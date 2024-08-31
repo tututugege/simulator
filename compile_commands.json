@@ -1,0 +1,52 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-O3",
+      "./rv_simu_mmu.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/cpp",
+    "file": "/home/tututu/qimeng/cpp/rv_simu_mmu.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-O3",
+      "./back-end/IQ.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/cpp",
+    "file": "/home/tututu/qimeng/cpp/back-end/IQ.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-O3",
+      "./back-end/RAT.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/cpp",
+    "file": "/home/tututu/qimeng/cpp/back-end/RAT.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-O3",
+      "./back-end/ROB.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/cpp",
+    "file": "/home/tututu/qimeng/cpp/back-end/ROB.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-O3",
+      "./back-end/TOP.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/cpp",
+    "file": "/home/tututu/qimeng/cpp/back-end/TOP.cpp"
+  }
+]
