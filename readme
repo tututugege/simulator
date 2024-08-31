@@ -1,0 +1,5 @@
+顶层模块：rv_simu_mmu.cpp       其它C文件都是他的子模块
+执行方式:
+(1) 编译模拟器              g++ rv_simu_mmu.cpp -O3     (默认输出文件为a.out)
+    (2) 模拟器运行Linux         ./a.out memory > log    (memory为编译后的存储文件)
+
