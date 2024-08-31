@@ -1,91 +1,57 @@
-#pragma once
-#include"RISCV_32I.h"
-#include"RISCV_32A.h"
-#include"RISCV_CSR.h"
-#include"cvt.h"
+#include "./back-end/Rename.h"
+#include <cstdio>
+#include <stdint.h>
+#define BIT_WIDTH (1798 + 64)
+extern const int bit_width;
+extern bool log;
+extern int time_i;
+void RISCV(bool input_data[BIT_WIDTH], bool *output_data);
+void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data);
+void RISCV_CSR(bool input_data[BIT_WIDTH], bool *output_data);
+void RISCV_32A(bool input_data[BIT_WIDTH], bool *output_data);
+bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
+           uint32_t type, bool *mstatus, uint32_t privilege, bool *sstatus);
 
-void RISCV(bool input_data[bit_width], bool* output_data) {
+extern const int BIT_WIDTH_INPUT;
+extern const int BIT_WIDTH_OUTPUT;
+extern const int BIT_WIDTH_PC;
+extern const int BIT_WIDHT_OP_CODE;
+extern const int BIT_WIDTH_REG_STATES;
+extern const int POS_IN_INST;
+extern const int POS_IN_PC;               // 1728-1760
+extern const int POS_IN_LOAD_DATA;        // 1760-1791
+extern const int POS_IN_ASY;              // 1792
+extern const int POS_PAGE_FAULT_INST;     // 1793
+extern const int POS_PAGE_FAULT_LOAD;     // 1794
+extern const int POS_PAGE_FAULT_STORE;    // 1795
+extern const int POS_IN_PRIVILEGEP;       // 1796-1797 privilege
+extern const int POS_IN_REG_A;            // 1798-1829
+extern const int POS_IN_REG_B;            // 1830-1862
+extern const int POS_OUT_PC;              // 1696-1727
+extern const int POS_OUT_LOAD_ADDR;       // 1728-1759
+extern const int POS_OUT_STORE_DATA;      // 1760-1791
+extern const int POS_OUT_STORE_ADDR;      // 1792-1823
+extern const int POS_OUT_PRIVILEGE;       // 1824-1825
+extern const long VIRTUAL_MEMORY_LENGTH;  // 4B
+extern const long PHYSICAL_MEMORY_LENGTH; // 4B
 
-	bool instruction[32];
-	bool this_priviledge[2];
-	bool csr_mie[32];
-	bool csr_mip[32];
-	bool csr_mstatus[32];
-	bool csr_mideleg[32];
-	bool csr_medeleg[32];
-	copy_indice(csr_mie, 0, input_data, 1120, 32);
-	copy_indice(csr_mip, 0, input_data, 1152, 32);
-	copy_indice(csr_mstatus, 0, input_data, 1248, 32);
-	copy_indice(csr_mideleg, 0, input_data, 1280, 32);
-	copy_indice(csr_medeleg, 0, input_data, 1312, 32);
-	// copy_indice(csr_sepc, 0, input_data, 1344, 32);
-	// copy_indice(csr_stvec, 0, input_data, 1376, 32);
-	// copy_indice(csr_scause, 0, input_data, 1408, 32);
-	// copy_indice(csr_sscratch, 0, input_data, 1440, 32);
-	// copy_indice(csr_stval, 0, input_data, 1472, 32);
-	copy_indice(instruction, 0, input_data, 1696, 32);
-	bool asy = input_data[1792];
-	bool page_fault_inst = input_data[1793];
-	bool page_fault_load = input_data[1794];
-	bool page_fault_store = input_data[1795];
-	copy_indice(this_priviledge, 0, input_data, 1796, 2);
-
-	//split instruction
-	bool bit_op_code[7]; //25-31
-	bool bit_csr_code[12]; //0-11
-	copy_indice(bit_op_code, 0, instruction, 25, 7);
-	uint32_t number_op_code_unsigned = cvt_bit_to_number_unsigned(bit_op_code, 7);
-	copy_indice(bit_csr_code, 0, instruction, 0, 12);
-	uint32_t number_csr_code_unsigned = cvt_bit_to_number_unsigned(bit_csr_code, 12);
-	bool	bit_funct3[3];
-	copy_indice(bit_funct3, 0, instruction, 17, 3);
-	uint32_t number_funct3_unsigned = cvt_bit_to_number_unsigned(bit_funct3, 3);
-
-	uint32_t number_this_priviledge = cvt_bit_to_number_unsigned(this_priviledge, 2);
-	uint32_t number_op_code = cvt_bit_to_number_unsigned(bit_op_code, 7);
-	bool M_software_interrupt = csr_mip[31 - 3] && csr_mie[31 - 3] && (csr_mideleg[31 - 3] == 0) && (number_this_priviledge < 3 || csr_mstatus[31 - 3] == 1); //M_software_interrupt
-	bool M_timer_interrupt = csr_mip[31 - 7] && csr_mie[31 - 7] && (csr_mideleg[31 - 7] == 0) && (number_this_priviledge < 3 || csr_mstatus[31 - 3] == 1); //M_timer_interrupt
-	bool M_external_interrupt = csr_mip[31 - 11] && csr_mie[31 - 11] && (csr_mideleg[31 - 11] == 0) && (number_this_priviledge < 3 || csr_mstatus[31 - 3] == 1);
-	bool S_software_interrupt = (csr_mip[31 - 3] && csr_mie[31 - 3] && csr_mideleg[31 - 3] == 1 && number_this_priviledge < 2 && (number_this_priviledge < 1 || csr_mstatus[31 - 1] == 1)) ||
-		(csr_mip[31 - 1] && csr_mie[31 - 1] && number_this_priviledge < 2 && (number_this_priviledge < 1 || csr_mstatus[31 - 1] == 1));
-	bool S_timer_interrupt = (csr_mip[31 - 7] && csr_mie[31 - 7] && csr_mideleg[31 - 7] == 1 && number_this_priviledge < 2 && (number_this_priviledge < 1 || csr_mstatus[31 - 1] == 1)) ||
-		(csr_mip[31 - 5] && csr_mie[31 - 5] && number_this_priviledge < 2 && (number_this_priviledge < 1 || csr_mstatus[31 - 1] == 1));
-	bool S_external_interrupt = (csr_mip[31 - 11] && csr_mie[31 - 11] && csr_mideleg[31 - 11] == 1 && number_this_priviledge < 2 && (number_this_priviledge < 1 || csr_mstatus[31 - 1] == 1)) ||
-		(csr_mip[31 - 9] && csr_mie[31 - 9] && number_this_priviledge < 2 && (number_this_priviledge < 1 || csr_mstatus[31 - 1] == 1)); 
-	bool ecall = (number_op_code == 0x73 && number_funct3_unsigned == 0 && cvt_bit_to_number_unsigned(bit_csr_code, 12) == 0);
-
-	bool MRET = (number_op_code==0x73	&&	number_funct3_unsigned==0 && (cvt_bit_to_number_unsigned(bit_csr_code,12)== 0x302));
-	bool SRET = (number_op_code==0x73	&&	number_funct3_unsigned==0 && (cvt_bit_to_number_unsigned(bit_csr_code,12)== 0x102));
-	bool MTrap = (M_software_interrupt 	) 
-			|| 	(M_timer_interrupt 	) 
-			|| 	(M_external_interrupt 	)
-			||	(ecall 	&& (number_this_priviledge==0) && !csr_medeleg[31- 8])
-			||	(ecall 	&& (number_this_priviledge==1) && !csr_medeleg[31- 9])
-			||	(ecall 	&& (number_this_priviledge==3) ) //MTrap下的ecall一定在MTrap处理
-			|| 	(page_fault_inst && !csr_medeleg[31-12])		
-			|| 	(page_fault_load && !csr_medeleg[31-13])		
-			|| 	(page_fault_store && !csr_medeleg[31-15]);
-	bool STrap = S_software_interrupt
-			||	S_timer_interrupt
-			||	S_external_interrupt
-			||	(ecall 	&& (number_this_priviledge==0) && csr_medeleg[31- 8])
-			||	(ecall 	&& (number_this_priviledge==1) && csr_medeleg[31- 9])
-			//||	(ecall 	&& (number_this_priviledge==3) && csr_medeleg[31-11]) //M态ECALL无论如何不会进入STrap
-			|| 	(page_fault_inst && csr_medeleg[31-12])		
-			|| 	(page_fault_load && csr_medeleg[31-13])		
-			|| 	(page_fault_store && csr_medeleg[31-15]);
-
-	asy = MTrap || STrap || MRET || SRET;
-	uint32_t number_instruction = cvt_bit_to_number_unsigned(instruction, 32);
-	if (number_instruction == 0x10500073 && !asy && !page_fault_inst && !page_fault_load && !page_fault_store) {
-		cerr << "wfi" << endl;
-		exit(-1);
-	}
-	if(asy || page_fault_inst || page_fault_load || page_fault_store || number_op_code_unsigned == number_10_opcode_ecall){	//进入中断控制程序，这里只完成了对1个中断的处理（只设置了1个mcause值）
-		RISCV_CSR(input_data, output_data);
-	}else if(number_op_code_unsigned == number_11_opcode_lrw){
-		RISCV_32A(input_data, output_data);
-	}else{
-		RISCV_32I(input_data, output_data);
-	}
-}
+extern Rename rename_unit;
+enum enum_number_opcode {
+  number_0_opcode_lui = 0b0110111,   // lui
+  number_1_opcode_auipc = 0b0010111, // auipc
+  number_2_opcode_jal = 0b1101111,   // jal
+  number_3_opcode_jalr = 0b1100111,  // jalr
+  number_4_opcode_beq = 0b1100011,   // beq, bne, blt, bge, bltu, bgeu
+  number_5_opcode_lb = 0b0000011,    // lb, lh, lw, lbu, lhu
+  number_6_opcode_sb = 0b0100011,    // sb, sh, sw
+  number_7_opcode_addi =
+      0b0010011, // addi, slti, sltiu, xori, ori, andi, slli, srli, srai
+  number_8_opcode_add =
+      0b0110011, // add, sub, sll, slt, sltu, xor, srl, sra, or, and
+  number_9_opcode_fence = 0b0001111, // fence, fence.i
+  number_10_opcode_ecall =
+      0b1110011, // ecall, ebreak, csrrw, csrrs, csrrc, csrrwi, csrrsi, csrrci
+  number_11_opcode_lrw =
+      0b0101111, // lr.w, sc.w, amoswap.w, amoadd.w, amoxor.w, amoand.w,
+                 // amoor.w, amomin.w, amomax.w, amominu.w, amomaxu.w
+};
