@@ -4,6 +4,7 @@ typedef struct RAT_out {
   int src1_preg_idx[WAY];
   int src2_preg_idx[WAY];
   int dest_preg_idx[WAY];
+  int old_dest_preg_idx[WAY];
 } RAT_out;
 
 typedef struct RAT_in {

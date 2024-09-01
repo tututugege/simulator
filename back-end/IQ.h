@@ -1,16 +1,10 @@
 
 #include "config.h"
 typedef struct IQ_entry {
-  int op;
-  int dest_idx;
-  bool dest_en;
-
-  int src1_idx;
-  bool src1_en;
+  bool pos_bit;
+  int pos_idx;
+  Inst_info inst;
   bool src1_ready;
-
-  int src2_idx;
-  bool src2_en;
   bool src2_ready;
 } IQ_entry;
 
@@ -21,20 +15,17 @@ typedef struct IQ_out {
 } IQ_out;
 
 typedef struct IQ_in {
-  Inst_type op[WAY];
-  int src1_preg_idx[WAY];
-  int src1_preg_en[WAY];
-  int src2_preg_idx[WAY];
-  int src2_preg_en[WAY];
-  int dest_preg_idx[WAY];
-  int dest_preg_en[WAY];
+  bool pos_bit[WAY];
+  int pos_idx[WAY];
+  Inst_info inst[WAY];
 } IQ_in;
 
 class IQ {
 public:
   void init();
   void IQ_add_inst();
-  void IQ_sel_inst(); // select instuction to execute
+  Inst_info IQ_sel_inst();          // 仲裁
+  void IQ_awake(int dest_preg_idx); // 唤醒
   struct IQ_in in;
   struct IQ_out out;
 
