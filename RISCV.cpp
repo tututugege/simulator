@@ -103,6 +103,7 @@ void RISCV(bool input_data[BIT_WIDTH], bool *output_data) {
     cerr << "wfi" << endl;
     exit(-1);
   }
+
   if (asy || page_fault_inst || page_fault_load || page_fault_store ||
       number_op_code_unsigned ==
           number_10_opcode_ecall) { // 进入中断控制程序，这里只完成了对1个中断的处理（只设置了1个mcause值）

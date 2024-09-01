@@ -1,20 +1,21 @@
 #include "RISCV.h"
-#include "back-end/Rename.h"
+#include "back-end/config.h"
 #include "cvt.h"
+#include <cassert>
 
 void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   // get input data
-  bool *general_regs = input_data;           // 1024
-  bool *reg_csrs = input_data + 1024;        // 32*21
-  bool *instruction = input_data + 1696;     // 32
-  bool *bit_this_pc = input_data + 1728;     // 32
-  bool *bit_load_data = input_data + 1760;   // 32
-  bool *this_priviledge = input_data + 1796; // 2
+  bool *general_regs = input_data;                        // 1024
+  bool *reg_csrs = input_data + 32 * PRF_NUM;             // 32*21
+  bool *instruction = input_data + POS_IN_INST;           // 32
+  bool *bit_this_pc = input_data + POS_IN_PC;             // 32
+  bool *bit_load_data = input_data + POS_IN_LOAD_DATA;    // 32
+  bool *this_priviledge = input_data + POS_IN_PRIVILEGEP; // 2
 
-  bool asy = input_data[1792];
-  bool page_fault_inst = input_data[1793];
-  bool page_fault_load = input_data[1794];
-  bool page_fault_store = input_data[1795];
+  bool asy = input_data[POS_IN_ASY];
+  bool page_fault_inst = input_data[POS_PAGE_FAULT_INST];
+  bool page_fault_load = input_data[POS_PAGE_FAULT_LOAD];
+  bool page_fault_store = input_data[POS_PAGE_FAULT_STORE];
 
   // initialize output data
   bool bit_result_tensor[32];
@@ -23,10 +24,10 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   copy_indice(next_priviledge, 0, this_priviledge, 0, 2);
 
   bool *next_general_regs = output_data + 0; // 1024
-  bool *bit_next_pc = output_data + 1696;
-  bool *bit_load_address = output_data + 1728;
-  bool *bit_store_data = output_data + 1760;
-  bool *bit_store_address = output_data + 1792;
+  bool *bit_next_pc = output_data + POS_OUT_PC;
+  bool *bit_load_address = output_data + POS_OUT_LOAD_ADDR;
+  bool *bit_store_data = output_data + POS_OUT_STORE_DATA;
+  bool *bit_store_address = output_data + POS_OUT_STORE_ADDR;
 
   // pc + 4
   bool bit_pc_4[32];
@@ -35,98 +36,8 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   cvt_number_to_bit_unsigned(bit_pc_4, number_pc_4, 32);
   copy_indice(bit_next_pc, 0, bit_pc_4, 0, 32);
 
-  // split instruction
-  bool *bit_op_code = instruction + 25; // 25-31
-  bool *rd_code = instruction + 20;     // 20-24
-  bool *rs_a_code = instruction + 12;   // 12-16
-  bool *rs_b_code = instruction + 7;    // 7-11
-  bool *bit_csr_code = instruction + 0; // 0-11
-
-  // 准备opcode、funct3、funct7
-  uint32_t number_op_code_unsigned = cvt_bit_to_number_unsigned(bit_op_code, 7);
-  bool *bit_funct3 = instruction + 17; // 3
-  uint32_t number_funct3_unsigned = cvt_bit_to_number_unsigned(bit_funct3, 3);
-  bool *bit_funct7 = instruction + 0; // 7
-  uint32_t number_funct7_unsigned = cvt_bit_to_number_unsigned(bit_funct7, 7);
-
-  // 准备寄存器
-  uint32_t reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
-  uint32_t reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
-  uint32_t reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
-
-  // 寄存器重命名
-  bool dest_en, src1_en, src2_en;
-  switch (number_op_code_unsigned) {
-  case number_0_opcode_lui: { // lui
-    dest_en = true;
-    src1_en = false;
-    src2_en = false;
-    break;
-  }
-  case number_1_opcode_auipc: { // auipc
-    dest_en = true;
-    src1_en = false;
-    src2_en = false;
-    break;
-  }
-  case number_2_opcode_jal: { // jal
-    dest_en = true;
-    src1_en = false;
-    src2_en = false;
-    break;
-  }
-  case number_3_opcode_jalr: { // jalr
-    dest_en = true;
-    src1_en = true;
-    src2_en = false;
-
-    break;
-  }
-  case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
-    dest_en = false;
-    src1_en = true;
-    src2_en = true;
-  }
-  case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
-    dest_en = true;
-    src1_en = true;
-    src2_en = false;
-  }
-  case number_6_opcode_sb: { // sb, sh, sw
-    dest_en = false;
-    src1_en = true;
-    src2_en = true;
-  }
-  case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
-    // srli, srai
-    dest_en = true;
-    src1_en = true;
-    src2_en = false;
-  }
-  case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
-    dest_en = true;
-    src1_en = true;
-    src2_en = true;
-  }
-  case number_9_opcode_fence: { // fence, fence.i
-    dest_en = false;
-    src1_en = false;
-    src2_en = false;
-
-    break;
-  }
-  default: {
-    cerr << "error" << endl;
-    exit(-1);
-    break;
-  }
-  }
-
-  int reg_a_preg_index;
-  int reg_b_preg_index;
-
-  bool *bit_reg_data_a = general_regs + 32 * reg_a_preg_index; // 32
-  bool *bit_reg_data_b = general_regs + 32 * reg_b_preg_index; // 32
+  bool *bit_reg_data_a = general_regs; // 32
+  bool *bit_reg_data_b = general_regs; // 32
 
   // 准备立即数
   bool bit_immi_u_type[32]; // U-type
@@ -150,349 +61,10 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   copy_indice(bit_immi_s_type, 0, instruction, 0, 7);
   copy_indice(bit_immi_s_type, 7, instruction, 20, 5);
 
-  switch (number_op_code_unsigned) {
-  case number_0_opcode_lui: { // lui
-    copy_indice(next_general_regs, reg_d_index * 32, bit_immi_u_type, 0, 32);
-    break;
-  }
-  case number_1_opcode_auipc: { // auipc
-    bool bit_temp[32];
-    add_bit_list(bit_temp, bit_this_pc, bit_immi_u_type, 32);
-    copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-    break;
-  }
-  case number_2_opcode_jal: { // jal
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_j_type, 21);
-    add_bit_list(bit_next_pc, bit_this_pc, bit_temp, 32);
-    copy_indice(next_general_regs, reg_d_index * 32, bit_pc_4, 0, 32);
-    break;
-  }
-  case number_3_opcode_jalr: { // jalr
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-    add_bit_list(bit_next_pc, bit_reg_data_a, bit_temp, 32);
-    (*(bit_next_pc + 31)) = 0;
-    copy_indice(next_general_regs, reg_d_index * 32, bit_pc_4, 0, 32);
-    break;
-  }
-  case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
-    uint32_t number_reg_data_a_unsigned =
-        cvt_bit_to_number_unsigned(bit_reg_data_a, 32);
-    uint32_t number_reg_data_b_unsigned =
-        cvt_bit_to_number_unsigned(bit_reg_data_b, 32);
-    int number_reg_data_a = cvt_bit_to_number(bit_reg_data_a, 32);
-    int number_reg_data_b = cvt_bit_to_number(bit_reg_data_b, 32);
-    switch (number_funct3_unsigned) {
-    case 0: { // beq
-      if (number_reg_data_a == number_reg_data_b) {
-        bool bit_temp[32];
-        sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-        add_bit_list(bit_next_pc, bit_this_pc, bit_temp, 32);
-      }
-      break;
-    }
-    case 1: { // bne
-      if (number_reg_data_a != number_reg_data_b) {
-        bool bit_temp[32];
-        sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-        add_bit_list(bit_next_pc, bit_this_pc, bit_temp, 32);
-      }
-      break;
-    }
-    case 4: { // blt
-      if (number_reg_data_a < number_reg_data_b) {
-        bool bit_temp[32];
-        sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-        add_bit_list(bit_next_pc, bit_this_pc, bit_temp, 32);
-      }
-      break;
-    }
-    case 5: { // bge
-      if (number_reg_data_a >= number_reg_data_b) {
-        bool bit_temp[32];
-        sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-        add_bit_list(bit_next_pc, bit_this_pc, bit_temp, 32);
-      }
-      break;
-    }
-    case 6: { // bltu
-      if (number_reg_data_a_unsigned < number_reg_data_b_unsigned) {
-        bool bit_temp[32];
-        sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-        add_bit_list(bit_next_pc, bit_this_pc, bit_temp, 32);
-      }
-      break;
-    }
-    case 7: { // bgeu
-      if (number_reg_data_a_unsigned >= number_reg_data_b_unsigned) {
-        bool bit_temp[32];
-        sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-        add_bit_list(bit_next_pc, bit_this_pc, bit_temp, 32);
-      }
-      break;
-    }
-    }
-    break;
-  }
-  case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
-    switch (number_funct3_unsigned) {
-    case 0: { // lb
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      add_bit_list(bit_load_address, bit_reg_data_a, bit_temp, 32);
-      sign_extend(bit_temp, 32, bit_load_data + 24, 8);
-      copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-      break;
-    }
-    case 1: { // lh
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      add_bit_list(bit_load_address, bit_reg_data_a, bit_temp, 32);
-      sign_extend(bit_temp, 32, bit_load_data + 16, 16);
-      copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-      break;
-    }
-    case 2: { // lw
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      add_bit_list(bit_load_address, bit_reg_data_a, bit_temp, 32);
-      copy_indice(next_general_regs, reg_d_index * 32, bit_load_data, 0, 32);
-      break;
-    }
-    case 4: { // lbu
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      add_bit_list(bit_load_address, bit_reg_data_a, bit_temp, 32);
-      zero_extend(bit_temp, 32, bit_load_data + 24, 8);
-      copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-      break;
-    }
-    case 5: { // lhu
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      add_bit_list(bit_load_address, bit_reg_data_a, bit_temp, 32);
-      zero_extend(bit_temp, 32, bit_load_data + 16, 16);
-      copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-      break;
-    }
-    }
-    break;
-  }
-  case number_6_opcode_sb: { // sb, sh, sw
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_s_type, 12);
-    add_bit_list(bit_store_address, bit_reg_data_a, bit_temp, 32);
-    init_indice(bit_store_data, 0, 32);
-    switch (number_funct3_unsigned) {
-    case 0: { // sb
-      copy_indice(bit_store_data, 24, bit_reg_data_b, 24, 8);
-      break;
-    }
-    case 1: { // sh
-      copy_indice(bit_store_data, 16, bit_reg_data_b, 16, 16);
-      break;
-    }
-    case 2: { // sw
-      copy_indice(bit_store_data, 0, bit_reg_data_b, 0, 32);
-      break;
-    }
-    }
-    break;
-  }
-  case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
-                               // srli, srai
-    switch (number_funct3_unsigned) {
-    case 0: { // addi
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      add_bit_list(bit_temp, bit_reg_data_a, bit_temp, 32);
-      copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-      break;
-    }
-    case 2: { // slti
-      int number_reg_data_a = cvt_bit_to_number(bit_reg_data_a, 32);
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      int number_temp = cvt_bit_to_number(bit_temp, 32);
-      init_indice(next_general_regs, reg_d_index * 32, 32);
-      (*(next_general_regs + reg_d_index * 32 + 31)) =
-          number_reg_data_a < number_temp ? 1 : 0;
-      break;
-    }
-    case 3: { // sltiu
-      uint32_t number_reg_data_a_unsigned =
-          cvt_bit_to_number_unsigned(bit_reg_data_a, 32);
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      uint32_t number_temp = cvt_bit_to_number_unsigned(bit_temp, 32);
-      init_indice(next_general_regs, reg_d_index * 32, 32);
-      (*(next_general_regs + reg_d_index * 32 + 31)) =
-          number_reg_data_a_unsigned < number_temp ? 1 : 0;
-      break;
-    }
-    case 4: { // xori
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      for (int i = 0; i < 32; i++)
-        (*(next_general_regs + reg_d_index * 32 + i)) =
-            (*(bit_reg_data_a + i)) ^ bit_temp[i];
-      break;
-    }
-    case 6: { // ori
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      for (int i = 0; i < 32; i++)
-        (*(next_general_regs + reg_d_index * 32 + i)) =
-            (*(bit_reg_data_a + i)) | bit_temp[i];
-      break;
-    }
-    case 7: { // andi
-      bool bit_temp[32];
-      sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-      for (int i = 0; i < 32; i++)
-        (*(next_general_regs + reg_d_index * 32 + i)) =
-            (*(bit_reg_data_a + i)) & bit_temp[i];
-      break;
-    }
-    case 1: { // slli
-      if ((*(instruction + 6)) == 0) {
-        uint32_t number_temp = cvt_bit_to_number_unsigned(rs_b_code, 5);
-        init_indice(next_general_regs, reg_d_index * 32, 32);
-        copy_indice(next_general_regs, reg_d_index * 32, bit_reg_data_a,
-                    number_temp, 32 - number_temp);
-      }
-      break;
-    }
-    case 5: { // srli, srai
-      switch (number_funct7_unsigned) {
-      case 0: { // srli
-        if ((*(instruction + 6)) == 0) {
-          uint32_t number_temp = cvt_bit_to_number_unsigned(rs_b_code, 5);
-          init_indice(next_general_regs, reg_d_index * 32, 32);
-          copy_indice(next_general_regs, reg_d_index * 32 + number_temp,
-                      bit_reg_data_a, 0, 32 - number_temp);
-        }
-        break;
-      }
-      case 32: { // srai
-        if ((*(instruction + 6)) == 0) {
-          uint32_t number_temp = cvt_bit_to_number_unsigned(rs_b_code, 5);
-          for (int i = 0; i < number_temp; i++)
-            (*(next_general_regs + reg_d_index * 32 + i)) =
-                (*(bit_reg_data_a + 0));
-          copy_indice(next_general_regs, reg_d_index * 32 + number_temp,
-                      bit_reg_data_a, 0, 32 - number_temp);
-        }
-        break;
-      }
-      }
-      break;
-    }
-    }
-    break;
-  }
-  case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
-                              // and
-    switch (number_funct3_unsigned) {
-    case 0: { // add, sub
-      switch (number_funct7_unsigned) {
-      case 0: { // add
-        bool bit_temp[32];
-        add_bit_list(bit_temp, bit_reg_data_a, bit_reg_data_b, 32);
-        copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-        break;
-      }
-      case 32: { // sub
-        int number_a = cvt_bit_to_number(bit_reg_data_a, 32);
-        int number_b = cvt_bit_to_number(bit_reg_data_b, 32);
-        int number_temp = number_a - number_b;
-        bool bit_temp[32];
-        cvt_number_to_bit(bit_temp, number_temp, 32);
-        copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);
-        break;
-      }
-      }
-      break;
-    }
-    case 1: { // sll
-      uint32_t number_temp = cvt_bit_to_number_unsigned(bit_reg_data_b + 27, 5);
-      init_indice(next_general_regs, reg_d_index * 32, 32);
-      copy_indice(next_general_regs, reg_d_index * 32, bit_reg_data_a,
-                  number_temp, 32 - number_temp);
-      break;
-    }
-    case 2: { // slt
-      int number_reg_data_a = cvt_bit_to_number(bit_reg_data_a, 32);
-      int number_reg_data_b = cvt_bit_to_number(bit_reg_data_b, 32);
-      init_indice(next_general_regs, reg_d_index * 32, 32);
-      (*(next_general_regs + reg_d_index * 32 + 31)) =
-          number_reg_data_a < number_reg_data_b ? 1 : 0;
-      break;
-    }
-    case 3: { // sltu
-      uint32_t number_reg_data_a_unsigned =
-          cvt_bit_to_number_unsigned(bit_reg_data_a, 32);
-      uint32_t number_reg_data_b_unsigned =
-          cvt_bit_to_number_unsigned(bit_reg_data_b, 32);
-      init_indice(next_general_regs, reg_d_index * 32, 32);
-      (*(next_general_regs + reg_d_index * 32 + 31)) =
-          number_reg_data_a_unsigned < number_reg_data_b_unsigned ? 1 : 0;
-      break;
-    }
-    case 4: { // xor
-      for (int i = 0; i < 32; i++)
-        (*(next_general_regs + reg_d_index * 32 + i)) =
-            (*(bit_reg_data_a + i)) ^ (*(bit_reg_data_b + i));
-      break;
-    }
-    case 5: { // srl, sra
-      switch (number_funct7_unsigned) {
-      case 0: { // srl
-        uint32_t number_temp =
-            cvt_bit_to_number_unsigned(bit_reg_data_b + 27, 5);
-        init_indice(next_general_regs, reg_d_index * 32, 32);
-        copy_indice(next_general_regs, reg_d_index * 32 + number_temp,
-                    bit_reg_data_a, 0, 32 - number_temp);
-        break;
-      }
-      case 32: { // sra
-        uint32_t number_temp =
-            cvt_bit_to_number_unsigned(bit_reg_data_b + 27, 5);
-        for (int i = 0; i < number_temp; i++)
-          (*(next_general_regs + reg_d_index * 32 + i)) =
-              (*(bit_reg_data_a + 0));
-        copy_indice(next_general_regs, reg_d_index * 32 + number_temp,
-                    bit_reg_data_a, 0, 32 - number_temp);
-        break;
-      }
-      }
-      break;
-    }
-    case 6: { // or
-      for (int i = 0; i < 32; i++)
-        (*(next_general_regs + reg_d_index * 32 + i)) =
-            (*(bit_reg_data_a + i)) | (*(bit_reg_data_b + i));
-      break;
-    }
-    case 7: { // and
-      for (int i = 0; i < 32; i++)
-        (*(next_general_regs + reg_d_index * 32 + i)) =
-            (*(bit_reg_data_a + i)) & (*(bit_reg_data_b + i));
-      break;
-    }
-    }
-    break;
-  }
-  case number_9_opcode_fence: { // fence, fence.i
-    break;
-  }
-  default: {
-    cerr << "error" << endl;
-    exit(-1);
-    break;
-  }
-  }
+  // decode
+
+  // rename-execute-write back
+  back.Back_cycle();
 
   // output data
   init_indice(next_general_regs, 0, 32);
@@ -503,4 +75,253 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   // copy_indice(output_data, 1760, bit_store_data, 0, 32);
   // copy_indice(output_data, 1792, bit_store_address, 0, 32);
   // copy_indice(output_data, 1824, next_priviledge, 0, 2);
+}
+
+Inst_info decode(bool inst_bit[]) {
+  // 操作数来源以及type
+  bool dest_en, src1_en, src2_en;
+  Inst_type type;
+
+  // split instruction
+  bool *bit_op_code = inst_bit + 25; // 25-31
+  bool *rd_code = inst_bit + 20;     // 20-24
+  bool *rs_a_code = inst_bit + 12;   // 12-16
+  bool *rs_b_code = inst_bit + 7;    // 7-11
+  bool *bit_csr_code = inst_bit + 0; // 0-11
+
+  // 准备opcode、funct3、funct7
+  uint32_t number_op_code_unsigned = cvt_bit_to_number_unsigned(bit_op_code, 7);
+  bool *bit_funct3 = inst_bit + 17; // 3
+  uint32_t number_funct3_unsigned = cvt_bit_to_number_unsigned(bit_funct3, 3);
+  bool *bit_funct7 = inst_bit + 0; // 7
+  uint32_t number_funct7_unsigned = cvt_bit_to_number_unsigned(bit_funct7, 7);
+
+  // 准备寄存器
+  int reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
+  int reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
+  int reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
+
+  switch (number_op_code_unsigned) {
+  case number_0_opcode_lui: { // lui
+    dest_en = true;
+    src1_en = false;
+    src2_en = false;
+    type = LUI;
+    break;
+  }
+  case number_1_opcode_auipc: { // auipc
+    dest_en = true;
+    src1_en = false;
+    src2_en = false;
+    type = AUIPC;
+    break;
+  }
+  case number_2_opcode_jal: { // jal
+    dest_en = true;
+    src1_en = false;
+    src2_en = false;
+    type = JAL;
+    break;
+  }
+  case number_3_opcode_jalr: { // jalr
+    dest_en = true;
+    src1_en = true;
+    src2_en = false;
+    type = JALR;
+    break;
+  }
+  case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
+    dest_en = false;
+    src1_en = true;
+    src2_en = true;
+    switch (number_funct3_unsigned) {
+    case 0: // beq
+      type = BEQ;
+      break;
+    case 1: // bne
+      type = BNE;
+      break;
+    case 4: // blt
+      type = BLT;
+      break;
+    case 5: // bge
+      type = BGE;
+      break;
+    case 6: // bltu
+      type = BLTU;
+      break;
+    case 7: // bgeu
+      type = BGEU;
+      break;
+    default:
+      assert(0);
+    }
+    break;
+  }
+  case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
+    dest_en = true;
+    src1_en = true;
+    src2_en = false;
+
+    switch (number_funct3_unsigned) {
+    case 0: // lb
+      type = LB;
+      break;
+    case 1: // lh
+      type = LH;
+      break;
+    case 2: // lw
+      type = LW;
+      break;
+    case 4: // lbu
+      type = LBU;
+      break;
+    case 5: // lhu
+      type = LHU;
+      break;
+    default:
+      assert(0);
+    }
+    break;
+  }
+  case number_6_opcode_sb: { // sb, sh, sw
+    dest_en = false;
+    src1_en = true;
+    src2_en = true;
+
+    switch (number_funct3_unsigned) {
+    case 0: // sb
+      type = SB;
+      break;
+    case 1: // sh
+      type = SH;
+      break;
+    case 2: // sw
+      type = SW;
+      break;
+    }
+    break;
+  }
+  case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
+    // srli, srai
+    dest_en = true;
+    src1_en = true;
+    src2_en = false;
+
+    switch (number_funct3_unsigned) {
+    case 0: // addi
+      type = ADDI;
+      break;
+    case 2: // slti
+      type = SLTI;
+      break;
+    case 3: // sltiu
+      type = SLTIU;
+      break;
+    case 4: // xori
+      type = XORI;
+      break;
+    case 6: // ori
+      type = ORI;
+      break;
+    case 7: // andi
+      type = ANDI;
+      break;
+    case 1: // slli
+      type = SLLI;
+      break;
+    case 5: { // srli, srai
+      switch (number_funct7_unsigned) {
+      case 0: // srli
+        type = SRLI;
+        break;
+      case 32: // srai
+        type = SRAI;
+        break;
+      default:
+        assert(0);
+      }
+      break;
+    }
+    }
+    break;
+  }
+  case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
+    dest_en = true;
+    src1_en = true;
+    src2_en = true;
+
+    switch (number_funct3_unsigned) {
+    case 0: { // add, sub
+      switch (number_funct7_unsigned) {
+      case 0: // add
+        type = ADD;
+        break;
+      case 32: // sub
+        type = SUB;
+        break;
+      default:
+        assert(0);
+      }
+      break;
+    }
+    case 1: // sll
+      type = SLL;
+      break;
+    case 2: // slt
+      type = SLT;
+      break;
+    case 3: // sltu
+      type = SLTU;
+      break;
+    case 4: // xor
+      type = XOR;
+      break;
+    case 5: { // srl, sra
+      switch (number_funct7_unsigned) {
+      case 0: // srl
+        type = SRL;
+        break;
+      case 32: // sra
+        type = SRA;
+        break;
+      default:
+        assert(0);
+      }
+      break;
+    }
+    case 6: // or
+      type = OR;
+      break;
+    case 7: // and
+      type = AND;
+      break;
+    }
+    break;
+  }
+  case number_9_opcode_fence: { // fence, fence.i
+    dest_en = false;
+    src1_en = false;
+    src2_en = false;
+
+    break;
+  }
+  default: {
+    cerr << "error" << endl;
+    exit(-1);
+    break;
+  }
+  }
+
+  Inst_info info = {
+      .dest_idx = reg_d_index,
+      .src1_idx = reg_a_index,
+      .src2_idx = reg_b_index,
+      .dest_en = dest_en,
+      .src1_en = src1_en,
+      .src2_en = src2_en,
+      .type = type,
+  };
+
+  return info;
 }
