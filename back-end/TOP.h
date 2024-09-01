@@ -14,9 +14,9 @@ private:
   Rename rename;
   IQ iq;
   ROB rob;
-  Back_in in;
 
 public:
+  Back_in in;
   void Back_cycle();
   void init();
 };
