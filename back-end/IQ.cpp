@@ -1,6 +1,13 @@
 #include "IQ.h"
 #include "config.h"
 
+void IQ::init() {
+
+  for (int i = 0; i < IQ_NUM; i++) {
+    entry[i].inst.type = NOP;
+  }
+}
+
 // 重命名后进入IQ
 void IQ::IQ_add_inst() {
   int IQ_idx;

@@ -2,15 +2,26 @@
 #include "back-end/config.h"
 #include "cvt.h"
 #include <cassert>
+#include <cstdint>
+Inst_info decode(bool inst_bit[]);
 
 void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   // get input data
-  bool *general_regs = input_data;                        // 1024
-  bool *reg_csrs = input_data + 32 * PRF_NUM;             // 32*21
-  bool *instruction = input_data + POS_IN_INST;           // 32
-  bool *bit_this_pc = input_data + POS_IN_PC;             // 32
-  bool *bit_load_data = input_data + POS_IN_LOAD_DATA;    // 32
-  bool *this_priviledge = input_data + POS_IN_PRIVILEGEP; // 2
+  bool *general_regs = input_data;            // 1024
+  bool *reg_csrs = input_data + 32 * PRF_NUM; // 32*21
+
+  bool *instruction[WAY]; // 32
+  bool *bit_this_pc[WAY]; // 32
+  uint32_t number_pc_unsigned[WAY];
+
+  for (int i = 0; i < WAY; i++) {
+    instruction[i] = input_data + POS_IN_INST + 32 * i;
+    bit_this_pc[i] = input_data + POS_IN_PC + 32 * i;
+    number_pc_unsigned[i] = cvt_bit_to_number_unsigned(bit_this_pc[i], 32);
+  }
+
+  bool *bit_load_data = input_data + POS_IN_LOAD_DATA;   // 32
+  bool *this_priviledge = input_data + POS_IN_PRIVILEGE; // 2
 
   bool asy = input_data[POS_IN_ASY];
   bool page_fault_inst = input_data[POS_PAGE_FAULT_INST];
@@ -30,39 +41,20 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   bool *bit_store_address = output_data + POS_OUT_STORE_ADDR;
 
   // pc + 4
-  bool bit_pc_4[32];
-  uint32_t number_pc_unsigned = cvt_bit_to_number_unsigned(bit_this_pc, 32);
-  uint32_t number_pc_4 = number_pc_unsigned + 4;
-  cvt_number_to_bit_unsigned(bit_pc_4, number_pc_4, 32);
-  copy_indice(bit_next_pc, 0, bit_pc_4, 0, 32);
+  /*bool bit_pc_4[32];*/
+  /*uint32_t number_pc_4 = number_pc_unsigned + 4;*/
+  /*cvt_number_to_bit_unsigned(bit_pc_4, number_pc_4, 32);*/
+  /*copy_indice(bit_next_pc, 0, bit_pc_4, 0, 32);*/
 
-  bool *bit_reg_data_a = general_regs; // 32
-  bool *bit_reg_data_b = general_regs; // 32
+  /*bool *bit_reg_data_a = general_regs; // 32*/
+  /*bool *bit_reg_data_b = general_regs; // 32*/
+  /**/
 
-  // 准备立即数
-  bool bit_immi_u_type[32]; // U-type
-  bool bit_immi_j_type[21]; // J-type
-  bool bit_immi_i_type[12]; // I-type
-  bool bit_immi_b_type[13]; // B-type
-  bool bit_immi_s_type[12]; // S-type
-  init_indice(bit_immi_u_type, 0, 32);
-  copy_indice(bit_immi_u_type, 0, instruction, 0, 20);
-  init_indice(bit_immi_j_type, 0, 21);
-  bit_immi_j_type[0] = (*(instruction + 0));
-  copy_indice(bit_immi_j_type, 1, instruction, 12, 8);
-  bit_immi_j_type[9] = (*(instruction + 11));
-  copy_indice(bit_immi_j_type, 10, instruction, 1, 10);
-  copy_indice(bit_immi_i_type, 0, instruction, 0, 12);
-  init_indice(bit_immi_b_type, 0, 13);
-  bit_immi_b_type[0] = (*(instruction + 0));
-  bit_immi_b_type[1] = (*(instruction + 24));
-  copy_indice(bit_immi_b_type, 2, instruction, 1, 6);
-  copy_indice(bit_immi_b_type, 8, instruction, 20, 4);
-  copy_indice(bit_immi_s_type, 0, instruction, 0, 7);
-  copy_indice(bit_immi_s_type, 7, instruction, 20, 5);
-
+  Inst_info inst[WAY];
   // decode
-
+  for (int i = 0; i < WAY; i++) {
+    back.in.inst[i] = decode(instruction[i]);
+  }
   // rename-execute-write back
   back.Back_cycle();
 
@@ -95,6 +87,28 @@ Inst_info decode(bool inst_bit[]) {
   uint32_t number_funct3_unsigned = cvt_bit_to_number_unsigned(bit_funct3, 3);
   bool *bit_funct7 = inst_bit + 0; // 7
   uint32_t number_funct7_unsigned = cvt_bit_to_number_unsigned(bit_funct7, 7);
+
+  // 准备立即数
+  bool bit_immi_u_type[32]; // U-type
+  bool bit_immi_j_type[21]; // J-type
+  bool bit_immi_i_type[12]; // I-type
+  bool bit_immi_b_type[13]; // B-type
+  bool bit_immi_s_type[12]; // S-type
+  init_indice(bit_immi_u_type, 0, 32);
+  copy_indice(bit_immi_u_type, 0, inst_bit, 0, 20);
+  init_indice(bit_immi_j_type, 0, 21);
+  bit_immi_j_type[0] = (*(inst_bit + 0));
+  copy_indice(bit_immi_j_type, 1, inst_bit, 12, 8);
+  bit_immi_j_type[9] = (*(inst_bit + 11));
+  copy_indice(bit_immi_j_type, 10, inst_bit, 1, 10);
+  copy_indice(bit_immi_i_type, 0, inst_bit, 0, 12);
+  init_indice(bit_immi_b_type, 0, 13);
+  bit_immi_b_type[0] = (*(inst_bit + 0));
+  bit_immi_b_type[1] = (*(inst_bit + 24));
+  copy_indice(bit_immi_b_type, 2, inst_bit, 1, 6);
+  copy_indice(bit_immi_b_type, 8, inst_bit, 20, 4);
+  copy_indice(bit_immi_s_type, 0, inst_bit, 0, 7);
+  copy_indice(bit_immi_s_type, 7, inst_bit, 20, 5);
 
   // 准备寄存器
   int reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
