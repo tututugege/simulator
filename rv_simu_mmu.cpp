@@ -1,5 +1,5 @@
-#include "./back-end/Rename.h"
 #include "RISCV.h"
+#include "back-end/TOP.h"
 #include "cvt.h"
 #include <cstdio>
 #include <fstream>
@@ -93,8 +93,8 @@ const int POS_CSR_MISA = CSR_MISA * 32;
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 
-// 推测执行的映射表和真实的映射表
-Rename rename_unit;
+// 后端执行
+Back_Top back;
 
 /* =====================================
 
@@ -179,8 +179,8 @@ int main(int argc, char *argv[]) {
   uint32_t number_PC = 0;
   ofstream outfile;
 
-  // init RAT
-  rename_unit.init();
+  // init
+  back.init();
 
   // main loop
   for (i = 0; i < 100000000000000; i++) { // 10398623

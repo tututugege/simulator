@@ -1,4 +1,5 @@
 #include "./back-end/Rename.h"
+#include "back-end/TOP.h"
 #include <cstdio>
 #include <stdint.h>
 #define BIT_WIDTH (1798 + 64)
@@ -35,7 +36,7 @@ extern const int POS_OUT_PRIVILEGE;       // 1824-1825
 extern const long VIRTUAL_MEMORY_LENGTH;  // 4B
 extern const long PHYSICAL_MEMORY_LENGTH; // 4B
 
-extern Rename rename_unit;
+extern Back_Top back;
 enum enum_number_opcode {
   number_0_opcode_lui = 0b0110111,   // lui
   number_1_opcode_auipc = 0b0010111, // auipc
