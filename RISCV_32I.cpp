@@ -12,12 +12,17 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
 
   bool *instruction[WAY]; // 32
   bool *bit_this_pc[WAY]; // 32
+  bool *bit_next_pc[WAY];
   uint32_t number_pc_unsigned[WAY];
+  uint32_t number_pc_4[WAY];
 
   for (int i = 0; i < WAY; i++) {
     instruction[i] = input_data + POS_IN_INST + 32 * i;
     bit_this_pc[i] = input_data + POS_IN_PC + 32 * i;
     number_pc_unsigned[i] = cvt_bit_to_number_unsigned(bit_this_pc[i], 32);
+    bit_next_pc[i] = output_data + POS_OUT_PC + 32 * i;
+    number_pc_4[i] = number_pc_unsigned[i] + 4;
+    cvt_number_to_bit_unsigned(bit_next_pc[i], number_pc_4[i], 32);
   }
 
   bool *bit_load_data = input_data + POS_IN_LOAD_DATA;   // 32
@@ -34,17 +39,10 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   bool next_priviledge[2];
   copy_indice(next_priviledge, 0, this_priviledge, 0, 2);
 
-  bool *next_general_regs = output_data + 0; // 1024
-  bool *bit_next_pc = output_data + POS_OUT_PC;
-  bool *bit_load_address = output_data + POS_OUT_LOAD_ADDR;
-  bool *bit_store_data = output_data + POS_OUT_STORE_DATA;
-  bool *bit_store_address = output_data + POS_OUT_STORE_ADDR;
-
-  // pc + 4
-  /*bool bit_pc_4[32];*/
-  /*uint32_t number_pc_4 = number_pc_unsigned + 4;*/
-  /*cvt_number_to_bit_unsigned(bit_pc_4, number_pc_4, 32);*/
-  /*copy_indice(bit_next_pc, 0, bit_pc_4, 0, 32);*/
+  /*bool *next_general_regs = output_data + 0; // 1024*/
+  /*bool *bit_load_address = output_data + POS_OUT_LOAD_ADDR;*/
+  /*bool *bit_store_data = output_data + POS_OUT_STORE_DATA;*/
+  /*bool *bit_store_address = output_data + POS_OUT_STORE_ADDR;*/
 
   /*bool *bit_reg_data_a = general_regs; // 32*/
   /*bool *bit_reg_data_b = general_regs; // 32*/
@@ -54,12 +52,13 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   // decode
   for (int i = 0; i < WAY; i++) {
     back.in.inst[i] = decode(instruction[i]);
+    back.in.PC[i] = number_pc_unsigned[i];
   }
   // rename-execute-write back
   back.Back_cycle();
 
   // output data
-  init_indice(next_general_regs, 0, 32);
+  /*init_indice(next_general_regs, 0, 32);*/
   // copy_indice(output_data, 0, next_general_regs, 0, 1024);
   // copy_indice(output_data, 1024, next_reg_csrs, 0, 32*21);
   // copy_indice(output_data, 1696, bit_next_pc, 0, 32);
@@ -73,6 +72,7 @@ Inst_info decode(bool inst_bit[]) {
   // 操作数来源以及type
   bool dest_en, src1_en, src2_en;
   Inst_type type;
+  uint32_t imm;
 
   // split instruction
   bool *bit_op_code = inst_bit + 25; // 25-31
@@ -121,6 +121,7 @@ Inst_info decode(bool inst_bit[]) {
     src1_en = false;
     src2_en = false;
     type = LUI;
+    imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
     break;
   }
   case number_1_opcode_auipc: { // auipc

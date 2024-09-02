@@ -36,7 +36,6 @@ void Back_Top::Back_cycle() {
     rob.in.dest_preg_idx[i] = rename.out.dest_preg_idx[i];
     rob.in.old_dest_preg_idx[i] = rename.out.old_dest_preg_idx[i];
   }
-
   rob.ROB_enq(iq.in.pos_bit, iq.in.pos_idx);
 
   for (int i = 0; i < WAY; i++) {
