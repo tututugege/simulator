@@ -51,4 +51,5 @@ typedef struct Inst_info {
   int dest_idx, src1_idx, src2_idx;
   bool dest_en, src1_en, src2_en;
   Inst_type type;
+  int imm;
 } Inst_info;
