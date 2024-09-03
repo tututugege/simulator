@@ -3,10 +3,13 @@
 
 typedef struct ROB_entry {
   uint32_t PC;
-  Inst_type type;
+  Inst_op op;
   int dest_preg_idx;
+  int dest_areg_idx;
   int old_dest_preg_idx;
   bool pos_bit;
+  bool complete;
+  bool branch;
 
   /*bool trap;*/
   /*int store_addr;*/
@@ -15,16 +18,22 @@ typedef struct ROB_entry {
 
 typedef struct ROB_in {
   int PC[WAY];
-  Inst_type type[WAY];
+  Inst_op op[WAY];
   int dest_preg_idx[WAY];
   int old_dest_preg_idx[WAY];
 } ROB_in;
 
 class ROB {
 public:
+  void init();
   void ROB_enq(bool pos_bit[], int pos_idx[]);
   void ROB_deq();
-  void init();
+  ROB_entry commit();
+
+  uint32_t get_pc(int idx);
+  void complete(int idx);
+  void branch(int idx);
+
   ROB_in in;
 
 private:

@@ -19,15 +19,19 @@ typedef struct RAT_in {
 class Rename {
 public:
   void init();
+
   int alloc_reg();
   void free_reg(int idx);
+
   void cycle();
+  void recover(); // 将arch_RAT 复制到 spec_RAT 用于分支预测错误时的恢复
+
   RAT_in in;
   RAT_out out;
+  int arch_RAT[ARF_NUM];
 
 private:
   int spec_RAT[ARF_NUM];
-  int arch_RAT[ARF_NUM];
   int free_list[PRF_NUM];
   int free_list_head = 0;
   int free_list_tail = ARF_NUM;

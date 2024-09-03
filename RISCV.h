@@ -1,7 +1,6 @@
+#pragma once
 #include "back-end/TOP.h"
-#include <cstdio>
-#include <stdint.h>
-#define BIT_WIDTH 2982
+#define BIT_WIDTH 3500
 extern const int bit_width;
 extern bool log;
 extern int time_i;
@@ -13,16 +12,17 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
            uint32_t type, bool *mstatus, uint32_t privilege, bool *sstatus);
 
 #define BIT_WIDTH_INPUT (POS_IN_REG_B + 32)
-#define BIT_WIDTH_OUTPUT (POS_OUT_PRIVILEGE + 2)
+#define BIT_WIDTH_OUTPUT (POS_OUT_STALL + 1)
 #define BIT_WIDTH_PC 32
 #define BIT_WIDHT_OP_CODE 7
 
 #define BIT_WIDTH_REG_STATES (32 * (64 + 21)) // 64+21
 
 // input
-#define POS_IN_INST BIT_WIDTH_REG_STATES          // 1696-1727
-#define POS_IN_PC (POS_IN_INST + 32 * (WAY))      // 1728-1760
-#define POS_IN_LOAD_DATA (POS_IN_PC + 32 * (WAY)) // 1760-1791
+#define POS_IN_INST BIT_WIDTH_REG_STATES             // 1696-1727
+#define POS_IN_INST_VALID (POS_IN_INST + 32 * (WAY)) // 1696-1727
+#define POS_IN_PC (POS_IN_INST_VALID + WAY)          // 1728-1760
+#define POS_IN_LOAD_DATA (POS_IN_PC + 32 * (WAY))    // 1760-1791
 // 1792 asy
 #define POS_IN_ASY (POS_IN_LOAD_DATA + 32)             // 1792
 #define POS_PAGE_FAULT_INST (POS_IN_ASY + 1)           // 1793
@@ -34,36 +34,14 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
 #define POS_IN_REG_B (POS_IN_REG_A + 32)            // 1830-1862
 
 #define POS_OUT_PC BIT_WIDTH_REG_STATES              // 1696-1727
-#define POS_OUT_LOAD_ADDR (POS_OUT_PC + 32 * WAY)    // 1728-1759
+#define POS_OUT_LOAD_ADDR POS_OUT_PC + 32            // 1728-1759
 #define POS_OUT_STORE_DATA (POS_OUT_LOAD_ADDR + 32)  // 1760-1791
 #define POS_OUT_STORE_ADDR (POS_OUT_STORE_DATA + 32) // 1792-1823
 #define POS_OUT_PRIVILEGE (POS_OUT_STORE_ADDR + 32)  // 1824-1825
+#define POS_OUT_STALL (POS_OUT_PRIVILEGE + 2)        // 1824-1825
 
 #define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
 #define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B
-
-/*extern const int BIT_WIDTH_INPUT;*/
-/*extern const int BIT_WIDTH_OUTPUT;*/
-/*extern const int BIT_WIDTH_PC;*/
-/*extern const int BIT_WIDHT_OP_CODE;*/
-/*extern const int BIT_WIDTH_REG_STATES;*/
-/*extern const int POS_IN_INST;*/
-/*extern const int POS_IN_PC;               // 1728-1760*/
-/*extern const int POS_IN_LOAD_DATA;        // 1760-1791*/
-/*extern const int POS_IN_ASY;              // 1792*/
-/*extern const int POS_PAGE_FAULT_INST;     // 1793*/
-/*extern const int POS_PAGE_FAULT_LOAD;     // 1794*/
-/*extern const int POS_PAGE_FAULT_STORE;    // 1795*/
-/*extern const int POS_IN_PRIVILEGEP;       // 1796-1797 privilege*/
-/*extern const int POS_IN_REG_A;            // 1798-1829*/
-/*extern const int POS_IN_REG_B;            // 1830-1862*/
-/*extern const int POS_OUT_PC;              // 1696-1727*/
-/*extern const int POS_OUT_LOAD_ADDR;       // 1728-1759*/
-/*extern const int POS_OUT_STORE_DATA;      // 1760-1791*/
-/*extern const int POS_OUT_STORE_ADDR;      // 1792-1823*/
-/*extern const int POS_OUT_PRIVILEGE;       // 1824-1825*/
-/*extern const long VIRTUAL_MEMORY_LENGTH;  // 4B*/
-/*extern const long PHYSICAL_MEMORY_LENGTH; // 4B*/
 
 extern Back_Top back;
 enum enum_number_opcode {
