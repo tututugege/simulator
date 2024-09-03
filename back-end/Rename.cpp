@@ -65,3 +65,9 @@ void Rename::cycle() {
       spec_RAT[in.dest_areg_idx[i]] = out.dest_preg_idx[i];
   }
 }
+
+void Rename::recover() {
+  for (int i = 0; i < ARF_NUM; i++) {
+    spec_RAT[i] = arch_RAT[i];
+  }
+}
