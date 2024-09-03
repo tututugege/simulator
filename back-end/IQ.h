@@ -24,8 +24,8 @@ class IQ {
 public:
   void init();
   void IQ_add_inst();
-  Inst_info IQ_sel_inst();          // 仲裁
-  void IQ_awake(int dest_preg_idx); // 唤醒
+  Inst_info IQ_sel_inst(int *rob_idx); // 仲裁
+  void IQ_awake(int dest_preg_idx);    // 唤醒
   struct IQ_in in;
   struct IQ_out out;
 

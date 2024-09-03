@@ -12,17 +12,12 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
 
   bool *instruction[WAY]; // 32
   bool *bit_this_pc[WAY]; // 32
-  bool *bit_next_pc[WAY];
   uint32_t number_pc_unsigned[WAY];
-  uint32_t number_pc_4[WAY];
 
   for (int i = 0; i < WAY; i++) {
     instruction[i] = input_data + POS_IN_INST + 32 * i;
     bit_this_pc[i] = input_data + POS_IN_PC + 32 * i;
     number_pc_unsigned[i] = cvt_bit_to_number_unsigned(bit_this_pc[i], 32);
-    bit_next_pc[i] = output_data + POS_OUT_PC + 32 * i;
-    number_pc_4[i] = number_pc_unsigned[i] + 4;
-    cvt_number_to_bit_unsigned(bit_next_pc[i], number_pc_4[i], 32);
   }
 
   bool *bit_load_data = input_data + POS_IN_LOAD_DATA;   // 32
@@ -50,12 +45,17 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
 
   Inst_info inst[WAY];
   // decode
+
   for (int i = 0; i < WAY; i++) {
-    back.in.inst[i] = decode(instruction[i]);
-    back.in.PC[i] = number_pc_unsigned[i];
+    if (*(input_data + POS_IN_INST_VALID + i)) {
+      back.in.inst[i] = decode(instruction[i]);
+      back.in.PC[i] = number_pc_unsigned[i];
+    } else {
+      back.in.inst[i].type = NOP;
+    }
   }
-  // rename-execute-write back
-  back.Back_cycle();
+  // rename -> execute -> write back
+  back.Back_cycle(input_data, output_data);
 
   // output data
   /*init_indice(next_general_regs, 0, 32);*/
@@ -72,6 +72,7 @@ Inst_info decode(bool inst_bit[]) {
   // 操作数来源以及type
   bool dest_en, src1_en, src2_en;
   Inst_type type;
+  Inst_op op;
   uint32_t imm;
 
   // split instruction
@@ -120,7 +121,8 @@ Inst_info decode(bool inst_bit[]) {
     dest_en = true;
     src1_en = false;
     src2_en = false;
-    type = LUI;
+    type = UTYPE;
+    op = LUI;
     imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
     break;
   }
@@ -128,75 +130,96 @@ Inst_info decode(bool inst_bit[]) {
     dest_en = true;
     src1_en = false;
     src2_en = false;
-    type = AUIPC;
+    type = UTYPE;
+    op = AUIPC;
+    imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
     break;
   }
   case number_2_opcode_jal: { // jal
     dest_en = true;
     src1_en = false;
     src2_en = false;
-    type = JAL;
+    type = JTYPE;
+    op = JAL;
+    bool bit_temp[32];
+    sign_extend(bit_temp, 32, bit_immi_j_type, 21);
+    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
     break;
   }
   case number_3_opcode_jalr: { // jalr
     dest_en = true;
     src1_en = true;
     src2_en = false;
-    type = JALR;
+    type = ITYPE;
+    op = JALR;
+    bool bit_temp[32];
+    sign_extend(bit_temp, 32, bit_immi_i_type, 21);
+    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+
     break;
   }
   case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
     dest_en = false;
     src1_en = true;
     src2_en = true;
+    type = BTYPE;
     switch (number_funct3_unsigned) {
     case 0: // beq
-      type = BEQ;
+      op = BEQ;
       break;
     case 1: // bne
-      type = BNE;
+      op = BNE;
       break;
     case 4: // blt
-      type = BLT;
+      op = BLT;
       break;
     case 5: // bge
-      type = BGE;
+      op = BGE;
       break;
     case 6: // bltu
-      type = BLTU;
+      op = BLTU;
       break;
     case 7: // bgeu
-      type = BGEU;
+      op = BGEU;
       break;
     default:
       assert(0);
     }
+    bool bit_temp[32];
+    sign_extend(bit_temp, 32, bit_immi_b_type, 13);
+    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+
     break;
   }
   case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
     dest_en = true;
     src1_en = true;
     src2_en = false;
+    type = ITYPE;
 
     switch (number_funct3_unsigned) {
     case 0: // lb
-      type = LB;
+      op = LB;
       break;
     case 1: // lh
-      type = LH;
+      op = LH;
       break;
     case 2: // lw
-      type = LW;
+      op = LW;
       break;
     case 4: // lbu
-      type = LBU;
+      op = LBU;
       break;
     case 5: // lhu
-      type = LHU;
+      op = LHU;
       break;
     default:
       assert(0);
     }
+    bool bit_temp[32];
+    sign_extend(bit_temp, 32, bit_immi_i_type, 12);
+    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+
     break;
   }
   case number_6_opcode_sb: { // sb, sh, sw
@@ -206,15 +229,20 @@ Inst_info decode(bool inst_bit[]) {
 
     switch (number_funct3_unsigned) {
     case 0: // sb
-      type = SB;
+      op = SB;
       break;
     case 1: // sh
-      type = SH;
+      op = SH;
       break;
     case 2: // sw
-      type = SW;
+      op = SW;
       break;
     }
+    bool bit_temp[32];
+    sign_extend(bit_temp, 32, bit_immi_s_type, 12);
+    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    type = STYPE;
+
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
@@ -225,33 +253,33 @@ Inst_info decode(bool inst_bit[]) {
 
     switch (number_funct3_unsigned) {
     case 0: // addi
-      type = ADDI;
+      op = ADD;
       break;
     case 2: // slti
-      type = SLTI;
+      op = SLT;
       break;
     case 3: // sltiu
-      type = SLTIU;
+      op = SLTU;
       break;
     case 4: // xori
-      type = XORI;
+      op = XOR;
       break;
     case 6: // ori
-      type = ORI;
+      op = OR;
       break;
     case 7: // andi
-      type = ANDI;
+      op = AND;
       break;
     case 1: // slli
-      type = SLLI;
+      op = SLL;
       break;
     case 5: { // srli, srai
       switch (number_funct7_unsigned) {
       case 0: // srli
-        type = SRLI;
+        op = SRL;
         break;
       case 32: // srai
-        type = SRAI;
+        op = SRA;
         break;
       default:
         assert(0);
@@ -259,21 +287,28 @@ Inst_info decode(bool inst_bit[]) {
       break;
     }
     }
+
+    bool bit_temp[32];
+    sign_extend(bit_temp, 32, bit_immi_i_type, 12);
+    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    type = ITYPE;
+
     break;
   }
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
     dest_en = true;
     src1_en = true;
     src2_en = true;
+    type = RTYPE;
 
     switch (number_funct3_unsigned) {
     case 0: { // add, sub
       switch (number_funct7_unsigned) {
       case 0: // add
-        type = ADD;
+        op = ADD;
         break;
       case 32: // sub
-        type = SUB;
+        op = SUB;
         break;
       default:
         assert(0);
@@ -281,24 +316,24 @@ Inst_info decode(bool inst_bit[]) {
       break;
     }
     case 1: // sll
-      type = SLL;
+      op = SLL;
       break;
     case 2: // slt
-      type = SLT;
+      op = SLT;
       break;
     case 3: // sltu
-      type = SLTU;
+      op = SLTU;
       break;
     case 4: // xor
-      type = XOR;
+      op = XOR;
       break;
     case 5: { // srl, sra
       switch (number_funct7_unsigned) {
       case 0: // srl
-        type = SRL;
+        op = SRL;
         break;
       case 32: // sra
-        type = SRA;
+        op = SRA;
         break;
       default:
         assert(0);
@@ -306,10 +341,10 @@ Inst_info decode(bool inst_bit[]) {
       break;
     }
     case 6: // or
-      type = OR;
+      op = OR;
       break;
     case 7: // and
-      type = AND;
+      op = AND;
       break;
     }
     break;
@@ -328,15 +363,15 @@ Inst_info decode(bool inst_bit[]) {
   }
   }
 
-  Inst_info info = {
-      .dest_idx = reg_d_index,
-      .src1_idx = reg_a_index,
-      .src2_idx = reg_b_index,
-      .dest_en = dest_en,
-      .src1_en = src1_en,
-      .src2_en = src2_en,
-      .type = type,
-  };
+  Inst_info info = {.dest_idx = reg_d_index,
+                    .src1_idx = reg_a_index,
+                    .src2_idx = reg_b_index,
+                    .dest_en = dest_en,
+                    .src1_en = src1_en,
+                    .src2_en = src2_en,
+                    .type = type,
+                    .op = op,
+                    .imm = imm};
 
   return info;
 }

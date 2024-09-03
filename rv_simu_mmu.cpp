@@ -73,28 +73,41 @@ Back_Top back;
 // ======================================
 
 int main(int argc, char *argv[]) {
-  setbuf(stdout, NULL);
-
-  ifstream inst_data(argv[argc - 1], ios::in);
+  /*setbuf(stdout, NULL);*/
+  /**/
+  /*ifstream inst_data(argv[argc - 1], ios::in);*/
 
   char **ptr = NULL;
   long i = 0;
 
   bool USE_MMU_PHYSICAL_MEMORY = true;
   init_indice(p_memory, 0, PHYSICAL_MEMORY_LENGTH);
-  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
-  p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
-  p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
-  p_memory[uint32_t(0xc / 4)] = 0x00028067;
+  /*p_memory[uint32_t(0x0 / 4)] = 0xf1402573;*/
+  /*p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;*/
+  /*p_memory[uint32_t(0x8 / 4)] = 0x800002b7;*/
+  /*p_memory[uint32_t(0xc / 4)] = 0x00028067;*/
 
-  p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0
-  p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi            a2,t0,40
-  p_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero
-  p_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw              a1,32(t0)
-  p_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw              t0,24(t0)
-  p_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
-  p_memory[uint32_t(0x00001018 / 4)] = 0x80000000;
-  p_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
+  p_memory[uint32_t(0x0 / 4)] = 0x00000293;
+  p_memory[uint32_t(0x4 / 4)] = 0x00100313;
+  p_memory[uint32_t(0x8 / 4)] = 0x00200393;
+  p_memory[uint32_t(0xc / 4)] = 0x00300e13;
+  p_memory[uint32_t(0x10 / 4)] = 0x00400e93;
+  p_memory[uint32_t(0x14 / 4)] = 0x007302b3;
+  p_memory[uint32_t(0x18 / 4)] = 0x01d302b3;
+  p_memory[uint32_t(0x1c / 4)] = 0x01de0333;
+  p_memory[uint32_t(0x20 / 4)] = 0x01d30e33;
+  p_memory[uint32_t(0x24 / 4)] = 0x008000ef;
+  p_memory[uint32_t(0x28 / 4)] = 0x0000006f;
+  p_memory[uint32_t(0x2c / 4)] = 0xff010113;
+
+  /*p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0*/
+  /*p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi a2,t0,40*/
+  /*p_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero*/
+  /*p_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw a1,32(t0)*/
+  /*p_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw t0,24(t0)*/
+  /*p_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0*/
+  /*p_memory[uint32_t(0x00001018 / 4)] = 0x80000000;*/
+  /*p_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;*/
 
   // p_memory[uint32_t(0x0/4)] = 0x810012b7;
   // p_memory[uint32_t(0x4/4)] = 0x80028293;
@@ -123,15 +136,15 @@ int main(int argc, char *argv[]) {
   // p_memory[uint32_t(0x60/4)] = 0x00028067;
 
   // init physical memory
-  for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {
-    if (inst_data.eof())
-      break;
-    char inst_data_line[20];
-    inst_data.getline(inst_data_line, 100);
-    uint32_t inst_32b = strtol(inst_data_line, ptr, 16);
-    p_memory[i + POS_MEMORY_SHIFT] = inst_32b;
-    // p_memory[i] = inst_32b;
-  }
+  /*for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {*/
+  /*  if (inst_data.eof())*/
+  /*    break;*/
+  /*  char inst_data_line[20];*/
+  /*  inst_data.getline(inst_data_line, 100);*/
+  /*  uint32_t inst_32b = strtol(inst_data_line, ptr, 16);*/
+  /*  p_memory[i + POS_MEMORY_SHIFT] = inst_32b;*/
+  /*  // p_memory[i] = inst_32b;*/
+  /*}*/
 
   cout << hex << p_memory[0x80400000 / 4] << endl;
   cout << hex << p_memory[0x80400004 / 4] << endl;
@@ -152,6 +165,7 @@ int main(int argc, char *argv[]) {
 
   // init
   back.init();
+  bool stall;
 
   // main loop
   for (i = 0; i < 20; i++) { // 10398623
@@ -175,14 +189,11 @@ int main(int argc, char *argv[]) {
                 POS_OUT_PRIVILEGE, 2);
     init_indice(input_data_to_RISCV, POS_IN_INST,
                 32 * 3 + 4); // inst, pc, load data, asy, page fault
-    /*for (int j = 0; j < WAY; j++) {*/
-    /*  copy_indice(number_PC_bit[j], 0, output_data_from_RISCV,*/
-    /*              POS_OUT_PC + i * 32, 32);*/
-    /*}*/
+    stall = *(output_data_from_RISCV + POS_OUT_STALL);
 
     if (i == 0) {
       // cvt_number_to_bit_unsigned(number_PC_bit, 0x00001000, 32);
-      for (int j = 0; j < WAY; i++) {
+      for (int j = 0; j < WAY; j++) {
         cvt_number_to_bit_unsigned(number_PC_bit[j], j * 4, 32);
       }
       // 写misa 寄存器  32-IA 支持User和Supervisor
@@ -227,71 +238,82 @@ int main(int argc, char *argv[]) {
     /////}
     // log
 
-    for (int j = 0; j < WAY; j++) {
-      number_PC = cvt_bit_to_number(number_PC_bit[j], BIT_WIDTH_PC);
+    if (!stall) {
+      for (int j = 0; j < WAY; j++) {
+        number_PC = cvt_bit_to_number(number_PC_bit[j], BIT_WIDTH_PC);
 
-      if (log)
-        cout << "指令index:" << dec << i + 1 << " 当前PC的取值为:" << hex
-             << number_PC
-             << endl; // << "SIE"<<
-                      // cvt_bit_to_number_unsigned(&input_data_to_RISCV[1536],
-                      // 32) << endl;
-      // cout << hex<< number_PC<<endl;
-
-      uint32_t privilege = cvt_bit_to_number_unsigned(
-          input_data_to_RISCV + POS_IN_PRIVILEGE * sizeof(bool), 2);
-
-      if (number_PC == 0x80000000) {
-        privilege = 1;
-        // Supervisor
-        input_data_to_RISCV[POS_IN_PRIVILEGE] = false;
-        input_data_to_RISCV[POS_IN_PRIVILEGE + 1] = true;
-        output_data_from_RISCV[POS_OUT_PRIVILEGE] = false;
-        output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
-      }
-
-      if (log)
-        cout << "Privilege:" << dec << privilege << endl;
-
-      bool bit_inst[WAY][32] = {false};
-      bool *satp = &input_data_to_RISCV[POS_CSR_SATP];
-      bool *mstatus = &input_data_to_RISCV[POS_CSR_MSTATUS];
-      bool *sstatus = &input_data_to_RISCV[POS_CSR_SSTATUS];
-
-      if (USE_MMU_PHYSICAL_MEMORY && satp[0] != 0 &&
-          privilege != 3) { // mmu physical
-        MMU_ret_state = va2pa(p_addr[j], satp, number_PC_bit[j], p_memory, 0,
-                              mstatus, privilege, sstatus);
-        input_data_to_RISCV[POS_PAGE_FAULT_INST] = !MMU_ret_state;
-        if (MMU_ret_state) {
-          uint32_t number_PC_p = cvt_bit_to_number_unsigned(p_addr[j], 32);
-          if (log)
-            cout << "当前物理地址为: " << hex << number_PC_p << endl;
-          cvt_number_to_bit_unsigned(
-              bit_inst[j], p_memory[uint32_t(number_PC_p / 4)],
-              32); // TODO。不太对, 没有经过初始化，哪里有指令？
-          if (log)
-            cout << "当前指令为:" << hex << p_memory[uint32_t(number_PC_p / 4)]
-                 << endl;
-        } // page fault的话，到下面RISCV会处理
-        else {
-          if (log)
-            cout << "PAGE FAULT INST" << endl;
-          copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j, number_PC_bit[j],
-                      0, 32);
-          RISCV(input_data_to_RISCV, output_data_from_RISCV);
-          continue;
-        }
-      } else if (USE_MMU_PHYSICAL_MEMORY) {
-        cvt_number_to_bit_unsigned(bit_inst[j], p_memory[number_PC / 4],
-                                   32); // 取指令
         if (log)
-          cout << "当前指令为:" << hex << p_memory[number_PC / 4] << endl;
+          cout
+              << "指令index:" << dec << i + 1 << " 当前PC的取值为:" << hex
+              << number_PC
+              << endl; // << "SIE"<<
+                       // cvt_bit_to_number_unsigned(&input_data_to_RISCV[1536],
+                       // 32) << endl;
+        // cout << hex<< number_PC<<endl;
+
+        uint32_t privilege = cvt_bit_to_number_unsigned(
+            input_data_to_RISCV + POS_IN_PRIVILEGE * sizeof(bool), 2);
+
+        if (number_PC == 0x80000000) {
+          privilege = 1;
+          // Supervisor
+          input_data_to_RISCV[POS_IN_PRIVILEGE] = false;
+          input_data_to_RISCV[POS_IN_PRIVILEGE + 1] = true;
+          output_data_from_RISCV[POS_OUT_PRIVILEGE] = false;
+          output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
+        }
+
+        if (log)
+          cout << "Privilege:" << dec << privilege << endl;
+
+        bool bit_inst[WAY][32] = {false};
+        bool *satp = &input_data_to_RISCV[POS_CSR_SATP];
+        bool *mstatus = &input_data_to_RISCV[POS_CSR_MSTATUS];
+        bool *sstatus = &input_data_to_RISCV[POS_CSR_SSTATUS];
+
+        if (USE_MMU_PHYSICAL_MEMORY && satp[0] != 0 &&
+            privilege != 3) { // mmu physical
+          MMU_ret_state = va2pa(p_addr[j], satp, number_PC_bit[j], p_memory, 0,
+                                mstatus, privilege, sstatus);
+          input_data_to_RISCV[POS_PAGE_FAULT_INST] = !MMU_ret_state;
+          if (MMU_ret_state) {
+            uint32_t number_PC_p = cvt_bit_to_number_unsigned(p_addr[j], 32);
+            if (log)
+              cout << "当前物理地址为: " << hex << number_PC_p << endl;
+            cvt_number_to_bit_unsigned(
+                bit_inst[j], p_memory[uint32_t(number_PC_p / 4)],
+                32); // TODO。不太对, 没有经过初始化，哪里有指令？
+            if (log)
+              cout << "当前指令为:" << hex
+                   << p_memory[uint32_t(number_PC_p / 4)] << endl;
+          } // page fault的话，到下面RISCV会处理
+          else {
+            if (log)
+              cout << "PAGE FAULT INST" << endl;
+            copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j,
+                        number_PC_bit[j], 0, 32);
+            RISCV(input_data_to_RISCV, output_data_from_RISCV);
+            continue;
+          }
+        } else if (USE_MMU_PHYSICAL_MEMORY) {
+          cvt_number_to_bit_unsigned(bit_inst[j], p_memory[number_PC / 4],
+                                     32); // 取指令
+          if (log)
+            cout << "当前指令为:" << hex << p_memory[number_PC / 4] << endl;
+        }
+
+        *(input_data_to_RISCV + POS_IN_INST_VALID + j) = true;
+        copy_indice(input_data_to_RISCV, POS_IN_INST + 32 * j, bit_inst[j], 0,
+                    32);
+        copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j, number_PC_bit[j],
+                    0,
+                    32); // 取PC
+        init_indice(input_data_to_RISCV, POS_IN_LOAD_DATA,
+                    32); // load data init
       }
-      copy_indice(input_data_to_RISCV, POS_IN_INST, bit_inst[j], 0, 32);
-      copy_indice(input_data_to_RISCV, POS_IN_PC, number_PC_bit[j], 0,
-                  32);                                        // 取PC
-      init_indice(input_data_to_RISCV, POS_IN_LOAD_DATA, 32); // load data init
+    } else {
+      for (int j = 0; j < WAY; j++)
+        *(input_data_to_RISCV + POS_IN_INST_VALID + j) = false;
     }
 
     // TODO
@@ -313,6 +335,29 @@ int main(int argc, char *argv[]) {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
     RISCV_32I(input_data_to_RISCV, output_data_from_RISCV);
+
+    if (!stall) {
+      for (int j = 0; j < WAY; j++) {
+        number_PC += 4;
+        cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
+        /*copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j,
+         * number_PC_bit[j],*/
+        /*            0, 32);*/
+      }
+    } else if (*(output_data_from_RISCV + POS_OUT_STALL) ==
+               false) { // 分支处理完成
+                        //
+      number_PC =
+          cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
+      for (int j = 0; j < WAY; j++) {
+        cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
+        copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j, number_PC_bit[j],
+                    0, 32);
+        number_PC += 4;
+      }
+      number_PC -= 4;
+    }
+
     /*if (log) {*/
     /*  // print_regs(output_data_from_RISCV);*/
     /*  // print_csr_regs(output_data_from_RISCV);*/

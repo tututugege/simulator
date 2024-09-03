@@ -15,6 +15,8 @@ void IQ::IQ_add_inst() {
     if (in.inst[i].type != NOP) {
       assert((IQ_idx = alloc_IQ()) != -1);
 
+      entry[IQ_idx].pos_idx = in.pos_idx[i];
+      entry[IQ_idx].pos_bit = in.pos_bit[i];
       entry[IQ_idx].inst = in.inst[i];
       entry[IQ_idx].src1_ready = true;
       entry[IQ_idx].src2_ready = true;
@@ -23,7 +25,7 @@ void IQ::IQ_add_inst() {
 }
 
 // 仲裁 选择指令发射到对应的FU
-Inst_info IQ::IQ_sel_inst() {
+Inst_info IQ::IQ_sel_inst(int *rob_idx) {
   int oldest_bit = 0;
   int oldest_idx = -1;
   int oldest_i;
@@ -59,6 +61,8 @@ Inst_info IQ::IQ_sel_inst() {
     inst.type = NOP;
   else {
     inst = entry[oldest_i].inst;
+    entry[oldest_i].inst.type = NOP;
+    *rob_idx = oldest_idx;
   }
 
   return inst;

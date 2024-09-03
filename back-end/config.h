@@ -1,5 +1,7 @@
 #pragma once
 #include <assert.h>
+#include <cstdint>
+using namespace std;
 #define WAY 2
 #define ARF_NUM 32
 #define PRF_NUM 64
@@ -8,6 +10,16 @@
 
 enum Inst_type {
   NOP,
+  UTYPE,
+  JTYPE,
+  ITYPE,
+  BTYPE,
+  STYPE,
+  RTYPE,
+};
+
+enum Inst_op {
+  NONE,
   LUI,
   AUIPC,
   JAL,
@@ -26,15 +38,6 @@ enum Inst_type {
   SB,
   SH,
   SW,
-  ADDI,
-  SLTI,
-  SLTIU,
-  XORI,
-  ORI,
-  ANDI,
-  SLLI,
-  SRLI,
-  SRAI,
   ADD,
   SUB,
   SLL,
@@ -51,5 +54,12 @@ typedef struct Inst_info {
   int dest_idx, src1_idx, src2_idx;
   bool dest_en, src1_en, src2_en;
   Inst_type type;
-  int imm;
+  Inst_op op;
+  uint32_t imm;
 } Inst_info;
+
+typedef struct Inst_res {
+  uint32_t result;
+  uint32_t pc_next;
+  bool branch;
+} Inst_res;
