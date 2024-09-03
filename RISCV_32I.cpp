@@ -10,7 +10,7 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   bool *general_regs = input_data;            // 1024
   bool *reg_csrs = input_data + 32 * PRF_NUM; // 32*21
 
-  bool *instruction[WAY]; // 32
+  bool *instruction[WAY];
   bool *bit_this_pc[WAY]; // 32
   uint32_t number_pc_unsigned[WAY];
 
