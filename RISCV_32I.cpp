@@ -363,6 +363,10 @@ Inst_info decode(bool inst_bit[]) {
   }
   }
 
+  // 不写0寄存器
+  if (reg_d_index == 0)
+    dest_en = 0;
+
   Inst_info info = {.dest_idx = reg_d_index,
                     .src1_idx = reg_a_index,
                     .src2_idx = reg_b_index,

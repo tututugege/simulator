@@ -1,8 +1,12 @@
 #include "TOP.h"
 #include "../RISCV.h"
 #include "../cvt.h"
+#include <cstdint>
 
 Inst_res execute(bool *input_data, Inst_info inst, uint32_t pc);
+
+uint32_t load_data(Inst_op op, bool *offset);
+void store_data(Inst_op op);
 
 void Back_Top::init() {
   rename.init();
@@ -38,14 +42,22 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
   for (int i = 0; i < WAY; i++) {
     if (inst[i].type != NOP) {
       res[i] = execute(input_data, inst[i], rob.get_pc(rob_idx[i]));
+
       if (res[i].branch && !*(output_data + POS_OUT_STALL)) {
         // 分支预测失败 停止取指
         bool bit_temp[32];
         *(output_data + POS_OUT_STALL) = true;
         cvt_number_to_bit_unsigned(bit_temp, res[i].pc_next, 32);
         copy_indice(output_data, POS_OUT_PC, bit_temp, 0, 32);
-        cout << cvt_bit_to_number_unsigned(output_data + POS_OUT_PC, 32)
-             << endl;
+      }
+
+      // load
+      if (inst[i].op == LW || inst[i].op == LH || inst[i].op == LB ||
+          inst[i].op == LBU || inst[i].op == LHU) {
+        bool bit_temp[32];
+        cvt_number_to_bit_unsigned(bit_temp, res[i].result, 32);
+        copy_indice(output_data, POS_OUT_LOAD_ADDR, bit_temp, 0, 32);
+        res[i].result = load_data(inst[i].op, bit_temp + 30);
       }
     }
   }
@@ -99,6 +111,17 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
     rename.free_reg(commit_entry.old_dest_preg_idx);
     rename.arch_RAT[commit_entry.dest_areg_idx] = commit_entry.dest_preg_idx;
 
+    if (commit_entry.op == SW || commit_entry.op == SH ||
+        commit_entry.op == SB) {
+
+      bool bit_temp[32];
+      cvt_number_to_bit_unsigned(bit_temp, commit_entry.store_addr, 32);
+      copy_indice(output_data, POS_OUT_STORE_ADDR, bit_temp, 0, 32);
+      cvt_number_to_bit_unsigned(bit_temp, commit_entry.store_data, 32);
+      copy_indice(output_data, POS_OUT_STORE_DATA, bit_temp, 0, 32);
+      store_data(commit_entry.op);
+    }
+
     if (log) {
       cout << "ROB commit PC 0x" << hex << commit_entry.PC << endl;
     }
@@ -123,9 +146,13 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
 
       if (res[i].branch) {
         rob.branch(rob_idx[i]);
-        cout << "2. "
-             << cvt_bit_to_number_unsigned(output_data + POS_OUT_PC, 32)
-             << endl;
+      }
+
+      // store
+      if (inst[i].op == SB || inst[i].op == SH || inst[i].op == SW) {
+        uint32_t data =
+            cvt_bit_to_number_unsigned(input_data + 32 * inst[i].src2_idx, 32);
+        rob.store(rob_idx[i], res[i].result, data);
       }
     }
   }

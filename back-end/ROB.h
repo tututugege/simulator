@@ -12,8 +12,8 @@ typedef struct ROB_entry {
   bool branch;
 
   /*bool trap;*/
-  /*int store_addr;*/
-  /*int store_data;*/
+  int store_addr;
+  int store_data;
 } ROB_entry;
 
 typedef struct ROB_in {
@@ -29,6 +29,7 @@ public:
   void ROB_enq(bool pos_bit[], int pos_idx[]);
   void ROB_deq();
   ROB_entry commit();
+  void store(int idx, uint32_t address, uint32_t data);
 
   uint32_t get_pc(int idx);
   void complete(int idx);
