@@ -1,7 +1,5 @@
 #include "ROB.h"
 #include "config.h"
-#include <cstdint>
-#include <sys/types.h>
 
 void ROB::ROB_enq(bool rob_pos_bit[], int rob_idx[]) {
   for (int i = 0; i < WAY; i++) {
@@ -49,6 +47,7 @@ ROB_entry ROB::commit() {
   ROB_entry ret = entry[deq_ptr];
   if (ret.complete) {
     entry[deq_ptr].complete = false;
+    entry[deq_ptr].branch = false;
     entry[deq_ptr].op = NONE;
     deq_ptr = (deq_ptr + 1) % ROB_NUM;
     if (deq_ptr == 0)
@@ -57,4 +56,10 @@ ROB_entry ROB::commit() {
   }
 
   return ret;
+}
+
+void ROB::store(int idx, uint32_t address, uint32_t data) {
+
+  entry[idx].store_addr = address;
+  entry[idx].store_data = data;
 }

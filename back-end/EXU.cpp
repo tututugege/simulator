@@ -1,6 +1,7 @@
 #include "../cvt.h"
 #include "config.h"
 #include <cstdint>
+#include <cstdio>
 #include <iostream>
 
 bool check_branch(Inst_op op, uint32_t operand1, uint32_t operand2) {
@@ -55,12 +56,11 @@ Inst_res execute(bool *input_data, Inst_info inst, uint32_t pc) {
   case LH:
   case LW:
   case LBU:
-  case LHU: { // lb, lh, lw, lbu, lhu
-    break;
-  }
+  case LHU:
   case SB:
   case SH:
   case SW: { // sb, sh, sw
+    result = (signed)operand1 + (signed)operand2;
     break;
   }
   case ADD: // add, sub, sll, slt, sltu, xor, srl, sra, or,

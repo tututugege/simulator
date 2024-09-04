@@ -1,6 +1,7 @@
 #include "RISCV.h"
 #include "back-end/TOP.h"
 #include "cvt.h"
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -72,6 +73,9 @@ Back_Top back;
 */
 // ======================================
 
+static bool input_data_to_RISCV[BIT_WIDTH_INPUT] = {0};
+static bool output_data_from_RISCV[BIT_WIDTH_OUTPUT] = {0};
+
 int main(int argc, char *argv[]) {
   /*setbuf(stdout, NULL);*/
   /**/
@@ -96,9 +100,12 @@ int main(int argc, char *argv[]) {
   p_memory[uint32_t(0x18 / 4)] = 0x01d302b3;
   p_memory[uint32_t(0x1c / 4)] = 0x01de0333;
   p_memory[uint32_t(0x20 / 4)] = 0x01d30e33;
-  p_memory[uint32_t(0x24 / 4)] = 0x008000ef;
+
+  p_memory[uint32_t(0x24 / 4)] = 0xfddff06f;
   p_memory[uint32_t(0x28 / 4)] = 0x0000006f;
-  p_memory[uint32_t(0x2c / 4)] = 0xff010113;
+  p_memory[uint32_t(0x2c / 4)] = 0x0000006f;
+  p_memory[uint32_t(0x30 / 4)] = 0x0000006f;
+  p_memory[uint32_t(0x34 / 4)] = 0x0000006f;
 
   /*p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0*/
   /*p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi a2,t0,40*/
@@ -151,8 +158,6 @@ int main(int argc, char *argv[]) {
   cout << hex << p_memory[0x80400008 / 4] << endl;
   cout << hex << p_memory[0x8040000c / 4] << endl;
   // cout << "all lines in program = " << i << endl;
-  bool input_data_to_RISCV[BIT_WIDTH_INPUT] = {0};
-  bool output_data_from_RISCV[BIT_WIDTH_OUTPUT] = {0};
 
   bool number_PC_bit[WAY][BIT_WIDTH_PC] = {0};
   bool number_op_code_bit[BIT_WIDHT_OP_CODE] = {0};
@@ -841,4 +846,68 @@ int main(int argc, char *argv[]) {
 
   delete[] p_memory;
   return 0;
+}
+
+uint32_t load_data(Inst_op op, bool *offset) {
+  uint32_t address =
+      cvt_bit_to_number_unsigned(output_data_from_RISCV, POS_OUT_LOAD_ADDR);
+  uint32_t data = p_memory[address / 8];
+
+  if (offset[1])
+    data = data >> 8;
+
+  if (offset[0])
+    data = data >> 16;
+
+  switch (op) {
+  case LH:
+    data = data & 0x0000FFFF;
+    if (data & 0x00008000)
+      data = data | 0xFFFF0000;
+    break;
+  case LB:
+    data = data & 0x0000FFFF;
+    if (data & 0x00000080)
+      data = data | 0xFFFFFF00;
+    break;
+  case LHU:
+    data = data & 0x0000FFFF;
+    break;
+  case LBU:
+    data = data & 0x0000FFFF;
+    break;
+  default:
+    break;
+  }
+
+  return data;
+}
+
+void store_data(Inst_op op) {
+  uint32_t address =
+      cvt_bit_to_number_unsigned(output_data_from_RISCV, POS_OUT_STORE_ADDR);
+  uint32_t data =
+      cvt_bit_to_number_unsigned(output_data_from_RISCV, POS_OUT_STORE_DATA);
+
+  uint32_t mask;
+  if (op == SH)
+    mask = 0xFFFF;
+  else if (op == SB)
+    mask = 0xFF;
+  else
+    mask = 0xFFFFFFFF;
+
+  if (address & 0x1) {
+    data = data << 8;
+    mask = mask << 8;
+  }
+
+  if (address & 0x2) {
+    data = data << 16;
+    mask = mask << 16;
+  }
+
+  data = (data & mask) | (p_memory[address / 8] & (~mask));
+
+  p_memory[address / 8] = data;
 }
