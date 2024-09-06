@@ -7,9 +7,11 @@ typedef struct ROB_entry {
   int dest_preg_idx;
   int dest_areg_idx;
   int old_dest_preg_idx;
-  bool pos_bit;
-  bool complete;
   bool branch;
+  bool dest_en;
+  bool complete;
+
+  bool pos_bit;
 
   /*bool trap;*/
   int store_addr;
@@ -19,7 +21,9 @@ typedef struct ROB_entry {
 typedef struct ROB_in {
   int PC[WAY];
   Inst_op op[WAY];
+  int dest_areg_idx[WAY];
   int dest_preg_idx[WAY];
+  int dest_en[WAY];
   int old_dest_preg_idx[WAY];
 } ROB_in;
 

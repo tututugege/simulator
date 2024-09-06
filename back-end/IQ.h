@@ -16,18 +16,18 @@ typedef struct IQ_out {
 
 typedef struct IQ_in {
   bool pos_bit[WAY];
-  int pos_idx[WAY];
+  int pos_idx[WAY]; // rob idx
   Inst_info inst[WAY];
 } IQ_in;
 
 class IQ {
 public:
   void init();
-  void IQ_add_inst();
+  void IQ_add_inst();                  // 写入IQ
   Inst_info IQ_sel_inst(int *rob_idx); // 仲裁
   void IQ_awake(int dest_preg_idx);    // 唤醒
-  struct IQ_in in;
-  struct IQ_out out;
+  IQ_in in;
+  IQ_out out;
 
 private:
   int alloc_IQ();

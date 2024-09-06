@@ -7,4 +7,4 @@ all:
 clean:
 	rm a.out
 
-phony: all clean
+.PHONY: all clean

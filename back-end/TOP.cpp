@@ -68,7 +68,9 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
   for (int i = 0; i < WAY; i++) {
     rob.in.PC[i] = in.PC[i];
     rob.in.op[i] = in.inst[i].op;
+    rob.in.dest_areg_idx[i] = in.inst[i].dest_idx;
     rob.in.dest_preg_idx[i] = rename.out.dest_preg_idx[i];
+    rob.in.dest_en[i] = in.inst[i].dest_en;
     rob.in.old_dest_preg_idx[i] = rename.out.old_dest_preg_idx[i];
   }
   rob.ROB_enq(iq.in.pos_bit, iq.in.pos_idx);
@@ -108,8 +110,10 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
   // pipeline3: ROB提交 更新free_list 重命名映射表
   ROB_entry commit_entry;
   while ((commit_entry = rob.commit()).complete) {
-    rename.free_reg(commit_entry.old_dest_preg_idx);
-    rename.arch_RAT[commit_entry.dest_areg_idx] = commit_entry.dest_preg_idx;
+    if (commit_entry.dest_en) {
+      rename.free_reg(commit_entry.old_dest_preg_idx);
+      rename.arch_RAT[commit_entry.dest_areg_idx] = commit_entry.dest_preg_idx;
+    }
 
     if (commit_entry.op == SW || commit_entry.op == SH ||
         commit_entry.op == SB) {
@@ -124,6 +128,7 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
 
     if (log) {
       cout << "ROB commit PC 0x" << hex << commit_entry.PC << endl;
+      rename.print_reg(output_data);
     }
 
     // 如果分支预测失败的指令提交

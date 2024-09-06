@@ -7,6 +7,8 @@ void ROB::ROB_enq(bool rob_pos_bit[], int rob_idx[]) {
       entry[enq_ptr].PC = in.PC[i];
       entry[enq_ptr].op = in.op[i];
       entry[enq_ptr].dest_preg_idx = in.dest_preg_idx[i];
+      entry[enq_ptr].dest_areg_idx = in.dest_areg_idx[i];
+      entry[enq_ptr].dest_en = in.dest_en[i];
       entry[enq_ptr].old_dest_preg_idx = in.old_dest_preg_idx[i];
       entry[enq_ptr].complete = false;
       rob_pos_bit[i] = entry[enq_ptr].pos_bit;
