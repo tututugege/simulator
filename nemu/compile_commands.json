@@ -1,0 +1,25 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-O2",
+      "-Wall",
+      "-Werror",
+      "-I/home/tututu/hry/ysyx/ysyx-workbench/nemu/include",
+      "-I/home/tututu/hry/ysyx/ysyx-workbench/nemu/src/isa/riscv32/include",
+      "-I/home/tututu/hry/ysyx/ysyx-workbench/nemu/src/engine/interpreter",
+      "-O2",
+      "-Og",
+      "-ggdb3",
+      "-DITRACE_COND=true",
+      "-D__GUEST_ISA__=riscv32",
+      "-c",
+      "-o",
+      "/home/tututu/hry/ysyx/ysyx-workbench/nemu/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/inst.o",
+      "src/isa/riscv32/inst.c"
+    ],
+    "directory": "/home/tututu/hry/ysyx/ysyx-workbench/nemu",
+    "file": "/home/tututu/hry/ysyx/ysyx-workbench/nemu/src/isa/riscv32/inst.c",
+    "output": "/home/tututu/hry/ysyx/ysyx-workbench/nemu/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/inst.o"
+  }
+]
