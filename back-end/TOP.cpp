@@ -129,6 +129,7 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
     if (log) {
       cout << "ROB commit PC 0x" << hex << commit_entry.PC << endl;
       rename.print_reg(output_data);
+      /*rename.print_RAT();*/
     }
 
     // 如果分支预测失败的指令提交
