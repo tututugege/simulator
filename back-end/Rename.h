@@ -23,6 +23,7 @@ public:
   int alloc_reg();
   void free_reg(int idx);
   void print_reg(bool *output_data);
+  void print_RAT();
 
   void cycle();
   void recover(); // 将arch_RAT 复制到 spec_RAT 用于分支预测错误时的恢复

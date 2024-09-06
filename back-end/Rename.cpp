@@ -87,3 +87,13 @@ void Rename::print_reg(bool *output_data) {
   }
   cout << endl;
 }
+
+void Rename::print_RAT() {
+  for (int i = 0; i < ARF_NUM; i++) {
+    cout << dec << i << ":" << dec << arch_RAT[i] << " ";
+
+    if (i % 8 == 0)
+      cout << endl;
+  }
+  cout << endl;
+}
