@@ -1,8 +1,7 @@
-#include "RISCV.h"
-#include "back-end/config.h"
-#include "cvt.h"
+#include <RISCV.h>
 #include <cassert>
-#include <cstdint>
+#include <config.h>
+#include <cvt.h>
 Inst_info decode(bool inst_bit[]);
 
 void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
@@ -358,6 +357,8 @@ Inst_info decode(bool inst_bit[]) {
   }
   default: {
     cerr << "error" << endl;
+    cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;
+    assert(0);
     exit(-1);
     break;
   }

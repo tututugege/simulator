@@ -1,7 +1,7 @@
-#include "../cvt.h"
-#include "config.h"
+#include <config.h>
 #include <cstdint>
 #include <cstdio>
+#include <cvt.h>
 #include <iostream>
 
 bool check_branch(Inst_op op, uint32_t operand1, uint32_t operand2) {
@@ -96,6 +96,7 @@ Inst_res execute(bool *input_data, Inst_info inst, uint32_t pc) {
   /*}*/
   default: {
     cerr << "error" << endl;
+    assert(0);
     exit(-1);
     break;
   }
