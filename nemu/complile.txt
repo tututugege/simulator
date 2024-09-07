@@ -1,0 +1,27 @@
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/nemu-main.o src/nemu-main.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/cpu/cpu-exec.o src/cpu/cpu-exec.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/cpu/difftest/dut.o src/cpu/difftest/dut.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/cpu/difftest/ref.o src/cpu/difftest/ref.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/monitor/sdb/sdb.o src/monitor/sdb/sdb.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/monitor/sdb/expr.o src/monitor/sdb/expr.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/monitor/sdb/watchpoint.o src/monitor/sdb/watchpoint.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/monitor/monitor.o src/monitor/monitor.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/utils/timer.o src/utils/timer.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/utils/state.o src/utils/state.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/utils/rand.o src/utils/rand.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/utils/log.o src/utils/log.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/memory/vaddr.o src/memory/vaddr.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/memory/paddr.o src/memory/paddr.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/device/io/map.o src/device/io/map.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/device/io/mmio.o src/device/io/mmio.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/device/io/port-io.o src/device/io/port-io.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/logo.o src/isa/riscv32/logo.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/init.o src/isa/riscv32/init.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/reg.o src/isa/riscv32/reg.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/difftest/dut.o src/isa/riscv32/difftest/dut.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/inst.o src/isa/riscv32/inst.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/system/mmu.o src/isa/riscv32/system/mmu.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/isa/riscv32/system/intr.o src/isa/riscv32/system/intr.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/engine/interpreter/hostcall.o src/engine/interpreter/hostcall.c
+gcc $CFLAGS -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/engine/interpreter/init.o src/engine/interpreter/init.c
+g++ $CFLAGS -I/usr/lib/llvm-14/include -std=c++14   -fno-exceptions -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -fPIE -c -o $NEMU_HOME/build/obj-riscv32-nemu-interpreter/src/utils/disasm.o src/utils/disasm.cc
