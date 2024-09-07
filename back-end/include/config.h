@@ -8,6 +8,8 @@ using namespace std;
 #define IQ_NUM 8
 #define ROB_NUM 8
 
+#define CONFIG_DIFFTEST
+
 enum Inst_type {
   NOP,
   UTYPE,

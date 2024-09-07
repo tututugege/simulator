@@ -1,17 +1,19 @@
-#include "TOP.h"
-#include "../RISCV.h"
-#include "../cvt.h"
-#include <cstdint>
+#include "config.h"
+#include <RISCV.h>
+#include <TOP.h>
+#include <cvt.h>
+#include <diff.h>
 
 Inst_res execute(bool *input_data, Inst_info inst, uint32_t pc);
 
 uint32_t load_data(Inst_op op, bool *offset);
 void store_data(Inst_op op);
 
-void Back_Top::init() {
+void Back_Top::init(bool *output_data) {
   rename.init();
   iq.init();
   rob.init();
+  back.rename.preg_base = output_data;
 }
 
 void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
@@ -128,9 +130,24 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
 
     if (log) {
       cout << "ROB commit PC 0x" << hex << commit_entry.PC << endl;
-      rename.print_reg(output_data);
+      rename.print_reg();
       /*rename.print_RAT();*/
     }
+
+#ifdef CONFIG_DIFFTEST
+    for (int i = 0; i < ARF_NUM; i++) {
+      dut.gpr[i] = rename.reg(i);
+    }
+
+    if (commit_entry.branch) {
+
+      dut.pc = cvt_bit_to_number_unsigned(output_data, POS_OUT_PC);
+    } else {
+      dut.pc = commit_entry.PC + 4;
+    }
+
+    difftest_step();
+#endif
 
     // 如果分支预测失败的指令提交
     // 则清空流水线

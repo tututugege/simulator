@@ -1,8 +1,10 @@
-#include "RISCV.h"
-#include "back-end/TOP.h"
-#include "cvt.h"
+#include <RISCV.h>
+#include <TOP.h>
 #include <cstdint>
 #include <cstdio>
+#include <cvt.h>
+#include <diff.h>
+#include <dlfcn.h>
 #include <fstream>
 #include <iostream>
 #include <stdint.h>
@@ -77,81 +79,29 @@ static bool input_data_to_RISCV[BIT_WIDTH_INPUT] = {0};
 static bool output_data_from_RISCV[BIT_WIDTH_OUTPUT] = {0};
 
 int main(int argc, char *argv[]) {
-  /*setbuf(stdout, NULL);*/
-  /**/
-  /*ifstream inst_data(argv[argc - 1], ios::in);*/
+  setbuf(stdout, NULL);
+
+  ifstream inst_data(argv[argc - 1], ios::in);
 
   char **ptr = NULL;
   long i = 0;
 
   bool USE_MMU_PHYSICAL_MEMORY = true;
   init_indice(p_memory, 0, PHYSICAL_MEMORY_LENGTH);
-  /*p_memory[uint32_t(0x0 / 4)] = 0xf1402573;*/
-  /*p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;*/
-  /*p_memory[uint32_t(0x8 / 4)] = 0x800002b7;*/
-  /*p_memory[uint32_t(0xc / 4)] = 0x00028067;*/
-
-  p_memory[uint32_t(0x0 / 4)] = 0x00000293;
-  p_memory[uint32_t(0x4 / 4)] = 0x00100313;
-  p_memory[uint32_t(0x8 / 4)] = 0x00200393;
-  p_memory[uint32_t(0xc / 4)] = 0x00300e13;
-  p_memory[uint32_t(0x10 / 4)] = 0x00400e93;
-  p_memory[uint32_t(0x14 / 4)] = 0x007302b3;
-  p_memory[uint32_t(0x18 / 4)] = 0x01d302b3;
-  p_memory[uint32_t(0x1c / 4)] = 0x01de0333;
-  p_memory[uint32_t(0x20 / 4)] = 0x01d30e33;
-
-  p_memory[uint32_t(0x24 / 4)] = 0xfddff06f;
-  p_memory[uint32_t(0x28 / 4)] = 0x0000006f;
-  p_memory[uint32_t(0x2c / 4)] = 0x0000006f;
-  p_memory[uint32_t(0x30 / 4)] = 0x0000006f;
-  p_memory[uint32_t(0x34 / 4)] = 0x0000006f;
-
-  /*p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0*/
-  /*p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi a2,t0,40*/
-  /*p_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero*/
-  /*p_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw a1,32(t0)*/
-  /*p_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw t0,24(t0)*/
-  /*p_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0*/
-  /*p_memory[uint32_t(0x00001018 / 4)] = 0x80000000;*/
-  /*p_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;*/
-
-  // p_memory[uint32_t(0x0/4)] = 0x810012b7;
-  // p_memory[uint32_t(0x4/4)] = 0x80028293;
-  // p_memory[uint32_t(0x8/4)] = 0x20000337;
-  // p_memory[uint32_t(0xc/4)] = 0x0cf30313;
-  // p_memory[uint32_t(0x10/4)] = 0x0062a023;
-  // p_memory[uint32_t(0x14/4)] = 0x810002b7;
-  // p_memory[uint32_t(0x18/4)] = 0x10028293;
-  // p_memory[uint32_t(0x1c/4)] = 0x20800337;
-  // p_memory[uint32_t(0x20/4)] = 0x00130313;
-  // p_memory[uint32_t(0x24/4)] = 0x0062a023;
-  // p_memory[uint32_t(0x28/4)] = 0x820002b7;
-  // p_memory[uint32_t(0x2c/4)] = 0x04000337;
-  // p_memory[uint32_t(0x30/4)] = 0x0cf30313;
-  // p_memory[uint32_t(0x34/4)] = 0x0062a023;
-  // p_memory[uint32_t(0x38/4)] = 0x80081337;
-  // p_memory[uint32_t(0x3c/4)] = 0x18031073;
-  // p_memory[uint32_t(0x40/4)] = 0x80080337;
-  // p_memory[uint32_t(0x44/4)] = 0x30531073;
-  // p_memory[uint32_t(0x48/4)] = 0x10531073;
-  // p_memory[uint32_t(0x4c/4)] = 0x000002b7;
-  // p_memory[uint32_t(0x50/4)] = 0x00000337;
-  // p_memory[uint32_t(0x54/4)] = 0xf1402573;
-  // p_memory[uint32_t(0x58/4)] = 0x8fe005b7;
-  // p_memory[uint32_t(0x5c/4)] = 0x800002b7;
-  // p_memory[uint32_t(0x60/4)] = 0x00028067;
 
   // init physical memory
-  /*for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {*/
-  /*  if (inst_data.eof())*/
-  /*    break;*/
-  /*  char inst_data_line[20];*/
-  /*  inst_data.getline(inst_data_line, 100);*/
-  /*  uint32_t inst_32b = strtol(inst_data_line, ptr, 16);*/
-  /*  p_memory[i + POS_MEMORY_SHIFT] = inst_32b;*/
-  /*  // p_memory[i] = inst_32b;*/
-  /*}*/
+  for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {
+    if (inst_data.eof())
+      break;
+    char inst_data_line[20];
+    inst_data.getline(inst_data_line, 100);
+    uint32_t inst_32b = strtol(inst_data_line, ptr, 16);
+    p_memory[i + POS_MEMORY_SHIFT] = inst_32b;
+  }
+  const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
+  // init difftest and back-end
+  init_difftest(diff_so, i);
+  back.init(output_data_from_RISCV);
 
   cout << hex << p_memory[0x80400000 / 4] << endl;
   cout << hex << p_memory[0x80400004 / 4] << endl;
@@ -160,26 +110,18 @@ int main(int argc, char *argv[]) {
   // cout << "all lines in program = " << i << endl;
 
   bool number_PC_bit[WAY][BIT_WIDTH_PC] = {0};
-  bool number_op_code_bit[BIT_WIDHT_OP_CODE] = {0};
   bool p_addr[WAY][32] = {0};
   bool MMU_ret_state = true;
-  log = true;
   bool filelog = true;
   uint32_t number_PC = 0;
   ofstream outfile;
-
-  // init
-  back.init();
   bool stall;
 
   // main loop
   for (i = 0; i < 20; i++) { // 10398623
-    /*if (i % 100 == 0) {*/
-    /*  cout << hex << i << ' ' << number_PC << endl;*/
-    /*}*/
-    // if (i >= 10000000) log = true;
-    // else log = false;
-    // log = true;
+    if (i % 100 == 0) {
+      cout << hex << i << ' ' << number_PC << endl;
+    }
     time_i = i;
 
     if (log)
@@ -197,9 +139,10 @@ int main(int argc, char *argv[]) {
     stall = *(output_data_from_RISCV + POS_OUT_STALL);
 
     if (i == 0) {
-      // cvt_number_to_bit_unsigned(number_PC_bit, 0x00001000, 32);
+
+      // 复位pc 0x80000000
       for (int j = 0; j < WAY; j++) {
-        cvt_number_to_bit_unsigned(number_PC_bit[j], j * 4, 32);
+        cvt_number_to_bit_unsigned(number_PC_bit[j], 0x80000000 + j * 4, 32);
       }
       // 写misa 寄存器  32-IA 支持User和Supervisor
       cvt_number_to_bit_unsigned(input_data_to_RISCV +
@@ -268,8 +211,8 @@ int main(int argc, char *argv[]) {
           output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
         }
 
-        if (log)
-          cout << "Privilege:" << dec << privilege << endl;
+        /*if (log)*/
+        /*  cout << "Privilege:" << dec << privilege << endl;*/
 
         bool bit_inst[WAY][32] = {false};
         bool *satp = &input_data_to_RISCV[POS_CSR_SATP];
@@ -845,6 +788,12 @@ int main(int argc, char *argv[]) {
   /*}*/
 
   delete[] p_memory;
+
+#ifdef CONFIG_DIFFTEST
+  extern void *handle;
+  dlclose(handle);
+#endif
+
   return 0;
 }
 

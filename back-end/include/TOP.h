@@ -18,5 +18,5 @@ private:
 public:
   Back_in in;
   void Back_cycle(bool *input_data, bool *output_data);
-  void init();
+  void init(bool *output_data);
 };
