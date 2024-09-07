@@ -1,5 +1,5 @@
-#include "RISCV.h"
-#include "cvt.h"
+#include <RISCV.h>
+#include <cvt.h>
 
 void RISCV(bool input_data[BIT_WIDTH], bool *output_data) {
 

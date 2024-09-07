@@ -1,5 +1,5 @@
-#include "RISCV.h"
-#include "cvt.h"
+#include <RISCV.h>
+#include <cvt.h>
 void RISCV_32A(bool input_data[BIT_WIDTH], bool *output_data) {
   // get input data
   bool general_regs[1024];

@@ -22,8 +22,9 @@ public:
 
   int alloc_reg();
   void free_reg(int idx);
-  void print_reg(bool *output_data);
+  void print_reg();
   void print_RAT();
+  uint32_t reg(int idx);
 
   void cycle();
   void recover(); // 将arch_RAT 复制到 spec_RAT 用于分支预测错误时的恢复
@@ -31,6 +32,7 @@ public:
   RAT_in in;
   RAT_out out;
   int arch_RAT[ARF_NUM];
+  bool *preg_base;
 
 private:
   int spec_RAT[ARF_NUM];

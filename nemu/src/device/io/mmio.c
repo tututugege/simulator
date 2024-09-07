@@ -13,6 +13,8 @@
  * See the Mulan PSL v2 for more details.
  ***************************************************************************************/
 
+#include "common.h"
+#include "difftest-def.h"
 #include <device/map.h>
 #include <memory/paddr.h>
 
@@ -39,7 +41,8 @@ void add_mmio_map(const char *name, paddr_t addr, void *space, uint32_t len,
   assert(nr_map < NR_MAP);
   paddr_t left = addr, right = addr + len - 1;
   if (in_pmem(left) || in_pmem(right)) {
-    report_mmio_overlap(name, left, right, "pmem", MROM_LEFT, MROM_RIGHT);
+    report_mmio_overlap(name, left, right, "pmem", CONFIG_MEMORY_BASE,
+                        CONFIG_MEMORY_BASE + CONFIG_MEMORY_SIZE);
   }
   for (int i = 0; i < nr_map; i++) {
     if (left <= maps[i].high && right >= maps[i].low) {

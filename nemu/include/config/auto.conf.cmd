@@ -1,7 +1,7 @@
 deps_config := \
 	src/device/Kconfig \
 	src/memory/Kconfig \
-	/home/tututu/hry/ysyx/ysyx-workbench/nemu/Kconfig
+	/home/tututu/qimeng/simulator/nemu//Kconfig
 
 include/config/auto.conf: \
 	$(deps_config)

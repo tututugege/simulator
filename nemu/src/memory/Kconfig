@@ -1,64 +1,13 @@
 menu "Memory Configuration"
 
-config MROM_BASE
-  hex "MROM base address"
+config MEMORY_BASE
+  hex "base address"
   default 0x0        if ISA_x86
-  default 0x20000000
-
-config MROM_SIZE
-  hex "MROM size"
-  default 0x1000
-
-config SRAM_BASE
-  hex "SRAM base address"
-  default 0x0        if ISA_x86
-  default 0x0f000000
-
-config SRAM_SIZE
-  hex "SRAM size"
-  default 0x2000
-
-config FLASH_BASE
-  hex "FLASH base address"
-  default 0x0        if ISA_x86
-  default 0x30000000
-
-config FLASH_SIZE
-  hex "FLASH size"
-  default 0x1000000
-
-config PSRAM_BASE
-  hex "PSRAM base address"
   default 0x80000000
 
-config PSRAM_SIZE
-  hex "PSRAM size"
-  default 0x400000
-
-config SDRAM_BASE
-  hex "SDRAM base address"
-  default 0xa0000000
-
-config SDRAM_SIZE
-  hex "SDRAM size"
-  default 0x4000000
-
-config UART_BASE
-  hex "UART base address"
+config MEMORY_SIZE
+  hex "size"
   default 0x10000000
-
-config UART_SIZE
-  hex "UART size"
-  default 0x10000
-
-config CLINT_BASE
-  hex "CLINT base address"
-  default 0x02000000
-
-config CLINT_SIZE
-  hex "CLINT size"
-  default 0x10000
-
 
 config PC_RESET_OFFSET
   hex "Offset of reset vector from the base of memory"

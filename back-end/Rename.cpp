@@ -1,6 +1,6 @@
-#include "Rename.h"
-#include "../cvt.h"
-#include "config.h"
+#include <Rename.h>
+#include <config.h>
+#include <cvt.h>
 
 void Rename::init() {
   for (int i = 0; i < ARF_NUM; i++) {
@@ -74,11 +74,11 @@ void Rename::recover() {
   }
 }
 
-void Rename::print_reg(bool *output_data) {
+void Rename::print_reg() {
   int preg_idx;
   for (int i = 0; i < ARF_NUM; i++) {
     preg_idx = arch_RAT[i];
-    uint32_t data = cvt_bit_to_number_unsigned(output_data + preg_idx * 32, 32);
+    uint32_t data = cvt_bit_to_number_unsigned(preg_base + preg_idx * 32, 32);
 
     cout << reg_names[i] << ": " << hex << data << " ";
 
@@ -86,6 +86,11 @@ void Rename::print_reg(bool *output_data) {
       cout << endl;
   }
   cout << endl;
+}
+
+uint32_t Rename::reg(int idx) {
+  int preg_idx = arch_RAT[idx];
+  return cvt_bit_to_number_unsigned(preg_base + preg_idx * 32, 32);
 }
 
 void Rename::print_RAT() {
