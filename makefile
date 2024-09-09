@@ -8,6 +8,8 @@ CXXINCLUDE += -I./diff/include/
 
 MEM_DIR=../file/baremetal
 
+IMG=../file/baremetal/memory
+
 all: $(CXXSRC) mem
 	g++ $(CXXINCLUDE) $(CXXSRC) -g
 
@@ -17,9 +19,12 @@ clean:
 run: 
 	./a.out $(MEM_DIR)/memory
 
+gdb:
+	gdb --args ./a.out $(IMG)
+
 mem:
 	make -C $(MEM_DIR)/test
-	$(shell cd $(MEM_DIR) && python get_memory.py)
+	cd $(MEM_DIR) ; python get_memory.py
 
 
 .PHONY: all clean mem run
