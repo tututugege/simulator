@@ -14,7 +14,7 @@ Inst_res execute(bool *input_data, Inst_info inst, uint32_t pc) {
   uint32_t pc_operand1, pc_operand2, pc_next;
 
   operand1 = cvt_bit_to_number_unsigned(input_data + 32 * inst.src1_idx, 32);
-  if (inst.type == ITYPE) {
+  if (inst.type == ITYPE || inst.type == STYPE) {
     operand2 = inst.imm;
   } else {
     operand2 = cvt_bit_to_number_unsigned(input_data + 32 * inst.src2_idx, 32);

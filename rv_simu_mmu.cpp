@@ -798,8 +798,8 @@ int main(int argc, char *argv[]) {
 }
 
 uint32_t load_data(Inst_op op, bool *offset) {
-  uint32_t address =
-      cvt_bit_to_number_unsigned(output_data_from_RISCV, POS_OUT_LOAD_ADDR);
+  uint32_t address = cvt_bit_to_number_unsigned(
+      output_data_from_RISCV + POS_OUT_LOAD_ADDR, 32);
   uint32_t data = p_memory[address / 8];
 
   if (offset[1])
@@ -833,10 +833,10 @@ uint32_t load_data(Inst_op op, bool *offset) {
 }
 
 void store_data(Inst_op op) {
-  uint32_t address =
-      cvt_bit_to_number_unsigned(output_data_from_RISCV, POS_OUT_STORE_ADDR);
-  uint32_t data =
-      cvt_bit_to_number_unsigned(output_data_from_RISCV, POS_OUT_STORE_DATA);
+  uint32_t address = cvt_bit_to_number_unsigned(
+      output_data_from_RISCV + POS_OUT_STORE_ADDR, 32);
+  uint32_t data = cvt_bit_to_number_unsigned(
+      output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
 
   uint32_t mask;
   if (op == SH)
