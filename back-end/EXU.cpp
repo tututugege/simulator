@@ -5,8 +5,31 @@
 #include <iostream>
 
 bool check_branch(Inst_op op, uint32_t operand1, uint32_t operand2) {
+  bool ret;
+  switch (op) {
+  case BEQ:
+    ret = (operand1 == operand2);
+    break;
+  case BNE:
+    ret = (operand1 != operand2);
+    break;
+  case BGE:
+    ret = ((signed)operand1 >= (signed)operand2);
+    break;
+  case BLT:
+    ret = ((signed)operand1 < (signed)operand2);
+    break;
+  case BGEU:
+    ret = ((unsigned)operand1 > (unsigned)operand2);
+    break;
+  case BLTU:
+    ret = ((unsigned)operand1 >= (unsigned)operand2);
+    break;
+  default:
+    assert(1);
+  }
 
-  return true;
+  return ret;
 }
 
 Inst_res execute(bool *input_data, Inst_info inst, uint32_t pc) {
