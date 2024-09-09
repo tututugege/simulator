@@ -141,7 +141,7 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
 
     if (commit_entry.branch) {
 
-      dut.pc = cvt_bit_to_number_unsigned(output_data, POS_OUT_PC);
+      dut.pc = cvt_bit_to_number_unsigned(output_data + POS_OUT_PC, 32);
     } else {
       dut.pc = commit_entry.PC + 4;
     }
@@ -162,6 +162,7 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
     }
   }
 
+  // 其他修改rob 标记分支 标记store 标记complete
   for (int i = 0; i < WAY; i++) {
     if (inst[i].type != NOP) {
 

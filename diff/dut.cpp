@@ -22,7 +22,6 @@ void init_difftest(const char *ref_so_file, long img_size) {
   assert(ref_so_file != NULL);
 
   handle = dlopen(ref_so_file, RTLD_LAZY);
-  cout << dlerror();
   assert(handle);
 
   ref_difftest_memcpy = (void (*)(uint32_t, void *, size_t, bool))dlsym(
