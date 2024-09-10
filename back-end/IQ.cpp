@@ -18,8 +18,8 @@ void IQ::IQ_add_inst() {
       entry[IQ_idx].pos_idx = in.pos_idx[i];
       entry[IQ_idx].pos_bit = in.pos_bit[i];
       entry[IQ_idx].inst = in.inst[i];
-      entry[IQ_idx].src1_ready = true;
-      entry[IQ_idx].src2_ready = true;
+      entry[IQ_idx].src1_ready = in.src1_ready[i];
+      entry[IQ_idx].src2_ready = in.src2_ready[i];
     }
   }
 }

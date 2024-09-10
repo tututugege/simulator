@@ -1,20 +1,22 @@
 #pragma once
 #include "config.h"
-typedef struct RAT_out {
+typedef struct Rename_out {
   int src1_preg_idx[WAY];
   int src2_preg_idx[WAY];
   int dest_preg_idx[WAY];
   int old_dest_preg_idx[WAY];
-} RAT_out;
+  bool src1_raw[WAY];
+  bool src2_raw[WAY];
+} Rename_out;
 
-typedef struct RAT_in {
+typedef struct Rename_in {
   int src1_areg_idx[WAY];
   int src1_areg_en[WAY];
   int src2_areg_idx[WAY];
   int src2_areg_en[WAY];
   int dest_areg_idx[WAY];
   int dest_areg_en[WAY];
-} RAT_in;
+} Rename_in;
 
 class Rename {
 public:
@@ -29,8 +31,8 @@ public:
   void cycle();
   void recover(); // 将arch_RAT 复制到 spec_RAT 用于分支预测错误时的恢复
 
-  RAT_in in;
-  RAT_out out;
+  Rename_in in;
+  Rename_out out;
   int arch_RAT[ARF_NUM];
   bool *preg_base;
 
