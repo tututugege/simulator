@@ -16,6 +16,8 @@ typedef struct IQ_out {
 
 typedef struct IQ_in {
   bool pos_bit[WAY];
+  bool src1_ready[WAY];
+  bool src2_ready[WAY];
   int pos_idx[WAY]; // rob idx
   Inst_info inst[WAY];
 } IQ_in;

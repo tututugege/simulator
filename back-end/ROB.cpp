@@ -26,6 +26,7 @@ void ROB::init() {
   for (int i = 0; i < WAY; i++) {
     entry[i].op = NONE;
     entry[i].pos_bit = 0;
+    entry[i].complete = false;
   }
   count = 0;
   deq_ptr = 0;
@@ -64,4 +65,14 @@ void ROB::store(int idx, uint32_t address, uint32_t data) {
 
   entry[idx].store_addr = address;
   entry[idx].store_data = data;
+}
+
+bool ROB::check_raw(int idx) {
+  for (int i = 0; i < ROB_NUM; i++) {
+    if (entry[i].op != NONE && entry[i].dest_en &&
+        entry[i].dest_preg_idx == idx && !entry[i].complete)
+      return true;
+  }
+
+  return false;
 }

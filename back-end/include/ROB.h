@@ -34,6 +34,7 @@ public:
   void ROB_deq();
   ROB_entry commit();
   void store(int idx, uint32_t address, uint32_t data);
+  bool check_raw(int idx);
 
   uint32_t get_pc(int idx);
   void complete(int idx);
