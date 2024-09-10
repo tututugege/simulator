@@ -78,6 +78,12 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
   rob.ROB_enq(iq.in.pos_bit, iq.in.pos_idx);
 
   for (int i = 0; i < WAY; i++) {
+    iq.in.src1_ready[i] =
+        !rename.in.src1_areg_en[i] ||
+        !(rename.out.src1_raw[i] || rob.check_raw(rename.out.src1_preg_idx[i]));
+    iq.in.src2_ready[i] =
+        !rename.in.src2_areg_en[i] ||
+        !(rename.out.src2_raw[i] || rob.check_raw(rename.out.src2_preg_idx[i]));
     iq.in.inst[i].type = in.inst[i].type;
     iq.in.inst[i].op = in.inst[i].op;
     iq.in.inst[i].imm = in.inst[i].imm;
@@ -105,7 +111,7 @@ void Back_Top::Back_cycle(bool *input_data, bool *output_data) {
   for (int i = 0; i < WAY; i++) {
     if (inst[i].dest_en) {
       // TODO
-      /*iq.IQ_awake(inst[i].dest_idx);*/
+      iq.IQ_awake(inst[i].dest_idx);
     }
   }
 
