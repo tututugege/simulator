@@ -29,9 +29,16 @@ void Rename::free_reg(int idx) {
   free_list_tail = (free_list_tail + 1) % PRF_NUM;
 }
 
-void Rename::cycle() {
-  for (int i = 0; i < WAY; i++) {
+void Rename::comb() {
+  if (free_list_count < INST_WAY) {
+    out.full = true;
+    return;
+  }
+
+  for (int i = 0; i < INST_WAY; i++) {
     int new_preg = alloc_reg();
+    assert(new_preg != -1);
+
     out.dest_preg_idx[i] = new_preg;
     out.src1_preg_idx[i] = spec_RAT[in.src1_areg_idx[i]];
     out.src2_preg_idx[i] = spec_RAT[in.src2_areg_idx[i]];
@@ -39,13 +46,14 @@ void Rename::cycle() {
     out.src1_raw[i] = false;
     out.src2_raw[i] = false;
   }
+  out.full = false;
 
-  for (int i = 0; i < WAY; i++) {
+  for (int i = 0; i < INST_WAY; i++) {
     if (in.dest_areg_en[i] == 0)
       continue;
 
     // raw
-    for (int j = i + 1; j < WAY; j++) {
+    for (int j = i + 1; j < INST_WAY; j++) {
       if (in.src1_areg_en[j] && in.src1_areg_idx[j] == in.dest_areg_idx[i]) {
         out.src1_preg_idx[j] = out.dest_preg_idx[i];
         out.src1_raw[j] = true;
@@ -59,7 +67,7 @@ void Rename::cycle() {
 
     // waw 同一preg的映射表写入只取最新的  写入rob的old_preg信息可能不来自RAT
     bool dest_we = true;
-    for (int j = i + 1; j < WAY; j++) {
+    for (int j = i + 1; j < INST_WAY; j++) {
       if (in.dest_areg_en[j] && in.dest_areg_idx[j] == in.dest_areg_idx[i]) {
         dest_we = false;
         out.old_dest_preg_idx[j] = out.dest_preg_idx[i];
@@ -69,6 +77,29 @@ void Rename::cycle() {
 
     if (dest_we)
       spec_RAT[in.dest_areg_idx[i]] = out.dest_preg_idx[i];
+  }
+}
+
+void Rename ::seq() {
+  // waw 同一preg的映射表写入只取最新的  写入rob的old_preg信息可能不来自RAT
+  for (int i = 0; i < INST_WAY; i++) {
+    bool dest_we = true;
+    for (int j = i + 1; j < INST_WAY; j++) {
+      if (in.dest_areg_en[j] && in.dest_areg_idx[j] == in.dest_areg_idx[i]) {
+        dest_we = false;
+        break;
+      }
+    }
+
+    if (dest_we)
+      spec_RAT[in.dest_areg_idx[i]] = out.dest_preg_idx[i];
+  }
+
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (in.commit_dest_en[i]) {
+      free_reg(in.commit_old_dest_areg_idx[i]);
+      arch_RAT[in.commit_dest_areg_idx[i]] = in.commit_dest_preg_idx[i];
+    }
   }
 }
 

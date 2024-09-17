@@ -109,8 +109,8 @@ int main(int argc, char *argv[]) {
   cout << hex << p_memory[0x8040000c / 4] << endl;
   // cout << "all lines in program = " << i << endl;
 
-  bool number_PC_bit[WAY][BIT_WIDTH_PC] = {0};
-  bool p_addr[WAY][32] = {0};
+  bool number_PC_bit[INST_WAY][BIT_WIDTH_PC] = {0};
+  bool p_addr[INST_WAY][32] = {0};
   bool MMU_ret_state = true;
   bool filelog = true;
   uint32_t number_PC = 0;
@@ -141,7 +141,7 @@ int main(int argc, char *argv[]) {
     if (i == 0) {
 
       // 复位pc 0x80000000
-      for (int j = 0; j < WAY; j++) {
+      for (int j = 0; j < INST_WAY; j++) {
         cvt_number_to_bit_unsigned(number_PC_bit[j], 0x80000000 + j * 4, 32);
       }
       // 写misa 寄存器  32-IA 支持User和Supervisor
@@ -187,7 +187,7 @@ int main(int argc, char *argv[]) {
     // log
 
     if (!stall) {
-      for (int j = 0; j < WAY; j++) {
+      for (int j = 0; j < INST_WAY; j++) {
         number_PC = cvt_bit_to_number(number_PC_bit[j], BIT_WIDTH_PC);
 
         if (log)
@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
         /*if (log)*/
         /*  cout << "Privilege:" << dec << privilege << endl;*/
 
-        bool bit_inst[WAY][32] = {false};
+        bool bit_inst[INST_WAY][32] = {false};
         bool *satp = &input_data_to_RISCV[POS_CSR_SATP];
         bool *mstatus = &input_data_to_RISCV[POS_CSR_MSTATUS];
         bool *sstatus = &input_data_to_RISCV[POS_CSR_SSTATUS];
@@ -260,7 +260,7 @@ int main(int argc, char *argv[]) {
                     32); // load data init
       }
     } else {
-      for (int j = 0; j < WAY; j++)
+      for (int j = 0; j < INST_WAY; j++)
         *(input_data_to_RISCV + POS_IN_INST_VALID + j) = false;
     }
 
@@ -285,7 +285,7 @@ int main(int argc, char *argv[]) {
     RISCV_32I(input_data_to_RISCV, output_data_from_RISCV);
 
     if (!stall) {
-      for (int j = 0; j < WAY; j++) {
+      for (int j = 0; j < INST_WAY; j++) {
         number_PC += 4;
         cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
         /*copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j,
@@ -297,7 +297,7 @@ int main(int argc, char *argv[]) {
                         //
       number_PC =
           cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
-      for (int j = 0; j < WAY; j++) {
+      for (int j = 0; j < INST_WAY; j++) {
         cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
         copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j, number_PC_bit[j],
                     0, 32);
