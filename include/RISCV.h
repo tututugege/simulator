@@ -19,10 +19,10 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
 #define BIT_WIDTH_REG_STATES (32 * (64 + 21)) // 64+21
 
 // input
-#define POS_IN_INST BIT_WIDTH_REG_STATES             // 1696-1727
-#define POS_IN_INST_VALID (POS_IN_INST + 32 * (WAY)) // 1696-1727
-#define POS_IN_PC (POS_IN_INST_VALID + WAY)          // 1728-1760
-#define POS_IN_LOAD_DATA (POS_IN_PC + 32 * (WAY))    // 1760-1791
+#define POS_IN_INST BIT_WIDTH_REG_STATES                  // 1696-1727
+#define POS_IN_INST_VALID (POS_IN_INST + 32 * (INST_WAY)) // 1696-1727
+#define POS_IN_PC (POS_IN_INST_VALID + INST_WAY)          // 1728-1760
+#define POS_IN_LOAD_DATA (POS_IN_PC + 32 * (INST_WAY))    // 1760-1791
 // 1792 asy
 #define POS_IN_ASY (POS_IN_LOAD_DATA + 32)             // 1792
 #define POS_PAGE_FAULT_INST (POS_IN_ASY + 1)           // 1793
@@ -39,6 +39,7 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
 #define POS_OUT_STORE_ADDR (POS_OUT_STORE_DATA + 32) // 1792-1823
 #define POS_OUT_PRIVILEGE (POS_OUT_STORE_ADDR + 32)  // 1824-1825
 #define POS_OUT_STALL (POS_OUT_PRIVILEGE + 2)        // 1824-1825
+#define POS_OUT_BRANCH (POS_OUT_STALL + 1)           // 1824-1825
 
 #define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
 #define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B
