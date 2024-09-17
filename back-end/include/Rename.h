@@ -1,21 +1,29 @@
 #pragma once
 #include "config.h"
 typedef struct Rename_out {
-  int src1_preg_idx[WAY];
-  int src2_preg_idx[WAY];
-  int dest_preg_idx[WAY];
-  int old_dest_preg_idx[WAY];
-  bool src1_raw[WAY];
-  bool src2_raw[WAY];
+  int src1_preg_idx[INST_WAY];
+  int src2_preg_idx[INST_WAY];
+  int dest_preg_idx[INST_WAY];
+  int old_dest_preg_idx[INST_WAY];
+  bool src1_raw[INST_WAY];
+  bool src2_raw[INST_WAY];
+  bool full;
 } Rename_out;
 
 typedef struct Rename_in {
-  int src1_areg_idx[WAY];
-  int src1_areg_en[WAY];
-  int src2_areg_idx[WAY];
-  int src2_areg_en[WAY];
-  int dest_areg_idx[WAY];
-  int dest_areg_en[WAY];
+  // rename
+  int src1_areg_idx[INST_WAY];
+  int src1_areg_en[INST_WAY];
+  int src2_areg_idx[INST_WAY];
+  int src2_areg_en[INST_WAY];
+  int dest_areg_idx[INST_WAY];
+  int dest_areg_en[INST_WAY];
+
+  // commit 更新arch RAT
+  int commit_dest_en[ISSUE_WAY];
+  int commit_dest_preg_idx[ISSUE_WAY];
+  int commit_dest_areg_idx[ISSUE_WAY];
+  int commit_old_dest_areg_idx[ISSUE_WAY];
 } Rename_in;
 
 class Rename {
@@ -28,7 +36,8 @@ public:
   void print_RAT();
   uint32_t reg(int idx);
 
-  void cycle();
+  void seq();
+  void comb();
   void recover(); // 将arch_RAT 复制到 spec_RAT 用于分支预测错误时的恢复
 
   Rename_in in;

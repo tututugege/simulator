@@ -9,11 +9,11 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   bool *general_regs = input_data;            // 1024
   bool *reg_csrs = input_data + 32 * PRF_NUM; // 32*21
 
-  bool *instruction[WAY];
-  bool *bit_this_pc[WAY]; // 32
-  uint32_t number_pc_unsigned[WAY];
+  bool *instruction[INST_WAY];
+  bool *bit_this_pc[INST_WAY]; // 32
+  uint32_t number_pc_unsigned[INST_WAY];
 
-  for (int i = 0; i < WAY; i++) {
+  for (int i = 0; i < INST_WAY; i++) {
     instruction[i] = input_data + POS_IN_INST + 32 * i;
     bit_this_pc[i] = input_data + POS_IN_PC + 32 * i;
     number_pc_unsigned[i] = cvt_bit_to_number_unsigned(bit_this_pc[i], 32);
@@ -42,19 +42,20 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   /*bool *bit_reg_data_b = general_regs; // 32*/
   /**/
 
-  Inst_info inst[WAY];
+  Inst_info inst[INST_WAY];
   // decode
 
-  for (int i = 0; i < WAY; i++) {
+  for (int i = 0; i < INST_WAY; i++) {
     if (*(input_data + POS_IN_INST_VALID + i)) {
       back.in.inst[i] = decode(instruction[i]);
-      back.in.PC[i] = number_pc_unsigned[i];
+      back.in.inst[i].pc = number_pc_unsigned[i];
     } else {
-      back.in.inst[i].type = NOP;
+      back.in.inst[i].type = INVALID;
     }
   }
   // rename -> execute -> write back
-  back.Back_cycle(input_data, output_data);
+  back.Back_comb(input_data, output_data);
+  back.Back_seq(input_data, output_data);
 
   // output data
   /*init_indice(next_general_regs, 0, 32);*/
@@ -194,7 +195,7 @@ Inst_info decode(bool inst_bit[]) {
     dest_en = true;
     src1_en = true;
     src2_en = false;
-    type = ITYPE;
+    type = LTYPE;
 
     switch (number_funct3_unsigned) {
     case 0: // lb
