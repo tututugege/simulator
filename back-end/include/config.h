@@ -6,18 +6,23 @@ using namespace std;
 #define INST_WAY 2
 #define ISSUE_WAY ALU_NUM + AGU_NUM
 #define ALU_NUM 2
-#define AGU_NUM 1
+#define AGU_NUM 2
 #define BRU_NUM 4
 
 #define ARF_NUM 32
 #define PRF_NUM 64
 #define PRF_WR_NUM 3
-#define PRF_RD_NUM 6
+#define PRF_RD_NUM 7
+#define PRF_WR_LD_PORT 3
+
+#define CHECKPOINT_NUM 7
 
 #define IQ_NUM 8
 #define ROB_NUM 8
 
 #define LDQ_NUM 8
+
+#define LOG 1
 
 #define CONFIG_DIFFTEST
 

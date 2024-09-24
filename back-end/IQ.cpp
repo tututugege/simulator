@@ -2,60 +2,82 @@
 #include "config.h"
 #include <ROB.h>
 
-void IQ::init() {
+IQ::IQ(int entry_num, int fu_num)
+    : entry(fu_num, INST_WAY, entry_num, sizeof(Inst_info) * 8) {
+  this->entry_num = entry_num;
+  this->fu_num = fu_num;
 
-  for (int i = 0; i < IQ_NUM; i++) {
-    entry[i].inst.type = INVALID;
+  out.inst.resize(fu_num);
+
+  valid.resize(entry_num);
+  pos_bit.resize(entry_num); // rob位置信息 用于仲裁找出最老指令
+  pos_idx.resize(entry_num);
+  src1_ready.resize(entry_num);
+  src2_ready.resize(entry_num);
+
+  valid_1.resize(entry_num);
+  pos_bit_1.resize(entry_num);
+  pos_idx_1.resize(entry_num);
+  src1_ready_1.resize(entry_num);
+  src2_ready_1.resize(entry_num);
+}
+
+void IQ::init() {
+  for (int i = 0; i < entry_num; i++) {
+    valid[i] = false;
   }
 }
 
 // 重命名后进入IQ
 void IQ::seq() {
   int IQ_idx;
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.inst[i].type != INVALID) {
-      assert((IQ_idx = alloc_IQ()) != -1);
-
-      entry[IQ_idx].pos_idx = in.pos_idx[i];
-      entry[IQ_idx].pos_bit = in.pos_bit[i];
-      entry[IQ_idx].inst = in.inst[i];
-      entry[IQ_idx].src1_ready = in.src1_ready[i];
-      entry[IQ_idx].src2_ready = in.src2_ready[i];
-    }
-  }
-
-  for (int i = 0; i < ALU_NUM; i++) {
-    if (out.int_entry[i].inst.type != INVALID)
-      entry[oldest_i[i]].inst.type = INVALID;
-  }
-
-  for (int i = 0; i < AGU_NUM; i++) {
-    if (out.mem_entry[i].inst.type != INVALID)
-      entry[oldest_i_mem].inst.type = INVALID;
+  entry.write();
+  for (int i = 0; i < entry_num; i++) {
+    valid[i] = valid_1[i];
+    pos_idx[i] = pos_idx_1[i];
+    pos_bit[i] = pos_bit_1[i];
+    src1_ready[i] = src1_ready_1[i];
+    src2_ready[i] = src2_ready_1[i];
   }
 }
 
 // 仲裁 选择指令发射到对应的FU
 void IQ::comb() {
+
+  int IQ_idx[INST_WAY];
+  alloc_IQ(IQ_idx);
+  // 指令进入发射队列
+  for (int i = 0; i < INST_WAY; i++) {
+    if (in.valid[i]) {
+
+      valid_1[IQ_idx[i]] = true;
+      pos_idx_1[IQ_idx[i]] = in.pos_idx[i];
+      pos_bit_1[IQ_idx[i]] = in.pos_bit[i];
+      src1_ready_1[IQ_idx[i]] = in.src1_ready[i];
+      src2_ready_1[IQ_idx[i]] = in.src2_ready[i];
+
+      entry.to_sram.wdata[i] = in.inst[i];
+      entry.to_sram.waddr[i] = IQ_idx[i];
+    }
+    entry.to_sram.we[i] = in.valid[i];
+  }
+
   bool oldest_bit;
   int oldest_idx;
+  int oldest_i[fu_num];
 
   // select n of m
-  for (int i = 0; i < ALU_NUM; i++) {
+  for (int i = 0; i < fu_num; i++) {
     oldest_i[i] = -1;
   }
 
-  for (int i = 0; i < ALU_NUM; i++) {
-    for (int j = 0; j < IQ_NUM; j++) {
-      if (entry[j].inst.type != INVALID && entry[j].src1_ready &&
-          entry[j].src2_ready)
-        continue;
-
-      if (entry[j].inst.type == STYPE || entry[j].inst.type == LTYPE)
+  for (int i = 0; i < fu_num; i++) {
+    for (int j = 0; j < entry_num; j++) {
+      if (!valid[j] || !src1_ready[j] || !src2_ready[j])
         continue;
 
       bool sel = false;
-      for (int k = 0; k < ALU_NUM; k++) {
+      for (int k = 0; k < fu_num; k++) {
         if (oldest_i[k] == j) {
           sel = true;
           break;
@@ -67,50 +89,31 @@ void IQ::comb() {
 
       if (oldest_i[i] == -1) {
         oldest_i[i] = j;
-        oldest_bit = entry[j].pos_bit;
-        oldest_idx = entry[j].pos_idx;
+        oldest_bit = pos_bit[j];
+        oldest_idx = pos_idx[j];
       } else {
-        if (rob_cmp(entry[j].pos_idx, entry[j].pos_bit, oldest_idx,
-                    oldest_bit)) {
-          oldest_bit = entry[j].pos_bit;
-          oldest_idx = entry[j].pos_idx;
+        if (rob_cmp(pos_idx[j], pos_bit[j], oldest_idx, oldest_bit)) {
+          oldest_bit = pos_bit[j];
+          oldest_idx = pos_idx[j];
         }
       }
     }
   }
 
-  // select load or store
-  for (int i = 0; i < IQ_NUM; i++) {
-    if (entry[i].inst.type != INVALID && entry[i].src1_ready &&
-        entry[i].src2_ready) {
-
-      if (entry[i].inst.type != STYPE && entry[i].inst.type != LTYPE)
-        continue;
-
-      if (oldest_i_mem == -1) {
-        oldest_bit = entry[i].pos_bit;
-        oldest_idx = entry[i].pos_idx;
-        oldest_i_mem = i;
-      } else {
-        if (rob_cmp(entry[i].pos_idx, entry[i].pos_bit, oldest_idx,
-                    oldest_bit)) {
-          oldest_bit = entry[i].pos_bit;
-          oldest_idx = entry[i].pos_idx;
-        }
-      }
-    }
-  }
-
-  for (int i = 0; i < ALU_NUM; i++) {
+  // 发射指令
+  for (int i = 0; i < fu_num; i++) {
     if (oldest_i[i] != -1) {
-      out.int_entry[i] = entry[oldest_i[i]];
+      entry.to_sram.raddr[i] = oldest_i[i];
+      valid_1[oldest_i[i]] = false;
+      out.valid[i] = true;
+    } else {
+      out.valid[i] = false;
     }
   }
-
-  for (int i = 0; i < AGU_NUM; i++) {
-    if (oldest_i_mem != -1) {
-      out.mem_entry[i] = entry[oldest_i_mem];
-    }
+  entry.read();
+  for (int i = 0; i < fu_num; i++) {
+    out.inst[i] = entry.from_sram.rdata[i];
+    out.pos_idx[i] = pos_idx[oldest_i[i]];
   }
 }
 
@@ -123,12 +126,16 @@ void IQ::comb() {
 /*  }*/
 /*}*/
 /**/
-int IQ::alloc_IQ() {
+
+void IQ::alloc_IQ(int *IQ_idx) {
   int i;
-  for (i = 0; i < IQ_NUM; i++) {
-    if (entry[i].inst.type == INVALID)
-      return i;
+  int num = 0;
+  for (i = 0; i < IQ_NUM && num < INST_WAY; i++) {
+    if (valid[i] == false) {
+      IQ_idx[num] = i;
+      num++;
+    }
   }
 
-  return -1;
+  assert(num == INST_WAY);
 }

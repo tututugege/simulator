@@ -1,10 +1,15 @@
 #pragma once
+#include "FIFO.h"
+#include "cRAT.h"
 #include "config.h"
+#include <cstdint>
 typedef struct Rename_out {
   int src1_preg_idx[INST_WAY];
   int src2_preg_idx[INST_WAY];
   int dest_preg_idx[INST_WAY];
   int old_dest_preg_idx[INST_WAY];
+  int gp_idx[INST_WAY];
+
   bool src1_raw[INST_WAY];
   bool src2_raw[INST_WAY];
   bool full;
@@ -12,6 +17,7 @@ typedef struct Rename_out {
 
 typedef struct Rename_in {
   // rename
+  bool valid[INST_WAY];
   int src1_areg_idx[INST_WAY];
   int src1_areg_en[INST_WAY];
   int src2_areg_idx[INST_WAY];
@@ -20,35 +26,54 @@ typedef struct Rename_in {
   int dest_areg_en[INST_WAY];
 
   // commit 更新arch RAT
+  bool commit_valid[ISSUE_WAY];
+  bool commit_gp_idx[ISSUE_WAY];
   int commit_dest_en[ISSUE_WAY];
   int commit_dest_preg_idx[ISSUE_WAY];
   int commit_dest_areg_idx[ISSUE_WAY];
-  int commit_old_dest_areg_idx[ISSUE_WAY];
+  int commit_old_dest_preg_idx[ISSUE_WAY];
 } Rename_in;
 
 class Rename {
 public:
+  Rename_in in;
+  Rename_out out;
   void init();
+  void seq();  // 时序逻辑
+  void comb(); // 组合逻辑
 
-  int alloc_reg();
-  void free_reg(int idx);
+  // debug
   void print_reg();
   void print_RAT();
   uint32_t reg(int idx);
-
-  void seq();
-  void comb();
-  void recover(); // 将arch_RAT 复制到 spec_RAT 用于分支预测错误时的恢复
-
-  Rename_in in;
-  Rename_out out;
   int arch_RAT[ARF_NUM];
-  bool *preg_base;
 
 private:
-  int spec_RAT[ARF_NUM];
-  int free_list[PRF_NUM];
-  int free_list_head = 0;
-  int free_list_tail = ARF_NUM;
-  int free_list_count = ARF_NUM;
+  int cRAT_read(int areg_idx);
+  void cRAT_write();
+
+  int alloc_reg();
+  void free_reg(int idx);
+
+  void free_gp(int idx);
+  void gp_write(int idx);
+
+  /*SRAM*/
+  cRAT RAT;
+  FIFO<uint32_t> free_list =
+      FIFO<uint32_t>(INST_WAY, ISSUE_WAY, PRF_NUM - ARF_NUM, 6);
+
+  // register
+  bool gp_v[CHECKPOINT_NUM];
+  bool gp[CHECKPOINT_NUM][PRF_NUM]; // CAM
+  /*int free_list_deq_ptr = 0;*/
+  /*int free_list_enq_ptr = ARF_NUM;*/
+  /*int free_list_count = ARF_NUM;*/
+
+  // register next val
+  bool gp_v_1[CHECKPOINT_NUM];
+  bool gp_1[CHECKPOINT_NUM][PRF_NUM]; // CAM
+  /*int free_list_deq_ptr_1 = 0;*/
+  /*int free_list_enq_ptr_1 = ARF_NUM;*/
+  /*int free_list_count_1 = ARF_NUM;*/
 };
