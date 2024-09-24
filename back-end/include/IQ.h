@@ -1,20 +1,17 @@
 #pragma once
-#include "config.h"
-typedef struct IQ_entry {
-  bool pos_bit;
-  int pos_idx;
-  Inst_info inst;
-  bool src1_ready;
-  bool src2_ready;
-} IQ_entry;
+#include <SRAM.h>
+#include <config.h>
+#include <vector>
 
 typedef struct IQ_out {
-  IQ_entry int_entry[ALU_NUM];
-  IQ_entry mem_entry[AGU_NUM];
+  vector<Inst_info> inst;
+  int pos_idx[INST_WAY]; // rob idx
+  int valid[INST_WAY];   // rob idx
   bool full;
 } IQ_out;
 
 typedef struct IQ_in {
+  bool valid[INST_WAY];
   bool pos_bit[INST_WAY];
   bool src1_ready[INST_WAY];
   bool src2_ready[INST_WAY];
@@ -22,21 +19,32 @@ typedef struct IQ_in {
   Inst_info inst[INST_WAY];
 } IQ_in;
 
-enum Issue_type { INT, MEM };
-
 class IQ {
 public:
+  IQ(int entry_num, int out_num);
   void init();
   void comb(); // 仲裁
   void seq();  // 写入IQ
-  /*void IQ_awake(int dest_preg_idx); // 唤醒*/
   IQ_in in;
   IQ_out out;
 
 private:
-  int alloc_IQ();
-  IQ_entry entry[IQ_NUM];
+  void alloc_IQ(int *);
+  SRAM<Inst_info> entry;
 
-  int oldest_i[ALU_NUM];
-  int oldest_i_mem = -1;
+  /*register*/
+  vector<bool> valid;
+  vector<bool> pos_bit; // rob位置信息 用于仲裁找出最老指令
+  vector<int> pos_idx;
+  vector<bool> src1_ready;
+  vector<bool> src2_ready;
+
+  vector<bool> valid_1;
+  vector<bool> pos_bit_1;
+  vector<int> pos_idx_1;
+  vector<bool> src1_ready_1;
+  vector<bool> src2_ready_1;
+
+  int entry_num;
+  int fu_num;
 };
