@@ -1,18 +1,11 @@
 #include <RISCV.h>
 #include <TOP.h>
-#include <cstdint>
-#include <cstdio>
 #include <cvt.h>
 #include <diff.h>
 #include <dlfcn.h>
 #include <fstream>
-#include <iostream>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 const int bit_width = POS_IN_REG_B + 32;
-bool log = true;
 int time_i = 0;
 
 using namespace std;
@@ -68,7 +61,7 @@ uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 
 // 后端执行
-Back_Top back;
+Back_Top back = Back_Top();
 
 /* =====================================
 
@@ -101,7 +94,7 @@ int main(int argc, char *argv[]) {
   const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
   // init difftest and back-end
   init_difftest(diff_so, i);
-  back.init(output_data_from_RISCV);
+  back.init();
 
   cout << hex << p_memory[0x80400000 / 4] << endl;
   cout << hex << p_memory[0x80400004 / 4] << endl;
@@ -124,7 +117,7 @@ int main(int argc, char *argv[]) {
     }
     time_i = i;
 
-    if (log)
+    if (LOG)
       cout << "****************************************************************"
               "**************************"
            << endl;
@@ -160,12 +153,12 @@ int main(int argc, char *argv[]) {
       output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
     }
 
-    // log
+    // LOG
     /////if (filelog) {
     /////	if (i % 100000000 == 0) {
     /////		outfile.close();
     /////		outfile.open("/mnt/tracelog/jinpengwei/riscv_log/403/"+
-    /// to_string(i/10000000) + ".log", ios::binary);
+    /// to_string(i/10000000) + ".LOG", ios::binary);
     /////	}
     /////	outfile.write((char*)(input_data_to_RISCV), 32*4); // general
     /// regs
@@ -184,13 +177,13 @@ int main(int argc, char *argv[]) {
     /////	// for (int q = 1796; q < 1796+2; q++) outfile <<
     /// input_data_to_RISCV[q]; // priviledge
     /////}
-    // log
+    // LOG
 
     if (!stall) {
       for (int j = 0; j < INST_WAY; j++) {
         number_PC = cvt_bit_to_number(number_PC_bit[j], BIT_WIDTH_PC);
 
-        if (log)
+        if (LOG)
           cout
               << "指令index:" << dec << i + 1 << " 当前PC的取值为:" << hex
               << number_PC
@@ -211,7 +204,7 @@ int main(int argc, char *argv[]) {
           output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
         }
 
-        /*if (log)*/
+        /*if (LOG)*/
         /*  cout << "Privilege:" << dec << privilege << endl;*/
 
         bool bit_inst[INST_WAY][32] = {false};
@@ -226,17 +219,17 @@ int main(int argc, char *argv[]) {
           input_data_to_RISCV[POS_PAGE_FAULT_INST] = !MMU_ret_state;
           if (MMU_ret_state) {
             uint32_t number_PC_p = cvt_bit_to_number_unsigned(p_addr[j], 32);
-            if (log)
+            if (LOG)
               cout << "当前物理地址为: " << hex << number_PC_p << endl;
             cvt_number_to_bit_unsigned(
                 bit_inst[j], p_memory[uint32_t(number_PC_p / 4)],
                 32); // TODO。不太对, 没有经过初始化，哪里有指令？
-            if (log)
+            if (LOG)
               cout << "当前指令为:" << hex
                    << p_memory[uint32_t(number_PC_p / 4)] << endl;
           } // page fault的话，到下面RISCV会处理
           else {
-            if (log)
+            if (LOG)
               cout << "PAGE FAULT INST" << endl;
             copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j,
                         number_PC_bit[j], 0, 32);
@@ -246,7 +239,7 @@ int main(int argc, char *argv[]) {
         } else if (USE_MMU_PHYSICAL_MEMORY) {
           cvt_number_to_bit_unsigned(bit_inst[j], p_memory[number_PC / 4],
                                      32); // 取指令
-          if (log)
+          if (LOG)
             cout << "当前指令为:" << hex << p_memory[number_PC / 4] << endl;
         }
 
@@ -306,7 +299,7 @@ int main(int argc, char *argv[]) {
       number_PC -= 4;
     }
 
-    /*if (log) {*/
+    /*if (LOG) {*/
     /*  // print_regs(output_data_from_RISCV);*/
     /*  // print_csr_regs(output_data_from_RISCV);*/
     /*}*/
@@ -333,7 +326,7 @@ int main(int argc, char *argv[]) {
     /*        number_load_data = p_memory[uint32_t(number_load_address / 4)];*/
     /*        cvt_number_to_bit_unsigned(bit_load_data, number_load_data, 32);*/
     /*      } else {*/
-    /*        if (log)*/
+    /*        if (LOG)*/
     /*          cout << "PAGE FAULT LOAD" << endl;*/
     /*        RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
     /*        continue;*/
@@ -390,7 +383,7 @@ int main(int argc, char *argv[]) {
     /*                32); // 将load的data存入input data， 之后放到寄存器里面*/
     /*    // load 之后再次执行指令，放到寄存器中*/
     /*    RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
-    /*    if (log)*/
+    /*    if (LOG)*/
     /*      cout << " ======= LOAD ===== " << "addr 0x" << hex*/
     /*           << number_load_address << " data: " << hex <<
      * number_load_data*/
@@ -415,7 +408,7 @@ int main(int argc, char *argv[]) {
     /*      input_data_to_RISCV[POS_PAGE_FAULT_STORE] = !MMU_ret_state;*/
     /*      if (!MMU_ret_state) { // can't load inst, give flag and let core*/
     /*                            // process*/
-    /*        if (log)*/
+    /*        if (LOG)*/
     /*          cout << "PAGE FAULT STORE" << endl;*/
     /*        RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
     /*        continue;*/
@@ -452,7 +445,7 @@ int main(int argc, char *argv[]) {
     /*                     2 * uint32_t(1 ^ bit_store_address[30]);*/
     /*      pos *= 8;*/
     /*      copy_indice(bit_memory_temp, pos, bit_store_data, 24, 8);*/
-    /*      if (log)*/
+    /*      if (LOG)*/
     /*        cout << " ======= STOREB ===== " << "addr 0x" << hex*/
     /*             << number_store_address << " data: " << hex*/
     /*             << (number_store_data & 0x000000ff) << endl;*/
@@ -461,7 +454,7 @@ int main(int argc, char *argv[]) {
     /*    case 1: { // sh*/
     /*      uint32_t pos = bit_store_address[30] ? 0 : 16;*/
     /*      copy_indice(bit_memory_temp, pos, bit_store_data, 16, 16);*/
-    /*      if (log)*/
+    /*      if (LOG)*/
     /*        cout << " ======= STOREH ===== " << "addr 0x" << hex*/
     /*             << number_store_address << " data: " << hex*/
     /*             << (number_store_data & 0x0000ffff) << endl;*/
@@ -469,7 +462,7 @@ int main(int argc, char *argv[]) {
     /*    }*/
     /*    case 2: { // sw*/
     /*      copy_indice(bit_memory_temp, 0, bit_store_data, 0, 32);*/
-    /*      if (log)*/
+    /*      if (LOG)*/
     /*        cout << " ======= STOREW ===== " << "addr 0x" << hex*/
     /*             << number_store_address << " data: " << hex <<
      * number_store_data*/
@@ -499,7 +492,7 @@ int main(int argc, char *argv[]) {
     /**/
     /*      if (temp == 0x3F) {*/
     /*        cerr << hex << time_i << endl;*/
-    /*        // log = true;*/
+    /*        // LOG = true;*/
     /*      }*/
     /*    }*/
     /*    if (number_store_address == 0x10000001 &&*/
@@ -508,7 +501,7 @@ int main(int argc, char *argv[]) {
     /*      output_data_from_RISCV[POS_CSR_MIP + 31 - 9] = 1; // mip*/
     /*      output_data_from_RISCV[POS_CSR_SIP + 31 - 9] = 1; // sip*/
     /*      p_memory[0xc201004 / 4] = 0xa;*/
-    /*      // log = true;*/
+    /*      // LOG = true;*/
     /*      p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] &
        0xfff0ffff;*/
     /*    }*/
@@ -560,7 +553,7 @@ int main(int argc, char *argv[]) {
     /*          cvt_number_to_bit_unsigned(bit_load_data, number_load_data,
        32);*/
     /*        } else {*/
-    /*          if (log)*/
+    /*          if (LOG)*/
     /*            cout << "PAGE FAULT LOAD" << endl;*/
     /*          RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
     /*          continue;*/
@@ -579,7 +572,7 @@ int main(int argc, char *argv[]) {
     /*                  32); // 将load的data存入input data，
        之后放到寄存器里面*/
     /*      RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
-    /*      if (log)*/
+    /*      if (LOG)*/
     /*        cout << " ======= LR ===== " << "addr 0x" << hex*/
     /*             << number_load_address << " data: " << hex <<
        number_load_data*/
@@ -605,7 +598,7 @@ int main(int argc, char *argv[]) {
     /*        if (!MMU_ret_state) { // can't load inst, give flag and let
        core*/
     /*                              // process*/
-    /*          if (log)*/
+    /*          if (LOG)*/
     /*            cout << "PAGE FAULT STORE" << endl;*/
     /*          RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
     /*          continue;*/
@@ -637,7 +630,7 @@ int main(int argc, char *argv[]) {
     /*        cout << "addr: " << hex << number_store_address << endl;*/
     /*        exit(-1);*/
     /*      }*/
-    /*      if (log)*/
+    /*      if (LOG)*/
     /*        cout << " ======= SC ===== " << "addr 0x" << hex*/
     /*             << number_store_address << " data: " << hex <<
        number_store_data*/
@@ -676,7 +669,7 @@ int main(int argc, char *argv[]) {
     /*                      32); // 将load的data存入input data，
        之后放到寄存器里面*/
     /*        } else {*/
-    /*          if (log)*/
+    /*          if (LOG)*/
     /*            cout << "PAGE FAULT LOAD" << endl;*/
     /*          RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
     /*          continue;*/
@@ -695,7 +688,7 @@ int main(int argc, char *argv[]) {
     /*      }*/
     /*      // load 之后再次执行指令，放到寄存器中*/
     /*      RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
-    /*      if (log)*/
+    /*      if (LOG)*/
     /*        cout << " ======= LOAD ===== " << "addr 0x" << hex*/
     /*             << number_load_address << " data: " << hex <<
        number_load_data*/
@@ -719,7 +712,7 @@ int main(int argc, char *argv[]) {
     /*        if (!MMU_ret_state) { // can't load inst, give flag and let
        core*/
     /*                              // process*/
-    /*          if (log)*/
+    /*          if (LOG)*/
     /*            cout << "PAGE FAULT STORE" << endl;*/
     /*          RISCV(input_data_to_RISCV, output_data_from_RISCV);*/
     /*          continue;*/
@@ -751,7 +744,7 @@ int main(int argc, char *argv[]) {
     /*        cout << "addr: " << hex << number_store_address << endl;*/
     /*        exit(-1);*/
     /*      }*/
-    /*      if (log)*/
+    /*      if (LOG)*/
     /*        cout << " ======= SC ===== " << "addr 0x" << hex*/
     /*             << number_store_address << " data: " << hex <<
        number_store_data*/
@@ -760,7 +753,7 @@ int main(int argc, char *argv[]) {
     /*    }*/
     /*    }*/
   }
-  /*  // log*/
+  /*  // LOG*/
   /*  if (filelog) {*/
   /*    outfile.write((char *)(input_data_to_RISCV + POS_IN_LOAD_DATA),*/
   /*                  4); // load_data*/
@@ -784,7 +777,7 @@ int main(int argc, char *argv[]) {
      output_data_from_RISCV[q];*/
   /*    // // store_address outfile << endl;*/
   /*  }*/
-  /*  // log*/
+  /*  // LOG*/
   /*}*/
 
   delete[] p_memory;

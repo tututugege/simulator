@@ -29,17 +29,24 @@ void operand_mux(Inst_info inst, uint32_t reg_data1, uint32_t reg_data2,
 
 void Back_Top::difftest(int pc) {
   for (int i = 0; i < ARF_NUM; i++) {
-    dut.gpr[i] = prf.PRF[rename.arch_RAT[i]];
+    dut.gpr[i] = prf.debug_read(rename.arch_RAT[i]);
   }
   dut.pc = pc;
   difftest_step();
 }
 
-void Back_Top::init(bool *output_data) {
+void Back_Top::arch_update(int areg_idx, int preg_idx) {
+  rename.arch_RAT[areg_idx] = preg_idx;
+}
+
+Back_Top::Back_Top() : int_iq(8, 2), ld_iq(4, 1), st_iq(4, 1) {}
+
+void Back_Top::init() {
   rename.init();
-  iq.init();
+  int_iq.init();
+  ld_iq.init();
+  st_iq.init();
   rob.init();
-  back.rename.preg_base = output_data;
 }
 
 void Back_Top::Back_comb(bool *input_data, bool *output_data) {
@@ -47,6 +54,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   // pipeline1: 重命名 dispatch
 
   for (int i = 0; i < INST_WAY; i++) {
+    rename.in.valid[i] = in.valid[i];
     rename.in.src1_areg_idx[i] = in.inst[i].src1_idx;
     rename.in.src1_areg_en[i] = in.inst[i].src1_en;
     rename.in.src2_areg_idx[i] = in.inst[i].src2_idx;
@@ -58,8 +66,9 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // rob入队输入
   for (int i = 0; i < INST_WAY; i++) {
+    rob.in.valid[i] = in.valid[i];
     rob.in.PC[i] = in.inst[i].pc;
-    rob.in.op[i] = rename.out.full ? NONE : in.inst[i].op;
+    rob.in.type[i] = in.inst[i].type;
     rob.in.dest_areg_idx[i] = in.inst[i].dest_idx;
     rob.in.dest_preg_idx[i] = rename.out.dest_preg_idx[i];
     rob.in.dest_en[i] = in.inst[i].dest_en;
@@ -69,10 +78,11 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   // ld queue入队输入
   for (int i = 0; i < INST_WAY; i++) {
     if (in.inst[i].type == LTYPE) {
-      ldq.in.alloc[i].pc = in.inst[i].pc;
+      /*ldq.in.alloc[i].pc = in.inst[i].pc;*/
       ldq.in.alloc[i].dest_preg_idx = rename.out.dest_preg_idx[i];
-      ldq.in.alloc[i].rob_bit =
-          (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
+      /*ldq.in.alloc[i].rob_bit =*/
+      /*    (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit :
+       * rob.out.enq_bit;*/
       ldq.in.alloc[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
       /*ldq.in.alloc[i].size = rename.out.dest_preg_idx[i];*/
     } else {
@@ -82,140 +92,168 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // iq入队输入
   for (int i = 0; i < INST_WAY; i++) {
-    /*iq.in.src1_ready[i] =*/
-    /*    !rename.in.src1_areg_en[i] ||*/
-    /*    !(rename.out.src1_raw[i] ||
-     * rob.check_raw(rename.out.src1_preg_idx[i]));*/
-    /*iq.in.src2_ready[i] =*/
-    /*    !rename.in.src2_areg_en[i] ||*/
-    /*    !(rename.out.src2_raw[i] ||
-     * rob.check_raw(rename.out.src2_preg_idx[i]));*/
-    iq.in.src1_ready[i] = !rename.in.src1_areg_en[i];
-    iq.in.src2_ready[i] = !rename.in.src2_areg_en[i];
+    int_iq.in.valid[i] =
+        in.inst[i].type != LTYPE && in.inst[i].type != STYPE && in.valid[i];
+    int_iq.in.src1_ready[i] = true;
+    int_iq.in.src2_ready[i] = true;
 
-    iq.in.pos_bit[i] =
+    int_iq.in.pos_bit[i] =
         (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
 
-    iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
+    int_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
 
-    iq.in.inst[i].pc = in.inst[i].pc;
-    iq.in.inst[i].type = rename.out.full ? INVALID : in.inst[i].type;
-    iq.in.inst[i].op = rename.out.full ? NONE : in.inst[i].op;
-    iq.in.inst[i].imm = in.inst[i].imm;
-    iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
-    iq.in.inst[i].src1_en = rename.in.src1_areg_en[i];
-    iq.in.inst[i].src2_idx = rename.out.src2_preg_idx[i];
-    iq.in.inst[i].src2_en = rename.in.src2_areg_en[i];
-    iq.in.inst[i].dest_idx = rename.out.dest_preg_idx[i];
-    iq.in.inst[i].dest_en = rename.in.dest_areg_en[i];
+    int_iq.in.inst[i].pc = in.inst[i].pc;
+    int_iq.in.inst[i].type = in.inst[i].type;
+    int_iq.in.inst[i].op = in.inst[i].op;
+    int_iq.in.inst[i].imm = in.inst[i].imm;
+    int_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
+    int_iq.in.inst[i].src1_en = rename.in.src1_areg_en[i];
+    int_iq.in.inst[i].src2_idx = rename.out.src2_preg_idx[i];
+    int_iq.in.inst[i].src2_en = rename.in.src2_areg_en[i];
+    int_iq.in.inst[i].dest_idx = rename.out.dest_preg_idx[i];
+    int_iq.in.inst[i].dest_en = rename.in.dest_areg_en[i];
+
+    st_iq.in.valid[i] = in.inst[i].type == STYPE && in.valid[i];
+    st_iq.in.src1_ready[i] = !rename.in.src1_areg_en[i];
+    st_iq.in.src2_ready[i] = !rename.in.src2_areg_en[i];
+
+    st_iq.in.pos_bit[i] =
+        (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
+
+    st_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
+    st_iq.in.inst[i].pc = in.inst[i].pc;
+    st_iq.in.inst[i].type = in.inst[i].type;
+    st_iq.in.inst[i].op = in.inst[i].op;
+    st_iq.in.inst[i].imm = in.inst[i].imm;
+    st_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
+    st_iq.in.inst[i].src1_en = true;
+    st_iq.in.inst[i].src2_idx = rename.out.src2_preg_idx[i];
+    st_iq.in.inst[i].src2_en = true;
+    st_iq.in.inst[i].dest_en = false;
+
+    ld_iq.in.valid[i] = in.inst[i].type == LTYPE && in.valid[i];
+    ld_iq.in.src1_ready[i] = !rename.in.src1_areg_en[i];
+    ld_iq.in.src2_ready[i] = !rename.in.src2_areg_en[i];
+
+    ld_iq.in.pos_bit[i] =
+        (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
+
+    ld_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
+    ld_iq.in.inst[i].pc = in.inst[i].pc;
+    ld_iq.in.inst[i].type = in.inst[i].type;
+    ld_iq.in.inst[i].op = in.inst[i].op;
+    ld_iq.in.inst[i].imm = in.inst[i].imm;
+    ld_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
+    ld_iq.in.inst[i].src1_en = rename.in.src1_areg_en[i];
+    ld_iq.in.inst[i].src2_en = false;
+    ld_iq.in.inst[i].dest_idx = rename.out.dest_preg_idx[i];
+    ld_iq.in.inst[i].dest_en = rename.in.dest_areg_en[i];
   }
 
   // pipeline2:
 
-  Inst_info mem_inst;
-  int mem_rob_idx[1];
-  int mem_rob_bit[1];
-
   // execute 执行
 
   // select 仲裁 发射指令 ALU_NUM + AGU_NUM
-  iq.comb();
+  int_iq.comb();
+  ld_iq.comb();
+  st_iq.comb();
 
   // 读寄存器
-  int preg_idx[PRF_RD_NUM];
-  int preg_rdata[PRF_RD_NUM];
   for (int i = 0; i < ALU_NUM; i++) {
-    preg_idx[2 * i] = iq.out.int_entry[i].inst.src1_idx;
-    preg_idx[2 * i + 1] = iq.out.int_entry[i].inst.src2_idx;
+    prf.to_sram.raddr[2 * i] = int_iq.out.inst[i].src1_idx;
+    prf.to_sram.raddr[2 * i + 1] = int_iq.out.inst[i].src2_idx;
   }
 
-  for (int i = 0; i < AGU_NUM; i++) {
-    preg_idx[2 * (i + ALU_NUM)] = iq.out.mem_entry[i].inst.src1_idx;
-    preg_idx[2 * (i + ALU_NUM) + 1] = iq.out.mem_entry[i].inst.src2_idx;
-  }
+  prf.to_sram.raddr[2 * (ALU_NUM)] = ld_iq.out.inst[0].src1_idx;
 
-  prf.read(preg_idx, preg_rdata);
+  prf.to_sram.raddr[2 * (ALU_NUM) + 1] = st_iq.out.inst[0].src1_idx;
+  prf.to_sram.raddr[2 * (ALU_NUM) + 2] = st_iq.out.inst[0].src2_idx;
+
+  prf.read();
 
   // 往所有ALU BRU发射指令
   for (int i = 0; i < ALU_NUM; i++) {
-    Inst_info inst = iq.out.int_entry[i].inst;
-    if (inst.type != INVALID) {
+    Inst_info inst = int_iq.out.inst[i];
+    if (int_iq.out.valid[i]) {
       // 操作数选择
-      operand_mux(inst, preg_rdata[2 * i], preg_rdata[2 * i + 1],
-                  alu[i].in.src1, alu[i].in.src2);
+      operand_mux(inst, prf.from_sram.rdata[2 * i],
+                  prf.from_sram.rdata[2 * i + 1], alu[i].in.src1,
+                  alu[i].in.src2);
       alu[i].in.op = inst.op;
       alu[i].cycle();
 
-      bru[i].in.src1 = preg_rdata[2 * 1];
-      bru[i].in.src2 = preg_rdata[2 * 1 + 1];
+      bru[i].in.src1 = prf.from_sram.rdata[2 * 1];
+      bru[i].in.src2 = prf.from_sram.rdata[2 * 1 + 1];
       bru[i].in.pc = inst.pc;
       bru[i].in.off = inst.imm;
       bru[i].in.op = inst.op;
       bru[i].cycle();
 
       rob.in.complete[i] = true;
-      rob.in.idx[i] = iq.out.int_entry[i].pos_idx;
+      rob.in.idx[i] = int_iq.out.pos_idx[i];
 
-      prf.wen[i] = iq.out.int_entry[i].inst.dest_en;
-      prf.wr_idx[i] = iq.out.int_entry[i].inst.dest_idx;
-      prf.wdata[i] = alu[i].out.res;
+      prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
+      prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_idx;
+      prf.to_sram.wdata[i] = alu[i].out.res;
 
     } else
       rob.in.complete[i] = false;
   }
 
-  // 访存指令计算地址
-  for (int i = 0; i < AGU_NUM; i++) {
-    Inst_info inst = iq.out.mem_entry[i].inst;
-    if (inst.type != INVALID) {
-      // 操作数选择
-      agu[i].in.base = preg_rdata[2 * (i + ALU_NUM)];
-      agu[i].in.off = inst.imm;
-      agu[i].cycle();
-
-      bru[i + ALU_NUM].in.src1 = preg_rdata[2 * (i + ALU_NUM)];
-      bru[i + ALU_NUM].in.src2 = preg_rdata[2 * (i + ALU_NUM) + 1];
-      bru[i + ALU_NUM].in.pc = inst.pc;
-      bru[i + ALU_NUM].in.off = inst.imm;
-      bru[i + ALU_NUM].in.op = inst.op;
-      bru[i + ALU_NUM].cycle();
-
-      rob.in.complete[i + ALU_NUM] = true;
-      rob.in.idx[i + ALU_NUM] = iq.out.mem_entry[i].pos_idx;
-    } else {
-      rob.in.complete[i + ALU_NUM] = false;
-    }
-  }
+  // load指令计算地址
+  Inst_info inst = ld_iq.out.inst[0];
+  // 操作数选择
+  agu[0].in.base = prf.from_sram.rdata[2 * ALU_NUM];
+  agu[0].in.off = inst.imm;
+  agu[0].cycle();
 
   // 发出访存请求 地址写入LDQ
-  if (iq.out.mem_entry[0].inst.type == LTYPE) {
+  if (ld_iq.out.valid[0]) {
     cvt_number_to_bit(output_data + POS_OUT_LOAD_ADDR, agu[0].out.addr, 32);
 
     ldq.in.write.valid = true;
-    ldq.in.write.rob_idx = iq.out.mem_entry[0].pos_idx;
+    ldq.in.write.rob_idx = ld_iq.out.pos_idx[0];
     ldq.in.write.addr = agu[0].out.addr;
 
-    prf.wen[ALU_NUM] = iq.out.mem_entry[0].inst.dest_en;
-    prf.wr_idx[ALU_NUM] = iq.out.mem_entry[0].inst.dest_idx;
+    prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;
+    prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_idx;
 
-    /*prf.wdata[ALU_NUM] = read_data();*/
+    /*prf.wdata[PRF_WR_LD_PORT] = read_data();*/
+
+    for (int i = 0; i < ISSUE_WAY; i++) {
+      ldq.in.commit[i] = rob.out.commit_entry[i].type == LTYPE;
+    }
+    /*rob.in.complete[ALU_NUM] = true;*/
+    /*rob.in.idx[ALU_NUM] = ld_iq.out.pos_idx[0];*/
+    /*rob.in.complete[ALU_NUM] = false;*/
+  }
+
+  // store指令计算地址 写入store queue
+  // 操作数选择
+  agu[1].in.base = prf.from_sram.rdata[2 * ALU_NUM + 1];
+  agu[1].in.off = inst.imm;
+  agu[1].cycle();
+
+  if (st_iq.out.valid[0]) {
   }
 
   rob.comb();
-  ldq.in.commit_num = rob.out.ld_commit_num;
 
+  // rob
   for (int i = 0; i < ISSUE_WAY; i++) {
-    if (rob.out.commit_entry[i].op != NONE && rob.out.commit_entry[i].dest_en) {
-      rename.free_reg(rob.out.commit_entry[i].old_dest_preg_idx);
-    }
+    /*if (rob.out.commit_entry[i].op != NONE &&
+     * rob.out.commit_entry[i].dest_en)
+     * {*/
+    /*  rename.free_reg(rob.out.commit_entry[i].old_dest_preg_idx);*/
+    /*}*/
+    rename.in.commit_valid[i] = rob.out.valid[i];
     rename.in.commit_dest_en[i] = rob.out.commit_entry[i].dest_en;
     rename.in.commit_dest_preg_idx[i] = rob.out.commit_entry[i].dest_preg_idx;
     rename.in.commit_dest_areg_idx[i] = rob.out.commit_entry[i].dest_areg_idx;
-    rename.in.commit_old_dest_areg_idx[i] =
+    rename.in.commit_old_dest_preg_idx[i] =
         rob.out.commit_entry[i].old_dest_preg_idx;
   }
-
-  // ROB
 }
 
 void Back_Top::Back_seq(bool *input_data, bool *output_data) {
@@ -224,11 +262,13 @@ void Back_Top::Back_seq(bool *input_data, bool *output_data) {
   // pipeline1: 写入ROB和IQ 重命名表更新
   // pipeline2: 执行结果写回 唤醒等待的指令(目前不考虑) 在ROB中标记执行完毕
   // pipeline3: ROB提交 更新free_list 重命名映射表
+  prf.write();
   rename.seq();
   rob.seq(); // dispatch写入rob  提交指令  store结果  标记complete
-  ldq.seq(); // dispatch写入rob  提交指令  store结果  标记complete
-  iq.seq();  // dispatch写入发射队列  发射后删除：w
-  prf.write();
+  ldq.seq();
+  int_iq.seq(); // dispatch写入发射队列  发射后删除
+  ld_iq.seq();  // dispatch写入发射队列  发射后删除
+  st_iq.seq();  // dispatch写入发射队列  发射后删除
 
   /*  ROB_entry commit_entry;*/
   /*  while ((commit_entry = rob.commit()).complete) {*/

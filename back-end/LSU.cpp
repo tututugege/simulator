@@ -1,6 +1,5 @@
 #include "config.h"
 #include <LSU.h>
-#include <cmath>
 void LDQ::init() {}
 void LDQ::comb() {}
 
@@ -26,8 +25,10 @@ void LDQ::seq() {
   }
 
   // 提交
-  for (int i = 0; i < in.commit_num; i++) {
-    entry[deq_ptr].valid = false;
-    deq_ptr = (deq_ptr + 1) % LDQ_NUM;
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (in.commit[i]) {
+      entry[deq_ptr].valid = false;
+      deq_ptr = (deq_ptr + 1) % LDQ_NUM;
+    }
   }
 }

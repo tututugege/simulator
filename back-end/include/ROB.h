@@ -1,41 +1,38 @@
 #pragma once
-#include "config.h"
-#include <cstdint>
+#include <SRAM.h>
+#include <config.h>
 
 typedef struct ROB_entry {
   uint32_t PC;
-  Inst_op op;
+  Inst_type type;
   int dest_preg_idx;
   int dest_areg_idx;
   int old_dest_preg_idx;
-  bool branch;
   bool dest_en;
-  bool complete;
 
-  bool pos_bit;
-
-  /*bool trap;*/
-  int store_addr;
-  int store_data;
+  // 放入store queue
+  /*int store_addr;*/
+  /*int store_data;*/
 } ROB_entry;
 
 typedef struct ROB_in {
 
   // dispatch写入ROB
-  int PC[INST_WAY];
-  Inst_op op[INST_WAY];
+  bool valid[INST_WAY];
+  uint32_t PC[INST_WAY];
+  Inst_type type[INST_WAY];
   int dest_areg_idx[INST_WAY];
   int dest_preg_idx[INST_WAY];
-  int dest_en[INST_WAY];
+  bool dest_en[INST_WAY];
   int old_dest_preg_idx[INST_WAY];
 
   // execute完成情况 store地址
   bool complete[ALU_NUM + AGU_NUM];
   bool br_taken[ALU_NUM];
   int idx[ALU_NUM + AGU_NUM];
-  uint32_t store_addr[AGU_NUM];
-  uint32_t store_data[AGU_NUM];
-  uint32_t store_size[AGU_NUM];
+  /*uint32_t store_addr[AGU_NUM];*/
+  /*uint32_t store_data[AGU_NUM];*/
+  /*uint32_t store_size[AGU_NUM];*/
 
 } ROB_in;
 
@@ -45,30 +42,38 @@ typedef struct ROB_out {
   int enq_idx;
   int ld_commit_num;
   ROB_entry commit_entry[ISSUE_WAY];
+  bool valid[ISSUE_WAY];
 } ROB_out;
 
 class ROB {
 public:
   void init();
-  /*void ROB_enq(bool pos_bit[], int pos_idx[]);*/
   void seq();
   void comb();
-  /*ROB_entry commit();*/
-  /*void store(int idx, uint32_t address, uint32_t data);*/
-  /*bool check_raw(int idx);*/
-
-  /*void complete(int idx);*/
-  /*void branch(int idx);*/
 
   ROB_in in;
   ROB_out out;
 
+  bool branch_1[ROB_NUM];
+  bool complete_1[ROB_NUM];
+
 private:
+  SRAM<ROB_entry> entry = SRAM<ROB_entry>(3, 2, ROB_NUM, sizeof(ROB_entry) * 8);
+  bool pos_bit;
   int enq_ptr;
   int deq_ptr;
   int count;
-  ROB_entry entry[ROB_NUM];
-  void pos_invert();
+  bool valid[ROB_NUM];
+  bool branch[ROB_NUM];
+  bool complete[ROB_NUM];
+  bool trap[ROB_NUM];
+
+  bool valid_1[ROB_NUM];
+  bool pos_bit_1;
+  int enq_ptr_1;
+  int deq_ptr_1;
+  int count_1;
+  bool trap_1[ROB_NUM];
 };
 
 bool rob_cmp(int idx1, bool bit1, int idx2, bool bit2);

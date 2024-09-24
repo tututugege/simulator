@@ -33,6 +33,7 @@ void RISCV_CSR(bool input_data[BIT_WIDTH], bool *output_data) {
   bool general_regs[1024];
   bool csr[1 + 0xfff][32] = {0};
   bool instruction[32];
+
   bool bit_this_pc[32];
   bool bit_load_data[32];
   bool this_priviledge[2];
@@ -476,7 +477,7 @@ void RISCV_CSR(bool input_data[BIT_WIDTH], bool *output_data) {
           cvt_bit_to_number_unsigned(bit_immi_s_type, 12);
       copy_indice(bit_csr_data_result, 0, bit_csr_data, 0, 32);
       if (number_immi_s_type_unsigned == 0b100100000) {
-        if (log)
+        if (LOG)
           cout << "sfence.vma" << endl;
         break;
       }

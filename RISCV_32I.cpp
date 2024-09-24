@@ -49,8 +49,9 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
     if (*(input_data + POS_IN_INST_VALID + i)) {
       back.in.inst[i] = decode(instruction[i]);
       back.in.inst[i].pc = number_pc_unsigned[i];
+      back.in.valid[i] = true;
     } else {
-      back.in.inst[i].type = INVALID;
+      back.in.valid[i] = false;
     }
   }
   // rename -> execute -> write back

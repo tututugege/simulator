@@ -2,7 +2,8 @@
 #include <ROB.h>
 #include <TOP.h>
 #include <config.h>
-#include <iostream>
+#include <diff.h>
+#include <string.h>
 
 bool rob_cmp(int idx1, bool bit1, int idx2, bool bit2) {
   bool ret;
@@ -16,148 +17,148 @@ bool rob_cmp(int idx1, bool bit1, int idx2, bool bit2) {
 }
 
 void ROB::comb() {
-  out.enq_idx = enq_ptr;
-  out.enq_bit = entry[0].pos_bit;
+  /**/
+  /*int ld_commit_num = 0;*/
+  /*bool store = false;*/
+  /*int i = deq_ptr;*/
+  /*int num = 0;*/
+  /*while (entry[i].complete && num < ISSUE_WAY) {*/
+  /*  if ((entry[i].op == SW || entry[i].op == SH || entry[i].op == SB)) {*/
+  /**/
+  /*    if (store)*/
+  /*      break;*/
+  /*    else {*/
+  /*      store = true;*/
+  /*    }*/
+  /*  }*/
+  /**/
+  /*  out.commit_entry[num] = entry[deq_ptr];*/
+  /*  num++;*/
+  /**/
+  /*  if (entry[i].op == LW || entry[i].op == LB || entry[i].op == LH ||*/
+  /*      entry[i].op == LHU || entry[i].op == LBU)*/
+  /*    ld_commit_num++;*/
+  /**/
+  /*  i = (i + 1) % ROB_NUM;*/
+  /*}*/
+  /**/
+  /*while (num < ISSUE_WAY) {*/
+  /*  out.commit_entry[num].op = NONE;*/
+  /*  num++;*/
+  /*}*/
+  /**/
+  /*out.ld_commit_num = ld_commit_num;*/
 
-  int ld_commit_num = 0;
-  bool store = false;
-  int i = deq_ptr;
-  int num = 0;
-  while (entry[i].complete && num < ISSUE_WAY) {
-    if ((entry[i].op == SW || entry[i].op == SH || entry[i].op == SB)) {
+  // 读取提交的指令
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    int idx = (deq_ptr + i) % ROB_NUM;
+    entry.to_sram.raddr[i] = idx;
+  }
+  entry.read();
 
-      if (store)
-        break;
-      else {
-        store = true;
-      }
-    }
-
-    out.commit_entry[num] = entry[deq_ptr];
-    num++;
-
-    if (entry[i].op == LW || entry[i].op == LB || entry[i].op == LH ||
-        entry[i].op == LHU || entry[i].op == LBU)
-      ld_commit_num++;
-
-    i = (i + 1) % ROB_NUM;
+  int complete_num;
+  for (complete_num = 0; complete_num < ISSUE_WAY; complete_num++) {
+    int idx = (deq_ptr + complete_num) % ROB_NUM;
+    out.commit_entry[complete_num] = entry.from_sram.rdata[complete_num];
+    out.valid[complete_num] = valid[idx] && complete[idx];
+    if (out.valid[complete_num] == false)
+      break;
   }
 
-  while (num < ISSUE_WAY) {
-    out.commit_entry[num].op = NONE;
-    num++;
+  for (; complete_num < ISSUE_WAY; complete_num++) {
+    out.valid[complete_num] = false;
   }
 
-  out.ld_commit_num = ld_commit_num;
+  // 提交指令
+  int commit_num = 0;
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    int idx = (deq_ptr + i) % ROB_NUM;
+    if (complete[idx] == false || valid[idx] == false)
+      break;
+
+    complete_1[idx] = false;
+    branch_1[idx] = false;
+    valid_1[idx] = false;
+
+    commit_num++;
+  }
+
+  deq_ptr_1 = (deq_ptr + commit_num) % ROB_NUM;
+
+  // dispatch进入rob
+  for (int i = 0; i < INST_WAY; i++) {
+    ROB_entry enq_entry = {in.PC[i],
+                           in.type[i],
+                           in.dest_preg_idx[i],
+                           in.dest_areg_idx[i],
+                           in.old_dest_preg_idx[i],
+                           in.dest_en[i]};
+    entry.to_sram.waddr[i] = enq_ptr_1;
+    entry.to_sram.we[i] = in.valid[i];
+    entry.to_sram.wdata[i] = enq_entry;
+    valid_1[enq_ptr_1] = true;
+    enq_ptr_1 = (enq_ptr_1 + 1) % ROB_NUM;
+    if (enq_ptr_1 == 0)
+      pos_bit_1 = !pos_bit;
+    count++;
+  }
+
+  // 3. 执行完毕的标记
+  for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
+    if (in.complete[i] == false)
+      continue;
+
+    complete_1[in.idx[i]] = true;
+    branch_1[in.idx[i]] = in.br_taken[i];
+  }
 }
 
 void ROB::seq() {
 
-  // 3. retire
-  bool store = false;
-  int i = 0;
+  if (LOG) {
+    for (int i = 0; i < ISSUE_WAY; i++) {
+      if (out.valid[i]) {
+#ifdef CONFIG_DIFFTEST
+        back.arch_update(out.commit_entry[i].dest_areg_idx,
+                         out.commit_entry[i].dest_preg_idx);
+        back.difftest(out.commit_entry[i].PC + 4);
+#endif
 
-  while (entry[deq_ptr].complete && i < ISSUE_WAY) {
-    if ((entry[deq_ptr].op == SW || entry[deq_ptr].op == SH ||
-         entry[deq_ptr].op == SB)) {
-
-      if (store)
-        break;
-      else {
-        /*cvt_number_to_bit(output_data, entry[deq_ptr].store_addr);*/
-        /*POS_OUT_STORE_ADDR = entry[deq_ptr].store_addr;*/
+        cout << "ROB commit PC 0x" << hex << out.commit_entry[i].PC << endl;
       }
     }
-
-#ifdef CONFIG_DIFFTEST
-    back.difftest(entry[deq_ptr].PC + 4);
-#endif
-    i++;
-    entry[deq_ptr].complete = false;
-    entry[deq_ptr].branch = false;
-    entry[deq_ptr].op = NONE;
-    deq_ptr = (deq_ptr + 1) % ROB_NUM;
-    if (deq_ptr == 0)
-      pos_invert();
-    count--;
-
-    if (log) {
-      cout << "ROB commit PC 0x" << hex << entry[deq_ptr].PC << endl;
-      /*rename.print_reg();*/
-      /*rename.print_RAT();*/
-    }
   }
 
-  // 1 dispatch进入rob
-  // 处理rob满的情况
-  /*if (ROB_NUM - count < WAY) {*/
-  /*  out.full = true;*/
-  /*  return;*/
-  /*}*/
+  /*rename.print_reg();*/
+  /*rename.print_RAT();*/
 
-  out.full = false;
-
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.op[i] != NONE) {
-      entry[enq_ptr].PC = in.PC[i];
-      entry[enq_ptr].op = in.op[i];
-      entry[enq_ptr].dest_preg_idx = in.dest_preg_idx[i];
-      entry[enq_ptr].dest_areg_idx = in.dest_areg_idx[i];
-      entry[enq_ptr].dest_en = in.dest_en[i];
-      entry[enq_ptr].old_dest_preg_idx = in.old_dest_preg_idx[i];
-      entry[enq_ptr].complete = false;
-      enq_ptr = (enq_ptr + 1) % ROB_NUM;
-      if (enq_ptr == 0)
-        pos_invert();
-      count++;
-    }
+  entry.write();
+  for (int i = 0; i < ROB_NUM; i++) {
+    branch[i] = branch_1[i];
+    complete[i] = complete_1[i];
+    trap[i] = trap_1[i];
+    valid[i] = valid_1[i];
   }
 
-  // 2. execute
-  for (int i = 0; i < ALU_NUM; i++) {
-    if (in.complete[i] == false)
-      continue;
-
-    entry[in.idx[i]].complete = true;
-    if (in.br_taken[i]) {
-      entry[in.idx[i]].branch = true;
-    }
-  }
-
-  for (int i = 0; i < AGU_NUM; i++) {
-    int j = i + ALU_NUM;
-    if (in.complete[j] == false)
-      continue;
-
-    entry[in.idx[j]].complete = true;
-
-    if (entry[in.idx[j]].op == SW || entry[in.idx[j]].op == SH ||
-        entry[in.idx[j]].op == SB) {
-      entry[in.idx[j]].store_addr = in.store_addr[i];
-      entry[in.idx[j]].store_data = in.store_data[i];
-      /*entry[in.idx[j]].store_size = in.store_size[i];*/
-    }
-  }
+  pos_bit = pos_bit_1;
+  enq_ptr = enq_ptr_1;
+  deq_ptr = deq_ptr_1;
+  count = count_1;
+  out.enq_idx = enq_ptr;
+  out.enq_bit = pos_bit;
 }
 
 void ROB::init() {
 
-  for (int i = 0; i < ROB_NUM; i++) {
-    entry[i].op = NONE;
-    entry[i].pos_bit = 0;
-    entry[i].complete = false;
-  }
+  /*for (int i = 0; i < ROB_NUM; i++) {*/
+  /*  entry[i].op = NONE;*/
+  /*  entry[i].pos_bit = 0;*/
+  /*  entry[i].complete = false;*/
+  /*}*/
   count = 0;
   deq_ptr = 0;
   enq_ptr = 0;
   count = 0;
-}
-
-void ROB::pos_invert() {
-
-  for (int i = 0; i < ROB_NUM; i++) {
-    entry[i].pos_bit = !entry[i].pos_bit;
-  }
 }
 
 /*uint32_t ROB::get_pc(int idx) { return entry[idx].PC; }*/

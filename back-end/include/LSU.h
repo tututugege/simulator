@@ -2,12 +2,10 @@
 class STQ {};
 
 typedef struct {
-  uint32_t pc;
   uint32_t addr;
   uint32_t size;
   uint32_t dest_preg_idx;
   int rob_idx;
-  bool rob_bit;
   bool valid;
 } LDQ_entry;
 
@@ -21,7 +19,7 @@ typedef struct {
   LDQ_entry write;
 
   // 提交数目
-  int commit_num;
+  bool commit[ISSUE_WAY];
 } LDQ_in;
 
 typedef struct {
@@ -42,6 +40,11 @@ private:
   int enq_ptr;
   int deq_ptr;
   int count;
+
+  LDQ_entry entry_1[LDQ_NUM];
+  int enq_ptr_1;
+  int deq_ptr_1;
+  int count_1;
 };
 
 /*typedef struct {*/

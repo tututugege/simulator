@@ -2,7 +2,6 @@
 #include <TOP.h>
 #define BIT_WIDTH 3500
 extern const int bit_width;
-extern bool log;
 extern int time_i;
 void RISCV(bool input_data[BIT_WIDTH], bool *output_data);
 void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data);
