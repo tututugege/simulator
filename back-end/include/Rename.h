@@ -32,6 +32,10 @@ typedef struct Rename_in {
   int commit_dest_preg_idx[ISSUE_WAY];
   int commit_dest_areg_idx[ISSUE_WAY];
   int commit_old_dest_preg_idx[ISSUE_WAY];
+
+  // branch 使用checkpoint恢复并回收
+  bool br_taken;
+  int br_gp_idx;
 } Rename_in;
 
 class Rename {
@@ -58,7 +62,6 @@ private:
   void free_gp(int idx);
   void gp_write(int idx);
 
-  /*SRAM*/
   cRAT RAT;
   FIFO<uint32_t> free_list =
       FIFO<uint32_t>(INST_WAY, ISSUE_WAY, PRF_NUM - ARF_NUM, 6);
@@ -66,14 +69,8 @@ private:
   // register
   bool gp_v[CHECKPOINT_NUM];
   bool gp[CHECKPOINT_NUM][PRF_NUM]; // CAM
-  /*int free_list_deq_ptr = 0;*/
-  /*int free_list_enq_ptr = ARF_NUM;*/
-  /*int free_list_count = ARF_NUM;*/
 
   // register next val
   bool gp_v_1[CHECKPOINT_NUM];
   bool gp_1[CHECKPOINT_NUM][PRF_NUM]; // CAM
-  /*int free_list_deq_ptr_1 = 0;*/
-  /*int free_list_enq_ptr_1 = ARF_NUM;*/
-  /*int free_list_count_1 = ARF_NUM;*/
 };
