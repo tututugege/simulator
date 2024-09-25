@@ -76,6 +76,7 @@ typedef struct Inst_info {
   Inst_op op;
   uint32_t imm;
   uint32_t pc;
+  uint32_t tag;
 } Inst_info;
 
 /*typedef struct Inst_res {*/

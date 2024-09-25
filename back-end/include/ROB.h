@@ -9,10 +9,6 @@ typedef struct ROB_entry {
   int dest_areg_idx;
   int old_dest_preg_idx;
   bool dest_en;
-
-  // 放入store queue
-  /*int store_addr;*/
-  /*int store_data;*/
 } ROB_entry;
 
 typedef struct ROB_in {
@@ -29,10 +25,8 @@ typedef struct ROB_in {
   // execute完成情况 store地址
   bool complete[ALU_NUM + AGU_NUM];
   bool br_taken[ALU_NUM];
+  uint32_t br_tag;
   int idx[ALU_NUM + AGU_NUM];
-  /*uint32_t store_addr[AGU_NUM];*/
-  /*uint32_t store_data[AGU_NUM];*/
-  /*uint32_t store_size[AGU_NUM];*/
 
 } ROB_in;
 
@@ -54,9 +48,6 @@ public:
   ROB_in in;
   ROB_out out;
 
-  bool branch_1[ROB_NUM];
-  bool complete_1[ROB_NUM];
-
 private:
   SRAM<ROB_entry> entry = SRAM<ROB_entry>(3, 2, ROB_NUM, sizeof(ROB_entry) * 8);
   bool pos_bit;
@@ -69,6 +60,8 @@ private:
   bool trap[ROB_NUM];
 
   bool valid_1[ROB_NUM];
+  bool branch_1[ROB_NUM];
+  bool complete_1[ROB_NUM];
   bool pos_bit_1;
   int enq_ptr_1;
   int deq_ptr_1;
