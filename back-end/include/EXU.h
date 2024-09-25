@@ -34,24 +34,3 @@ public:
   ALU_in in;
   ALU_out out;
 };
-
-typedef struct BRU_in {
-  uint32_t pc;
-  uint32_t off;
-  uint32_t src1;
-  uint32_t src2;
-  Inst_op op;
-} BRU_in;
-
-typedef struct BRU_out {
-  uint32_t pc_next;
-  bool branch;
-  bool idle;
-} BRU_out;
-
-class BRU {
-public:
-  void cycle();
-  BRU_in in;
-  BRU_out out;
-};

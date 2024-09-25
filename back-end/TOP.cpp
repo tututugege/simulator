@@ -51,7 +51,14 @@ void Back_Top::init() {
 
 void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   // 组合逻辑
-  // pipeline1: 重命名 dispatch
+  // pipeline1: 重命名 dispatch 分配分支tag
+
+  for (int i = 0; i < INST_WAY; i++) {
+    br_tag.in.alloc[i] =
+        in.valid[i] && (in.inst[i].type == BTYPE || in.inst[i].type == JTYPE ||
+                        in.inst[i].op == JAL);
+    in.inst[i].tag = br_tag.out.now_tag;
+  }
 
   for (int i = 0; i < INST_WAY; i++) {
     rename.in.valid[i] = in.valid[i];
@@ -191,15 +198,26 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       bru[i].cycle();
 
       rob.in.complete[i] = true;
+      rob.in.br_taken[i] = bru[i].out.br_taken;
       rob.in.idx[i] = int_iq.out.pos_idx[i];
 
       prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
       prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_idx;
       prf.to_sram.wdata[i] = alu[i].out.res;
 
-    } else
+    } else {
       rob.in.complete[i] = false;
+      rob.in.br_taken[i] = false;
+    }
+
+    if (*(output_data + POS_OUT_BRANCH) == false) {
+      *(output_data + POS_OUT_BRANCH) = rob.in.br_taken[i];
+      cvt_number_to_bit_unsigned(output_data + POS_OUT_PC, bru[i].out.pc_next,
+                                 32);
+    }
   }
+
+  rename.in.br_taken = *(output_data + POS_OUT_BRANCH);
 
   // load指令计算地址
   Inst_info inst = ld_iq.out.inst[0];

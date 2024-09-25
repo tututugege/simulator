@@ -49,43 +49,4 @@ void ALU::cycle() {
   }
 }
 
-void BRU::cycle() {
-  uint32_t pc_br = in.pc + in.off;
-
-  switch (in.op) {
-  case BEQ:
-    out.branch = (in.src1 == in.src2);
-    break;
-  case BNE:
-    out.branch = (in.src1 != in.src2);
-    break;
-  case BGE:
-    out.branch = ((signed)in.src1 >= (signed)in.src2);
-    break;
-  case BLT:
-    out.branch = ((signed)in.src1 < (signed)in.src2);
-    break;
-  case BGEU:
-    out.branch = ((unsigned)in.src1 > (unsigned)in.src2);
-    break;
-  case BLTU:
-    out.branch = ((unsigned)in.src1 >= (unsigned)in.src2);
-    break;
-  case JAL:
-    out.branch = true;
-    break;
-  case JALR:
-    out.branch = true;
-    pc_br = (in.src1 + in.off) & (~0x1);
-    break;
-  default:
-    out.branch = false;
-  }
-
-  if (out.branch)
-    out.pc_next = pc_br;
-  else
-    out.pc_next = in.pc + 4;
-}
-
 void AGU::cycle() { out.addr = in.base + in.off; }
