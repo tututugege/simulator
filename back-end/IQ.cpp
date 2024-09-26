@@ -48,7 +48,7 @@ void IQ::comb() {
   alloc_IQ(IQ_idx);
   // 指令进入发射队列
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i]) {
+    if (in.valid[i] && !(in.br_taken && in.inst[i].tag == in.br_tag)) {
 
       valid_1[IQ_idx[i]] = true;
       pos_idx_1[IQ_idx[i]] = in.pos_idx[i];
@@ -56,8 +56,8 @@ void IQ::comb() {
       src1_ready_1[IQ_idx[i]] = in.src1_ready[i];
       src2_ready_1[IQ_idx[i]] = in.src2_ready[i];
 
-      entry.to_sram.wdata[i] = in.inst[i];
       entry.to_sram.waddr[i] = IQ_idx[i];
+      entry.to_sram.wdata[i] = in.inst[i];
     }
     entry.to_sram.we[i] = in.valid[i];
   }
@@ -73,7 +73,8 @@ void IQ::comb() {
 
   for (int i = 0; i < fu_num; i++) {
     for (int j = 0; j < entry_num; j++) {
-      if (!valid[j] || !src1_ready[j] || !src2_ready[j])
+      if (!valid[j] || !src1_ready[j] || !src2_ready[j] ||
+          in.br_taken && tag[j] == in.br_tag)
         continue;
 
       bool sel = false;
@@ -111,9 +112,19 @@ void IQ::comb() {
     }
   }
   entry.read();
+
   for (int i = 0; i < fu_num; i++) {
-    out.inst[i] = entry.from_sram.rdata[i];
-    out.pos_idx[i] = pos_idx[oldest_i[i]];
+    if (oldest_i[i] != -1) {
+      out.inst[i] = entry.from_sram.rdata[i];
+      out.pos_idx[i] = pos_idx[oldest_i[i]];
+    }
+  }
+
+  // 清理发射队列
+  for (int i = 0; i < IQ_NUM; i++) {
+    if (in.br_taken && tag[i] == in.br_tag) {
+      valid_1[i] = false;
+    }
   }
 }
 

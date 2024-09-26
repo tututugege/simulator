@@ -795,33 +795,6 @@ uint32_t load_data(Inst_op op, bool *offset) {
       output_data_from_RISCV + POS_OUT_LOAD_ADDR, 32);
   uint32_t data = p_memory[address / 8];
 
-  if (offset[1])
-    data = data >> 8;
-
-  if (offset[0])
-    data = data >> 16;
-
-  switch (op) {
-  case LH:
-    data = data & 0x0000FFFF;
-    if (data & 0x00008000)
-      data = data | 0xFFFF0000;
-    break;
-  case LB:
-    data = data & 0x0000FFFF;
-    if (data & 0x00000080)
-      data = data | 0xFFFFFF00;
-    break;
-  case LHU:
-    data = data & 0x0000FFFF;
-    break;
-  case LBU:
-    data = data & 0x0000FFFF;
-    break;
-  default:
-    break;
-  }
-
   return data;
 }
 
@@ -832,12 +805,12 @@ void store_data(Inst_op op) {
       output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
 
   uint32_t mask;
-  if (op == SH)
-    mask = 0xFFFF;
-  else if (op == SB)
-    mask = 0xFF;
-  else
-    mask = 0xFFFFFFFF;
+  /*if (op == SH)*/
+  /*  mask = 0xFFFF;*/
+  /*else if (op == SB)*/
+  /*  mask = 0xFF;*/
+  /*else*/
+  /*  mask = 0xFFFFFFFF;*/
 
   if (address & 0x1) {
     data = data << 8;

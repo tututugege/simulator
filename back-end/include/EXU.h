@@ -1,4 +1,5 @@
 #include <config.h>
+#include <cstdint>
 
 typedef struct AGU_in {
   uint32_t base;
@@ -16,11 +17,17 @@ public:
   AGU_in in;
   AGU_out out;
 };
+typedef struct ALU_op {
+  Inst_op op;
+  uint32_t func3;
+  bool func7_5;
+  bool src2_is_imm;
+} ALU_op;
 
 typedef struct ALU_in {
   uint32_t src1;
   uint32_t src2;
-  Inst_op op;
+  ALU_op alu_op;
 } ALU_in;
 
 typedef struct ALU_out {
