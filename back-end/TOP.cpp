@@ -1,24 +1,22 @@
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
-#include <cstdint>
 #include <cvt.h>
 #include <diff.h>
 
-uint32_t load_data(Inst_op op, bool *offset);
-void store_data(Inst_op op);
+/*uint32_t load_data();*/
+/*void store_data();*/
 
 void operand_mux(Inst_info inst, uint32_t reg_data1, uint32_t reg_data2,
                  uint32_t &operand1, uint32_t &operand2) {
-  if (inst.op == AUIPC || inst.op == JALR || inst.op == JAL)
+  if (inst.op == AUIPC || inst.op == JAL || inst.op == JALR)
     operand1 = inst.pc;
   else if (inst.op == LUI)
     operand1 = 0;
   else
     operand1 = reg_data1;
 
-  if (inst.type == ITYPE && inst.op != JAL || inst.type == STYPE ||
-      inst.type == UTYPE) {
+  if (inst.src2_is_imm) {
     operand2 = inst.imm;
   } else if (inst.op == JALR && inst.op == JAL) {
     operand2 = 4;
@@ -51,15 +49,17 @@ void Back_Top::init() {
 
 void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   // 组合逻辑
-  // pipeline1: 重命名 dispatch 分配分支tag
+  // pipeline1:
 
+  // 分配分支tag
   for (int i = 0; i < INST_WAY; i++) {
     br_tag.in.alloc[i] =
-        in.valid[i] && (in.inst[i].type == BTYPE || in.inst[i].type == JTYPE ||
-                        in.inst[i].op == JAL);
-    in.inst[i].tag = br_tag.out.now_tag;
+        in.valid[i] &&
+        (in.inst[i].op == BR || in.inst[i].op == JALR || in.inst[i].op == JAL);
+    in.inst[i].tag = br_tag.out.now_tag[i];
   }
 
+  // 重命名
   for (int i = 0; i < INST_WAY; i++) {
     rename.in.valid[i] = in.valid[i];
     rename.in.src1_areg_idx[i] = in.inst[i].src1_idx;
@@ -75,32 +75,41 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   for (int i = 0; i < INST_WAY; i++) {
     rob.in.valid[i] = in.valid[i];
     rob.in.PC[i] = in.inst[i].pc;
-    rob.in.type[i] = in.inst[i].type;
+    rob.in.op[i] = in.inst[i].op;
     rob.in.dest_areg_idx[i] = in.inst[i].dest_idx;
     rob.in.dest_preg_idx[i] = rename.out.dest_preg_idx[i];
     rob.in.dest_en[i] = in.inst[i].dest_en;
     rob.in.old_dest_preg_idx[i] = rename.out.old_dest_preg_idx[i];
   }
 
-  // ld queue入队输入
+  // ld queue分配
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.inst[i].type == LTYPE) {
-      /*ldq.in.alloc[i].pc = in.inst[i].pc;*/
+    if (in.inst[i].op == LOAD) {
       ldq.in.alloc[i].dest_preg_idx = rename.out.dest_preg_idx[i];
-      /*ldq.in.alloc[i].rob_bit =*/
-      /*    (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit :
-       * rob.out.enq_bit;*/
       ldq.in.alloc[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
-      /*ldq.in.alloc[i].size = rename.out.dest_preg_idx[i];*/
+      ldq.in.alloc[i].valid = true;
     } else {
       ldq.in.alloc[i].valid = false;
     }
   }
 
+  // st queue分配
+  for (int i = 0; i < INST_WAY; i++) {
+    if (in.inst[i].op == STORE) {
+      stq.in.alloc[i].valid = false;
+    } else {
+      stq.in.alloc[i].valid = false;
+    }
+  }
+
+  // pipeline2:
+  // execute 执行
   // iq入队输入
+  // 仲裁 发射指令
+
   for (int i = 0; i < INST_WAY; i++) {
     int_iq.in.valid[i] =
-        in.inst[i].type != LTYPE && in.inst[i].type != STYPE && in.valid[i];
+        in.inst[i].op != LOAD && in.inst[i].op != STORE && in.valid[i];
     int_iq.in.src1_ready[i] = true;
     int_iq.in.src2_ready[i] = true;
 
@@ -109,10 +118,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
     int_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
 
-    int_iq.in.inst[i].pc = in.inst[i].pc;
-    int_iq.in.inst[i].type = in.inst[i].type;
-    int_iq.in.inst[i].op = in.inst[i].op;
-    int_iq.in.inst[i].imm = in.inst[i].imm;
+    int_iq.in.inst[i] = in.inst[i];
     int_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
     int_iq.in.inst[i].src1_en = rename.in.src1_areg_en[i];
     int_iq.in.inst[i].src2_idx = rename.out.src2_preg_idx[i];
@@ -120,7 +126,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     int_iq.in.inst[i].dest_idx = rename.out.dest_preg_idx[i];
     int_iq.in.inst[i].dest_en = rename.in.dest_areg_en[i];
 
-    st_iq.in.valid[i] = in.inst[i].type == STYPE && in.valid[i];
+    st_iq.in.valid[i] = in.inst[i].op == STORE && in.valid[i];
     st_iq.in.src1_ready[i] = !rename.in.src1_areg_en[i];
     st_iq.in.src2_ready[i] = !rename.in.src2_areg_en[i];
 
@@ -128,17 +134,14 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
         (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
 
     st_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
-    st_iq.in.inst[i].pc = in.inst[i].pc;
-    st_iq.in.inst[i].type = in.inst[i].type;
-    st_iq.in.inst[i].op = in.inst[i].op;
-    st_iq.in.inst[i].imm = in.inst[i].imm;
+    st_iq.in.inst[i] = in.inst[i];
     st_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
     st_iq.in.inst[i].src1_en = true;
     st_iq.in.inst[i].src2_idx = rename.out.src2_preg_idx[i];
     st_iq.in.inst[i].src2_en = true;
     st_iq.in.inst[i].dest_en = false;
 
-    ld_iq.in.valid[i] = in.inst[i].type == LTYPE && in.valid[i];
+    ld_iq.in.valid[i] = in.inst[i].op == LOAD && in.valid[i];
     ld_iq.in.src1_ready[i] = !rename.in.src1_areg_en[i];
     ld_iq.in.src2_ready[i] = !rename.in.src2_areg_en[i];
 
@@ -146,10 +149,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
         (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
 
     ld_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
-    ld_iq.in.inst[i].pc = in.inst[i].pc;
-    ld_iq.in.inst[i].type = in.inst[i].type;
-    ld_iq.in.inst[i].op = in.inst[i].op;
-    ld_iq.in.inst[i].imm = in.inst[i].imm;
+    ld_iq.in.inst[i] = in.inst[i];
     ld_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
     ld_iq.in.inst[i].src1_en = rename.in.src1_areg_en[i];
     ld_iq.in.inst[i].src2_en = false;
@@ -157,11 +157,6 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     ld_iq.in.inst[i].dest_en = rename.in.dest_areg_en[i];
   }
 
-  // pipeline2:
-
-  // execute 执行
-
-  // select 仲裁 发射指令 ALU_NUM + AGU_NUM
   int_iq.comb();
   ld_iq.comb();
   st_iq.comb();
@@ -187,18 +182,20 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       operand_mux(inst, prf.from_sram.rdata[2 * i],
                   prf.from_sram.rdata[2 * i + 1], alu[i].in.src1,
                   alu[i].in.src2);
-      alu[i].in.op = inst.op;
+      alu[i].in.alu_op.op = inst.op;
+      alu[i].in.alu_op.func3 = inst.func3;
+      alu[i].in.alu_op.func7_5 = inst.func7_5;
+      alu[i].in.alu_op.src2_is_imm = inst.src2_is_imm;
       alu[i].cycle();
 
       bru[i].in.src1 = prf.from_sram.rdata[2 * 1];
-      bru[i].in.src2 = prf.from_sram.rdata[2 * 1 + 1];
       bru[i].in.pc = inst.pc;
+      bru[i].in.alu_out = (bool)alu[i].out.res;
       bru[i].in.off = inst.imm;
       bru[i].in.op = inst.op;
       bru[i].cycle();
 
       rob.in.complete[i] = true;
-      rob.in.br_taken[i] = bru[i].out.br_taken;
       rob.in.idx[i] = int_iq.out.pos_idx[i];
 
       prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
@@ -207,11 +204,27 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
     } else {
       rob.in.complete[i] = false;
-      rob.in.br_taken[i] = false;
+      alu[i].cycle();
+      bru[i].cycle();
+    }
+
+    for (int i = 0; i < BRU_NUM; i++) {
+      if (int_iq.out.valid[i] && bru[i].out.br_taken) {
+        rob.in.br_taken = true;
+        rob.in.br_tag = int_iq.out.inst[i].tag;
+
+        int_iq.in.br_taken = true;
+        int_iq.in.br_tag = int_iq.out.inst[i].tag;
+        ld_iq.in.br_taken = true;
+        ld_iq.in.br_tag = int_iq.out.inst[i].tag;
+        st_iq.in.br_taken = true;
+        st_iq.in.br_tag = int_iq.out.inst[i].tag;
+        break;
+      }
     }
 
     if (*(output_data + POS_OUT_BRANCH) == false) {
-      *(output_data + POS_OUT_BRANCH) = rob.in.br_taken[i];
+      *(output_data + POS_OUT_BRANCH) = rob.in.br_taken;
       cvt_number_to_bit_unsigned(output_data + POS_OUT_PC, bru[i].out.pc_next,
                                  32);
     }
@@ -233,19 +246,20 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     ldq.in.write.valid = true;
     ldq.in.write.rob_idx = ld_iq.out.pos_idx[0];
     ldq.in.write.addr = agu[0].out.addr;
+    ldq.in.write.size = inst.func3;
 
     prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;
     prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_idx;
-
-    /*prf.wdata[PRF_WR_LD_PORT] = read_data();*/
+    /*prf.to_sram.wdata[PRF_WR_LD_PORT] = load_data();*/
 
     for (int i = 0; i < ISSUE_WAY; i++) {
-      ldq.in.commit[i] = rob.out.commit_entry[i].type == LTYPE;
+      ldq.in.commit[i] = (rob.out.commit_entry[i].op == LOAD);
     }
-    /*rob.in.complete[ALU_NUM] = true;*/
+    rob.in.complete[ALU_NUM] = true;
     /*rob.in.idx[ALU_NUM] = ld_iq.out.pos_idx[0];*/
-    /*rob.in.complete[ALU_NUM] = false;*/
   }
+
+  inst = st_iq.out.inst[0];
 
   // store指令计算地址 写入store queue
   // 操作数选择
@@ -254,6 +268,9 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   agu[1].cycle();
 
   if (st_iq.out.valid[0]) {
+    stq.in.write.valid = true;
+    stq.in.write.addr = agu[1].out.addr;
+    stq.in.write.size = inst.func3;
   }
 
   rob.comb();
@@ -287,38 +304,4 @@ void Back_Top::Back_seq(bool *input_data, bool *output_data) {
   int_iq.seq(); // dispatch写入发射队列  发射后删除
   ld_iq.seq();  // dispatch写入发射队列  发射后删除
   st_iq.seq();  // dispatch写入发射队列  发射后删除
-
-  /*  ROB_entry commit_entry;*/
-  /*  while ((commit_entry = rob.commit()).complete) {*/
-  /*    if (commit_entry.dest_en) {*/
-  /*      rename.free_reg(commit_entry.old_dest_preg_idx);*/
-  /*      rename.arch_RAT[commit_entry.dest_areg_idx] =
-   * commit_entry.dest_preg_idx;*/
-  /*    }*/
-  /**/
-  /*    if (commit_entry.op == SW || commit_entry.op == SH ||*/
-  /*        commit_entry.op == SB) {*/
-  /*    }*/
-  /**/
-  /*    if (log) {*/
-  /*      cout << "ROB commit PC 0x" << hex << commit_entry.PC << endl;*/
-  /*      rename.print_reg();*/
-  /*rename.print_RAT();*/
-  /*    }*/
-  /**/
-  /*#ifdef CONFIG_DIFFTEST*/
-  /*    for (int i = 0; i < ARF_NUM; i++) {*/
-  /*      dut.gpr[i] = rename.reg(i);*/
-  /*    }*/
-  /**/
-  /*    if (commit_entry.branch) {*/
-  /**/
-  /*      dut.pc = cvt_bit_to_number_unsigned(output_data + POS_OUT_PC, 32);*/
-  /*    } else {*/
-  /*      dut.pc = commit_entry.PC + 4;*/
-  /*    }*/
-  /**/
-  /*    difftest_step();*/
-  /*#endif*/
-  /*  }*/
 }

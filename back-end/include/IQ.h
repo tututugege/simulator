@@ -22,14 +22,13 @@ typedef struct IQ_in {
   uint32_t br_tag;
 } IQ_in;
 
-typedef struct IQ_entry {
-  int dest_idx;
-  bool dest_en;
-  Inst_type type;
-  Inst_op op;
-  uint32_t imm;
-  uint32_t pc;
-} IQ_entry;
+/*typedef struct IQ_entry {*/
+/*  int dest_idx;*/
+/*  bool dest_en;*/
+/*  Inst_op op;*/
+/*  uint32_t imm;*/
+/*  uint32_t pc;*/
+/*} IQ_entry;*/
 
 class IQ {
 public:
@@ -42,7 +41,7 @@ public:
 
 private:
   void alloc_IQ(int *);
-  SRAM<IQ_entry> entry;
+  SRAM<Inst_info> entry;
 
   /*register*/
   vector<bool> valid;
