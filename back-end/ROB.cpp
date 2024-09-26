@@ -3,7 +3,6 @@
 #include <TOP.h>
 #include <config.h>
 #include <diff.h>
-#include <string.h>
 
 bool rob_cmp(int idx1, bool bit1, int idx2, bool bit2) {
   bool ret;
@@ -17,38 +16,6 @@ bool rob_cmp(int idx1, bool bit1, int idx2, bool bit2) {
 }
 
 void ROB::comb() {
-  /**/
-  /*int ld_commit_num = 0;*/
-  /*bool store = false;*/
-  /*int i = deq_ptr;*/
-  /*int num = 0;*/
-  /*while (entry[i].complete && num < ISSUE_WAY) {*/
-  /*  if ((entry[i].op == SW || entry[i].op == SH || entry[i].op == SB)) {*/
-  /**/
-  /*    if (store)*/
-  /*      break;*/
-  /*    else {*/
-  /*      store = true;*/
-  /*    }*/
-  /*  }*/
-  /**/
-  /*  out.commit_entry[num] = entry[deq_ptr];*/
-  /*  num++;*/
-  /**/
-  /*  if (entry[i].op == LW || entry[i].op == LB || entry[i].op == LH ||*/
-  /*      entry[i].op == LHU || entry[i].op == LBU)*/
-  /*    ld_commit_num++;*/
-  /**/
-  /*  i = (i + 1) % ROB_NUM;*/
-  /*}*/
-  /**/
-  /*while (num < ISSUE_WAY) {*/
-  /*  out.commit_entry[num].op = NONE;*/
-  /*  num++;*/
-  /*}*/
-  /**/
-  /*out.ld_commit_num = ld_commit_num;*/
-
   // 读取提交的指令
   for (int i = 0; i < ISSUE_WAY; i++) {
     int idx = (deq_ptr + i) % ROB_NUM;
@@ -77,7 +44,6 @@ void ROB::comb() {
       break;
 
     complete_1[idx] = false;
-    branch_1[idx] = false;
     valid_1[idx] = false;
 
     commit_num++;
@@ -87,29 +53,43 @@ void ROB::comb() {
 
   // dispatch进入rob
   for (int i = 0; i < INST_WAY; i++) {
-    ROB_entry enq_entry = {in.PC[i],
-                           in.type[i],
-                           in.dest_preg_idx[i],
-                           in.dest_areg_idx[i],
-                           in.old_dest_preg_idx[i],
-                           in.dest_en[i]};
-    entry.to_sram.waddr[i] = enq_ptr_1;
-    entry.to_sram.we[i] = in.valid[i];
-    entry.to_sram.wdata[i] = enq_entry;
-    valid_1[enq_ptr_1] = true;
-    enq_ptr_1 = (enq_ptr_1 + 1) % ROB_NUM;
-    if (enq_ptr_1 == 0)
-      pos_bit_1 = !pos_bit;
-    count++;
+    if (in.valid[i] && !(in.br_taken && in.tag[i] == in.br_tag)) {
+      ROB_entry enq_entry = {in.PC[i],
+                             in.op[i],
+                             in.dest_preg_idx[i],
+                             in.dest_areg_idx[i],
+                             in.old_dest_preg_idx[i],
+                             in.dest_en[i]};
+      entry.to_sram.waddr[i] = enq_ptr_1;
+      entry.to_sram.we[i] = true;
+      entry.to_sram.wdata[i] = enq_entry;
+      valid_1[enq_ptr_1] = true;
+      tag_1[enq_ptr_1] = in.tag[i];
+      enq_ptr_1 = (enq_ptr_1 + 1) % ROB_NUM;
+      if (enq_ptr_1 == 0)
+        pos_bit_1 = !pos_bit;
+      count++;
+    } else {
+      entry.to_sram.we[i] = false;
+    }
   }
 
-  // 3. 执行完毕的标记
+  //  执行完毕的标记
   for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
     if (in.complete[i] == false)
       continue;
 
     complete_1[in.idx[i]] = true;
-    branch_1[in.idx[i]] = in.br_taken[i];
+  }
+
+  // 分支清空指令
+  if (in.br_taken) {
+    for (int i = 0; i < ROB_NUM; i++) {
+      if (tag[i] == in.br_tag && valid[i]) {
+        valid_1[in.idx[i]] = false;
+        complete_1[in.idx[i]] = false;
+      }
+    }
   }
 }
 
@@ -134,10 +114,10 @@ void ROB::seq() {
 
   entry.write();
   for (int i = 0; i < ROB_NUM; i++) {
-    branch[i] = branch_1[i];
     complete[i] = complete_1[i];
-    trap[i] = trap_1[i];
     valid[i] = valid_1[i];
+    tag[i] = tag_1[i];
+    /*trap[i] = trap_1[i];*/
   }
 
   pos_bit = pos_bit_1;
@@ -150,11 +130,6 @@ void ROB::seq() {
 
 void ROB::init() {
 
-  /*for (int i = 0; i < ROB_NUM; i++) {*/
-  /*  entry[i].op = NONE;*/
-  /*  entry[i].pos_bit = 0;*/
-  /*  entry[i].complete = false;*/
-  /*}*/
   count = 0;
   deq_ptr = 0;
   enq_ptr = 0;
@@ -165,34 +140,3 @@ void ROB::init() {
 /**/
 /*void ROB::complete(int idx) { entry[idx].complete = true; }*/
 /*void ROB::branch(int idx) { entry[idx].branch = true; }*/
-
-/*ROB_entry ROB::commit() {*/
-/*  ROB_entry ret = entry[deq_ptr];*/
-/*  if (ret.complete) {*/
-/*    entry[deq_ptr].complete = false;*/
-/*    entry[deq_ptr].branch = false;*/
-/*    entry[deq_ptr].op = NONE;*/
-/*    deq_ptr = (deq_ptr + 1) % ROB_NUM;*/
-/*    if (deq_ptr == 0)*/
-/*      pos_invert();*/
-/*    count--;*/
-/*  }*/
-/**/
-/*  return ret;*/
-/*}*/
-/**/
-/*void ROB::store(int idx, uint32_t address, uint32_t data) {*/
-/**/
-/*  entry[idx].store_addr = address;*/
-/*  entry[idx].store_data = data;*/
-/*}*/
-/**/
-/*bool ROB::check_raw(int idx) {*/
-/*  for (int i = 0; i < ROB_NUM; i++) {*/
-/*    if (entry[i].op != NONE && entry[i].dest_en &&*/
-/*        entry[i].dest_preg_idx == idx && !entry[i].complete)*/
-/*      return true;*/
-/*  }*/
-/**/
-/*  return false;*/
-/*}*/

@@ -24,6 +24,8 @@ using namespace std;
 
 #define LOG 1
 
+#define TAG_NUM 8
+
 #define CONFIG_DIFFTEST
 
 enum Inst_type {
@@ -33,51 +35,26 @@ enum Inst_type {
   ITYPE,
   BTYPE,
   STYPE,
-  LTYPE,
   RTYPE,
 };
 
-enum Inst_op {
-  NONE,
-  LUI,
-  AUIPC,
-  JAL,
-  JALR,
-  BEQ,
-  BNE,
-  BLT,
-  BGE,
-  BLTU,
-  BGEU,
-  LB,
-  LH,
-  LW,
-  LBU,
-  LHU,
-  SB,
-  SH,
-  SW,
-  ADD,
-  SUB,
-  SLL,
-  SLT,
-  SLTU,
-  XOR,
-  SRL,
-  SRA,
-  OR,
-  AND
-};
+enum Inst_op { NONE, LUI, AUIPC, JAL, JALR, ADD, BR, LOAD, STORE };
 
 typedef struct Inst_info {
   int dest_idx, src1_idx, src2_idx;
   bool dest_en, src1_en, src2_en;
-  Inst_type type;
   Inst_op op;
+  bool src2_is_imm;
+  uint32_t func3;
+  bool func7_5;
   uint32_t imm;
   uint32_t pc;
   uint32_t tag;
 } Inst_info;
+
+inline bool is_branch(Inst_op op) {
+  return op == BR || op == JALR || op == JAL;
+}
 
 /*typedef struct Inst_res {*/
 /*  uint32_t result;*/

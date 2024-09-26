@@ -4,7 +4,7 @@
 
 typedef struct ROB_entry {
   uint32_t PC;
-  Inst_type type;
+  Inst_op op;
   int dest_preg_idx;
   int dest_areg_idx;
   int old_dest_preg_idx;
@@ -16,7 +16,8 @@ typedef struct ROB_in {
   // dispatch写入ROB
   bool valid[INST_WAY];
   uint32_t PC[INST_WAY];
-  Inst_type type[INST_WAY];
+  uint32_t tag[INST_WAY];
+  Inst_op op[INST_WAY];
   int dest_areg_idx[INST_WAY];
   int dest_preg_idx[INST_WAY];
   bool dest_en[INST_WAY];
@@ -24,7 +25,7 @@ typedef struct ROB_in {
 
   // execute完成情况 store地址
   bool complete[ALU_NUM + AGU_NUM];
-  bool br_taken[ALU_NUM];
+  bool br_taken;
   uint32_t br_tag;
   int idx[ALU_NUM + AGU_NUM];
 
@@ -50,23 +51,24 @@ public:
 
 private:
   SRAM<ROB_entry> entry = SRAM<ROB_entry>(3, 2, ROB_NUM, sizeof(ROB_entry) * 8);
+
+  bool valid[ROB_NUM];
+  bool complete[ROB_NUM];
   bool pos_bit;
   int enq_ptr;
   int deq_ptr;
   int count;
-  bool valid[ROB_NUM];
-  bool branch[ROB_NUM];
-  bool complete[ROB_NUM];
-  bool trap[ROB_NUM];
+  /*bool trap[ROB_NUM];*/
+  uint32_t tag[ROB_NUM];
 
   bool valid_1[ROB_NUM];
-  bool branch_1[ROB_NUM];
   bool complete_1[ROB_NUM];
   bool pos_bit_1;
   int enq_ptr_1;
   int deq_ptr_1;
   int count_1;
-  bool trap_1[ROB_NUM];
+  /*bool trap_1[ROB_NUM];*/
+  uint32_t tag_1[ROB_NUM];
 };
 
 bool rob_cmp(int idx1, bool bit1, int idx2, bool bit2);

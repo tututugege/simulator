@@ -7,8 +7,7 @@ CXXINCLUDE += -I./back-end/include/
 CXXINCLUDE += -I./diff/include/
 
 MEM_DIR=../file/baremetal
-
-IMG=../file/baremetal/memory
+IMG=./memory
 
 all: $(CXXSRC) mem
 	g++ $(CXXINCLUDE) $(CXXSRC) -g
@@ -25,6 +24,7 @@ gdb:
 mem:
 	make -C $(MEM_DIR)/test
 	cd $(MEM_DIR) ; python get_memory.py
+	cp $(MEM_DIR)/memory $(IMG)
 
 
 .PHONY: all clean mem run
