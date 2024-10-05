@@ -12,12 +12,16 @@ typedef struct Rename_out {
 
   bool src1_raw[INST_WAY];
   bool src2_raw[INST_WAY];
-  bool full;
+  bool valid[INST_WAY]; // to dispatch
+  bool ready[INST_WAY]; // to_decode
+  bool all_ready;
 } Rename_out;
 
 typedef struct Rename_in {
   // rename
-  bool valid[INST_WAY];
+  bool valid[INST_WAY]; // from decode
+  bool ready[INST_WAY]; // from dispatch
+  bool all_ready;
   int src1_areg_idx[INST_WAY];
   int src1_areg_en[INST_WAY];
   int src2_areg_idx[INST_WAY];

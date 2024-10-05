@@ -52,8 +52,9 @@ void ROB::comb() {
   deq_ptr_1 = (deq_ptr + commit_num) % ROB_NUM;
 
   // dispatch进入rob
+  bool full = (count_1 == ROB_NUM);
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i] && !(in.br_taken && in.tag[i] == in.br_tag)) {
+    if (in.valid[i] && !(in.br_taken && in.tag[i] == in.br_tag) && full) {
       ROB_entry enq_entry = {in.PC[i],
                              in.op[i],
                              in.dest_preg_idx[i],
@@ -68,9 +69,12 @@ void ROB::comb() {
       enq_ptr_1 = (enq_ptr_1 + 1) % ROB_NUM;
       if (enq_ptr_1 == 0)
         pos_bit_1 = !pos_bit;
-      count++;
+      count_1++;
+      full = (count_1 == ROB_NUM);
+      out.ready[i] = true;
     } else {
       entry.to_sram.we[i] = false;
+      out.ready[i] = false;
     }
   }
 

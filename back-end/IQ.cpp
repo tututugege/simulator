@@ -47,19 +47,23 @@ void IQ::comb() {
   int IQ_idx[INST_WAY];
   alloc_IQ(IQ_idx);
   // 指令进入发射队列
+  bool full = (count_1 == entry_num);
   for (int i = 0; i < INST_WAY; i++) {
     if (in.valid[i] && !(in.br_taken && in.inst[i].tag == in.br_tag)) {
-
+      out.ready[i] = true;
       valid_1[IQ_idx[i]] = true;
       pos_idx_1[IQ_idx[i]] = in.pos_idx[i];
       pos_bit_1[IQ_idx[i]] = in.pos_bit[i];
       src1_ready_1[IQ_idx[i]] = in.src1_ready[i];
       src2_ready_1[IQ_idx[i]] = in.src2_ready[i];
 
+      entry.to_sram.we[i] = true;
       entry.to_sram.waddr[i] = IQ_idx[i];
       entry.to_sram.wdata[i] = in.inst[i];
+    } else {
+      out.ready[i] = false;
+      entry.to_sram.we[i] = false;
     }
-    entry.to_sram.we[i] = in.valid[i];
   }
 
   bool oldest_bit;

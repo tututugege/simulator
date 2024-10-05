@@ -4,14 +4,22 @@
 #include <vector>
 
 typedef struct IQ_out {
+  // 握手信号
+  int valid[INST_WAY]; // rob idx
+  int ready[INST_WAY]; // rob idx
+
   vector<Inst_info> inst;
   int pos_idx[INST_WAY]; // rob idx
-  int valid[INST_WAY];   // rob idx
   bool full;
+
 } IQ_out;
 
 typedef struct IQ_in {
+  // 握手信号
   bool valid[INST_WAY];
+  bool ready[ISSUE_WAY];
+  bool all_ready;
+
   bool pos_bit[INST_WAY];
   bool src1_ready[INST_WAY];
   bool src2_ready[INST_WAY];
@@ -52,6 +60,7 @@ private:
   vector<uint32_t> src2_preg_idx;
   vector<bool> src1_ready;
   vector<bool> src2_ready;
+  int count;
 
   vector<bool> valid_1;
   vector<bool> pos_bit_1;
@@ -61,6 +70,7 @@ private:
   vector<uint32_t> src2_preg_idx_1;
   vector<bool> src1_ready_1;
   vector<bool> src2_ready_1;
+  int count_1;
 
   int entry_num;
   int fu_num;
