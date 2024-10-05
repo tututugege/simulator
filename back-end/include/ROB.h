@@ -14,7 +14,9 @@ typedef struct ROB_entry {
 typedef struct ROB_in {
 
   // dispatch写入ROB
-  bool valid[INST_WAY];
+  bool from_ren_valid[INST_WAY];
+  bool from_ex_valid[ISSUE_WAY];
+
   uint32_t PC[INST_WAY];
   uint32_t tag[INST_WAY];
   Inst_op op[INST_WAY];
@@ -32,12 +34,18 @@ typedef struct ROB_in {
 } ROB_in;
 
 typedef struct ROB_out {
+  // 流水线握手信号
+  bool to_ex_ready[ISSUE_WAY];
+  bool to_ren_ready[INST_WAY];
+
+  bool to_ex_all_ready;
+  bool to_ren_all_ready;
+
   bool full;
   bool enq_bit;
   int enq_idx;
   int ld_commit_num;
   ROB_entry commit_entry[ISSUE_WAY];
-  bool valid[ISSUE_WAY];
 } ROB_out;
 
 class ROB {
