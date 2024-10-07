@@ -13,7 +13,8 @@ typedef struct ROB_in {
   int rob_idx[ISSUE_WAY];
 
   // 分支信息
-  Br_info br;
+  int br_rob_idx;
+  bool br_taken;
 } ROB_in;
 
 typedef struct ROB_out {
@@ -32,7 +33,9 @@ class ROB {
 public:
   void init();
   void seq();
-  void comb();
+  void comb_0();
+  void comb_1();
+  void comb_2();
 
   ROB_in in;
   ROB_out out;

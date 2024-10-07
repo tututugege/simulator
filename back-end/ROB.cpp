@@ -5,15 +5,15 @@
 #include <diff.h>
 #include <util.h>
 
-void ROB::comb() {
-  // 提交指令
+// 提交指令
+void ROB::comb_0() {
+  int complete_num;
   for (int i = 0; i < ISSUE_WAY; i++) {
     int idx = (deq_ptr + i) % ROB_NUM;
     entry.to_sram.raddr[i] = idx;
   }
   entry.read();
 
-  int complete_num;
   for (complete_num = 0; complete_num < ISSUE_WAY; complete_num++) {
     int idx = (deq_ptr + complete_num) % ROB_NUM;
     out.commit_entry[complete_num] = entry.from_sram.rdata[complete_num];
@@ -29,7 +29,10 @@ void ROB::comb() {
 
   deq_ptr_1 = (deq_ptr + complete_num) % ROB_NUM;
   count_1 = count - complete_num;
+}
 
+// 生成ready
+void ROB::comb_1() {
   // dispatch进入rob
   for (int i = 0; i < INST_WAY; i++) {
     if (!in.from_ren_valid[i])
@@ -43,6 +46,18 @@ void ROB::comb() {
   }
   out.to_ren_all_ready = andR(out.to_ren_ready, INST_WAY);
 
+  //  执行完毕的标记
+  for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
+    out.to_ex_ready[i] = true;
+    if (in.from_ex_valid[i] && out.to_ex_all_ready) {
+      complete_1[in.rob_idx[i]] = true;
+    }
+  }
+  out.to_ex_all_ready = true;
+  out.enq_idx = enq_ptr;
+}
+
+void ROB::comb_2() {
   for (int i = 0; i < INST_WAY; i++) {
     if (in.from_ren_valid[i] && out.to_ren_ready[i]) {
       Inst_info enq_entry = in.inst[i];
@@ -57,15 +72,9 @@ void ROB::comb() {
     }
   }
 
-  //  执行完毕的标记
-  for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
-    out.to_ex_ready[i] = true;
-    if (in.from_ex_valid[i] && out.to_ex_all_ready) {
-      complete_1[in.rob_idx[i]] = true;
-    }
-  }
-  out.to_ex_all_ready = true;
-  out.enq_idx = enq_ptr;
+  // 分支处理
+  if (in.br_taken)
+    enq_ptr_1 = (in.br_rob_idx + 1) % ROB_NUM;
 }
 
 void ROB::seq() {
@@ -74,8 +83,6 @@ void ROB::seq() {
     for (int i = 0; i < ISSUE_WAY; i++) {
       if (out.valid[i]) {
 #ifdef CONFIG_DIFFTEST
-        back.arch_update(out.commit_entry[i].dest_preg,
-                         out.commit_entry[i].dest_areg);
         back.difftest(out.commit_entry[i].pc_next);
 #endif
         cout << "ROB commit PC 0x" << hex << out.commit_entry[i].pc << endl;

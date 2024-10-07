@@ -1,9 +1,9 @@
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
-#include <cstdio>
 #include <cvt.h>
 #include <diff.h>
+#include <util.h>
 
 /*uint32_t load_data();*/
 /*void store_data();*/
@@ -34,10 +34,6 @@ void Back_Top::difftest(int pc) {
   difftest_step();
 }
 
-void Back_Top::arch_update(int areg_idx, int preg_idx) {
-  rename.arch_RAT[areg_idx] = preg_idx;
-}
-
 Back_Top::Back_Top() : int_iq(8, 2), ld_iq(4, 1), st_iq(4, 1) {}
 
 void Back_Top::init() {
@@ -49,27 +45,84 @@ void Back_Top::init() {
 }
 
 void Back_Top::Back_comb(bool *input_data, bool *output_data) {
-  // 组合逻辑
-  // pipeline1:
+  /************* 顺着流水线生成valid-reaedy控制信号****************/
 
-  // 分配分支tag
+  rob.comb_0(); // 输出提交的指令以及valid
   for (int i = 0; i < INST_WAY; i++) {
+    if (!in.valid[i])
+      out.ready[i] = true;
+
     br_tag.in.valid[i] =
         in.valid[i] &&
         (in.inst[i].op == BR || in.inst[i].op == JALR || in.inst[i].op == JAL);
+
     in.inst[i].tag = br_tag.out.tag[i];
   }
 
-  // 重命名
   for (int i = 0; i < INST_WAY; i++) {
     rename.in.valid[i] = in.valid[i];
     rename.in.inst[i] = in.inst[i];
+    rob.in.from_ren_valid[i] = in.valid[i];
+    int_iq.in.valid[i] =
+        in.inst[i].op != LOAD && in.inst[i].op != STORE && in.valid[i];
+    st_iq.in.valid[i] = in.inst[i].op == STORE && in.valid[i];
+    ld_iq.in.valid[i] = in.inst[i].op == LOAD && in.valid[i];
   }
+
+  br_tag.comb();
   rename.comb_0();
+  int_iq.comb_0();
+  st_iq.comb_0();
+  ld_iq.comb_0();
+
+  for (int i = 0; i < ALU_NUM; i++) {
+    rob.in.from_ex_valid[i] = int_iq.out.valid[i];
+  }
+  rob.in.from_ex_valid[ALU_NUM] = ld_iq.out.valid[0];
+  rob.in.from_ex_valid[ALU_NUM + 1] = st_iq.out.valid[0];
+
+  rob.comb_1();
+
+  // 连接对应的ready信号
+  for (int i = 0; i < INST_WAY; i++) {
+    rename.in.from_dis_ready[i] =
+        rob.out.to_ren_ready[i] && int_iq.out.ready[i];
+
+    rename.in.from_rob_ready[i] = rob.out.to_ren_ready[i];
+  }
+
+  for (int i = 0; i < ALU_NUM; i++) {
+    int_iq.in.ready[i] = rob.out.to_ex_ready[i];
+  }
+
+  ld_iq.in.ready[0] = rob.out.to_ex_ready[2];
+  st_iq.in.ready[0] = rob.out.to_ex_ready[3];
+  // 生成all ready
+  rename.comb_1();
+  int_iq.comb_1();
+  st_iq.comb_1();
+  ld_iq.comb_1();
+
+  out.all_ready = andR(out.ready, INST_WAY) &&
+                  andR(br_tag.out.ready, INST_WAY) && rename.out.all_ready;
+
+  rename.in.from_dis_all_ready =
+      rob.out.to_ren_all_ready && int_iq.out.all_ready;
+  int_iq.in.all_ready = rob.out.to_ex_all_ready;
+  ld_iq.in.all_ready = rob.out.to_ex_all_ready;
+  st_iq.in.all_ready = rob.out.to_ex_all_ready;
+
+  /************* 逆流水线更新组合逻辑输入输出以及ready信号 ****************/
+  // 分配分支tag
+  /*bool tag_fire[INST_WAY];*/
+
+  // 重命名
+  for (int i = 0; i < INST_WAY; i++) {
+    rename.in.inst[i] = in.inst[i];
+  }
 
   // rob入队输入
   for (int i = 0; i < INST_WAY; i++) {
-    rob.in.from_ren_valid[i] = in.valid[i];
     rob.in.inst[i] = rename.out.inst[i];
   }
 
@@ -99,23 +152,15 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   // 仲裁 发射指令
 
   for (int i = 0; i < INST_WAY; i++) {
-    int_iq.in.valid[i] =
-        in.inst[i].op != LOAD && in.inst[i].op != STORE && in.valid[i];
     int_iq.in.inst[i] = rename.out.inst[i];
     int_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
 
-    st_iq.in.valid[i] = in.inst[i].op == STORE && in.valid[i];
     st_iq.in.inst[i] = rename.out.inst[i];
     st_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
 
-    ld_iq.in.valid[i] = in.inst[i].op == LOAD && in.valid[i];
     ld_iq.in.inst[i] = rename.out.inst[i];
     ld_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
   }
-
-  int_iq.comb();
-  ld_iq.comb();
-  st_iq.comb();
 
   // 读寄存器
   for (int i = 0; i < ALU_NUM; i++) {
@@ -230,7 +275,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     stq.in.write.size = inst.func3;
   }
 
-  rob.comb();
+  rob.comb_2();
 
   // rob
   for (int i = 0; i < ISSUE_WAY; i++) {
@@ -245,7 +290,6 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 }
 
 void Back_Top::Back_seq(bool *input_data, bool *output_data) {
-
   // 时序逻辑
   // pipeline1: 写入ROB和IQ 重命名表更新
   // pipeline2: 执行结果写回 唤醒等待的指令(目前不考虑) 在ROB中标记执行完毕

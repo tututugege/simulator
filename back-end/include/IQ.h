@@ -36,8 +36,10 @@ class IQ {
 public:
   IQ(int entry_num, int out_num);
   void init();
-  void comb(); // 仲裁
-  void seq();  // 写入IQ
+  void comb_0();
+  void comb_1();
+  void comb_2();
+  void seq(); // 写入IQ
   IQ_in in;
   IQ_out out;
 

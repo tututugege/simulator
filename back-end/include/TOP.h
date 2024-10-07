@@ -13,6 +13,11 @@ typedef struct Back_in {
   bool valid[INST_WAY];
 } Back_in;
 
+typedef struct Back_out {
+  bool ready[INST_WAY];
+  bool all_ready;
+} Back_out;
+
 class Back_Top {
 private:
   Rename rename;
@@ -32,10 +37,10 @@ public:
   Back_Top();
   void init();
   Back_in in;
+  Back_out out;
   void Back_comb(bool *input_data, bool *output_data); // 组合逻辑
   void Back_seq(bool *input_data, bool *output_data);  // 时序逻辑
 
   // debug
   void difftest(int pc);
-  void arch_update(int areg_idx, int preg_idx);
 };

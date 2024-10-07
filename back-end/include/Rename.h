@@ -33,6 +33,7 @@ public:
   void init();
   void comb_0();
   void comb_1();
+  void comb_2();
   void seq(); // 时序逻辑
 
   // debug
@@ -47,12 +48,16 @@ private:
   bool free_vec[PRF_NUM];
   bool alloc_checkpoint[MAX_BR_NUM][PRF_NUM];
   bool busy_table[PRF_NUM];
+  bool rob_fire;
+  bool iq_fire;
 
   uint32_t spec_RAT_1[ARF_NUM];
   uint32_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM];
   bool free_vec_1[PRF_NUM];
   bool alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
   bool busy_table_1[PRF_NUM];
+  bool rob_fire_1;
+  bool iq_fire_1;
 
   // 内部信号
   uint32_t alloc_reg[INST_WAY];

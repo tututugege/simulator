@@ -1,5 +1,6 @@
 #pragma once
 #include <assert.h>
+#include <cstdint>
 #include <iostream>
 using namespace std;
 
@@ -56,6 +57,7 @@ typedef struct Inst_info {
 } Inst_info;
 
 typedef struct Br_info {
+  uint32_t br_tag;
   bool br_mask[MAX_BR_NUM];
   bool br_taken;
 } Br_info;
