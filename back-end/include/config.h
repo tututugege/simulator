@@ -1,6 +1,6 @@
 #pragma once
 #include <assert.h>
-#include <cstdint>
+#include <iostream>
 using namespace std;
 
 #define INST_WAY 2
@@ -15,7 +15,7 @@ using namespace std;
 #define PRF_RD_NUM 7
 #define PRF_WR_LD_PORT 3
 
-#define CHECKPOINT_NUM 7
+#define MAX_BR_NUM 4
 
 #define IQ_NUM 8
 #define ROB_NUM 8
@@ -23,8 +23,6 @@ using namespace std;
 #define LDQ_NUM 8
 
 #define LOG 1
-
-#define TAG_NUM 8
 
 #define CONFIG_DIFFTEST
 
@@ -41,8 +39,11 @@ enum Inst_type {
 enum Inst_op { NONE, LUI, AUIPC, JAL, JALR, ADD, BR, LOAD, STORE };
 
 typedef struct Inst_info {
-  int dest_idx, src1_idx, src2_idx;
+  int dest_areg, src1_areg, src2_areg;
+  int dest_preg, src1_preg, src2_preg;
+  int old_dest_preg;
   bool dest_en, src1_en, src2_en;
+  bool src1_busy, src2_busy;
   Inst_op op;
   bool src2_is_imm;
   uint32_t func3;
@@ -50,7 +51,14 @@ typedef struct Inst_info {
   uint32_t imm;
   uint32_t pc;
   uint32_t tag;
+  uint32_t rob_idx;
+  int pc_next;
 } Inst_info;
+
+typedef struct Br_info {
+  bool br_mask[MAX_BR_NUM];
+  bool br_taken;
+} Br_info;
 
 inline bool is_branch(Inst_op op) {
   return op == BR || op == JALR || op == JAL;

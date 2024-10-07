@@ -1,123 +1,134 @@
 #include <Rename.h>
 #include <config.h>
+#include <cstdlib>
 #include <cvt.h>
 
 void Rename::init() {
-  for (int i = 0; i < INST_WAY; i++)
-    RAT.to_rat.we[i] = true;
-
-  for (int i = 0; i < ARF_NUM; i += 2) {
+  for (int i = 0; i < ARF_NUM; i++) {
+    free_vec[i] = false;
     arch_RAT[i] = i;
-    arch_RAT[i + 1] = i + 1;
-    RAT.to_rat.waddr[0] = i;
-    RAT.to_rat.waddr[1] = i + 1;
-    RAT.to_rat.wdata[0] = i;
-    RAT.to_rat.wdata[1] = i + 1;
-    RAT.write();
+    spec_RAT[i] = i;
   }
 
-  for (int i = 0; i < PRF_NUM - ARF_NUM; i++) {
-
-    free_list.to_fifo.wdata[0] = ARF_NUM + i;
-    free_list.to_fifo.we[0] = true;
-    free_list.write();
+  for (int i = ARF_NUM; i < PRF_NUM; i += 2) {
+    free_vec[i] = false;
   }
 }
 
-void Rename::free_gp(int idx) { gp_v[idx] = false; }
-
-void Rename::comb() {
-  /*if (free_list_count < INST_WAY) {*/
-  /*  out.full = true;*/
-  /*  return;*/
-  /*}*/
-
-  // 读free_list和RAT
-  for (int i = 0; i < INST_WAY; i++) {
-
-    RAT.to_rat.raddr[3 * i] = in.src1_areg_idx[i];
-    RAT.to_rat.raddr[3 * i + 1] = in.src2_areg_idx[i];
-    RAT.to_rat.raddr[3 * i + 2] = in.dest_areg_idx[i];
-    free_list.to_fifo.re[i] = in.valid[i];
-  }
-
-  free_list.read();
-  RAT.read();
-
-  // 无waw raw的输出
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i]) {
-      if (in.dest_areg_en[i]) {
-        int new_preg = free_list.from_fifo.rdata[i];
-
-        out.dest_preg_idx[i] = new_preg;
-        out.old_dest_preg_idx[i] = RAT.from_rat.rdata[3 * i + 2];
-
-        /*out.src1_raw[i] = false;*/
-        /*out.src2_raw[i] = false;*/
-      }
-      out.gp_idx[i] = RAT.alloc_gp();
-      gp_v_1[out.gp_idx[i]] = true;
-      out.src1_preg_idx[i] = RAT.from_rat.rdata[3 * i];
-      out.src2_preg_idx[i] = RAT.from_rat.rdata[3 * i + 1];
+// 根据PRF使用情况以及后级流水线ready信号输出ready
+void Rename::comb_0() {
+  // 可用寄存器个数 大于INST_WAY时为INST_WAY
+  int num = 0;
+  for (int i = 0; i < PRF_NUM && num < INST_WAY; i++) {
+    if (free_vec[i] == false) {
+      alloc_reg[num] = i;
+      num++;
     }
   }
 
-  // 处理raw waw 处理RAT写信号
+  // 无有效指令或者无需分配寄存器ready都为1且不占用寄存器
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.dest_areg_en[i] == 0)
-      continue;
+    if (!in.valid[i] || !in.inst[i].dest_en)
+      out.ready[i] = true;
+  }
 
-    // raw 修改源寄存器号
-    for (int j = i + 1; j < INST_WAY; j++) {
-      if (in.src1_areg_en[j] && in.src1_areg_idx[j] == in.dest_areg_idx[i]) {
-        out.src1_preg_idx[j] = out.dest_preg_idx[i];
-        /*out.src1_raw[j] = true;*/
-      }
-
-      if (in.src2_areg_en[j] && in.src2_areg_idx[j] == in.dest_areg_idx[i]) {
-        out.src2_preg_idx[j] = out.dest_preg_idx[i];
-        /*out.src2_raw[j] = true;*/
-      }
-    }
-
-    // waw 同一preg的映射表写入只取最新的  写入rob的old_preg信息可能不来自RAT
-    RAT.to_rat.we[i] = true;
-    RAT.to_rat.waddr[i] = out.dest_preg_idx[i];
-    RAT.to_rat.wdata[i] = in.dest_areg_idx[i];
-
-    for (int j = i + 1; j < INST_WAY; j++) {
-      if (in.dest_areg_en[j] && in.dest_areg_idx[j] == in.dest_areg_idx[i]) {
-        out.old_dest_preg_idx[j] = out.dest_preg_idx[i];
-        RAT.to_rat.we[i] = false;
-        break;
+  // 有效且需要寄存器的指令，寄存器不够则对应端口ready为false
+  int alloc_num = 0;
+  for (int i = 0; i < INST_WAY; i++) {
+    out.inst[i] = in.inst[i];
+    if (in.valid[i] && in.inst[i].dest_en) {
+      // 分配寄存器
+      if (alloc_num < num) {
+        out.ready[i] = true;
+        out.inst[i].dest_preg = alloc_reg[alloc_num];
+        free_vec_1[alloc_reg[i]] = false;
+        busy_table_1[alloc_reg[i]] = true;
+        for (int j = 0; j < MAX_BR_NUM; j++)
+          alloc_checkpoint_1[j][alloc_reg[i]] = true;
+        alloc_num++;
+      } else {
+        out.ready[i] = false;
       }
     }
   }
 
-  // free_list 入队 gp释放
+  out.all_ready = out.ready[0];
+  for (int i = 1; i < INST_WAY; i++) {
+    out.all_ready = out.ready[i] && out.all_ready;
+  }
+  out.all_ready =
+      out.all_ready && in.from_dis_all_ready && in.from_rob_all_ready;
+}
+
+void Rename::comb_1() {
+  // 无waw raw的输出 读spec_RAT和busy_table
+  for (int i = 0; i < INST_WAY; i++) {
+    out.inst[i].old_dest_preg = spec_RAT[in.inst[i].dest_preg];
+    out.inst[i].src1_preg = spec_RAT[in.inst[i].src1_areg];
+    out.inst[i].src2_preg = spec_RAT[in.inst[i].src2_areg];
+    out.inst[i].src1_busy =
+        busy_table[out.inst[i].src1_preg] && in.inst[i].src1_en;
+    out.inst[i].src2_busy =
+        busy_table[out.inst[i].src1_preg] && in.inst[i].src2_en;
+
+    // 如果输入有指令且寄存器够
+    if (in.valid[i] && out.ready[i]) {
+      out.valid[i] = true;
+    } else {
+      out.valid[i] = false;
+    }
+  }
+
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (in.commit_valid[i]) {
+      if (in.commit_inst[i].dest_en) {
+        free_vec_1[in.commit_inst[i].old_dest_preg] = true;
 
-      free_list.to_fifo.we[i] = in.commit_dest_en[i];
-      free_list.to_fifo.wdata[i] = in.commit_old_dest_preg_idx[i];
+#ifdef CONFIG_DIFFTEST
+        arch_RAT[in.commit_inst[i].dest_areg] = in.commit_inst[i].dest_preg;
+#endif
+      }
+    }
+  }
 
-      gp_v_1[in.commit_gp_idx[i]] = false;
-    } else
-      free_list.to_fifo.we[i] = false;
+  // 针对RAT 和busy_table的raw的bypass
+  for (int i = 1; i < INST_WAY; i++) {
+
+    for (int j = 0; j < i; j++) {
+      if (!in.valid[j] || !in.inst[j].dest_en)
+        continue;
+
+      if (in.inst[i].src1_areg == in.inst[j].dest_areg) {
+        out.inst[i].src1_preg = out.inst[j].dest_preg;
+        out.inst[i].src1_busy = true;
+      }
+
+      if (in.inst[i].src2_areg == in.inst[j].dest_areg) {
+        out.inst[i].src2_preg = out.inst[j].dest_preg;
+        out.inst[i].src2_busy = true;
+      }
+
+      if (in.inst[i].dest_areg == in.inst[j].dest_areg) {
+        out.inst[i].old_dest_preg = out.inst[j].dest_preg;
+      }
+    }
   }
 }
 
 void Rename ::seq() {
-  RAT.write();
-  free_list.write();
-}
+  for (int i = 0; i < ARF_NUM; i++) {
+    spec_RAT[i] = spec_RAT_1[i];
+    for (int j = 0; i < MAX_BR_NUM; j++)
+      RAT_checkpoint[j][i] = RAT_checkpoint_1[j][i];
+  }
 
-/*void Rename ::gp_write(int idx) {*/
-/*  for (int i = 0; i < PRF_NUM; i++) {*/
-/*    spec_cRAT[i].gp[idx] = cRAT_valid_wdata[i];*/
-/*  }*/
-/*}*/
+  for (int i = 0; i < ARF_NUM; i++) {
+    free_vec[i] = free_vec_1[i];
+    busy_table[i] = busy_table_1[i];
+    for (int j = 0; i < MAX_BR_NUM; j++)
+      alloc_checkpoint[j][i] = alloc_checkpoint_1[j][i];
+  }
+}
 
 /*void Rename::print_reg() {*/
 /*  int preg_idx;*/

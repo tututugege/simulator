@@ -23,14 +23,15 @@ public:
 };
 
 typedef struct Br_Tag_in {
-  bool alloc[INST_WAY];
-  bool free[ISSUE_WAY];
-  uint32_t free_tag[ISSUE_WAY];
+  bool valid[INST_WAY];
 
+  bool free_valid[MAX_BR_NUM - 1];
+  uint32_t free_tag[MAX_BR_NUM - 1];
 } Br_Tag_in;
 
 typedef struct Br_Tag_out {
-  uint32_t now_tag[INST_WAY];
+  uint32_t tag[INST_WAY];
+  bool ready[INST_WAY];
 } Br_Tag_out;
 
 class Br_Tag {
@@ -41,9 +42,15 @@ public:
   void comb();
   void seq();
 
-  FIFO<uint32_t> free_tag_list = FIFO<uint32_t>(1, 1, 4, 32);
-  FIFO<uint32_t> tag_list = FIFO<uint32_t>(1, 1, 4, 32);
+  bool tag_vec[MAX_BR_NUM];
+  uint32_t tag_fifo[MAX_BR_NUM];
+  int enq_ptr = 0;
+  int deq_ptr = 0;
+  int last_tag;
 
-  uint32_t now_tag;
-  uint32_t now_tag_1;
+  bool tag_vec_1[MAX_BR_NUM];
+  uint32_t tag_fifo_1[MAX_BR_NUM];
+  int enq_ptr_1 = 0;
+  int deq_ptr_1 = 0;
+  int last_tag_1;
 };

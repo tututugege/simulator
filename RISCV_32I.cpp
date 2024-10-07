@@ -238,9 +238,9 @@ Inst_info decode(bool inst_bit[]) {
   if (reg_d_index == 0)
     dest_en = 0;
 
-  Inst_info info = {.dest_idx = reg_d_index,
-                    .src1_idx = reg_a_index,
-                    .src2_idx = reg_b_index,
+  Inst_info info = {.dest_areg = reg_d_index,
+                    .src1_areg = reg_a_index,
+                    .src2_areg = reg_b_index,
                     .dest_en = dest_en,
                     .src1_en = src1_en,
                     .src2_en = src2_en,
