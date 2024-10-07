@@ -40,18 +40,23 @@ void Rename::comb_0() {
       // 分配寄存器
       if (alloc_num < num) {
         out.ready[i] = true;
-        out.inst[i].dest_preg = alloc_reg[alloc_num];
-        free_vec_1[alloc_reg[i]] = false;
-        busy_table_1[alloc_reg[i]] = true;
-        for (int j = 0; j < MAX_BR_NUM; j++)
-          alloc_checkpoint_1[j][alloc_reg[i]] = true;
-        alloc_num++;
       } else {
         out.ready[i] = false;
       }
     }
   }
 
+  for (int i = 0; i < INST_WAY; i++) {
+    // 如果输入有指令且寄存器够
+    if (in.valid[i] && out.ready[i]) {
+      out.valid[i] = true;
+    } else {
+      out.valid[i] = false;
+    }
+  }
+}
+
+void Rename::comb_1() {
   out.all_ready = out.ready[0];
   for (int i = 1; i < INST_WAY; i++) {
     out.all_ready = out.ready[i] && out.all_ready;
@@ -60,7 +65,19 @@ void Rename::comb_0() {
       out.all_ready && in.from_dis_all_ready && in.from_rob_all_ready;
 }
 
-void Rename::comb_1() {
+void Rename::comb_2() {
+  // 分配寄存器
+  int alloc_num = 0;
+  for (int i = 0; i < INST_WAY; i++) {
+    if (in.valid[i] && out.ready[i] && out.inst[i].dest_en) {
+      out.inst[i].dest_preg = alloc_reg[alloc_num];
+      free_vec_1[alloc_reg[alloc_num]] = false;
+      busy_table_1[alloc_reg[alloc_num]] = true;
+      for (int j = 0; j < MAX_BR_NUM; j++)
+        alloc_checkpoint_1[j][alloc_reg[alloc_num]] = true;
+    }
+  }
+
   // 无waw raw的输出 读spec_RAT和busy_table
   for (int i = 0; i < INST_WAY; i++) {
     out.inst[i].old_dest_preg = spec_RAT[in.inst[i].dest_preg];
@@ -70,13 +87,6 @@ void Rename::comb_1() {
         busy_table[out.inst[i].src1_preg] && in.inst[i].src1_en;
     out.inst[i].src2_busy =
         busy_table[out.inst[i].src1_preg] && in.inst[i].src2_en;
-
-    // 如果输入有指令且寄存器够
-    if (in.valid[i] && out.ready[i]) {
-      out.valid[i] = true;
-    } else {
-      out.valid[i] = false;
-    }
   }
 
   for (int i = 0; i < ISSUE_WAY; i++) {
@@ -110,6 +120,23 @@ void Rename::comb_1() {
 
       if (in.inst[i].dest_areg == in.inst[j].dest_areg) {
         out.inst[i].old_dest_preg = out.inst[j].dest_preg;
+      }
+    }
+  }
+
+  // 分支处理
+  if (in.br.br_taken) {
+    // 恢复重命名表
+    for (int i = 0; i < ARF_NUM; i++) {
+      spec_RAT_1[i] = RAT_checkpoint[in.br.br_tag][i];
+    }
+
+    // 恢复free_list
+    for (int i = 0; i < MAX_BR_NUM; i++) {
+      if (in.br.br_mask[i]) {
+        for (int j = 0; j < ARF_NUM; j++) {
+          free_vec_1[j] = free_vec_1[j] || alloc_checkpoint[j];
+        }
       }
     }
   }
