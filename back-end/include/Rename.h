@@ -3,16 +3,17 @@
 typedef struct Rename_out {
   Inst_info inst[INST_WAY];
 
-  bool valid[INST_WAY]; // to dispatch
-  bool ready[INST_WAY]; // to_decode
+  bool to_iq_valid[INST_WAY];  // to iq
+  bool to_rob_valid[INST_WAY]; // to rob
+  bool ready[INST_WAY];
   bool all_ready;
 } Rename_out;
 
 typedef struct Rename_in {
   // rename
-  bool valid[INST_WAY];          // from decode
-  bool from_dis_ready[INST_WAY]; // from dispatch
-  bool from_dis_all_ready;
+  bool valid[INST_WAY];         // from decode
+  bool from_iq_ready[INST_WAY]; // from dispatch
+  bool from_iq_all_ready;
   bool from_rob_ready[INST_WAY]; // from dispatch
   bool from_rob_all_ready;
 
