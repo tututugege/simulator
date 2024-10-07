@@ -2,50 +2,30 @@
 #include <SRAM.h>
 #include <config.h>
 
-typedef struct ROB_entry {
-  uint32_t PC;
-  Inst_op op;
-  int dest_preg_idx;
-  int dest_areg_idx;
-  int old_dest_preg_idx;
-  bool dest_en;
-} ROB_entry;
-
 typedef struct ROB_in {
 
   // dispatch写入ROB
   bool from_ren_valid[INST_WAY];
+  Inst_info inst[INST_WAY];
+
+  // execute完成情况
   bool from_ex_valid[ISSUE_WAY];
+  int rob_idx[ISSUE_WAY];
 
-  uint32_t PC[INST_WAY];
-  uint32_t tag[INST_WAY];
-  Inst_op op[INST_WAY];
-  int dest_areg_idx[INST_WAY];
-  int dest_preg_idx[INST_WAY];
-  bool dest_en[INST_WAY];
-  int old_dest_preg_idx[INST_WAY];
-
-  // execute完成情况 store地址
-  bool complete[ALU_NUM + AGU_NUM];
-  bool br_taken;
-  uint32_t br_tag;
-  int idx[ALU_NUM + AGU_NUM];
-
+  // 分支信息
+  Br_info br;
 } ROB_in;
 
 typedef struct ROB_out {
   // 流水线握手信号
   bool to_ex_ready[ISSUE_WAY];
   bool to_ren_ready[INST_WAY];
-
   bool to_ex_all_ready;
   bool to_ren_all_ready;
 
-  bool full;
-  bool enq_bit;
   int enq_idx;
-  int ld_commit_num;
-  ROB_entry commit_entry[ISSUE_WAY];
+  Inst_info commit_entry[ISSUE_WAY];
+  bool valid[ISSUE_WAY];
 } ROB_out;
 
 class ROB {
@@ -58,25 +38,19 @@ public:
   ROB_out out;
 
 private:
-  SRAM<ROB_entry> entry = SRAM<ROB_entry>(3, 2, ROB_NUM, sizeof(ROB_entry) * 8);
+  SRAM<Inst_info> entry = SRAM<Inst_info>(3, 2, ROB_NUM, sizeof(Inst_info) * 8);
 
   bool valid[ROB_NUM];
   bool complete[ROB_NUM];
-  bool pos_bit;
   int enq_ptr;
   int deq_ptr;
   int count;
-  /*bool trap[ROB_NUM];*/
   uint32_t tag[ROB_NUM];
 
   bool valid_1[ROB_NUM];
   bool complete_1[ROB_NUM];
-  bool pos_bit_1;
   int enq_ptr_1;
   int deq_ptr_1;
   int count_1;
-  /*bool trap_1[ROB_NUM];*/
   uint32_t tag_1[ROB_NUM];
 };
-
-bool rob_cmp(int idx1, bool bit1, int idx2, bool bit2);

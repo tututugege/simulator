@@ -1,6 +1,5 @@
-#include "config.h"
 #include <BRU.h>
-#include <cstdint>
+#include <config.h>
 
 void BRU::cycle() {
   uint32_t pc_br = in.pc + in.off;
@@ -27,54 +26,50 @@ void BRU::cycle() {
 }
 
 void Br_Tag::init() {
-  for (int i = TAG_NUM - 1; i >= 0; i--) {
-    free_tag_list.to_fifo.we[0] = true;
-    free_tag_list.to_fifo.wdata[0] = i;
-    free_tag_list.write();
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    tag_vec[i] = true;
   }
 }
 
 void Br_Tag::comb() {
-
   // 分配新tag
+  int free_tag_num = 0;
+  int free_tag[INST_WAY];
+  for (int i = 0; i < MAX_BR_NUM && free_tag_num < INST_WAY; i++) {
+    if (tag_vec[i])
+      free_tag[free_tag_num++] = i;
+  }
+
+  int tag_num = 0;
   for (int i = 0; i < INST_WAY; i++) {
-    free_tag_list.to_fifo.re[i] = in.alloc[i];
+    if (!in.valid[i])
+      out.ready[i] = true;
+    else if (tag_num < free_tag_num) {
+      out.tag[i] = last_tag_1;
+      tag_fifo_1[enq_ptr_1] = free_tag[tag_num];
+      last_tag_1 = free_tag[tag_num];
+      enq_ptr_1 = (enq_ptr_1 + 1) % (MAX_BR_NUM - 1);
+      out.ready[i] = true;
+      tag_num++;
+    } else
+      out.ready[i] = false;
   }
 
   // 释放tag
-  for (int i = 0; i < INST_WAY; i++) {
-    free_tag_list.to_fifo.we[i] = in.free[i];
-    free_tag_list.to_fifo.wdata[i] = in.free_tag[i];
-  }
-
-  tag_list.read();
-
-  for (int i = 0; i < INST_WAY; i++) {
-    // 分配新tag
-
-    // 新分配的tag写入tag_list
-    tag_list.to_fifo.we[i] = in.alloc[i];
-    tag_list.to_fifo.wdata[i] = tag_list.from_fifo.rdata[i];
-  }
-
-  // 释放tag
-  for (int i = 0; i < INST_WAY; i++) {
-    free_tag_list.to_fifo.we[i] = in.free[i];
-    free_tag_list.to_fifo.wdata[i] = in.free_tag[i];
-  }
-
-  uint32_t last_tag = now_tag;
-  for (int i = 0; i < INST_WAY; i++) {
-    if (i == 0 || in.alloc[i - 1] == 0) {
-      out.now_tag[i] = last_tag;
-    } else {
-      out.now_tag[i] = tag_list.from_fifo.rdata[i - 1];
-      last_tag = out.now_tag[i];
+  for (int i = 0; i < MAX_BR_NUM - 1; i++) {
+    if (in.free_valid[i]) {
+      tag_vec[in.free_tag[i]] = true;
+      deq_ptr_1 = (deq_ptr_1 + 1) % (MAX_BR_NUM - 1);
     }
   }
 }
 
 void Br_Tag::seq() {
-  tag_list.write();
-  free_tag_list.write();
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    tag_vec[i] = tag_vec_1[i];
+    tag_fifo[i] = tag_fifo_1[i];
+  }
+  enq_ptr = enq_ptr_1;
+  deq_ptr = deq_ptr_1;
+  last_tag = last_tag_1;
 }
