@@ -49,9 +49,11 @@ void Rename::comb_0() {
   for (int i = 0; i < INST_WAY; i++) {
     // 如果输入有指令且寄存器够
     if (in.valid[i] && out.ready[i]) {
-      out.valid[i] = true;
+      out.to_iq_valid[i] = !iq_fire;
+      out.to_rob_valid[i] = !rob_fire;
     } else {
-      out.valid[i] = false;
+      out.to_iq_valid[i] = false;
+      out.to_rob_valid[i] = false;
     }
   }
 }
@@ -62,7 +64,7 @@ void Rename::comb_1() {
     out.all_ready = out.ready[i] && out.all_ready;
   }
   out.all_ready =
-      out.all_ready && in.from_dis_all_ready && in.from_rob_all_ready;
+      out.all_ready && in.from_iq_all_ready && in.from_rob_all_ready;
 }
 
 void Rename::comb_2() {
@@ -140,6 +142,15 @@ void Rename::comb_2() {
       }
     }
   }
+
+  if ((in.from_iq_all_ready || iq_fire) &&
+      (in.from_rob_all_ready || rob_fire)) {
+    iq_fire_1 = false;
+    rob_fire_1 = false;
+  } else {
+    iq_fire_1 = in.from_iq_all_ready;
+    rob_fire_1 = in.from_iq_all_ready;
+  }
 }
 
 void Rename ::seq() {
@@ -155,6 +166,9 @@ void Rename ::seq() {
     for (int j = 0; i < MAX_BR_NUM; j++)
       alloc_checkpoint[j][i] = alloc_checkpoint_1[j][i];
   }
+
+  rob_fire = rob_fire_1;
+  iq_fire = iq_fire_1;
 }
 
 /*void Rename::print_reg() {*/

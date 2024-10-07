@@ -55,22 +55,25 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     br_tag.in.valid[i] =
         in.valid[i] &&
         (in.inst[i].op == BR || in.inst[i].op == JALR || in.inst[i].op == JAL);
-
-    in.inst[i].tag = br_tag.out.tag[i];
-  }
-
-  for (int i = 0; i < INST_WAY; i++) {
-    rename.in.valid[i] = in.valid[i];
-    rename.in.inst[i] = in.inst[i];
-    rob.in.from_ren_valid[i] = in.valid[i];
-    int_iq.in.valid[i] =
-        in.inst[i].op != LOAD && in.inst[i].op != STORE && in.valid[i];
-    st_iq.in.valid[i] = in.inst[i].op == STORE && in.valid[i];
-    ld_iq.in.valid[i] = in.inst[i].op == LOAD && in.valid[i];
   }
 
   br_tag.comb();
+
+  for (int i = 0; i < INST_WAY; i++) {
+    in.inst[i].tag = br_tag.out.tag[i];
+    rename.in.valid[i] = in.valid[i];
+    rename.in.inst[i] = in.inst[i];
+  }
   rename.comb_0();
+
+  for (int i = 0; i < INST_WAY; i++) {
+    rob.in.from_ren_valid[i] = rename.out.to_rob_valid[i];
+    int_iq.in.valid[i] = in.inst[i].op != LOAD && in.inst[i].op != STORE &&
+                         rename.out.to_iq_valid[i];
+    st_iq.in.valid[i] = in.inst[i].op == STORE && rename.out.to_iq_valid[i];
+    ld_iq.in.valid[i] = in.inst[i].op == LOAD && rename.out.to_iq_valid[i];
+  }
+
   int_iq.comb_0();
   st_iq.comb_0();
   ld_iq.comb_0();
@@ -85,8 +88,12 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // 连接对应的ready信号
   for (int i = 0; i < INST_WAY; i++) {
-    rename.in.from_dis_ready[i] =
-        rob.out.to_ren_ready[i] && int_iq.out.ready[i];
+    if (in.inst[i].op == LOAD)
+      rename.in.from_iq_ready[i] = st_iq.out.ready[i];
+    else if (in.inst[i].op == STORE)
+      rename.in.from_iq_ready[i] = ld_iq.out.ready[i];
+    else
+      rename.in.from_iq_ready[i] = int_iq.out.ready[i];
 
     rename.in.from_rob_ready[i] = rob.out.to_ren_ready[i];
   }
@@ -106,7 +113,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   out.all_ready = andR(out.ready, INST_WAY) &&
                   andR(br_tag.out.ready, INST_WAY) && rename.out.all_ready;
 
-  rename.in.from_dis_all_ready =
+  rename.in.from_iq_all_ready =
       rob.out.to_ren_all_ready && int_iq.out.all_ready;
   int_iq.in.all_ready = rob.out.to_ex_all_ready;
   ld_iq.in.all_ready = rob.out.to_ex_all_ready;
