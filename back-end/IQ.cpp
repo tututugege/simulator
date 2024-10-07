@@ -22,8 +22,7 @@ void IQ::seq() {
   }
 }
 
-void IQ::comb() {
-
+void IQ::comb_0() {
   // 仲裁 选择指令发射到对应的FU 压缩式IQ，直接选择最老的
   int issue_num = 0;
   for (int i = 0; i < entry_num && issue_num < fu_num; i++) {
@@ -37,6 +36,47 @@ void IQ::comb() {
   while (issue_num < fu_num) {
     out.valid[issue_num] = false;
   }
+
+  // 无效指令 ready为1
+  for (int i = 0; i < INST_WAY; i++) {
+    if (!in.valid[i])
+      out.ready[i] = true;
+  }
+
+  // 进入IQ
+  int num = 0;
+  int alloc_iq[INST_WAY];
+  for (int i = 0; i < entry_num && num < INST_WAY; i++) {
+    if (entry_1[i].valid == false) {
+      alloc_iq[num] = i;
+      num++;
+    }
+  }
+
+  // 有效指令，iq不够则对应端口ready为false
+  int alloc_num = 0;
+  for (int i = 0; i < INST_WAY; i++) {
+    if (in.valid[i]) {
+      // 分配iq
+      if (alloc_num < num) {
+        entry_1[alloc_iq[alloc_num]].inst = in.inst[i];
+        alloc_num++;
+      } else {
+        out.ready[i] = false;
+      }
+    }
+  }
+}
+
+void IQ::comb_1() {
+  out.all_ready = out.ready[0];
+  for (int i = 1; i < INST_WAY; i++) {
+    out.all_ready = out.ready[i] && out.all_ready;
+  }
+  out.all_ready = out.all_ready && in.all_ready;
+}
+
+void IQ::comb_2() {
 
   // 成功发射的entry号
   int fire_issue_idx[fu_num];
@@ -60,40 +100,15 @@ void IQ::comb() {
       entry_1[i] = entry[i + compress_num];
   }
 
-  // 进入IQ
-  // 可用寄存器个数 大于INST_WAY时为INST_WAY
-  int num = 0;
-  int alloc_iq[INST_WAY];
-  for (int i = 0; i < entry_num && num < INST_WAY; i++) {
-    if (entry_1[i].valid == false) {
-      alloc_iq[num] = i;
-      num++;
-    }
-  }
-
-  // 无效指令
-  for (int i = 0; i < INST_WAY; i++) {
-    if (!in.valid[i])
-      out.ready[i] = true;
-  }
-
-  // 有效指令，iq不够则对应端口ready为false
-  int alloc_num = 0;
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i]) {
-      // 分配iq
-      if (alloc_num < num) {
-        entry_1[alloc_iq[alloc_num]].inst = in.inst[i];
-        alloc_num++;
-      } else {
-        out.ready[i] = false;
+  // 分支处理
+  if (in.br.br_taken) {
+    for (int i = 0; i < MAX_BR_NUM; i++) {
+      if (in.br.br_mask[i]) {
+        for (int j = 0; j < entry_num; j++) {
+          if (entry[j].valid && entry[j].inst.tag == i)
+            entry_1[j].valid = false;
+        }
       }
     }
   }
-
-  out.all_ready = out.ready[0];
-  for (int i = 1; i < INST_WAY; i++) {
-    out.all_ready = out.ready[i] && out.all_ready;
-  }
-  out.all_ready = out.all_ready && in.all_ready;
 }
