@@ -5,13 +5,11 @@
 
 typedef struct IQ_out {
   // 握手信号
-  int valid[INST_WAY]; // rob idx
-  int ready[INST_WAY]; // rob idx
+  int valid[INST_WAY];
+  int ready[INST_WAY];
+  bool all_ready;
 
   vector<Inst_info> inst;
-  int pos_idx[INST_WAY]; // rob idx
-  bool full;
-
 } IQ_out;
 
 typedef struct IQ_in {
@@ -20,23 +18,19 @@ typedef struct IQ_in {
   bool ready[ISSUE_WAY];
   bool all_ready;
 
-  bool pos_bit[INST_WAY];
-  bool src1_ready[INST_WAY];
-  bool src2_ready[INST_WAY];
-  int pos_idx[INST_WAY]; // rob idx
   Inst_info inst[INST_WAY];
 
-  bool br_taken;
-  uint32_t br_tag;
+  // 分支信息
+  Br_info br;
+
 } IQ_in;
 
-/*typedef struct IQ_entry {*/
-/*  int dest_idx;*/
-/*  bool dest_en;*/
-/*  Inst_op op;*/
-/*  uint32_t imm;*/
-/*  uint32_t pc;*/
-/*} IQ_entry;*/
+typedef struct IQ_entry {
+  bool valid;
+  Inst_info inst;
+  bool src1_busy;
+  bool src2_busy;
+} IQ_entry;
 
 class IQ {
 public:
@@ -49,29 +43,10 @@ public:
 
 private:
   void alloc_IQ(int *);
-  SRAM<Inst_info> entry;
+  vector<IQ_entry> entry;
+  vector<IQ_entry> entry_1;
 
-  /*register*/
-  vector<bool> valid;
-  vector<bool> pos_bit; // rob位置信息 用于仲裁找出最老指令
-  vector<int> pos_idx;
-  vector<uint32_t> tag;
-  vector<uint32_t> src1_preg_idx;
-  vector<uint32_t> src2_preg_idx;
-  vector<bool> src1_ready;
-  vector<bool> src2_ready;
-  int count;
-
-  vector<bool> valid_1;
-  vector<bool> pos_bit_1;
-  vector<int> pos_idx_1;
-  vector<uint32_t> tag_1;
-  vector<uint32_t> src1_preg_idx_1;
-  vector<uint32_t> src2_preg_idx_1;
-  vector<bool> src1_ready_1;
-  vector<bool> src2_ready_1;
-  int count_1;
-
+  // config
   int entry_num;
   int fu_num;
 };

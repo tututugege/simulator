@@ -1,6 +1,7 @@
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
+#include <cstdio>
 #include <cvt.h>
 #include <diff.h>
 
@@ -53,39 +54,29 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // 分配分支tag
   for (int i = 0; i < INST_WAY; i++) {
-    br_tag.in.alloc[i] =
+    br_tag.in.valid[i] =
         in.valid[i] &&
         (in.inst[i].op == BR || in.inst[i].op == JALR || in.inst[i].op == JAL);
-    in.inst[i].tag = br_tag.out.now_tag[i];
+    in.inst[i].tag = br_tag.out.tag[i];
   }
 
   // 重命名
   for (int i = 0; i < INST_WAY; i++) {
     rename.in.valid[i] = in.valid[i];
-    rename.in.src1_areg_idx[i] = in.inst[i].src1_idx;
-    rename.in.src1_areg_en[i] = in.inst[i].src1_en;
-    rename.in.src2_areg_idx[i] = in.inst[i].src2_idx;
-    rename.in.src2_areg_en[i] = in.inst[i].src2_en;
-    rename.in.dest_areg_idx[i] = in.inst[i].dest_idx;
-    rename.in.dest_areg_en[i] = in.inst[i].dest_en;
+    rename.in.inst[i] = in.inst[i];
   }
-  rename.comb();
+  rename.comb_0();
 
   // rob入队输入
   for (int i = 0; i < INST_WAY; i++) {
-    rob.in.valid[i] = in.valid[i];
-    rob.in.PC[i] = in.inst[i].pc;
-    rob.in.op[i] = in.inst[i].op;
-    rob.in.dest_areg_idx[i] = in.inst[i].dest_idx;
-    rob.in.dest_preg_idx[i] = rename.out.dest_preg_idx[i];
-    rob.in.dest_en[i] = in.inst[i].dest_en;
-    rob.in.old_dest_preg_idx[i] = rename.out.old_dest_preg_idx[i];
+    rob.in.from_ren_valid[i] = in.valid[i];
+    rob.in.inst[i] = rename.out.inst[i];
   }
 
   // ld queue分配
   for (int i = 0; i < INST_WAY; i++) {
     if (in.inst[i].op == LOAD) {
-      ldq.in.alloc[i].dest_preg_idx = rename.out.dest_preg_idx[i];
+      ldq.in.alloc[i].dest_preg_idx = rename.out.inst[i].dest_preg;
       ldq.in.alloc[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
       ldq.in.alloc[i].valid = true;
     } else {
@@ -110,51 +101,16 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   for (int i = 0; i < INST_WAY; i++) {
     int_iq.in.valid[i] =
         in.inst[i].op != LOAD && in.inst[i].op != STORE && in.valid[i];
-    int_iq.in.src1_ready[i] = true;
-    int_iq.in.src2_ready[i] = true;
-
-    int_iq.in.pos_bit[i] =
-        (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
-
-    int_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
-
-    int_iq.in.inst[i] = in.inst[i];
-    int_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
-    int_iq.in.inst[i].src1_en = rename.in.src1_areg_en[i];
-    int_iq.in.inst[i].src2_idx = rename.out.src2_preg_idx[i];
-    int_iq.in.inst[i].src2_en = rename.in.src2_areg_en[i];
-    int_iq.in.inst[i].dest_idx = rename.out.dest_preg_idx[i];
-    int_iq.in.inst[i].dest_en = rename.in.dest_areg_en[i];
+    int_iq.in.inst[i] = rename.out.inst[i];
+    int_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
 
     st_iq.in.valid[i] = in.inst[i].op == STORE && in.valid[i];
-    st_iq.in.src1_ready[i] = !rename.in.src1_areg_en[i];
-    st_iq.in.src2_ready[i] = !rename.in.src2_areg_en[i];
-
-    st_iq.in.pos_bit[i] =
-        (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
-
-    st_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
-    st_iq.in.inst[i] = in.inst[i];
-    st_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
-    st_iq.in.inst[i].src1_en = true;
-    st_iq.in.inst[i].src2_idx = rename.out.src2_preg_idx[i];
-    st_iq.in.inst[i].src2_en = true;
-    st_iq.in.inst[i].dest_en = false;
+    st_iq.in.inst[i] = rename.out.inst[i];
+    st_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
 
     ld_iq.in.valid[i] = in.inst[i].op == LOAD && in.valid[i];
-    ld_iq.in.src1_ready[i] = !rename.in.src1_areg_en[i];
-    ld_iq.in.src2_ready[i] = !rename.in.src2_areg_en[i];
-
-    ld_iq.in.pos_bit[i] =
-        (rob.out.enq_idx + i >= ROB_NUM) ? !rob.out.enq_bit : rob.out.enq_bit;
-
-    ld_iq.in.pos_idx[i] = (rob.out.enq_idx + i) % ROB_NUM;
-    ld_iq.in.inst[i] = in.inst[i];
-    ld_iq.in.inst[i].src1_idx = rename.out.src1_preg_idx[i];
-    ld_iq.in.inst[i].src1_en = rename.in.src1_areg_en[i];
-    ld_iq.in.inst[i].src2_en = false;
-    ld_iq.in.inst[i].dest_idx = rename.out.dest_preg_idx[i];
-    ld_iq.in.inst[i].dest_en = rename.in.dest_areg_en[i];
+    ld_iq.in.inst[i] = rename.out.inst[i];
+    ld_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
   }
 
   int_iq.comb();
@@ -163,14 +119,14 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // 读寄存器
   for (int i = 0; i < ALU_NUM; i++) {
-    prf.to_sram.raddr[2 * i] = int_iq.out.inst[i].src1_idx;
-    prf.to_sram.raddr[2 * i + 1] = int_iq.out.inst[i].src2_idx;
+    prf.to_sram.raddr[2 * i] = int_iq.out.inst[i].src1_preg;
+    prf.to_sram.raddr[2 * i + 1] = int_iq.out.inst[i].src2_preg;
   }
 
-  prf.to_sram.raddr[2 * (ALU_NUM)] = ld_iq.out.inst[0].src1_idx;
+  prf.to_sram.raddr[2 * (ALU_NUM)] = ld_iq.out.inst[0].src1_preg;
 
-  prf.to_sram.raddr[2 * (ALU_NUM) + 1] = st_iq.out.inst[0].src1_idx;
-  prf.to_sram.raddr[2 * (ALU_NUM) + 2] = st_iq.out.inst[0].src2_idx;
+  prf.to_sram.raddr[2 * (ALU_NUM) + 1] = st_iq.out.inst[0].src1_preg;
+  prf.to_sram.raddr[2 * (ALU_NUM) + 2] = st_iq.out.inst[0].src2_preg;
 
   prf.read();
 
@@ -195,42 +151,43 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       bru[i].in.op = inst.op;
       bru[i].cycle();
 
-      rob.in.complete[i] = true;
-      rob.in.idx[i] = int_iq.out.pos_idx[i];
+      rob.in.from_ex_valid[i] = true;
+      rob.in.rob_idx[i] = int_iq.out.inst[i].rob_idx;
 
       prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
-      prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_idx;
+      prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_preg;
       prf.to_sram.wdata[i] = alu[i].out.res;
 
     } else {
-      rob.in.complete[i] = false;
+      rob.in.from_ex_valid[i] = false;
       alu[i].cycle();
       bru[i].cycle();
     }
 
-    for (int i = 0; i < BRU_NUM; i++) {
-      if (int_iq.out.valid[i] && bru[i].out.br_taken) {
-        rob.in.br_taken = true;
-        rob.in.br_tag = int_iq.out.inst[i].tag;
+    /*for (int i = 0; i < BRU_NUM; i++) {*/
+    /*  if (int_iq.out.valid[i] && bru[i].out.br_taken) {*/
+    /*    rob.in.br_taken = true;*/
+    /*    rob.in.br_tag = int_iq.out.inst[i].tag;*/
+    /**/
+    /*    int_iq.in.br_taken = true;*/
+    /*    int_iq.in.br_tag = int_iq.out.inst[i].tag;*/
+    /*    ld_iq.in.br_taken = true;*/
+    /*    ld_iq.in.br_tag = int_iq.out.inst[i].tag;*/
+    /*    st_iq.in.br_taken = true;*/
+    /*    st_iq.in.br_tag = int_iq.out.inst[i].tag;*/
+    /*    break;*/
+    /*  }*/
+    /*}*/
 
-        int_iq.in.br_taken = true;
-        int_iq.in.br_tag = int_iq.out.inst[i].tag;
-        ld_iq.in.br_taken = true;
-        ld_iq.in.br_tag = int_iq.out.inst[i].tag;
-        st_iq.in.br_taken = true;
-        st_iq.in.br_tag = int_iq.out.inst[i].tag;
-        break;
-      }
-    }
-
-    if (*(output_data + POS_OUT_BRANCH) == false) {
-      *(output_data + POS_OUT_BRANCH) = rob.in.br_taken;
-      cvt_number_to_bit_unsigned(output_data + POS_OUT_PC, bru[i].out.pc_next,
-                                 32);
-    }
+    /*if (*(output_data + POS_OUT_BRANCH) == false) {*/
+    /*  *(output_data + POS_OUT_BRANCH) = rob.in.br_taken;*/
+    /*  cvt_number_to_bit_unsigned(output_data + POS_OUT_PC,
+     * bru[i].out.pc_next,*/
+    /*                             32);*/
+    /*}*/
   }
 
-  rename.in.br_taken = *(output_data + POS_OUT_BRANCH);
+  /*rename.in.br_taken = *(output_data + POS_OUT_BRANCH);*/
 
   // load指令计算地址
   Inst_info inst = ld_iq.out.inst[0];
@@ -244,18 +201,18 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     cvt_number_to_bit(output_data + POS_OUT_LOAD_ADDR, agu[0].out.addr, 32);
 
     ldq.in.write.valid = true;
-    ldq.in.write.rob_idx = ld_iq.out.pos_idx[0];
+    ldq.in.write.rob_idx = ld_iq.out.inst[0].rob_idx;
     ldq.in.write.addr = agu[0].out.addr;
     ldq.in.write.size = inst.func3;
 
     prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;
-    prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_idx;
+    prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_preg;
     /*prf.to_sram.wdata[PRF_WR_LD_PORT] = load_data();*/
 
     for (int i = 0; i < ISSUE_WAY; i++) {
       ldq.in.commit[i] = (rob.out.commit_entry[i].op == LOAD);
     }
-    rob.in.complete[ALU_NUM] = true;
+    rob.in.from_ex_valid[ALU_NUM] = true;
     /*rob.in.idx[ALU_NUM] = ld_iq.out.pos_idx[0];*/
   }
 
@@ -283,11 +240,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     /*  rename.free_reg(rob.out.commit_entry[i].old_dest_preg_idx);*/
     /*}*/
     rename.in.commit_valid[i] = rob.out.valid[i];
-    rename.in.commit_dest_en[i] = rob.out.commit_entry[i].dest_en;
-    rename.in.commit_dest_preg_idx[i] = rob.out.commit_entry[i].dest_preg_idx;
-    rename.in.commit_dest_areg_idx[i] = rob.out.commit_entry[i].dest_areg_idx;
-    rename.in.commit_old_dest_preg_idx[i] =
-        rob.out.commit_entry[i].old_dest_preg_idx;
+    rename.in.commit_inst[i] = rob.out.commit_entry[i];
   }
 }
 
