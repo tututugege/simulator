@@ -26,11 +26,14 @@ void operand_mux(Inst_info inst, uint32_t reg_data1, uint32_t reg_data2,
   }
 }
 
-void Back_Top::difftest(int pc) {
+void Back_Top::difftest(Inst_info inst) {
+  if (inst.dest_en)
+    rename.arch_RAT[inst.dest_areg] = inst.dest_preg;
+
   for (int i = 0; i < ARF_NUM; i++) {
     dut.gpr[i] = prf.debug_read(rename.arch_RAT[i]);
   }
-  dut.pc = pc;
+  dut.pc = inst.pc_next;
   difftest_step();
 }
 
@@ -51,16 +54,14 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   for (int i = 0; i < INST_WAY; i++) {
     if (!in.valid[i])
       out.ready[i] = true;
-
-    br_tag.in.valid[i] =
-        in.valid[i] &&
-        (in.inst[i].op == BR || in.inst[i].op == JALR || in.inst[i].op == JAL);
   }
 
-  br_tag.comb();
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    rename.in.commit_valid[i] = rob.out.valid[i];
+    rename.in.commit_inst[i] = rob.out.commit_entry[i];
+  }
 
   for (int i = 0; i < INST_WAY; i++) {
-    in.inst[i].tag = br_tag.out.tag[i];
     rename.in.valid[i] = in.valid[i];
     rename.in.inst[i] = in.inst[i];
   }
@@ -80,9 +81,11 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   for (int i = 0; i < ALU_NUM; i++) {
     rob.in.from_ex_valid[i] = int_iq.out.valid[i];
+    rob.in.from_ex_inst[i] = int_iq.out.inst[i];
   }
   rob.in.from_ex_valid[ALU_NUM] = ld_iq.out.valid[0];
-  rob.in.from_ex_valid[ALU_NUM + 1] = st_iq.out.valid[0];
+  rob.in.from_ex_inst[ALU_NUM] = ld_iq.out.inst[0];
+  rob.in.from_ex_inst[ALU_NUM + 1] = st_iq.out.inst[0];
 
   rob.comb_1();
 
@@ -96,6 +99,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       rename.in.from_iq_ready[i] = int_iq.out.ready[i];
 
     rename.in.from_rob_ready[i] = rob.out.to_ren_ready[i];
+    out.ready[i] = rename.out.to_dec_ready[i];
   }
 
   for (int i = 0; i < ALU_NUM; i++) {
@@ -105,58 +109,50 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   ld_iq.in.ready[0] = rob.out.to_ex_ready[2];
   st_iq.in.ready[0] = rob.out.to_ex_ready[3];
   // 生成all ready
-  rename.comb_1();
+  int_iq.in.all_ready = rob.out.to_ex_all_ready;
+  ld_iq.in.all_ready = rob.out.to_ex_all_ready;
+  st_iq.in.all_ready = rob.out.to_ex_all_ready;
   int_iq.comb_1();
   st_iq.comb_1();
   ld_iq.comb_1();
 
-  out.all_ready = andR(out.ready, INST_WAY) &&
-                  andR(br_tag.out.ready, INST_WAY) && rename.out.all_ready;
-
   rename.in.from_iq_all_ready =
-      rob.out.to_ren_all_ready && int_iq.out.all_ready;
-  int_iq.in.all_ready = rob.out.to_ex_all_ready;
-  ld_iq.in.all_ready = rob.out.to_ex_all_ready;
-  st_iq.in.all_ready = rob.out.to_ex_all_ready;
+      int_iq.out.all_ready && ld_iq.out.all_ready && st_iq.out.all_ready;
+  rename.in.from_rob_all_ready = rob.out.to_ren_all_ready;
+  rename.comb_1();
 
-  /************* 逆流水线更新组合逻辑输入输出以及ready信号 ****************/
-  // 分配分支tag
-  /*bool tag_fire[INST_WAY];*/
+  out.all_ready = rename.out.to_dec_all_ready;
 
   // 重命名
   for (int i = 0; i < INST_WAY; i++) {
     rename.in.inst[i] = in.inst[i];
   }
+  rename.comb_2();
 
   // rob入队输入
   for (int i = 0; i < INST_WAY; i++) {
-    rob.in.inst[i] = rename.out.inst[i];
+    rob.in.from_ren_inst[i] = rename.out.inst[i];
   }
 
-  // ld queue分配
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.inst[i].op == LOAD) {
-      ldq.in.alloc[i].dest_preg_idx = rename.out.inst[i].dest_preg;
-      ldq.in.alloc[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
-      ldq.in.alloc[i].valid = true;
-    } else {
-      ldq.in.alloc[i].valid = false;
-    }
-  }
-
-  // st queue分配
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.inst[i].op == STORE) {
-      stq.in.alloc[i].valid = false;
-    } else {
-      stq.in.alloc[i].valid = false;
-    }
-  }
-
-  // pipeline2:
-  // execute 执行
-  // iq入队输入
-  // 仲裁 发射指令
+  /*// ld queue分配*/
+  /*for (int i = 0; i < INST_WAY; i++) {*/
+  /*  if (in.inst[i].op == LOAD) {*/
+  /*    ldq.in.alloc[i].dest_preg_idx = rename.out.inst[i].dest_preg;*/
+  /*    ldq.in.alloc[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;*/
+  /*    ldq.in.alloc[i].valid = true;*/
+  /*  } else {*/
+  /*    ldq.in.alloc[i].valid = false;*/
+  /*  }*/
+  /*}*/
+  /**/
+  /*// st queue分配*/
+  /*for (int i = 0; i < INST_WAY; i++) {*/
+  /*  if (in.inst[i].op == STORE) {*/
+  /*    stq.in.alloc[i].valid = false;*/
+  /*  } else {*/
+  /*    stq.in.alloc[i].valid = false;*/
+  /*  }*/
+  /*}*/
 
   for (int i = 0; i < INST_WAY; i++) {
     int_iq.in.inst[i] = rename.out.inst[i];
@@ -182,6 +178,10 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   prf.read();
 
+  int_iq.comb_2();
+  ld_iq.comb_2();
+  st_iq.comb_2();
+
   // 往所有ALU BRU发射指令
   for (int i = 0; i < ALU_NUM; i++) {
     Inst_info inst = int_iq.out.inst[i];
@@ -203,15 +203,12 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       bru[i].in.op = inst.op;
       bru[i].cycle();
 
-      rob.in.from_ex_valid[i] = true;
-      rob.in.rob_idx[i] = int_iq.out.inst[i].rob_idx;
-
+      rob.in.from_ex_inst[i].pc_next = bru[i].out.pc_next;
       prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
       prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_preg;
       prf.to_sram.wdata[i] = alu[i].out.res;
 
     } else {
-      rob.in.from_ex_valid[i] = false;
       alu[i].cycle();
       bru[i].cycle();
     }
@@ -264,8 +261,6 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       ldq.in.commit[i] = (rob.out.commit_entry[i].op == LOAD);
     }
-    rob.in.from_ex_valid[ALU_NUM] = true;
-    /*rob.in.idx[ALU_NUM] = ld_iq.out.pos_idx[0];*/
   }
 
   inst = st_iq.out.inst[0];
@@ -283,17 +278,6 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   }
 
   rob.comb_2();
-
-  // rob
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    /*if (rob.out.commit_entry[i].op != NONE &&
-     * rob.out.commit_entry[i].dest_en)
-     * {*/
-    /*  rename.free_reg(rob.out.commit_entry[i].old_dest_preg_idx);*/
-    /*}*/
-    rename.in.commit_valid[i] = rob.out.valid[i];
-    rename.in.commit_inst[i] = rob.out.commit_entry[i];
-  }
 }
 
 void Back_Top::Back_seq(bool *input_data, bool *output_data) {

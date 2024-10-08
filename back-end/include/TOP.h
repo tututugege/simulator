@@ -21,7 +21,6 @@ typedef struct Back_out {
 class Back_Top {
 private:
   Rename rename;
-  Br_Tag br_tag;
   IQ int_iq;
   IQ st_iq;
   IQ ld_iq; // 发射队列
@@ -42,5 +41,5 @@ public:
   void Back_seq(bool *input_data, bool *output_data);  // 时序逻辑
 
   // debug
-  void difftest(int pc);
+  void difftest(Inst_info inst);
 };

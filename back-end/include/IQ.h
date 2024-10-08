@@ -5,8 +5,8 @@
 
 typedef struct IQ_out {
   // 握手信号
-  int valid[INST_WAY];
-  int ready[INST_WAY];
+  vector<bool> valid;
+  bool ready[INST_WAY];
   bool all_ready;
 
   vector<Inst_info> inst;
@@ -15,7 +15,7 @@ typedef struct IQ_out {
 typedef struct IQ_in {
   // 握手信号
   bool valid[INST_WAY];
-  bool ready[ISSUE_WAY];
+  vector<bool> ready;
   bool all_ready;
 
   Inst_info inst[INST_WAY];
@@ -44,9 +44,12 @@ public:
   IQ_out out;
 
 private:
-  void alloc_IQ(int *);
   vector<IQ_entry> entry;
   vector<IQ_entry> entry_1;
+
+  // register
+  int enq_ptr;
+  int enq_ptr_1;
 
   // config
   int entry_num;
