@@ -1,3 +1,4 @@
+#pragma once
 #include <FIFO.h>
 #include <config.h>
 

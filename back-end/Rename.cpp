@@ -8,19 +8,23 @@ void Rename::init() {
     free_vec[i] = false;
     arch_RAT[i] = i;
     spec_RAT[i] = i;
+
+    free_vec_1[i] = false;
+    spec_RAT_1[i] = i;
   }
 
-  for (int i = ARF_NUM; i < PRF_NUM; i += 2) {
-    free_vec[i] = false;
+  for (int i = ARF_NUM; i < PRF_NUM; i++) {
+    free_vec[i] = true;
+    free_vec_1[i] = true;
   }
 }
 
-// 根据PRF使用情况以及后级流水线ready信号输出ready
+// valid
 void Rename::comb_0() {
   // 可用寄存器个数 大于INST_WAY时为INST_WAY
   int num = 0;
   for (int i = 0; i < PRF_NUM && num < INST_WAY; i++) {
-    if (free_vec[i] == false) {
+    if (free_vec[i]) {
       alloc_reg[num] = i;
       num++;
     }
@@ -29,7 +33,7 @@ void Rename::comb_0() {
   // 无有效指令或者无需分配寄存器ready都为1且不占用寄存器
   for (int i = 0; i < INST_WAY; i++) {
     if (!in.valid[i] || !in.inst[i].dest_en)
-      out.ready[i] = true;
+      done[i] = true;
   }
 
   // 有效且需要寄存器的指令，寄存器不够则对应端口ready为false
@@ -39,68 +43,65 @@ void Rename::comb_0() {
     if (in.valid[i] && in.inst[i].dest_en) {
       // 分配寄存器
       if (alloc_num < num) {
-        out.ready[i] = true;
+        done[i] = true;
+        alloc_num++;
       } else {
-        out.ready[i] = false;
+        done[i] = false;
       }
     }
   }
 
   for (int i = 0; i < INST_WAY; i++) {
     // 如果输入有指令且寄存器够
-    if (in.valid[i] && out.ready[i]) {
+    if (in.valid[i] && done[i]) {
       out.to_iq_valid[i] = !iq_fire;
       out.to_rob_valid[i] = !rob_fire;
     } else {
       out.to_iq_valid[i] = false;
       out.to_rob_valid[i] = false;
     }
+
+    // 无有效输入或者本级即将流入下一级时ready
+    out.to_dec_ready[i] = !in.valid[i] || ((in.from_iq_all_ready || iq_fire) &&
+                                           (in.from_rob_all_ready || rob_fire));
   }
 }
 
 void Rename::comb_1() {
-  out.all_ready = out.ready[0];
+  out.to_dec_all_ready = out.to_dec_ready[0];
   for (int i = 1; i < INST_WAY; i++) {
-    out.all_ready = out.ready[i] && out.all_ready;
+    out.to_dec_all_ready = out.to_dec_ready[i] && out.to_dec_all_ready;
   }
-  out.all_ready =
-      out.all_ready && in.from_iq_all_ready && in.from_rob_all_ready;
+  out.to_dec_all_ready =
+      out.to_dec_all_ready && in.from_iq_all_ready && in.from_rob_all_ready;
 }
 
 void Rename::comb_2() {
   // 分配寄存器
   int alloc_num = 0;
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i] && out.ready[i] && out.inst[i].dest_en) {
+    if (in.valid[i] && out.to_dec_ready[i] && out.inst[i].dest_en &&
+        !has_alloc[i]) {
       out.inst[i].dest_preg = alloc_reg[alloc_num];
       free_vec_1[alloc_reg[alloc_num]] = false;
       busy_table_1[alloc_reg[alloc_num]] = true;
+      spec_RAT_1[in.inst[i].dest_areg] = alloc_reg[alloc_num];
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][alloc_reg[alloc_num]] = true;
+
+      alloc_num++;
     }
   }
 
   // 无waw raw的输出 读spec_RAT和busy_table
   for (int i = 0; i < INST_WAY; i++) {
-    out.inst[i].old_dest_preg = spec_RAT[in.inst[i].dest_preg];
+    out.inst[i].old_dest_preg = spec_RAT[in.inst[i].dest_areg];
     out.inst[i].src1_preg = spec_RAT[in.inst[i].src1_areg];
     out.inst[i].src2_preg = spec_RAT[in.inst[i].src2_areg];
     out.inst[i].src1_busy =
         busy_table[out.inst[i].src1_preg] && in.inst[i].src1_en;
     out.inst[i].src2_busy =
         busy_table[out.inst[i].src1_preg] && in.inst[i].src2_en;
-  }
-
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (in.commit_valid[i]) {
-      if (in.commit_inst[i].dest_en) {
-        free_vec_1[in.commit_inst[i].old_dest_preg] = true;
-
-#ifdef CONFIG_DIFFTEST
-        arch_RAT[in.commit_inst[i].dest_areg] = in.commit_inst[i].dest_preg;
-#endif
-      }
-    }
   }
 
   // 针对RAT 和busy_table的raw的bypass
@@ -151,19 +152,35 @@ void Rename::comb_2() {
     iq_fire_1 = in.from_iq_all_ready;
     rob_fire_1 = in.from_iq_all_ready;
   }
+
+  // 已经分配寄存的指令做标记防止重复
+  for (int i = 0; i < INST_WAY; i++) {
+    if (in.valid[i] && done[i])
+      has_alloc_1[i] = true;
+    else
+      has_alloc_1[i] = false;
+  }
+
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (in.commit_valid[i]) {
+      if (in.commit_inst[i].dest_en) {
+        free_vec_1[in.commit_inst[i].old_dest_preg] = true;
+      }
+    }
+  }
 }
 
 void Rename ::seq() {
   for (int i = 0; i < ARF_NUM; i++) {
     spec_RAT[i] = spec_RAT_1[i];
-    for (int j = 0; i < MAX_BR_NUM; j++)
+    for (int j = 0; j < MAX_BR_NUM; j++)
       RAT_checkpoint[j][i] = RAT_checkpoint_1[j][i];
   }
 
-  for (int i = 0; i < ARF_NUM; i++) {
+  for (int i = 0; i < PRF_NUM; i++) {
     free_vec[i] = free_vec_1[i];
     busy_table[i] = busy_table_1[i];
-    for (int j = 0; i < MAX_BR_NUM; j++)
+    for (int j = 0; j < MAX_BR_NUM; j++)
       alloc_checkpoint[j][i] = alloc_checkpoint_1[j][i];
   }
 

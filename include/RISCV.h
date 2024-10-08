@@ -44,6 +44,7 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
 #define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B
 
 extern Back_Top back;
+extern Br_Tag br_tag;
 enum enum_number_opcode {
   number_0_opcode_lui = 0b0110111,   // lui
   number_1_opcode_auipc = 0b0010111, // auipc

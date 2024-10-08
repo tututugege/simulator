@@ -26,9 +26,19 @@ void BRU::cycle() {
 }
 
 void Br_Tag::init() {
-  for (int i = 0; i < MAX_BR_NUM; i++) {
+  for (int i = 1; i < MAX_BR_NUM; i++) {
     tag_vec[i] = true;
+    tag_vec_1[i] = true;
   }
+  tag_vec[0] = false;
+  tag_vec_1[0] = false;
+  last_tag = 0;
+  last_tag_1 = 0;
+
+  tag_fifo[0] = 0;
+  tag_fifo_1[0] = 0;
+  enq_ptr = 1;
+  enq_ptr_1 = 1;
 }
 
 void Br_Tag::comb() {
