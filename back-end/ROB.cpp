@@ -17,12 +17,15 @@ void ROB::comb_0() {
   for (complete_num = 0; complete_num < ISSUE_WAY; complete_num++) {
     int idx = (deq_ptr + complete_num) % ROB_NUM;
     out.commit_entry[complete_num] = entry.from_sram.rdata[complete_num];
+    out.commit_entry[complete_num].pc_next = pc_next[idx];
     out.valid[complete_num] = valid[idx] && complete[idx];
-    complete_1[idx] = false;
-    valid_1[idx] = false;
-    if (out.valid[complete_num] == false)
+    if (out.valid[complete_num]) {
+      complete_1[idx] = false;
+      valid_1[idx] = false;
+    } else
       break;
   }
+
   for (int i = complete_num; i < ISSUE_WAY; i++) {
     out.valid[i] = false;
   }
@@ -49,8 +52,8 @@ void ROB::comb_1() {
   //  执行完毕的标记
   for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
     out.to_ex_ready[i] = true;
-    if (in.from_ex_valid[i] && out.to_ex_all_ready) {
-      complete_1[in.rob_idx[i]] = true;
+    if (in.from_ex_valid[i] && out.to_ex_ready[i]) {
+      complete_1[in.from_ex_inst[i].rob_idx] = true;
     }
   }
   out.to_ex_all_ready = true;
@@ -60,17 +63,25 @@ void ROB::comb_1() {
 void ROB::comb_2() {
   for (int i = 0; i < INST_WAY; i++) {
     if (in.from_ren_valid[i] && out.to_ren_ready[i]) {
-      Inst_info enq_entry = in.inst[i];
+      Inst_info enq_entry = in.from_ren_inst[i];
       entry.to_sram.waddr[i] = enq_ptr_1;
       entry.to_sram.we[i] = true;
       entry.to_sram.wdata[i] = enq_entry;
       valid_1[enq_ptr_1] = true;
-      tag_1[enq_ptr_1] = in.inst[i].tag;
+      tag_1[enq_ptr_1] = in.from_ex_inst[i].tag;
       enq_ptr_1 = (enq_ptr_1 + 1) % ROB_NUM;
     } else {
       entry.to_sram.we[i] = false;
     }
   }
+
+#ifdef CONFIG_DIFFTEST
+  for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
+    if (in.from_ex_valid[i] && out.to_ex_ready[i]) {
+      pc_next_1[in.from_ex_inst[i].rob_idx] = in.from_ex_inst[i].pc_next;
+    }
+  }
+#endif // DEBUG
 
   // 分支处理
   if (in.br_taken)
@@ -83,7 +94,7 @@ void ROB::seq() {
     for (int i = 0; i < ISSUE_WAY; i++) {
       if (out.valid[i]) {
 #ifdef CONFIG_DIFFTEST
-        back.difftest(out.commit_entry[i].pc_next);
+        back.difftest(out.commit_entry[i]);
 #endif
         cout << "ROB commit PC 0x" << hex << out.commit_entry[i].pc << endl;
       }
@@ -95,6 +106,10 @@ void ROB::seq() {
     complete[i] = complete_1[i];
     valid[i] = valid_1[i];
     tag[i] = tag_1[i];
+
+#ifdef CONFIG_DIFFTEST
+    pc_next[i] = pc_next_1[i];
+#endif
   }
 
   enq_ptr = enq_ptr_1;

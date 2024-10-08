@@ -6,8 +6,11 @@ IQ::IQ(int entry_num, int fu_num) {
   this->fu_num = fu_num;
 
   out.inst.resize(fu_num);
+  out.valid.resize(fu_num);
 
+  in.ready.resize(fu_num);
   entry.resize(entry_num);
+  entry_1.resize(entry_num);
 }
 
 void IQ::init() {
@@ -20,6 +23,7 @@ void IQ::seq() {
   for (int i = 0; i < entry_num; i++) {
     entry[i] = entry_1[i];
   }
+  enq_ptr = enq_ptr_1;
 }
 
 void IQ::comb_0() {
@@ -30,11 +34,12 @@ void IQ::comb_0() {
       out.inst[issue_num] = entry[i].inst;
       out.valid[issue_num] = true;
       issue_num++;
+      enq_ptr_1--;
     }
   }
 
   while (issue_num < fu_num) {
-    out.valid[issue_num] = false;
+    out.valid[issue_num++] = false;
   }
 
   // 无效指令 ready为1
@@ -43,24 +48,13 @@ void IQ::comb_0() {
       out.ready[i] = true;
   }
 
-  // 进入IQ
-  int num = 0;
-  int alloc_iq[INST_WAY];
-  for (int i = 0; i < entry_num && num < INST_WAY; i++) {
-    if (entry_1[i].valid == false) {
-      alloc_iq[num] = i;
-      num++;
-    }
-  }
-
   // 有效指令，iq不够则对应端口ready为false
-  int alloc_num = 0;
+  int enq_idx = enq_ptr_1;
   for (int i = 0; i < INST_WAY; i++) {
     if (in.valid[i]) {
-      // 分配iq
-      if (alloc_num < num) {
-        entry_1[alloc_iq[alloc_num]].inst = in.inst[i];
-        alloc_num++;
+      if (enq_idx < entry_num) {
+        out.ready[i] = true;
+        enq_idx++;
       } else {
         out.ready[i] = false;
       }
@@ -92,12 +86,28 @@ void IQ::comb_2() {
   for (int i = 0; i < entry_num; i++) {
     int compress_num = 0;
     for (int j = 0; j < fire_issue_num; j++) {
-      if (i <= fire_issue_idx[j])
+      if (i >= fire_issue_idx[j])
         compress_num++;
     }
 
     if (entry[i + compress_num].valid)
       entry_1[i] = entry[i + compress_num];
+    else
+      entry_1[i].valid = false;
+  }
+
+  // 进入 分配iq
+  for (int i = 0; i < INST_WAY; i++) {
+    if (in.valid[i]) {
+      if (enq_ptr_1 < entry_num) {
+        entry_1[enq_ptr_1].inst = in.inst[i];
+        entry_1[enq_ptr_1].valid = true;
+        out.ready[i] = true;
+        enq_ptr_1++;
+      } else {
+        out.ready[i] = false;
+      }
+    }
   }
 
   // 分支处理

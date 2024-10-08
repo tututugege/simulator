@@ -1,17 +1,29 @@
+#include <BRU.h>
 #include <RISCV.h>
 #include <cassert>
 #include <config.h>
 #include <cvt.h>
+#include <util.h>
+
 Inst_info decode(bool inst_bit[]);
+Inst_info ren_inst[INST_WAY];
+bool ren_valid[INST_WAY];
+bool has_alloc[INST_WAY];
+
+Inst_info ren_inst_1[INST_WAY];
+bool ren_valid_1[INST_WAY];
+bool has_alloc_1[INST_WAY];
 
 void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
+
+  bool *instruction[INST_WAY];
+  uint32_t number_pc_unsigned[INST_WAY];
+
   // get input data
   bool *general_regs = input_data;            // 1024
   bool *reg_csrs = input_data + 32 * PRF_NUM; // 32*21
 
-  bool *instruction[INST_WAY];
   bool *bit_this_pc[INST_WAY]; // 32
-  uint32_t number_pc_unsigned[INST_WAY];
 
   for (int i = 0; i < INST_WAY; i++) {
     instruction[i] = input_data + POS_IN_INST + 32 * i;
@@ -33,30 +45,50 @@ void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data) {
   bool next_priviledge[2];
   copy_indice(next_priviledge, 0, this_priviledge, 0, 2);
 
-  /*bool *next_general_regs = output_data + 0; // 1024*/
-  /*bool *bit_load_address = output_data + POS_OUT_LOAD_ADDR;*/
-  /*bool *bit_store_data = output_data + POS_OUT_STORE_DATA;*/
-  /*bool *bit_store_address = output_data + POS_OUT_STORE_ADDR;*/
-
-  /*bool *bit_reg_data_a = general_regs; // 32*/
-  /*bool *bit_reg_data_b = general_regs; // 32*/
-  /**/
-
-  Inst_info inst[INST_WAY];
-  // decode
+  // 译码并分配tag
+  Inst_info dec_inst[INST_WAY];
+  bool dec_done[INST_WAY];
+  bool *dec_valid = input_data + POS_IN_INST_VALID;
+  for (int i = 0; i < INST_WAY; i++) {
+    dec_inst[i] = decode(instruction[i]);
+    dec_inst[i].pc = number_pc_unsigned[i];
+    br_tag.in.valid[i] = dec_valid[i] && ~has_alloc[i] &&
+                         (dec_inst[i].op == BR || dec_inst[i].op == JALR ||
+                          dec_inst[i].op == JAL);
+  }
+  br_tag.comb();
 
   for (int i = 0; i < INST_WAY; i++) {
-    if (*(input_data + POS_IN_INST_VALID + i)) {
-      back.in.inst[i] = decode(instruction[i]);
-      back.in.inst[i].pc = number_pc_unsigned[i];
-      back.in.valid[i] = true;
-    } else {
-      back.in.valid[i] = false;
-    }
+    back.in.inst[i] = ren_inst[i];
+    back.in.valid[i] = ren_valid[i];
   }
+
   // rename -> execute -> write back
   back.Back_comb(input_data, output_data);
+
+  for (int i = 0; i < INST_WAY; i++) {
+    dec_inst[i].tag = br_tag.out.tag[i];
+    dec_done[i] = br_tag.out.ready[i];
+
+    if (back.out.all_ready) {
+      ren_inst_1[i] = dec_inst[i];
+      ren_valid_1[i] = dec_valid[i] && dec_done[i];
+    } else if (back.out.ready[i] && dec_done[i]) {
+      ren_valid_1[i] = false;
+    }
+
+    if (dec_valid[i] && dec_done[i] && !back.out.ready[i])
+      has_alloc_1[i] = true;
+    else
+      has_alloc_1[i] = false;
+  }
+
   back.Back_seq(input_data, output_data);
+  for (int i = 0; i < INST_WAY; i++) {
+    ren_inst[i] = ren_inst_1[i];
+    ren_valid[i] = ren_valid_1[i];
+    has_alloc[i] = has_alloc_1[i];
+  }
 
   // output data
   /*init_indice(next_general_regs, 0, 32);*/
@@ -215,6 +247,7 @@ Inst_info decode(bool inst_bit[]) {
     src2_en = true;
     src2_is_imm = false;
     op = ADD;
+    break;
   }
   case number_9_opcode_fence: { // fence, fence.i
     dest_en = false;

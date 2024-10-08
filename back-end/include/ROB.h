@@ -1,16 +1,17 @@
 #pragma once
 #include <SRAM.h>
 #include <config.h>
+#include <cstdint>
 
 typedef struct ROB_in {
 
   // dispatch写入ROB
   bool from_ren_valid[INST_WAY];
-  Inst_info inst[INST_WAY];
+  Inst_info from_ren_inst[INST_WAY];
 
   // execute完成情况
   bool from_ex_valid[ISSUE_WAY];
-  int rob_idx[ISSUE_WAY];
+  Inst_info from_ex_inst[ISSUE_WAY];
 
   // 分支信息
   int br_rob_idx;
@@ -56,4 +57,9 @@ private:
   int deq_ptr_1;
   int count_1;
   uint32_t tag_1[ROB_NUM];
+
+#ifdef CONFIG_DIFFTEST
+  uint32_t pc_next[ROB_NUM];
+  uint32_t pc_next_1[ROB_NUM];
+#endif
 };

@@ -62,6 +62,7 @@ uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 
 // 后端执行
 Back_Top back = Back_Top();
+Br_Tag br_tag;
 
 /* =====================================
 
@@ -95,6 +96,7 @@ int main(int argc, char *argv[]) {
   // init difftest and back-end
   init_difftest(diff_so, i);
   back.init();
+  br_tag.init();
 
   cout << hex << p_memory[0x80400000 / 4] << endl;
   cout << hex << p_memory[0x80400004 / 4] << endl;
