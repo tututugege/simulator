@@ -24,14 +24,14 @@ typedef struct IQ_in {
 typedef struct IQ_entry {
   bool valid;
   Inst_info inst;
-  bool src1_busy;
-  bool src2_busy;
 } IQ_entry;
 
 class IQ {
 public:
   IQ(int entry_num, int out_num);
   void init();
+
+  void wake_up(Inst_info *);
   void comb_deq();
   void comb_enq();
   void comb_2();
@@ -47,7 +47,14 @@ private:
   int enq_ptr;
   int enq_ptr_1;
 
+  // 中间
+  vector<int> issue_idx;
+
   // config
   int entry_num;
   int fu_num;
 };
+
+/*class ISU {*/
+/**/
+/*};*/

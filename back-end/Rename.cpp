@@ -53,20 +53,26 @@ void Rename::comb_alloc() {
     }
   }
 
+  // busy_table wake up
+  for (int i = 0; i < ALU_NUM; i++) {
+    if (in.wake[i].valid) {
+      busy_table_1[in.wake[i].preg] = false;
+    }
+  }
+
   // 无waw raw的输出 读spec_RAT和busy_table
   for (int i = 0; i < INST_WAY; i++) {
     out.inst[i].old_dest_preg = spec_RAT[in.inst[i].dest_areg];
     out.inst[i].src1_preg = spec_RAT[in.inst[i].src1_areg];
     out.inst[i].src2_preg = spec_RAT[in.inst[i].src2_areg];
     out.inst[i].src1_busy =
-        busy_table[out.inst[i].src1_preg] && in.inst[i].src1_en;
+        busy_table_1[out.inst[i].src1_preg] && in.inst[i].src1_en;
     out.inst[i].src2_busy =
-        busy_table[out.inst[i].src1_preg] && in.inst[i].src2_en;
+        busy_table_1[out.inst[i].src2_preg] && in.inst[i].src2_en;
   }
 
   // 针对RAT 和busy_table的raw的bypass
   for (int i = 1; i < INST_WAY; i++) {
-
     for (int j = 0; j < i; j++) {
       if (!in.valid[j] || !in.inst[j].dest_en)
         continue;
