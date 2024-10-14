@@ -20,6 +20,9 @@ typedef struct Rename_in {
 
   // 分支信息
   Br_info br;
+
+  // wakeup
+  Wake_info wake[ALU_NUM];
 } Rename_in;
 
 class Rename {
@@ -29,7 +32,6 @@ public:
   void init();
   void comb_alloc();
   void comb_fire();
-  void comb_2();
   void seq(); // 时序逻辑
 
   // debug

@@ -14,10 +14,10 @@
 
 #define BEQ 0b000
 #define BNE 0b001
-#define BGE 0b100
-#define BLT 0b101
-#define BGEU 0b110
-#define BLTU 0b111
+#define BLT 0b100
+#define BGE 0b101
+#define BLTU 0b110
+#define BGEU 0b111
 
 void ALU::cycle() {
 
