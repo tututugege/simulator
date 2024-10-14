@@ -10,7 +10,6 @@ int time_i = 0;
 
 using namespace std;
 
-//
 enum csr_reg {
   CSR_MTVEC = 64,
   CSR_MEPC,
@@ -96,10 +95,10 @@ int main(int argc, char *argv[]) {
   init_difftest(diff_so, i);
   back.init();
 
-  cout << hex << p_memory[0x80400000 / 4] << endl;
-  cout << hex << p_memory[0x80400004 / 4] << endl;
-  cout << hex << p_memory[0x80400008 / 4] << endl;
-  cout << hex << p_memory[0x8040000c / 4] << endl;
+  /*cout << hex << p_memory[0x80400000 / 4] << endl;*/
+  /*cout << hex << p_memory[0x80400004 / 4] << endl;*/
+  /*cout << hex << p_memory[0x80400008 / 4] << endl;*/
+  /*cout << hex << p_memory[0x8040000c / 4] << endl;*/
   // cout << "all lines in program = " << i << endl;
 
   bool number_PC_bit[INST_WAY][BIT_WIDTH_PC] = {0};
@@ -127,9 +126,8 @@ int main(int argc, char *argv[]) {
                 BIT_WIDTH_REG_STATES);
     copy_indice(input_data_to_RISCV, POS_IN_PRIVILEGE, output_data_from_RISCV,
                 POS_OUT_PRIVILEGE, 2);
-    init_indice(input_data_to_RISCV, POS_IN_INST,
-                32 * 3 + 4); // inst, pc, load data, asy, page fault
-    stall = *(output_data_from_RISCV + POS_OUT_STALL);
+    /*init_indice(input_data_to_RISCV, POS_IN_INST,*/
+    /*            32 * 3 + 4); // inst, pc, load data, asy, page fault*/
 
     if (i == 0) {
 
@@ -274,6 +272,7 @@ int main(int argc, char *argv[]) {
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
     RISCV_32I(input_data_to_RISCV, output_data_from_RISCV);
 
+    stall = *(output_data_from_RISCV + POS_OUT_STALL);
     if (!stall) {
       if (*(output_data_from_RISCV + POS_OUT_BRANCH)) {
         number_PC =
@@ -288,10 +287,9 @@ int main(int argc, char *argv[]) {
         /*            0, 32);*/
       }
     } else {
+      bool *fire = output_data_from_RISCV + POS_OUT_FIRE;
       for (int j = 0; j < INST_WAY; j++) {
-        bool valid = *(input_data_to_RISCV + POS_IN_INST_VALID + j);
-        bool ready = *(output_data_from_RISCV + POS_OUT_FIRE + j);
-        if (valid && ready)
+        if (fire[j])
           *(input_data_to_RISCV + POS_IN_INST_VALID + j) = false;
       }
     }

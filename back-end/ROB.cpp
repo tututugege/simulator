@@ -61,6 +61,7 @@ void ROB::comb_complete() {
     while (idx != in.br_rob_idx) {
       valid_1[idx] = false;
       idx = (idx - 1 + ROB_NUM) % ROB_NUM;
+      count_1--;
     }
   }
 

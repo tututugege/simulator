@@ -2,7 +2,7 @@
 #include <EXU.h>
 #include <FIFO.h>
 #include <IDU.h>
-#include <IQ.h>
+#include <ISU.h>
 #include <LSU.h>
 #include <ROB.h>
 #include <Rename.h>

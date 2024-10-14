@@ -56,11 +56,16 @@ typedef struct Inst_info {
   int pc_next;
 } Inst_info;
 
-typedef struct Br_info {
+typedef struct {
   uint32_t br_tag;
   bool br_mask[MAX_BR_NUM];
   bool br_taken;
 } Br_info;
+
+typedef struct {
+  bool valid;
+  uint32_t preg;
+} Wake_info;
 
 inline bool is_branch(Inst_op op) {
   return op == BR || op == JALR || op == JAL;

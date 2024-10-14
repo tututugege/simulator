@@ -201,6 +201,12 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     rename.in.valid[i] = idu.out.valid[i];
     rename.in.inst[i] = idu.out.inst[i];
   }
+
+  for (int i = 0; i < ALU_NUM; i++) {
+    rename.in.wake[i].valid = int_iq.out.valid[i] && int_iq.out.inst[i].dest_en;
+    rename.in.wake[i].preg = int_iq.out.inst[i].dest_preg;
+  }
+
   rename.comb_alloc();
 
   for (int i = 0; i < ALU_NUM; i++) {
@@ -218,15 +224,22 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   rob.in.from_ex_inst[ALU_NUM + 1] = st_iq.out.inst[0];
   rob.in.from_ex_inst[ALU_NUM + 1].pc_next = st_iq.out.inst[0].pc + 4;
 
+  for (int i = 0; i < INST_WAY; i++) {
+    rob.in.from_ren_valid[i] = rename.out.valid[i];
+  }
+
   rob.comb_complete();
 
   for (int i = 0; i < INST_WAY; i++) {
+    int_iq.in.valid[i] = rename.out.valid[i];
     int_iq.in.inst[i] = rename.out.inst[i];
     int_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
 
+    st_iq.in.valid[i] = rename.out.valid[i];
     st_iq.in.inst[i] = rename.out.inst[i];
     st_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
 
+    ld_iq.in.valid[i] = rename.out.valid[i];
     ld_iq.in.inst[i] = rename.out.inst[i];
     ld_iq.in.inst[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;
   }
@@ -264,6 +277,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // rob入队输入
   for (int i = 0; i < INST_WAY; i++) {
+    rob.in.from_ren_valid[i] = rename.out.valid[i];
     rob.in.from_ren_inst[i] = rename.out.inst[i];
   }
 

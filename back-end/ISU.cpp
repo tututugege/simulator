@@ -1,4 +1,4 @@
-#include "IQ.h"
+#include "ISU.h"
 #include "config.h"
 #include "util.h"
 
@@ -30,9 +30,12 @@ void IQ::comb_deq() {
   // 仲裁 选择指令发射到对应的FU 压缩式IQ，直接选择最老的
   int issue_num = 0;
   for (int i = 0; i < entry_num && issue_num < fu_num; i++) {
-    if (entry[i].valid && !entry[i].src1_busy && !entry[i].src2_busy) {
+    if (entry[i].valid && !entry[i].inst.src1_busy &&
+        !entry[i].inst.src2_busy) {
       out.inst[issue_num] = entry[i].inst;
       out.valid[issue_num] = true;
+      entry_1[i].valid = false;
+      wake_up(&entry[i].inst);
       issue_num++;
       enq_ptr_1--;
     }
@@ -64,13 +67,6 @@ void IQ::comb_deq() {
 
 void IQ::comb_enq() {
 
-  // 成功发射的entry号
-  for (int i = 0; i < fu_num; i++) {
-    if (out.valid[i]) {
-      entry_1[i].valid = false;
-    }
-  }
-
   // 分支处理
   if (in.br.br_taken) {
     for (int j = 0; j < entry_num; j++) {
@@ -88,6 +84,7 @@ void IQ::comb_enq() {
           entry_1[i] = entry_1[j];
           entry_1[i].valid = true;
           entry_1[j].valid = false;
+          break;
         }
       }
 
@@ -107,6 +104,22 @@ void IQ::comb_enq() {
         enq_ptr_1++;
       } else {
         out.ready[i] = false;
+      }
+    }
+  }
+}
+
+// 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
+void IQ::wake_up(Inst_info *issue_inst) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid) {
+      if (issue_inst->dest_en &&
+          entry[i].inst.src1_preg == issue_inst->dest_preg) {
+        entry_1[i].inst.src1_busy = false;
+      }
+      if (issue_inst->dest_en &&
+          entry[i].inst.src2_preg == issue_inst->dest_preg) {
+        entry_1[i].inst.src2_busy = false;
       }
     }
   }
