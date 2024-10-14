@@ -1,5 +1,24 @@
 #include <config.h>
-#include <cstdint>
+
+typedef struct BRU_in {
+  uint32_t pc;
+  uint32_t off;
+  uint32_t src1;
+  bool alu_out;
+  Inst_op op;
+} BRU_in;
+
+typedef struct BRU_out {
+  uint32_t pc_next;
+  bool br_taken;
+} BRU_out;
+
+class BRU {
+public:
+  void cycle();
+  BRU_in in;
+  BRU_out out;
+};
 
 typedef struct AGU_in {
   uint32_t base;
@@ -8,7 +27,6 @@ typedef struct AGU_in {
 
 typedef struct AGU_out {
   uint32_t addr;
-  bool idle;
 } AGU_out;
 
 class AGU {
@@ -32,7 +50,6 @@ typedef struct ALU_in {
 
 typedef struct ALU_out {
   uint32_t res;
-  bool idle;
 } ALU_out;
 
 class ALU {

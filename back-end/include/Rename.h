@@ -1,21 +1,15 @@
 #pragma once
 #include "config.h"
+
 typedef struct Rename_out {
   Inst_info inst[INST_WAY];
-
-  bool to_iq_valid[INST_WAY];  // to iq
-  bool to_rob_valid[INST_WAY]; // to rob
-
-  bool to_dec_ready[INST_WAY];
-  bool to_dec_all_ready;
+  bool valid[INST_WAY];
+  bool ready[INST_WAY];
 } Rename_out;
 
 typedef struct Rename_in {
   // rename
-  bool from_iq_ready[INST_WAY]; // from dispatch
-  bool from_iq_all_ready;
-  bool from_rob_ready[INST_WAY]; // from dispatch
-  bool from_rob_all_ready;
+  bool dis_fire[INST_WAY];
 
   bool valid[INST_WAY];
   Inst_info inst[INST_WAY];
@@ -33,8 +27,8 @@ public:
   Rename_in in;
   Rename_out out;
   void init();
-  void comb_0();
-  void comb_1();
+  void comb_alloc();
+  void comb_fire();
   void comb_2();
   void seq(); // 时序逻辑
 
@@ -50,18 +44,12 @@ private:
   bool free_vec[PRF_NUM];
   bool alloc_checkpoint[MAX_BR_NUM][PRF_NUM];
   bool busy_table[PRF_NUM];
-  bool rob_fire;
-  bool iq_fire;
-  bool has_alloc[INST_WAY];
 
   uint32_t spec_RAT_1[ARF_NUM];
   uint32_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM];
   bool free_vec_1[PRF_NUM];
   bool alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
   bool busy_table_1[PRF_NUM];
-  bool rob_fire_1;
-  bool iq_fire_1;
-  bool has_alloc_1[INST_WAY];
 
   // 内部信号
   uint32_t alloc_reg[INST_WAY];
