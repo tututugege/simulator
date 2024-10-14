@@ -1,22 +1,12 @@
 #pragma once
-#include <BRU.h>
 #include <EXU.h>
 #include <FIFO.h>
+#include <IDU.h>
 #include <IQ.h>
 #include <LSU.h>
 #include <ROB.h>
 #include <Rename.h>
 #include <config.h>
-
-typedef struct Back_in {
-  Inst_info inst[INST_WAY];
-  bool valid[INST_WAY];
-} Back_in;
-
-typedef struct Back_out {
-  bool ready[INST_WAY];
-  bool all_ready;
-} Back_out;
 
 class Back_Top {
 private:
@@ -31,12 +21,11 @@ private:
   LDQ ldq;
   STQ stq;
   ROB rob;
+  IDU idu;
 
 public:
   Back_Top();
   void init();
-  Back_in in;
-  Back_out out;
   void Back_comb(bool *input_data, bool *output_data); // 组合逻辑
   void Back_seq(bool *input_data, bool *output_data);  // 时序逻辑
 

@@ -7,17 +7,13 @@ typedef struct IQ_out {
   // 握手信号
   vector<bool> valid;
   bool ready[INST_WAY];
-  bool all_ready;
 
   vector<Inst_info> inst;
 } IQ_out;
 
 typedef struct IQ_in {
-  // 握手信号
+  bool dis_fire[INST_WAY];
   bool valid[INST_WAY];
-  vector<bool> ready;
-  bool all_ready;
-
   Inst_info inst[INST_WAY];
 
   // 分支信息
@@ -36,8 +32,8 @@ class IQ {
 public:
   IQ(int entry_num, int out_num);
   void init();
-  void comb_0();
-  void comb_1();
+  void comb_deq();
+  void comb_enq();
   void comb_2();
   void seq(); // 写入IQ
   IQ_in in;

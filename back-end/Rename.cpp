@@ -20,7 +20,7 @@ void Rename::init() {
 }
 
 // valid
-void Rename::comb_0() {
+void Rename::comb_alloc() {
   // 可用寄存器个数 大于INST_WAY时为INST_WAY
   int num = 0;
   for (int i = 0; i < PRF_NUM && num < INST_WAY; i++) {
@@ -30,66 +30,26 @@ void Rename::comb_0() {
     }
   }
 
-  // 无有效指令或者无需分配寄存器ready都为1且不占用寄存器
-  for (int i = 0; i < INST_WAY; i++) {
-    if (!in.valid[i] || !in.inst[i].dest_en)
-      done[i] = true;
-  }
-
   // 有效且需要寄存器的指令，寄存器不够则对应端口ready为false
   int alloc_num = 0;
+  bool stall = false;
   for (int i = 0; i < INST_WAY; i++) {
     out.inst[i] = in.inst[i];
-    if (in.valid[i] && in.inst[i].dest_en) {
+    if (in.valid[i] && in.inst[i].dest_en && !stall) {
       // 分配寄存器
       if (alloc_num < num) {
-        done[i] = true;
+        out.valid[i] = true;
+        out.ready[i] = true;
+        out.inst[i].dest_preg = alloc_reg[alloc_num];
         alloc_num++;
       } else {
-        done[i] = false;
+        stall = true;
+        out.valid[i] = false;
+        break;
       }
-    }
-  }
-
-  for (int i = 0; i < INST_WAY; i++) {
-    // 如果输入有指令且寄存器够
-    if (in.valid[i] && done[i]) {
-      out.to_iq_valid[i] = !iq_fire;
-      out.to_rob_valid[i] = !rob_fire;
     } else {
-      out.to_iq_valid[i] = false;
-      out.to_rob_valid[i] = false;
-    }
-
-    // 无有效输入或者本级即将流入下一级时ready
-    out.to_dec_ready[i] = !in.valid[i] || ((in.from_iq_all_ready || iq_fire) &&
-                                           (in.from_rob_all_ready || rob_fire));
-  }
-}
-
-void Rename::comb_1() {
-  out.to_dec_all_ready = out.to_dec_ready[0];
-  for (int i = 1; i < INST_WAY; i++) {
-    out.to_dec_all_ready = out.to_dec_ready[i] && out.to_dec_all_ready;
-  }
-  out.to_dec_all_ready =
-      out.to_dec_all_ready && in.from_iq_all_ready && in.from_rob_all_ready;
-}
-
-void Rename::comb_2() {
-  // 分配寄存器
-  int alloc_num = 0;
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i] && out.to_dec_ready[i] && out.inst[i].dest_en &&
-        !has_alloc[i]) {
-      out.inst[i].dest_preg = alloc_reg[alloc_num];
-      free_vec_1[alloc_reg[alloc_num]] = false;
-      busy_table_1[alloc_reg[alloc_num]] = true;
-      spec_RAT_1[in.inst[i].dest_areg] = alloc_reg[alloc_num];
-      for (int j = 0; j < MAX_BR_NUM; j++)
-        alloc_checkpoint_1[j][alloc_reg[alloc_num]] = true;
-
-      alloc_num++;
+      out.valid[i] = in.valid[i] && !stall;
+      out.ready[i] = !stall;
     }
   }
 
@@ -143,22 +103,38 @@ void Rename::comb_2() {
       }
     }
   }
+}
 
-  if ((in.from_iq_all_ready || iq_fire) &&
-      (in.from_rob_all_ready || rob_fire)) {
-    iq_fire_1 = false;
-    rob_fire_1 = false;
-  } else {
-    iq_fire_1 = in.from_iq_all_ready;
-    rob_fire_1 = in.from_iq_all_ready;
-  }
+/*void Rename::comb_fire() {*/
+/*  for (int i = 0; i < INST_WAY; i++) {*/
+/*    // 无有效输入或者本级即将流入下一级*/
+/*    out.to_if_ready[i] = !in.valid[i] || ((in.from_iq_all_ready || iq_fire)
+ * &&*/
+/*                                          (in.from_rob_all_ready ||
+ * rob_fire));*/
+/*  }*/
+/**/
+/*  out.to_if_all_ready = out.to_if_ready[0];*/
+/*  for (int i = 1; i < INST_WAY; i++) {*/
+/*    out.to_if_all_ready = out.to_if_ready[i] && out.to_if_all_ready;*/
+/*  }*/
+/*  out.to_if_all_ready =*/
+/*      out.to_if_all_ready && in.from_iq_all_ready && in.from_rob_all_ready;*/
+/*}*/
 
-  // 已经分配寄存的指令做标记防止重复
+void Rename::comb_fire() {
+  // 分配寄存器
+  int alloc_num = 0;
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i] && done[i])
-      has_alloc_1[i] = true;
-    else
-      has_alloc_1[i] = false;
+    if (in.dis_fire[i] && out.inst[i].dest_en) {
+      free_vec_1[alloc_reg[alloc_num]] = false;
+      busy_table_1[alloc_reg[alloc_num]] = true;
+      spec_RAT_1[in.inst[i].dest_areg] = alloc_reg[alloc_num];
+      for (int j = 0; j < MAX_BR_NUM; j++)
+        alloc_checkpoint_1[j][alloc_reg[alloc_num]] = true;
+
+      alloc_num++;
+    }
   }
 
   for (int i = 0; i < ISSUE_WAY; i++) {
@@ -183,9 +159,6 @@ void Rename ::seq() {
     for (int j = 0; j < MAX_BR_NUM; j++)
       alloc_checkpoint[j][i] = alloc_checkpoint_1[j][i];
   }
-
-  rob_fire = rob_fire_1;
-  iq_fire = iq_fire_1;
 }
 
 /*void Rename::print_reg() {*/

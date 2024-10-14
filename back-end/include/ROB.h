@@ -6,6 +6,7 @@
 typedef struct ROB_in {
 
   // dispatch写入ROB
+  bool dis_fire[INST_WAY];
   bool from_ren_valid[INST_WAY];
   Inst_info from_ren_inst[INST_WAY];
 
@@ -20,10 +21,7 @@ typedef struct ROB_in {
 
 typedef struct ROB_out {
   // 流水线握手信号
-  bool to_ex_ready[ISSUE_WAY];
   bool to_ren_ready[INST_WAY];
-  bool to_ex_all_ready;
-  bool to_ren_all_ready;
 
   int enq_idx;
   Inst_info commit_entry[ISSUE_WAY];
@@ -34,9 +32,9 @@ class ROB {
 public:
   void init();
   void seq();
-  void comb_0();
-  void comb_1();
-  void comb_2();
+  void comb_commit();
+  void comb_complete();
+  void comb_enq();
 
   ROB_in in;
   ROB_out out;

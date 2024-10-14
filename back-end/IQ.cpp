@@ -1,5 +1,6 @@
 #include "IQ.h"
 #include "config.h"
+#include "util.h"
 
 IQ::IQ(int entry_num, int fu_num) {
   this->entry_num = entry_num;
@@ -8,7 +9,6 @@ IQ::IQ(int entry_num, int fu_num) {
   out.inst.resize(fu_num);
   out.valid.resize(fu_num);
 
-  in.ready.resize(fu_num);
   entry.resize(entry_num);
   entry_1.resize(entry_num);
 }
@@ -26,7 +26,7 @@ void IQ::seq() {
   enq_ptr = enq_ptr_1;
 }
 
-void IQ::comb_0() {
+void IQ::comb_deq() {
   // 仲裁 选择指令发射到对应的FU 压缩式IQ，直接选择最老的
   int issue_num = 0;
   for (int i = 0; i < entry_num && issue_num < fu_num; i++) {
@@ -62,43 +62,44 @@ void IQ::comb_0() {
   }
 }
 
-void IQ::comb_1() {
-  out.all_ready = out.ready[0];
-  for (int i = 1; i < INST_WAY; i++) {
-    out.all_ready = out.ready[i] && out.all_ready;
-  }
-  out.all_ready = out.all_ready && in.all_ready;
-}
-
-void IQ::comb_2() {
+void IQ::comb_enq() {
 
   // 成功发射的entry号
-  int fire_issue_idx[fu_num];
-  int fire_issue_num;
   for (int i = 0; i < fu_num; i++) {
-    if (out.valid[i] && in.ready[i]) {
-      fire_issue_idx[fire_issue_num] = i;
-      fire_issue_num++;
+    if (out.valid[i]) {
+      entry_1[i].valid = false;
+    }
+  }
+
+  // 分支处理
+  if (in.br.br_taken) {
+    for (int j = 0; j < entry_num; j++) {
+      if (entry[j].valid && in.br.br_mask[entry[j].inst.tag])
+        entry_1[j].valid = false;
     }
   }
 
   // 压缩，使得IQ中的指令紧密排列
   for (int i = 0; i < entry_num; i++) {
-    int compress_num = 0;
-    for (int j = 0; j < fire_issue_num; j++) {
-      if (i >= fire_issue_idx[j])
-        compress_num++;
-    }
+    int j;
+    if (!entry_1[i].valid) {
+      for (j = i + 1; j < entry_num; j++) {
+        if (entry_1[j].valid) {
+          entry_1[i] = entry_1[j];
+          entry_1[i].valid = true;
+          entry_1[j].valid = false;
+        }
+      }
 
-    if (entry[i + compress_num].valid)
-      entry_1[i] = entry[i + compress_num];
-    else
-      entry_1[i].valid = false;
+      // 上面的所有都为false
+      if (j == entry_num)
+        break;
+    }
   }
 
   // 进入 分配iq
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i]) {
+    if (in.dis_fire[i]) {
       if (enq_ptr_1 < entry_num) {
         entry_1[enq_ptr_1].inst = in.inst[i];
         entry_1[enq_ptr_1].valid = true;
@@ -106,18 +107,6 @@ void IQ::comb_2() {
         enq_ptr_1++;
       } else {
         out.ready[i] = false;
-      }
-    }
-  }
-
-  // 分支处理
-  if (in.br.br_taken) {
-    for (int i = 0; i < MAX_BR_NUM; i++) {
-      if (in.br.br_mask[i]) {
-        for (int j = 0; j < entry_num; j++) {
-          if (entry[j].valid && entry[j].inst.tag == i)
-            entry_1[j].valid = false;
-        }
       }
     }
   }

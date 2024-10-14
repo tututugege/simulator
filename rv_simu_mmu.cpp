@@ -62,7 +62,6 @@ uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 
 // 后端执行
 Back_Top back = Back_Top();
-Br_Tag br_tag;
 
 /* =====================================
 
@@ -96,7 +95,6 @@ int main(int argc, char *argv[]) {
   // init difftest and back-end
   init_difftest(diff_so, i);
   back.init();
-  br_tag.init();
 
   cout << hex << p_memory[0x80400000 / 4] << endl;
   cout << hex << p_memory[0x80400004 / 4] << endl;
@@ -254,9 +252,6 @@ int main(int argc, char *argv[]) {
         init_indice(input_data_to_RISCV, POS_IN_LOAD_DATA,
                     32); // load data init
       }
-    } else {
-      for (int j = 0; j < INST_WAY; j++)
-        *(input_data_to_RISCV + POS_IN_INST_VALID + j) = false;
     }
 
     // TODO
@@ -280,6 +275,11 @@ int main(int argc, char *argv[]) {
     RISCV_32I(input_data_to_RISCV, output_data_from_RISCV);
 
     if (!stall) {
+      if (*(output_data_from_RISCV + POS_OUT_BRANCH)) {
+        number_PC =
+            cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
+        number_PC -= 4;
+      }
       for (int j = 0; j < INST_WAY; j++) {
         number_PC += 4;
         cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
@@ -287,20 +287,14 @@ int main(int argc, char *argv[]) {
          * number_PC_bit[j],*/
         /*            0, 32);*/
       }
-    } else if (*(output_data_from_RISCV + POS_OUT_STALL) ==
-               false) { // 分支处理完成
-                        //
-      number_PC =
-          cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
+    } else {
       for (int j = 0; j < INST_WAY; j++) {
-        cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
-        copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j, number_PC_bit[j],
-                    0, 32);
-        number_PC += 4;
+        bool valid = *(input_data_to_RISCV + POS_IN_INST_VALID + j);
+        bool ready = *(output_data_from_RISCV + POS_OUT_FIRE + j);
+        if (valid && ready)
+          *(input_data_to_RISCV + POS_IN_INST_VALID + j) = false;
       }
-      number_PC -= 4;
     }
-
     /*if (LOG) {*/
     /*  // print_regs(output_data_from_RISCV);*/
     /*  // print_csr_regs(output_data_from_RISCV);*/
