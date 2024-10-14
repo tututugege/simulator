@@ -91,3 +91,27 @@ void ALU::cycle() {
 }
 
 void AGU::cycle() { out.addr = in.base + in.off; }
+
+void BRU::cycle() {
+  uint32_t pc_br = in.pc + in.off;
+
+  switch (in.op) {
+  case BR:
+    out.br_taken = in.alu_out;
+    break;
+  case JAL:
+    out.br_taken = true;
+    break;
+  case JALR:
+    out.br_taken = true;
+    pc_br = (in.src1 + in.off) & (~0x1);
+    break;
+  default:
+    out.br_taken = false;
+  }
+
+  if (out.br_taken)
+    out.pc_next = pc_br;
+  else
+    out.pc_next = in.pc + 4;
+}

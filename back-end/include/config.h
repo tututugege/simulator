@@ -8,7 +8,7 @@ using namespace std;
 #define ISSUE_WAY ALU_NUM + AGU_NUM
 #define ALU_NUM 2
 #define AGU_NUM 2
-#define BRU_NUM 4
+#define BRU_NUM 2
 
 #define ARF_NUM 32
 #define PRF_NUM 64

@@ -6,7 +6,7 @@
 #include <util.h>
 
 // 提交指令
-void ROB::comb_0() {
+void ROB::comb_commit() {
   int complete_num;
   for (int i = 0; i < ISSUE_WAY; i++) {
     int idx = (deq_ptr + i) % ROB_NUM;
@@ -35,7 +35,7 @@ void ROB::comb_0() {
 }
 
 // 生成ready
-void ROB::comb_1() {
+void ROB::comb_complete() {
   // dispatch进入rob
   for (int i = 0; i < INST_WAY; i++) {
     if (!in.from_ren_valid[i])
@@ -47,22 +47,37 @@ void ROB::comb_1() {
       out.to_ren_ready[i] = false;
     }
   }
-  out.to_ren_all_ready = andR(out.to_ren_ready, INST_WAY);
 
   //  执行完毕的标记
   for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
-    out.to_ex_ready[i] = true;
-    if (in.from_ex_valid[i] && out.to_ex_ready[i]) {
+    if (in.from_ex_valid[i]) {
       complete_1[in.from_ex_inst[i].rob_idx] = true;
     }
   }
-  out.to_ex_all_ready = true;
-  out.enq_idx = enq_ptr;
+
+  if (in.br_taken) {
+    int idx = (enq_ptr - 1 + ROB_NUM) % ROB_NUM;
+    enq_ptr_1 = (in.br_rob_idx + 1) % ROB_NUM;
+    while (idx != in.br_rob_idx) {
+      valid_1[idx] = false;
+      idx = (idx - 1 + ROB_NUM) % ROB_NUM;
+    }
+  }
+
+  out.enq_idx = enq_ptr_1;
+
+#ifdef CONFIG_DIFFTEST
+  for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
+    if (in.from_ex_valid[i]) {
+      pc_next_1[in.from_ex_inst[i].rob_idx] = in.from_ex_inst[i].pc_next;
+    }
+  }
+#endif // DEBUG
 }
 
-void ROB::comb_2() {
+void ROB::comb_enq() {
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.from_ren_valid[i] && out.to_ren_ready[i]) {
+    if (in.dis_fire[i]) {
       Inst_info enq_entry = in.from_ren_inst[i];
       entry.to_sram.waddr[i] = enq_ptr_1;
       entry.to_sram.we[i] = true;
@@ -74,18 +89,6 @@ void ROB::comb_2() {
       entry.to_sram.we[i] = false;
     }
   }
-
-#ifdef CONFIG_DIFFTEST
-  for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
-    if (in.from_ex_valid[i] && out.to_ex_ready[i]) {
-      pc_next_1[in.from_ex_inst[i].rob_idx] = in.from_ex_inst[i].pc_next;
-    }
-  }
-#endif // DEBUG
-
-  // 分支处理
-  if (in.br_taken)
-    enq_ptr_1 = (in.br_rob_idx + 1) % ROB_NUM;
 }
 
 void ROB::seq() {
