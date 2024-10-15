@@ -1,5 +1,6 @@
 #include <RISCV.h>
 #include <TOP.h>
+#include <cstdint>
 #include <cvt.h>
 #include <diff.h>
 #include <dlfcn.h>
@@ -271,6 +272,16 @@ int main(int argc, char *argv[]) {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
     RISCV_32I(input_data_to_RISCV, output_data_from_RISCV);
+
+    bool wen = *(output_data_from_RISCV + POS_OUT_STORE);
+    if (wen) {
+      uint32_t wdata = cvt_bit_to_number_unsigned(
+          output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
+      uint32_t waddr = cvt_bit_to_number_unsigned(
+          output_data_from_RISCV + POS_OUT_STORE_ADDR, 32);
+
+      p_memory[waddr / 8] = wdata;
+    }
 
     stall = *(output_data_from_RISCV + POS_OUT_STALL);
     if (!stall) {
@@ -784,12 +795,12 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-uint32_t load_data(Inst_op op, bool *offset) {
+void load_data() {
   uint32_t address = cvt_bit_to_number_unsigned(
       output_data_from_RISCV + POS_OUT_LOAD_ADDR, 32);
-  uint32_t data = p_memory[address / 8];
 
-  return data;
+  uint32_t data = p_memory[address / 8];
+  cvt_number_to_bit_unsigned(input_data_to_RISCV + POS_IN_LOAD_DATA, data, 32);
 }
 
 void store_data(Inst_op op) {
@@ -799,6 +810,7 @@ void store_data(Inst_op op) {
       output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
 
   uint32_t mask;
+
   /*if (op == SH)*/
   /*  mask = 0xFFFF;*/
   /*else if (op == SB)*/

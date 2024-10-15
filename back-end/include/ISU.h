@@ -3,11 +3,11 @@
 #include <config.h>
 #include <vector>
 
+enum IQ_TYPE { INT, LD, ST };
+
 typedef struct IQ_out {
-  // 握手信号
   vector<bool> valid;
   bool ready[INST_WAY];
-
   vector<Inst_info> inst;
 } IQ_out;
 
@@ -19,6 +19,10 @@ typedef struct IQ_in {
   // 分支信息
   Br_info br;
 
+  // store唤醒
+  bool st_valid;
+  uint32_t st_idx;
+
 } IQ_in;
 
 typedef struct IQ_entry {
@@ -28,7 +32,7 @@ typedef struct IQ_entry {
 
 class IQ {
 public:
-  IQ(int entry_num, int out_num);
+  IQ(int entry_num, int out_num, IQ_TYPE);
   void init();
 
   void wake_up(Inst_info *);
@@ -53,6 +57,7 @@ private:
   // config
   int entry_num;
   int fu_num;
+  IQ_TYPE type;
 };
 
 /*class ISU {*/

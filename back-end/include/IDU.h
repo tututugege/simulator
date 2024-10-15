@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+
 typedef struct IDU_out {
   Inst_info inst[INST_WAY];
   bool valid[INST_WAY];
@@ -9,14 +10,12 @@ typedef struct IDU_out {
 
 typedef struct IDU_in {
   bool valid[INST_WAY];
+  bool dis_fire[INST_WAY];
   bool *instruction[INST_WAY];
 
   Br_info br;
   bool free_valid[ISSUE_WAY];
   uint32_t free_tag[ISSUE_WAY];
-
-  bool dis_fire[INST_WAY];
-
 } IDU_in;
 
 class IDU {
