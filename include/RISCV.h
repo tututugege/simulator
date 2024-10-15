@@ -34,9 +34,11 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
 
 #define POS_OUT_PC BIT_WIDTH_REG_STATES              // 1696-1727
 #define POS_OUT_LOAD_ADDR POS_OUT_PC + 32            // 1728-1759
-#define POS_OUT_STORE_DATA (POS_OUT_LOAD_ADDR + 32)  // 1760-1791
+#define POS_OUT_STORE (POS_OUT_LOAD_ADDR + 32)       // 1792-1823
+#define POS_OUT_STORE_DATA (POS_OUT_STORE + 1)       // 1760-1791
 #define POS_OUT_STORE_ADDR (POS_OUT_STORE_DATA + 32) // 1792-1823
-#define POS_OUT_PRIVILEGE (POS_OUT_STORE_ADDR + 32)  // 1824-1825
+#define POS_OUT_STORE_STRB (POS_OUT_STORE_ADDR + 32) // 1792-1823
+#define POS_OUT_PRIVILEGE (POS_OUT_STORE_STRB + 4)   // 1824-1825
 #define POS_OUT_STALL (POS_OUT_PRIVILEGE + 2)        // 1824-1825
 #define POS_OUT_FIRE (POS_OUT_STALL + 1)             // 1824-1825
 #define POS_OUT_BRANCH (POS_OUT_FIRE + INST_WAY)     // 1824-1825

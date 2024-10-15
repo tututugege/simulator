@@ -2,9 +2,10 @@
 #include "config.h"
 #include "util.h"
 
-IQ::IQ(int entry_num, int fu_num) {
+IQ::IQ(int entry_num, int fu_num, IQ_TYPE type) {
   this->entry_num = entry_num;
   this->fu_num = fu_num;
+  this->type = type;
 
   out.inst.resize(fu_num);
   out.valid.resize(fu_num);
@@ -30,12 +31,14 @@ void IQ::comb_deq() {
   // 仲裁 选择指令发射到对应的FU 压缩式IQ，直接选择最老的
   int issue_num = 0;
   for (int i = 0; i < entry_num && issue_num < fu_num; i++) {
+
+    // 发射条件 操作数准备好 依赖的STORE完成（无RAW）
     if (entry[i].valid && !entry[i].inst.src1_busy &&
-        !entry[i].inst.src2_busy) {
+        !entry[i].inst.src2_busy &&
+        !(type == LD && orR(entry[i].inst.pre_store, STQ_NUM))) {
       out.inst[issue_num] = entry[i].inst;
       out.valid[issue_num] = true;
       entry_1[i].valid = false;
-      wake_up(&entry[i].inst);
       issue_num++;
       enq_ptr_1--;
     }
@@ -60,6 +63,15 @@ void IQ::comb_deq() {
         enq_idx++;
       } else {
         out.ready[i] = false;
+      }
+    }
+  }
+
+  // 唤醒load
+  if (type == LD && in.st_valid) {
+    for (int i = 0; i < entry_num; i++) {
+      if (entry[i].valid) {
+        entry_1[i].inst.pre_store[in.st_idx] = false;
       }
     }
   }

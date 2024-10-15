@@ -5,7 +5,7 @@
 #include <diff.h>
 #include <util.h>
 
-/*uint32_t load_data();*/
+void load_data();
 /*void store_data();*/
 
 void operand_mux(Inst_info inst, uint32_t reg_data1, uint32_t reg_data2,
@@ -37,7 +37,7 @@ void Back_Top::difftest(Inst_info inst) {
   difftest_step();
 }
 
-Back_Top::Back_Top() : int_iq(8, 2), ld_iq(4, 1), st_iq(4, 1) {}
+Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST) {}
 
 void Back_Top::init() {
   idu.init();
@@ -65,12 +65,30 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     idu.in.free_valid[i] =
         rob.out.valid[i] && is_branch(rob.out.commit_entry[i]);
     idu.in.free_tag[i] = rob.out.commit_entry[i].tag;
+
+    stq.in.commit[i] =
+        (rob.out.valid[i] && rob.out.commit_entry[i].op == STORE);
   }
 
   // 发射指令
   int_iq.comb_deq();
   st_iq.comb_deq();
   ld_iq.comb_deq();
+
+  // 唤醒
+  for (int i = 0; i < ALU_NUM; i++) {
+    if (int_iq.out.valid[i]) {
+      int_iq.wake_up(&int_iq.out.inst[i]);
+      st_iq.wake_up(&int_iq.out.inst[i]);
+      ld_iq.wake_up(&int_iq.out.inst[i]);
+    }
+  }
+
+  if (ld_iq.out.valid[0]) {
+    int_iq.wake_up(&ld_iq.out.inst[0]);
+    st_iq.wake_up(&ld_iq.out.inst[0]);
+    ld_iq.wake_up(&ld_iq.out.inst[0]);
+  }
 
   // 读寄存器
   for (int i = 0; i < ALU_NUM; i++) {
@@ -117,47 +135,39 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   }
 
   /*// load指令计算地址*/
-  /*Inst_info inst = ld_iq.out.inst[0];*/
-  /*inst.pc_next = inst.pc + 4;*/
-  /*// 操作数选择*/
-  /*agu[0].in.base = prf.from_sram.rdata[2 * ALU_NUM];*/
-  /*agu[0].in.off = inst.imm;*/
-  /*agu[0].cycle();*/
-  /**/
-  /*// 发出访存请求 地址写入LDQ*/
-  /*if (ld_iq.out.valid[0]) {*/
-  /*  cvt_number_to_bit(output_data + POS_OUT_LOAD_ADDR, agu[0].out.addr, 32);*/
-  /**/
-  /*  ldq.in.write.valid = true;*/
-  /*  ldq.in.write.rob_idx = ld_iq.out.inst[0].rob_idx;*/
-  /*  ldq.in.write.addr = agu[0].out.addr;*/
-  /*  ldq.in.write.size = inst.func3;*/
-  /**/
-  /*  prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;*/
-  /*  prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_preg;*/
-  /*  prf.to_sram.wdata[PRF_WR_LD_PORT] = load_data(); */
-  /**/
-  /*  for (int i = 0; i < ISSUE_WAY; i++) {*/
-  /*    ldq.in.commit[i] = (rob.out.commit_entry[i].op == LOAD);*/
-  /*  }*/
-  /*}*/
-  /*rob.in.from_ex_inst[ALU_NUM] = inst;*/
-  /**/
-  /*inst = st_iq.out.inst[0];*/
-  /*inst.pc_next = inst.pc + 4;*/
-  /**/
+  Inst_info *inst = &ld_iq.out.inst[0];
+  // 操作数选择
+  agu[0].in.base = prf.from_sram.rdata[2 * ALU_NUM];
+  agu[0].in.off = inst->imm;
+  agu[0].cycle();
+
+  // 发出访存请求 地址写入LDQ
+  if (ld_iq.out.valid[0]) {
+    cvt_number_to_bit(output_data + POS_OUT_LOAD_ADDR, agu[0].out.addr, 32);
+    load_data();
+
+    prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;
+    prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_preg;
+    prf.to_sram.wdata[PRF_WR_LD_PORT] =
+        cvt_bit_to_number_unsigned(input_data + POS_IN_LOAD_DATA, 32);
+  }
+
   /*// store指令计算地址 写入store queue*/
   /*// 操作数选择*/
-  /*agu[1].in.base = prf.from_sram.rdata[2 * ALU_NUM + 1];*/
-  /*agu[1].in.off = inst.imm;*/
-  /*agu[1].cycle();*/
-  /**/
-  /*if (st_iq.out.valid[0]) {*/
-  /*  stq.in.write.valid = true;*/
-  /*  stq.in.write.addr = agu[1].out.addr;*/
-  /*  stq.in.write.size = inst.func3;*/
-  /*}*/
-  /*rob.in.from_ex_inst[ALU_NUM] = inst;*/
+  agu[1].in.base = prf.from_sram.rdata[2 * ALU_NUM + 1];
+  agu[1].in.off = st_iq.out.inst[0].imm;
+  agu[1].cycle();
+
+  if (st_iq.out.valid[0]) {
+    stq.in.wr_valid = true;
+    stq.in.write.valid = true;
+    stq.in.wr_idx = st_iq.out.inst[0].stq_idx;
+    stq.in.write.addr = agu[1].out.addr;
+    stq.in.write.size = st_iq.out.inst[0].func3;
+    stq.in.write.data = prf.from_sram.rdata[2 * ALU_NUM + 2];
+  } else {
+    stq.in.wr_valid = false;
+  }
 
   bool br_taken = false;
   int br_idx;
@@ -187,14 +197,34 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   // 译码 分配新tag 回收tag 处理分支
   idu.comb_dec();
 
-  for (int i = 0; i < INST_WAY; i++) {
-    idu.out.inst[i].pc = number_pc_unsigned[i];
-  }
-
+  // 分支tag信息
   rename.in.br = idu.out.br;
   int_iq.in.br = idu.out.br;
   ld_iq.in.br = idu.out.br;
   st_iq.in.br = idu.out.br;
+  stq.in.br = idu.out.br;
+
+  // st queue分配
+  // stq 分配 写入地址 标记提交
+  for (int i = 0; i < INST_WAY; i++) {
+    if (idu.out.valid[i] && idu.out.inst[i].op == STORE) {
+      stq.in.valid[i] = true;
+    } else {
+      stq.in.valid[i] = false;
+    }
+  }
+
+  stq.comb_alloc();
+
+  for (int i = 0; i < INST_WAY; i++) {
+    idu.out.inst[i].pc = number_pc_unsigned[i];
+    // 查看先前的所有store
+    if (idu.out.inst[i].op == LOAD) {
+      memcpy(idu.out.inst[i].pre_store, stq.out.entry_valid, 4);
+    } else if (idu.out.inst[i].op == STORE) {
+      idu.out.inst[i].stq_idx = stq.out.enq_idx[i];
+    }
+  }
 
   // 完成重命名 根据输入的valid以及寄存器存留个数输出stall
   for (int i = 0; i < INST_WAY; i++) {
@@ -248,9 +278,10 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   bool dis_stall[INST_WAY];
 
   for (int i = 0; i < INST_WAY; i++) {
-    dis_stall[i] = !rob.out.to_ren_ready[i] ||
-                   !orR(rename.out.ready, INST_WAY) ||
-                   !orR(idu.out.ready, INST_WAY);
+    // stall的情况：rob空间不足 重命名寄存器不够 分支tag不够 stq空间不够
+    // IQ空间不够
+    dis_stall[i] = !rob.out.to_ren_ready[i] || !rename.out.ready[i] ||
+                   !idu.out.ready[i] || !stq.out.ready[i];
     if (idu.out.inst[i].op == LOAD)
       dis_stall[i] = dis_stall[i] || !ld_iq.out.ready[i];
     else if (idu.out.inst[i].op == STORE)
@@ -262,6 +293,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     rename.in.dis_fire[i] = dis_fire[i];
     idu.in.dis_fire[i] = dis_fire[i];
     rob.in.dis_fire[i] = dis_fire[i];
+    stq.in.dis_fire[i] = dis_fire[i] && idu.out.inst[i].op == STORE;
 
     int_iq.in.dis_fire[i] = idu.out.inst[i].op != LOAD &&
                             idu.out.inst[i].op != STORE && dis_fire[i];
@@ -271,7 +303,18 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   rename.comb_fire();
   idu.comb_fire();
+  stq.comb_fire();
+
   int_iq.comb_enq();
+
+  // 入队前还要检查是否有同时派遣的store
+  if (dis_fire[0] && idu.out.inst[0].op == STORE &&
+      idu.out.inst[1].op == LOAD) {
+    ld_iq.in.inst[1].pre_store[idu.out.inst[0].stq_idx] = true;
+  }
+
+  ld_iq.in.st_idx = stq.deq_ptr;
+  ld_iq.in.st_valid = stq.out.wen;
   ld_iq.comb_enq();
   st_iq.comb_enq();
 
@@ -283,30 +326,19 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   rob.comb_enq();
 
+  // 后端输出信号
   *(output_data + POS_OUT_STALL) = orR(dis_stall, INST_WAY);
-
   for (int i = 0; i < INST_WAY; i++) {
     *(output_data + POS_OUT_FIRE + i) = dis_fire[i];
   }
-  /*// ld queue分配*/
-  /*for (int i = 0; i < INST_WAY; i++) {*/
-  /*  if (in.inst[i].op == LOAD) {*/
-  /*    ldq.in.alloc[i].dest_preg_idx = rename.out.inst[i].dest_preg;*/
-  /*    ldq.in.alloc[i].rob_idx = (rob.out.enq_idx + i) % ROB_NUM;*/
-  /*    ldq.in.alloc[i].valid = true;*/
-  /*  } else {*/
-  /*    ldq.in.alloc[i].valid = false;*/
-  /*  }*/
-  /*}*/
-  /**/
-  /*// st queue分配*/
-  /*for (int i = 0; i < INST_WAY; i++) {*/
-  /*  if (in.inst[i].op == STORE) {*/
-  /*    stq.in.alloc[i].valid = false;*/
-  /*  } else {*/
-  /*    stq.in.alloc[i].valid = false;*/
-  /*  }*/
-  /*}*/
+
+  *(output_data + POS_OUT_STORE) = stq.out.wen;
+  cvt_number_to_bit_unsigned(output_data + POS_OUT_STORE_DATA, stq.out.wdata,
+                             32);
+  cvt_number_to_bit_unsigned(output_data + POS_OUT_STORE_ADDR, stq.out.waddr,
+                             32);
+
+  /*copy_indice(output_data, POS_OUT_STORE_STRB, stq.out.wstrb, 0, 4);*/
 }
 
 void Back_Top::Back_seq(bool *input_data, bool *output_data) {
@@ -315,10 +347,11 @@ void Back_Top::Back_seq(bool *input_data, bool *output_data) {
   // pipeline2: 执行结果写回 唤醒等待的指令(目前不考虑) 在ROB中标记执行完毕
   // pipeline3: ROB提交 更新free_list 重命名映射表
   idu.seq();
+  stq.seq();
   prf.write();
   rename.seq();
   rob.seq(); // dispatch写入rob  提交指令  store结果  标记complete
-  ldq.seq();
+  /*ldq.seq();*/
   int_iq.seq(); // dispatch写入发射队列  发射后删除
   ld_iq.seq();  // dispatch写入发射队列  发射后删除
   st_iq.seq();  // dispatch写入发射队列  发射后删除
