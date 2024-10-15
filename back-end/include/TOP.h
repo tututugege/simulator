@@ -18,7 +18,7 @@ private:
   ALU alu[ALU_NUM];
   BRU bru[BRU_NUM];
   AGU agu[AGU_NUM];
-  LDQ ldq;
+  /*LDQ ldq;*/
   STQ stq;
   ROB rob;
   IDU idu;
