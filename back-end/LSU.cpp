@@ -33,6 +33,19 @@
 /*  }*/
 /*}*/
 
+void STQ::comb_deq() {
+  // 写端口 同时给ld_IQ发送唤醒信息
+  if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
+    out.wen = true;
+    out.wdata = entry[deq_ptr].data;
+    out.waddr = entry[deq_ptr].addr;
+    /*out.wstrb = entry[deq_ptr].size;*/
+    deq_ptr_1 = (deq_ptr + 1) % STQ_NUM;
+  } else {
+    out.wen = false;
+  }
+}
+
 void STQ::comb_alloc() {
   int num = count;
   int idx = enq_ptr;
@@ -77,17 +90,6 @@ void STQ::comb_fire() {
       entry_1[commit_ptr_1].compelete = true;
       commit_ptr_1 = (commit_ptr_1 + 1) % STQ_NUM;
     }
-  }
-
-  // 写端口 同时给ld_IQ发送唤醒信息
-  if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
-    out.wen = true;
-    out.wdata = entry[deq_ptr].data;
-    out.waddr = entry[deq_ptr].addr;
-    /*out.wstrb = entry[deq_ptr].size;*/
-    deq_ptr_1 = (deq_ptr + 1) % STQ_NUM;
-  } else {
-    out.wen = false;
   }
 }
 

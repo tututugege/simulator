@@ -119,7 +119,6 @@ int main(int argc, char *argv[]) {
 
     if (LOG)
       cout << "****************************************************************"
-              "**************************"
            << endl;
 
     // copy registers states, include: 32+21 (include satp)
@@ -220,9 +219,8 @@ int main(int argc, char *argv[]) {
             uint32_t number_PC_p = cvt_bit_to_number_unsigned(p_addr[j], 32);
             if (LOG)
               cout << "当前物理地址为: " << hex << number_PC_p << endl;
-            cvt_number_to_bit_unsigned(
-                bit_inst[j], p_memory[uint32_t(number_PC_p / 4)],
-                32); // TODO。不太对, 没有经过初始化，哪里有指令？
+            cvt_number_to_bit_unsigned(bit_inst[j],
+                                       p_memory[uint32_t(number_PC_p / 4)], 32);
             if (LOG)
               cout << "当前指令为:" << hex
                    << p_memory[uint32_t(number_PC_p / 4)] << endl;
@@ -236,10 +234,17 @@ int main(int argc, char *argv[]) {
             continue;
           }
         } else if (USE_MMU_PHYSICAL_MEMORY) {
-          cvt_number_to_bit_unsigned(bit_inst[j], p_memory[number_PC / 4],
+          uint32_t inst;
+          if (p_memory[number_PC / 4])
+            inst = p_memory[number_PC / 4];
+          else
+            inst = 0x13;
+
+          cvt_number_to_bit_unsigned(bit_inst[j], inst,
                                      32); // 取指令
-          if (LOG)
-            cout << "当前指令为:" << hex << p_memory[number_PC / 4] << endl;
+
+          /*if (LOG)*/
+          /*  cout << "当前指令为:" << hex << inst << endl;*/
         }
 
         *(input_data_to_RISCV + POS_IN_INST_VALID + j) = true;
