@@ -40,7 +40,7 @@ public:
   ROB_out out;
 
 private:
-  SRAM<Inst_info> entry = SRAM<Inst_info>(3, 2, ROB_NUM, sizeof(Inst_info) * 8);
+  SRAM<Inst_info> entry = SRAM<Inst_info>(4, 2, ROB_NUM, sizeof(Inst_info) * 8);
 
   bool valid[ROB_NUM];
   bool complete[ROB_NUM];

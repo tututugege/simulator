@@ -98,6 +98,7 @@ public:
   STQ_out out;
   void comb_alloc();
   void comb_fire();
+  void comb_deq();
   void seq();
   void init();
   int enq_ptr;
