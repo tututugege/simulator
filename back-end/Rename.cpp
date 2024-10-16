@@ -54,7 +54,7 @@ void Rename::comb_alloc() {
   }
 
   // busy_table wake up
-  for (int i = 0; i < ALU_NUM; i++) {
+  for (int i = 0; i < ALU_NUM + 1; i++) {
     if (in.wake[i].valid) {
       busy_table_1[in.wake[i].preg] = false;
     }
@@ -101,12 +101,8 @@ void Rename::comb_alloc() {
     }
 
     // 恢复free_list
-    for (int i = 0; i < MAX_BR_NUM; i++) {
-      if (in.br.br_mask[i]) {
-        for (int j = 0; j < ARF_NUM; j++) {
-          free_vec_1[j] = free_vec_1[j] || alloc_checkpoint[j];
-        }
-      }
+    for (int j = 0; j < ARF_NUM; j++) {
+      free_vec_1[j] = free_vec_1[j] || alloc_checkpoint[in.br.br_tag][j];
     }
   }
 }
@@ -140,6 +136,17 @@ void Rename::comb_fire() {
         alloc_checkpoint_1[j][alloc_reg[alloc_num]] = true;
 
       alloc_num++;
+    }
+
+    // 保存checkpoint
+    if (is_branch(in.inst[i].op) && in.dis_fire[i]) {
+      for (int j = 0; j < ARF_NUM; j++) {
+        RAT_checkpoint_1[in.inst[i].tag][j] = spec_RAT_1[j];
+      }
+
+      for (int j = 0; j < PRF_NUM; j++) {
+        alloc_checkpoint_1[in.inst[i].tag][j] = false;
+      }
     }
   }
 

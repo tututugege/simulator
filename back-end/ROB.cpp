@@ -84,6 +84,7 @@ void ROB::comb_enq() {
       entry.to_sram.we[i] = true;
       entry.to_sram.wdata[i] = enq_entry;
       valid_1[enq_ptr_1] = true;
+      complete_1[enq_ptr_1] = false;
       tag_1[enq_ptr_1] = in.from_ex_inst[i].tag;
       enq_ptr_1 = (enq_ptr_1 + 1) % ROB_NUM;
     } else {

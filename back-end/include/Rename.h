@@ -22,7 +22,7 @@ typedef struct Rename_in {
   Br_info br;
 
   // wakeup
-  Wake_info wake[ALU_NUM];
+  Wake_info wake[ALU_NUM + 1];
 } Rename_in;
 
 class Rename {
