@@ -87,6 +87,7 @@ void IDU::comb_dec() {
     }
 
     out.br.br_taken = true;
+    out.br.br_tag = in.br.br_tag;
   } else {
     out.br.br_taken = false;
   }
