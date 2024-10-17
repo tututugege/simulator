@@ -5,6 +5,8 @@
 #include <diff.h>
 #include <util.h>
 
+extern int commit_num;
+
 void load_data();
 /*void store_data();*/
 
@@ -35,6 +37,7 @@ void Back_Top::difftest(Inst_info inst) {
   }
   dut.pc = inst.pc_next;
   difftest_step();
+  commit_num++;
 }
 
 Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST) {}
@@ -169,6 +172,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     stq.in.wr_valid = true;
     stq.in.write.valid = true;
     stq.in.wr_idx = st_iq.out.inst[0].stq_idx;
+    stq.in.write.tag = st_iq.out.inst[0].tag;
     stq.in.write.addr = agu[1].out.addr;
     stq.in.write.size = st_iq.out.inst[0].func3;
     stq.in.write.data = prf.from_sram.rdata[2 * ALU_NUM + 2];
@@ -216,6 +220,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   for (int i = 0; i < INST_WAY; i++) {
     if (idu.out.valid[i] && idu.out.inst[i].op == STORE) {
       stq.in.valid[i] = true;
+      stq.in.tag[i] = idu.out.inst[i].tag;
     } else {
       stq.in.valid[i] = false;
     }

@@ -13,7 +13,7 @@ typedef struct {
 
 typedef struct {
   // 分配
-  STQ_entry alloc[INST_WAY];
+  uint32_t tag[INST_WAY];
   bool valid[INST_WAY];
   bool dis_fire[INST_WAY];
 
