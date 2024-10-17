@@ -1,5 +1,6 @@
 #include <LSU.h>
 #include <config.h>
+#include <util.h>
 /*void LDQ::init() {}*/
 /*void LDQ::comb() {}*/
 /**/
@@ -41,6 +42,7 @@ void STQ::comb_deq() {
     out.waddr = entry[deq_ptr].addr;
     /*out.wstrb = entry[deq_ptr].size;*/
     deq_ptr_1 = (deq_ptr + 1) % STQ_NUM;
+    count_1--;
   } else {
     out.wen = false;
   }
@@ -63,6 +65,18 @@ void STQ::comb_alloc() {
       }
     }
   }
+
+  // 分支清空
+  if (in.br.br_taken) {
+    for (int i = 0; i < STQ_NUM; i++) {
+      if (entry[i].valid && in.br.br_mask[entry[i].tag]) {
+        entry_1[i].valid = false;
+        count_1--;
+        LOOP_DEC(enq_ptr_1, STQ_NUM);
+      }
+    }
+  }
+
   // 指令store依赖信息
   for (int i = 0; i < STQ_NUM; i++) {
     out.entry_valid[i] = entry[i].valid;
@@ -73,14 +87,15 @@ void STQ::comb_fire() {
   // 入队
   for (int i = 0; i < INST_WAY; i++) {
     if (in.dis_fire[i]) {
-      entry_1[enq_ptr_1] = in.alloc[i];
+      entry_1[enq_ptr_1].tag = in.tag[i];
+      entry_1[enq_ptr_1].valid = true;
       count_1 = count_1 + 1;
-      enq_ptr_1 = (enq_ptr_1 + 1) % STQ_NUM;
+      LOOP_INC(enq_ptr_1, STQ_NUM);
     }
   }
 
-  // 地址数据写入
-  if (in.wr_valid) {
+  // 地址数据写入 若项无效说明被br清除
+  if (in.wr_valid && entry_1[in.wr_idx].valid) {
     entry_1[in.wr_idx] = in.write;
   }
 
