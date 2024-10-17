@@ -40,5 +40,5 @@ private:
   int deq_ptr_1 = 0;
   int now_tag_1;
 
-  int free_tag[INST_WAY];
+  int alloc_tag[INST_WAY];
 };

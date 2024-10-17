@@ -27,7 +27,7 @@ void IDU::comb_dec() {
   int free_tag_num = 0;
   for (int i = 0; i < MAX_BR_NUM && free_tag_num < INST_WAY; i++) {
     if (tag_vec[i])
-      free_tag[free_tag_num++] = i;
+      alloc_tag[free_tag_num++] = i;
   }
 
   int new_tag_num = 0;
@@ -43,7 +43,7 @@ void IDU::comb_dec() {
            out.inst[i].op == JAL) &&
           new_tag_num < free_tag_num) {
         out.inst[i].tag = inst_tag;
-        inst_tag = free_tag[new_tag_num];
+        inst_tag = alloc_tag[new_tag_num];
         out.valid[i] = true;
         out.ready[i] = true;
         new_tag_num++;
@@ -82,9 +82,15 @@ void IDU::comb_dec() {
     int idx = (enq_ptr_1 - 1 + MAX_BR_NUM) % MAX_BR_NUM;
     while (tag_fifo[idx] != in.br.br_tag) {
       br_mask = br_mask | (1 << tag_fifo[idx]);
+      tag_vec_1[tag_fifo[idx]] = true;
       enq_ptr_1 = (enq_ptr_1 - 1 + MAX_BR_NUM) % MAX_BR_NUM;
-      idx = (enq_ptr_1 - 1 + MAX_BR_NUM) % MAX_BR_NUM;
+      idx = (idx - 1 + MAX_BR_NUM) % MAX_BR_NUM;
     }
+
+    idx = (idx + 1) % MAX_BR_NUM;
+    enq_ptr_1 = (enq_ptr_1 + 1) % MAX_BR_NUM;
+    tag_vec_1[tag_fifo[idx]] = false;
+    now_tag_1 = tag_fifo[idx];
 
     out.br.br_taken = true;
     out.br.br_tag = in.br.br_tag;
@@ -104,9 +110,10 @@ void IDU::comb_fire() {
     if (in.dis_fire[i] && (out.inst[i].op == BR || out.inst[i].op == JALR ||
                            out.inst[i].op == JAL)) {
 
-      tag_fifo_1[enq_ptr_1] = free_tag[new_tag_num];
+      tag_fifo_1[enq_ptr_1] = alloc_tag[new_tag_num];
+      tag_vec_1[alloc_tag[new_tag_num]] = false;
       enq_ptr_1 = (enq_ptr_1 + 1) % MAX_BR_NUM;
-      now_tag_1 = free_tag[new_tag_num];
+      now_tag_1 = alloc_tag[new_tag_num];
       new_tag_num++;
     }
   }
