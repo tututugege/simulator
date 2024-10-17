@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
   bool stall;
 
   // main loop
-  for (i = 0; i < 20; i++) { // 10398623
+  for (i = 0; i < 100; i++) { // 10398623
     if (i % 100 == 0) {
       cout << hex << i << ' ' << number_PC << endl;
     }
@@ -284,6 +284,20 @@ int main(int argc, char *argv[]) {
           output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
       uint32_t waddr = cvt_bit_to_number_unsigned(
           output_data_from_RISCV + POS_OUT_STORE_ADDR, 32);
+
+      if (waddr == 0x1c) {
+        if (wdata == 0) {
+          cout << "\033[1;32m-----------------------------\033[0m" << endl;
+          cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
+          cout << "\033[1;32m-----------------------------\033[0m" << endl;
+          exit(0);
+        } else {
+          cout << "\033[1;31m------------------------------\033[0m" << endl;
+          cout << "\033[1;31mFail!!!!QAQ\033[0m" << endl;
+          cout << "\033[1;31m------------------------------\033[0m" << endl;
+          exit(1);
+        }
+      }
 
       p_memory[waddr / 8] = wdata;
     }
@@ -804,7 +818,7 @@ void load_data() {
   uint32_t address = cvt_bit_to_number_unsigned(
       output_data_from_RISCV + POS_OUT_LOAD_ADDR, 32);
 
-  uint32_t data = p_memory[address / 8];
+  uint32_t data = p_memory[address / 4];
   cvt_number_to_bit_unsigned(input_data_to_RISCV + POS_IN_LOAD_DATA, data, 32);
 }
 
@@ -833,7 +847,7 @@ void store_data(Inst_op op) {
     mask = mask << 16;
   }
 
-  data = (data & mask) | (p_memory[address / 8] & (~mask));
+  data = (data & mask) | (p_memory[address / 4] & (~mask));
 
-  p_memory[address / 8] = data;
+  p_memory[address / 4] = data;
 }

@@ -135,6 +135,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       prf.to_sram.wdata[i] = alu[i].out.res;
 
     } else {
+      prf.to_sram.we[i] = false;
       alu[i].cycle();
       bru[i].cycle();
     }
@@ -249,17 +250,14 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   rename.comb_alloc();
 
   for (int i = 0; i < ALU_NUM; i++) {
-    if (!br_taken || i <= br_idx)
-      rob.in.from_ex_valid[i] = int_iq.out.valid[i];
-    else
-      rob.in.from_ex_valid[i] = false;
+    rob.in.from_ex_valid[i] = int_iq.out.valid[i];
     rob.in.from_ex_inst[i] = int_iq.out.inst[i];
     rob.in.from_ex_inst[i].pc_next = bru[i].out.pc_next;
   }
-  rob.in.from_ex_valid[ALU_NUM] = ld_iq.out.valid[0] && !br_taken;
+  rob.in.from_ex_valid[ALU_NUM] = ld_iq.out.valid[0];
   rob.in.from_ex_inst[ALU_NUM] = ld_iq.out.inst[0];
   rob.in.from_ex_inst[ALU_NUM].pc_next = ld_iq.out.inst[0].pc + 4;
-  rob.in.from_ex_valid[ALU_NUM + 1] = st_iq.out.valid[0] && !br_taken;
+  rob.in.from_ex_valid[ALU_NUM + 1] = st_iq.out.valid[0];
   rob.in.from_ex_inst[ALU_NUM + 1] = st_iq.out.inst[0];
   rob.in.from_ex_inst[ALU_NUM + 1].pc_next = st_iq.out.inst[0].pc + 4;
 
