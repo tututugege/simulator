@@ -26,7 +26,7 @@ using namespace std;
 #define LDQ_NUM 4
 #define STQ_NUM 4
 
-#define LOG 0
+#define LOG 1
 
 #define CONFIG_DIFFTEST
 
