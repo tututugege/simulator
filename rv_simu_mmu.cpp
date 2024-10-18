@@ -90,15 +90,10 @@ int main(int argc, char *argv[]) {
     p_memory[i + POS_MEMORY_SHIFT] = inst_32b;
   }
   const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
+
   // init difftest and back-end
   init_difftest(diff_so, i);
   back.init();
-
-  /*cout << hex << p_memory[0x80400000 / 4] << endl;*/
-  /*cout << hex << p_memory[0x80400004 / 4] << endl;*/
-  /*cout << hex << p_memory[0x80400008 / 4] << endl;*/
-  /*cout << hex << p_memory[0x8040000c / 4] << endl;*/
-  // cout << "all lines in program = " << i << endl;
 
   bool number_PC_bit[INST_WAY][BIT_WIDTH_PC] = {0};
   bool p_addr[INST_WAY][32] = {0};
@@ -106,10 +101,10 @@ int main(int argc, char *argv[]) {
   bool filelog = true;
   uint32_t number_PC = 0;
   ofstream outfile;
-  bool stall;
+  bool stall, br_taken;
 
   // main loop
-  for (i = 0; i < MAX_SIM_TIME; i++) { // 10398623
+  for (i = 0; i < MAX_SIM_TIME; i++) {
     if (i % 100 == 0) {
       cout << hex << i << ' ' << number_PC << endl;
     }
@@ -149,7 +144,7 @@ int main(int argc, char *argv[]) {
       output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
     }
 
-    if (!stall) {
+    if (!stall || br_taken) {
       for (int j = 0; j < INST_WAY; j++) {
         number_PC = cvt_bit_to_number(number_PC_bit[j], BIT_WIDTH_PC);
 
@@ -250,19 +245,18 @@ int main(int argc, char *argv[]) {
       p_memory[waddr / 4] = wdata;
     }
 
+    br_taken = *(output_data_from_RISCV + POS_OUT_BRANCH);
+    if (br_taken) {
+      number_PC =
+          cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
+      number_PC -= 4;
+    }
+
     stall = *(output_data_from_RISCV + POS_OUT_STALL);
-    if (!stall) {
-      if (*(output_data_from_RISCV + POS_OUT_BRANCH)) {
-        number_PC =
-            cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
-        number_PC -= 4;
-      }
+    if (!stall || br_taken) {
       for (int j = 0; j < INST_WAY; j++) {
         number_PC += 4;
         cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
-        /*copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j,
-         * number_PC_bit[j],*/
-        /*            0, 32);*/
       }
     } else {
       bool *fire = output_data_from_RISCV + POS_OUT_FIRE;

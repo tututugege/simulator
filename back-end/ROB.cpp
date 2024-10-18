@@ -95,12 +95,12 @@ void ROB::comb_enq() {
 
 void ROB::seq() {
 
-  if (LOG) {
-    for (int i = 0; i < ISSUE_WAY; i++) {
-      if (out.valid[i]) {
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (out.valid[i]) {
 #ifdef CONFIG_DIFFTEST
-        back.difftest(out.commit_entry[i]);
+      back.difftest(out.commit_entry[i]);
 #endif
+      if (LOG) {
         cout << "ROB commit PC 0x" << hex << out.commit_entry[i].pc << endl;
       }
     }

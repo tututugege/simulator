@@ -37,6 +37,8 @@
 void STQ::comb_deq() {
   // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
+    entry_1[deq_ptr].valid = false;
+    entry_1[deq_ptr].compelete = false;
     out.wen = true;
     out.wdata = entry[deq_ptr].data;
     out.waddr = entry[deq_ptr].addr;
@@ -65,6 +67,10 @@ void STQ::comb_alloc() {
       }
     }
   }
+  // 指令store依赖信息
+  for (int i = 0; i < STQ_NUM; i++) {
+    out.entry_valid[i] = entry_1[i].valid;
+  }
 
   // 分支清空
   if (in.br.br_taken) {
@@ -75,11 +81,6 @@ void STQ::comb_alloc() {
         LOOP_DEC(enq_ptr_1, STQ_NUM);
       }
     }
-  }
-
-  // 指令store依赖信息
-  for (int i = 0; i < STQ_NUM; i++) {
-    out.entry_valid[i] = entry[i].valid;
   }
 }
 
