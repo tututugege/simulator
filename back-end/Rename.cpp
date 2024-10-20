@@ -19,6 +19,13 @@ void Rename::init() {
   }
 }
 
+void Rename::wake_up_preg() {
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (in.commit_valid[i] && in.commit_inst[i].dest_en) 
+        free_vec_1[in.commit_inst[i].old_dest_preg] = true;
+  }
+}
+
 // valid
 void Rename::comb_alloc() {
   // 可用寄存器个数 大于INST_WAY时为INST_WAY
@@ -45,7 +52,6 @@ void Rename::comb_alloc() {
       } else {
         stall = true;
         out.valid[i] = false;
-        break;
       }
     } else {
       out.valid[i] = in.valid[i] && !stall;
@@ -107,23 +113,6 @@ void Rename::comb_alloc() {
   }
 }
 
-/*void Rename::comb_fire() {*/
-/*  for (int i = 0; i < INST_WAY; i++) {*/
-/*    // 无有效输入或者本级即将流入下一级*/
-/*    out.to_if_ready[i] = !in.valid[i] || ((in.from_iq_all_ready || iq_fire)
- * &&*/
-/*                                          (in.from_rob_all_ready ||
- * rob_fire));*/
-/*  }*/
-/**/
-/*  out.to_if_all_ready = out.to_if_ready[0];*/
-/*  for (int i = 1; i < INST_WAY; i++) {*/
-/*    out.to_if_all_ready = out.to_if_ready[i] && out.to_if_all_ready;*/
-/*  }*/
-/*  out.to_if_all_ready =*/
-/*      out.to_if_all_ready && in.from_iq_all_ready && in.from_rob_all_ready;*/
-/*}*/
-
 void Rename::comb_fire() {
   // 分配寄存器
   int alloc_num = 0;
@@ -149,14 +138,6 @@ void Rename::comb_fire() {
       }
     }
   }
-
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (in.commit_valid[i]) {
-      if (in.commit_inst[i].dest_en) {
-        free_vec_1[in.commit_inst[i].old_dest_preg] = true;
-      }
-    }
-  }
 }
 
 void Rename ::seq() {
@@ -173,33 +154,3 @@ void Rename ::seq() {
       alloc_checkpoint[j][i] = alloc_checkpoint_1[j][i];
   }
 }
-
-/*void Rename::print_reg() {*/
-/*  int preg_idx;*/
-/*  for (int i = 0; i < ARF_NUM; i++) {*/
-/*    preg_idx = arch_RAT[i];*/
-/*    uint32_t data = cvt_bit_to_number_unsigned(preg_base + preg_idx * 32,
- * 32);*/
-/**/
-/*    cout << reg_names[i] << ": " << hex << data << " ";*/
-/**/
-/*    if (i % 8 == 0)*/
-/*      cout << endl;*/
-/*  }*/
-/*  cout << endl;*/
-/*}*/
-/**/
-/*uint32_t Rename::reg(int idx) {*/
-/*  int preg_idx = arch_RAT[idx];*/
-/*  return cvt_bit_to_number_unsigned(preg_base + preg_idx * 32, 32);*/
-/*}*/
-/**/
-/*void Rename::print_RAT() {*/
-/*  for (int i = 0; i < ARF_NUM; i++) {*/
-/*    cout << dec << i << ":" << dec << arch_RAT[i] << " ";*/
-/**/
-/*    if (i % 8 == 0)*/
-/*      cout << endl;*/
-/*  }*/
-/*  cout << endl;*/
-/*}*/

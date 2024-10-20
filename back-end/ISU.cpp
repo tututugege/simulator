@@ -47,33 +47,22 @@ void IQ::comb_deq() {
   while (issue_num < fu_num) {
     out.valid[issue_num++] = false;
   }
+}
 
-  // 无效指令 ready为1
-  for (int i = 0; i < INST_WAY; i++) {
-    if (!in.valid[i])
-      out.ready[i] = true;
-  }
-
-  // 有效指令，iq不够则对应端口ready为false
+void IQ::comb_alloc() {
   int enq_idx = enq_ptr_1;
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i]) {
-      if (enq_idx < entry_num) {
-        out.ready[i] = true;
-        enq_idx++;
-      } else {
-        out.ready[i] = false;
-      }
-    }
-  }
 
-  // 唤醒load
-  if (type == LD && in.st_valid) {
-    for (int i = 0; i < entry_num; i++) {
-      if (entry[i].valid) {
-        entry_1[i].inst.pre_store[in.st_idx] = false;
-      }
-    }
+    if (!in.valid[i])
+      // 无效指令，ready_to_dis为1
+      out.ready_to_dis[i] = true;
+    else
+      // 有效指令，iq不够则ready_to_dis为false
+      if (enq_idx < entry_num) {
+        out.ready_to_dis[i] = true;
+        enq_idx++;
+      } else
+        out.ready_to_dis[i] = false;
   }
 }
 
@@ -122,17 +111,25 @@ void IQ::comb_enq() {
 }
 
 // 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
-void IQ::wake_up(Inst_info *issue_inst) {
+void IQ::wake_up_busy(Inst_info *issue_inst) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid) {
       if (issue_inst->dest_en &&
-          entry[i].inst.src1_preg == issue_inst->dest_preg) {
+          entry[i].inst.src1_preg == issue_inst->dest_preg) 
         entry_1[i].inst.src1_busy = false;
-      }
+      
       if (issue_inst->dest_en &&
-          entry[i].inst.src2_preg == issue_inst->dest_preg) {
+          entry[i].inst.src2_preg == issue_inst->dest_preg) 
         entry_1[i].inst.src2_busy = false;
-      }
     }
   }
 }
+
+// 唤醒st之后的ld指令
+void IQ::wake_up_pre_store(Inst_info *issue_inst) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid)
+      entry_1[i].inst.pre_store[issue_inst->stq_idx] = false;
+  }
+}
+

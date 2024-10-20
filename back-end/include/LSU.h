@@ -4,8 +4,47 @@
 typedef struct {
   uint32_t addr;
   uint32_t size;
+  uint32_t dest_preg;
+
+  bool issue;
+  bool fire;
+  bool complete;
+  bool valid;
+
+  bool pre_store[STQ_NUM];
+} LDQ_entry;
+
+typedef struct {
+  // ld_iq发射的ld指令将地址写入ldq
+  bool from_ld_iq_valid;
+  uint32_t ldq_idx;
+  uint32_t addr;
+
+  // stq中fire to mem的st指令写回ldq
+  uint32_t stq_idx;
+  bool st_valid;
+
+  // dispatch的ld指令写入ldq
+  bool from_dis_valid;
+  uint32_t tag;
+
+  bool commit[ISSUE_WAY];
+} LDQ_in;
+
+typedef struct {
+  bool mem_fire_valid;
+  uint32_t dest_preg;
   uint32_t data;
 
+  bool to_dis_ready;
+} LDQ_out;
+
+typedef struct {
+  uint32_t addr;
+  uint32_t size;
+  uint32_t data;
+
+  bool issue;
   bool compelete;
   bool valid;
   uint32_t tag;
@@ -28,6 +67,11 @@ typedef struct {
   // 分支信息
   Br_info br;
 
+  // ldq前递
+  bool *ld_pre_store;
+  uint32_t forward_addr;
+  uint32_t forward_size;
+
 } STQ_in;
 
 typedef struct {
@@ -45,52 +89,29 @@ typedef struct {
 
   // 当前有效信息
   bool entry_valid[STQ_NUM];
+
+  // ldq前递有效
+  bool forward_valid;
+
+  bool to_dis_pre_store[STQ_NUM];
 } STQ_out;
 
-/*typedef struct {*/
-/*  // 入队信息*/
-/*  uint32_t addr;*/
-/*  uint32_t size;*/
-/*  int rob_idx;*/
-/*  bool pre_store[STQ_NUM];*/
-/*} LDQ_entry;*/
-/**/
-/*typedef struct {*/
-/*  // 分配*/
-/*  LDQ_entry alloc[INST_WAY];*/
-/*  bool valid[INST_WAY];*/
-/*  bool dis_fire[INST_WAY];*/
-/*  // 实际写入*/
-/*  LDQ_entry write;*/
-/*  // 提交数目*/
-/*  bool commit[ISSUE_WAY];*/
-/*} LDQ_in;*/
-/**/
-/*typedef struct {*/
-/*  bool ready[INST_WAY];*/
-/*} LDQ_out;*/
+class LDQ {
+  public:
 
-// ROB子集 已经dispatch但未提交的load指令
-/*class LDQ {*/
-/*public:*/
-/*  LDQ_in in;*/
-/*  void comb();*/
-/*  void seq();*/
-/*  void init();*/
-/*  void comb_alloc();*/
-/**/
-/*private:*/
-/*  LDQ_entry entry[LDQ_NUM];*/
-/*  int enq_ptr;*/
-/*  int deq_ptr;*/
-/*  int count;*/
-/**/
-/*  LDQ_entry entry_1[LDQ_NUM];*/
-/*  int enq_ptr_1;*/
-/*  int deq_ptr_1;*/
-/*  int count_1;*/
-/*};*/
-/**/
+  private:
+  LDQ_entry entry[LDQ_NUM];
+  LDQ_entry entry_1[LDQ_NUM];
+
+  int enq_ptr;
+  int enq_ptr_1;
+
+  int deq_ptr;
+  int deq_ptr_1;
+
+  int num;
+  int num_1;
+};
 
 class STQ {
 public:

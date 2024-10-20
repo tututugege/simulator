@@ -1,5 +1,5 @@
 
-RISCV_PATH := ../../../file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-
+RISCV_PATH := /opt/riscv/bin/riscv64-unknown-linux-gnu-
 
 RISCV_GCC     := $(abspath $(RISCV_PATH)gcc)
 RISCV_AS      := $(abspath $(RISCV_PATH)as)

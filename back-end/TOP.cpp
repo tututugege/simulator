@@ -65,38 +65,61 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   // 写内存
   stq.comb_deq();
 
+  ldq.in.stq_idx = stq.deq;
+  ldq.in.st_valid = stq.out.wen;
+
+  // 唤醒ldq表项中的pre_store
+  ldq.wake_up_pre_store();
+
   for (int i = 0; i < ISSUE_WAY; i++) {
     rename.in.commit_valid[i] = rob.out.valid[i];
-    rename.in.commit_inst[i] = rob.out.commit_entry[i];
+    rename.in.commit_inst[i]  = rob.out.commit_entry[i];
+
     idu.in.free_valid[i] =
         rob.out.valid[i] && is_branch(rob.out.commit_entry[i]);
     idu.in.free_tag[i] = rob.out.commit_entry[i].tag;
 
     stq.in.commit[i] =
         (rob.out.valid[i] && rob.out.commit_entry[i].op == STORE);
+
+    ldq.in.commit[i] = 
+        (rob.out.valid[i] && rob.out.commit_entry[i].op == LOAD);    
   }
 
-  ld_iq.in.st_idx = stq.deq_ptr;
-  ld_iq.in.st_valid = stq.out.wen;
+  // rob提交的指令唤醒rename，释放物理寄存器
+  rename.wake_up_preg();
+
+  // rob提交的指令唤醒idu，释放br_tag
+
+  // 在stq中标记本周期提交的store指令
+  stq.comb_commit();
+
+  // 本周期提交的load指令离开ldq
+  ldq.comb_commit();
 
   // 发射指令
   int_iq.comb_deq();
   st_iq.comb_deq();
   ld_iq.comb_deq();
 
-  // 唤醒
+  // st_iq本周期发射的指令唤醒ld_iq中相应的pre_store
+  if (st_iq.out.valid[0])
+    ld_iq.wake_up_pre_store(&st_iq.out.inst[0]);
+
+  // int_iq本周期发射的指令唤醒iq中其余指令
   for (int i = 0; i < ALU_NUM; i++) {
     if (int_iq.out.valid[i]) {
-      int_iq.wake_up(&int_iq.out.inst[i]);
-      st_iq.wake_up(&int_iq.out.inst[i]);
-      ld_iq.wake_up(&int_iq.out.inst[i]);
+      int_iq.wake_up_busy(&int_iq.out.inst[i]);
+      st_iq.wake_up_busy(&int_iq.out.inst[i]);
+      ld_iq.wake_up_busy(&int_iq.out.inst[i]);
     }
   }
 
+  // ld_iq本周期发射的指令唤醒iq中其余指令
   if (ld_iq.out.valid[0]) {
-    int_iq.wake_up(&ld_iq.out.inst[0]);
-    st_iq.wake_up(&ld_iq.out.inst[0]);
-    ld_iq.wake_up(&ld_iq.out.inst[0]);
+    int_iq.wake_up_busy(&ld_iq.out.inst[0]);
+    st_iq.wake_up_busy(&ld_iq.out.inst[0]);
+    ld_iq.wake_up_busy(&ld_iq.out.inst[0]);
   }
 
   // 读寄存器
@@ -144,26 +167,25 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     }
   }
 
-  /*// load指令计算地址*/
+  // 从ldq中选出最老的已经issue但尚未fire的指令，发起访存请求，同时完成stq的前递
+  ldq.comb_mem_fire();
+  prf.to_sram.we[PRF_WR_LD_PORT]    = ldq.out.mem_fire_valid;
+  prf.to_sram.waddr[PRF_WR_LD_PORT] = ldq.out.dest_preg;
+  prf.to_sram.wdata[PRF_WR_LD_PORT] = ldq.out.data;
+
+  // 操作数选择，load指令计算地址, 地址写入LDQ
   Inst_info *inst = &ld_iq.out.inst[0];
-  // 操作数选择
   agu[0].in.base = prf.from_sram.rdata[2 * ALU_NUM];
   agu[0].in.off = inst->imm;
   agu[0].cycle();
 
-  // 发出访存请求 地址写入LDQ
-  if (ld_iq.out.valid[0]) {
-    cvt_number_to_bit(output_data + POS_OUT_LOAD_ADDR, agu[0].out.addr, 32);
-    load_data();
+  ldq.in.from_ld_iq_valid = ld_iq.out.valid[0];
+  ldq.in.ldq_idx = ld_iq.out.inst[0].ldq_idx;
+  ldq.in.addr = agu[0].out.addr;
+  ldq.wake_up_addr();
 
-    prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;
-    prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_preg;
-    prf.to_sram.wdata[PRF_WR_LD_PORT] =
-        cvt_bit_to_number_unsigned(input_data + POS_IN_LOAD_DATA, 32);
-  }
-
-  /*// store指令计算地址 写入store queue*/
-  /*// 操作数选择*/
+  /* store指令计算地址 写入store queue*/
+  /* 操作数选择*/
   agu[1].in.base = prf.from_sram.rdata[2 * ALU_NUM + 1];
   agu[1].in.off = st_iq.out.inst[0].imm;
   agu[1].cycle();
@@ -215,7 +237,18 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   st_iq.in.br = idu.out.br;
   stq.in.br = idu.out.br;
 
-  // st queue分配
+  // ldq 分配
+  for (int i = 0; i < INST_WAY; i++) {
+    if (idu.out.valid[i] && idu.out.inst[i].op == LOAD) {
+      ldq.in.from_dis_valid[i] = true;
+      ldq.in.tag[i] = idu.out.inst[i].tag;
+    } else {
+      ldq.in.from_dis_valid[i] = false;
+    }
+  }
+
+  ldq.comb_alloc();
+
   // stq 分配 写入地址 标记提交
   for (int i = 0; i < INST_WAY; i++) {
     if (idu.out.valid[i] && idu.out.inst[i].op == STORE) {
@@ -232,7 +265,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     idu.out.inst[i].pc = number_pc_unsigned[i];
     // 查看先前的所有store
     if (idu.out.inst[i].op == LOAD) {
-      memcpy(idu.out.inst[i].pre_store, stq.out.entry_valid, 4);
+      memcpy(idu.out.inst[i].pre_store, stq.out.to_dis_pre_store, 4);
     } else if (idu.out.inst[i].op == STORE) {
       idu.out.inst[i].stq_idx = stq.out.enq_idx[i];
     }
@@ -288,6 +321,10 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       j++;
   }
 
+  int_iq.comb_alloc();
+  ld_iq.comb_alloc();
+  st_iq.comb_alloc();
+
   bool dis_fire[INST_WAY];
   bool dis_stall[INST_WAY];
 
@@ -295,7 +332,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     // stall的情况：rob空间不足 重命名寄存器不够 分支tag不够 stq空间不够
     // IQ空间不够
     dis_stall[i] = !rob.out.to_ren_ready[i] || !rename.out.ready[i] ||
-                   !idu.out.ready[i] || !stq.out.ready[i];
+                   !idu.out.ready[i] || !stq.out.ready[i] || !ldq.out.to_dis_ready[i];
     if (idu.out.inst[i].op == LOAD)
       dis_stall[i] = dis_stall[i] || !ld_iq.out.ready[i];
     else if (idu.out.inst[i].op == STORE)
@@ -318,6 +355,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   rename.comb_fire();
   idu.comb_fire();
   stq.comb_fire();
+  //ldq.comb_fire(); 来不及写了
 
   int_iq.comb_enq();
 

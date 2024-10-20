@@ -56,6 +56,7 @@ typedef struct Inst_info {
   uint32_t pc;
   uint32_t tag;
   uint32_t rob_idx;
+  uint32_t ldq_idx;
   uint32_t stq_idx;
   int pc_next;
   bool pre_store[STQ_NUM];
