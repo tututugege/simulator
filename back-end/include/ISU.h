@@ -38,6 +38,7 @@ public:
   void wake_up(Inst_info *);
   void comb_deq();
   void comb_enq();
+  void comb_alloc();
   void comb_2();
   void seq(); // 写入IQ
   IQ_in in;

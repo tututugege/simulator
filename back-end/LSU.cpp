@@ -10,7 +10,16 @@ void STQ::comb_deq() {
     out.wen = true;
     out.wdata = entry[deq_ptr].data;
     out.waddr = entry[deq_ptr].addr;
-    /*out.wstrb = entry[deq_ptr].size;*/
+    if (entry[deq_ptr].size == 0b00)
+      out.wstrb = 0b1;
+    else if (entry[deq_ptr].size == 0b01)
+      out.wstrb = 0b11;
+    else
+      out.wstrb = 0b1111;
+
+    int offset = entry[deq_ptr].addr & 0x3;
+    out.wstrb = out.wstrb << offset;
+    out.wdata = out.wdata << (offset * 8);
     deq_ptr_1 = (deq_ptr + 1) % STQ_NUM;
     count_1--;
   } else {
@@ -35,6 +44,7 @@ void STQ::comb_alloc() {
       }
     }
   }
+
   // 指令store依赖信息
   for (int i = 0; i < STQ_NUM; i++) {
     out.entry_valid[i] = entry_1[i].valid;

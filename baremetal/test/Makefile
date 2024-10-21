@@ -6,7 +6,7 @@ TARGET ?= test
 
 C_SRCS := $(TARGET).c
 CFLAGS := -O2
-CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\"
+CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
 
 COMMON_DIR = ..
 

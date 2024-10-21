@@ -18,10 +18,12 @@ TOP为顶层，组合逻辑因为各模块间的依赖关系需要划分为不�
 ## 用法
 
 交叉编译工具为师兄提供的环境，需要修改baremetal/common.mk
-中的`RISCV_PATH`为正确的目录
+中的`RISCV_PATH`为正确的目录或自己编译安装toolchains
 
-例：`make TEST=min3` 将编译test/下的min3.c作为测试程序，
-将编译后提取出的二进制文件memory放入模拟器的内存，然后`make run`即可运行
+例：`make ALL=min3 run` 将编译test/下的min3.c作为测试程序，
+将编译后提取出的二进制文件memory放入模拟器的内存，然后运行
+
+`make run` 将会批量执行所有test/下的测试程序
 
 模拟器通过判断是否写入0x1c来判断程序是否结束，并将写入0x1c的值作为返回值，
 正常情况下返回0表示运行正确，如图所示
@@ -31,6 +33,7 @@ TOP为顶层，组合逻辑因为各模块间的依赖关系需要划分为不�
 `./back-end/include/config.h`中的`LOG`可以控制是否打印信息（取值，rob提交），
 `MAX_SIM_TIME`控制最多的周期，超过这个周期认为超时
 
-目前已经通过测试的程序：min3，max，add，add-longlong，bubble-sort，dummy，min3，prime
+目前不能通过测试的程序：
+hello-str, leap-year, mersenne, movc, movsx, pascal, string
 
 

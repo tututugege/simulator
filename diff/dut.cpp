@@ -79,7 +79,7 @@ fault:
   }
   printf("PC:\t%08x\t%08x\n", ref.pc, dut.pc);
   dlclose(handle);
-  exit(-1);
+  exit(1);
 }
 
 void difftest_skip_ref() { difftest_skip = true; }
