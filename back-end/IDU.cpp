@@ -33,38 +33,31 @@ void IDU::comb_dec() {
   int new_tag_num = 0;
 
   int inst_tag = now_tag;
+  bool stall = false;
   for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i]) {
+    if (in.valid[i] && !stall) {
       out.inst[i] = decode(in.instruction[i]);
       out.inst[i].tag = inst_tag;
 
       // 分配新tag
-      if ((out.inst[i].op == BR || out.inst[i].op == JALR ||
-           out.inst[i].op == JAL) &&
-          new_tag_num < free_tag_num) {
+      if (is_branch(out.inst[i].op) && new_tag_num < free_tag_num) {
         out.inst[i].tag = inst_tag;
         inst_tag = alloc_tag[new_tag_num];
         out.valid[i] = true;
         out.ready[i] = true;
         new_tag_num++;
-      } else if (new_tag_num < free_tag_num) {
+      } else if (!is_branch(out.inst[i].op)) {
         out.valid[i] = true;
         out.ready[i] = true;
       } else {
-        break;
+        stall = true;
+        out.valid[i] = false;
+        out.ready[i] = false;
       }
     } else {
-      // 输入无效
+      // 输入无效 或tag不够
       out.valid[i] = false;
-      out.ready[i] = true;
-    }
-  }
-
-  // tag不够
-  if (new_tag_num == free_tag_num) {
-    for (int i = new_tag_num; i < INST_WAY; i++) {
-      out.valid[i] = false;
-      out.ready[i] = false;
+      out.ready[i] = !stall;
     }
   }
 

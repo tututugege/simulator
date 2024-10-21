@@ -45,6 +45,7 @@ void Rename::comb_alloc() {
       } else {
         stall = true;
         out.valid[i] = false;
+        out.ready[i] = false;
       }
     } else {
       out.valid[i] = in.valid[i] && !stall;

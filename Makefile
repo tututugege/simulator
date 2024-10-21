@@ -32,12 +32,12 @@ COLOR_NONE  = \033[0m
 
 ALL ?= $(basename $(notdir $(shell find baremetal/test/ -name "*.c")))
 
-all: $(addprefix Makefile., $(ALL))
+all: default $(addprefix Makefile., $(ALL))
 	@echo "test list [$(words $(ALL)) item(s)]:" $(ALL)
 
-$(ALL): %: Makefile.%
+$(ALL): %: Makefile.% 
 
-Makefile.%: baremetal/test/%.c default 
+Makefile.%: baremetal/test/%.c  
 	@if make -C $(MEM_DIR)/test TARGET=$* ; \
 	cd $(MEM_DIR) ; python get_memory.py $* ;\
 	cd ../ ; ./a.out $(IMG); then \
