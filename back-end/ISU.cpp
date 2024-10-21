@@ -84,8 +84,15 @@ void IQ::comb_enq() {
   // 分支处理
   if (in.br.br_taken) {
     for (int j = 0; j < entry_num; j++) {
-      if (entry[j].valid && in.br.br_mask[entry[j].inst.tag])
+      if (entry[j].valid && in.br.br_mask[entry[j].inst.tag]) {
         entry_1[j].valid = false;
+        enq_ptr_1--;
+        for (int k = 0; k < fu_num; k++)
+          if (entry[j].inst.rob_idx == out.inst[k].rob_idx && out.valid[k]) {
+            enq_ptr_1++;
+            break;
+          }
+      }
     }
   }
 

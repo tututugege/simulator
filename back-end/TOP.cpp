@@ -322,12 +322,13 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   bool dis_fire[INST_WAY];
   bool dis_stall[INST_WAY];
+  bool pre_stall = false;
 
   for (int i = 0; i < INST_WAY; i++) {
     // stall的情况：rob空间不足 重命名寄存器不够 分支tag不够 stq空间不够
     // IQ空间不够
     dis_stall[i] = !rob.out.to_ren_ready[i] || !rename.out.ready[i] ||
-                   !idu.out.ready[i] || !stq.out.ready[i];
+                   !idu.out.ready[i] || !stq.out.ready[i] || pre_stall;
     if (idu.out.inst[i].op == LOAD)
       dis_stall[i] = dis_stall[i] || !ld_iq.out.ready[i];
     else if (idu.out.inst[i].op == STORE)
@@ -336,6 +337,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       dis_stall[i] = dis_stall[i] || !int_iq.out.ready[i];
 
     dis_fire[i] = (!dis_stall[i]) && (rename.out.valid[i]);
+    pre_stall = dis_stall[i];
     rename.in.dis_fire[i] = dis_fire[i];
     idu.in.dis_fire[i] = dis_fire[i];
     rob.in.dis_fire[i] = dis_fire[i];

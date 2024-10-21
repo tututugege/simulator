@@ -33,7 +33,5 @@ TOP为顶层，组合逻辑因为各模块间的依赖关系需要划分为不�
 `./back-end/include/config.h`中的`LOG`可以控制是否打印信息（取值，rob提交），
 `MAX_SIM_TIME`控制最多的周期，超过这个周期认为超时
 
-目前不能通过测试的程序：
-hello-str, leap-year, mersenne, movc, movsx, pascal, string
-
+string和hello-str需要klib支持，其余程序目前已经可以通过测试
 
