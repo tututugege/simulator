@@ -285,12 +285,13 @@ Inst_info decode(bool inst_bit[]) {
     break;
   }
   default: {
-    cerr << "*****************************************" << endl;
-    cerr << "Error: unknown instruction: ";
-    cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;
-    cerr << "*****************************************" << endl;
-    assert(0);
-    exit(-1);
+    if (LOG) {
+      cerr << "*****************************************" << endl;
+      cerr << "Error: unknown instruction: ";
+      cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;
+      cerr << "*****************************************" << endl;
+    }
+    /*assert(0);*/
     break;
   }
   }

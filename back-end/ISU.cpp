@@ -54,6 +54,17 @@ void IQ::comb_deq() {
       out.ready[i] = true;
   }
 
+  // 唤醒load
+  if (type == LD && in.st_valid) {
+    for (int i = 0; i < entry_num; i++) {
+      if (entry[i].valid) {
+        entry_1[i].inst.pre_store[in.st_idx] = false;
+      }
+    }
+  }
+}
+
+void IQ::comb_alloc() {
   // 有效指令，iq不够则对应端口ready为false
   int enq_idx = enq_ptr_1;
   for (int i = 0; i < INST_WAY; i++) {
@@ -63,15 +74,6 @@ void IQ::comb_deq() {
         enq_idx++;
       } else {
         out.ready[i] = false;
-      }
-    }
-  }
-
-  // 唤醒load
-  if (type == LD && in.st_valid) {
-    for (int i = 0; i < entry_num; i++) {
-      if (entry[i].valid) {
-        entry_1[i].inst.pre_store[in.st_idx] = false;
       }
     }
   }

@@ -1,6 +1,7 @@
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
+#include <cstdint>
 #include <cvt.h>
 #include <diff.h>
 #include <dlfcn.h>
@@ -78,7 +79,7 @@ int main(int argc, char *argv[]) {
   bool ret;
 
   bool USE_MMU_PHYSICAL_MEMORY = true;
-  init_indice(p_memory, 0, PHYSICAL_MEMORY_LENGTH);
+  /*init_indice(p_memory, 0, PHYSICAL_MEMORY_LENGTH);*/
 
   // init physical memory
   for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {
@@ -105,10 +106,6 @@ int main(int argc, char *argv[]) {
 
   // main loop
   for (i = 0; i < MAX_SIM_TIME; i++) {
-    if (i % 100 == 0) {
-      cout << hex << i << ' ' << number_PC << endl;
-    }
-    time_i = i;
 
     if (LOG)
       cout << "****************************************************************"
@@ -202,10 +199,7 @@ int main(int argc, char *argv[]) {
           }
         } else if (USE_MMU_PHYSICAL_MEMORY) {
           uint32_t inst;
-          if (p_memory[number_PC / 4])
-            inst = p_memory[number_PC / 4];
-          else
-            inst = 0x13;
+          inst = p_memory[number_PC / 4];
 
           cvt_number_to_bit_unsigned(bit_inst[j], inst,
                                      32); // 取指令
@@ -237,12 +231,31 @@ int main(int argc, char *argv[]) {
       uint32_t waddr = cvt_bit_to_number_unsigned(
           output_data_from_RISCV + POS_OUT_STORE_ADDR, 32);
 
+      uint32_t wstrb = cvt_bit_to_number_unsigned(
+          output_data_from_RISCV + POS_OUT_STORE_STRB, 4);
+
       if (waddr == 0x1c) {
         ret = wdata;
         break;
       }
 
-      p_memory[waddr / 4] = wdata;
+      uint32_t old_data = p_memory[waddr / 4];
+      uint32_t mask = 0;
+      if (wstrb & 0b1)
+        mask |= 0xFF;
+      if (wstrb & 0b10)
+        mask |= 0xFF00;
+      if (wstrb & 0b100)
+        mask |= 0xFF0000;
+      if (wstrb & 0b1000)
+        mask |= 0xFF000000;
+
+      p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
+
+      if (LOG) {
+        cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
+             << " in " << (waddr & 0xFFFFFFFC) << endl;
+      }
     }
 
     br_taken = *(output_data_from_RISCV + POS_OUT_BRANCH);
@@ -286,6 +299,7 @@ int main(int argc, char *argv[]) {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
     cout << "\033[1;31m------------------------------\033[0m" << endl;
+    return 1;
   }
 
 #ifdef CONFIG_DIFFTEST

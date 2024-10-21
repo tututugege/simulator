@@ -1,4 +1,9 @@
-#define LENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
+
+#include "klib-macros.h"
+#include <stdbool.h>
+#include <stdint.h>
+typedef unsigned int size_t;
+
 inline void check(int cond) {
   volatile int *end_flag = (int *)0x1c;
   if (!cond) {

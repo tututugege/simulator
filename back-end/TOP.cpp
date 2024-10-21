@@ -1,6 +1,7 @@
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
+#include <cstdint>
 #include <cvt.h>
 #include <diff.h>
 #include <util.h>
@@ -145,10 +146,9 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   }
 
   /*// load指令计算地址*/
-  Inst_info *inst = &ld_iq.out.inst[0];
   // 操作数选择
   agu[0].in.base = prf.from_sram.rdata[2 * ALU_NUM];
-  agu[0].in.off = inst->imm;
+  agu[0].in.off = ld_iq.out.inst[0].imm;
   agu[0].cycle();
 
   // 发出访存请求 地址写入LDQ
@@ -156,10 +156,38 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     cvt_number_to_bit(output_data + POS_OUT_LOAD_ADDR, agu[0].out.addr, 32);
     load_data();
 
+    uint32_t data =
+        cvt_bit_to_number_unsigned(input_data + POS_IN_LOAD_DATA, 32);
+    int size = ld_iq.out.inst[0].func3 & 0b11;
+    int offset = agu[0].out.addr & 0b11;
+    uint32_t mask = 0;
+    uint32_t sign = 0;
+
+    data = data >> (offset * 8);
+    if (size == 0) {
+      mask = 0xFF;
+      if (data & 0x80)
+        sign = 0xFFFFFF00;
+    } else if (size == 0b01) {
+      mask = 0xFFFF;
+      if (data & 0x8000)
+        sign = 0xFFFF0000;
+    } else {
+      mask = 0xFFFFFFFF;
+    }
+
+    data = data & mask;
+
+    // 有符号数
+    if (!(ld_iq.out.inst[0].func3 & 0b100)) {
+      data = data | sign;
+    }
+
     prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;
     prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_preg;
-    prf.to_sram.wdata[PRF_WR_LD_PORT] =
-        cvt_bit_to_number_unsigned(input_data + POS_IN_LOAD_DATA, 32);
+    prf.to_sram.wdata[PRF_WR_LD_PORT] = data;
+  } else {
+    prf.to_sram.we[PRF_WR_LD_PORT] = false;
   }
 
   /*// store指令计算地址 写入store queue*/
@@ -288,6 +316,10 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       j++;
   }
 
+  int_iq.comb_alloc();
+  st_iq.comb_alloc();
+  ld_iq.comb_alloc();
+
   bool dis_fire[INST_WAY];
   bool dis_stall[INST_WAY];
 
@@ -349,8 +381,8 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
                              32);
   cvt_number_to_bit_unsigned(output_data + POS_OUT_STORE_ADDR, stq.out.waddr,
                              32);
-
-  /*copy_indice(output_data, POS_OUT_STORE_STRB, stq.out.wstrb, 0, 4);*/
+  cvt_number_to_bit_unsigned(output_data + POS_OUT_STORE_STRB, stq.out.wstrb,
+                             4);
 }
 
 void Back_Top::Back_seq(bool *input_data, bool *output_data) {
