@@ -1,38 +1,6 @@
 #include <LSU.h>
 #include <config.h>
 #include <util.h>
-/*void LDQ::init() {}*/
-/*void LDQ::comb() {}*/
-/**/
-/*// 分配 写入 提交*/
-/*void LDQ::comb_alloc() {*/
-/*  // 分配*/
-/*  for (int i = 0; i < INST_WAY; i++) {*/
-/*    if (in.alloc[i].valid) {*/
-/*      entry_1[enq_ptr] = in.alloc[i];*/
-/*      enq_ptr_1 = (enq_ptr + 1) % LDQ_NUM;*/
-/*      count_1++;*/
-/*    }*/
-/*  }*/
-/**/
-/*  // 写入*/
-/*  if (in.write.valid) {*/
-/*    for (int i = deq_ptr; i < enq_ptr; i++) {*/
-/*      if (entry[i].rob_idx == in.write.rob_idx) {*/
-/*        entry[i].addr = in.write.addr;*/
-/*        break;*/
-/*      }*/
-/*    }*/
-/*  }*/
-/**/
-/*  // 提交*/
-/*  for (int i = 0; i < ISSUE_WAY; i++) {*/
-/*    if (in.commit[i]) {*/
-/*      entry[deq_ptr].valid = false;*/
-/*      deq_ptr = (deq_ptr + 1) % LDQ_NUM;*/
-/*    }*/
-/*  }*/
-/*}*/
 
 void STQ::comb_deq() {
   // 写端口 同时给ld_IQ发送唤醒信息
