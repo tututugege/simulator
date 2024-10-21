@@ -7,7 +7,7 @@ CXXINCLUDE += -I./back-end/include/
 CXXINCLUDE += -I./diff/include/
 
 MEM_DIR=./baremetal
-IMG=./memory
+IMG=./baremetal/memory
 TEST?=test
 
 all: $(CXXSRC) mem
@@ -23,7 +23,7 @@ clean:
 	rm -rf ./baremetal/test.code
 
 run: 
-	./a.out $(MEM_DIR)/memory
+	./a.out $(IMG)
 
 gdb:
 	gdb --args ./a.out $(IMG)
