@@ -30,6 +30,8 @@ using namespace std;
 
 #define CONFIG_DIFFTEST
 
+#define UART_BASE 0x10000000
+
 enum Inst_type {
   INVALID,
   UTYPE,

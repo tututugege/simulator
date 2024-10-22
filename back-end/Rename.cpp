@@ -101,28 +101,11 @@ void Rename::comb_alloc() {
     }
 
     // 恢复free_list
-    for (int j = 0; j < ARF_NUM; j++) {
+    for (int j = 0; j < PRF_NUM; j++) {
       free_vec_1[j] = free_vec_1[j] || alloc_checkpoint[in.br.br_tag][j];
     }
   }
 }
-
-/*void Rename::comb_fire() {*/
-/*  for (int i = 0; i < INST_WAY; i++) {*/
-/*    // 无有效输入或者本级即将流入下一级*/
-/*    out.to_if_ready[i] = !in.valid[i] || ((in.from_iq_all_ready || iq_fire)
- * &&*/
-/*                                          (in.from_rob_all_ready ||
- * rob_fire));*/
-/*  }*/
-/**/
-/*  out.to_if_all_ready = out.to_if_ready[0];*/
-/*  for (int i = 1; i < INST_WAY; i++) {*/
-/*    out.to_if_all_ready = out.to_if_ready[i] && out.to_if_all_ready;*/
-/*  }*/
-/*  out.to_if_all_ready =*/
-/*      out.to_if_all_ready && in.from_iq_all_ready && in.from_rob_all_ready;*/
-/*}*/
 
 void Rename::comb_fire() {
   // 分配寄存器
@@ -172,6 +155,11 @@ void Rename ::seq() {
     for (int j = 0; j < MAX_BR_NUM; j++)
       alloc_checkpoint[j][i] = alloc_checkpoint_1[j][i];
   }
+
+  /*for (int i = 0; i < PRF_NUM; i++) {*/
+  /*  cout << dec << free_vec[i];*/
+  /*}*/
+  /*cout << endl;*/
 }
 
 /*void Rename::print_reg() {*/
