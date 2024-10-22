@@ -45,6 +45,7 @@ Makefile.%: baremetal/test/%.c
 	else \
 		printf "[%14s] $(COLOR_RED)***FAIL***$(COLOR_NONE)\n" $* >> $(RESULT); \
 	fi
+	rm $(MEM_DIR)/test/$*
 	-@rm -f Makefile.$*
 
 run: all

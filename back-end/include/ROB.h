@@ -12,6 +12,7 @@ typedef struct ROB_in {
 
   // execute完成情况
   bool from_ex_valid[ISSUE_WAY];
+  bool from_ex_diff[ISSUE_WAY];
   Inst_info from_ex_inst[ISSUE_WAY];
 
   // 分支信息
@@ -57,6 +58,8 @@ private:
   uint32_t tag_1[ROB_NUM];
 
 #ifdef CONFIG_DIFFTEST
+  bool diff[ROB_NUM];
+  bool diff_1[ROB_NUM];
   uint32_t pc_next[ROB_NUM];
   uint32_t pc_next_1[ROB_NUM];
 #endif

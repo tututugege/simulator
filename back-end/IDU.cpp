@@ -274,7 +274,7 @@ Inst_info decode(bool inst_bit[]) {
     dest_en = false;
     src1_en = false;
     src2_en = false;
-
+    op = ADD;
     break;
   }
   default: {

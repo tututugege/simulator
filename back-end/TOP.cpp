@@ -36,6 +36,7 @@ void Back_Top::difftest(Inst_info inst) {
   for (int i = 0; i < ARF_NUM; i++) {
     dut.gpr[i] = prf.debug_read(rename.arch_RAT[i]);
   }
+
   dut.pc = inst.pc_next;
   difftest_step();
   commit_num++;
@@ -286,11 +287,17 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     rob.in.from_ex_valid[i] = int_iq.out.valid[i];
     rob.in.from_ex_inst[i] = int_iq.out.inst[i];
     rob.in.from_ex_inst[i].pc_next = bru[i].out.pc_next;
+    rob.in.from_ex_diff[i] = true;
   }
   rob.in.from_ex_valid[ALU_NUM] = ld_iq.out.valid[0];
+  rob.in.from_ex_diff[ALU_NUM] = true;
   rob.in.from_ex_inst[ALU_NUM] = ld_iq.out.inst[0];
   rob.in.from_ex_inst[ALU_NUM].pc_next = ld_iq.out.inst[0].pc + 4;
   rob.in.from_ex_valid[ALU_NUM + 1] = st_iq.out.valid[0];
+  if ((agu[1].out.addr & 0xFFFFFFF0) == UART_BASE)
+    rob.in.from_ex_diff[ALU_NUM + 1] = false;
+  else
+    rob.in.from_ex_diff[ALU_NUM + 1] = true;
   rob.in.from_ex_inst[ALU_NUM + 1] = st_iq.out.inst[0];
   rob.in.from_ex_inst[ALU_NUM + 1].pc_next = st_iq.out.inst[0].pc + 4;
 
@@ -301,17 +308,16 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   rob.comb_complete();
 
   for (int i = 0, j = 0; i < INST_WAY; i++) {
+    rename.out.inst[i].rob_idx = (rob.out.enq_idx + j) % ROB_NUM;
+
     int_iq.in.valid[i] = rename.out.valid[i];
     int_iq.in.inst[i] = rename.out.inst[i];
-    int_iq.in.inst[i].rob_idx = (rob.out.enq_idx + j) % ROB_NUM;
 
     st_iq.in.valid[i] = rename.out.valid[i];
     st_iq.in.inst[i] = rename.out.inst[i];
-    st_iq.in.inst[i].rob_idx = (rob.out.enq_idx + j) % ROB_NUM;
 
     ld_iq.in.valid[i] = rename.out.valid[i];
     ld_iq.in.inst[i] = rename.out.inst[i];
-    ld_iq.in.inst[i].rob_idx = (rob.out.enq_idx + j) % ROB_NUM;
     if (rename.out.valid[i])
       j++;
   }
@@ -366,7 +372,6 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // rob入队输入
   for (int i = 0; i < INST_WAY; i++) {
-    rob.in.from_ren_valid[i] = rename.out.valid[i];
     rob.in.from_ren_inst[i] = rename.out.inst[i];
   }
 

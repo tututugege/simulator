@@ -52,6 +52,7 @@ void ROB::comb_complete() {
   for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
     if (in.from_ex_valid[i]) {
       complete_1[in.from_ex_inst[i].rob_idx] = true;
+      diff_1[in.from_ex_inst[i].rob_idx] = in.from_ex_diff[i];
     }
   }
 
@@ -93,11 +94,13 @@ void ROB::comb_enq() {
   }
 }
 
+extern bool difftest_skip;
 void ROB::seq() {
 
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (out.valid[i]) {
 #ifdef CONFIG_DIFFTEST
+      difftest_skip = !diff[out.commit_entry[i].rob_idx];
       back.difftest(out.commit_entry[i]);
 #endif
       if (LOG) {
@@ -114,6 +117,7 @@ void ROB::seq() {
 
 #ifdef CONFIG_DIFFTEST
     pc_next[i] = pc_next_1[i];
+    diff[i] = diff_1[i];
 #endif
   }
 

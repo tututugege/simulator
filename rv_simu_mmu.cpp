@@ -166,9 +166,6 @@ int main(int argc, char *argv[]) {
           output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
         }
 
-        /*if (LOG)*/
-        /*  cout << "Privilege:" << dec << privilege << endl;*/
-
         bool bit_inst[INST_WAY][32] = {false};
         bool *satp = &input_data_to_RISCV[POS_CSR_SATP];
         bool *mstatus = &input_data_to_RISCV[POS_CSR_MSTATUS];
@@ -203,9 +200,6 @@ int main(int argc, char *argv[]) {
 
           cvt_number_to_bit_unsigned(bit_inst[j], inst,
                                      32); // 取指令
-
-          /*if (LOG)*/
-          /*  cout << "当前指令为:" << hex << inst << endl;*/
         }
 
         *(input_data_to_RISCV + POS_IN_INST_VALID + j) = true;
@@ -228,6 +222,7 @@ int main(int argc, char *argv[]) {
     if (wen) {
       uint32_t wdata = cvt_bit_to_number_unsigned(
           output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
+
       uint32_t waddr = cvt_bit_to_number_unsigned(
           output_data_from_RISCV + POS_OUT_STORE_ADDR, 32);
 
@@ -251,6 +246,11 @@ int main(int argc, char *argv[]) {
         mask |= 0xFF000000;
 
       p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
+
+      if (waddr == UART_BASE) {
+        char temp = wdata & 0xFF;
+        cout << temp;
+      }
 
       if (LOG) {
         cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))

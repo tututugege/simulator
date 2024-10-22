@@ -82,8 +82,6 @@ fault:
   exit(1);
 }
 
-void difftest_skip_ref() { difftest_skip = true; }
-
 void difftest_step() {
   if (difftest_skip) {
     // to skip the checking of an instruction, just copy the reg state to
@@ -91,7 +89,7 @@ void difftest_step() {
     for (int i = 0; i < ARF_NUM; i++) {
       ref.gpr[i] = dut.gpr[i];
     }
-    ref.pc = dut.pc + 4;
+    ref.pc = dut.pc;
     ref_difftest_regcpy(&ref, DIFFTEST_TO_REF);
     difftest_skip = false;
   } else {
