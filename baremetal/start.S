@@ -9,6 +9,7 @@ _start:
   la gp, __global_pointer
   la sp, _sp
   call main
-  sw zero, 0x1c(zero)
+  sw a0, 0x1c(zero)
+
 loop:
     j loop

@@ -4,7 +4,7 @@
 #include <iostream>
 using namespace std;
 
-#define MAX_SIM_TIME 200000
+#define MAX_SIM_TIME 2000000
 
 #define INST_WAY 2
 #define ISSUE_WAY ALU_NUM + AGU_NUM

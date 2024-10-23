@@ -392,18 +392,14 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
                              4);
 }
 
-void Back_Top::Back_seq(bool *input_data, bool *output_data) {
-  // 时序逻辑
-  // pipeline1: 写入ROB和IQ 重命名表更新
-  // pipeline2: 执行结果写回 唤醒等待的指令(目前不考虑) 在ROB中标记执行完毕
-  // pipeline3: ROB提交 更新free_list 重命名映射表
+void Back_Top::Back_seq() {
+  // 更新Reg SRAM
   idu.seq();
   stq.seq();
   prf.write();
   rename.seq();
-  rob.seq(); // dispatch写入rob  提交指令  store结果  标记complete
-  /*ldq.seq();*/
-  int_iq.seq(); // dispatch写入发射队列  发射后删除
-  ld_iq.seq();  // dispatch写入发射队列  发射后删除
-  st_iq.seq();  // dispatch写入发射队列  发射后删除
+  rob.seq();
+  int_iq.seq();
+  ld_iq.seq();
+  st_iq.seq();
 }

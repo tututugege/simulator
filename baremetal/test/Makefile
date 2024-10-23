@@ -1,14 +1,32 @@
-
-RISCV_ARCH := rv32ia
-RISCV_ABI := ilp32
-RISCV_MCMODEL := medlow
 TARGET ?= test
 
-C_SRCS := $(TARGET).c
-CFLAGS := -O2
-CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
+COLOR_RED   = \033[1;31m
+COLOR_GREEN = \033[1;32m
+COLOR_NONE  = \033[0m
 
-COMMON_DIR = ..
+RESULT = .result
+$(shell > $(RESULT))
 
-include ../common.mk
+ALL ?= $(basename $(notdir $(shell find cpu-tests -name "*.c")))
 
+all: $(addprefix Makefile., $(ALL))
+	@echo "test list [$(words $(ALL)) item(s)]:" $(ALL)
+
+$(ALL): %: Makefile.%
+
+Makefile.%: cpu-tests/%.c
+	/bin/echo -e "COMMON_DIR = ..\nTARGET = $*\nC_SRCS = $<\ninclude ../common.mk" > $@
+	if make -s -f $@; then \
+		printf "[%14s] $(COLOR_GREEN)PASS$(COLOR_NONE)\n" $* >> $(RESULT); \
+	else \
+		printf "[%14s] $(COLOR_RED)***FAIL***$(COLOR_NONE)\n" $* >> $(RESULT); \
+	fi
+	rm -f $* $*.bin
+	rm -f Makefile.$*
+
+run: all
+	@cat $(RESULT)
+	@rm $(RESULT)
+
+clean:
+	rm -rf *.dump
