@@ -1,5 +1,10 @@
+RISCV_ARCH := rv32ia
+RISCV_ABI := ilp32
+RISCV_MCMODEL := medlow
+CFLAGS := -O2
+CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
 
-RISCV_PATH := ../../../file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-
+RISCV_PATH := $(COMMON_DIR)/../../file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-
 
 RISCV_GCC     := $(abspath $(RISCV_PATH)gcc)
 RISCV_AS      := $(abspath $(RISCV_PATH)as)
@@ -11,7 +16,12 @@ RISCV_OBJCOPY := $(abspath $(RISCV_PATH)objcopy)
 RISCV_READELF := $(abspath $(RISCV_PATH)readelf)
 
 .PHONY: all
+
+BINARY = $(CURDIR)/$(TARGET).bin
+
 all: $(TARGET)
+	cd $(COMMON_DIR) ;python get_memory.py $(BINARY)
+	make -C $(COMMON_DIR)/..
 
 ASM_SRCS += $(COMMON_DIR)/start.S
 
@@ -23,6 +33,7 @@ C_SRCS += $(COMMON_DIR)/lib/uart.c
 LINKER_SCRIPT := $(COMMON_DIR)/link.lds
 
 INCLUDES += -I$(COMMON_DIR)
+INCLUDES += -I$(COMMON_DIR)/include
 
 LDFLAGS += -T $(LINKER_SCRIPT) -nostartfiles -Wl,--gc-sections -Wl,--check-sections
 

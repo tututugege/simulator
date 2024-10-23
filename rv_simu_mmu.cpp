@@ -293,13 +293,13 @@ int main(int argc, char *argv[]) {
       cout << "\033[1;31m------------------------------\033[0m" << endl;
       cout << "\033[1;31mFail!!!!QAQ\033[0m" << endl;
       cout << "\033[1;31m------------------------------\033[0m" << endl;
-      return 1;
+      exit(1);
     }
   } else {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
     cout << "\033[1;31m------------------------------\033[0m" << endl;
-    return 1;
+    exit(1);
   }
 
 #ifdef CONFIG_DIFFTEST

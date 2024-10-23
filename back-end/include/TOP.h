@@ -18,7 +18,6 @@ private:
   ALU alu[ALU_NUM];
   BRU bru[BRU_NUM];
   AGU agu[AGU_NUM];
-  /*LDQ ldq;*/
   STQ stq;
   ROB rob;
   IDU idu;
@@ -26,8 +25,8 @@ private:
 public:
   Back_Top();
   void init();
-  void Back_comb(bool *input_data, bool *output_data); // 组合逻辑
-  void Back_seq(bool *input_data, bool *output_data);  // 时序逻辑
+  void Back_comb(bool *input_data, bool *output_data);
+  void Back_seq();
 
   // debug
   void difftest(Inst_info inst);

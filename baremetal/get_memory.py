@@ -22,7 +22,7 @@ def read(path, offset):
         # exit()
 import os
 import sys
-os.system("hexdump -xv ./test/" + sys.argv[1] + ".bin  > ./test.code")
+os.system("hexdump -xv " + sys.argv[1] + " > ./test.code")
 
 read('test.code', 0x0)
 
