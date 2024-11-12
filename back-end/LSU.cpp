@@ -51,7 +51,7 @@ void STQ::comb_alloc() {
   }
 
   // 分支清空
-  if (in.br.br_taken) {
+  if (in.br.mispred) {
     for (int i = 0; i < STQ_NUM; i++) {
       if (entry[i].valid && in.br.br_mask[entry[i].tag]) {
         entry_1[i].valid = false;

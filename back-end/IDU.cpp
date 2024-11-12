@@ -71,7 +71,7 @@ void IDU::comb_dec() {
 
   // 分支
   uint32_t br_mask = 0;
-  if (in.br.br_taken) {
+  if (in.br.mispred) {
     int idx = (enq_ptr_1 - 1 + MAX_BR_NUM) % MAX_BR_NUM;
     while (tag_fifo[idx] != in.br.br_tag) {
       br_mask = br_mask | (1 << tag_fifo[idx]);
@@ -85,10 +85,10 @@ void IDU::comb_dec() {
     tag_vec_1[tag_fifo[idx]] = false;
     now_tag_1 = tag_fifo[idx];
 
-    out.br.br_taken = true;
+    out.br.mispred = true;
     out.br.br_tag = in.br.br_tag;
   } else {
-    out.br.br_taken = false;
+    out.br.mispred = false;
   }
 
   for (int i = 0; i < MAX_BR_NUM; i++) {

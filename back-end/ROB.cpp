@@ -3,6 +3,7 @@
 #include <TOP.h>
 #include <config.h>
 #include <diff.h>
+#include <iostream>
 #include <util.h>
 
 // 提交指令
@@ -56,7 +57,7 @@ void ROB::comb_complete() {
     }
   }
 
-  if (in.br_taken) {
+  if (in.mispred) {
     int idx = (enq_ptr - 1 + ROB_NUM) % ROB_NUM;
     enq_ptr_1 = (in.br_rob_idx + 1) % ROB_NUM;
     while (idx != in.br_rob_idx) {

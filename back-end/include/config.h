@@ -1,7 +1,6 @@
 #pragma once
 #include <assert.h>
 #include <cstdint>
-#include <iostream>
 using namespace std;
 
 #define MAX_SIM_TIME 2000000
@@ -66,7 +65,7 @@ typedef struct Inst_info {
 typedef struct {
   uint32_t br_tag;
   bool br_mask[MAX_BR_NUM];
-  bool br_taken;
+  bool mispred;
 } Br_info;
 
 typedef struct {

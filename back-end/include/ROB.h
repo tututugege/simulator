@@ -17,7 +17,7 @@ typedef struct ROB_in {
 
   // 分支信息
   int br_rob_idx;
-  bool br_taken;
+  bool mispred;
 } ROB_in;
 
 typedef struct ROB_out {

@@ -46,6 +46,7 @@ Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST) {}
 
 void Back_Top::init() {
   idu.init();
+  ptab.init();
   rename.init();
   int_iq.init();
   ld_iq.init();
@@ -114,6 +115,11 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   prf.read();
 
+  for (int i = 0; i < ALU_NUM; i++) {
+    ptab.in.br_idx[i] = int_iq.out.inst[i].tag;
+  }
+  ptab.read();
+
   // 往所有ALU BRU发射指令
   for (int i = 0; i < ALU_NUM; i++) {
     Inst_info inst = int_iq.out.inst[i];
@@ -130,9 +136,12 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
       bru[i].in.src1 = prf.from_sram.rdata[2 * i];
       bru[i].in.pc = inst.pc;
+      bru[i].in.pred_pc = ptab.out.entry[i].br_pc;
+      bru[i].in.pred_br_taken = ptab.out.entry[i].valid;
       bru[i].in.alu_out = (bool)alu[i].out.res;
       bru[i].in.off = inst.imm;
       bru[i].in.op = inst.op;
+
       bru[i].cycle();
 
       prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
@@ -209,29 +218,29 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
     stq.in.wr_valid = false;
   }
 
-  bool br_taken = false;
+  bool mispred = false;
   int br_idx;
   for (br_idx = 0; br_idx < BRU_NUM; br_idx++) {
-    if (int_iq.out.valid[br_idx] && bru[br_idx].out.br_taken) {
-      br_taken = true;
+    if (int_iq.out.valid[br_idx] && bru[br_idx].out.mispred) {
+      mispred = true;
       cvt_number_to_bit_unsigned(output_data + POS_OUT_PC,
                                  bru[br_idx].out.pc_next, 32);
       break;
     }
   }
 
-  *(output_data + POS_OUT_BRANCH) = br_taken;
+  *(output_data + POS_OUT_BRANCH) = mispred;
 
-  // idu处理分支，如果taken会输出需要清除的tag_mask
+  // idu处理mispred，如果taken会输出需要清除的tag_mask
   for (int i = 0; i < INST_WAY; i++) {
-    idu.in.valid[i] = valid[i] && !br_taken;
+    idu.in.valid[i] = valid[i] && !mispred;
     idu.in.instruction[i] = input_data + POS_IN_INST + 32 * i;
     bit_this_pc[i] = input_data + POS_IN_PC + 32 * i;
     number_pc_unsigned[i] = cvt_bit_to_number_unsigned(bit_this_pc[i], 32);
   }
-  idu.in.br.br_taken = br_taken;
+  idu.in.br.mispred = mispred;
   idu.in.br.br_tag = int_iq.out.inst[br_idx].tag;
-  rob.in.br_taken = br_taken;
+  rob.in.mispred = mispred;
   rob.in.br_rob_idx = int_iq.out.inst[br_idx].rob_idx;
 
   // 译码 分配新tag 回收tag 处理分支
