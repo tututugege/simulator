@@ -355,7 +355,7 @@
 #include <xprintf.h>
 
 typedef unsigned int size_t;
-#define NUMBER_OF_RUNS 500 /* Default number of runs */
+#define NUMBER_OF_RUNS 50000 /* Default number of runs */
 #define PASS2
 
 #ifdef NOSTRUCTASSIGN
@@ -723,6 +723,8 @@ int main()
 /* main program, corresponds to procedures        */
 /* Main and Proc_0 in the Ada version             */
 {
+
+  uart_init();
   One_Fifty Int_1_Loc;
   REG One_Fifty Int_2_Loc;
   One_Fifty Int_3_Loc;

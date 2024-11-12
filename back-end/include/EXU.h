@@ -4,13 +4,15 @@ typedef struct BRU_in {
   uint32_t pc;
   uint32_t off;
   uint32_t src1;
+  bool pred_br_taken;
+  uint32_t pred_pc;
   bool alu_out;
   Inst_op op;
 } BRU_in;
 
 typedef struct BRU_out {
   uint32_t pc_next;
-  bool br_taken;
+  bool mispred;
 } BRU_out;
 
 class BRU {

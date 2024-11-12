@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
   bool filelog = true;
   uint32_t number_PC = 0;
   ofstream outfile;
-  bool stall, br_taken;
+  bool stall, misprediction;
 
   // main loop
   for (i = 0; i < MAX_SIM_TIME; i++) {
@@ -141,7 +141,7 @@ int main(int argc, char *argv[]) {
       output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
     }
 
-    if (!stall || br_taken) {
+    if (!stall || misprediction) {
       for (int j = 0; j < INST_WAY; j++) {
         number_PC = cvt_bit_to_number(number_PC_bit[j], BIT_WIDTH_PC);
 
@@ -258,15 +258,15 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    br_taken = *(output_data_from_RISCV + POS_OUT_BRANCH);
-    if (br_taken) {
+    misprediction = *(output_data_from_RISCV + POS_OUT_BRANCH);
+    if (misprediction) {
       number_PC =
           cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
       number_PC -= 4;
     }
 
     stall = *(output_data_from_RISCV + POS_OUT_STALL);
-    if (!stall || br_taken) {
+    if (!stall || misprediction) {
       for (int j = 0; j < INST_WAY; j++) {
         number_PC += 4;
         cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);

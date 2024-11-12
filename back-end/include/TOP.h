@@ -4,6 +4,7 @@
 #include <IDU.h>
 #include <ISU.h>
 #include <LSU.h>
+#include <PTAB.h>
 #include <ROB.h>
 #include <Rename.h>
 #include <config.h>
@@ -13,8 +14,9 @@ private:
   Rename rename;
   IQ int_iq;
   IQ st_iq;
-  IQ ld_iq; // 发射队列
+  IQ ld_iq;
   SRAM<uint32_t> prf = SRAM<uint32_t>(PRF_RD_NUM, PRF_WR_NUM, PRF_NUM, 32);
+  PTAB ptab;
   ALU alu[ALU_NUM];
   BRU bru[BRU_NUM];
   AGU agu[AGU_NUM];

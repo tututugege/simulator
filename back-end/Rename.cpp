@@ -94,7 +94,7 @@ void Rename::comb_alloc() {
   }
 
   // 分支处理
-  if (in.br.br_taken) {
+  if (in.br.mispred) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM; i++) {
       spec_RAT_1[i] = RAT_checkpoint[in.br.br_tag][i];

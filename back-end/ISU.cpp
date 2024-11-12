@@ -82,7 +82,7 @@ void IQ::comb_alloc() {
 void IQ::comb_enq() {
 
   // 分支处理
-  if (in.br.br_taken) {
+  if (in.br.mispred) {
     for (int j = 0; j < entry_num; j++) {
       if (entry[j].valid && in.br.br_mask[entry[j].inst.tag]) {
         entry_1[j].valid = false;
