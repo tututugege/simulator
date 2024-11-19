@@ -28,5 +28,9 @@ run: all
 	@cat $(RESULT)
 	@rm $(RESULT)
 
+gdb:
+	make -C ../.. gdb
+
 clean:
 	rm -rf *.dump
+	rm -rf ./cpu-tests/*.o

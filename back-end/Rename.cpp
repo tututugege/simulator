@@ -161,33 +161,3 @@ void Rename ::seq() {
   /*}*/
   /*cout << endl;*/
 }
-
-/*void Rename::print_reg() {*/
-/*  int preg_idx;*/
-/*  for (int i = 0; i < ARF_NUM; i++) {*/
-/*    preg_idx = arch_RAT[i];*/
-/*    uint32_t data = cvt_bit_to_number_unsigned(preg_base + preg_idx * 32,
- * 32);*/
-/**/
-/*    cout << reg_names[i] << ": " << hex << data << " ";*/
-/**/
-/*    if (i % 8 == 0)*/
-/*      cout << endl;*/
-/*  }*/
-/*  cout << endl;*/
-/*}*/
-/**/
-/*uint32_t Rename::reg(int idx) {*/
-/*  int preg_idx = arch_RAT[idx];*/
-/*  return cvt_bit_to_number_unsigned(preg_base + preg_idx * 32, 32);*/
-/*}*/
-/**/
-/*void Rename::print_RAT() {*/
-/*  for (int i = 0; i < ARF_NUM; i++) {*/
-/*    cout << dec << i << ":" << dec << arch_RAT[i] << " ";*/
-/**/
-/*    if (i % 8 == 0)*/
-/*      cout << endl;*/
-/*  }*/
-/*  cout << endl;*/
-/*}*/

@@ -3,8 +3,8 @@
 
 int main(int argc, char **argv) {
 
-  uart_init();
-  xprintf("hello world\n");
+  // uart_init();
+  // xprintf("hello world\n");
 
   return 0;
 }

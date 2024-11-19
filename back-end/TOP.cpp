@@ -52,6 +52,7 @@ void Back_Top::init() {
   ld_iq.init();
   st_iq.init();
   rob.init();
+  csru.init();
 }
 
 void Back_Top::Back_comb(bool *input_data, bool *output_data) {
@@ -121,18 +122,45 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   ptab.read();
 
   // 往所有ALU BRU发射指令
+  csru.in.re = false;
+  csru.in.we = false;
   for (int i = 0; i < ALU_NUM; i++) {
     Inst_info inst = int_iq.out.inst[i];
     if (int_iq.out.valid[i]) {
-      // 操作数选择
-      operand_mux(inst, prf.from_sram.rdata[2 * i],
-                  prf.from_sram.rdata[2 * i + 1], alu[i].in.src1,
-                  alu[i].in.src2);
-      alu[i].in.alu_op.op = inst.op;
-      alu[i].in.alu_op.func3 = inst.func3;
-      alu[i].in.alu_op.func7_5 = inst.func7_5;
-      alu[i].in.alu_op.src2_is_imm = inst.src2_is_imm;
-      alu[i].cycle();
+      if (int_iq.out.inst[i].op != CSR) {
+        // 操作数选择
+        operand_mux(inst, prf.from_sram.rdata[2 * i],
+                    prf.from_sram.rdata[2 * i + 1], alu[i].in.src1,
+                    alu[i].in.src2);
+        alu[i].in.alu_op.op = inst.op;
+        alu[i].in.alu_op.func3 = inst.func3;
+        alu[i].in.alu_op.func7_5 = inst.func7_5;
+        alu[i].in.alu_op.src2_is_imm = inst.src2_is_imm;
+        alu[i].cycle();
+
+        prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
+        prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_preg;
+        prf.to_sram.wdata[i] = alu[i].out.res;
+      } else {
+        // 如果是csr读写指令
+        csru.in.we = (int_iq.out.inst[i].func3 == 1 ||
+                      int_iq.out.inst[i].src1_areg != 0);
+
+        csru.in.re = (int_iq.out.inst[i].func3 != 1 ||
+                      int_iq.out.inst[i].dest_areg != 0);
+
+        csru.in.idx = int_iq.out.inst[i].csr_idx;
+        csru.in.wcmd = int_iq.out.inst[i].func3 & 0b11;
+        if (int_iq.out.inst[i].src2_is_imm)
+          csru.in.wdata = int_iq.out.inst[i].imm;
+        else
+          csru.in.wdata = prf.from_sram.rdata[i];
+
+        csru.comb();
+        prf.to_sram.wdata[i] = csru.out.rdata;
+        prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_preg;
+        prf.to_sram.we[i] = csru.in.re;
+      }
 
       bru[i].in.src1 = prf.from_sram.rdata[2 * i];
       bru[i].in.pc = inst.pc;
@@ -141,12 +169,7 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       bru[i].in.alu_out = (bool)alu[i].out.res;
       bru[i].in.off = inst.imm;
       bru[i].in.op = inst.op;
-
       bru[i].cycle();
-
-      prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
-      prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_preg;
-      prf.to_sram.wdata[i] = alu[i].out.res;
 
     } else {
       prf.to_sram.we[i] = false;
@@ -337,13 +360,20 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   bool dis_fire[INST_WAY];
   bool dis_stall[INST_WAY];
-  bool pre_stall = false;
+  bool pre_stall = false; // 前面的指令stall，后面的指令也需要跟着stall
+  bool pre_valid = false; // 对于CSR指令，前面有有效指令时stall
+  bool csr_stall = false;
 
   for (int i = 0; i < INST_WAY; i++) {
     // stall的情况：rob空间不足 重命名寄存器不够 分支tag不够 stq空间不够
-    // IQ空间不够
+    // IQ空间不够 csr指令
+
+    // rob 非空 或者前面有有效指令
+    csr_stall = is_CSR(idu.out.inst[i]) && idu.out.valid[i] &&
+                (!rob.out.empty || pre_valid);
     dis_stall[i] = !rob.out.to_ren_ready[i] || !rename.out.ready[i] ||
-                   !idu.out.ready[i] || !stq.out.ready[i] || pre_stall;
+                   !idu.out.ready[i] || !stq.out.ready[i] || pre_stall ||
+                   csr_stall;
     if (idu.out.inst[i].op == LOAD)
       dis_stall[i] = dis_stall[i] || !ld_iq.out.ready[i];
     else if (idu.out.inst[i].op == STORE)
@@ -352,7 +382,8 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
       dis_stall[i] = dis_stall[i] || !int_iq.out.ready[i];
 
     dis_fire[i] = (!dis_stall[i]) && (rename.out.valid[i]);
-    pre_stall = dis_stall[i];
+    pre_stall = dis_stall[i] || is_CSR(idu.out.inst[i]) && idu.out.valid[i];
+    pre_valid = idu.out.valid[i] || pre_valid;
     rename.in.dis_fire[i] = dis_fire[i];
     idu.in.dis_fire[i] = dis_fire[i];
     rob.in.dis_fire[i] = dis_fire[i];
@@ -411,4 +442,5 @@ void Back_Top::Back_seq() {
   int_iq.seq();
   ld_iq.seq();
   st_iq.seq();
+  csru.seq();
 }

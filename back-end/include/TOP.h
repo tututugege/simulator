@@ -1,4 +1,5 @@
 #pragma once
+#include <CSR.h>
 #include <EXU.h>
 #include <FIFO.h>
 #include <IDU.h>
@@ -23,6 +24,7 @@ private:
   STQ stq;
   ROB rob;
   IDU idu;
+  CSRU csru;
 
 public:
   Back_Top();

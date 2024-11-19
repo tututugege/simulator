@@ -3,7 +3,7 @@
 #include <cstdint>
 using namespace std;
 
-#define MAX_SIM_TIME 2000000
+#define MAX_SIM_TIME 10
 
 #define INST_WAY 2
 #define ISSUE_WAY ALU_NUM + AGU_NUM
@@ -25,23 +25,27 @@ using namespace std;
 #define LDQ_NUM 4
 #define STQ_NUM 4
 
-#define LOG 0
+#define LOG 1
 
 #define CONFIG_DIFFTEST
 
 #define UART_BASE 0x10000000
 
-enum Inst_type {
-  INVALID,
-  UTYPE,
-  JTYPE,
-  ITYPE,
-  BTYPE,
-  STYPE,
-  RTYPE,
+enum Inst_op {
+  NONE,
+  LUI,
+  AUIPC,
+  JAL,
+  JALR,
+  ADD,
+  BR,
+  LOAD,
+  STORE,
+  CSR,
+  ECALL,
+  EBREAK,
+  MRET
 };
-
-enum Inst_op { NONE, LUI, AUIPC, JAL, JALR, ADD, BR, LOAD, STORE };
 
 typedef struct Inst_info {
   int dest_areg, src1_areg, src2_areg;
@@ -60,6 +64,7 @@ typedef struct Inst_info {
   uint32_t stq_idx;
   int pc_next;
   bool pre_store[STQ_NUM];
+  uint32_t csr_idx;
 } Inst_info;
 
 typedef struct {
