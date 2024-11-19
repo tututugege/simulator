@@ -6,3 +6,4 @@
 bool andR(bool *in, int num);
 bool orR(bool *in, int num);
 bool is_branch(Inst_info);
+bool is_CSR(Inst_info);

@@ -23,6 +23,7 @@ typedef struct ROB_in {
 typedef struct ROB_out {
   // 流水线握手信号
   bool to_ren_ready[INST_WAY];
+  bool empty;
 
   int enq_idx;
   Inst_info commit_entry[ISSUE_WAY];

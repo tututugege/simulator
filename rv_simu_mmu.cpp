@@ -12,52 +12,6 @@ int time_i = 0;
 
 using namespace std;
 
-enum csr_reg {
-  CSR_MTVEC = 64,
-  CSR_MEPC,
-  CSR_MCAUSE,
-  CSR_MIE,
-  CSR_MIP,
-  CSR_MTVAL,
-  CSR_MSCRATCH,
-  CSR_MSTATUS,
-  CSR_MIDELEG,
-  CSR_MEDELEG,
-  CSR_SEPC,
-  CSR_STVEC,
-  CSR_SCAUSE,
-  CSR_SSCATCH,
-  CSR_STVAL,
-  CSR_SSTATUS,
-  CSR_SIE,
-  CSR_SIP,
-  CSR_SATP,
-  CSR_MHARTID,
-  CSR_MISA
-};
-
-const int POS_CSR_MTVEC = CSR_MTVEC * 32;
-const int POS_CSR_MEPC = CSR_MEPC * 32;
-const int POS_CSR_MCAUSE = CSR_MCAUSE * 32;
-const int POS_CSR_MIE = CSR_MIE * 32;
-const int POS_CSR_MIP = CSR_MIP * 32;
-const int POS_CSR_MTVAL = CSR_MTVAL * 32;
-const int POS_CSR_MSCRATCH = CSR_MSCRATCH * 32;
-const int POS_CSR_MSTATUS = CSR_MSTATUS * 32;
-const int POS_CSR_MIDELEG = CSR_MIDELEG * 32;
-const int POS_CSR_MEDELEG = CSR_MEDELEG * 32;
-const int POS_CSR_SEPC = CSR_SEPC * 32;
-const int POS_CSR_STVEC = CSR_STVEC * 32;
-const int POS_CSR_SCAUSE = CSR_SCAUSE * 32;
-const int POS_CSR_SSCRATCH = CSR_SSCATCH * 32;
-const int POS_CSR_STVAL = CSR_STVAL * 32;
-const int POS_CSR_SSTATUS = CSR_SSTATUS * 32;
-const int POS_CSR_SIE = CSR_SIE * 32;
-const int POS_CSR_SIP = CSR_SIP * 32;
-const int POS_CSR_SATP = CSR_SATP * 32;
-const int POS_CSR_MHARTID = CSR_MHARTID * 32;
-const int POS_CSR_MISA = CSR_MISA * 32;
-
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 
@@ -125,14 +79,15 @@ int main(int argc, char *argv[]) {
       for (int j = 0; j < INST_WAY; j++) {
         cvt_number_to_bit_unsigned(number_PC_bit[j], 0x80000000 + j * 4, 32);
       }
-      // 写misa 寄存器  32-IA 支持User和Supervisor
-      cvt_number_to_bit_unsigned(input_data_to_RISCV +
-                                     POS_CSR_MISA * sizeof(bool),
-                                 0x40140101, 32); // 0x4014112d //0x40140101
-                                                  //
-      cvt_number_to_bit_unsigned(
-          output_data_from_RISCV + POS_CSR_MISA * sizeof(bool), 0x40140101, 32);
-      p_memory[0x10000004 / 4] = 0x00006000;
+      /*// 写misa 寄存器  32-IA 支持User和Supervisor*/
+      /*cvt_number_to_bit_unsigned(input_data_to_RISCV +*/
+      /*                               POS_CSR_MISA * sizeof(bool),*/
+      /*                           0x40140101, 32); // 0x4014112d //0x40140101*/
+      /*                                            //*/
+      /*cvt_number_to_bit_unsigned(*/
+      /*    output_data_from_RISCV + POS_CSR_MISA * sizeof(bool), 0x40140101,
+       * 32);*/
+      /*p_memory[0x10000004 / 4] = 0x00006000;*/
 
       // M-mode
       input_data_to_RISCV[POS_IN_PRIVILEGE] = true;
@@ -167,40 +122,15 @@ int main(int argc, char *argv[]) {
         }
 
         bool bit_inst[INST_WAY][32] = {false};
-        bool *satp = &input_data_to_RISCV[POS_CSR_SATP];
-        bool *mstatus = &input_data_to_RISCV[POS_CSR_MSTATUS];
-        bool *sstatus = &input_data_to_RISCV[POS_CSR_SSTATUS];
+        /*bool *satp = &input_data_to_RISCV[POS_CSR_SATP];*/
+        /*bool *mstatus = &input_data_to_RISCV[POS_CSR_MSTATUS];*/
+        /*bool *sstatus = &input_data_to_RISCV[POS_CSR_SSTATUS];*/
 
-        if (USE_MMU_PHYSICAL_MEMORY && satp[0] != 0 &&
-            privilege != 3) { // mmu physical
-          MMU_ret_state = va2pa(p_addr[j], satp, number_PC_bit[j], p_memory, 0,
-                                mstatus, privilege, sstatus);
-          input_data_to_RISCV[POS_PAGE_FAULT_INST] = !MMU_ret_state;
-          if (MMU_ret_state) {
-            uint32_t number_PC_p = cvt_bit_to_number_unsigned(p_addr[j], 32);
-            if (LOG)
-              cout << "当前物理地址为: " << hex << number_PC_p << endl;
-            cvt_number_to_bit_unsigned(bit_inst[j],
-                                       p_memory[uint32_t(number_PC_p / 4)], 32);
-            if (LOG)
-              cout << "当前指令为:" << hex
-                   << p_memory[uint32_t(number_PC_p / 4)] << endl;
-          } // page fault的话，到下面RISCV会处理
-          else {
-            if (LOG)
-              cout << "PAGE FAULT INST" << endl;
-            copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j,
-                        number_PC_bit[j], 0, 32);
-            RISCV(input_data_to_RISCV, output_data_from_RISCV);
-            continue;
-          }
-        } else if (USE_MMU_PHYSICAL_MEMORY) {
-          uint32_t inst;
-          inst = p_memory[number_PC / 4];
+        uint32_t inst;
+        inst = p_memory[number_PC / 4];
 
-          cvt_number_to_bit_unsigned(bit_inst[j], inst,
-                                     32); // 取指令
-        }
+        cvt_number_to_bit_unsigned(bit_inst[j], inst,
+                                   32); // 取指令
 
         *(input_data_to_RISCV + POS_IN_INST_VALID + j) = true;
         copy_indice(input_data_to_RISCV, POS_IN_INST + 32 * j, bit_inst[j], 0,

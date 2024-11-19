@@ -33,19 +33,27 @@ void ROB::comb_commit() {
 
   deq_ptr_1 = (deq_ptr + complete_num) % ROB_NUM;
   count_1 = count - complete_num;
+
+  out.empty = (count == 0);
 }
 
 // 生成ready
 void ROB::comb_complete() {
   // dispatch进入rob
+  bool csr_stall = (entry.from_sram.rdata[0].op == CSR) && valid[deq_ptr];
+  int num = count;
   for (int i = 0; i < INST_WAY; i++) {
-    if (!in.from_ren_valid[i])
-      out.to_ren_ready[i] = true;
-    else if (count_1 < ROB_NUM) {
-      out.to_ren_ready[i] = true;
-      count_1++;
-    } else {
+    if (csr_stall) {
       out.to_ren_ready[i] = false;
+    } else {
+      if (!in.from_ren_valid[i]) {
+        out.to_ren_ready[i] = true;
+      } else if (num < ROB_NUM) {
+        out.to_ren_ready[i] = true;
+        num++;
+      } else {
+        out.to_ren_ready[i] = false;
+      }
     }
   }
 
@@ -88,7 +96,8 @@ void ROB::comb_enq() {
       valid_1[enq_ptr_1] = true;
       complete_1[enq_ptr_1] = false;
       tag_1[enq_ptr_1] = in.from_ex_inst[i].tag;
-      enq_ptr_1 = (enq_ptr_1 + 1) % ROB_NUM;
+      LOOP_INC(enq_ptr_1, ROB_NUM);
+      count_1++;
     } else {
       entry.to_sram.we[i] = false;
     }

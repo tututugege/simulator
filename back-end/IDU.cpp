@@ -1,6 +1,7 @@
 #include "config.h"
 #include <IDU.h>
 #include <RISCV.h>
+#include <cstdint>
 #include <cstdlib>
 #include <cvt.h>
 
@@ -129,6 +130,8 @@ Inst_info decode(bool inst_bit[]) {
   bool src2_is_4;
   Inst_op op;
   uint32_t imm;
+  uint32_t csr_idx;
+  uint32_t instruction = cvt_bit_to_number_unsigned(inst_bit, 32);
 
   // split instruction
   bool *bit_op_code = inst_bit + 25; // 25-31
@@ -172,6 +175,7 @@ Inst_info decode(bool inst_bit[]) {
   int reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
 
   src2_is_imm = true;
+
   switch (number_op_code_unsigned) {
   case number_0_opcode_lui: { // lui
     dest_en = true;
@@ -277,6 +281,34 @@ Inst_info decode(bool inst_bit[]) {
     op = ADD;
     break;
   }
+  case number_10_opcode_ecall: { // ecall, ebreak, csrrw, csrrs, csrrc, csrrwi,
+                                 // csrrsi, csrrci
+    src2_is_imm = bit_funct3[0] && (bit_funct3[2] || bit_funct3[1]);
+    if (bit_funct3[2] || bit_funct3[1]) {
+      op = CSR;
+      dest_en = true;
+      src1_en = true;
+      src2_en = !src2_is_imm;
+      imm = reg_a_index;
+      csr_idx = instruction >> 20;
+    } else {
+      dest_en = false;
+      src1_en = false;
+      src2_en = false;
+
+      if (instruction == INST_ECALL) {
+        op = ECALL;
+      } else if (instruction == INST_EBREAK) {
+        op = EBREAK;
+      } else if (instruction == INST_MRET) {
+        op = MRET;
+      } else {
+        assert(0);
+      }
+    }
+    break;
+  }
+
   default: {
     if (LOG) {
       cerr << "*****************************************" << endl;
@@ -303,7 +335,8 @@ Inst_info decode(bool inst_bit[]) {
                     .src2_is_imm = src2_is_imm,
                     .func3 = number_funct3_unsigned,
                     .func7_5 = (bool)(number_funct7_unsigned >> 5),
-                    .imm = imm};
+                    .imm = imm,
+                    .csr_idx = csr_idx};
 
   return info;
 }
