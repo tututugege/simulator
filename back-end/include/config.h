@@ -65,6 +65,7 @@ typedef struct Inst_info {
   int pc_next;
   bool pre_store[STQ_NUM];
   uint32_t csr_idx;
+
 } Inst_info;
 
 typedef struct {

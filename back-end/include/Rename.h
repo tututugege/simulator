@@ -23,6 +23,10 @@ typedef struct Rename_in {
 
   // wakeup
   Wake_info wake[ALU_NUM + 1];
+
+  // rollback
+  bool rollback;
+
 } Rename_in;
 
 class Rename {

@@ -35,10 +35,15 @@ typedef struct {
   uint32_t idx;
   uint32_t wdata;
   uint32_t wcmd;
+
+  // 中断异常
+  bool exception;
+  bool mret;
 } CSRU_in;
 
 typedef struct {
   uint32_t rdata;
+  uint32_t csr_mepc_rdata;
 } CSRU_out;
 
 class CSRU {

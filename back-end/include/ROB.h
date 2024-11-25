@@ -28,6 +28,9 @@ typedef struct ROB_out {
   int enq_idx;
   Inst_info commit_entry[ISSUE_WAY];
   bool valid[ISSUE_WAY];
+
+  // 异常清空
+  bool rollback;
 } ROB_out;
 
 class ROB {
@@ -46,6 +49,7 @@ private:
 
   bool valid[ROB_NUM];
   bool complete[ROB_NUM];
+  bool exception[ROB_NUM];
   int enq_ptr;
   int deq_ptr;
   int count;
@@ -53,6 +57,7 @@ private:
 
   bool valid_1[ROB_NUM];
   bool complete_1[ROB_NUM];
+  bool exception_1[ROB_NUM];
   int enq_ptr_1;
   int deq_ptr_1;
   int count_1;

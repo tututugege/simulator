@@ -9,6 +9,7 @@
 // 提交指令
 void ROB::comb_commit() {
   int complete_num;
+  out.rollback = false;
   for (int i = 0; i < ISSUE_WAY; i++) {
     int idx = (deq_ptr + i) % ROB_NUM;
     entry.to_sram.raddr[i] = idx;
@@ -20,9 +21,15 @@ void ROB::comb_commit() {
     out.commit_entry[complete_num] = entry.from_sram.rdata[complete_num];
     out.commit_entry[complete_num].pc_next = pc_next[idx];
     out.valid[complete_num] = valid[idx] && complete[idx];
+
     if (out.valid[complete_num]) {
       complete_1[idx] = false;
       valid_1[idx] = false;
+      exception_1[idx] = false;
+      if (exception[idx]) {
+        out.rollback = true;
+        break;
+      }
     } else
       break;
   }
@@ -31,8 +38,14 @@ void ROB::comb_commit() {
     out.valid[i] = false;
   }
 
-  deq_ptr_1 = (deq_ptr + complete_num) % ROB_NUM;
-  count_1 = count - complete_num;
+  if (out.rollback) {
+    enq_ptr_1 = 0;
+    deq_ptr_1 = 0;
+    count_1 = 0;
+  } else {
+    deq_ptr_1 = (deq_ptr + complete_num) % ROB_NUM;
+    count_1 = count - complete_num;
+  }
 
   out.empty = (count == 0);
 }
@@ -41,9 +54,17 @@ void ROB::comb_commit() {
 void ROB::comb_complete() {
   // dispatch进入rob
   bool csr_stall = (entry.from_sram.rdata[0].op == CSR) && valid[deq_ptr];
+
+  bool exception_stall = false;
+  for (int i = 0; i < ROB_NUM; i++) {
+    exception_stall = exception_stall || (exception[i] && valid[i]);
+    if (exception_stall)
+      break;
+  }
+
   int num = count;
   for (int i = 0; i < INST_WAY; i++) {
-    if (csr_stall) {
+    if (csr_stall || exception_stall) {
       out.to_ren_ready[i] = false;
     } else {
       if (!in.from_ren_valid[i]) {
@@ -98,6 +119,10 @@ void ROB::comb_enq() {
       tag_1[enq_ptr_1] = in.from_ex_inst[i].tag;
       LOOP_INC(enq_ptr_1, ROB_NUM);
       count_1++;
+
+      if (in.from_ren_inst[i].op == ECALL)
+        exception_1[enq_ptr_1] = true;
+
     } else {
       entry.to_sram.we[i] = false;
     }

@@ -92,6 +92,14 @@ void IDU::comb_dec() {
     out.br.mispred = false;
   }
 
+  if (in.rollback) {
+    for (int i = 0; i < MAX_BR_NUM; i++) {
+      tag_vec_1[i] = true;
+      enq_ptr_1 = 0;
+      deq_ptr_1 = 0;
+    }
+  }
+
   for (int i = 0; i < MAX_BR_NUM; i++) {
     out.br.br_mask[i] = (bool)(br_mask & (1 << i));
   }

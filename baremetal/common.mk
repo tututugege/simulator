@@ -24,11 +24,9 @@ all: $(TARGET)
 	make -C $(COMMON_DIR)/..
 
 ASM_SRCS += $(COMMON_DIR)/start.S
+ASM_SRCS += $(COMMON_DIR)/trap.S
 
-C_SRCS += $(COMMON_DIR)/lib/utils.c
-C_SRCS += $(COMMON_DIR)/lib/xprintf.c
-C_SRCS += $(COMMON_DIR)/lib/uart.c
-
+C_SRCS += $(wildcard *.c, $(COMMON_DIR)/lib/*.c)
 
 LINKER_SCRIPT := $(COMMON_DIR)/link.lds
 
@@ -49,8 +47,6 @@ CFLAGS += -march=$(RISCV_ARCH)
 CFLAGS += -mabi=$(RISCV_ABI)
 
 CFLAGS += -mcmodel=$(RISCV_MCMODEL)  -O2 --specs=nosys.specs  -gdwarf
-
-
 
 $(TARGET): $(LINK_OBJS) $(LINK_DEPS) Makefile
 	$(RISCV_GCC) $(CFLAGS) $(INCLUDES) $(LINK_OBJS) -o $@ $(LDFLAGS)
