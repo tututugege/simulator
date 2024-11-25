@@ -105,6 +105,18 @@ void Rename::comb_alloc() {
       free_vec_1[j] = free_vec_1[j] || alloc_checkpoint[in.br.br_tag][j];
     }
   }
+
+  if (in.rollback) {
+    // 恢复重命名表
+    for (int i = 0; i < ARF_NUM; i++) {
+      spec_RAT_1[i] = arch_RAT[i];
+    }
+
+    // 恢复free_list
+    for (int j = 0; j < PRF_NUM; j++) {
+      free_vec_1[j] = true;
+    }
+  }
 }
 
 void Rename::comb_fire() {

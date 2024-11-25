@@ -1,0 +1,163 @@
+[
+  {
+    "arguments": [
+      "/home/tututu/qimeng/file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2\"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I..",
+      "-I../include",
+      "-c",
+      "-o",
+      "../start.o",
+      "../start.S"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/yield-os",
+    "file": "/home/tututu/qimeng/simulator/baremetal/start.S",
+    "output": "/home/tututu/qimeng/simulator/baremetal/start.o"
+  },
+  {
+    "arguments": [
+      "/home/tututu/qimeng/file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2\"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I..",
+      "-I../include",
+      "-c",
+      "-o",
+      "yield-os.o",
+      "yield-os.c"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/yield-os",
+    "file": "/home/tututu/qimeng/simulator/baremetal/yield-os/yield-os.c",
+    "output": "/home/tututu/qimeng/simulator/baremetal/yield-os/yield-os.o"
+  },
+  {
+    "arguments": [
+      "/home/tututu/qimeng/file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2\"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I..",
+      "-I../include",
+      "-c",
+      "-o",
+      "../lib/cte.o",
+      "../lib/cte.c"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/yield-os",
+    "file": "/home/tututu/qimeng/simulator/baremetal/lib/cte.c",
+    "output": "/home/tututu/qimeng/simulator/baremetal/lib/cte.o"
+  },
+  {
+    "arguments": [
+      "/home/tututu/qimeng/file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2\"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I..",
+      "-I../include",
+      "-c",
+      "-o",
+      "../lib/trm.o",
+      "../lib/trm.c"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/yield-os",
+    "file": "/home/tututu/qimeng/simulator/baremetal/lib/trm.c",
+    "output": "/home/tututu/qimeng/simulator/baremetal/lib/trm.o"
+  },
+  {
+    "arguments": [
+      "/home/tututu/qimeng/file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2\"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I..",
+      "-I../include",
+      "-c",
+      "-o",
+      "../lib/uart.o",
+      "../lib/uart.c"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/yield-os",
+    "file": "/home/tututu/qimeng/simulator/baremetal/lib/uart.c",
+    "output": "/home/tututu/qimeng/simulator/baremetal/lib/uart.o"
+  },
+  {
+    "arguments": [
+      "/home/tututu/qimeng/file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2\"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I..",
+      "-I../include",
+      "-c",
+      "-o",
+      "../lib/utils.o",
+      "../lib/utils.c"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/yield-os",
+    "file": "/home/tututu/qimeng/simulator/baremetal/lib/utils.c",
+    "output": "/home/tututu/qimeng/simulator/baremetal/lib/utils.o"
+  },
+  {
+    "arguments": [
+      "/home/tututu/qimeng/file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2\"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I..",
+      "-I../include",
+      "-c",
+      "-o",
+      "../lib/xprintf.o",
+      "../lib/xprintf.c"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/yield-os",
+    "file": "/home/tututu/qimeng/simulator/baremetal/lib/xprintf.c",
+    "output": "/home/tututu/qimeng/simulator/baremetal/lib/xprintf.o"
+  }
+]

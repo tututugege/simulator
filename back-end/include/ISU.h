@@ -19,6 +19,8 @@ typedef struct IQ_in {
   // 分支信息
   Br_info br;
 
+  bool rollback;
+
   // store唤醒
   bool st_valid;
   uint32_t st_idx;

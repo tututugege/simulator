@@ -96,6 +96,15 @@ void IQ::comb_enq() {
     }
   }
 
+  if (in.rollback) {
+    for (int j = 0; j < entry_num; j++) {
+      entry_1[j].valid = false;
+    }
+
+    enq_ptr_1 = 0;
+    return;
+  }
+
   // 压缩，使得IQ中的指令紧密排列
   for (int i = 0; i < entry_num; i++) {
     int j;

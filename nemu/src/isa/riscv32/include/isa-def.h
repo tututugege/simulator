@@ -22,7 +22,6 @@
 #define CSR_MTVEC 0x305
 #define CSR_MEPC 0x341
 #define CSR_MCAUSE 0x342
-
 #define ECALL_U 11
 #define CSR_NR 4
 

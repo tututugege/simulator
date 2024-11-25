@@ -16,6 +16,8 @@ typedef struct IDU_in {
   Br_info br;
   bool free_valid[ISSUE_WAY];
   uint32_t free_tag[ISSUE_WAY];
+
+  bool rollback;
 } IDU_in;
 
 class IDU {
