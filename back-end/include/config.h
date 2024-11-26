@@ -3,7 +3,7 @@
 #include <cstdint>
 using namespace std;
 
-#define MAX_SIM_TIME 10
+#define MAX_SIM_TIME 10000
 
 #define INST_WAY 2
 #define ISSUE_WAY ALU_NUM + AGU_NUM

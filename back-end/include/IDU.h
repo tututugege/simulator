@@ -11,7 +11,7 @@ typedef struct IDU_out {
 typedef struct IDU_in {
   bool valid[INST_WAY];
   bool dis_fire[INST_WAY];
-  bool *instruction[INST_WAY];
+  uint32_t inst[INST_WAY];
 
   Br_info br;
   bool free_valid[ISSUE_WAY];

@@ -7,7 +7,6 @@
 #include <dlfcn.h>
 #include <fstream>
 
-const int bit_width = POS_IN_REG_B + 32;
 int time_i = 0;
 
 using namespace std;
@@ -18,11 +17,7 @@ uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 // 后端执行
 Back_Top back = Back_Top();
 
-static bool input_data_to_RISCV[BIT_WIDTH_INPUT] = {0};
-static bool output_data_from_RISCV[BIT_WIDTH_OUTPUT] = {0};
-
 int commit_num;
-
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
 
@@ -31,9 +26,6 @@ int main(int argc, char *argv[]) {
   char **ptr = NULL;
   long i = 0;
   bool ret;
-
-  bool USE_MMU_PHYSICAL_MEMORY = true;
-  /*init_indice(p_memory, 0, PHYSICAL_MEMORY_LENGTH);*/
 
   // init physical memory
   for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {
@@ -50,13 +42,10 @@ int main(int argc, char *argv[]) {
   init_difftest(diff_so, i);
   back.init();
 
-  bool number_PC_bit[INST_WAY][BIT_WIDTH_PC] = {0};
-  bool p_addr[INST_WAY][32] = {0};
-  bool MMU_ret_state = true;
-  bool filelog = true;
   uint32_t number_PC = 0;
   ofstream outfile;
   bool stall, misprediction;
+  number_PC = 0x80000000;
 
   // main loop
   for (i = 0; i < MAX_SIM_TIME; i++) {
@@ -65,99 +54,29 @@ int main(int argc, char *argv[]) {
       cout << "****************************************************************"
            << endl;
 
-    // copy registers states, include: 32+21 (include satp)
-    copy_indice(input_data_to_RISCV, 0, output_data_from_RISCV, 0,
-                BIT_WIDTH_REG_STATES);
-    copy_indice(input_data_to_RISCV, POS_IN_PRIVILEGE, output_data_from_RISCV,
-                POS_OUT_PRIVILEGE, 2);
-    /*init_indice(input_data_to_RISCV, POS_IN_INST,*/
-    /*            32 * 3 + 4); // inst, pc, load data, asy, page fault*/
-
-    if (i == 0) {
-
-      // 复位pc 0x80000000
-      for (int j = 0; j < INST_WAY; j++) {
-        cvt_number_to_bit_unsigned(number_PC_bit[j], 0x80000000 + j * 4, 32);
-      }
-      /*// 写misa 寄存器  32-IA 支持User和Supervisor*/
-      /*cvt_number_to_bit_unsigned(input_data_to_RISCV +*/
-      /*                               POS_CSR_MISA * sizeof(bool),*/
-      /*                           0x40140101, 32); // 0x4014112d //0x40140101*/
-      /*                                            //*/
-      /*cvt_number_to_bit_unsigned(*/
-      /*    output_data_from_RISCV + POS_CSR_MISA * sizeof(bool), 0x40140101,
-       * 32);*/
-      /*p_memory[0x10000004 / 4] = 0x00006000;*/
-
-      // M-mode
-      input_data_to_RISCV[POS_IN_PRIVILEGE] = true;
-      input_data_to_RISCV[POS_IN_PRIVILEGE + 1] = true;
-      output_data_from_RISCV[POS_OUT_PRIVILEGE] = true;
-      output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
-    }
-
     if (!stall || misprediction) {
+      back.in.pc = number_PC;
       for (int j = 0; j < INST_WAY; j++) {
-        number_PC = cvt_bit_to_number(number_PC_bit[j], BIT_WIDTH_PC);
-
         if (LOG)
-          cout
-              << "指令index:" << dec << i + 1 << " 当前PC的取值为:" << hex
-              << number_PC
-              << endl; // << "SIE"<<
-                       // cvt_bit_to_number_unsigned(&input_data_to_RISCV[1536],
-                       // 32) << endl;
-        // cout << hex<< number_PC<<endl;
+          cout << "指令index:" << dec << i + 1 << " 当前PC的取值为:" << hex
+               << number_PC + 4 * j << endl;
 
-        uint32_t privilege = cvt_bit_to_number_unsigned(
-            input_data_to_RISCV + POS_IN_PRIVILEGE * sizeof(bool), 2);
-
-        if (number_PC == 0x80000000) {
-          privilege = 1;
-          // Supervisor
-          input_data_to_RISCV[POS_IN_PRIVILEGE] = false;
-          input_data_to_RISCV[POS_IN_PRIVILEGE + 1] = true;
-          output_data_from_RISCV[POS_OUT_PRIVILEGE] = false;
-          output_data_from_RISCV[POS_OUT_PRIVILEGE + 1] = true;
-        }
-
-        bool bit_inst[INST_WAY][32] = {false};
-        /*bool *satp = &input_data_to_RISCV[POS_CSR_SATP];*/
-        /*bool *mstatus = &input_data_to_RISCV[POS_CSR_MSTATUS];*/
-        /*bool *sstatus = &input_data_to_RISCV[POS_CSR_SSTATUS];*/
-
-        uint32_t inst;
-        inst = p_memory[number_PC / 4];
-
-        cvt_number_to_bit_unsigned(bit_inst[j], inst,
-                                   32); // 取指令
-
-        *(input_data_to_RISCV + POS_IN_INST_VALID + j) = true;
-        copy_indice(input_data_to_RISCV, POS_IN_INST + 32 * j, bit_inst[j], 0,
-                    32);
-        copy_indice(input_data_to_RISCV, POS_IN_PC + 32 * j, number_PC_bit[j],
-                    0,
-                    32); // 取PC
-        init_indice(input_data_to_RISCV, POS_IN_LOAD_DATA,
-                    32); // load data init
+        back.in.inst[j] = p_memory[(number_PC + 4 * j) / 4];
+        back.in.valid[j] = true;
       }
     }
 
     // TODO
     // asy and page fault
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    RISCV_32I(input_data_to_RISCV, output_data_from_RISCV);
+    back.Back_comb();
+    back.Back_seq();
 
-    bool wen = *(output_data_from_RISCV + POS_OUT_STORE);
+    bool wen = back.out.store;
     if (wen) {
-      uint32_t wdata = cvt_bit_to_number_unsigned(
-          output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
-
-      uint32_t waddr = cvt_bit_to_number_unsigned(
-          output_data_from_RISCV + POS_OUT_STORE_ADDR, 32);
-
-      uint32_t wstrb = cvt_bit_to_number_unsigned(
-          output_data_from_RISCV + POS_OUT_STORE_STRB, 4);
+      uint32_t wdata = back.out.store_data;
+      uint32_t waddr = back.out.store_addr;
+      uint32_t wstrb = back.out.store_strb;
 
       if (waddr == 0x1c) {
         ret = wdata;
@@ -188,24 +107,19 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    misprediction = *(output_data_from_RISCV + POS_OUT_BRANCH);
-    if (misprediction) {
-      number_PC =
-          cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
-      number_PC -= 4;
-    }
+    stall = back.out.stall;
+    misprediction = back.out.mispred;
 
-    stall = *(output_data_from_RISCV + POS_OUT_STALL);
-    if (!stall || misprediction) {
+    if (misprediction) {
+      number_PC = back.out.pc;
+    } else if (!stall) {
       for (int j = 0; j < INST_WAY; j++) {
         number_PC += 4;
-        cvt_number_to_bit_unsigned(number_PC_bit[j], number_PC, 32);
       }
     } else {
-      bool *fire = output_data_from_RISCV + POS_OUT_FIRE;
       for (int j = 0; j < INST_WAY; j++) {
-        if (fire[j])
-          *(input_data_to_RISCV + POS_IN_INST_VALID + j) = false;
+        if (back.out.fire[j])
+          back.in.valid[j] = false;
       }
     }
   }
@@ -241,9 +155,6 @@ int main(int argc, char *argv[]) {
 }
 
 void load_data() {
-  uint32_t address = cvt_bit_to_number_unsigned(
-      output_data_from_RISCV + POS_OUT_LOAD_ADDR, 32);
-
-  uint32_t data = p_memory[address / 4];
-  cvt_number_to_bit_unsigned(input_data_to_RISCV + POS_IN_LOAD_DATA, data, 32);
+  uint32_t address = back.out.load_addr;
+  back.in.load_data = p_memory[address / 4];
 }

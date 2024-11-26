@@ -4,7 +4,7 @@
 extern const int bit_width;
 extern int time_i;
 void RISCV(bool input_data[BIT_WIDTH], bool *output_data);
-void RISCV_32I(bool input_data[BIT_WIDTH], bool *output_data);
+void RISCV_32I();
 void RISCV_CSR(bool input_data[BIT_WIDTH], bool *output_data);
 void RISCV_32A(bool input_data[BIT_WIDTH], bool *output_data);
 bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,

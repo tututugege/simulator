@@ -9,6 +9,31 @@
 #include <ROB.h>
 #include <Rename.h>
 #include <config.h>
+#include <cstdint>
+
+typedef struct {
+  uint32_t inst[INST_WAY];
+  uint32_t pc;
+  bool valid[INST_WAY];
+  uint32_t load_data;
+} Back_in;
+
+typedef struct {
+
+  // to front-end
+  bool mispred;
+  bool stall;
+  bool exception;
+  bool fire[INST_WAY];
+  uint32_t pc;
+
+  // memory
+  uint32_t load_addr;
+  bool store;
+  uint32_t store_addr;
+  uint32_t store_data;
+  uint32_t store_strb;
+} Back_out;
 
 class Back_Top {
 private:
@@ -27,9 +52,11 @@ private:
   CSRU csru;
 
 public:
+  Back_in in;
+  Back_out out;
   Back_Top();
   void init();
-  void Back_comb(bool *input_data, bool *output_data);
+  void Back_comb();
   void Back_seq();
 
   // debug
