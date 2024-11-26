@@ -28,6 +28,8 @@ void CSRU::comb() {
   }
 
   out.rdata = CSR_RegFile[CSR_Hash_table[in.idx]];
+  out.mepc = CSR_RegFile[CSR_MEPC];
+  out.mtvec = CSR_RegFile[CSR_MTVEC];
 }
 
 void CSRU::seq() {

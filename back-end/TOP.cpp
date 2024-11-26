@@ -2,6 +2,7 @@
 #include <TOP.h>
 #include <config.h>
 #include <cstdint>
+#include <cstring>
 #include <cvt.h>
 #include <diff.h>
 #include <util.h>
@@ -55,16 +56,18 @@ void Back_Top::init() {
   csru.init();
 }
 
-void Back_Top::Back_comb(bool *input_data, bool *output_data) {
-  bool *valid = input_data + POS_IN_INST_VALID;
-  bool *fire = output_data + POS_OUT_FIRE;
+void Back_Top::Back_comb() {
   bool *instruction[INST_WAY];
   uint32_t number_pc_unsigned[INST_WAY];
-  bool *bit_this_pc[INST_WAY];
   bool stall[INST_WAY];
 
   // 输出提交的指令
   rob.comb_commit();
+  rename.in.rollback = rob.out.rollback;
+  idu.in.rollback = rob.out.rollback;
+  int_iq.in.rollback = rob.out.rollback;
+  ld_iq.in.rollback = rob.out.rollback;
+  st_iq.in.rollback = rob.out.rollback;
 
   // 写内存
   stq.comb_deq();
@@ -186,11 +189,9 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
 
   // 发出访存请求 地址写入LDQ
   if (ld_iq.out.valid[0]) {
-    cvt_number_to_bit(output_data + POS_OUT_LOAD_ADDR, agu[0].out.addr, 32);
+    out.load_addr = agu[0].out.addr;
     load_data();
-
-    uint32_t data =
-        cvt_bit_to_number_unsigned(input_data + POS_IN_LOAD_DATA, 32);
+    uint32_t data = in.load_data;
     int size = ld_iq.out.inst[0].func3 & 0b11;
     int offset = agu[0].out.addr & 0b11;
     uint32_t mask = 0;
@@ -246,20 +247,18 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   for (br_idx = 0; br_idx < BRU_NUM; br_idx++) {
     if (int_iq.out.valid[br_idx] && bru[br_idx].out.mispred) {
       mispred = true;
-      cvt_number_to_bit_unsigned(output_data + POS_OUT_PC,
-                                 bru[br_idx].out.pc_next, 32);
+      out.pc = bru[br_idx].out.pc_next;
       break;
     }
   }
 
-  *(output_data + POS_OUT_BRANCH) = mispred;
+  out.mispred = mispred;
 
   // idu处理mispred，如果taken会输出需要清除的tag_mask
   for (int i = 0; i < INST_WAY; i++) {
-    idu.in.valid[i] = valid[i] && !mispred;
-    idu.in.instruction[i] = input_data + POS_IN_INST + 32 * i;
-    bit_this_pc[i] = input_data + POS_IN_PC + 32 * i;
-    number_pc_unsigned[i] = cvt_bit_to_number_unsigned(bit_this_pc[i], 32);
+    idu.in.valid[i] = in.valid[i] && !mispred;
+    idu.in.inst[i] = in.inst[i];
+    number_pc_unsigned[i] = in.pc + 4 * i;
   }
   idu.in.br.mispred = mispred;
   idu.in.br.br_tag = int_iq.out.inst[br_idx].tag;
@@ -418,18 +417,15 @@ void Back_Top::Back_comb(bool *input_data, bool *output_data) {
   rob.comb_enq();
 
   // 后端输出信号
-  *(output_data + POS_OUT_STALL) = orR(dis_stall, INST_WAY);
+  out.stall = orR(dis_stall, INST_WAY);
   for (int i = 0; i < INST_WAY; i++) {
-    *(output_data + POS_OUT_FIRE + i) = dis_fire[i];
+    out.fire[i] = dis_fire[i];
   }
 
-  *(output_data + POS_OUT_STORE) = stq.out.wen;
-  cvt_number_to_bit_unsigned(output_data + POS_OUT_STORE_DATA, stq.out.wdata,
-                             32);
-  cvt_number_to_bit_unsigned(output_data + POS_OUT_STORE_ADDR, stq.out.waddr,
-                             32);
-  cvt_number_to_bit_unsigned(output_data + POS_OUT_STORE_STRB, stq.out.wstrb,
-                             4);
+  out.store = stq.out.wen;
+  out.store_data = stq.out.wdata;
+  out.store_addr = stq.out.waddr;
+  out.store_strb = stq.out.wstrb;
 }
 
 void Back_Top::Back_seq() {

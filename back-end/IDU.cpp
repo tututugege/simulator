@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <cvt.h>
 
-Inst_info decode(bool inst_bit[]);
+Inst_info decode(uint32_t);
 
 void IDU::init() {
   for (int i = 1; i < MAX_BR_NUM; i++) {
@@ -32,12 +32,11 @@ void IDU::comb_dec() {
   }
 
   int new_tag_num = 0;
-
   int inst_tag = now_tag;
   bool stall = false;
   for (int i = 0; i < INST_WAY; i++) {
     if (in.valid[i] && !stall) {
-      out.inst[i] = decode(in.instruction[i]);
+      out.inst[i] = decode(in.inst[i]);
       out.inst[i].tag = inst_tag;
 
       // 分配新tag
@@ -131,7 +130,7 @@ void IDU::seq() {
   now_tag = now_tag_1;
 }
 
-Inst_info decode(bool inst_bit[]) {
+Inst_info decode(uint32_t inst) {
   // 操作数来源以及type
   bool dest_en, src1_en, src2_en;
   bool src2_is_imm;
@@ -139,7 +138,8 @@ Inst_info decode(bool inst_bit[]) {
   Inst_op op;
   uint32_t imm;
   uint32_t csr_idx;
-  uint32_t instruction = cvt_bit_to_number_unsigned(inst_bit, 32);
+  bool inst_bit[32];
+  cvt_number_to_bit_unsigned(inst_bit, inst, 32);
 
   // split instruction
   bool *bit_op_code = inst_bit + 25; // 25-31
@@ -298,17 +298,17 @@ Inst_info decode(bool inst_bit[]) {
       src1_en = true;
       src2_en = !src2_is_imm;
       imm = reg_a_index;
-      csr_idx = instruction >> 20;
+      csr_idx = inst >> 20;
     } else {
       dest_en = false;
       src1_en = false;
       src2_en = false;
 
-      if (instruction == INST_ECALL) {
+      if (inst == INST_ECALL) {
         op = ECALL;
-      } else if (instruction == INST_EBREAK) {
+      } else if (inst == INST_EBREAK) {
         op = EBREAK;
-      } else if (instruction == INST_MRET) {
+      } else if (inst == INST_MRET) {
         op = MRET;
       } else {
         assert(0);

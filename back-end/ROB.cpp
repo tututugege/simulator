@@ -16,6 +16,7 @@ void ROB::comb_commit() {
   }
   entry.read();
 
+  out.rollback = false;
   for (complete_num = 0; complete_num < ISSUE_WAY; complete_num++) {
     int idx = (deq_ptr + complete_num) % ROB_NUM;
     out.commit_entry[complete_num] = entry.from_sram.rdata[complete_num];
@@ -149,6 +150,7 @@ void ROB::seq() {
     complete[i] = complete_1[i];
     valid[i] = valid_1[i];
     tag[i] = tag_1[i];
+    exception[i] = exception_1[i];
 
 #ifdef CONFIG_DIFFTEST
     pc_next[i] = pc_next_1[i];

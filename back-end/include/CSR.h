@@ -43,7 +43,8 @@ typedef struct {
 
 typedef struct {
   uint32_t rdata;
-  uint32_t csr_mepc_rdata;
+  uint32_t mepc;
+  uint32_t mtvec;
 } CSRU_out;
 
 class CSRU {
