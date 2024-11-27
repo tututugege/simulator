@@ -69,8 +69,8 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
 #define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
 #define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B
 
-#define INST_EBREAK 0x00000073
-#define INST_ECALL 0x00100073
+#define INST_EBREAK 0x00100073
+#define INST_ECALL 0x00000073
 #define INST_MRET 0x30200073
 
 extern Back_Top back;

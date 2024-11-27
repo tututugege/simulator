@@ -8,12 +8,16 @@ void Rename::init() {
     free_vec[i] = false;
     arch_RAT[i] = i;
     spec_RAT[i] = i;
+    spec_alloc[i] = false;
 
     free_vec_1[i] = false;
+    spec_alloc_1[i] = false;
     spec_RAT_1[i] = i;
   }
 
   for (int i = ARF_NUM; i < PRF_NUM; i++) {
+    spec_alloc[i] = false;
+    spec_alloc_1[i] = false;
     free_vec[i] = true;
     free_vec_1[i] = true;
   }
@@ -102,7 +106,8 @@ void Rename::comb_alloc() {
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
-      free_vec_1[j] = free_vec_1[j] || alloc_checkpoint[in.br.br_tag][j];
+      free_vec_1[j] = free_vec[j] || alloc_checkpoint[in.br.br_tag][j];
+      spec_alloc_1[j] = spec_alloc[j] && !alloc_checkpoint[in.br.br_tag][j];
     }
   }
 
@@ -114,7 +119,8 @@ void Rename::comb_alloc() {
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
-      free_vec_1[j] = true;
+      free_vec_1[j] = free_vec[j] || spec_alloc[j];
+      spec_alloc_1[j] = false;
     }
   }
 }
@@ -124,6 +130,7 @@ void Rename::comb_fire() {
   int alloc_num = 0;
   for (int i = 0; i < INST_WAY; i++) {
     if (in.dis_fire[i] && out.inst[i].dest_en) {
+      spec_alloc_1[alloc_reg[alloc_num]] = true;
       free_vec_1[alloc_reg[alloc_num]] = false;
       busy_table_1[alloc_reg[alloc_num]] = true;
       spec_RAT_1[in.inst[i].dest_areg] = alloc_reg[alloc_num];
@@ -149,6 +156,7 @@ void Rename::comb_fire() {
     if (in.commit_valid[i]) {
       if (in.commit_inst[i].dest_en) {
         free_vec_1[in.commit_inst[i].old_dest_preg] = true;
+        spec_alloc_1[in.commit_inst[i].dest_preg] = false;
       }
     }
   }
@@ -164,6 +172,7 @@ void Rename ::seq() {
   for (int i = 0; i < PRF_NUM; i++) {
     free_vec[i] = free_vec_1[i];
     busy_table[i] = busy_table_1[i];
+    spec_alloc[i] = spec_alloc_1[i];
     for (int j = 0; j < MAX_BR_NUM; j++)
       alloc_checkpoint[j][i] = alloc_checkpoint_1[j][i];
   }

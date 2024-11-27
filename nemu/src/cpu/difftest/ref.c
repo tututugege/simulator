@@ -41,6 +41,10 @@ __EXPORT void difftest_memcpy(paddr_t addr, void *buf, size_t n,
       *(uint8_t *)(buf + i) = paddr_read(addr + i, 1);
     }
   }
+
+  // printf("*******************\n");
+  // printf("%x\n", ((uint32_t *)(buf))[0x18bc0 / 4]);
+  // printf("%x\n", paddr_read(0x80018bc0, 4));
 }
 
 __EXPORT void difftest_regcpy(void *dut, bool direction) {

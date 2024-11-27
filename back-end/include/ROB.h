@@ -31,6 +31,8 @@ typedef struct ROB_out {
 
   // 异常清空
   bool rollback;
+  bool exception;
+  bool mret;
 } ROB_out;
 
 class ROB {

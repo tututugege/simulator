@@ -1,5 +1,4 @@
 #include <CSR.h>
-#include <cstdint>
 
 #define CSR_W 0b01
 #define CSR_S 0b10
@@ -9,6 +8,7 @@ uint32_t CSR_Hash_table[1 << 11];
 
 void CSRU::init() {
   CSR_RegFile[CSR_MSTATUS] = 0x1800;
+  CSR_RegFile_1[CSR_MSTATUS] = 0x1800;
   CSR_Hash_table[number_mstatus] = CSR_MSTATUS;
   CSR_Hash_table[number_mepc] = CSR_MEPC;
   CSR_Hash_table[number_mtvec] = CSR_MTVEC;
@@ -25,6 +25,11 @@ void CSRU::comb() {
     } else if (in.wcmd == CSR_C) {
       CSR_RegFile_1[csr_pos] = (~in.wdata & CSR_RegFile[csr_pos]);
     }
+  }
+
+  if (in.exception) {
+    CSR_RegFile_1[CSR_MCAUSE] = in.cause;
+    CSR_RegFile_1[CSR_MEPC] = in.pc;
   }
 
   out.rdata = CSR_RegFile[CSR_Hash_table[in.idx]];
