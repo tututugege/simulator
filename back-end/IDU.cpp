@@ -92,11 +92,14 @@ void IDU::comb_dec() {
   }
 
   if (in.rollback) {
-    for (int i = 0; i < MAX_BR_NUM; i++) {
+    for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
-      enq_ptr_1 = 0;
-      deq_ptr_1 = 0;
     }
+    tag_vec_1[0] = false;
+    now_tag_1 = 0;
+    tag_fifo_1[0] = 0;
+    enq_ptr_1 = 1;
+    deq_ptr_1 = 0;
   }
 
   for (int i = 0; i < MAX_BR_NUM; i++) {

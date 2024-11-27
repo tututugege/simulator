@@ -50,12 +50,14 @@ private:
   bool free_vec[PRF_NUM];
   bool alloc_checkpoint[MAX_BR_NUM][PRF_NUM];
   bool busy_table[PRF_NUM];
+  bool spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
   uint32_t spec_RAT_1[ARF_NUM];
   uint32_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM];
   bool free_vec_1[PRF_NUM];
   bool alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
   bool busy_table_1[PRF_NUM];
+  bool spec_alloc_1[PRF_NUM];
 
   // 内部信号
   uint32_t alloc_reg[INST_WAY];

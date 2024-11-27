@@ -39,13 +39,14 @@ int main(int argc, char *argv[]) {
   const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
 
   // init difftest and back-end
-  init_difftest(diff_so, i);
+  init_difftest(diff_so, i * 4);
   back.init();
 
   uint32_t number_PC = 0;
   ofstream outfile;
-  bool stall, misprediction;
+  bool stall, misprediction, exception;
   number_PC = 0x80000000;
+  stall = misprediction = exception = false;
 
   // main loop
   for (i = 0; i < MAX_SIM_TIME; i++) {
@@ -54,7 +55,7 @@ int main(int argc, char *argv[]) {
       cout << "****************************************************************"
            << endl;
 
-    if (!stall || misprediction) {
+    if (!stall || misprediction || exception) {
       back.in.pc = number_PC;
       for (int j = 0; j < INST_WAY; j++) {
         if (LOG)
@@ -109,8 +110,9 @@ int main(int argc, char *argv[]) {
 
     stall = back.out.stall;
     misprediction = back.out.mispred;
+    exception = back.out.exception;
 
-    if (misprediction) {
+    if (misprediction || exception) {
       number_PC = back.out.pc;
     } else if (!stall) {
       for (int j = 0; j < INST_WAY; j++) {

@@ -1,3 +1,4 @@
+#include "CSR.h"
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -68,6 +69,14 @@ void Back_Top::Back_comb() {
   int_iq.in.rollback = rob.out.rollback;
   ld_iq.in.rollback = rob.out.rollback;
   st_iq.in.rollback = rob.out.rollback;
+  back.out.exception = rob.out.rollback;
+  csru.in.exception = rob.out.exception;
+  csru.in.cause = M_MODE_ECALL;
+
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (rob.out.valid[i] && rob.out.commit_entry[i].op == ECALL)
+      csru.in.pc = rob.out.commit_entry[i].pc;
+  }
 
   // 写内存
   stq.comb_deq();
@@ -127,6 +136,7 @@ void Back_Top::Back_comb() {
   // 往所有ALU BRU发射指令
   csru.in.re = false;
   csru.in.we = false;
+  bool csr_op = false;
   for (int i = 0; i < ALU_NUM; i++) {
     Inst_info inst = int_iq.out.inst[i];
     if (int_iq.out.valid[i]) {
@@ -159,10 +169,7 @@ void Back_Top::Back_comb() {
         else
           csru.in.wdata = prf.from_sram.rdata[i];
 
-        csru.comb();
-        prf.to_sram.wdata[i] = csru.out.rdata;
-        prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_preg;
-        prf.to_sram.we[i] = csru.in.re;
+        csr_op = true;
       }
 
       bru[i].in.src1 = prf.from_sram.rdata[2 * i];
@@ -179,6 +186,13 @@ void Back_Top::Back_comb() {
       alu[i].cycle();
       bru[i].cycle();
     }
+  }
+
+  csru.comb();
+  if (csr_op) {
+    prf.to_sram.wdata[0] = csru.out.rdata;
+    prf.to_sram.waddr[0] = int_iq.out.inst[0].dest_preg;
+    prf.to_sram.we[0] = csru.in.re;
   }
 
   /*// load指令计算地址*/
@@ -317,7 +331,13 @@ void Back_Top::Back_comb() {
   for (int i = 0; i < ALU_NUM; i++) {
     rob.in.from_ex_valid[i] = int_iq.out.valid[i];
     rob.in.from_ex_inst[i] = int_iq.out.inst[i];
-    rob.in.from_ex_inst[i].pc_next = bru[i].out.pc_next;
+    if (rob.in.from_ex_inst[i].op == ECALL) {
+      rob.in.from_ex_inst[i].pc_next = csru.out.mtvec;
+    } else if (rob.in.from_ex_inst[i].op == MRET) {
+      rob.in.from_ex_inst[i].pc_next = csru.out.mepc;
+    } else {
+      rob.in.from_ex_inst[i].pc_next = bru[i].out.pc_next;
+    }
     rob.in.from_ex_diff[i] = true;
   }
   rob.in.from_ex_valid[ALU_NUM] = ld_iq.out.valid[0];
@@ -421,6 +441,11 @@ void Back_Top::Back_comb() {
   for (int i = 0; i < INST_WAY; i++) {
     out.fire[i] = dis_fire[i];
   }
+
+  if (rob.out.exception)
+    out.pc = csru.out.mtvec;
+  else if (rob.out.mret)
+    out.pc = csru.out.mepc;
 
   out.store = stq.out.wen;
   out.store_data = stq.out.wdata;

@@ -16,7 +16,7 @@ void ROB::comb_commit() {
   }
   entry.read();
 
-  out.rollback = false;
+  out.rollback = out.exception = out.mret = false;
   for (complete_num = 0; complete_num < ISSUE_WAY; complete_num++) {
     int idx = (deq_ptr + complete_num) % ROB_NUM;
     out.commit_entry[complete_num] = entry.from_sram.rdata[complete_num];
@@ -29,6 +29,11 @@ void ROB::comb_commit() {
       exception_1[idx] = false;
       if (exception[idx]) {
         out.rollback = true;
+        if (out.commit_entry[complete_num].op == ECALL)
+          out.exception = true;
+        else if (out.commit_entry[complete_num].op == MRET)
+          out.mret = true;
+        complete_num++;
         break;
       }
     } else
@@ -118,11 +123,10 @@ void ROB::comb_enq() {
       valid_1[enq_ptr_1] = true;
       complete_1[enq_ptr_1] = false;
       tag_1[enq_ptr_1] = in.from_ex_inst[i].tag;
+      if (in.from_ren_inst[i].op == ECALL || in.from_ren_inst[i].op == MRET)
+        exception_1[enq_ptr_1] = true;
       LOOP_INC(enq_ptr_1, ROB_NUM);
       count_1++;
-
-      if (in.from_ren_inst[i].op == ECALL)
-        exception_1[enq_ptr_1] = true;
 
     } else {
       entry.to_sram.we[i] = false;

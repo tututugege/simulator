@@ -1,5 +1,8 @@
 #pragma once
 #include <config.h>
+#include <cstdint>
+
+#define M_MODE_ECALL 0xb
 
 enum csr_reg { CSR_MTVEC, CSR_MEPC, CSR_MCAUSE, CSR_MSTATUS, CSR_NUM };
 
@@ -39,6 +42,8 @@ typedef struct {
   // 中断异常
   bool exception;
   bool mret;
+  uint32_t cause;
+  uint32_t pc;
 } CSRU_in;
 
 typedef struct {
