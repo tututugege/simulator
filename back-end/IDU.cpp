@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <cvt.h>
 
+extern int inst_idx;
+
 Inst_info decode(uint32_t);
 
 void IDU::init() {
@@ -38,6 +40,7 @@ void IDU::comb_dec() {
     if (in.valid[i] && !stall) {
       out.inst[i] = decode(in.inst[i]);
       out.inst[i].tag = inst_tag;
+      out.inst[i].inst_idx = 2 * inst_idx + i;
 
       // 分配新tag
       if (is_branch(out.inst[i].op) && new_tag_num < free_tag_num) {

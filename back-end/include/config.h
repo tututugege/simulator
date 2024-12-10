@@ -3,7 +3,7 @@
 #include <cstdint>
 using namespace std;
 
-#define MAX_SIM_TIME 10000000
+#define MAX_SIM_TIME 1000000
 
 #define INST_WAY 2
 #define ISSUE_WAY ALU_NUM + AGU_NUM
@@ -66,6 +66,8 @@ typedef struct Inst_info {
   bool pre_store[STQ_NUM];
   uint32_t csr_idx;
   uint32_t ptab_idx;
+
+  int inst_idx;
 
 } Inst_info;
 
