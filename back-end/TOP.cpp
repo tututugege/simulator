@@ -129,9 +129,9 @@ void Back_Top::Back_comb() {
   prf.read();
 
   for (int i = 0; i < ALU_NUM; i++) {
-    ptab.in.br_idx[i] = int_iq.out.inst[i].tag;
+    ptab.in.ptab_idx[i] = int_iq.out.inst[i].tag;
   }
-  ptab.read();
+  ptab.comb_read();
 
   // 往所有ALU BRU发射指令
   csru.in.re = false;
@@ -257,14 +257,14 @@ void Back_Top::Back_comb() {
   }
 
   bool mispred = false;
-  int br_idx;
-  for (br_idx = 0; br_idx < BRU_NUM; br_idx++) {
-    if (int_iq.out.valid[br_idx] && bru[br_idx].out.mispred) {
-      mispred = true;
-      out.pc = bru[br_idx].out.pc_next;
-      break;
-    }
-  }
+  /*int br_idx;*/
+  /*for (br_idx = 0; br_idx < BRU_NUM; br_idx++) {*/
+  /*  if (int_iq.out.valid[br_idx] && bru[br_idx].out.mispred) {*/
+  /*    mispred = true;*/
+  /*    out.pc = bru[br_idx].out.pc_next;*/
+  /*    break;*/
+  /*  }*/
+  /*}*/
 
   out.mispred = mispred;
 
@@ -272,12 +272,12 @@ void Back_Top::Back_comb() {
   for (int i = 0; i < INST_WAY; i++) {
     idu.in.valid[i] = in.valid[i] && !mispred;
     idu.in.inst[i] = in.inst[i];
-    number_pc_unsigned[i] = in.pc + 4 * i;
+    number_pc_unsigned[i] = in.pc[i];
   }
   idu.in.br.mispred = mispred;
-  idu.in.br.br_tag = int_iq.out.inst[br_idx].tag;
+  /*idu.in.br.br_tag = int_iq.out.inst[br_idx].tag;*/
   rob.in.mispred = mispred;
-  rob.in.br_rob_idx = int_iq.out.inst[br_idx].rob_idx;
+  /*rob.in.br_rob_idx = int_iq.out.inst[br_idx].rob_idx;*/
 
   // 译码 分配新tag 回收tag 处理分支
   idu.comb_dec();

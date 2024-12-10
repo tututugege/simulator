@@ -13,9 +13,12 @@ using namespace std;
 
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
+uint32_t next_PC[2];
 
 // 后端执行
 Back_Top back = Back_Top();
+
+void branch_check();
 
 int commit_num;
 int main(int argc, char *argv[]) {
@@ -42,7 +45,7 @@ int main(int argc, char *argv[]) {
   init_difftest(diff_so, i * 4);
   back.init();
 
-  uint32_t number_PC = 0;
+  uint32_t number_PC;
   ofstream outfile;
   bool stall, misprediction, exception;
   number_PC = 0x80000000;
@@ -55,17 +58,35 @@ int main(int argc, char *argv[]) {
       cout << "****************************************************************"
            << endl;
 
-    if (!stall || misprediction || exception) {
-      back.in.pc = number_PC;
-      for (int j = 0; j < INST_WAY; j++) {
-        if (LOG)
-          cout << "指令index:" << dec << i + 1 << " 当前PC的取值为:" << hex
-               << number_PC + 4 * j << endl;
+    /*if (!stall || misprediction || exception) {*/
 
-        back.in.inst[j] = p_memory[(number_PC + 4 * j) / 4];
+    if (!stall) {
+      if (i != 0)
+        branch_check();
+
+      /*for (int j = 0; j < INST_WAY; j++) {*/
+      /*  if (next_PC[j] != number_PC + 4 * j) {*/
+      /*    back.ptab.in.valid[j] = true;*/
+      /*    back.ptab.in.ptab_wdata[j] = next_PC[j];*/
+      /*  } else {*/
+      /*    back.ptab.in.valid[j] = false;*/
+      /*  }*/
+      /*  back.ptab.comb_alloc();*/
+      /*}*/
+
+      for (int j = 0; j < INST_WAY; j++) {
+        back.in.pc[j] = next_PC[j];
+        if (LOG)
+          cout << "指令index:" << dec << i << " 当前PC的取值为:" << hex
+               << next_PC[j] << endl;
+
+        back.in.inst[j] = p_memory[next_PC[j] / 4];
+        /*back.in.valid[j] = back.ptab.out.ready[j];*/
         back.in.valid[j] = true;
       }
     }
+
+    /*}*/
 
     // TODO
     // asy and page fault
@@ -111,20 +132,27 @@ int main(int argc, char *argv[]) {
     stall = back.out.stall;
     misprediction = back.out.mispred;
     exception = back.out.exception;
+    number_PC = next_PC[1];
 
-    if (misprediction || exception) {
-      number_PC = back.out.pc;
-    } else if (!stall) {
-      for (int j = 0; j < INST_WAY; j++) {
-        number_PC += 4;
-      }
-    } else {
+    /*if (misprediction || exception) {*/
+    /*  number_PC = back.out.pc;*/
+    /*} else if (!stall) {*/
+    /*  number_PC = next_PC[1];*/
+    /*} else {*/
+    /*  for (int j = 0; j < INST_WAY; j++) {*/
+    /*    if (back.out.fire[j])*/
+    /*      back.in.valid[j] = false;*/
+    /*  }*/
+    /*}*/
+
+    if (stall) {
       for (int j = 0; j < INST_WAY; j++) {
         if (back.out.fire[j])
           back.in.valid[j] = false;
       }
     }
   }
+
   delete[] p_memory;
 
   if (i != MAX_SIM_TIME) {
