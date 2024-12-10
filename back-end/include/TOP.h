@@ -13,7 +13,7 @@
 
 typedef struct {
   uint32_t inst[INST_WAY];
-  uint32_t pc;
+  uint32_t pc[INST_WAY];
   bool valid[INST_WAY];
   uint32_t load_data;
 } Back_in;
@@ -42,7 +42,6 @@ private:
   IQ st_iq;
   IQ ld_iq;
   SRAM<uint32_t> prf = SRAM<uint32_t>(PRF_RD_NUM, PRF_WR_NUM, PRF_NUM, 32);
-  PTAB ptab;
   ALU alu[ALU_NUM];
   BRU bru[BRU_NUM];
   AGU agu[AGU_NUM];
@@ -52,12 +51,14 @@ private:
   CSRU csru;
 
 public:
+  PTAB ptab;
   Back_in in;
   Back_out out;
   Back_Top();
   void init();
   void Back_comb();
   void Back_seq();
+  bool pre_br_check(uint32_t *br_pc);
 
   // debug
   void difftest(Inst_info inst);
