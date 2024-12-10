@@ -32,6 +32,7 @@ typedef struct IQ_entry {
   Inst_info inst;
 } IQ_entry;
 
+enum Sched_type { OLDEST_FIRST, GREEDY, STATIC };
 class IQ {
 public:
   IQ(int entry_num, int out_num, IQ_TYPE);
@@ -43,6 +44,7 @@ public:
   void comb_alloc();
   void comb_2();
   void seq(); // 写入IQ
+  int scheduler(Sched_type);
   IQ_in in;
   IQ_out out;
 
@@ -50,12 +52,8 @@ private:
   vector<IQ_entry> entry;
   vector<IQ_entry> entry_1;
 
-  // register
-  int enq_ptr;
-  int enq_ptr_1;
-
   // 中间
-  vector<int> issue_idx;
+  vector<int> alloc_idx;
 
   // config
   int entry_num;

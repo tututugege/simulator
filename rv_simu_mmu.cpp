@@ -7,7 +7,7 @@
 #include <dlfcn.h>
 #include <fstream>
 
-int time_i = 0;
+int inst_idx;
 
 using namespace std;
 
@@ -53,6 +53,7 @@ int main(int argc, char *argv[]) {
 
   // main loop
   for (i = 0; i < MAX_SIM_TIME; i++) {
+    inst_idx = i;
 
     if (LOG)
       cout << "****************************************************************"
