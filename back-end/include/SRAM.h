@@ -56,7 +56,7 @@ public:
   T debug_read(int idx) { return data[idx]; }
   void debug_write(int idx, T data) { data[idx] = data; }
 
-private:
+public:
   int depth;
   int width;
   int r_num;

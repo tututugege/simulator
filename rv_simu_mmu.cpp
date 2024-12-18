@@ -156,6 +156,7 @@ int main(int argc, char *argv[]) {
 
   delete[] p_memory;
 
+  extern int stall_num[3];
   if (i != MAX_SIM_TIME) {
     if (ret == 0) {
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
@@ -163,6 +164,18 @@ int main(int argc, char *argv[]) {
       printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
       printf("\033[1;32mcycle num      : %ld\033[0m\n", i);
       printf("\033[1;32mipc            : %f\033[0m\n", (double)commit_num / i);
+      /*printf("\033[1;32mIQ stall num   : %d\033[0m\n", stall_num);*/
+      printf("\033[1;32mint stall num  : %d\033[0m\n", stall_num[0]);
+      printf("\033[1;32mld  stall num  : %d\033[0m\n", stall_num[1]);
+      printf("\033[1;32mst  stall num  : %d\033[0m\n", stall_num[2]);
+
+      printf("\033[1;32mint inst num   : %f\033[0m\n",
+             (double)back.int_iq.num / commit_num);
+      printf("\033[1;32mld  inst num   : %f\033[0m\n",
+             (double)back.ld_iq.num / commit_num);
+      printf("\033[1;32mst  inst num   : %f\033[0m\n",
+             (double)back.st_iq.num / commit_num);
+
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
     } else {
       cout << "\033[1;31m------------------------------\033[0m" << endl;

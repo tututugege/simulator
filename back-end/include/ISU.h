@@ -32,7 +32,7 @@ typedef struct IQ_entry {
   Inst_info inst;
 } IQ_entry;
 
-enum Sched_type { OLDEST_FIRST, GREEDY, STATIC };
+enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
 class IQ {
 public:
   IQ(int entry_num, int out_num, IQ_TYPE);
@@ -45,8 +45,10 @@ public:
   void comb_2();
   void seq(); // 写入IQ
   int scheduler(Sched_type);
+  void dependency(int dest_idx);
   IQ_in in;
   IQ_out out;
+  int num;
 
 private:
   vector<IQ_entry> entry;
