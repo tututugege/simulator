@@ -1,4 +1,5 @@
 #include "CSR.h"
+#include <DAG.h>
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -55,6 +56,7 @@ void Back_Top::init() {
   st_iq.init();
   rob.init();
   csru.init();
+  init_dag();
 }
 
 void Back_Top::Back_comb() {
@@ -428,6 +430,13 @@ void Back_Top::Back_comb() {
 
   ld_iq.comb_enq();
   st_iq.comb_enq();
+
+  // dependency
+  /*for (int i = 0; i < INST_WAY; i++) {*/
+  /*  if (int_iq.in.valid[i] && int_iq.in.inst[i].dest_en) {*/
+  /*    int_iq.dependency(int_iq.);*/
+  /*  }*/
+  /*}*/
 
   // rob入队输入
   for (int i = 0; i < INST_WAY; i++) {

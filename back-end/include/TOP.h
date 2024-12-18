@@ -38,9 +38,6 @@ typedef struct {
 class Back_Top {
 private:
   Rename rename;
-  IQ int_iq;
-  IQ st_iq;
-  IQ ld_iq;
   SRAM<uint32_t> prf = SRAM<uint32_t>(PRF_RD_NUM, PRF_WR_NUM, PRF_NUM, 32);
   ALU alu[ALU_NUM];
   BRU bru[BRU_NUM];
@@ -51,6 +48,10 @@ private:
   CSRU csru;
 
 public:
+  IQ int_iq;
+  IQ st_iq;
+  IQ ld_iq;
+
   PTAB ptab;
   Back_in in;
   Back_out out;

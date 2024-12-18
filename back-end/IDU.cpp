@@ -40,6 +40,7 @@ void IDU::comb_dec() {
     if (in.valid[i] && !stall) {
       out.inst[i] = decode(in.inst[i]);
       out.inst[i].tag = inst_tag;
+      out.inst[i].dependency = 0;
       out.inst[i].inst_idx = 2 * inst_idx + i;
 
       // 分配新tag

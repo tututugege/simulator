@@ -1,3 +1,4 @@
+#include <DAG.h>
 #include <RISCV.h>
 #include <ROB.h>
 #include <TOP.h>
@@ -88,6 +89,8 @@ void ROB::comb_complete() {
   for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
     if (in.from_ex_valid[i]) {
       complete_1[in.from_ex_inst[i].rob_idx] = true;
+      if (in.from_ex_inst[i].op != STORE)
+        dag_del_node(in.from_ex_inst[i].rob_idx);
       diff_1[in.from_ex_inst[i].rob_idx] = in.from_ex_diff[i];
     }
   }
@@ -139,6 +142,8 @@ void ROB::seq() {
 
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (out.valid[i]) {
+      if (out.commit_entry[i].op == STORE)
+        dag_del_node(out.commit_entry[i].rob_idx);
 #ifdef CONFIG_DIFFTEST
       difftest_skip = !diff[out.commit_entry[i].rob_idx];
       back.difftest(out.commit_entry[i]);
@@ -150,6 +155,11 @@ void ROB::seq() {
   }
 
   entry.write();
+  for (int i = 0; i < INST_WAY; i++) {
+    if (in.dis_fire[i])
+      dag_add_node(&entry.data[entry.to_sram.waddr[i]]);
+  }
+
   for (int i = 0; i < ROB_NUM; i++) {
     complete[i] = complete_1[i];
     valid[i] = valid_1[i];

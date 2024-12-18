@@ -1,6 +1,12 @@
 #include "ISU.h"
+#include "DAG.h"
+#include "TOP.h"
 #include "config.h"
 #include "util.h"
+#include <iostream>
+
+int stall_num[3];
+extern Back_Top back;
 
 IQ::IQ(int entry_num, int fu_num, IQ_TYPE type) {
   this->entry_num = entry_num;
@@ -46,7 +52,18 @@ void IQ::comb_deq() {
 
   int issue_num;
 
-  issue_num = scheduler(OLDEST_FIRST);
+  if (type == ST)
+    issue_num = scheduler(OLDEST_FIRST);
+  else if (type == LD)
+    issue_num = scheduler(OLDEST_FIRST);
+  else {
+    issue_num = scheduler(GREEDY);
+    for (int i = 0; i < issue_num; i++) {
+      cout << hex << out.inst[i].pc << " ";
+    }
+    cout << endl;
+  }
+
   while (issue_num < fu_num) {
     out.valid[issue_num++] = false;
   }
@@ -118,8 +135,18 @@ void IQ::comb_enq() {
   // 进入iq
   for (int i = 0; i < INST_WAY; i++) {
     if (in.dis_fire[i]) {
+      if (in.inst[i].src1_en) {
+        back.int_iq.dependency(in.inst[i].src1_preg);
+        back.ld_iq.dependency(in.inst[i].src1_preg);
+      }
+      if (in.inst[i].src2_en) {
+        back.int_iq.dependency(in.inst[i].src2_preg);
+        back.ld_iq.dependency(in.inst[i].src2_preg);
+      }
+
       entry_1[alloc_idx[i]].inst = in.inst[i];
       entry_1[alloc_idx[i]].valid = true;
+      num++;
     }
   }
 }
@@ -145,6 +172,8 @@ int IQ::scheduler(Sched_type sched) {
 
   int issue_num = 0;
   int youngest_idx = -1;
+  int valid_num = 0;
+
   if (sched == OLDEST_FIRST) {
     // 遍历查找oldest的指令
     int oldest_idx[fu_num];
@@ -153,6 +182,10 @@ int IQ::scheduler(Sched_type sched) {
 
     for (int i = 0; i < entry_num; i++) {
       // 发射条件 操作数准备好 依赖的STORE完成（无RAW）
+
+      if (entry[i].valid)
+        valid_num++;
+
       if (entry[i].valid && !entry[i].inst.src1_busy &&
           !entry[i].inst.src2_busy &&
           !(type == LD && orR(entry[i].inst.pre_store, STQ_NUM))) {
@@ -170,6 +203,7 @@ int IQ::scheduler(Sched_type sched) {
 
         // 如果是更老的指令，则将最年轻的指令替换
         int youngest_j;
+        youngest_idx = -1;
         for (j = 0; j < fu_num; j++) {
           if (youngest_idx == -1) {
             youngest_idx = oldest_idx[j];
@@ -177,7 +211,7 @@ int IQ::scheduler(Sched_type sched) {
             continue;
           }
 
-          if (entry[oldest_idx[j]].inst.inst_idx <
+          if (entry[oldest_idx[j]].inst.inst_idx >
               entry[youngest_idx].inst.inst_idx) {
             youngest_idx = oldest_idx[j];
             youngest_j = j;
@@ -192,16 +226,196 @@ int IQ::scheduler(Sched_type sched) {
 
     for (int i = 0; i < fu_num; i++) {
       if (oldest_idx[i] != -1) {
-        out.inst[i] = entry[oldest_idx[i]].inst;
-        out.valid[i] = true;
+        out.inst[issue_num] = entry[oldest_idx[i]].inst;
+        out.valid[issue_num] = true;
         entry_1[oldest_idx[i]].valid = false;
         issue_num++;
-      } else {
-        out.valid[i] = false;
+      }
+    }
+
+    // 退化为顺序多发射
+  } else if (sched == IN_ORDER) {
+    // 遍历查找oldest的指令
+    int oldest_idx[fu_num];
+    for (int i = 0; i < fu_num; i++)
+      oldest_idx[i] = -1;
+
+    for (int i = 0; i < entry_num; i++) {
+      if (entry[i].valid) {
+        valid_num++;
+
+        // 如果oldest_idx仍有-1的空位
+        int j;
+        for (j = 0; j < fu_num; j++) {
+          if (oldest_idx[j] == -1) {
+            oldest_idx[j] = i;
+            break;
+          }
+        }
+        if (j != fu_num)
+          continue;
+
+        // 如果是更老的指令，则将最年轻的指令替换
+        int youngest_j;
+        youngest_idx = -1;
+        for (j = 0; j < fu_num; j++) {
+          if (youngest_idx == -1) {
+            youngest_idx = oldest_idx[j];
+            youngest_j = j;
+            continue;
+          }
+
+          if (entry[oldest_idx[j]].inst.inst_idx >
+              entry[youngest_idx].inst.inst_idx) {
+            youngest_idx = oldest_idx[j];
+            youngest_j = j;
+          }
+        }
+
+        if (entry[i].inst.inst_idx < entry[youngest_idx].inst.inst_idx) {
+          oldest_idx[youngest_j] = i;
+        }
+      }
+    }
+
+    for (int i = 0; i < fu_num; i++) {
+      if (oldest_idx[i] != -1) {
+        int idx = oldest_idx[i];
+        if (!entry[idx].inst.src1_busy && !entry[idx].inst.src2_busy &&
+            !(type == LD && orR(entry[idx].inst.pre_store, STQ_NUM))) {
+
+          out.inst[issue_num] = entry[idx].inst;
+          out.valid[issue_num] = true;
+          entry_1[idx].valid = false;
+          issue_num++;
+        }
+      }
+    }
+  } else if (sched == INDEX) {
+    for (int i = 0; i < entry_num && issue_num < fu_num; i++) {
+      if (entry[i].valid)
+        valid_num++;
+
+      if (entry[i].valid && !entry[i].inst.src1_busy &&
+          !entry[i].inst.src2_busy &&
+          !(type == LD && orR(entry[i].inst.pre_store, STQ_NUM))) {
+
+        out.inst[issue_num] = entry[i].inst;
+        out.valid[issue_num] = true;
+        entry_1[i].valid = false;
+        issue_num++;
+      }
+    }
+  } else if (sched == DEPENDENCY) {
+    int min_idx = -1;
+    int oldest_idx[fu_num];
+    for (int i = 0; i < entry_num; i++) {
+      if (entry[i].valid)
+        valid_num++;
+
+      if (entry[i].valid && !entry[i].inst.src1_busy &&
+          !entry[i].inst.src2_busy &&
+          !(type == LD && orR(entry[i].inst.pre_store, STQ_NUM))) {
+
+        // 如果oldest_idx仍有-1的空位
+        int j;
+        for (j = 0; j < fu_num; j++) {
+          if (oldest_idx[j] == -1) {
+            oldest_idx[j] = i;
+            break;
+          }
+        }
+        if (j != fu_num)
+          continue;
+
+        // 如果是被依赖得更少的指令，则将被依赖最少的指令替换
+        int min_j;
+        min_idx = -1;
+        for (j = 0; j < fu_num; j++) {
+          if (min_idx == -1) {
+            min_idx = oldest_idx[j];
+            min_j = j;
+            continue;
+          }
+
+          if (entry[oldest_idx[j]].inst.dependency <
+              entry[youngest_idx].inst.dependency) {
+            min_idx = oldest_idx[j];
+            min_j = j;
+          }
+        }
+
+        if (entry[i].inst.dependency > entry[youngest_idx].inst.dependency) {
+          oldest_idx[min_j] = i;
+        }
+      }
+    }
+
+    for (int i = 0; i < fu_num; i++) {
+      if (oldest_idx[i] != -1) {
+        out.inst[issue_num] = entry[oldest_idx[i]].inst;
+        out.valid[issue_num] = true;
+        entry_1[oldest_idx[i]].valid = false;
+        issue_num++;
       }
     }
   } else if (sched == GREEDY) {
+    for (int j = 0; j < entry_num; j++) {
+      if (entry[j].valid)
+        valid_num++;
+    }
+
+    if (type == INT) {
+      search_optimal();
+
+      for (int i : optimal_int_idx) {
+        for (int j = 0; j < entry_num; j++) {
+          if (entry[j].valid && entry[j].inst.rob_idx == i) {
+            out.inst[issue_num] = entry[j].inst;
+            out.valid[issue_num] = true;
+            entry_1[j].valid = false;
+          }
+        }
+        issue_num++;
+      }
+    } else if (type == LD) {
+      for (int i : optimal_ld_idx) {
+        for (int j = 0; j < entry_num; j++) {
+          if (entry[j].valid && entry[j].inst.rob_idx == i) {
+            out.inst[issue_num] = entry[j].inst;
+            out.valid[issue_num] = true;
+            entry_1[j].valid = false;
+            issue_num++;
+          }
+        }
+      }
+    } else {
+
+      for (int i : optimal_st_idx) {
+        for (int j = 0; j < entry_num; j++) {
+          if (entry[j].valid && entry[j].inst.rob_idx == i) {
+            out.inst[issue_num] = entry[j].inst;
+            out.valid[issue_num] = true;
+            entry_1[j].valid = false;
+            issue_num++;
+            break;
+          }
+        }
+      }
+    }
   }
 
+  valid_num = (valid_num > fu_num) ? fu_num : valid_num;
+  stall_num[this->type] += (valid_num - issue_num);
+
   return issue_num;
+}
+
+void IQ::dependency(int dest_idx) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry_1[i].valid && entry_1[i].inst.dest_en &&
+        entry_1[i].inst.dest_preg == dest_idx) {
+      entry_1[i].inst.dependency++;
+    }
+  }
 }

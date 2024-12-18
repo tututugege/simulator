@@ -4,7 +4,6 @@
 using namespace std;
 
 #define MAX_SIM_TIME 1000000
-
 #define INST_WAY 2
 #define ISSUE_WAY ALU_NUM + AGU_NUM
 #define ALU_NUM 2
@@ -67,7 +66,9 @@ typedef struct Inst_info {
   uint32_t csr_idx;
   uint32_t ptab_idx;
 
+  // 调度特征
   int inst_idx;
+  int dependency;
 
 } Inst_info;
 
