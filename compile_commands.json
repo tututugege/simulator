@@ -5,12 +5,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./RISCV.cpp"
+      "./back-end/EXU/CSR.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/RISCV.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/EXU/CSR.cpp"
   },
   {
     "arguments": [
@@ -18,12 +20,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./RISCV_32A.cpp"
+      "./back-end/EXU/EXU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/RISCV_32A.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/EXU/EXU.cpp"
   },
   {
     "arguments": [
@@ -31,12 +35,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./RISCV_32I.cpp"
+      "./back-end/EXU/LSU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/RISCV_32I.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/EXU/LSU.cpp"
   },
   {
     "arguments": [
@@ -44,12 +50,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./RISCV_CSR.cpp"
+      "./back-end/EXU/PTAB.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/RISCV_CSR.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/EXU/PTAB.cpp"
   },
   {
     "arguments": [
@@ -57,12 +65,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./RISCV_MMU.cpp"
+      "./back-end/IDU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/RISCV_MMU.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/IDU.cpp"
   },
   {
     "arguments": [
@@ -70,12 +80,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./RISCV_V2C.cpp"
+      "./back-end/ISU/DAG.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/RISCV_V2C.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/ISU/DAG.cpp"
   },
   {
     "arguments": [
@@ -83,12 +95,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./rv_simu_mmu.cpp"
+      "./back-end/ISU/ISU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/rv_simu_mmu.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/ISU/ISU.cpp"
   },
   {
     "arguments": [
@@ -96,12 +110,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./back-end/EXU.cpp"
+      "./back-end/PRF.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/back-end/EXU.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/PRF.cpp"
   },
   {
     "arguments": [
@@ -109,32 +125,8 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
-      "-I./diff/include/",
-      "-g",
-      "./back-end/IQ.cpp"
-    ],
-    "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/back-end/IQ.cpp"
-  },
-  {
-    "arguments": [
-      "/usr/bin/g++",
-      "-c",
-      "-I./include/",
-      "-I./back-end/include/",
-      "-I./diff/include/",
-      "-g",
-      "./back-end/ROB.cpp"
-    ],
-    "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/back-end/ROB.cpp"
-  },
-  {
-    "arguments": [
-      "/usr/bin/g++",
-      "-c",
-      "-I./include/",
-      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
       "./back-end/Rename.cpp"
@@ -148,12 +140,14 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./back-end/TOP.cpp"
+      "./back-end/ROB.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/back-end/TOP.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/ROB.cpp"
   },
   {
     "arguments": [
@@ -161,11 +155,13 @@
       "-c",
       "-I./include/",
       "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
       "-I./diff/include/",
       "-g",
-      "./diff/dut.cpp"
+      "./back-end/TOP.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/diff/dut.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/TOP.cpp"
   }
 ]

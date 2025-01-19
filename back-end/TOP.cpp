@@ -1,9 +1,9 @@
 #include "CSR.h"
+#include "IO.h"
 #include <DAG.h>
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
-#include <cstdint>
 #include <cstring>
 #include <cvt.h>
 #include <diff.h>
@@ -14,463 +14,199 @@ extern int commit_num;
 void load_data();
 /*void store_data();*/
 
-void operand_mux(Inst_info inst, uint32_t reg_data1, uint32_t reg_data2,
-                 uint32_t &operand1, uint32_t &operand2) {
-  if (inst.op == AUIPC || inst.op == JAL || inst.op == JALR)
-    operand1 = inst.pc;
-  else if (inst.op == LUI)
-    operand1 = 0;
-  else
-    operand1 = reg_data1;
-
-  if (inst.src2_is_imm) {
-    operand2 = inst.imm;
-  } else if (inst.op == JALR || inst.op == JAL) {
-    operand2 = 4;
-  } else {
-    operand2 = reg_data2;
-  }
-}
-
-void Back_Top::difftest(Inst_info inst) {
-  if (inst.dest_en)
-    rename.arch_RAT[inst.dest_areg] = inst.dest_preg;
+void Back_Top::difftest(Inst_info *inst) {
+  if (inst->dest_en)
+    rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
 
   for (int i = 0; i < ARF_NUM; i++) {
-    dut.gpr[i] = prf.debug_read(rename.arch_RAT[i]);
+    dut.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
   }
 
-  dut.pc = inst.pc_next;
+  dut.pc = inst->pc_next;
   difftest_step();
   commit_num++;
 }
 
-Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST) {}
+/*Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST)
+ * {}*/
+
+Front_Dec front2id;
+Dec_Front id2front;
+
+Dec_Ren id2ren;
+Dec_Broadcast id_bc;
+
+Ren_Dec ren2id;
+Ren_Iss ren2iss;
+Ren_Rob ren2rob;
+
+Iss_Ren iss2ren;
+Iss_Prf iss2prf;
+
+Prf_Exe prf2exe;
+Prf_Rob prf2rob;
+
+Exe_Iss exe2iss; // br
+Exe_Ren exe2ren;
+Exe_Prf exe2prf;
+Exe_Broadcast exe_bc;
+
+Rob_Ren rob2ren;
+Rob_Broadcast rob_bc;
+Rob_Commit rob_commit;
 
 void Back_Top::init() {
-  idu.init();
+
+  for (auto pack : fu_config) {
+    vector<Inst_entry> a(pack.size());
+    iss2prf.iss_pack.push_back(a);
+  }
+
+  for (auto pack : fu_config) {
+    vector<bool> a(pack.size());
+    exe2iss.ready.push_back(a);
+  }
+
+  for (auto pack : fu_config) {
+    vector<Inst_entry> a(pack.size());
+    prf2exe.iss_pack.push_back(a);
+  }
+
+  for (auto pack : fu_config) {
+    vector<bool> a(pack.size());
+    exe2prf.ready.push_back(a);
+  }
+
+  idu.io.front2id = &front2id;
+  idu.io.id2front = &id2front;
+  idu.io.id2ren = &id2ren;
+  idu.io.ren2id = &ren2id;
+  idu.io.id_bc = &id_bc;
+  idu.io.exe_bc = &exe_bc;
+  idu.io.rob_bc = &rob_bc;
+  idu.io.commit = &rob_commit;
+
+  rename.io.dec2ren = &id2ren;
+  rename.io.ren2dec = &ren2id;
+  rename.io.ren2iss = &ren2iss;
+  rename.io.iss2ren = &iss2ren;
+  rename.io.exe2ren = &exe2ren;
+  rename.io.exe_bc = &exe_bc;
+  rename.io.rob2ren = &rob2ren;
+  rename.io.ren2rob = &ren2rob;
+  rename.io.rob_bc = &rob_bc;
+  rename.io.rob_commit = &rob_commit;
+
+  isu.io.rob_bc = &rob_bc;
+  isu.io.ren2iss = &ren2iss;
+  isu.io.iss2ren = &iss2ren;
+  isu.io.iss2prf = &iss2prf;
+  isu.io.exe2iss = &exe2iss;
+
+  prf.io.iss2prf = &iss2prf;
+  prf.io.prf2rob = &prf2rob;
+  prf.io.prf2exe = &prf2exe;
+  prf.io.exe2prf = &exe2prf;
+
+  exu.io.prf2exe = &prf2exe;
+  exu.io.exe2iss = &exe2iss;
+  exu.io.exe2prf = &exe2prf;
+  exu.io.exe_bc = &exe_bc;
+
+  rob.io.ren2rob = &ren2rob;
+  rob.io.exe_bc = &exe_bc;
+  rob.io.prf2rob = &prf2rob;
+  rob.io.rob_bc = &rob_bc;
+  rob.io.rob_commit = &rob_commit;
+  rob.io.rob2ren = &rob2ren;
   ptab.init();
+  idu.init();
   rename.init();
-  int_iq.init();
-  ld_iq.init();
-  st_iq.init();
-  rob.init();
+  isu.init();
+  prf.init();
+  exu.init();
   csru.init();
+  rob.init();
   init_dag();
 }
 
 void Back_Top::Back_comb() {
-  bool *instruction[INST_WAY];
-  uint32_t number_pc_unsigned[INST_WAY];
-  bool stall[INST_WAY];
-
   // 输出提交的指令
-  rob.comb_commit();
-  rename.in.rollback = rob.out.rollback;
-  idu.in.rollback = rob.out.rollback;
-  int_iq.in.rollback = rob.out.rollback;
-  ld_iq.in.rollback = rob.out.rollback;
-  st_iq.in.rollback = rob.out.rollback;
-  back.out.exception = rob.out.rollback;
-  csru.in.exception = rob.out.exception;
-  csru.in.cause = M_MODE_ECALL;
-
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (rob.out.valid[i] && rob.out.commit_entry[i].op == ECALL)
-      csru.in.pc = rob.out.commit_entry[i].pc;
+  for (int i = 0; i < INST_WAY; i++) {
+    idu.io.front2id->valid[i] = in.valid[i];
+    idu.io.front2id->pc[i] = in.pc[i];
+    idu.io.front2id->inst[i] = in.inst[i];
   }
+
+  idu.comb();
+  rename.comb();
+  isu.comb();
+  prf.comb();
+  exu.comb();
+  rob.comb();
+
+  /*csru.in.exception = rob.out.exception;*/
+  /*csru.in.cause = M_MODE_ECALL;*/
+
+  /*for (int i = 0; i < ISSUE_WAY; i++) {*/
+  /*  if (rob.out.valid[i] && rob.out.commit_entry[i].op == ECALL)*/
+  /*    csru.in.pc = rob.out.commit_entry[i].pc;*/
+  /*}*/
 
   // 写内存
-  stq.comb_deq();
+  /*stq.comb_deq();*/
 
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    rename.in.commit_valid[i] = rob.out.valid[i];
-    rename.in.commit_inst[i] = rob.out.commit_entry[i];
-    idu.in.free_valid[i] =
-        rob.out.valid[i] && is_branch(rob.out.commit_entry[i]);
-    idu.in.free_tag[i] = rob.out.commit_entry[i].tag;
-
-    stq.in.commit[i] =
-        (rob.out.valid[i] && rob.out.commit_entry[i].op == STORE);
-  }
-
-  ld_iq.in.st_idx = stq.deq_ptr;
-  ld_iq.in.st_valid = stq.out.wen;
-
+  /*for (int i = 0; i < ISSUE_WAY; i++) {*/
+  /*  idu.in.free_valid[i] =*/
+  /*      rob.out.valid[i] && is_branch(rob.out.commit_entry[i]);*/
+  /*  idu.in.free_tag[i] = rob.out.commit_entry[i].tag;*/
+  /**/
+  /*  stq.in.commit[i] =*/
+  /*      (rob.out.valid[i] && rob.out.commit_entry[i].op == STORE);*/
+  /*}*/
+  /**/
   // 发射指令
-  int_iq.comb_deq();
-  st_iq.comb_deq();
-  ld_iq.comb_deq();
 
   // 唤醒
-  for (int i = 0; i < ALU_NUM; i++) {
-    if (int_iq.out.valid[i]) {
-      int_iq.wake_up(&int_iq.out.inst[i]);
-      st_iq.wake_up(&int_iq.out.inst[i]);
-      ld_iq.wake_up(&int_iq.out.inst[i]);
-    }
-  }
-
-  if (ld_iq.out.valid[0]) {
-    int_iq.wake_up(&ld_iq.out.inst[0]);
-    st_iq.wake_up(&ld_iq.out.inst[0]);
-    ld_iq.wake_up(&ld_iq.out.inst[0]);
-  }
-
-  // 读寄存器
-  for (int i = 0; i < ALU_NUM; i++) {
-    prf.to_sram.raddr[2 * i] = int_iq.out.inst[i].src1_preg;
-    prf.to_sram.raddr[2 * i + 1] = int_iq.out.inst[i].src2_preg;
-  }
-
-  prf.to_sram.raddr[2 * (ALU_NUM)] = ld_iq.out.inst[0].src1_preg;
-
-  prf.to_sram.raddr[2 * (ALU_NUM) + 1] = st_iq.out.inst[0].src1_preg;
-  prf.to_sram.raddr[2 * (ALU_NUM) + 2] = st_iq.out.inst[0].src2_preg;
-
-  prf.read();
-
-  for (int i = 0; i < ALU_NUM; i++) {
-    ptab.in.ptab_idx[i] = int_iq.out.inst[i].tag;
-  }
-  ptab.comb_read();
-
-  // 往所有ALU BRU发射指令
-  csru.in.re = false;
-  csru.in.we = false;
-  bool csr_op = false;
-  for (int i = 0; i < ALU_NUM; i++) {
-    Inst_info inst = int_iq.out.inst[i];
-    if (int_iq.out.valid[i]) {
-      if (int_iq.out.inst[i].op != CSR) {
-        // 操作数选择
-        operand_mux(inst, prf.from_sram.rdata[2 * i],
-                    prf.from_sram.rdata[2 * i + 1], alu[i].in.src1,
-                    alu[i].in.src2);
-        alu[i].in.alu_op.op = inst.op;
-        alu[i].in.alu_op.func3 = inst.func3;
-        alu[i].in.alu_op.func7_5 = inst.func7_5;
-        alu[i].in.alu_op.src2_is_imm = inst.src2_is_imm;
-        alu[i].cycle();
-
-        prf.to_sram.we[i] = int_iq.out.inst[i].dest_en;
-        prf.to_sram.waddr[i] = int_iq.out.inst[i].dest_preg;
-        prf.to_sram.wdata[i] = alu[i].out.res;
-      } else {
-        // 如果是csr读写指令
-        csru.in.we = (int_iq.out.inst[i].func3 == 1 ||
-                      int_iq.out.inst[i].src1_areg != 0);
-
-        csru.in.re = (int_iq.out.inst[i].func3 != 1 ||
-                      int_iq.out.inst[i].dest_areg != 0);
-
-        csru.in.idx = int_iq.out.inst[i].csr_idx;
-        csru.in.wcmd = int_iq.out.inst[i].func3 & 0b11;
-        if (int_iq.out.inst[i].src2_is_imm)
-          csru.in.wdata = int_iq.out.inst[i].imm;
-        else
-          csru.in.wdata = prf.from_sram.rdata[i];
-
-        csr_op = true;
-      }
-
-      bru[i].in.src1 = prf.from_sram.rdata[2 * i];
-      bru[i].in.pc = inst.pc;
-      bru[i].in.pred_pc = ptab.out.entry[i].br_pc;
-      bru[i].in.pred_br_taken = ptab.out.entry[i].valid;
-      bru[i].in.alu_out = (bool)alu[i].out.res;
-      bru[i].in.off = inst.imm;
-      bru[i].in.op = inst.op;
-      bru[i].cycle();
-
-    } else {
-      prf.to_sram.we[i] = false;
-      alu[i].cycle();
-      bru[i].cycle();
-    }
-  }
-
-  csru.comb();
-  if (csr_op) {
-    prf.to_sram.wdata[0] = csru.out.rdata;
-    prf.to_sram.waddr[0] = int_iq.out.inst[0].dest_preg;
-    prf.to_sram.we[0] = csru.in.re;
-  }
-
-  /*// load指令计算地址*/
-  // 操作数选择
-  agu[0].in.base = prf.from_sram.rdata[2 * ALU_NUM];
-  agu[0].in.off = ld_iq.out.inst[0].imm;
-  agu[0].cycle();
-
-  // 发出访存请求 地址写入LDQ
-  if (ld_iq.out.valid[0]) {
-    out.load_addr = agu[0].out.addr;
-    load_data();
-    uint32_t data = in.load_data;
-    int size = ld_iq.out.inst[0].func3 & 0b11;
-    int offset = agu[0].out.addr & 0b11;
-    uint32_t mask = 0;
-    uint32_t sign = 0;
-
-    data = data >> (offset * 8);
-    if (size == 0) {
-      mask = 0xFF;
-      if (data & 0x80)
-        sign = 0xFFFFFF00;
-    } else if (size == 0b01) {
-      mask = 0xFFFF;
-      if (data & 0x8000)
-        sign = 0xFFFF0000;
-    } else {
-      mask = 0xFFFFFFFF;
-    }
-
-    data = data & mask;
-
-    // 有符号数
-    if (!(ld_iq.out.inst[0].func3 & 0b100)) {
-      data = data | sign;
-    }
-
-    prf.to_sram.we[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_en;
-    prf.to_sram.waddr[PRF_WR_LD_PORT] = ld_iq.out.inst[0].dest_preg;
-    prf.to_sram.wdata[PRF_WR_LD_PORT] = data;
-  } else {
-    prf.to_sram.we[PRF_WR_LD_PORT] = false;
-  }
-
-  /*// store指令计算地址 写入store queue*/
-  /*// 操作数选择*/
-  agu[1].in.base = prf.from_sram.rdata[2 * ALU_NUM + 1];
-  agu[1].in.off = st_iq.out.inst[0].imm;
-  agu[1].cycle();
-
-  if (st_iq.out.valid[0]) {
-    stq.in.wr_valid = true;
-    stq.in.write.valid = true;
-    stq.in.wr_idx = st_iq.out.inst[0].stq_idx;
-    stq.in.write.tag = st_iq.out.inst[0].tag;
-    stq.in.write.addr = agu[1].out.addr;
-    stq.in.write.size = st_iq.out.inst[0].func3;
-    stq.in.write.data = prf.from_sram.rdata[2 * ALU_NUM + 2];
-  } else {
-    stq.in.wr_valid = false;
-  }
-
-  bool mispred = false;
-  /*int br_idx;*/
-  /*for (br_idx = 0; br_idx < BRU_NUM; br_idx++) {*/
-  /*  if (int_iq.out.valid[br_idx] && bru[br_idx].out.mispred) {*/
-  /*    mispred = true;*/
-  /*    out.pc = bru[br_idx].out.pc_next;*/
-  /*    break;*/
+  /*for (int i = 0; i < ALU_NUM; i++) {*/
+  /*  if (int_iq.out.valid[i]) {*/
+  /*    int_iq.wake_up(&int_iq.out.inst[i]);*/
+  /*    st_iq.wake_up(&int_iq.out.inst[i]);*/
+  /*    ld_iq.wake_up(&int_iq.out.inst[i]);*/
   /*  }*/
   /*}*/
+  /**/
+  /*if (ld_iq.out.valid[0]) {*/
+  /*  int_iq.wake_up(&ld_iq.out.inst[0]);*/
+  /*  st_iq.wake_up(&ld_iq.out.inst[0]);*/
+  /*  ld_iq.wake_up(&ld_iq.out.inst[0]);*/
+  /*}*/
 
-  out.mispred = mispred;
+  /*for (int i = 0; i < ALU_NUM; i++) {*/
+  /*  ptab.in.ptab_idx[i] = int_iq.out.inst[i].tag;*/
+  /*}*/
 
   // idu处理mispred，如果taken会输出需要清除的tag_mask
-  for (int i = 0; i < INST_WAY; i++) {
-    idu.in.valid[i] = in.valid[i] && !mispred;
-    idu.in.inst[i] = in.inst[i];
-    number_pc_unsigned[i] = in.pc[i];
-  }
-  idu.in.br.mispred = mispred;
-  /*idu.in.br.br_tag = int_iq.out.inst[br_idx].tag;*/
-  rob.in.mispred = mispred;
-  /*rob.in.br_rob_idx = int_iq.out.inst[br_idx].rob_idx;*/
-
-  // 译码 分配新tag 回收tag 处理分支
-  idu.comb_dec();
-
-  // 分支tag信息
-  rename.in.br = idu.out.br;
-  int_iq.in.br = idu.out.br;
-  ld_iq.in.br = idu.out.br;
-  st_iq.in.br = idu.out.br;
-  stq.in.br = idu.out.br;
-
   // st queue分配
   // stq 分配 写入地址 标记提交
-  for (int i = 0; i < INST_WAY; i++) {
-    if (idu.out.valid[i] && idu.out.inst[i].op == STORE) {
-      stq.in.valid[i] = true;
-      stq.in.tag[i] = idu.out.inst[i].tag;
-    } else {
-      stq.in.valid[i] = false;
-    }
-  }
-
-  stq.comb_alloc();
-
-  for (int i = 0; i < INST_WAY; i++) {
-    idu.out.inst[i].pc = number_pc_unsigned[i];
-    // 查看先前的所有store
-    if (idu.out.inst[i].op == LOAD) {
-      memcpy(idu.out.inst[i].pre_store, stq.out.entry_valid, 4);
-    } else if (idu.out.inst[i].op == STORE) {
-      idu.out.inst[i].stq_idx = stq.out.enq_idx[i];
-    }
-  }
-
-  // 完成重命名 根据输入的valid以及寄存器存留个数输出stall
-  for (int i = 0; i < INST_WAY; i++) {
-    rename.in.valid[i] = idu.out.valid[i];
-    rename.in.inst[i] = idu.out.inst[i];
-  }
-
-  for (int i = 0; i < ALU_NUM; i++) {
-    rename.in.wake[i].valid = int_iq.out.valid[i] && int_iq.out.inst[i].dest_en;
-    rename.in.wake[i].preg = int_iq.out.inst[i].dest_preg;
-  }
-  rename.in.wake[ALU_NUM].valid =
-      ld_iq.out.valid[0] && ld_iq.out.inst[0].dest_en;
-  rename.in.wake[ALU_NUM].preg = ld_iq.out.inst[0].dest_preg;
-
-  rename.comb_alloc();
-
-  for (int i = 0; i < ALU_NUM; i++) {
-    rob.in.from_ex_valid[i] = int_iq.out.valid[i];
-    rob.in.from_ex_inst[i] = int_iq.out.inst[i];
-    if (rob.in.from_ex_inst[i].op == ECALL) {
-      rob.in.from_ex_inst[i].pc_next = csru.out.mtvec;
-    } else if (rob.in.from_ex_inst[i].op == MRET) {
-      rob.in.from_ex_inst[i].pc_next = csru.out.mepc;
-    } else {
-      rob.in.from_ex_inst[i].pc_next = bru[i].out.pc_next;
-    }
-    rob.in.from_ex_diff[i] = true;
-  }
-  rob.in.from_ex_valid[ALU_NUM] = ld_iq.out.valid[0];
-  rob.in.from_ex_diff[ALU_NUM] = true;
-  rob.in.from_ex_inst[ALU_NUM] = ld_iq.out.inst[0];
-  rob.in.from_ex_inst[ALU_NUM].pc_next = ld_iq.out.inst[0].pc + 4;
-  rob.in.from_ex_valid[ALU_NUM + 1] = st_iq.out.valid[0];
-  if ((agu[1].out.addr & 0xFFFFFFF0) == UART_BASE)
-    rob.in.from_ex_diff[ALU_NUM + 1] = false;
-  else
-    rob.in.from_ex_diff[ALU_NUM + 1] = true;
-  rob.in.from_ex_inst[ALU_NUM + 1] = st_iq.out.inst[0];
-  rob.in.from_ex_inst[ALU_NUM + 1].pc_next = st_iq.out.inst[0].pc + 4;
-
-  for (int i = 0; i < INST_WAY; i++) {
-    rob.in.from_ren_valid[i] = rename.out.valid[i];
-  }
-
-  rob.comb_complete();
-
-  for (int i = 0, j = 0; i < INST_WAY; i++) {
-    rename.out.inst[i].rob_idx = (rob.out.enq_idx + j) % ROB_NUM;
-
-    int_iq.in.valid[i] = rename.out.valid[i];
-    int_iq.in.inst[i] = rename.out.inst[i];
-
-    st_iq.in.valid[i] = rename.out.valid[i];
-    st_iq.in.inst[i] = rename.out.inst[i];
-
-    ld_iq.in.valid[i] = rename.out.valid[i];
-    ld_iq.in.inst[i] = rename.out.inst[i];
-    if (rename.out.valid[i])
-      j++;
-  }
-
-  int_iq.comb_alloc();
-  st_iq.comb_alloc();
-  ld_iq.comb_alloc();
-
-  bool dis_fire[INST_WAY];
-  bool dis_stall[INST_WAY];
-  bool pre_stall = false; // 前面的指令stall，后面的指令也需要跟着stall
-  bool pre_valid = false; // 对于CSR指令，前面有有效指令时stall
-  bool csr_stall = false;
-
-  for (int i = 0; i < INST_WAY; i++) {
-    // stall的情况：rob空间不足 重命名寄存器不够 分支tag不够 stq空间不够
-    // IQ空间不够 csr指令
-
-    // rob 非空 或者前面有有效指令
-    csr_stall = is_CSR(idu.out.inst[i]) && idu.out.valid[i] &&
-                (!rob.out.empty || pre_valid);
-    dis_stall[i] = !rob.out.to_ren_ready[i] || !rename.out.ready[i] ||
-                   !idu.out.ready[i] || !stq.out.ready[i] || pre_stall ||
-                   csr_stall;
-    if (idu.out.inst[i].op == LOAD)
-      dis_stall[i] = dis_stall[i] || !ld_iq.out.ready[i];
-    else if (idu.out.inst[i].op == STORE)
-      dis_stall[i] = dis_stall[i] || !st_iq.out.ready[i];
-    else
-      dis_stall[i] = dis_stall[i] || !int_iq.out.ready[i];
-
-    dis_fire[i] = (!dis_stall[i]) && (rename.out.valid[i]);
-    pre_stall = dis_stall[i] || is_CSR(idu.out.inst[i]) && idu.out.valid[i];
-    pre_valid = idu.out.valid[i] || pre_valid;
-    rename.in.dis_fire[i] = dis_fire[i];
-    idu.in.dis_fire[i] = dis_fire[i];
-    rob.in.dis_fire[i] = dis_fire[i];
-    stq.in.dis_fire[i] = dis_fire[i] && idu.out.inst[i].op == STORE;
-
-    int_iq.in.dis_fire[i] = idu.out.inst[i].op != LOAD &&
-                            idu.out.inst[i].op != STORE && dis_fire[i];
-    st_iq.in.dis_fire[i] = idu.out.inst[i].op == STORE && dis_fire[i];
-    ld_iq.in.dis_fire[i] = idu.out.inst[i].op == LOAD && dis_fire[i];
-  }
-
-  rename.comb_fire();
-  idu.comb_fire();
-  stq.comb_fire();
-
-  int_iq.comb_enq();
-
-  // 入队前还要检查是否有同时派遣的store
-  if (dis_fire[0] && idu.out.inst[0].op == STORE &&
-      idu.out.inst[1].op == LOAD) {
-    ld_iq.in.inst[1].pre_store[idu.out.inst[0].stq_idx] = true;
-  }
-
-  ld_iq.comb_enq();
-  st_iq.comb_enq();
-
-  // dependency
   /*for (int i = 0; i < INST_WAY; i++) {*/
-  /*  if (int_iq.in.valid[i] && int_iq.in.inst[i].dest_en) {*/
-  /*    int_iq.dependency(int_iq.);*/
+  /*  if (idu.out.valid[i] && idu.out.inst[i].op == STORE) {*/
+  /*    stq.in.valid[i] = true;*/
+  /*    stq.in.tag[i] = idu.out.inst[i].tag;*/
+  /*  } else {*/
+  /*    stq.in.valid[i] = false;*/
   /*  }*/
   /*}*/
 
-  // rob入队输入
-  for (int i = 0; i < INST_WAY; i++) {
-    rob.in.from_ren_inst[i] = rename.out.inst[i];
-  }
-
-  rob.comb_enq();
-
-  // 后端输出信号
-  out.stall = orR(dis_stall, INST_WAY);
-  for (int i = 0; i < INST_WAY; i++) {
-    out.fire[i] = dis_fire[i];
-  }
-
-  if (rob.out.exception)
-    out.pc = csru.out.mtvec;
-  else if (rob.out.mret)
-    out.pc = csru.out.mepc;
-
-  out.store = stq.out.wen;
-  out.store_data = stq.out.wdata;
-  out.store_addr = stq.out.waddr;
-  out.store_strb = stq.out.wstrb;
+  /*stq.comb_alloc();*/
 }
 
 void Back_Top::Back_seq() {
   // 更新Reg SRAM
   idu.seq();
-  stq.seq();
-  prf.write();
   rename.seq();
+  isu.seq();
+  prf.seq();
+  exu.seq();
   rob.seq();
-  int_iq.seq();
-  ld_iq.seq();
-  st_iq.seq();
-  csru.seq();
 }

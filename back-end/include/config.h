@@ -1,14 +1,16 @@
 #pragma once
 #include <assert.h>
 #include <cstdint>
+#include <vector>
 using namespace std;
 
-#define MAX_SIM_TIME 1000000
+#define MAX_SIM_TIME 10
 #define INST_WAY 2
-#define ISSUE_WAY ALU_NUM + AGU_NUM
-#define ALU_NUM 2
+#define ISSUE_WAY 6
+#define ALU_NUM 4
 #define AGU_NUM 2
 #define BRU_NUM 2
+#define EXU_NUM 6
 
 #define ARF_NUM 32
 #define PRF_NUM 64
@@ -30,6 +32,12 @@ using namespace std;
 
 #define UART_BASE 0x10000000
 
+enum IQ_TYPE { IQ_INT, IQ_MEM, IQ_CSR };
+enum FU_TYPE { FU_ALU, FU_CSR, FU_AGU };
+enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
+
+extern vector<vector<FU_TYPE>> fu_config;
+
 enum Inst_op {
   NONE,
   LUI,
@@ -49,7 +57,13 @@ enum Inst_op {
 typedef struct Inst_info {
   int dest_areg, src1_areg, src2_areg;
   int dest_preg, src1_preg, src2_preg;
+  uint32_t src1_rdata, src2_rdata;
+  uint32_t result;
+  bool mispred;
+  bool pred_br_taken;
+  uint32_t pred_br_pc;
   int old_dest_preg;
+  IQ_TYPE iq_type;
   bool dest_en, src1_en, src2_en;
   bool src1_busy, src2_busy;
   Inst_op op;
@@ -72,11 +86,10 @@ typedef struct Inst_info {
 
 } Inst_info;
 
-typedef struct {
-  uint32_t br_tag;
-  bool br_mask[MAX_BR_NUM];
-  bool mispred;
-} Br_info;
+typedef struct Inst_entry {
+  bool valid;
+  Inst_info inst;
+} Inst_entry;
 
 typedef struct {
   bool valid;

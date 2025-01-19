@@ -2,8 +2,8 @@
 #include <IDU.h>
 #include <RISCV.h>
 #include <cstdint>
-#include <cstdlib>
 #include <cvt.h>
+#include <util.h>
 
 extern int inst_idx;
 
@@ -12,129 +12,116 @@ Inst_info decode(uint32_t);
 void IDU::init() {
   for (int i = 1; i < MAX_BR_NUM; i++) {
     tag_vec[i] = true;
-    tag_vec_1[i] = true;
   }
   tag_vec[0] = false;
-  tag_vec_1[0] = false;
   now_tag = 0;
-  now_tag_1 = 0;
 
   tag_fifo[0] = 0;
-  tag_fifo_1[0] = 0;
   enq_ptr = 1;
-  enq_ptr_1 = 1;
 }
 
 // 译码并分配tag
-void IDU::comb_dec() {
-  int free_tag_num = 0;
-  for (int i = 0; i < MAX_BR_NUM && free_tag_num < INST_WAY; i++) {
-    if (tag_vec[i])
-      alloc_tag[free_tag_num++] = i;
-  }
-
-  int new_tag_num = 0;
-  int inst_tag = now_tag;
+void IDU::comb() {
+  bool has_br = false;
   bool stall = false;
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.valid[i] && !stall) {
-      out.inst[i] = decode(in.inst[i]);
-      out.inst[i].tag = inst_tag;
-      out.inst[i].dependency = 0;
-      out.inst[i].inst_idx = 2 * inst_idx + i;
 
-      // 分配新tag
-      if (is_branch(out.inst[i].op) && new_tag_num < free_tag_num) {
-        out.inst[i].tag = inst_tag;
-        inst_tag = alloc_tag[new_tag_num];
-        out.valid[i] = true;
-        out.ready[i] = true;
-        new_tag_num++;
-      } else if (!is_branch(out.inst[i].op)) {
-        out.valid[i] = true;
-        out.ready[i] = true;
+  int tag = now_tag;
+
+  for (int i = 0; i < INST_WAY; i++) {
+    if (io.front2id->valid[i] && !stall) {
+      io.id2ren->inst[i] = decode(io.front2id->inst[i]);
+      io.id2ren->inst[i].tag = tag;
+      io.id2ren->inst[i].pc = io.front2id->pc[i];
+      if (!is_branch(io.id2ren->inst[i].op))
+        io.id2ren->inst[i].pc_next = io.front2id->pc[i] + 4;
+      io.id2ren->inst[i].dependency = 0;
+      /*io.id2ren->inst[i].inst_idx = 2 * inst_idx + i;*/
+
+      // 分配新tag 一组指令只能有一个分支指令
+      if (is_branch(io.id2ren->inst[i].op) && !has_br) {
+        for (alloc_tag = 0; alloc_tag < MAX_BR_NUM; alloc_tag++) {
+          if (tag_vec[alloc_tag])
+            break;
+        }
+
+        // 还有tag
+        if (alloc_tag != MAX_BR_NUM) {
+          tag = alloc_tag;
+          io.id2ren->valid[i] = true;
+
+          // 无tag
+        } else {
+          io.id2ren->valid[i] = false;
+          stall = true;
+        }
+        has_br = true;
+      } else if (!is_branch(io.id2ren->inst[i].op)) {
+        io.id2ren->valid[i] = true;
       } else {
+        io.id2ren->valid[i] = false;
         stall = true;
-        out.valid[i] = false;
-        out.ready[i] = false;
       }
     } else {
       // 输入无效 或tag不够
-      out.valid[i] = false;
-      out.ready[i] = !stall;
-    }
-  }
-
-  // 释放tag
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (in.free_valid[i]) {
-      tag_vec_1[in.free_tag[i]] = true;
-      deq_ptr_1 = (deq_ptr_1 + 1) % (MAX_BR_NUM);
+      io.id2ren->valid[i] = false;
     }
   }
 
   // 分支
   uint32_t br_mask = 0;
-  if (in.br.mispred) {
-    int idx = (enq_ptr_1 - 1 + MAX_BR_NUM) % MAX_BR_NUM;
-    while (tag_fifo[idx] != in.br.br_tag) {
+  if (io.exe_bc->mispred) {
+    int idx = (enq_ptr - 1 + MAX_BR_NUM) % MAX_BR_NUM;
+
+    while (tag_fifo[idx] != io.exe_bc->br_tag) {
       br_mask = br_mask | (1 << tag_fifo[idx]);
-      tag_vec_1[tag_fifo[idx]] = true;
-      enq_ptr_1 = (enq_ptr_1 - 1 + MAX_BR_NUM) % MAX_BR_NUM;
-      idx = (idx - 1 + MAX_BR_NUM) % MAX_BR_NUM;
+      tag_vec[tag_fifo[idx]] = true;
+      LOOP_DEC(enq_ptr, MAX_BR_NUM);
+      LOOP_DEC(idx, MAX_BR_NUM);
     }
 
-    idx = (idx + 1) % MAX_BR_NUM;
-    enq_ptr_1 = (enq_ptr_1 + 1) % MAX_BR_NUM;
-    tag_vec_1[tag_fifo[idx]] = false;
-    now_tag_1 = tag_fifo[idx];
-
-    out.br.mispred = true;
-    out.br.br_tag = in.br.br_tag;
+    LOOP_INC(idx, MAX_BR_NUM);
+    LOOP_INC(enq_ptr, MAX_BR_NUM);
+    tag_vec[tag_fifo[idx]] = false;
+    now_tag = tag_fifo[idx];
+    io.id_bc->br_mask = br_mask;
   } else {
-    out.br.mispred = false;
-  }
-
-  if (in.rollback) {
-    for (int i = 1; i < MAX_BR_NUM; i++) {
-      tag_vec_1[i] = true;
-    }
-    tag_vec_1[0] = false;
-    now_tag_1 = 0;
-    tag_fifo_1[0] = 0;
-    enq_ptr_1 = 1;
-    deq_ptr_1 = 0;
-  }
-
-  for (int i = 0; i < MAX_BR_NUM; i++) {
-    out.br.br_mask[i] = (bool)(br_mask & (1 << i));
-  }
-}
-
-void IDU::comb_fire() {
-  int new_tag_num = 0;
-
-  for (int i = 0; i < INST_WAY; i++) {
-    if (in.dis_fire[i] && (out.inst[i].op == BR || out.inst[i].op == JALR ||
-                           out.inst[i].op == JAL)) {
-
-      tag_fifo_1[enq_ptr_1] = alloc_tag[new_tag_num];
-      tag_vec_1[alloc_tag[new_tag_num]] = false;
-      enq_ptr_1 = (enq_ptr_1 + 1) % MAX_BR_NUM;
-      now_tag_1 = alloc_tag[new_tag_num];
-      new_tag_num++;
-    }
+    io.id_bc->br_mask = 0;
   }
 }
 
 void IDU::seq() {
-  for (int i = 0; i < MAX_BR_NUM; i++) {
-    tag_vec[i] = tag_vec_1[i];
-    tag_fifo[i] = tag_fifo_1[i];
+
+  // rollback
+  if (io.rob_bc->rollback) {
+    for (int i = 1; i < MAX_BR_NUM; i++) {
+      tag_vec[i] = true;
+    }
+    tag_vec[0] = false;
+    now_tag = 0;
+    tag_fifo[0] = 0;
+    enq_ptr = 1;
+    deq_ptr = 0;
   }
-  enq_ptr = enq_ptr_1;
-  deq_ptr = deq_ptr_1;
-  now_tag = now_tag_1;
+
+  for (int i = 0; i < INST_WAY; i++) {
+    io.id2front->dec_fire[i] = io.ren2id->dec_fire[i] =
+        io.front2id->valid[i] && io.ren2id->ready[i];
+    if (io.ren2id->dec_fire[i] && is_branch(io.id2ren->inst[i].op)) {
+      tag_fifo[enq_ptr] = alloc_tag;
+      tag_vec[alloc_tag] = false;
+      LOOP_INC(enq_ptr, MAX_BR_NUM);
+      now_tag = alloc_tag;
+    }
+  }
+
+  // 释放tag
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (io.commit->commit_entry[i].valid &&
+        is_branch(io.commit->commit_entry[i].inst.op)) {
+      tag_vec[io.commit->commit_entry[i].inst.tag] = true;
+      LOOP_INC(deq_ptr, MAX_BR_NUM);
+    }
+  }
 }
 
 Inst_info decode(uint32_t inst) {
