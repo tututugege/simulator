@@ -9,7 +9,7 @@ diff/和/nemu/是difftest部分，用于比对每条指令提交的结果是否�
 
 ![后端架构图](./arch.svg)
 
-分为六级流水线   Decode->Rename/dispatch->issue->execute->write back->commit
+分为六级流水线   Decode->Rename/Dispatch->Issue/Register Read->Execute->Write Back->Commit
 
 ## 用法
 
