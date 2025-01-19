@@ -1,10 +1,10 @@
 #pragma once
 #include <CSR.h>
 #include <EXU.h>
-#include <FIFO.h>
 #include <IDU.h>
 #include <ISU.h>
 #include <LSU.h>
+#include <PRF.h>
 #include <PTAB.h>
 #include <ROB.h>
 #include <Rename.h>
@@ -16,10 +16,25 @@ typedef struct {
   uint32_t pc[INST_WAY];
   bool valid[INST_WAY];
   uint32_t load_data;
+
+  // ar
+  bool arready;
+
+  // r
+  bool rvalid;
+  uint32_t rdata;
+
+  // aw
+  bool awready;
+
+  // w
+  bool wready;
+
+  // b
+  bool bvalid;
 } Back_in;
 
 typedef struct {
-
   // to front-end
   bool mispred;
   bool stall;
@@ -27,40 +42,49 @@ typedef struct {
   bool fire[INST_WAY];
   uint32_t pc;
 
-  // memory
-  uint32_t load_addr;
-  bool store;
-  uint32_t store_addr;
-  uint32_t store_data;
-  uint32_t store_strb;
+  // ar
+  bool arready;    // in
+  bool arvalid;    // out
+  uint32_t araddr; // out
+
+  // r
+  bool rready;    // out
+  bool rvalid;    // in
+  uint32_t rdata; // in
+
+  // w
+  bool wvalid;    // out
+  bool wready;    // in
+  uint32_t waddr; // out
+  uint32_t wdata; // out
+  uint32_t wstrb; // out
+
+  // b
+  bool bvalid; // in
+  bool bready; // out
+
 } Back_out;
 
 class Back_Top {
 private:
+  IDU idu;
   Rename rename;
-  SRAM<uint32_t> prf = SRAM<uint32_t>(PRF_RD_NUM, PRF_WR_NUM, PRF_NUM, 32);
-  ALU alu[ALU_NUM];
-  BRU bru[BRU_NUM];
-  AGU agu[AGU_NUM];
+  ISU isu;
+  PRF prf;
+  EXU exu;
+  CSRU csru;
   STQ stq;
   ROB rob;
-  IDU idu;
-  CSRU csru;
 
 public:
-  IQ int_iq;
-  IQ st_iq;
-  IQ ld_iq;
-
   PTAB ptab;
   Back_in in;
   Back_out out;
-  Back_Top();
   void init();
   void Back_comb();
   void Back_seq();
   bool pre_br_check(uint32_t *br_pc);
 
   // debug
-  void difftest(Inst_info inst);
+  void difftest(Inst_info *inst);
 };

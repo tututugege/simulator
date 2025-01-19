@@ -1,4 +1,3 @@
-#include <FIFO.h>
 #include <config.h>
 #include <cstdint>
 typedef struct {
@@ -26,7 +25,7 @@ typedef struct {
   bool commit[ISSUE_WAY];
 
   // 分支信息
-  Br_info br;
+  /*Br_info br;*/
 
 } STQ_in;
 

@@ -16,7 +16,7 @@ uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 uint32_t next_PC[2];
 
 // 后端执行
-Back_Top back = Back_Top();
+Back_Top back;
 
 void branch_check();
 
@@ -82,8 +82,8 @@ int main(int argc, char *argv[]) {
                << next_PC[j] << endl;
 
         back.in.inst[j] = p_memory[next_PC[j] / 4];
-        /*back.in.valid[j] = back.ptab.out.ready[j];*/
         back.in.valid[j] = true;
+        /*back.in.valid[j] = back.ptab.out.ready[j];*/
       }
     }
 
@@ -95,40 +95,41 @@ int main(int argc, char *argv[]) {
     back.Back_comb();
     back.Back_seq();
 
-    bool wen = back.out.store;
-    if (wen) {
-      uint32_t wdata = back.out.store_data;
-      uint32_t waddr = back.out.store_addr;
-      uint32_t wstrb = back.out.store_strb;
-
-      if (waddr == 0x1c) {
-        ret = wdata;
-        break;
-      }
-
-      uint32_t old_data = p_memory[waddr / 4];
-      uint32_t mask = 0;
-      if (wstrb & 0b1)
-        mask |= 0xFF;
-      if (wstrb & 0b10)
-        mask |= 0xFF00;
-      if (wstrb & 0b100)
-        mask |= 0xFF0000;
-      if (wstrb & 0b1000)
-        mask |= 0xFF000000;
-
-      p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
-
-      if (waddr == UART_BASE) {
-        char temp = wdata & 0xFF;
-        cout << temp;
-      }
-
-      if (LOG) {
-        cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
-             << " in " << (waddr & 0xFFFFFFFC) << endl;
-      }
-    }
+    /*bool wen = back.out.store;*/
+    /*if (wen) {*/
+    /*  uint32_t wdata = back.out.store_data;*/
+    /*  uint32_t waddr = back.out.store_addr;*/
+    /*  uint32_t wstrb = back.out.store_strb;*/
+    /**/
+    /*  if (waddr == 0x1c) {*/
+    /*    ret = wdata;*/
+    /*    break;*/
+    /*  }*/
+    /**/
+    /*  uint32_t old_data = p_memory[waddr / 4];*/
+    /*  uint32_t mask = 0;*/
+    /*  if (wstrb & 0b1)*/
+    /*    mask |= 0xFF;*/
+    /*  if (wstrb & 0b10)*/
+    /*    mask |= 0xFF00;*/
+    /*  if (wstrb & 0b100)*/
+    /*    mask |= 0xFF0000;*/
+    /*  if (wstrb & 0b1000)*/
+    /*    mask |= 0xFF000000;*/
+    /**/
+    /*  p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);*/
+    /**/
+    /*  if (waddr == UART_BASE) {*/
+    /*    char temp = wdata & 0xFF;*/
+    /*    cout << temp;*/
+    /*  }*/
+    /**/
+    /*  if (LOG) {*/
+    /*    cout << "store data " << hex << ((mask & wdata) | (~mask &
+     * old_data))*/
+    /*         << " in " << (waddr & 0xFFFFFFFC) << endl;*/
+    /*  }*/
+    /*}*/
 
     stall = back.out.stall;
     misprediction = back.out.mispred;
@@ -165,16 +166,16 @@ int main(int argc, char *argv[]) {
       printf("\033[1;32mcycle num      : %ld\033[0m\n", i);
       printf("\033[1;32mipc            : %f\033[0m\n", (double)commit_num / i);
       /*printf("\033[1;32mIQ stall num   : %d\033[0m\n", stall_num);*/
-      printf("\033[1;32mint stall num  : %d\033[0m\n", stall_num[0]);
-      printf("\033[1;32mld  stall num  : %d\033[0m\n", stall_num[1]);
-      printf("\033[1;32mst  stall num  : %d\033[0m\n", stall_num[2]);
+      /*printf("\033[1;32mint stall num  : %d\033[0m\n", stall_num[0]);*/
+      /*printf("\033[1;32mld  stall num  : %d\033[0m\n", stall_num[1]);*/
+      /*printf("\033[1;32mst  stall num  : %d\033[0m\n", stall_num[2]);*/
 
-      printf("\033[1;32mint inst num   : %f\033[0m\n",
-             (double)back.int_iq.num / commit_num);
-      printf("\033[1;32mld  inst num   : %f\033[0m\n",
-             (double)back.ld_iq.num / commit_num);
-      printf("\033[1;32mst  inst num   : %f\033[0m\n",
-             (double)back.st_iq.num / commit_num);
+      /*printf("\033[1;32mint inst num   : %f\033[0m\n",*/
+      /*       (double)back.int_iq.num / commit_num);*/
+      /*printf("\033[1;32mld  inst num   : %f\033[0m\n",*/
+      /*       (double)back.ld_iq.num / commit_num);*/
+      /*printf("\033[1;32mst  inst num   : %f\033[0m\n",*/
+      /*       (double)back.st_iq.num / commit_num);*/
 
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
     } else {
@@ -198,7 +199,7 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-void load_data() {
-  uint32_t address = back.out.load_addr;
-  back.in.load_data = p_memory[address / 4];
-}
+/*void load_data() {*/
+/*  uint32_t address = back.out.load_addr;*/
+/*  back.in.load_data = p_memory[address / 4];*/
+/*}*/

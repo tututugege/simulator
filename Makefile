@@ -1,9 +1,10 @@
-CXXSRC=./*.cpp
-CXXSRC+=./back-end/*.cpp
-CXXSRC+=./diff/*.cpp
-
+CXXSRC = $(shell find ./back-end/ -name "*.cpp")
+CXXSRC += $(shell find ./diff/ -name "*.cpp")
+CXXSRC += ./rv_simu_mmu.cpp
 CXXINCLUDE = -I./include/
 CXXINCLUDE += -I./back-end/include/
+CXXINCLUDE += -I./back-end/EXU/include/
+CXXINCLUDE += -I./back-end/ISU/include/
 CXXINCLUDE += -I./diff/include/
 
 MEM_DIR=./baremetal
