@@ -45,9 +45,9 @@ Iss_Prf iss2prf;
 
 Prf_Exe prf2exe;
 Prf_Rob prf2rob;
+Prf_Awake awake;
 
 Exe_Iss exe2iss; // br
-Exe_Ren exe2ren;
 Exe_Prf exe2prf;
 Exe_Broadcast exe_bc;
 
@@ -90,23 +90,25 @@ void Back_Top::init() {
   rename.io.ren2dec = &ren2id;
   rename.io.ren2iss = &ren2iss;
   rename.io.iss2ren = &iss2ren;
-  rename.io.exe2ren = &exe2ren;
   rename.io.exe_bc = &exe_bc;
   rename.io.rob2ren = &rob2ren;
   rename.io.ren2rob = &ren2rob;
   rename.io.rob_bc = &rob_bc;
   rename.io.rob_commit = &rob_commit;
+  rename.io.awake = &awake;
 
   isu.io.rob_bc = &rob_bc;
   isu.io.ren2iss = &ren2iss;
   isu.io.iss2ren = &iss2ren;
   isu.io.iss2prf = &iss2prf;
   isu.io.exe2iss = &exe2iss;
+  isu.io.awake = &awake;
 
   prf.io.iss2prf = &iss2prf;
   prf.io.prf2rob = &prf2rob;
   prf.io.prf2exe = &prf2exe;
   prf.io.exe2prf = &exe2prf;
+  prf.io.prf_awake = &awake;
 
   exu.io.prf2exe = &prf2exe;
   exu.io.exe2iss = &exe2iss;

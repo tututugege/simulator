@@ -112,6 +112,14 @@ void ISU::seq() {
   for (auto &q : iq) {
     q.num_temp = q.num;
   }
+
+  // 唤醒
+  for (int i = 0; i < EXU_NUM; i++) {
+    if (io.awake->wake[i].valid)
+      for (auto &q : iq) {
+        q.wake_up(io.awake->wake[i].preg);
+      }
+  }
 }
 
 /*void IQ::comb_enq() {*/
@@ -153,15 +161,14 @@ void ISU::seq() {
 /*}*/
 
 // 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
-void IQ::wake_up(Inst_info *issue_inst) {
+void IQ::wake_up(uint32_t dest_preg) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid) {
-      if (issue_inst->dest_en &&
-          entry[i].inst.src1_preg == issue_inst->dest_preg) {
+      if (entry[i].inst.src1_en && entry[i].inst.src1_preg == dest_preg) {
         entry[i].inst.src1_busy = false;
       }
-      if (issue_inst->dest_en &&
-          entry[i].inst.src2_preg == issue_inst->dest_preg) {
+
+      if (entry[i].inst.src2_en && entry[i].inst.src2_preg == dest_preg) {
         entry[i].inst.src2_busy = false;
       }
     }

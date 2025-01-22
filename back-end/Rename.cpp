@@ -36,35 +36,34 @@ void Rename::comb() {
   bool stall = false;
   for (int i = 0; i < INST_WAY; i++) {
     io.ren2iss->inst[i] = dec_ren_r[i].inst;
+    if (dec_ren_r[i].valid) {
+      io.ren2iss->inst[i].rob_idx = (io.rob2ren->enq_idx + i) % ROB_NUM;
+    }
+
     if (dec_ren_r[i].valid && dec_ren_r[i].inst.dest_en && !stall) {
       // 分配寄存器
       if (alloc_num < num) {
         io.ren2iss->valid[i] = true;
-        io.ren2rob->valid[i] = true;
         io.ren2dec->ready[i] = true;
         io.ren2iss->inst[i].dest_preg = alloc_reg[alloc_num];
-        io.ren2rob->inst[i] = io.ren2iss->inst[i];
         alloc_num++;
       } else {
         stall = true;
         io.ren2iss->valid[i] = false;
-        io.ren2rob->valid[i] = false;
         io.ren2dec->ready[i] = false;
       }
     } else if (!dec_ren_r[i].valid) {
       io.ren2dec->ready[i] = true;
-      io.ren2rob->valid[i] = false;
       io.ren2iss->valid[i] = false;
     } else {
       io.ren2iss->valid[i] = !stall;
-      io.ren2rob->valid[i] = !stall;
     }
   }
 
   // busy_table wake up
   for (int i = 0; i < ALU_NUM + 1; i++) {
-    if (io.exe2ren->wake[i].valid) {
-      busy_table[io.exe2ren->wake[i].preg] = false;
+    if (io.awake->wake[i].valid) {
+      busy_table[io.awake->wake[i].preg] = false;
     }
   }
 
@@ -100,6 +99,11 @@ void Rename::comb() {
       }
     }
   }
+
+  for (int i = 0; i < INST_WAY; i++) {
+    io.ren2rob->inst[i] = io.ren2iss->inst[i];
+    io.ren2rob->valid[i] = io.ren2iss->valid[i];
+  }
 }
 
 void Rename ::seq() {
@@ -109,6 +113,7 @@ void Rename ::seq() {
     io.ren2iss->dis_fire[i] = (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
                               (io.ren2rob->valid[i] && io.rob2ren->ready[i]);
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
+
     if (io.ren2iss->dis_fire[i] && io.ren2iss->inst[i].dest_en) {
       spec_alloc[alloc_reg[alloc_num]] = true;
       free_vec[alloc_reg[alloc_num]] = false;

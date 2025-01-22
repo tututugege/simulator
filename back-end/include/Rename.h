@@ -10,8 +10,9 @@ public:
   Ren_Iss *ren2iss;
   Iss_Ren *iss2ren;
 
-  Exe_Ren *exe2ren;
   Exe_Broadcast *exe_bc;
+
+  Prf_Awake *awake;
 
   Rob_Ren *rob2ren;
   Ren_Rob *ren2rob;

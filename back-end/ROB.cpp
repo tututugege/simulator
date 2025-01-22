@@ -13,8 +13,6 @@ extern int commit_num;
 // 提交指令
 void ROB::comb() {
 
-  io.rob2ren->enq_idx = enq_ptr;
-
   bool csr_stall = (entry[deq_ptr].inst.op == CSR) && entry[deq_ptr].valid;
   bool exception_stall = false;
   for (int i = 0; i < ROB_NUM; i++) {
@@ -81,7 +79,7 @@ void ROB::comb() {
 extern bool difftest_skip;
 void ROB::seq() {
   //  执行完毕的标记
-  for (int i = 0; i < ALU_NUM + AGU_NUM; i++) {
+  for (int i = 0; i < EXU_NUM; i++) {
     if (io.prf2rob->entry[i].valid) {
       complete[io.prf2rob->entry[i].inst.rob_idx] = true;
       entry[io.prf2rob->entry[i].inst.rob_idx].inst = io.prf2rob->entry[i].inst;
@@ -140,6 +138,8 @@ void ROB::seq() {
   /*  if (io.ren2rob->dis_fire[i])*/
   /*  dag_add_node(&entry.data[entry.to_sram.waddr[i]]);*/
   /*}*/
+
+  io.rob2ren->enq_idx = enq_ptr;
 }
 
 void ROB::init() {

@@ -1,13 +1,14 @@
 #pragma once
 #include "config.h"
 #include <IO.h>
+#include <cstdint>
 #include <vector>
 
 class IQ {
 public:
   IQ(int entry_num, int out_num, IQ_TYPE);
   void init();
-  void wake_up(Inst_info *);
+  void wake_up(uint32_t);
   void clear();
   vector<Inst_entry> scheduler(Sched_type);
   vector<Inst_entry> deq();
@@ -35,6 +36,8 @@ public:
 
   Iss_Prf *iss2prf;
   Exe_Iss *exe2iss; // br
+
+  Prf_Awake *awake;
 };
 
 class ISU {
