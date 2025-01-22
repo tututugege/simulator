@@ -44,8 +44,8 @@ typedef struct {
 } Ren_Rob;
 
 typedef struct {
-  Wake_info wake[ALU_NUM + 1];
-} Exe_Ren;
+  Wake_info wake[EXU_NUM];
+} Prf_Awake;
 
 typedef struct {
   Inst_info inst[INST_WAY];

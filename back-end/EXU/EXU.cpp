@@ -51,8 +51,11 @@ void EXU::comb() {
 void EXU::seq() {
   for (int i = 0; i < EXU_NUM; i++) {
     for (int j = 0; j < fu[i].size(); j++) {
-      if (io.prf2exe->iss_pack[i][j].valid && io.exe2prf->ready[i][j])
+      if (io.prf2exe->iss_pack[i][j].valid && io.exe2prf->ready[i][j]) {
         inst_r[i][j] = io.prf2exe->iss_pack[i][j];
+      } else if (inst_r[i][j].valid && fu[i][j].latency == 0) {
+        inst_r[i][j].valid = false;
+      }
     }
   }
 }

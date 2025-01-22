@@ -8,6 +8,7 @@ public:
   Prf_Exe *prf2exe;
   Exe_Prf *exe2prf;
   Prf_Rob *prf2rob;
+  Prf_Awake *prf_awake;
 };
 
 class PRF {
