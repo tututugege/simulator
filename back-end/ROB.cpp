@@ -120,8 +120,8 @@ void ROB::seq() {
 
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
-      if (io.rob_commit->commit_entry[i].inst.op == STORE)
-        dag_del_node(io.rob_commit->commit_entry[i].inst.rob_idx);
+      /*if (io.rob_commit->commit_entry[i].inst.op == STORE)*/
+      /*  dag_del_node(io.rob_commit->commit_entry[i].inst.rob_idx);*/
       /*#ifdef CONFIG_DIFFTEST*/
       /*      difftest_skip =
        * !diff[io.rob_commit->commit_entry[i].inst.rob_idx];*/

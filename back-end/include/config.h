@@ -33,7 +33,7 @@ using namespace std;
 #define UART_BASE 0x10000000
 
 enum IQ_TYPE { IQ_INT, IQ_MEM, IQ_CSR };
-enum FU_TYPE { FU_ALU, FU_CSR, FU_AGU };
+enum FU_TYPE { FU_ALU, FU_BRU, FU_AGU, FU_CSR, FU_NUM };
 enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
 
 extern vector<vector<FU_TYPE>> fu_config;
