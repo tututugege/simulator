@@ -28,14 +28,14 @@ void alu(Inst_info *inst) {
   else if (inst->op == LUI)
     operand1 = 0;
   else
-    operand1 = operand1;
+    operand1 = inst->src1_rdata;
 
   if (inst->src2_is_imm) {
     operand2 = inst->imm;
   } else if (inst->op == JALR || inst->op == JAL) {
     operand2 = 4;
   } else {
-    operand2 = operand2;
+    operand2 = inst->src2_rdata;
   }
 
   switch (inst->op) {
@@ -175,7 +175,8 @@ void bru(Inst_info *inst) {
     inst->mispred = false;
   }
 
-  inst->pc_next = pc_br;
+  if (br_taken)
+    inst->pc_next = pc_br;
 }
 
 /*void ldu(Inst_info *inst) {*/

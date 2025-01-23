@@ -10,8 +10,8 @@ void PRF::init() {
 void PRF::comb() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     io.prf2exe->iss_pack[i] = io.iss2prf->iss_pack[i];
-    for (int j; j < io.iss2prf->iss_pack.size(); j++) {
-      Inst_entry *entry = &io.iss2prf->iss_pack[i][j];
+    for (int j; j < io.iss2prf->iss_pack[i].size(); j++) {
+      Inst_entry *entry = &io.prf2exe->iss_pack[i][j];
       if (entry->valid) {
         if (entry->inst.src1_en) {
           entry->inst.src1_rdata = reg_file[entry->inst.src1_preg];
