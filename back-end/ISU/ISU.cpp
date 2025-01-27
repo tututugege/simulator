@@ -1,8 +1,11 @@
+#include "TOP.h"
 #include "config.h"
 #include <ISU.h>
 #include <cmath>
 #include <util.h>
 #include <vector>
+
+extern Back_Top back;
 
 void ISU::add_iq(int entry_num, int out_num, IQ_TYPE type) {
   iq.push_back(IQ(entry_num, out_num, type));
