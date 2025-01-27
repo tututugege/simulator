@@ -152,16 +152,17 @@ void ldu(Inst_info *inst) {
       state = RECV;
     }
   } else if (state == RECV) {
-    int size = inst->func3;
-    int offset = addr & 0b11;
     int data;
 
-    if (back.out.rvalid && back.out.rvalid) {
+    if (back.out.rready && back.in.rvalid) {
       data = back.in.rdata;
       state = IDLE;
     } else {
       return;
     }
+
+    int size = inst->func3;
+    int offset = addr & 0b11;
     uint32_t mask = 0;
     uint32_t sign = 0;
 

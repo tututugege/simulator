@@ -43,24 +43,19 @@ typedef struct {
   uint32_t pc;
 
   // ar
-  bool arready;    // in
-  bool arvalid;    // out
-  uint32_t araddr; // out
+  uint32_t arvalid; // out
+  uint32_t araddr;  // out
 
   // r
-  bool rready;    // out
-  bool rvalid;    // in
-  uint32_t rdata; // in
+  bool rready; // out
 
   // w
   bool wvalid;    // out
-  bool wready;    // in
   uint32_t waddr; // out
   uint32_t wdata; // out
   uint32_t wstrb; // out
 
   // b
-  bool bvalid; // in
   bool bready; // out
 
 } Back_out;
