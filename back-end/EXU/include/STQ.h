@@ -1,3 +1,5 @@
+#pragma once
+#include "IO.h"
 #include <config.h>
 #include <cstdint>
 typedef struct {
@@ -11,27 +13,39 @@ typedef struct {
 } STQ_entry;
 
 typedef struct {
-  // 分配
   uint32_t tag[INST_WAY];
   bool valid[INST_WAY];
   bool dis_fire[INST_WAY];
+} REN_STQ;
 
+typedef struct {
+  bool ready[INST_WAY];
+  bool stq_valid[STQ_NUM];
+  uint32_t stq_idx[INST_WAY];
+} STQ_REN;
+
+typedef struct {
   // 实际写入
   STQ_entry write;
   bool wr_valid;
   uint32_t wr_idx;
+} EXU_STQ;
 
-  // 提交个数
-  bool commit[ISSUE_WAY];
+typedef struct {
+  bool valid[INST_WAY];
+  uint32_t tag[INST_WAY];
+} STQ_ISU;
 
-  // 分支信息
-  /*Br_info br;*/
-
-} STQ_in;
+typedef struct {
+  REN_STQ *ren2stq;
+  EXU_STQ *exe2stq;
+  STQ_ISU *stq2isu;
+  STQ_REN *stq2ren;
+  Rob_Commit *rob_commit;
+} STQ_IO;
 
 typedef struct {
   bool ready[INST_WAY];
-  uint32_t enq_idx[INST_WAY];
 
   // 内存写端口
   bool wen;
@@ -48,11 +62,8 @@ typedef struct {
 
 class STQ {
 public:
-  STQ_in in;
-  STQ_out out;
-  void comb_alloc();
-  void comb_fire();
-  void comb_deq();
+  STQ_IO io;
+  void comb();
   void seq();
   void init();
   int enq_ptr;
@@ -62,10 +73,4 @@ private:
   STQ_entry entry[STQ_NUM];
   int commit_ptr;
   int count;
-
-  STQ_entry entry_1[STQ_NUM];
-  int enq_ptr_1;
-  int deq_ptr_1;
-  int commit_ptr_1;
-  int count_1;
 };

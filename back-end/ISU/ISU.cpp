@@ -92,13 +92,13 @@ void ISU::comb() {
 
   // 出队
   int issue_idx = 0;
-  for (int i = 0; i < iq_num; i++) {
-    vector<Inst_entry> iss_entry = iq[i].deq();
-    for (auto entry : iss_entry) {
-      io.iss2prf->iss_pack[issue_idx][0] = entry;
-      issue_idx++;
-    }
+  vector<Inst_entry> iss_entry = iq[0].deq();
+  for (auto entry : iss_entry) {
+    io.iss2prf->iss_pack[issue_idx][0] = entry;
+    issue_idx++;
   }
+
+  io.iss2prf->iss_pack[4][0] = iq[1].deq()[0];
 }
 
 void ISU::seq() {
