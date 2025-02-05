@@ -4,6 +4,8 @@
 
 extern Back_Top back;
 
+enum STATE { IDLE, RECV };
+
 #define SUB 0b000
 #define SLL 0b001
 #define SLT 0b010
@@ -20,7 +22,9 @@ extern Back_Top back;
 #define BLTU 0b110
 #define BGEU 0b111
 
-void alu(Inst_info *inst) {
+void alu(Inst_info *inst, FU &fu) {
+  fu.complete = true;
+
   uint32_t operand1, operand2;
   if (inst->op == AUIPC || inst->op == JAL || inst->op == JALR)
     operand1 = inst->pc;
@@ -137,26 +141,24 @@ void alu(Inst_info *inst) {
   }
 }
 
-void ldu(Inst_info *inst) {
-  enum STATE { IDLE, REQ, RECV } state;
+void ldu_comb(Inst_info *inst, FU &fu) {
   int addr = inst->src1_rdata + inst->imm;
+  back.out.rready = true;
 
-  if (state == IDLE) {
+  if (fu.state == IDLE) {
 
+    fu.complete = false;
     back.out.araddr = addr;
     back.out.arvalid = true;
-    state = REQ;
-  } else if (state == REQ) {
     if (back.in.arready && back.out.arvalid) {
       back.out.rready = true;
-      state = RECV;
     }
-  } else if (state == RECV) {
+  } else if (fu.state == RECV) {
     int data;
 
     if (back.out.rready && back.in.rvalid) {
       data = back.in.rdata;
-      state = IDLE;
+      fu.complete = true;
     } else {
       return;
     }
@@ -190,4 +192,18 @@ void ldu(Inst_info *inst) {
   }
 }
 
-void stu(Inst_info *inst) { inst->result = inst->src1_rdata + inst->imm; }
+void ldu_seq(Inst_info *inst, FU &fu) {
+  if (fu.state == IDLE) {
+    if (back.in.arready && back.out.arvalid) {
+      back.out.arvalid = false;
+      fu.state = RECV;
+    }
+  } else if (fu.state == RECV) {
+    if (back.out.rready && back.in.rvalid) {
+    } else {
+      return;
+    }
+  }
+}
+
+/*void stu(Inst_info *inst) { inst->result = inst->src1_rdata + inst->imm; }*/

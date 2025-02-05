@@ -11,6 +11,9 @@ int inst_idx;
 
 using namespace std;
 
+void load_slave_comb();
+void load_slave_seq();
+
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 uint32_t next_PC[2];
@@ -92,7 +95,9 @@ int main(int argc, char *argv[]) {
     // TODO
     // asy and page fault
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    load_slave_comb();
     back.Back_comb();
+    load_slave_seq();
     back.Back_seq();
 
     /*bool wen = back.out.store;*/
@@ -199,7 +204,30 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-/*void load_data() {*/
-/*  uint32_t address = back.out.load_addr;*/
-/*  back.in.load_data = p_memory[address / 4];*/
-/*}*/
+enum STATE { IDLE, RET };
+int load_slave_state = IDLE;
+uint32_t load_slave_addr = 0;
+
+void load_slave_comb() {
+
+  if (load_slave_state == IDLE) {
+    back.in.arready = true;
+  } else if (load_slave_state == RET) {
+    back.in.arready = false;
+    back.in.rdata = p_memory[load_slave_addr >> 2];
+    back.in.rvalid = true;
+  }
+}
+
+void load_slave_seq() {
+  if (load_slave_state == IDLE) {
+    if (back.out.arvalid && back.in.arready) {
+      load_slave_state = RET;
+      load_slave_addr = back.out.araddr;
+    }
+  } else if (load_slave_state == RET) {
+    if (back.out.rready && back.in.rvalid) {
+      load_slave_state = IDLE;
+    }
+  }
+}

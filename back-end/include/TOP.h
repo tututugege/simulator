@@ -3,11 +3,11 @@
 #include <EXU.h>
 #include <IDU.h>
 #include <ISU.h>
-#include <LSU.h>
 #include <PRF.h>
 #include <PTAB.h>
 #include <ROB.h>
 #include <Rename.h>
+#include <STQ.h>
 #include <config.h>
 #include <cstdint>
 

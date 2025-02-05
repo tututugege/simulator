@@ -4,7 +4,7 @@
 #include <vector>
 using namespace std;
 
-#define MAX_SIM_TIME 10
+#define MAX_SIM_TIME 15
 #define INST_WAY 2
 #define ISSUE_WAY 6
 #define ALU_NUM 4
@@ -33,7 +33,7 @@ using namespace std;
 #define UART_BASE 0x10000000
 
 enum IQ_TYPE { IQ_INT, IQ_MEM, IQ_CSR };
-enum FU_TYPE { FU_ALU, FU_AGU, FU_CSR, FU_NUM };
+enum FU_TYPE { FU_ALU, FU_LDU, FU_CSR, FU_NUM };
 enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
 
 extern vector<vector<FU_TYPE>> fu_config;
