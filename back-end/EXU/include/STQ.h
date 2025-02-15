@@ -2,45 +2,12 @@
 #include "IO.h"
 #include <config.h>
 #include <cstdint>
-typedef struct {
-  uint32_t addr;
-  uint32_t size;
-  uint32_t data;
-
-  bool compelete;
-  bool valid;
-  uint32_t tag;
-} STQ_entry;
 
 typedef struct {
-  uint32_t tag[INST_WAY];
-  bool valid[INST_WAY];
-  bool dis_fire[INST_WAY];
-} REN_STQ;
-
-typedef struct {
-  bool ready[INST_WAY];
-  bool stq_valid[STQ_NUM];
-  uint32_t stq_idx[INST_WAY];
-} STQ_REN;
-
-typedef struct {
-  // 实际写入
-  STQ_entry write;
-  bool wr_valid;
-  uint32_t wr_idx;
-} EXU_STQ;
-
-typedef struct {
-  bool valid[INST_WAY];
-  uint32_t tag[INST_WAY];
-} STQ_ISU;
-
-typedef struct {
-  REN_STQ *ren2stq;
-  EXU_STQ *exe2stq;
-  STQ_ISU *stq2isu;
-  STQ_REN *stq2ren;
+  Ren_Stq *ren2stq;
+  Exe_Stq *exe2stq;
+  Stq_Iss *stq2iss;
+  Stq_Ren *stq2ren;
   Rob_Commit *rob_commit;
 } STQ_IO;
 
@@ -71,6 +38,6 @@ public:
 
 private:
   STQ_entry entry[STQ_NUM];
-  int commit_ptr;
-  int count;
+  int commit_ptr = 0;
+  int count = 0;
 };

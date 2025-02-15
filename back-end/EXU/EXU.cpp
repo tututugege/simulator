@@ -5,18 +5,19 @@
 void alu(Inst_info *inst, FU &fu);
 void ldu_comb(Inst_info *inst, FU &fu);
 void ldu_seq(Inst_info *inst, FU &fu);
+void stu_comb(Inst_info *inst, FU &fu);
 
 vector<FU_TYPE> fu_config1 = {FU_ALU};
 vector<FU_TYPE> fu_config2 = {FU_ALU};
 vector<FU_TYPE> fu_config3 = {FU_ALU};
 vector<FU_TYPE> fu_config4 = {FU_ALU};
 vector<FU_TYPE> fu_config5 = {FU_LDU};
-vector<FU_TYPE> fu_config6 = {FU_CSR};
+vector<FU_TYPE> fu_config6 = {FU_STU};
 vector<vector<FU_TYPE>> fu_config = {fu_config1, fu_config2, fu_config3,
                                      fu_config4, fu_config5, fu_config6};
 
-void (*fu_comb[FU_NUM])(Inst_info *, FU &) = {alu, ldu_comb};
-void (*fu_seq[FU_NUM])(Inst_info *, FU &) = {nullptr, ldu_seq};
+void (*fu_comb[FU_NUM])(Inst_info *, FU &) = {alu, ldu_comb, stu_comb};
+void (*fu_seq[FU_NUM])(Inst_info *, FU &) = {nullptr, nullptr};
 
 void EXU::init() {
   for (auto config : fu_config) {
@@ -42,7 +43,7 @@ void EXU::comb() {
       io.exe2prf->entry[i].inst = inst_r[i][j].inst;
       if (inst_r[i][j].valid) {
         fu[i][j].comb(&io.exe2prf->entry[i].inst, fu[i][j]);
-        if (fu[i][j].complete && inst_r[i][j].inst.dest_en) {
+        if (fu[i][j].complete) {
           io.exe2prf->entry[i].valid = true;
         } else {
           io.exe2prf->entry[i].valid = false;
@@ -53,6 +54,13 @@ void EXU::comb() {
           !inst_r[i][j].valid ||
           io.exe2prf->entry[i].valid && io.prf2exe->ready[i];
     }
+  }
+
+  // store
+  if (inst_r[5][0].valid) {
+    io.exe2stq->entry = inst_r[5][0];
+  } else {
+    io.exe2stq->entry.valid = false;
   }
 }
 

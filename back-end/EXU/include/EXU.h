@@ -9,6 +9,7 @@ public:
   Exe_Iss *exe2iss;
 
   Exe_Prf *exe2prf;
+  Exe_Stq *exe2stq;
 
   Exe_Broadcast *exe_bc;
 };

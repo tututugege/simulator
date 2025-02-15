@@ -17,6 +17,9 @@ public:
   Rob_Ren *rob2ren;
   Ren_Rob *ren2rob;
 
+  Ren_Stq *ren2stq;
+  Stq_Ren *stq2ren;
+
   Rob_Broadcast *rob_bc;
   Rob_Commit *rob_commit;
 };

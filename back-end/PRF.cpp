@@ -31,7 +31,7 @@ void PRF::comb() {
   }
 
   for (int i = 0; i < EXU_NUM; i++) {
-    if (inst_r[i].valid) {
+    if (inst_r[i].valid && inst_r[i].inst.dest_en) {
       io.prf_awake->wake[i].valid = true;
       io.prf_awake->wake[i].preg = inst_r[i].inst.dest_preg;
     } else {

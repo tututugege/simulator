@@ -24,9 +24,6 @@ typedef struct {
   bool rvalid;
   uint32_t rdata;
 
-  // aw
-  bool awready;
-
   // w
   bool wready;
 

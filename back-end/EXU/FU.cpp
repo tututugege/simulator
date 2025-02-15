@@ -206,4 +206,7 @@ void ldu_seq(Inst_info *inst, FU &fu) {
   }
 }
 
-/*void stu(Inst_info *inst) { inst->result = inst->src1_rdata + inst->imm; }*/
+void stu_comb(Inst_info *inst, FU &fu) {
+  inst->result = inst->src1_rdata + inst->imm;
+  fu.complete = true;
+}

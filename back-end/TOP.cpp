@@ -39,6 +39,7 @@ Dec_Broadcast id_bc;
 Ren_Dec ren2id;
 Ren_Iss ren2iss;
 Ren_Rob ren2rob;
+Ren_Stq ren2stq;
 
 Iss_Ren iss2ren;
 Iss_Prf iss2prf;
@@ -49,11 +50,15 @@ Prf_Awake awake;
 
 Exe_Iss exe2iss; // br
 Exe_Prf exe2prf;
+Exe_Stq exe2stq;
 Exe_Broadcast exe_bc;
 
 Rob_Ren rob2ren;
 Rob_Broadcast rob_bc;
 Rob_Commit rob_commit;
+
+Stq_Ren stq2ren;
+Stq_Iss stq2iss;
 
 void Back_Top::init() {
 
@@ -93,6 +98,8 @@ void Back_Top::init() {
   rename.io.exe_bc = &exe_bc;
   rename.io.rob2ren = &rob2ren;
   rename.io.ren2rob = &ren2rob;
+  rename.io.ren2stq = &ren2stq;
+  rename.io.stq2ren = &stq2ren;
   rename.io.rob_bc = &rob_bc;
   rename.io.rob_commit = &rob_commit;
   rename.io.awake = &awake;
@@ -103,6 +110,7 @@ void Back_Top::init() {
   isu.io.iss2prf = &iss2prf;
   isu.io.exe2iss = &exe2iss;
   isu.io.awake = &awake;
+  isu.io.stq2iss = &stq2iss;
 
   prf.io.iss2prf = &iss2prf;
   prf.io.prf2rob = &prf2rob;
@@ -114,6 +122,7 @@ void Back_Top::init() {
   exu.io.exe2iss = &exe2iss;
   exu.io.exe2prf = &exe2prf;
   exu.io.exe_bc = &exe_bc;
+  exu.io.exe2stq = &exe2stq;
 
   rob.io.ren2rob = &ren2rob;
   rob.io.exe_bc = &exe_bc;
@@ -121,6 +130,13 @@ void Back_Top::init() {
   rob.io.rob_bc = &rob_bc;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2ren = &rob2ren;
+
+  stq.io.exe2stq = &exe2stq;
+  stq.io.rob_commit = &rob_commit;
+  stq.io.ren2stq = &ren2stq;
+  stq.io.stq2iss = &stq2iss;
+  stq.io.stq2ren = &stq2ren;
+
   ptab.init();
   idu.init();
   rename.init();
@@ -142,6 +158,7 @@ void Back_Top::Back_comb() {
 
   idu.comb();
   rename.comb();
+  stq.comb();
   isu.comb();
   prf.comb();
   exu.comb();
@@ -211,4 +228,5 @@ void Back_Top::Back_seq() {
   prf.seq();
   exu.seq();
   rob.seq();
+  stq.seq();
 }

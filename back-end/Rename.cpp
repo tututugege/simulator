@@ -36,6 +36,10 @@ void Rename::comb() {
   bool stall = false;
   for (int i = 0; i < INST_WAY; i++) {
     io.ren2iss->inst[i] = dec_ren_r[i].inst;
+    if (io.ren2iss->inst[i].op == STORE) {
+      io.ren2iss->inst[i].stq_idx = io.stq2ren->stq_idx[i];
+    }
+
     if (dec_ren_r[i].valid) {
       io.ren2iss->inst[i].rob_idx = (io.rob2ren->enq_idx + i) % ROB_NUM;
     }
@@ -103,16 +107,30 @@ void Rename::comb() {
   for (int i = 0; i < INST_WAY; i++) {
     io.ren2rob->inst[i] = io.ren2iss->inst[i];
     io.ren2rob->valid[i] = io.ren2iss->valid[i];
+
+    io.ren2stq->tag[i] = io.ren2iss->inst[i].tag;
+    io.ren2stq->valid[i] =
+        io.ren2iss->valid[i] && io.ren2iss->inst[i].op == STORE;
   }
 }
 
 void Rename ::seq() {
   // 分配寄存器
   int alloc_num = 0;
+  bool dis_stall[INST_WAY];
+  bool pre_stall = false;
+
+  for (int i = 0; i < INST_WAY; i++) {
+    dis_stall[i] = !io.rob2ren->ready[i] || !io.stq2ren->ready[i];
+  }
+
   for (int i = 0; i < INST_WAY; i++) {
     io.ren2iss->dis_fire[i] = (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
+                              (io.ren2iss->inst[i].op != STORE ||
+                               io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
                               (io.ren2rob->valid[i] && io.rob2ren->ready[i]);
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
+    io.ren2stq->dis_fire[i] = io.ren2iss->dis_fire[i];
 
     if (io.ren2iss->dis_fire[i] && io.ren2iss->inst[i].dest_en) {
       spec_alloc[alloc_reg[alloc_num]] = true;
