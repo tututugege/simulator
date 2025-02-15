@@ -5,6 +5,16 @@
 #include <vector>
 
 typedef struct {
+  uint32_t addr;
+  uint32_t size;
+  uint32_t data;
+
+  bool compelete;
+  bool valid;
+  uint32_t tag;
+} STQ_entry;
+
+typedef struct {
   Inst_info inst[INST_WAY];
   bool valid[INST_WAY];
 } Dec_Ren;
@@ -92,3 +102,25 @@ typedef struct {
   bool mispred;
   uint32_t br_tag;
 } Exe_Broadcast;
+
+typedef struct {
+  uint32_t tag[INST_WAY];
+  bool valid[INST_WAY];
+  bool dis_fire[INST_WAY];
+} Ren_Stq;
+
+typedef struct {
+  bool ready[INST_WAY];
+  bool stq_valid[STQ_NUM];
+  uint32_t stq_idx[INST_WAY];
+} Stq_Ren;
+
+typedef struct {
+  // 实际写入
+  Inst_entry entry;
+} Exe_Stq;
+
+typedef struct {
+  bool valid[INST_WAY];
+  uint32_t tag[INST_WAY];
+} Stq_Iss;

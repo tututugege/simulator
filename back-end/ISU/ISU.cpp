@@ -17,6 +17,8 @@ IQ::IQ(int entry_num, int out_num, IQ_TYPE type) {
   this->entry_num = entry_num;
   this->out_num = out_num;
   this->type = type;
+  this->num = 0;
+  this->num_temp = 0;
 
   entry.resize(entry_num);
   for (int i = 0; i < entry_num; i++) {
@@ -26,7 +28,8 @@ IQ::IQ(int entry_num, int out_num, IQ_TYPE type) {
 
 void ISU::init() {
   add_iq(8, 4, IQ_INT);
-  add_iq(8, 1, IQ_MEM);
+  add_iq(8, 1, IQ_LD);
+  add_iq(8, 1, IQ_ST);
   add_iq(8, 1, IQ_CSR);
 }
 
@@ -99,6 +102,7 @@ void ISU::comb() {
   }
 
   io.iss2prf->iss_pack[4][0] = iq[1].deq()[0];
+  io.iss2prf->iss_pack[5][0] = iq[2].deq()[0];
 }
 
 void ISU::seq() {
@@ -112,6 +116,7 @@ void ISU::seq() {
       }
     }
   }
+
   for (auto &q : iq) {
     q.num_temp = q.num;
   }

@@ -13,6 +13,8 @@ using namespace std;
 
 void load_slave_comb();
 void load_slave_seq();
+void store_slave_seq();
+void store_slave_comb();
 
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
@@ -96,45 +98,11 @@ int main(int argc, char *argv[]) {
     // asy and page fault
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
     load_slave_comb();
+    store_slave_comb();
     back.Back_comb();
     load_slave_seq();
+    store_slave_seq();
     back.Back_seq();
-
-    /*bool wen = back.out.store;*/
-    /*if (wen) {*/
-    /*  uint32_t wdata = back.out.store_data;*/
-    /*  uint32_t waddr = back.out.store_addr;*/
-    /*  uint32_t wstrb = back.out.store_strb;*/
-    /**/
-    /*  if (waddr == 0x1c) {*/
-    /*    ret = wdata;*/
-    /*    break;*/
-    /*  }*/
-    /**/
-    /*  uint32_t old_data = p_memory[waddr / 4];*/
-    /*  uint32_t mask = 0;*/
-    /*  if (wstrb & 0b1)*/
-    /*    mask |= 0xFF;*/
-    /*  if (wstrb & 0b10)*/
-    /*    mask |= 0xFF00;*/
-    /*  if (wstrb & 0b100)*/
-    /*    mask |= 0xFF0000;*/
-    /*  if (wstrb & 0b1000)*/
-    /*    mask |= 0xFF000000;*/
-    /**/
-    /*  p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);*/
-    /**/
-    /*  if (waddr == UART_BASE) {*/
-    /*    char temp = wdata & 0xFF;*/
-    /*    cout << temp;*/
-    /*  }*/
-    /**/
-    /*  if (LOG) {*/
-    /*    cout << "store data " << hex << ((mask & wdata) | (~mask &
-     * old_data))*/
-    /*         << " in " << (waddr & 0xFFFFFFFC) << endl;*/
-    /*  }*/
-    /*}*/
 
     stall = back.out.stall;
     misprediction = back.out.mispred;
@@ -228,6 +196,54 @@ void load_slave_seq() {
   } else if (load_slave_state == RET) {
     if (back.out.rready && back.in.rvalid) {
       load_slave_state = IDLE;
+    }
+  }
+}
+
+int store_slave_state = IDLE;
+void store_slave_comb() {
+  if (store_slave_state == IDLE) {
+    back.in.wready = true;
+  } else if (store_slave_state == RET) {
+    back.in.wready = false;
+    back.in.bvalid = true;
+  }
+}
+
+void store_slave_seq() {
+  if (store_slave_state == IDLE) {
+    if (back.out.wvalid && back.in.wready) {
+      store_slave_state = RET;
+      uint32_t wdata = back.out.wdata;
+      uint32_t waddr = back.out.waddr;
+      uint32_t wstrb = back.out.wstrb;
+
+      uint32_t old_data = p_memory[waddr / 4];
+      uint32_t mask = 0;
+      if (wstrb & 0b1)
+        mask |= 0xFF;
+      if (wstrb & 0b10)
+        mask |= 0xFF00;
+      if (wstrb & 0b100)
+        mask |= 0xFF0000;
+      if (wstrb & 0b1000)
+        mask |= 0xFF000000;
+
+      p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
+
+      if (waddr == UART_BASE) {
+        char temp = wdata & 0xFF;
+        cout << temp;
+      }
+
+      if (LOG) {
+        cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
+             << " in " << (waddr & 0xFFFFFFFC) << endl;
+      }
+    }
+  } else if (load_slave_state == RET) {
+    if (back.out.rready && back.in.rvalid) {
+      store_slave_state = IDLE;
     }
   }
 }

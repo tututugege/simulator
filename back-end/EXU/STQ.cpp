@@ -8,32 +8,39 @@ extern Back_Top back;
 enum STATE { IDLE, WAIT };
 void STQ::comb() {
   back.out.bready = true;
+  back.out.wvalid = false;
   static int state;
 
   // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
     if (state == IDLE) {
+      back.out.wvalid = true;
+      back.out.wdata = entry[deq_ptr].data;
+      back.out.waddr = entry[deq_ptr].addr;
+      if (entry[deq_ptr].size == 0b00)
+        back.out.wstrb = 0b1;
+      else if (entry[deq_ptr].size == 0b01)
+        back.out.wstrb = 0b11;
+      else
+        back.out.wstrb = 0b1111;
+
+      int offset = entry[deq_ptr].addr & 0x3;
+      back.out.wstrb = back.out.wstrb << offset;
+      back.out.wdata = back.out.wdata << (offset * 8);
+
+      if (back.out.wvalid && back.in.wready) {
+        state = WAIT;
+      }
     } else if (state == WAIT) {
       if (back.in.bvalid && back.out.bready) {
         entry[deq_ptr].valid = false;
         entry[deq_ptr].compelete = false;
-        back.out.wvalid = true;
-        back.out.wdata = entry[deq_ptr].data;
-        back.out.waddr = entry[deq_ptr].addr;
-        if (entry[deq_ptr].size == 0b00)
-          back.out.wstrb = 0b1;
-        else if (entry[deq_ptr].size == 0b01)
-          back.out.wstrb = 0b11;
-        else
-          back.out.wstrb = 0b1111;
-
-        int offset = entry[deq_ptr].addr & 0x3;
-        back.out.wstrb = back.out.wstrb << offset;
-        back.out.wdata = back.out.wdata << (offset * 8);
+        LOOP_INC(deq_ptr, STQ_NUM);
+        state = IDLE;
       }
+    } else {
+      back.out.wvalid = false;
     }
-  } else {
-    back.out.wvalid = false;
   }
 
   int num = count;
@@ -74,7 +81,7 @@ void STQ::seq() {
 
   // 入队
   for (int i = 0; i < INST_WAY; i++) {
-    if (io.ren2stq->dis_fire[i]) {
+    if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i]) {
       entry[enq_ptr].tag = io.ren2stq->tag[i];
       entry[enq_ptr].valid = true;
       count++;
@@ -83,13 +90,18 @@ void STQ::seq() {
   }
 
   // 地址数据写入 若项无效说明被br清除
-  if (io.exe2stq->wr_valid && entry[io.exe2stq->wr_idx].valid) {
-    entry[io.exe2stq->wr_idx] = io.exe2stq->write;
+  Inst_info *inst = &io.exe2stq->entry.inst;
+  int idx = inst->stq_idx;
+  if (io.exe2stq->entry.valid && entry[idx].valid) {
+    entry[idx].data = inst->src2_rdata;
+    entry[idx].addr = inst->result;
+    entry[idx].size = inst->func3;
   }
 
   // commit标记为可执行
   for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.rob_commit->commit_entry[i].valid) {
+    if (io.rob_commit->commit_entry[i].valid &&
+        io.rob_commit->commit_entry[i].inst.op == STORE) {
       entry[commit_ptr].compelete = true;
       commit_ptr = (commit_ptr + 1) % STQ_NUM;
     }

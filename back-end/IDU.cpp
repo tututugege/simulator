@@ -340,8 +340,11 @@ Inst_info decode(uint32_t inst) {
                     .imm = imm,
                     .csr_idx = csr_idx};
 
-  if (info.op == LOAD || info.op == STORE) {
-    info.iq_type = IQ_MEM;
+  if (info.op == LOAD) {
+    info.iq_type = IQ_LD;
+
+  } else if (info.op == STORE) {
+    info.iq_type = IQ_ST;
   } else {
     info.iq_type = IQ_INT;
   }

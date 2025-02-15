@@ -37,6 +37,8 @@ public:
   Iss_Prf *iss2prf;
   Exe_Iss *exe2iss; // br
 
+  Stq_Iss *stq2iss;
+
   Prf_Awake *awake;
 };
 
