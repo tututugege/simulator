@@ -103,9 +103,11 @@ void IDU::seq() {
     deq_ptr = 0;
   }
 
+  back.out.stall = false;
   for (int i = 0; i < INST_WAY; i++) {
     io.id2front->dec_fire[i] = io.ren2id->dec_fire[i] =
         io.front2id->valid[i] && io.ren2id->ready[i];
+    back.out.stall |= !io.ren2id->ready[i];
     if (io.ren2id->dec_fire[i] && is_branch(io.id2ren->inst[i].op)) {
       tag_fifo[enq_ptr] = alloc_tag;
       tag_vec[alloc_tag] = false;

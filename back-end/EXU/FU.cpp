@@ -88,7 +88,6 @@ void alu(Inst_info *inst, FU &fu) {
   if (is_branch(inst->op)) {
     uint32_t pc_br = inst->pc + inst->imm;
     bool br_taken = true;
-    uint32_t operand1, operand2;
 
     assert(is_branch(inst->op));
     if (inst->op == BR) {
@@ -123,7 +122,7 @@ void alu(Inst_info *inst, FU &fu) {
       break;
     case JALR:
       br_taken = true;
-      pc_br = (operand1 + inst->imm) & (~0x1);
+      pc_br = (inst->src1_rdata + inst->imm) & (~0x1);
       break;
     default:
       br_taken = false;

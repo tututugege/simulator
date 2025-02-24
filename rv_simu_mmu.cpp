@@ -22,10 +22,13 @@ uint32_t next_PC[2];
 
 // 后端执行
 Back_Top back;
+bool ret;
+bool sim_end = false;
 
 void branch_check();
 
 int commit_num;
+
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
 
@@ -33,7 +36,6 @@ int main(int argc, char *argv[]) {
 
   char **ptr = NULL;
   long i = 0;
-  bool ret;
 
   // init physical memory
   for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {
@@ -48,6 +50,7 @@ int main(int argc, char *argv[]) {
 
   // init difftest and back-end
   init_difftest(diff_so, i * 4);
+
   back.init();
 
   uint32_t number_PC;
@@ -103,6 +106,9 @@ int main(int argc, char *argv[]) {
     load_slave_seq();
     store_slave_seq();
     back.Back_seq();
+
+    if (sim_end)
+      break;
 
     stall = back.out.stall;
     misprediction = back.out.mispred;
@@ -218,6 +224,12 @@ void store_slave_seq() {
       uint32_t waddr = back.out.waddr;
       uint32_t wstrb = back.out.wstrb;
 
+      if (waddr == 0x1c) {
+        ret = wdata;
+        sim_end = true;
+        return;
+      }
+
       uint32_t old_data = p_memory[waddr / 4];
       uint32_t mask = 0;
       if (wstrb & 0b1)
@@ -241,7 +253,7 @@ void store_slave_seq() {
              << " in " << (waddr & 0xFFFFFFFC) << endl;
       }
     }
-  } else if (load_slave_state == RET) {
+  } else if (store_slave_state == RET) {
     if (back.out.rready && back.in.rvalid) {
       store_slave_state = IDLE;
     }

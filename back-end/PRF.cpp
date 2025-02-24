@@ -42,7 +42,7 @@ void PRF::comb() {
 
 void PRF::seq() {
   for (int i = 0; i < EXU_NUM; i++) {
-    if (inst_r[i].valid) {
+    if (inst_r[i].valid && inst_r[i].inst.dest_en) {
       reg_file[inst_r[i].inst.dest_preg] = inst_r[i].inst.result;
     }
 

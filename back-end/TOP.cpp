@@ -156,13 +156,14 @@ void Back_Top::Back_comb() {
     idu.io.front2id->inst[i] = in.inst[i];
   }
 
-  idu.comb();
-  rename.comb();
+  // 顺序：stq->rename -> rob/isu
   stq.comb();
+  rename.comb();
+  rob.comb();
   isu.comb();
+  idu.comb();
   prf.comb();
   exu.comb();
-  rob.comb();
 
   /*csru.in.exception = rob.out.exception;*/
   /*csru.in.cause = M_MODE_ECALL;*/
@@ -222,8 +223,8 @@ void Back_Top::Back_comb() {
 
 void Back_Top::Back_seq() {
   // 更新Reg SRAM
-  idu.seq();
   rename.seq();
+  idu.seq();
   isu.seq();
   prf.seq();
   exu.seq();

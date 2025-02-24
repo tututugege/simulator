@@ -34,30 +34,38 @@ void Rename::comb() {
   // 有效且需要寄存器的指令，寄存器不够则对应端口ready为false
   int alloc_num = 0;
   bool stall = false;
+  int rob_idx = io.rob2ren->enq_idx;
+  int stq_idx = io.stq2ren->stq_idx;
+
   for (int i = 0; i < INST_WAY; i++) {
     io.ren2iss->inst[i] = dec_ren_r[i].inst;
     if (io.ren2iss->inst[i].op == STORE) {
-      io.ren2iss->inst[i].stq_idx = io.stq2ren->stq_idx[i];
+      io.ren2iss->inst[i].stq_idx = io.stq2ren->stq_idx;
+      LOOP_INC(stq_idx, STQ_NUM);
+    }
+
+    if (io.ren2iss->inst[i].op == LOAD) {
+      for (int j = 0; j < STQ_NUM; j++) {
+        io.ren2iss->inst[i].pre_store[j] = io.stq2ren->stq_valid[j];
+      }
     }
 
     if (dec_ren_r[i].valid) {
-      io.ren2iss->inst[i].rob_idx = (io.rob2ren->enq_idx + i) % ROB_NUM;
+      io.ren2iss->inst[i].rob_idx = rob_idx;
+      LOOP_INC(rob_idx, ROB_NUM);
     }
 
     if (dec_ren_r[i].valid && dec_ren_r[i].inst.dest_en && !stall) {
       // 分配寄存器
       if (alloc_num < num) {
         io.ren2iss->valid[i] = true;
-        io.ren2dec->ready[i] = true;
         io.ren2iss->inst[i].dest_preg = alloc_reg[alloc_num];
         alloc_num++;
       } else {
         stall = true;
         io.ren2iss->valid[i] = false;
-        io.ren2dec->ready[i] = false;
       }
     } else if (!dec_ren_r[i].valid) {
-      io.ren2dec->ready[i] = true;
       io.ren2iss->valid[i] = false;
     } else {
       io.ren2iss->valid[i] = !stall;
@@ -160,8 +168,8 @@ void Rename ::seq() {
       if (io.rob_commit->commit_entry[i].inst.dest_en) {
         free_vec[io.rob_commit->commit_entry[i].inst.old_dest_preg] = true;
         spec_alloc[io.rob_commit->commit_entry[i].inst.dest_preg] = false;
-        back.difftest(&(io.rob_commit->commit_entry[i].inst));
       }
+      back.difftest(&(io.rob_commit->commit_entry[i].inst));
     }
   }
 
@@ -192,9 +200,16 @@ void Rename ::seq() {
     }
   }
 
+  for (int i = 0; i < INST_WAY; i++) {
+    if (!io.dec2ren->valid[i])
+      io.ren2dec->ready[i] = true;
+    else
+      io.ren2dec->ready[i] = io.ren2iss->dis_fire[i] || !dec_ren_r[i].valid;
+  }
+
   bool ready = true;
   for (int i = 0; i < INST_WAY; i++) {
-    ready = ready && io.ren2dec->ready[i];
+    ready = ready && !dis_stall[i];
   }
 
   for (int i = 0; i < INST_WAY; i++) {
@@ -204,7 +219,7 @@ void Rename ::seq() {
       dec_ren_r[i].inst = io.dec2ren->inst[i];
       dec_ren_r[i].valid = io.dec2ren->valid[i];
     } else {
-      dec_ren_r[i].valid = dec_ren_r[i].valid && !io.ren2dec->dec_fire[i];
+      dec_ren_r[i].valid = dec_ren_r[i].valid && !io.ren2iss->dis_fire[i];
     }
   }
 

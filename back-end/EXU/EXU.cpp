@@ -17,7 +17,7 @@ vector<vector<FU_TYPE>> fu_config = {fu_config1, fu_config2, fu_config3,
                                      fu_config4, fu_config5, fu_config6};
 
 void (*fu_comb[FU_NUM])(Inst_info *, FU &) = {alu, ldu_comb, stu_comb};
-void (*fu_seq[FU_NUM])(Inst_info *, FU &) = {nullptr, nullptr};
+void (*fu_seq[FU_NUM])(Inst_info *, FU &) = {nullptr, ldu_seq, nullptr};
 
 void EXU::init() {
   for (auto config : fu_config) {
@@ -58,7 +58,7 @@ void EXU::comb() {
 
   // store
   if (inst_r[5][0].valid) {
-    io.exe2stq->entry = inst_r[5][0];
+    io.exe2stq->entry = io.exe2prf->entry[5];
   } else {
     io.exe2stq->entry.valid = false;
   }
