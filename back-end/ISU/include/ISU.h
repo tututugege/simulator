@@ -9,6 +9,7 @@ public:
   IQ(int entry_num, int out_num, IQ_TYPE);
   void init();
   void wake_up(uint32_t);
+  void store_wake_up(bool *);
   void clear();
   vector<Inst_entry> scheduler(Sched_type);
   vector<Inst_entry> deq();

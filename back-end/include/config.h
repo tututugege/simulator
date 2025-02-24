@@ -4,7 +4,7 @@
 #include <vector>
 using namespace std;
 
-#define MAX_SIM_TIME 20
+#define MAX_SIM_TIME 30
 #define INST_WAY 2
 #define ISSUE_WAY 6
 #define ALU_NUM 4

@@ -9,7 +9,11 @@ enum STATE { IDLE, WAIT };
 void STQ::comb() {
   back.out.bready = true;
   back.out.wvalid = false;
+
   static int state;
+  for (int i = 0; i < STQ_NUM; i++) {
+    io.stq2iss->valid[i] = false;
+  }
 
   // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
@@ -35,6 +39,7 @@ void STQ::comb() {
       if (back.in.bvalid && back.out.bready) {
         entry[deq_ptr].valid = false;
         entry[deq_ptr].compelete = false;
+        io.stq2iss->valid[deq_ptr] = true;
         LOOP_INC(deq_ptr, STQ_NUM);
         state = IDLE;
       }
@@ -44,16 +49,14 @@ void STQ::comb() {
   }
 
   int num = count;
-  int idx = enq_ptr;
+  io.stq2ren->stq_idx = enq_ptr;
   for (int i = 0; i < INST_WAY; i++) {
     if (!io.ren2stq->valid[i]) {
       io.stq2ren->ready[i] = true;
     } else {
       if (num < STQ_NUM) {
         io.stq2ren->ready[i] = true;
-        io.stq2ren->stq_idx[i] = idx;
         num++;
-        idx = (idx + 1) % STQ_NUM;
       } else {
         io.stq2ren->ready[i] = false;
       }

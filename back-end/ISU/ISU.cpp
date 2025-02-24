@@ -128,6 +128,13 @@ void ISU::seq() {
         q.wake_up(io.awake->wake[i].preg);
       }
   }
+
+  // 唤醒load
+  for (auto &q : iq) {
+    if (q.type == IQ_LD) {
+      q.store_wake_up(io.stq2iss->valid);
+    }
+  }
 }
 
 /*void IQ::comb_enq() {*/
@@ -178,6 +185,18 @@ void IQ::wake_up(uint32_t dest_preg) {
 
       if (entry[i].inst.src2_en && entry[i].inst.src2_preg == dest_preg) {
         entry[i].inst.src2_busy = false;
+      }
+    }
+  }
+}
+
+void IQ::store_wake_up(bool valid[]) {
+  for (int i = 0; i < STQ_NUM; i++) {
+    if (valid[i]) {
+      for (int j = 0; j < entry_num; j++) {
+        if (entry[j].valid) {
+          entry[j].inst.pre_store[i] = false;
+        }
       }
     }
   }

@@ -112,7 +112,7 @@ typedef struct {
 typedef struct {
   bool ready[INST_WAY];
   bool stq_valid[STQ_NUM];
-  uint32_t stq_idx[INST_WAY];
+  uint32_t stq_idx;
 } Stq_Ren;
 
 typedef struct {
@@ -121,6 +121,5 @@ typedef struct {
 } Exe_Stq;
 
 typedef struct {
-  bool valid[INST_WAY];
-  uint32_t tag[INST_WAY];
+  bool valid[STQ_NUM];
 } Stq_Iss;
