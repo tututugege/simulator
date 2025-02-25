@@ -31,10 +31,18 @@ typedef struct {
   uint32_t inst[INST_WAY];
   uint32_t pc[INST_WAY];
   bool valid[INST_WAY];
+  bool predict_dir[INST_WAY];
+  bool alt_pred[INST_WAY];
+  uint8_t altpcpn[INST_WAY];
+  uint8_t pcpn[INST_WAY];
+  uint32_t predict_next_fetch_address;
+
 } Front_Dec;
 
 typedef struct {
+  bool mispred;
   uint32_t br_mask;
+  uint32_t br_tag;
 } Dec_Broadcast;
 
 typedef struct {
@@ -100,8 +108,9 @@ typedef struct {
 
 typedef struct {
   bool mispred;
+  uint32_t redirect_pc;
   uint32_t br_tag;
-} Exe_Broadcast;
+} Prf_Dec;
 
 typedef struct {
   uint32_t tag[INST_WAY];

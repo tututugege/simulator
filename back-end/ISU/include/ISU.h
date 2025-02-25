@@ -10,7 +10,7 @@ public:
   void init();
   void wake_up(uint32_t);
   void store_wake_up(bool *);
-  void clear();
+  void br_clear(uint32_t br_mask);
   Inst_entry pop_oldest(vector<Inst_entry> &valid_entry,
                         vector<int> &valid_idx);
 
@@ -33,8 +33,8 @@ private:
 
 class ISU_IO {
 public:
-  // rollback
   Rob_Broadcast *rob_bc;
+  Dec_Broadcast *id_bc;
 
   Ren_Iss *ren2iss;
   Iss_Ren *iss2ren; // ready

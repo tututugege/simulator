@@ -12,7 +12,7 @@ public:
 
   Dec_Broadcast *id_bc;
 
-  Exe_Broadcast *exe_bc;
+  Prf_Dec *prf2id;
   Rob_Broadcast *rob_bc;
   Rob_Commit *commit;
 };

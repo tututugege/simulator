@@ -4,7 +4,7 @@
 using namespace std;
 
 #define MAX_SIM_TIME 1500000
-#define INST_WAY 2
+#define INST_WAY 4
 #define ISSUE_WAY 6
 
 #define ARF_NUM 32
@@ -12,14 +12,15 @@ using namespace std;
 #define MAX_BR_NUM 4
 
 #define IQ_NUM 8
-#define ROB_NUM 8
+#define ROB_NUM 16
 
 #define LDQ_NUM 4
 #define STQ_NUM 4
 
-#define LOG 0
+#define LOG 1
 
 #define CONFIG_DIFFTEST
+/*#define CONFIG_BRANCHCHECK*/
 
 #define UART_BASE 0x10000000
 
@@ -50,9 +51,18 @@ typedef struct Inst_info {
   int dest_preg, src1_preg, src2_preg;
   uint32_t src1_rdata, src2_rdata;
   uint32_t result;
-  bool mispred;
+
+  // 分支预测信息
   bool pred_br_taken;
+  bool alt_pred;
+  uint8_t altpcpn;
+  uint8_t pcpn;
   uint32_t pred_br_pc;
+
+  // 分支预测更新信息
+  bool mispred;
+  uint32_t pc_next;
+
   int old_dest_preg;
   IQ_TYPE iq_type;
   bool dest_en, src1_en, src2_en;
@@ -66,10 +76,8 @@ typedef struct Inst_info {
   uint32_t tag;
   uint32_t rob_idx;
   uint32_t stq_idx;
-  int pc_next;
   bool pre_store[STQ_NUM];
   uint32_t csr_idx;
-  uint32_t ptab_idx;
 
   // 调度特征
   int inst_idx;

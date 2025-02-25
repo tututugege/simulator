@@ -6,12 +6,11 @@
 class EXU_IO {
 public:
   Prf_Exe *prf2exe;
+  Dec_Broadcast *id_bc;
 
   Exe_Prf *exe2prf;
   Exe_Stq *exe2stq;
   Exe_Iss *exe2iss;
-
-  Exe_Broadcast *exe_bc;
 };
 
 class EXU {

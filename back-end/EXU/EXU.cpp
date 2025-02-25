@@ -58,4 +58,12 @@ void EXU::seq() {
     if (fu[i].seq)
       fu[i].seq(&io.exe2prf->entry[i].inst, fu[i]);
   }
+
+  if (io.id_bc->mispred) {
+    for (int i = 0; i < ISSUE_WAY; i++) {
+      if (inst_r[i].valid && (io.id_bc->br_mask & (1 << inst_r[i].inst.tag))) {
+        inst_r[i].valid = false;
+      }
+    }
+  }
 }

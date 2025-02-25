@@ -69,15 +69,15 @@ void STQ::comb() {
   }
 
   // 分支清空
-  /*if (in.br.mispred) {*/
-  /*  for (int i = 0; i < STQ_NUM; i++) {*/
-  /*    if (entry[i].valid && in.br.br_mask[entry[i].tag]) {*/
-  /*      entry_1[i].valid = false;*/
-  /*      count_1--;*/
-  /*      LOOP_DEC(enq_ptr_1, STQ_NUM);*/
-  /*    }*/
-  /*  }*/
-  /*}*/
+  if (io.id_bc->mispred) {
+    for (int i = 0; i < STQ_NUM; i++) {
+      if (entry[i].valid && (io.id_bc->br_mask & (1 << entry[i].tag))) {
+        entry[i].valid = false;
+        count--;
+        LOOP_DEC(enq_ptr, STQ_NUM);
+      }
+    }
+  }
 }
 
 void STQ::seq() {

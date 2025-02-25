@@ -8,11 +8,10 @@ public:
   Rob_Ren *rob2ren;
 
   Prf_Rob *prf2rob;
+
   Rob_Broadcast *rob_bc;
   Rob_Commit *rob_commit;
   Dec_Broadcast *id_bc;
-
-  Exe_Broadcast *exe_bc;
 };
 
 class ROB {

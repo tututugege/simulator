@@ -29,6 +29,12 @@ void IDU::comb() {
 
   for (int i = 0; i < INST_WAY; i++) {
     if (io.front2id->valid[i] && !stall) {
+      io.id2ren->inst[i].pred_br_taken = io.front2id->predict_dir[i];
+      io.id2ren->inst[i].alt_pred = io.front2id->alt_pred[i];
+      io.id2ren->inst[i].altpcpn = io.front2id->altpcpn[i];
+      io.id2ren->inst[i].pcpn = io.front2id->pcpn[i];
+      io.id2ren->inst[i].pred_br_pc = io.front2id->predict_next_fetch_address;
+
       io.id2ren->inst[i] = decode(io.front2id->inst[i]);
       io.id2ren->inst[i].tag = tag;
       io.id2ren->inst[i].pc = io.front2id->pc[i];
@@ -69,10 +75,10 @@ void IDU::comb() {
 
   // 分支
   uint32_t br_mask = 0;
-  if (io.exe_bc->mispred) {
+  if (io.prf2id->mispred) {
     int idx = (enq_ptr - 1 + MAX_BR_NUM) % MAX_BR_NUM;
 
-    while (tag_fifo[idx] != io.exe_bc->br_tag) {
+    while (tag_fifo[idx] != io.prf2id->br_tag) {
       br_mask = br_mask | (1 << tag_fifo[idx]);
       tag_vec[tag_fifo[idx]] = true;
       LOOP_DEC(enq_ptr, MAX_BR_NUM);
@@ -84,8 +90,11 @@ void IDU::comb() {
     tag_vec[tag_fifo[idx]] = false;
     now_tag = tag_fifo[idx];
     io.id_bc->br_mask = br_mask;
+    io.id_bc->mispred = true;
+    io.id_bc->br_tag = io.prf2id->br_tag;
   } else {
     io.id_bc->br_mask = 0;
+    io.id_bc->mispred = false;
   }
 }
 

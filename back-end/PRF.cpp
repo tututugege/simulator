@@ -1,6 +1,7 @@
 #include "config.h"
 #include <IO.h>
 #include <PRF.h>
+#include <iostream>
 
 void PRF::init() {
   for (int i = 0; i < ISSUE_WAY; i++)
@@ -8,6 +9,22 @@ void PRF::init() {
 }
 
 void PRF::comb() {
+  // 根据分支结果向前端返回信息
+
+  io.prf2id->mispred = false;
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (inst_r[i].valid && is_branch(inst_r[i].inst.op) &&
+        inst_r[i].inst.mispred) {
+
+      io.prf2id->mispred = true;
+      io.prf2id->redirect_pc = inst_r[i].inst.pc_next;
+      io.prf2id->br_tag = inst_r[i].inst.tag;
+
+      cout << "misprediction redirect_pc 0x" << hex << io.prf2id->redirect_pc
+           << endl;
+    }
+  }
+
   for (int i = 0; i < ISSUE_WAY; i++) {
     io.prf2exe->iss_entry[i] = io.iss2prf->iss_entry[i];
     Inst_entry *entry = &io.prf2exe->iss_entry[i];
@@ -48,6 +65,14 @@ void PRF::seq() {
       inst_r[i] = io.exe2prf->entry[i];
     } else {
       inst_r[i].valid = false;
+    }
+  }
+
+  if (io.id_bc->mispred) {
+    for (int i = 0; i < ISSUE_WAY; i++) {
+      if (inst_r[i].valid && (io.id_bc->br_mask & (1 << inst_r[i].inst.tag))) {
+        inst_r[i].valid = false;
+      }
     }
   }
 }

@@ -7,6 +7,18 @@
 #include <dlfcn.h>
 #include <fstream>
 
+struct front_top_out {
+  // to back-end
+  bool FIFO_valid;
+  uint32_t pc[INST_WAY];
+  uint32_t instructions[INST_WAY];
+  bool predict_dir[INST_WAY];
+  uint32_t predict_next_fetch_address;
+  bool alt_pred[INST_WAY];
+  uint8_t altpcpn[INST_WAY];
+  uint8_t pcpn[INST_WAY];
+};
+
 int inst_idx;
 
 using namespace std;
@@ -59,6 +71,8 @@ int main(int argc, char *argv[]) {
   number_PC = 0x80000000;
   stall = misprediction = exception = false;
 
+  front_top_out front_out;
+
   // main loop
   for (i = 0; i < MAX_SIM_TIME; i++) {
     inst_idx = i;
@@ -67,42 +81,46 @@ int main(int argc, char *argv[]) {
       cout << "****************************************************************"
            << endl;
 
-    /*if (!stall || misprediction || exception) {*/
+    if (!stall || misprediction || exception) {
 
-    if (!stall) {
-      if (i != 0)
+#if defined(CONFIG_BRANCHCHECK)
+      if (i != 0) {
         branch_check();
+      }
+#elif defined(CONFIG_BPU)
 
-      /*for (int j = 0; j < INST_WAY; j++) {*/
-      /*  if (next_PC[j] != number_PC + 4 * j) {*/
-      /*    back.ptab.in.valid[j] = true;*/
-      /*    back.ptab.in.ptab_wdata[j] = next_PC[j];*/
-      /*  } else {*/
-      /*    back.ptab.in.valid[j] = false;*/
-      /*  }*/
-      /*  back.ptab.comb_alloc();*/
-      /*}*/
-
+#else
       for (int j = 0; j < INST_WAY; j++) {
-        back.in.pc[j] = next_PC[j];
+        front_out.pc[j] = number_PC;
+        front_out.FIFO_valid = true;
+        front_out.instructions[j] = p_memory[front_out.pc[j] / 4];
         if (LOG)
           cout << "指令index:" << dec << i << " 当前PC的取值为:" << hex
-               << next_PC[j] << endl;
+               << number_PC << endl;
 
-        back.in.inst[j] = p_memory[next_PC[j] / 4];
-        back.in.valid[j] = true;
-        /*back.in.valid[j] = back.ptab.out.ready[j];*/
+        front_out.predict_dir[j] = false;
+        number_PC += 4;
+      }
+
+      front_out.predict_next_fetch_address = number_PC;
+
+#endif
+
+      for (int j = 0; j < INST_WAY; j++) {
+        back.in.valid[j] =
+            front_out.FIFO_valid && front_out.instructions[j] != 0;
+        back.in.pc[j] = front_out.pc[j];
+        back.in.inst[j] = front_out.instructions[j];
+        back.in.predict_dir[j] = front_out.predict_dir[j];
+        back.in.alt_pred[j] = front_out.alt_pred[j];
+        back.in.altpcpn[j] = front_out.altpcpn[j];
       }
     }
 
-    /*}*/
-
-    // TODO
-    // asy and page fault
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////
     load_slave_comb();
     store_slave_comb();
     back.Back_comb();
+
     load_slave_seq();
     store_slave_seq();
     back.Back_seq();
@@ -113,20 +131,10 @@ int main(int argc, char *argv[]) {
     stall = back.out.stall;
     misprediction = back.out.mispred;
     exception = back.out.exception;
-    number_PC = next_PC[1];
 
-    /*if (misprediction || exception) {*/
-    /*  number_PC = back.out.pc;*/
-    /*} else if (!stall) {*/
-    /*  number_PC = next_PC[1];*/
-    /*} else {*/
-    /*  for (int j = 0; j < INST_WAY; j++) {*/
-    /*    if (back.out.fire[j])*/
-    /*      back.in.valid[j] = false;*/
-    /*  }*/
-    /*}*/
-
-    if (stall) {
+    if (misprediction || exception) {
+      number_PC = back.out.redirect_pc;
+    } else if (stall) {
       for (int j = 0; j < INST_WAY; j++) {
         if (back.out.fire[j])
           back.in.valid[j] = false;

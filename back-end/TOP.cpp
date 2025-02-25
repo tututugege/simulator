@@ -47,10 +47,10 @@ Iss_Prf iss2prf;
 Prf_Exe prf2exe;
 Prf_Rob prf2rob;
 Prf_Awake awake;
+Prf_Dec prf2id;
 
 Exe_Prf exe2prf;
 Exe_Stq exe2stq;
-Exe_Broadcast exe_bc;
 Exe_Iss exe2iss;
 
 Rob_Ren rob2ren;
@@ -67,7 +67,7 @@ void Back_Top::init() {
   idu.io.id2ren = &id2ren;
   idu.io.ren2id = &ren2id;
   idu.io.id_bc = &id_bc;
-  idu.io.exe_bc = &exe_bc;
+  idu.io.prf2id = &prf2id;
   idu.io.rob_bc = &rob_bc;
   idu.io.commit = &rob_commit;
 
@@ -75,7 +75,7 @@ void Back_Top::init() {
   rename.io.ren2dec = &ren2id;
   rename.io.ren2iss = &ren2iss;
   rename.io.iss2ren = &iss2ren;
-  rename.io.exe_bc = &exe_bc;
+  rename.io.id_bc = &id_bc;
   rename.io.rob2ren = &rob2ren;
   rename.io.ren2rob = &ren2rob;
   rename.io.ren2stq = &ren2stq;
@@ -85,6 +85,7 @@ void Back_Top::init() {
   rename.io.awake = &awake;
 
   isu.io.rob_bc = &rob_bc;
+  isu.io.id_bc = &id_bc;
   isu.io.ren2iss = &ren2iss;
   isu.io.iss2ren = &iss2ren;
   isu.io.iss2prf = &iss2prf;
@@ -97,17 +98,20 @@ void Back_Top::init() {
   prf.io.prf2exe = &prf2exe;
   prf.io.exe2prf = &exe2prf;
   prf.io.prf_awake = &awake;
+  prf.io.prf2id = &prf2id;
+  prf.io.id_bc = &id_bc;
 
   exu.io.prf2exe = &prf2exe;
+  exu.io.id_bc = &id_bc;
   exu.io.exe2prf = &exe2prf;
-  exu.io.exe_bc = &exe_bc;
   exu.io.exe2stq = &exe2stq;
   exu.io.exe2iss = &exe2iss;
 
   rob.io.ren2rob = &ren2rob;
-  rob.io.exe_bc = &exe_bc;
+  rob.io.id_bc = &id_bc;
   rob.io.prf2rob = &prf2rob;
   rob.io.rob_bc = &rob_bc;
+  rob.io.id_bc = &id_bc;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2ren = &rob2ren;
 
@@ -116,8 +120,8 @@ void Back_Top::init() {
   stq.io.ren2stq = &ren2stq;
   stq.io.stq2iss = &stq2iss;
   stq.io.stq2ren = &stq2ren;
+  stq.io.id_bc = &id_bc;
 
-  ptab.init();
   idu.init();
   rename.init();
   isu.init();
@@ -145,61 +149,8 @@ void Back_Top::Back_comb() {
   isu.comb();
   prf.comb();
   idu.comb();
-
-  /*csru.in.exception = rob.out.exception;*/
-  /*csru.in.cause = M_MODE_ECALL;*/
-
-  /*for (int i = 0; i < ISSUE_WAY; i++) {*/
-  /*  if (rob.out.valid[i] && rob.out.commit_entry[i].op == ECALL)*/
-  /*    csru.in.pc = rob.out.commit_entry[i].pc;*/
-  /*}*/
-
-  // 写内存
-  /*stq.comb_deq();*/
-
-  /*for (int i = 0; i < ISSUE_WAY; i++) {*/
-  /*  idu.in.free_valid[i] =*/
-  /*      rob.out.valid[i] && is_branch(rob.out.commit_entry[i]);*/
-  /*  idu.in.free_tag[i] = rob.out.commit_entry[i].tag;*/
-  /**/
-  /*  stq.in.commit[i] =*/
-  /*      (rob.out.valid[i] && rob.out.commit_entry[i].op == STORE);*/
-  /*}*/
-  /**/
-  // 发射指令
-
-  // 唤醒
-  /*for (int i = 0; i < ALU_NUM; i++) {*/
-  /*  if (int_iq.out.valid[i]) {*/
-  /*    int_iq.wake_up(&int_iq.out.inst[i]);*/
-  /*    st_iq.wake_up(&int_iq.out.inst[i]);*/
-  /*    ld_iq.wake_up(&int_iq.out.inst[i]);*/
-  /*  }*/
-  /*}*/
-  /**/
-  /*if (ld_iq.out.valid[0]) {*/
-  /*  int_iq.wake_up(&ld_iq.out.inst[0]);*/
-  /*  st_iq.wake_up(&ld_iq.out.inst[0]);*/
-  /*  ld_iq.wake_up(&ld_iq.out.inst[0]);*/
-  /*}*/
-
-  /*for (int i = 0; i < ALU_NUM; i++) {*/
-  /*  ptab.in.ptab_idx[i] = int_iq.out.inst[i].tag;*/
-  /*}*/
-
-  // idu处理mispred，如果taken会输出需要清除的tag_mask
-  // st queue分配
-  // stq 分配 写入地址 标记提交
-  /*for (int i = 0; i < INST_WAY; i++) {*/
-  /*  if (idu.out.valid[i] && idu.out.inst[i].op == STORE) {*/
-  /*    stq.in.valid[i] = true;*/
-  /*    stq.in.tag[i] = idu.out.inst[i].tag;*/
-  /*  } else {*/
-  /*    stq.in.valid[i] = false;*/
-  /*  }*/
-  /*}*/
-
-  /*stq.comb_alloc();*/
+  back.out.mispred = prf.io.prf2id->mispred;
+  back.out.redirect_pc = prf.io.prf2id->redirect_pc;
 }
 
 void Back_Top::Back_seq() {
