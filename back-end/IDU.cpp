@@ -35,7 +35,7 @@ void IDU::comb() {
       if (!is_branch(io.id2ren->inst[i].op))
         io.id2ren->inst[i].pc_next = io.front2id->pc[i] + 4;
       io.id2ren->inst[i].dependency = 0;
-      /*io.id2ren->inst[i].inst_idx = 2 * inst_idx + i;*/
+      io.id2ren->inst[i].inst_idx = 2 * inst_idx + i;
 
       // 分配新tag 一组指令只能有一个分支指令
       if (is_branch(io.id2ren->inst[i].op) && !has_br) {
@@ -105,10 +105,9 @@ void IDU::seq() {
 
   back.out.stall = false;
   for (int i = 0; i < INST_WAY; i++) {
-    io.id2front->dec_fire[i] = io.ren2id->dec_fire[i] =
-        io.front2id->valid[i] && io.ren2id->ready[i];
-    back.out.stall |= !io.ren2id->ready[i];
-    if (io.ren2id->dec_fire[i] && is_branch(io.id2ren->inst[i].op)) {
+    io.id2front->dec_fire[i] = io.id2ren->valid[i] && io.ren2id->ready;
+    back.out.stall |= io.front2id->valid[i] && !io.id2front->dec_fire[i];
+    if (io.id2front->dec_fire[i] && is_branch(io.id2ren->inst[i].op)) {
       tag_fifo[enq_ptr] = alloc_tag;
       tag_vec[alloc_tag] = false;
       LOOP_INC(enq_ptr, MAX_BR_NUM);

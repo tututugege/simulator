@@ -8,15 +8,15 @@ typedef struct {
 } PTAB_entry;
 
 typedef struct {
-  PTAB_entry entry[ALU_NUM];
+  PTAB_entry entry[ISSUE_WAY];
   bool ready[INST_WAY];
   bool ptab_idx[INST_WAY];
   bool full;
 } PTAB_out;
 
 typedef struct {
-  uint32_t ptab_idx[ALU_NUM];
-  uint32_t ptab_wdata[ALU_NUM];
+  uint32_t ptab_idx[ISSUE_WAY];
+  uint32_t ptab_wdata[ISSUE_WAY];
   bool valid[INST_WAY];
 } PTAB_in;
 

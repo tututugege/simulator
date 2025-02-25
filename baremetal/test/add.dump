@@ -13,23 +13,23 @@ _start():
 
 _start:
 
-  la a0, 0x80001000
-80000000:	80001537          	lui	a0,0x80001
-/home/tututu/qimeng/simulator/baremetal/test/../start.S:10
   la gp, __global_pointer
-80000004:	00001197          	auipc	gp,0x1
-80000008:	88c18193          	addi	gp,gp,-1908 # 80000890 <__global_pointer>
-/home/tututu/qimeng/simulator/baremetal/test/../start.S:11
+80000000:	00001197          	auipc	gp,0x1
+80000004:	89018193          	addi	gp,gp,-1904 # 80000890 <__global_pointer>
+/home/tututu/qimeng/simulator/baremetal/test/../start.S:10
   la sp, _sp
-8000000c:	08000117          	auipc	sp,0x8000
-80000010:	ff410113          	addi	sp,sp,-12 # 88000000 <_sp>
-/home/tututu/qimeng/simulator/baremetal/test/../start.S:13
+80000008:	08000117          	auipc	sp,0x8000
+8000000c:	ff810113          	addi	sp,sp,-8 # 88000000 <_sp>
+/home/tututu/qimeng/simulator/baremetal/test/../start.S:12
 
-  la a1, 0x80000000
-80000014:	800005b7          	lui	a1,0x80000
+  la a0, 0x80001000
+80000010:	80001537          	lui	a0,0x80001
+/home/tututu/qimeng/simulator/baremetal/test/../start.S:13
+  sw a0, 0(a0)
+80000014:	00a52023          	sw	a0,0(a0) # 80001000 <_sp+0xf8001000>
 /home/tututu/qimeng/simulator/baremetal/test/../start.S:14
-  lw a2, 0(a1)
-80000018:	0005a603          	lw	a2,0(a1) # 80000000 <_sp+0xf8000000>
+  lw a0, 0(a0)
+80000018:	00052503          	lw	a0,0(a0)
 /home/tututu/qimeng/simulator/baremetal/test/../start.S:15
   call main
 8000001c:	00c000ef          	jal	ra,80000028 <main>
@@ -88,7 +88,7 @@ add():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:4 (discriminator 3)
   int c = a + b;
 80000054:	0007a583          	lw	a1,0(a5)
-80000058:	00052703          	lw	a4,0(a0) # 80001000 <_sp+0xf8001000>
+80000058:	00052703          	lw	a4,0(a0)
 check():
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:9 (discriminator 3)
   if (!cond) {
@@ -351,11 +351,11 @@ Disassembly of section .debug_line:
   3c:	0002                	c.slli64	zero
   3e:	0000                	c.unimp
   40:	1a80                	c.addi4spn	s0,sp,368
-  42:	04090103          	lb	sp,64(s2)
+  42:	08090103          	lb	sp,128(s2)
   46:	0100                	c.addi4spn	s0,sp,128
-  48:	08090103          	lb	sp,128(s2)
+  48:	08090203          	lb	tp,128(s2)
   4c:	0100                	c.addi4spn	s0,sp,128
-  4e:	08090203          	lb	tp,128(s2)
+  4e:	04090103          	lb	sp,64(s2)
   52:	0100                	c.addi4spn	s0,sp,128
   54:	04090103          	lb	sp,64(s2)
   58:	0100                	c.addi4spn	s0,sp,128

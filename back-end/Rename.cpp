@@ -39,18 +39,14 @@ void Rename::comb() {
 
   for (int i = 0; i < INST_WAY; i++) {
     io.ren2iss->inst[i] = dec_ren_r[i].inst;
-    if (io.ren2iss->inst[i].op == STORE) {
-      io.ren2iss->inst[i].stq_idx = io.stq2ren->stq_idx;
-      LOOP_INC(stq_idx, STQ_NUM);
-    }
-
-    if (io.ren2iss->inst[i].op == LOAD) {
-      for (int j = 0; j < STQ_NUM; j++) {
-        io.ren2iss->inst[i].pre_store[j] = io.stq2ren->stq_valid[j];
-      }
-    }
 
     if (dec_ren_r[i].valid) {
+      // 分配stq_idx 和 rob_idx
+      if (io.ren2iss->inst[i].op == STORE) {
+        io.ren2iss->inst[i].stq_idx = stq_idx;
+        LOOP_INC(stq_idx, STQ_NUM);
+      }
+
       io.ren2iss->inst[i].rob_idx = rob_idx;
       LOOP_INC(rob_idx, ROB_NUM);
     }
@@ -73,7 +69,7 @@ void Rename::comb() {
   }
 
   // busy_table wake up
-  for (int i = 0; i < ALU_NUM + 1; i++) {
+  for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.awake->wake[i].valid) {
       busy_table[io.awake->wake[i].preg] = false;
     }
@@ -87,7 +83,7 @@ void Rename::comb() {
     io.ren2iss->inst[i].src1_busy =
         busy_table[io.ren2iss->inst[i].src1_preg] && dec_ren_r[i].inst.src1_en;
     io.ren2iss->inst[i].src2_busy =
-        busy_table[dec_ren_r[i].inst.src2_preg] && dec_ren_r[i].inst.src2_en;
+        busy_table[io.ren2iss->inst[i].src2_preg] && dec_ren_r[i].inst.src2_en;
   }
 
   // 针对RAT 和busy_table的raw的bypass
@@ -125,20 +121,31 @@ void Rename::comb() {
 void Rename ::seq() {
   // 分配寄存器
   int alloc_num = 0;
-  bool dis_stall[INST_WAY];
   bool pre_stall = false;
 
   for (int i = 0; i < INST_WAY; i++) {
-    dis_stall[i] = !io.rob2ren->ready[i] || !io.stq2ren->ready[i];
-  }
+    if (io.ren2iss->valid[i] && io.ren2iss->inst[i].op == LOAD) {
+      for (int j = 0; j < STQ_NUM; j++) {
+        io.ren2iss->inst[i].pre_store[j] = io.stq2ren->stq_valid[j];
+      }
 
-  for (int i = 0; i < INST_WAY; i++) {
+      // 同一组store 和load
+      for (int j = 0; j < i; j++) {
+        if (io.ren2iss->valid[j] && io.ren2iss->inst[j].op == STORE) {
+          int idx = io.ren2iss->inst[j].stq_idx;
+          io.ren2iss->inst[i].pre_store[idx] = true;
+        }
+      }
+    }
+
     io.ren2iss->dis_fire[i] = (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
                               (io.ren2iss->inst[i].op != STORE ||
                                io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
-                              (io.ren2rob->valid[i] && io.rob2ren->ready[i]);
+                              (io.ren2rob->valid[i] && io.rob2ren->ready[i]) &&
+                              !pre_stall;
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
     io.ren2stq->dis_fire[i] = io.ren2iss->dis_fire[i];
+    pre_stall = dec_ren_r[i].valid && !io.ren2iss->dis_fire[i];
 
     if (io.ren2iss->dis_fire[i] && io.ren2iss->inst[i].dest_en) {
       spec_alloc[alloc_reg[alloc_num]] = true;
@@ -200,22 +207,15 @@ void Rename ::seq() {
     }
   }
 
+  io.ren2dec->ready = true;
   for (int i = 0; i < INST_WAY; i++) {
-    if (!io.dec2ren->valid[i])
-      io.ren2dec->ready[i] = true;
-    else
-      io.ren2dec->ready[i] = io.ren2iss->dis_fire[i] || !dec_ren_r[i].valid;
-  }
-
-  bool ready = true;
-  for (int i = 0; i < INST_WAY; i++) {
-    ready = ready && !dis_stall[i];
+    io.ren2dec->ready &= io.ren2iss->dis_fire[i] || !dec_ren_r[i].valid;
   }
 
   for (int i = 0; i < INST_WAY; i++) {
     if (io.rob_bc->rollback) {
       dec_ren_r[i].valid = false;
-    } else if (ready) {
+    } else if (io.ren2dec->ready) {
       dec_ren_r[i].inst = io.dec2ren->inst[i];
       dec_ren_r[i].valid = io.dec2ren->valid[i];
     } else {

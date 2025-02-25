@@ -41,6 +41,7 @@ void STQ::comb() {
         entry[deq_ptr].compelete = false;
         io.stq2iss->valid[deq_ptr] = true;
         LOOP_INC(deq_ptr, STQ_NUM);
+        count--;
         state = IDLE;
       }
     } else {
@@ -49,7 +50,6 @@ void STQ::comb() {
   }
 
   int num = count;
-  io.stq2ren->stq_idx = enq_ptr;
   for (int i = 0; i < INST_WAY; i++) {
     if (!io.ren2stq->valid[i]) {
       io.stq2ren->ready[i] = true;
@@ -106,7 +106,9 @@ void STQ::seq() {
     if (io.rob_commit->commit_entry[i].valid &&
         io.rob_commit->commit_entry[i].inst.op == STORE) {
       entry[commit_ptr].compelete = true;
-      commit_ptr = (commit_ptr + 1) % STQ_NUM;
+      LOOP_INC(commit_ptr, STQ_NUM);
     }
   }
+
+  io.stq2ren->stq_idx = enq_ptr;
 }
