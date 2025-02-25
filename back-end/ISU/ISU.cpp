@@ -27,10 +27,10 @@ IQ::IQ(int entry_num, int out_num, IQ_TYPE type) {
 }
 
 void ISU::init() {
-  add_iq(8, 4, IQ_INT);
-  add_iq(8, 1, IQ_LD);
-  add_iq(8, 1, IQ_ST);
-  add_iq(8, 1, IQ_CSR);
+  add_iq(16, 4, IQ_INT);
+  add_iq(16, 1, IQ_LD);
+  add_iq(16, 1, IQ_ST);
+  add_iq(16, 1, IQ_CSR);
 }
 
 void IQ::enq(Inst_info *inst) {
@@ -143,18 +143,17 @@ void ISU::seq() {
       q.store_wake_up(io.stq2iss->valid);
     }
   }
+
+  // 分支处理
+  if (io.id_bc->mispred) {
+    for (auto &q : iq) {
+      q.br_clear(io.id_bc->br_mask);
+    }
+  }
 }
 
 /*void IQ::comb_enq() {*/
 /**/
-/*  // 分支处理*/
-/*  if (in.br.mispred) {*/
-/*    for (int j = 0; j < entry_num; j++) {*/
-/*      if (entry[j].valid && in.br.br_mask[entry[j].inst.tag]) {*/
-/*        entry_1[j].valid = false;*/
-/*      }*/
-/*    }*/
-/*  }*/
 /**/
 // 异常处理
 /*if (in.rollback) {*/
@@ -182,6 +181,14 @@ void ISU::seq() {
 /*  }*/
 /*}*/
 /*}*/
+
+void IQ::br_clear(uint32_t br_mask) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid && ((1 << entry[i].inst.tag) & br_mask)) {
+      entry[i].valid = false;
+    }
+  }
+}
 
 // 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
 void IQ::wake_up(uint32_t dest_preg) {

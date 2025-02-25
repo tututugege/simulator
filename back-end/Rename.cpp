@@ -142,7 +142,8 @@ void Rename ::seq() {
                               (io.ren2iss->inst[i].op != STORE ||
                                io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
                               (io.ren2rob->valid[i] && io.rob2ren->ready[i]) &&
-                              !pre_stall;
+                              !pre_stall && !io.id_bc->mispred;
+
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
     io.ren2stq->dis_fire[i] = io.ren2iss->dis_fire[i];
     pre_stall = dec_ren_r[i].valid && !io.ren2iss->dis_fire[i];
@@ -181,16 +182,16 @@ void Rename ::seq() {
   }
 
   // 分支处理
-  if (io.exe_bc->mispred) {
+  if (io.id_bc->mispred) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM; i++) {
-      spec_RAT[i] = RAT_checkpoint[io.exe_bc->br_tag][i];
+      spec_RAT[i] = RAT_checkpoint[io.id_bc->br_tag][i];
     }
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
-      free_vec[j] = free_vec[j] || alloc_checkpoint[io.exe_bc->br_tag][j];
-      spec_alloc[j] = spec_alloc[j] && !alloc_checkpoint[io.exe_bc->br_tag][j];
+      free_vec[j] = free_vec[j] || alloc_checkpoint[io.id_bc->br_tag][j];
+      spec_alloc[j] = spec_alloc[j] && !alloc_checkpoint[io.id_bc->br_tag][j];
     }
   }
 
@@ -213,7 +214,7 @@ void Rename ::seq() {
   }
 
   for (int i = 0; i < INST_WAY; i++) {
-    if (io.rob_bc->rollback) {
+    if (io.rob_bc->rollback || io.id_bc->mispred) {
       dec_ren_r[i].valid = false;
     } else if (io.ren2dec->ready) {
       dec_ren_r[i].inst = io.dec2ren->inst[i];
@@ -222,9 +223,4 @@ void Rename ::seq() {
       dec_ren_r[i].valid = dec_ren_r[i].valid && !io.ren2iss->dis_fire[i];
     }
   }
-
-  /*for (int i = 0; i < PRF_NUM; i++) {*/
-  /*  cout << dec << free_vec[i];*/
-  /*}*/
-  /*cout << endl;*/
 }

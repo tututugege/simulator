@@ -5,7 +5,7 @@
 #include <dlfcn.h>
 
 enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
-enum { BRANCHCHECK, DIFFTEST };
+enum { DIFFTEST, BRANCHCHECK };
 
 CPU_state dut, ref;
 bool difftest_skip = false;
@@ -25,7 +25,11 @@ void init_difftest(const char *ref_so_file, long img_size) {
 
   assert(ref_so_file != NULL);
 
+#ifdef CONFIG_BRANCHCHECK
   for (int i = 0; i < 2; i++) {
+#else
+  for (int i = 0; i < 1; i++) {
+#endif
     if (i == 0)
       handle[i] = dlopen(ref_so_file, RTLD_LAZY);
     else
@@ -62,10 +66,12 @@ void init_difftest(const char *ref_so_file, long img_size) {
     ref_difftest_regcpy[i](&ref, DIFFTEST_TO_REF);
   }
 
+#ifdef CONFIG_BRANCHCHECK
   ref_difftest_exec[BRANCHCHECK](1);
   ref_difftest_regcpy[BRANCHCHECK](&ref, DIFFTEST_TO_DUT);
   next_PC[1] = ref.pc;
   next_PC[0] = 0x80000000;
+#endif
 }
 
 static void checkregs() {

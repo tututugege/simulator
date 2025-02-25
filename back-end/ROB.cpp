@@ -89,9 +89,10 @@ void ROB::seq() {
   }
 
   // 分支预测失败
-  if (io.exe_bc->mispred) {
+  if (io.id_bc->mispred) {
     int idx = (enq_ptr - 1 + ROB_NUM) % ROB_NUM;
-    while (entry[idx].valid && (entry[idx].inst.tag & io.id_bc->br_mask)) {
+    while (entry[idx].valid &&
+           ((1 << entry[idx].inst.tag) & io.id_bc->br_mask)) {
       entry[idx].valid = false;
       idx = (idx - 1 + ROB_NUM) % ROB_NUM;
       count--;

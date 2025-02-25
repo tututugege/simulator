@@ -4,7 +4,6 @@
 #include <IDU.h>
 #include <ISU.h>
 #include <PRF.h>
-#include <PTAB.h>
 #include <ROB.h>
 #include <Rename.h>
 #include <STQ.h>
@@ -15,7 +14,11 @@ typedef struct {
   uint32_t inst[INST_WAY];
   uint32_t pc[INST_WAY];
   bool valid[INST_WAY];
-  uint32_t load_data;
+  bool predict_dir[INST_WAY];
+  bool alt_pred[INST_WAY];
+  uint8_t altpcpn[INST_WAY];
+  uint8_t pcpn[INST_WAY];
+  uint32_t predict_next_fetch_address;
 
   // ar
   bool arready;
@@ -37,7 +40,7 @@ typedef struct {
   bool stall;
   bool exception;
   bool fire[INST_WAY];
-  uint32_t pc;
+  uint32_t redirect_pc;
 
   // ar
   uint32_t arvalid; // out
@@ -69,7 +72,6 @@ private:
   ROB rob;
 
 public:
-  PTAB ptab;
   Back_in in;
   Back_out out;
   void init();
