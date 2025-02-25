@@ -48,10 +48,10 @@ Prf_Exe prf2exe;
 Prf_Rob prf2rob;
 Prf_Awake awake;
 
-Exe_Iss exe2iss; // br
 Exe_Prf exe2prf;
 Exe_Stq exe2stq;
 Exe_Broadcast exe_bc;
+Exe_Iss exe2iss;
 
 Rob_Ren rob2ren;
 Rob_Broadcast rob_bc;
@@ -61,26 +61,6 @@ Stq_Ren stq2ren;
 Stq_Iss stq2iss;
 
 void Back_Top::init() {
-
-  for (auto pack : fu_config) {
-    vector<Inst_entry> a(pack.size());
-    iss2prf.iss_pack.push_back(a);
-  }
-
-  for (auto pack : fu_config) {
-    vector<bool> a(pack.size());
-    exe2iss.ready.push_back(a);
-  }
-
-  for (auto pack : fu_config) {
-    vector<Inst_entry> a(pack.size());
-    prf2exe.iss_pack.push_back(a);
-  }
-
-  for (auto pack : fu_config) {
-    vector<bool> a(pack.size());
-    exe2prf.ready.push_back(a);
-  }
 
   idu.io.front2id = &front2id;
   idu.io.id2front = &id2front;
@@ -108,9 +88,9 @@ void Back_Top::init() {
   isu.io.ren2iss = &ren2iss;
   isu.io.iss2ren = &iss2ren;
   isu.io.iss2prf = &iss2prf;
-  isu.io.exe2iss = &exe2iss;
   isu.io.awake = &awake;
   isu.io.stq2iss = &stq2iss;
+  isu.io.exe2iss = &exe2iss;
 
   prf.io.iss2prf = &iss2prf;
   prf.io.prf2rob = &prf2rob;
@@ -119,10 +99,10 @@ void Back_Top::init() {
   prf.io.prf_awake = &awake;
 
   exu.io.prf2exe = &prf2exe;
-  exu.io.exe2iss = &exe2iss;
   exu.io.exe2prf = &exe2prf;
   exu.io.exe_bc = &exe_bc;
   exu.io.exe2stq = &exe2stq;
+  exu.io.exe2iss = &exe2iss;
 
   rob.io.ren2rob = &ren2rob;
   rob.io.exe_bc = &exe_bc;
@@ -156,14 +136,15 @@ void Back_Top::Back_comb() {
     idu.io.front2id->inst[i] = in.inst[i];
   }
 
-  // 顺序：stq->rename -> rob/isu
-  stq.comb();
+  // 顺序：rename -> stq/rob/isu
+  // exu -> iss -> prf
   rename.comb();
+  stq.comb();
   rob.comb();
-  isu.comb();
-  idu.comb();
-  prf.comb();
   exu.comb();
+  isu.comb();
+  prf.comb();
+  idu.comb();
 
   /*csru.in.exception = rob.out.exception;*/
   /*csru.in.cause = M_MODE_ECALL;*/
@@ -230,4 +211,8 @@ void Back_Top::Back_seq() {
   exu.seq();
   rob.seq();
   stq.seq();
+
+  for (int i = 0; i < INST_WAY; i++) {
+    out.fire[i] = idu.io.id2front->dec_fire[i];
+  }
 }

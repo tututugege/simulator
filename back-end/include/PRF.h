@@ -21,5 +21,5 @@ public:
   void seq();
 
 private:
-  Inst_entry inst_r[EXU_NUM];
+  Inst_entry inst_r[ISSUE_WAY];
 };

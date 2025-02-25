@@ -30,7 +30,7 @@ void PTAB::comb_alloc() {
 }
 
 void PTAB::comb_read() {
-  for (int i = 0; i < ALU_NUM; i++) {
+  for (int i = 0; i < ISSUE_WAY; i++) {
     out.entry[i] = entry[in.ptab_idx[i]];
     entry_1[i].valid = false;
   }

@@ -79,7 +79,7 @@ void ROB::comb() {
 extern bool difftest_skip;
 void ROB::seq() {
   //  执行完毕的标记
-  for (int i = 0; i < EXU_NUM; i++) {
+  for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.prf2rob->entry[i].valid) {
       complete[io.prf2rob->entry[i].inst.rob_idx] = true;
       entry[io.prf2rob->entry[i].inst.rob_idx].inst = io.prf2rob->entry[i].inst;
@@ -129,7 +129,8 @@ void ROB::seq() {
       /*#endif*/
       if (LOG) {
         cout << "ROB commit PC 0x" << hex
-             << io.rob_commit->commit_entry[i].inst.pc << endl;
+             << io.rob_commit->commit_entry[i].inst.pc << " idx "
+             << io.rob_commit->commit_entry[i].inst.inst_idx << endl;
       }
     }
   }

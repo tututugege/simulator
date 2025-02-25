@@ -2,7 +2,6 @@
 
 #include "config.h"
 #include <cstdint>
-#include <vector>
 
 typedef struct {
   uint32_t addr;
@@ -20,12 +19,12 @@ typedef struct {
 } Dec_Ren;
 
 typedef struct {
-  bool dec_fire[INST_WAY];
-  bool ready[INST_WAY];
+  bool ready;
 } Ren_Dec;
 
 typedef struct {
   bool dec_fire[INST_WAY];
+  bool ready;
 } Dec_Front;
 
 typedef struct {
@@ -54,7 +53,7 @@ typedef struct {
 } Ren_Rob;
 
 typedef struct {
-  Wake_info wake[EXU_NUM];
+  Wake_info wake[ISSUE_WAY];
 } Prf_Awake;
 
 typedef struct {
@@ -74,25 +73,26 @@ typedef struct {
 } Rob_Broadcast;
 
 typedef struct {
-  vector<vector<Inst_entry>> iss_pack;
+  Inst_entry iss_entry[ISSUE_WAY];
 } Iss_Prf;
 
 typedef struct {
-  vector<vector<bool>> ready;
-  // store唤醒
-  /*bool st_valid;*/
-  /*uint32_t st_idx;*/
-} Exe_Iss;
+  bool ready[ISSUE_WAY];
+} Prf_Iss;
 
 typedef struct {
-  vector<vector<Inst_entry>> iss_pack;
-  bool ready[EXU_NUM]; // write back
+  Inst_entry iss_entry[ISSUE_WAY];
+  bool ready[ISSUE_WAY];
 } Prf_Exe;
 
 typedef struct {
   Inst_entry entry[ISSUE_WAY];
-  vector<vector<bool>> ready;
+  bool ready[ISSUE_WAY];
 } Exe_Prf;
+
+typedef struct {
+  bool ready[ISSUE_WAY];
+} Exe_Iss;
 
 typedef struct {
   Inst_entry entry[ISSUE_WAY];

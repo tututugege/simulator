@@ -137,6 +137,8 @@ void alu(Inst_info *inst, FU &fu) {
 
     if (br_taken)
       inst->pc_next = pc_br;
+    else
+      inst->pc_next = inst->pc + 4;
   }
 }
 
@@ -145,8 +147,6 @@ void ldu_comb(Inst_info *inst, FU &fu) {
   back.out.rready = true;
 
   if (fu.state == IDLE) {
-
-    fu.complete = false;
     back.out.araddr = addr;
     back.out.arvalid = true;
     if (back.in.arready && back.out.arvalid) {
@@ -162,7 +162,7 @@ void ldu_comb(Inst_info *inst, FU &fu) {
       return;
     }
 
-    int size = inst->func3;
+    int size = inst->func3 & 0b11;
     int offset = addr & 0b11;
     uint32_t mask = 0;
     uint32_t sign = 0;
@@ -199,8 +199,8 @@ void ldu_seq(Inst_info *inst, FU &fu) {
     }
   } else if (fu.state == RECV) {
     if (back.out.rready && back.in.rvalid) {
-    } else {
-      return;
+      fu.state = IDLE;
+      fu.complete = false;
     }
   }
 }

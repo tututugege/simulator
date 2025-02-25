@@ -46,8 +46,9 @@ void IQ::enq(Inst_info *inst) {
   assert(i != entry_num);
 }
 
-vector<Inst_entry> IQ::deq() {
-  vector<Inst_entry> ret = scheduler(OLDEST_FIRST);
+vector<Inst_entry> IQ::deq(int ready_num) {
+
+  vector<Inst_entry> ret = scheduler(OLDEST_FIRST, ready_num);
   for (auto &e : ret) {
     if (e.valid)
       num--;
@@ -95,14 +96,21 @@ void ISU::comb() {
 
   // 出队
   int issue_idx = 0;
-  vector<Inst_entry> iss_entry = iq[0].deq();
+  int ready_num[IQ_NUM] = {0};
+
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (io.exe2iss->ready[i])
+      ready_num[fu_config[i]]++;
+  }
+
+  vector<Inst_entry> iss_entry = iq[0].deq(ready_num[0]);
   for (auto entry : iss_entry) {
-    io.iss2prf->iss_pack[issue_idx][0] = entry;
+    io.iss2prf->iss_entry[issue_idx] = entry;
     issue_idx++;
   }
 
-  io.iss2prf->iss_pack[4][0] = iq[1].deq()[0];
-  io.iss2prf->iss_pack[5][0] = iq[2].deq()[0];
+  io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0];
+  io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0];
 }
 
 void ISU::seq() {
@@ -122,7 +130,7 @@ void ISU::seq() {
   }
 
   // 唤醒
-  for (int i = 0; i < EXU_NUM; i++) {
+  for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.awake->wake[i].valid)
       for (auto &q : iq) {
         q.wake_up(io.awake->wake[i].preg);
@@ -202,255 +210,61 @@ void IQ::store_wake_up(bool valid[]) {
   }
 }
 
+Inst_entry IQ::pop_oldest(vector<Inst_entry> &valid_entry,
+                          vector<int> &valid_idx) {
+  Inst_entry ret;
+
+  if (valid_entry.size() == 0) {
+    ret.valid = false;
+    return ret;
+  }
+
+  int oldest_idx = 0;
+  int i;
+
+  for (i = 1; i < valid_entry.size(); i++) {
+    if (valid_entry[i].inst.inst_idx < valid_entry[oldest_idx].inst.inst_idx) {
+      oldest_idx = i;
+    }
+  }
+
+  ret = valid_entry[oldest_idx];
+  entry[valid_idx[oldest_idx]].valid = false;
+  valid_entry.erase(valid_entry.begin() + oldest_idx);
+  valid_idx.erase(valid_idx.begin() + oldest_idx);
+
+  return ret;
+}
+
 // 调度策略
-vector<Inst_entry> IQ::scheduler(Sched_type sched) {
+vector<Inst_entry> IQ::scheduler(Sched_type sched, int ready_num) {
 
   int issue_num = 0;
-  int youngest_idx = -1;
   int valid_num = 0;
   vector<Inst_entry> iss_entry(out_num);
+  vector<Inst_entry> valid_entry;
+  vector<int> valid_idx;
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid &&
+        (!entry[i].inst.src1_en || !entry[i].inst.src1_busy) &&
+        (!entry[i].inst.src2_en || !entry[i].inst.src2_busy) &&
+        !(entry[i].inst.op == LOAD && orR(entry[i].inst.pre_store, STQ_NUM))) {
+      valid_entry.push_back(entry[i]);
+      valid_idx.push_back(i);
+    }
+  }
 
   if (sched == OLDEST_FIRST) {
-    // 遍历查找oldest的指令
-    int oldest_idx[out_num];
-    for (int i = 0; i < out_num; i++)
-      oldest_idx[i] = -1;
-
-    for (int i = 0; i < entry_num; i++) {
-      // 发射条件 操作数准备好 依赖的STORE完成（无RAW）
-
-      if (entry[i].valid)
-        valid_num++;
-
-      if (entry[i].valid && !entry[i].inst.src1_busy &&
-          !entry[i].inst.src2_busy &&
-          !(entry[i].inst.op == LOAD &&
-            orR(entry[i].inst.pre_store, STQ_NUM))) {
-
-        // 如果oldest_idx仍有-1的空位
-        int j;
-        for (j = 0; j < out_num; j++) {
-          if (oldest_idx[j] == -1) {
-            oldest_idx[j] = i;
-            break;
-          }
-        }
-        if (j != out_num)
-          continue;
-
-        // 如果是更老的指令，则将最年轻的指令替换
-        int youngest_j;
-        youngest_idx = -1;
-        for (j = 0; j < out_num; j++) {
-          if (youngest_idx == -1) {
-            youngest_idx = oldest_idx[j];
-            youngest_j = j;
-            continue;
-          }
-
-          if (entry[oldest_idx[j]].inst.inst_idx >
-              entry[youngest_idx].inst.inst_idx) {
-            youngest_idx = oldest_idx[j];
-            youngest_j = j;
-          }
-        }
-
-        if (entry[i].inst.inst_idx < entry[youngest_idx].inst.inst_idx) {
-          oldest_idx[youngest_j] = i;
-        }
-      }
-    }
-
     for (int i = 0; i < out_num; i++) {
-      if (oldest_idx[i] != -1) {
-        iss_entry[issue_num] = entry[oldest_idx[i]];
-        entry[oldest_idx[i]].valid = false;
-        issue_num++;
+      if (issue_num < ready_num) {
+        iss_entry[i] = pop_oldest(valid_entry, valid_idx);
+        if (iss_entry[i].valid)
+          issue_num++;
+      } else {
+        iss_entry[i].valid = false;
       }
     }
   }
 
-  // 退化为顺序多发射
-  /*} else if (sched == IN_ORDER) {*/
-  // 遍历查找oldest的指令
-  /*  int oldest_idx[out_num];*/
-  /*  for (int i = 0; i < out_num; i++)*/
-  /*    oldest_idx[i] = -1;*/
-  /**/
-  /*  for (int i = 0; i < entry_num; i++) {*/
-  /*    if (entry[i].valid) {*/
-  /*      valid_num++;*/
-  /**/
-  /*      // 如果oldest_idx仍有-1的空位*/
-  /*      int j;*/
-  /*      for (j = 0; j < out_num; j++) {*/
-  /*        if (oldest_idx[j] == -1) {*/
-  /*          oldest_idx[j] = i;*/
-  /*          break;*/
-  /*        }*/
-  /*      }*/
-  /*      if (j != out_num)*/
-  /*        continue;*/
-  /**/
-  /*      // 如果是更老的指令，则将最年轻的指令替换*/
-  /*      int youngest_j;*/
-  /*      youngest_idx = -1;*/
-  /*      for (j = 0; j < out_num; j++) {*/
-  /*        if (youngest_idx == -1) {*/
-  /*          youngest_idx = oldest_idx[j];*/
-  /*          youngest_j = j;*/
-  /*          continue;*/
-  /*        }*/
-  /**/
-  /*        if (entry[oldest_idx[j]].inst.inst_idx >*/
-  /*            entry[youngest_idx].inst.inst_idx) {*/
-  /*          youngest_idx = oldest_idx[j];*/
-  /*          youngest_j = j;*/
-  /*        }*/
-  /*      }*/
-  /**/
-  /*      if (entry[i].inst.inst_idx < entry[youngest_idx].inst.inst_idx) {*/
-  /*        oldest_idx[youngest_j] = i;*/
-  /*      }*/
-  /*    }*/
-  /*  }*/
-  /**/
-  /*  for (int i = 0; i < out_num; i++) {*/
-  /*    if (oldest_idx[i] != -1) {*/
-  /*      int idx = oldest_idx[i];*/
-  /*      if (!entry[idx].inst.src1_busy && !entry[idx].inst.src2_busy &&*/
-  /*          !(entry[idx].inst.op == LOAD &&*/
-  /*            orR(entry[idx].inst.pre_store, STQ_NUM))) {*/
-  /**/
-  /*        iss_entry[issue_num] = entry[idx];*/
-  /*        issue_num++;*/
-  /*      }*/
-  /*    }*/
-  /*  }*/
-  /*} else if (sched == INDEX) {*/
-  /*  for (int i = 0; i < entry_num && issue_num < out_num; i++) {*/
-  /*    if (entry[i].valid)*/
-  /*      valid_num++;*/
-  /**/
-  /*    if (entry[i].valid && !entry[i].inst.src1_busy &&*/
-  /*        !entry[i].inst.src2_busy &&*/
-  /*        !(entry[i].inst.op == LOAD &&*/
-  /*          orR(entry[i].inst.pre_store, STQ_NUM))) {*/
-  /**/
-  /*      iss_entry[issue_num] = entry[i];*/
-  /*      issue_num++;*/
-  /*    }*/
-  /*  }*/
-  /*} else if (sched == DEPENDENCY) {*/
-  /*  int min_idx = -1;*/
-  /*  int oldest_idx[out_num];*/
-  /*  for (int i = 0; i < entry_num; i++) {*/
-  /*    if (entry[i].valid)*/
-  /*      valid_num++;*/
-  /**/
-  /*    if (entry[i].valid && !entry[i].inst.src1_busy &&*/
-  /*        !entry[i].inst.src2_busy &&*/
-  /*        !(entry[i].inst.op == LOAD &&*/
-  /*          orR(entry[i].inst.pre_store, STQ_NUM))) {*/
-  /**/
-  /*      // 如果oldest_idx仍有-1的空位*/
-  /*      int j;*/
-  /*      for (j = 0; j < out_num; j++) {*/
-  /*        if (oldest_idx[j] == -1) {*/
-  /*          oldest_idx[j] = i;*/
-  /*          break;*/
-  /*        }*/
-  /*      }*/
-  /*      if (j != out_num)*/
-  /*        continue;*/
-  /**/
-  /*      // 如果是被依赖得更少的指令，则将被依赖最少的指令替换*/
-  /*      int min_j;*/
-  /*      min_idx = -1;*/
-  /*      for (j = 0; j < out_num; j++) {*/
-  /*        if (min_idx == -1) {*/
-  /*          min_idx = oldest_idx[j];*/
-  /*          min_j = j;*/
-  /*          continue;*/
-  /*        }*/
-  /**/
-  /*        if (entry[oldest_idx[j]].inst.dependency <*/
-  /*            entry[youngest_idx].inst.dependency) {*/
-  /*          min_idx = oldest_idx[j];*/
-  /*          min_j = j;*/
-  /*        }*/
-  /*      }*/
-  /**/
-  /*      if (entry[i].inst.dependency > entry[youngest_idx].inst.dependency)
-   * {*/
-  /*        oldest_idx[min_j] = i;*/
-  /*      }*/
-  /*    }*/
-  /*  }*/
-  /**/
-  /*  for (int i = 0; i < out_num; i++) {*/
-  /*    if (oldest_idx[i] != -1) {*/
-  /*      iss_entry[issue_num] = entry[oldest_idx[i]];*/
-  /*      issue_num++;*/
-  /*    }*/
-  /*  }*/
-  /*} else if (sched == GREEDY) {*/
-  /*  for (int j = 0; j < entry_num; j++) {*/
-  /*    if (entry[j].valid)*/
-  /*      valid_num++;*/
-  /*  }*/
-  /**/
-  /*if (type == INT) {*/
-  /*  search_optimal();*/
-  /**/
-  /*  for (int i : optimal_int_idx) {*/
-  /*    for (int j = 0; j < entry_num; j++) {*/
-  /*      if (entry[j].valid && entry[j].inst.rob_idx == i) {*/
-  /*        out.inst[issue_num] = entry[j].inst;*/
-  /*        out.valid[issue_num] = true;*/
-  /*        entry_1[j].valid = false;*/
-  /*      }*/
-  /*    }*/
-  /*    issue_num++;*/
-  /*  }*/
-  /*} else if (type == LD) {*/
-  /*  for (int i : optimal_ld_idx) {*/
-  /*    for (int j = 0; j < entry_num; j++) {*/
-  /*      if (entry[j].valid && entry[j].inst.rob_idx == i) {*/
-  /*        out.inst[issue_num] = entry[j].inst;*/
-  /*        out.valid[issue_num] = true;*/
-  /*        entry_1[j].valid = false;*/
-  /*        issue_num++;*/
-  /*      }*/
-  /*    }*/
-  /*  }*/
-  /*} else {*/
-  /**/
-  /*  for (int i : optimal_st_idx) {*/
-  /*    for (int j = 0; j < entry_num; j++) {*/
-  /*      if (entry[j].valid && entry[j].inst.rob_idx == i) {*/
-  /*        out.inst[issue_num] = entry[j].inst;*/
-  /*        out.valid[issue_num] = true;*/
-  /*        entry_1[j].valid = false;*/
-  /*        issue_num++;*/
-  /*        break;*/
-  /*      }*/
-  /*    }*/
-  /*  }*/
-  /*}*/
-  /*}*/
-
-  /*valid_num = (valid_num > out_num) ? out_num : valid_num;*/
-  /*stall_num[this->type] += (valid_num - issue_num);*/
-
   return iss_entry;
 }
-
-/*void IQ::dependency(int dest_idx) {*/
-/*  for (int i = 0; i < entry_num; i++) {*/
-/*    if (entry_1[i].valid && entry_1[i].inst.dest_en &&*/
-/*        entry_1[i].inst.dest_preg == dest_idx) {*/
-/*      entry_1[i].inst.dependency++;*/
-/*    }*/
-/*  }*/
-/*}*/

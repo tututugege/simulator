@@ -1,23 +1,14 @@
 #pragma once
 #include <assert.h>
 #include <cstdint>
-#include <vector>
 using namespace std;
 
-#define MAX_SIM_TIME 30
+#define MAX_SIM_TIME 1500000
 #define INST_WAY 2
 #define ISSUE_WAY 6
-#define ALU_NUM 4
-#define AGU_NUM 2
-#define BRU_NUM 2
-#define EXU_NUM 6
 
 #define ARF_NUM 32
 #define PRF_NUM 64
-#define PRF_WR_NUM 3
-#define PRF_RD_NUM 7
-#define PRF_WR_LD_PORT 2
-
 #define MAX_BR_NUM 4
 
 #define IQ_NUM 8
@@ -26,7 +17,7 @@ using namespace std;
 #define LDQ_NUM 4
 #define STQ_NUM 4
 
-#define LOG 1
+#define LOG 0
 
 #define CONFIG_DIFFTEST
 
@@ -36,7 +27,7 @@ enum IQ_TYPE { IQ_INT, IQ_LD, IQ_ST, IQ_CSR };
 enum FU_TYPE { FU_ALU, FU_LDU, FU_STU, FU_CSR, FU_NUM };
 enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
 
-extern vector<vector<FU_TYPE>> fu_config;
+extern FU_TYPE fu_config[ISSUE_WAY];
 
 enum Inst_op {
   NONE,

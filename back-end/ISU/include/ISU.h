@@ -11,10 +11,14 @@ public:
   void wake_up(uint32_t);
   void store_wake_up(bool *);
   void clear();
-  vector<Inst_entry> scheduler(Sched_type);
-  vector<Inst_entry> deq();
+  Inst_entry pop_oldest(vector<Inst_entry> &valid_entry,
+                        vector<int> &valid_idx);
+
+  vector<Inst_entry> scheduler(Sched_type, int ready_num);
+  vector<Inst_entry> deq(int ready_num);
   void enq(Inst_info *inst);
   void dependency(int dest_idx);
+
   int num;
   int num_temp;
 
@@ -36,7 +40,7 @@ public:
   Iss_Ren *iss2ren; // ready
 
   Iss_Prf *iss2prf;
-  Exe_Iss *exe2iss; // br
+  Exe_Iss *exe2iss;
 
   Stq_Iss *stq2iss;
 
