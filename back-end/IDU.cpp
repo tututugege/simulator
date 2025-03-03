@@ -357,6 +357,8 @@ Inst_info decode(uint32_t inst) {
     info.iq_type = IQ_ST;
   } else if (is_branch(info.op)) {
     info.iq_type = IQ_BR;
+  } else {
+    info.iq_type = IQ_INT;
   }
 
   return info;

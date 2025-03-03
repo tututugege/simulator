@@ -6,6 +6,7 @@
 #include <util.h>
 
 extern Back_Top back;
+extern int commit_num;
 
 void Rename::init() {
   for (int i = 0; i < ARF_NUM; i++) {
@@ -177,12 +178,16 @@ void Rename ::seq() {
         free_vec[io.rob_commit->commit_entry[i].inst.old_dest_preg] = true;
         spec_alloc[io.rob_commit->commit_entry[i].inst.dest_preg] = false;
       }
+      commit_num++;
       if (LOG) {
         cout << "ROB commit PC 0x" << hex
              << io.rob_commit->commit_entry[i].inst.pc << " idx "
              << io.rob_commit->commit_entry[i].inst.inst_idx << endl;
       }
+#ifdef CONFIG_DIFFTSETCONFIG_DIFFTSET
+
       back.difftest(&(io.rob_commit->commit_entry[i].inst));
+#endif // CONFIG_DIFFTSET
     }
   }
 

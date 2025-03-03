@@ -34,7 +34,9 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
 #ifndef IO_version
       TAGE_do_update(in->predict_base_pc[i], in->actual_dir[i], pred_out);
 #else
-      printf("inpc %x acdir %d\n", in->predict_base_pc[i], in->actual_dir[i]);
+      if (LOG)
+        printf("inpc %x acdir %d\n", in->predict_base_pc[i], in->actual_dir[i]);
+
       C_TAGE_do_update(in->predict_base_pc[i], in->actual_dir[i], pred_out);
 #endif
       bht_update(in->predict_base_pc[i], in->actual_dir[i]);

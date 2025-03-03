@@ -25,7 +25,6 @@ void Back_Top::difftest(Inst_info *inst) {
 
   dut.pc = inst->pc_next;
   difftest_step();
-  commit_num++;
 }
 
 /*Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST)
