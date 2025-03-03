@@ -3,9 +3,9 @@
 #include <cstdint>
 using namespace std;
 
-#define MAX_SIM_TIME 1500000
-#define INST_WAY 4
-#define ISSUE_WAY 6
+#define MAX_SIM_TIME 400000
+#define FETCH_WIDTH 4
+#define ISSUE_WAY 7
 
 #define ARF_NUM 32
 #define PRF_NUM 64
@@ -17,15 +17,17 @@ using namespace std;
 #define LDQ_NUM 4
 #define STQ_NUM 4
 
-#define LOG 1
+#define LOG 0
 
 #define CONFIG_DIFFTEST
-/*#define CONFIG_BRANCHCHECK*/
+#define CONFIG_BRANCHCHECK
+/*#define CONFIG_BPU*/
+/*#define CONFIG_TRACE*/
 
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE { IQ_INT, IQ_LD, IQ_ST, IQ_CSR };
-enum FU_TYPE { FU_ALU, FU_LDU, FU_STU, FU_CSR, FU_NUM };
+enum IQ_TYPE { IQ_INT, IQ_LD, IQ_ST, IQ_BR, IQ_CSR };
+enum FU_TYPE { FU_ALU, FU_LDU, FU_STU, FU_BRU, FU_CSR, FU_NUM };
 enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
 
 extern FU_TYPE fu_config[ISSUE_WAY];

@@ -22,9 +22,9 @@ void Rename::init() {
 }
 
 void Rename::comb() {
-  // 可用寄存器个数 大于INST_WAY时为INST_WAY
+  // 可用寄存器个数 大于FETCH_WIDTH时为FETCH_WIDTH
   int num = 0;
-  for (int i = 0; i < PRF_NUM && num < INST_WAY; i++) {
+  for (int i = 0; i < PRF_NUM && num < FETCH_WIDTH; i++) {
     if (free_vec[i]) {
       alloc_reg[num] = i;
       num++;
@@ -37,7 +37,7 @@ void Rename::comb() {
   int rob_idx = io.rob2ren->enq_idx;
   int stq_idx = io.stq2ren->stq_idx;
 
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2iss->inst[i] = dec_ren_r[i].inst;
 
     if (dec_ren_r[i].valid) {
@@ -76,7 +76,7 @@ void Rename::comb() {
   }
 
   // 无waw raw的输出 读spec_RAT和busy_table
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2iss->inst[i].old_dest_preg = spec_RAT[dec_ren_r[i].inst.dest_areg];
     io.ren2iss->inst[i].src1_preg = spec_RAT[dec_ren_r[i].inst.src1_areg];
     io.ren2iss->inst[i].src2_preg = spec_RAT[dec_ren_r[i].inst.src2_areg];
@@ -87,7 +87,7 @@ void Rename::comb() {
   }
 
   // 针对RAT 和busy_table的raw的bypass
-  for (int i = 1; i < INST_WAY; i++) {
+  for (int i = 1; i < FETCH_WIDTH; i++) {
     for (int j = 0; j < i; j++) {
       if (!dec_ren_r[j].valid || !dec_ren_r[j].inst.dest_en)
         continue;
@@ -108,7 +108,7 @@ void Rename::comb() {
     }
   }
 
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2rob->inst[i] = io.ren2iss->inst[i];
     io.ren2rob->valid[i] = io.ren2iss->valid[i];
 
@@ -123,7 +123,7 @@ void Rename ::seq() {
   int alloc_num = 0;
   bool pre_stall = false;
 
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2iss->valid[i] && io.ren2iss->inst[i].op == LOAD) {
       for (int j = 0; j < STQ_NUM; j++) {
         io.ren2iss->inst[i].pre_store[j] = io.stq2ren->stq_valid[j];
@@ -177,6 +177,11 @@ void Rename ::seq() {
         free_vec[io.rob_commit->commit_entry[i].inst.old_dest_preg] = true;
         spec_alloc[io.rob_commit->commit_entry[i].inst.dest_preg] = false;
       }
+      if (LOG) {
+        cout << "ROB commit PC 0x" << hex
+             << io.rob_commit->commit_entry[i].inst.pc << " idx "
+             << io.rob_commit->commit_entry[i].inst.inst_idx << endl;
+      }
       back.difftest(&(io.rob_commit->commit_entry[i].inst));
     }
   }
@@ -209,11 +214,11 @@ void Rename ::seq() {
   }
 
   io.ren2dec->ready = true;
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2dec->ready &= io.ren2iss->dis_fire[i] || !dec_ren_r[i].valid;
   }
 
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.rob_bc->rollback || io.id_bc->mispred) {
       dec_ren_r[i].valid = false;
     } else if (io.ren2dec->ready) {

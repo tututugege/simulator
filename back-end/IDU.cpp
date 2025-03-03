@@ -27,13 +27,8 @@ void IDU::comb() {
 
   int tag = now_tag;
 
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.front2id->valid[i] && !stall) {
-      io.id2ren->inst[i].pred_br_taken = io.front2id->predict_dir[i];
-      io.id2ren->inst[i].alt_pred = io.front2id->alt_pred[i];
-      io.id2ren->inst[i].altpcpn = io.front2id->altpcpn[i];
-      io.id2ren->inst[i].pcpn = io.front2id->pcpn[i];
-      io.id2ren->inst[i].pred_br_pc = io.front2id->predict_next_fetch_address;
 
       io.id2ren->inst[i] = decode(io.front2id->inst[i]);
       io.id2ren->inst[i].tag = tag;
@@ -42,6 +37,14 @@ void IDU::comb() {
         io.id2ren->inst[i].pc_next = io.front2id->pc[i] + 4;
       io.id2ren->inst[i].dependency = 0;
       io.id2ren->inst[i].inst_idx = 2 * inst_idx + i;
+
+      // 分支预测信息
+      io.id2ren->inst[i].pred_br_taken = io.front2id->predict_dir[i];
+      io.id2ren->inst[i].alt_pred = io.front2id->alt_pred[i];
+      io.id2ren->inst[i].altpcpn = io.front2id->altpcpn[i];
+      io.id2ren->inst[i].pcpn = io.front2id->pcpn[i];
+      io.id2ren->inst[i].pred_br_pc =
+          io.front2id->predict_next_fetch_address[i];
 
       // 分配新tag 一组指令只能有一个分支指令
       if (is_branch(io.id2ren->inst[i].op) && !has_br) {
@@ -113,7 +116,7 @@ void IDU::seq() {
   }
 
   back.out.stall = false;
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     io.id2front->dec_fire[i] = io.id2ren->valid[i] && io.ren2id->ready;
     back.out.stall |= io.front2id->valid[i] && !io.id2front->dec_fire[i];
     if (io.id2front->dec_fire[i] && is_branch(io.id2ren->inst[i].op)) {
@@ -323,10 +326,8 @@ Inst_info decode(uint32_t inst) {
 
   default: {
     if (LOG) {
-      cerr << "*****************************************" << endl;
       cerr << "Error: unknown instruction: ";
       cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;
-      cerr << "*****************************************" << endl;
     }
     /*assert(0);*/
     break;
@@ -352,11 +353,10 @@ Inst_info decode(uint32_t inst) {
 
   if (info.op == LOAD) {
     info.iq_type = IQ_LD;
-
   } else if (info.op == STORE) {
     info.iq_type = IQ_ST;
-  } else {
-    info.iq_type = IQ_INT;
+  } else if (is_branch(info.op)) {
+    info.iq_type = IQ_BR;
   }
 
   return info;

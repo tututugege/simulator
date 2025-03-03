@@ -1,3 +1,5 @@
+#include "BPU/target_predictor/btb.h"
+#include "frontend.h"
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -5,21 +7,13 @@
 #include <cvt.h>
 #include <diff.h>
 #include <dlfcn.h>
+#include <front_IO.h>
+#include <front_module.h>
 #include <fstream>
 
-struct front_top_out {
-  // to back-end
-  bool FIFO_valid;
-  uint32_t pc[INST_WAY];
-  uint32_t instructions[INST_WAY];
-  bool predict_dir[INST_WAY];
-  uint32_t predict_next_fetch_address;
-  bool alt_pred[INST_WAY];
-  uint8_t altpcpn[INST_WAY];
-  uint8_t pcpn[INST_WAY];
-};
-
 int inst_idx;
+int mispred_num = 0;
+int branch_num = 0;
 
 using namespace std;
 
@@ -30,7 +24,8 @@ void store_slave_comb();
 
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
-uint32_t next_PC[2];
+uint32_t next_PC[FETCH_WIDTH];
+uint32_t fetch_PC[FETCH_WIDTH];
 
 // 后端执行
 Back_Top back;
@@ -65,6 +60,11 @@ int main(int argc, char *argv[]) {
 
   back.init();
 
+#ifdef CONFIG_TRACE
+  ofstream out_trace;
+  out_trace.open("./trace");
+#endif
+
   uint32_t number_PC;
   ofstream outfile;
   bool stall, misprediction, exception;
@@ -72,6 +72,7 @@ int main(int argc, char *argv[]) {
   stall = misprediction = exception = false;
 
   front_top_out front_out;
+  front_top_in front_in;
 
   // main loop
   for (i = 0; i < MAX_SIM_TIME; i++) {
@@ -84,13 +85,30 @@ int main(int argc, char *argv[]) {
     if (!stall || misprediction || exception) {
 
 #if defined(CONFIG_BRANCHCHECK)
-      if (i != 0) {
-        branch_check();
-      }
+
 #elif defined(CONFIG_BPU)
 
+      // reset
+      if (i == 0) {
+        front_in.reset = true;
+        front_in.FIFO_read_enable = true;
+        front_top(&front_in, &front_out);
+        front_in.reset = false;
+
+        for (int j = 0; j < FETCH_WIDTH; j++) {
+          for (int i = 0; i < COMMIT_WIDTH; i++) {
+            front_in.back2front_valid[i] = false;
+          }
+        }
+      }
+
+      // 取指令
+      front_in.FIFO_read_enable = true;
+
+      front_top(&front_in, &front_out);
+
 #else
-      for (int j = 0; j < INST_WAY; j++) {
+      for (int j = 0; j < FETCH_WIDTH; j++) {
         front_out.pc[j] = number_PC;
         front_out.FIFO_valid = true;
         front_out.instructions[j] = p_memory[front_out.pc[j] / 4];
@@ -106,20 +124,102 @@ int main(int argc, char *argv[]) {
 
 #endif
 
-      for (int j = 0; j < INST_WAY; j++) {
-        back.in.valid[j] =
-            front_out.FIFO_valid && front_out.instructions[j] != 0;
+#ifdef CONFIG_BRANCHCHECK
+
+      branch_check();
+      for (int j = 0; j < FETCH_WIDTH; j++) {
+        back.in.valid[j] = true;
+        back.in.pc[j] = fetch_PC[j];
+        back.in.inst[j] = p_memory[fetch_PC[j] >> 2];
+        if (LOG)
+          cout << "指令index:" << dec << i << " 当前PC的取值为:" << hex
+               << fetch_PC[j] << endl;
+
+        if (j != FETCH_WIDTH - 1)
+          back.in.predict_next_fetch_address[j] = fetch_PC[j + 1];
+        else
+          back.in.predict_next_fetch_address[j] = next_PC[0];
+
+        back.in.predict_dir[j] =
+            (back.in.predict_next_fetch_address[j] != fetch_PC[j] + 4);
+      }
+
+      for (int j = 0; j < FETCH_WIDTH; j++) {
+        fetch_PC[j] = next_PC[j];
+      }
+
+#ifdef CONFIG_TRACE
+      for (int j = 0; j < FETCH_WIDTH; j++) {
+        if (back.in.valid[j]) {
+          out_trace.write((char *)(&back.in.pc[j]), sizeof(uint32_t));
+          out_trace.write((char *)(&back.in.inst[j]), sizeof(uint32_t));
+          if (back.in.inst[j] == INST_EBREAK)
+            goto SIM_END;
+        }
+      }
+
+      continue;
+#endif
+
+#else
+      bool no_taken = true;
+      for (int j = 0; j < FETCH_WIDTH; j++) {
+        back.in.valid[j] = front_out.FIFO_valid && no_taken;
         back.in.pc[j] = front_out.pc[j];
+        back.in.predict_next_fetch_address[j] =
+            front_out.predict_next_fetch_address;
         back.in.inst[j] = front_out.instructions[j];
         back.in.predict_dir[j] = front_out.predict_dir[j];
         back.in.alt_pred[j] = front_out.alt_pred[j];
         back.in.altpcpn[j] = front_out.altpcpn[j];
+
+        if (front_out.predict_dir[j])
+          no_taken = false;
       }
+
+#endif
     }
 
     load_slave_comb();
     store_slave_comb();
     back.Back_comb();
+
+#ifdef CONFIG_BPU
+
+    front_in.FIFO_read_enable = false;
+    for (int i = 0; i < COMMIT_WIDTH; i++) {
+      Inst_info *inst = &back.out.commit_entry[i].inst;
+      front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
+      if (front_in.back2front_valid[i]) {
+        front_in.predict_dir[i] = inst->pred_br_taken;
+        front_in.predict_base_pc[i] = inst->pc;
+        front_in.actual_dir[i] = inst->mispred ^ inst->pred_br_taken;
+        int br_type = BR_DIRECT;
+
+        if (inst->op == JALR) {
+          if (inst->src1_areg == 1)
+            br_type = BR_RET;
+          else
+            br_type = BR_IDIRECT;
+        } else if (inst->op == JAL) {
+          if (inst->dest_areg == 1)
+            br_type = BR_CALL;
+        }
+
+        front_in.actual_br_type[i] = br_type;
+        front_in.alt_pred[i] = inst->alt_pred;
+        front_in.altpcpn[i] = inst->altpcpn;
+        front_in.pcpn[i] = inst->pcpn;
+      }
+    }
+
+    if (back.out.mispred) {
+      front_in.refetch = true;
+      front_in.refetch_address = back.out.redirect_pc;
+    } else {
+      front_in.refetch = false;
+    }
+#endif
 
     load_slave_seq();
     store_slave_seq();
@@ -135,12 +235,14 @@ int main(int argc, char *argv[]) {
     if (misprediction || exception) {
       number_PC = back.out.redirect_pc;
     } else if (stall) {
-      for (int j = 0; j < INST_WAY; j++) {
+      for (int j = 0; j < FETCH_WIDTH; j++) {
         if (back.out.fire[j])
           back.in.valid[j] = false;
       }
     }
   }
+
+SIM_END:
 
   delete[] p_memory;
 
@@ -152,6 +254,8 @@ int main(int argc, char *argv[]) {
       printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
       printf("\033[1;32mcycle num      : %ld\033[0m\n", i);
       printf("\033[1;32mipc            : %f\033[0m\n", (double)commit_num / i);
+      printf("\033[1;32mbranch num     : %d\033[0m\n", branch_num);
+      printf("\033[1;32mmispred num    : %d\033[0m\n", mispred_num);
       /*printf("\033[1;32mIQ stall num   : %d\033[0m\n", stall_num);*/
       /*printf("\033[1;32mint stall num  : %d\033[0m\n", stall_num[0]);*/
       /*printf("\033[1;32mld  stall num  : %d\033[0m\n", stall_num[1]);*/

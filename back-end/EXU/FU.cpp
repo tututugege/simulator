@@ -3,6 +3,7 @@
 #include <cstdint>
 
 extern Back_Top back;
+extern int mispred_num;
 
 enum STATE { IDLE, RECV };
 
@@ -22,11 +23,88 @@ enum STATE { IDLE, RECV };
 #define BLTU 0b110
 #define BGEU 0b111
 
+void bru(Inst_info *inst, FU &fu) {
+  fu.complete = true;
+
+  uint32_t operand1, operand2;
+  if (inst->op == JAL || inst->op == JALR)
+    operand1 = inst->pc;
+  else if (inst->op == LUI)
+    operand1 = 0;
+  else
+    operand1 = inst->src1_rdata;
+
+  if (inst->src2_is_imm) {
+    operand2 = inst->imm;
+  } else if (inst->op == JALR || inst->op == JAL) {
+    operand2 = 4;
+  } else {
+    operand2 = inst->src2_rdata;
+  }
+
+  inst->result = operand1 + operand2;
+
+  uint32_t pc_br = inst->pc + inst->imm;
+  bool br_taken = true;
+
+  assert(is_branch(inst->op));
+  if (inst->op == BR) {
+    switch (inst->func3) {
+    case BEQ:
+      inst->result = (operand1 == operand2);
+      break;
+    case BNE:
+      inst->result = (operand1 != operand2);
+      break;
+    case BGE:
+      inst->result = ((signed)operand1 >= (signed)operand2);
+      break;
+    case BLT:
+      inst->result = ((signed)operand1 < (signed)operand2);
+      break;
+    case BGEU:
+      inst->result = ((unsigned)operand1 >= (unsigned)operand2);
+      break;
+    case BLTU:
+      inst->result = ((unsigned)operand1 < (unsigned)operand2);
+      break;
+    }
+  }
+
+  switch (inst->op) {
+  case BR:
+    br_taken = inst->result;
+    break;
+  case JAL:
+    br_taken = true;
+    break;
+  case JALR:
+    br_taken = true;
+    pc_br = (inst->src1_rdata + inst->imm) & (~0x1);
+    break;
+  default:
+    br_taken = false;
+  }
+
+  if (br_taken && inst->pred_br_taken && inst->pred_br_pc == pc_br ||
+      !br_taken && !inst->pred_br_taken) {
+    inst->mispred = false;
+  } else {
+    inst->mispred = true;
+    mispred_num++;
+  }
+
+  if (br_taken)
+    inst->pc_next = pc_br;
+  else
+    inst->pc_next = inst->pc + 4;
+}
+
 void alu(Inst_info *inst, FU &fu) {
   fu.complete = true;
 
   uint32_t operand1, operand2;
-  if (inst->op == AUIPC || inst->op == JAL || inst->op == JALR)
+  if (inst->op == AUIPC)
     operand1 = inst->pc;
   else if (inst->op == LUI)
     operand1 = 0;
@@ -83,62 +161,6 @@ void alu(Inst_info *inst, FU &fu) {
     inst->result = operand1 + operand2;
     break;
   }
-  }
-
-  if (is_branch(inst->op)) {
-    uint32_t pc_br = inst->pc + inst->imm;
-    bool br_taken = true;
-
-    assert(is_branch(inst->op));
-    if (inst->op == BR) {
-      switch (inst->func3) {
-      case BEQ:
-        inst->result = (operand1 == operand2);
-        break;
-      case BNE:
-        inst->result = (operand1 != operand2);
-        break;
-      case BGE:
-        inst->result = ((signed)operand1 >= (signed)operand2);
-        break;
-      case BLT:
-        inst->result = ((signed)operand1 < (signed)operand2);
-        break;
-      case BGEU:
-        inst->result = ((unsigned)operand1 >= (unsigned)operand2);
-        break;
-      case BLTU:
-        inst->result = ((unsigned)operand1 < (unsigned)operand2);
-        break;
-      }
-    }
-
-    switch (inst->op) {
-    case BR:
-      br_taken = inst->result;
-      break;
-    case JAL:
-      br_taken = true;
-      break;
-    case JALR:
-      br_taken = true;
-      pc_br = (inst->src1_rdata + inst->imm) & (~0x1);
-      break;
-    default:
-      br_taken = false;
-    }
-
-    if (br_taken && inst->pred_br_taken && inst->pred_br_pc == pc_br ||
-        !br_taken && !inst->pred_br_taken) {
-      inst->mispred = false;
-    } else {
-      inst->mispred = true;
-    }
-
-    if (br_taken)
-      inst->pc_next = pc_br;
-    else
-      inst->pc_next = inst->pc + 4;
   }
 }
 

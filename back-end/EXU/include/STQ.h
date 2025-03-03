@@ -13,7 +13,7 @@ typedef struct {
 } STQ_IO;
 
 typedef struct {
-  bool ready[INST_WAY];
+  bool ready[FETCH_WIDTH];
 
   // 内存写端口
   bool wen;

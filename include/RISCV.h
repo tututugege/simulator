@@ -33,39 +33,6 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
 /*#define POS_CSR_MISA (CSR_MISA * 32)*/
 /**/
 
-#define BIT_WIDTH_INPUT (POS_IN_REG_B + 32)
-#define BIT_WIDTH_OUTPUT (POS_OUT_STALL + 1)
-#define BIT_WIDTH_PC 32
-#define BIT_WIDHT_OP_CODE 7
-
-#define BIT_WIDTH_REG_STATES (32 * (64 + 21)) // 64+21
-
-// input
-#define POS_IN_INST BIT_WIDTH_REG_STATES                  // 1696-1727
-#define POS_IN_INST_VALID (POS_IN_INST + 32 * (INST_WAY)) // 1696-1727
-#define POS_IN_PC (POS_IN_INST_VALID + INST_WAY)          // 1728-1760
-#define POS_IN_LOAD_DATA (POS_IN_PC + 32 * (INST_WAY))    // 1760-1791
-// 1792 asy
-#define POS_IN_ASY (POS_IN_LOAD_DATA + 32)             // 1792
-#define POS_PAGE_FAULT_INST (POS_IN_ASY + 1)           // 1793
-#define POS_PAGE_FAULT_LOAD (POS_PAGE_FAULT_INST + 1)  // 1794
-#define POS_PAGE_FAULT_STORE (POS_PAGE_FAULT_LOAD + 1) // 1795
-
-#define POS_IN_PRIVILEGE (POS_PAGE_FAULT_STORE + 1) // 1796-1797 privilege
-#define POS_IN_REG_A (POS_IN_PRIVILEGE + 2)         // 1798-1829
-#define POS_IN_REG_B (POS_IN_REG_A + 32)            // 1830-1862
-
-#define POS_OUT_PC BIT_WIDTH_REG_STATES              // 1696-1727
-#define POS_OUT_LOAD_ADDR POS_OUT_PC + 32            // 1728-1759
-#define POS_OUT_STORE (POS_OUT_LOAD_ADDR + 32)       // 1792-1823
-#define POS_OUT_STORE_DATA (POS_OUT_STORE + 1)       // 1760-1791
-#define POS_OUT_STORE_ADDR (POS_OUT_STORE_DATA + 32) // 1792-1823
-#define POS_OUT_STORE_STRB (POS_OUT_STORE_ADDR + 32) // 1792-1823
-#define POS_OUT_PRIVILEGE (POS_OUT_STORE_STRB + 4)   // 1824-1825
-#define POS_OUT_STALL (POS_OUT_PRIVILEGE + 2)        // 1824-1825
-#define POS_OUT_FIRE (POS_OUT_STALL + 1)             // 1824-1825
-#define POS_OUT_BRANCH (POS_OUT_FIRE + INST_WAY)     // 1824-1825
-
 #define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
 #define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B
 

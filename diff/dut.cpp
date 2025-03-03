@@ -10,7 +10,8 @@ enum { DIFFTEST, BRANCHCHECK };
 CPU_state dut, ref;
 bool difftest_skip = false;
 extern uint32_t *p_memory;
-extern uint32_t next_PC[2];
+extern uint32_t next_PC[FETCH_WIDTH];
+extern uint32_t fetch_PC[FETCH_WIDTH];
 
 void (*ref_difftest_memcpy[2])(uint32_t addr, void *buf, size_t n,
                                bool direction);
@@ -67,10 +68,13 @@ void init_difftest(const char *ref_so_file, long img_size) {
   }
 
 #ifdef CONFIG_BRANCHCHECK
-  ref_difftest_exec[BRANCHCHECK](1);
-  ref_difftest_regcpy[BRANCHCHECK](&ref, DIFFTEST_TO_DUT);
-  next_PC[1] = ref.pc;
-  next_PC[0] = 0x80000000;
+
+  fetch_PC[0] = 0x80000000;
+  for (int i = 0; i < FETCH_WIDTH - 1; i++) {
+    ref_difftest_exec[BRANCHCHECK](1);
+    ref_difftest_regcpy[BRANCHCHECK](&ref, DIFFTEST_TO_DUT);
+    fetch_PC[i + 1] = ref.pc;
+  }
 #endif
 }
 
@@ -123,7 +127,7 @@ void difftest_step() {
 }
 
 void branch_check() {
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     ref_difftest_exec[BRANCHCHECK](1);
     ref_difftest_regcpy[BRANCHCHECK](&ref, DIFFTEST_TO_DUT);
     next_PC[i] = ref.pc;
