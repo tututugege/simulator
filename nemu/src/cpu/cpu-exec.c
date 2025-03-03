@@ -25,7 +25,6 @@
  * You can modify this value as you want.
  */
 #define MAX_INST_TO_PRINT 10
-
 #define MAX_IRINGBUF_INST 32
 
 int check_wp();
@@ -116,17 +115,44 @@ static void exec_once(Decode *s, vaddr_t pc) {
 #endif
 }
 
+typedef struct itrace_node {
+  uint32_t pc;
+  int num;
+} itrace_node;
+
+#define CONFIG_CACHE_ITRACE
 static void execute(uint64_t n) {
   Decode s;
+  itrace_node itrace_pc = {.pc = cpu.pc, .num = 1};
+  FILE *fp = NULL;
+  extern bool gen_trace;
+  extern char *trace_path;
+
+  if (gen_trace) {
+    fp = fopen(trace_path, "w");
+  }
 
   for (; n > 0; n--) {
     exec_once(&s, cpu.pc);
+    if (gen_trace) {
+      if (s.snpc == s.dnpc) {
+        itrace_pc.num++;
+      } else {
+        fwrite(&itrace_pc, sizeof(itrace_pc), 1, fp);
+        itrace_pc.pc = cpu.pc;
+        itrace_pc.num = 1;
+      }
+    }
+
     g_nr_guest_inst++;
     trace_and_difftest(&s, cpu.pc);
     if (nemu_state.state != NEMU_RUNNING)
       break;
     IFDEF(CONFIG_DEVICE, device_update());
   }
+
+  if (gen_trace)
+    fclose(fp);
 }
 
 static void statistic() {

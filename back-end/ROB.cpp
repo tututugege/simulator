@@ -132,6 +132,10 @@ void ROB::seq() {
       /*#endif*/
       if (is_branch(io.rob_commit->commit_entry[i].inst.op))
         branch_num++;
+
+      extern bool sim_end;
+      if (io.rob_commit->commit_entry[i].inst.op == EBREAK)
+        sim_end = true;
     }
   }
 

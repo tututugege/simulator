@@ -55,15 +55,11 @@ int main(int argc, char *argv[]) {
   }
   const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
 
-  // init difftest and back-end
+#ifdef CONFIG_DIFFTEST
   init_difftest(diff_so, i * 4);
+#endif
 
   back.init();
-
-#ifdef CONFIG_TRACE
-  ofstream out_trace;
-  out_trace.open("./trace");
-#endif
 
   uint32_t number_PC;
   ofstream outfile;
@@ -147,19 +143,6 @@ int main(int argc, char *argv[]) {
       for (int j = 0; j < FETCH_WIDTH; j++) {
         fetch_PC[j] = next_PC[j];
       }
-
-#ifdef CONFIG_TRACE
-      for (int j = 0; j < FETCH_WIDTH; j++) {
-        if (back.in.valid[j]) {
-          out_trace.write((char *)(&back.in.pc[j]), sizeof(uint32_t));
-          out_trace.write((char *)(&back.in.inst[j]), sizeof(uint32_t));
-          if (back.in.inst[j] == INST_EBREAK)
-            goto SIM_END;
-        }
-      }
-
-      continue;
-#endif
 
 #else
       bool no_taken = true;
@@ -246,7 +229,6 @@ SIM_END:
 
   delete[] p_memory;
 
-  extern int stall_num[3];
   if (i != MAX_SIM_TIME) {
     if (ret == 0) {
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
@@ -256,18 +238,6 @@ SIM_END:
       printf("\033[1;32mipc            : %f\033[0m\n", (double)commit_num / i);
       printf("\033[1;32mbranch num     : %d\033[0m\n", branch_num);
       printf("\033[1;32mmispred num    : %d\033[0m\n", mispred_num);
-      /*printf("\033[1;32mIQ stall num   : %d\033[0m\n", stall_num);*/
-      /*printf("\033[1;32mint stall num  : %d\033[0m\n", stall_num[0]);*/
-      /*printf("\033[1;32mld  stall num  : %d\033[0m\n", stall_num[1]);*/
-      /*printf("\033[1;32mst  stall num  : %d\033[0m\n", stall_num[2]);*/
-
-      /*printf("\033[1;32mint inst num   : %f\033[0m\n",*/
-      /*       (double)back.int_iq.num / commit_num);*/
-      /*printf("\033[1;32mld  inst num   : %f\033[0m\n",*/
-      /*       (double)back.ld_iq.num / commit_num);*/
-      /*printf("\033[1;32mst  inst num   : %f\033[0m\n",*/
-      /*       (double)back.st_iq.num / commit_num);*/
-
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
     } else {
       cout << "\033[1;31m------------------------------\033[0m" << endl;
@@ -336,11 +306,11 @@ void store_slave_seq() {
       uint32_t waddr = back.out.waddr;
       uint32_t wstrb = back.out.wstrb;
 
-      if (waddr == 0x1c) {
-        ret = wdata;
-        sim_end = true;
-        return;
-      }
+      /*if (waddr == 0x1c) {*/
+      /*  ret = wdata;*/
+      /*  sim_end = true;*/
+      /*  return;*/
+      /*}*/
 
       uint32_t old_data = p_memory[waddr / 4];
       uint32_t mask = 0;
@@ -366,7 +336,7 @@ void store_slave_seq() {
       }
     }
   } else if (store_slave_state == RET) {
-    if (back.out.rready && back.in.rvalid) {
+    if (back.out.bready && back.in.bvalid) {
       store_slave_state = IDLE;
     }
   }

@@ -3,26 +3,23 @@
 #include <cstdint>
 using namespace std;
 
-#define MAX_SIM_TIME 400000
+#define MAX_SIM_TIME 2000000
 #define FETCH_WIDTH 4
 #define ISSUE_WAY 7
 
 #define ARF_NUM 32
-#define PRF_NUM 64
-#define MAX_BR_NUM 4
+#define PRF_NUM 96
+#define MAX_BR_NUM 16
 
-#define IQ_NUM 8
-#define ROB_NUM 16
-
-#define LDQ_NUM 4
-#define STQ_NUM 4
+#define IQ_NUM 4
+#define ROB_NUM 64
+#define STQ_NUM 8
 
 #define LOG 0
 
 #define CONFIG_DIFFTEST
 #define CONFIG_BRANCHCHECK
 /*#define CONFIG_BPU*/
-/*#define CONFIG_TRACE*/
 
 #define UART_BASE 0x10000000
 
