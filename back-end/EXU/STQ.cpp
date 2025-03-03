@@ -15,6 +15,20 @@ void STQ::comb() {
     io.stq2iss->valid[i] = false;
   }
 
+  int num = count;
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (!io.ren2stq->valid[i]) {
+      io.stq2ren->ready[i] = true;
+    } else {
+      if (num < STQ_NUM) {
+        io.stq2ren->ready[i] = true;
+        num++;
+      } else {
+        io.stq2ren->ready[i] = false;
+      }
+    }
+  }
+
   // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
     if (state == IDLE) {
@@ -49,20 +63,6 @@ void STQ::comb() {
     }
   }
 
-  int num = count;
-  for (int i = 0; i < INST_WAY; i++) {
-    if (!io.ren2stq->valid[i]) {
-      io.stq2ren->ready[i] = true;
-    } else {
-      if (num < STQ_NUM) {
-        io.stq2ren->ready[i] = true;
-        num++;
-      } else {
-        io.stq2ren->ready[i] = false;
-      }
-    }
-  }
-
   // 指令store依赖信息
   for (int i = 0; i < STQ_NUM; i++) {
     io.stq2ren->stq_valid[i] = entry[i].valid;
@@ -83,7 +83,7 @@ void STQ::comb() {
 void STQ::seq() {
 
   // 入队
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i]) {
       entry[enq_ptr].tag = io.ren2stq->tag[i];
       entry[enq_ptr].valid = true;

@@ -8,6 +8,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/EXU/CSR.cpp"
     ],
@@ -23,6 +24,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/EXU/EXU.cpp"
     ],
@@ -38,11 +40,12 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
-      "./back-end/EXU/LSU.cpp"
+      "./back-end/EXU/FU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/back-end/EXU/LSU.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/EXU/FU.cpp"
   },
   {
     "arguments": [
@@ -53,11 +56,12 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
-      "./back-end/EXU/PTAB.cpp"
+      "./back-end/EXU/STQ.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/back-end/EXU/PTAB.cpp"
+    "file": "/home/tututu/qimeng/simulator/back-end/EXU/STQ.cpp"
   },
   {
     "arguments": [
@@ -68,6 +72,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/IDU.cpp"
     ],
@@ -83,6 +88,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/ISU/DAG.cpp"
     ],
@@ -98,6 +104,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/ISU/ISU.cpp"
     ],
@@ -113,6 +120,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/PRF.cpp"
     ],
@@ -128,6 +136,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/Rename.cpp"
     ],
@@ -143,6 +152,7 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/ROB.cpp"
     ],
@@ -158,10 +168,235 @@
       "-I./back-end/EXU/include/",
       "-I./back-end/ISU/include/",
       "-I./diff/include/",
+      "-I./front-end/",
       "-g",
       "./back-end/TOP.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
     "file": "/home/tututu/qimeng/simulator/back-end/TOP.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/BPU/BPU_top.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/BPU/BPU_top.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/BPU/dir_predictor/tage_IO.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/BPU/dir_predictor/tage_IO.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/BPU/target_predictor/btb.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/BPU/target_predictor/btb.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/BPU/target_predictor/ras.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/BPU/target_predictor/ras.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/BPU/target_predictor/target_cache.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/BPU/target_predictor/target_cache.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/fifo/instruction_FIFO.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/fifo/instruction_FIFO.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/fifo/PTAB.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/fifo/PTAB.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/front_top.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/front_top.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/icache/icache.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/icache/icache.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/IO_train/IO_cvt.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/IO_train/IO_cvt.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/sequential_components/seq_comp.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/sequential_components/seq_comp.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./front-end/test_env.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/test_env.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./diff/dut.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/diff/dut.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/ISU/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-g",
+      "./rv_simu_mmu.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/rv_simu_mmu.cpp"
   }
 ]

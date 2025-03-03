@@ -1,4 +1,5 @@
 #pragma once
+#include "frontend.h"
 #include <CSR.h>
 #include <EXU.h>
 #include <IDU.h>
@@ -11,14 +12,14 @@
 #include <cstdint>
 
 typedef struct {
-  uint32_t inst[INST_WAY];
-  uint32_t pc[INST_WAY];
-  bool valid[INST_WAY];
-  bool predict_dir[INST_WAY];
-  bool alt_pred[INST_WAY];
-  uint8_t altpcpn[INST_WAY];
-  uint8_t pcpn[INST_WAY];
-  uint32_t predict_next_fetch_address;
+  uint32_t inst[FETCH_WIDTH];
+  uint32_t pc[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool predict_dir[FETCH_WIDTH];
+  bool alt_pred[FETCH_WIDTH];
+  uint8_t altpcpn[FETCH_WIDTH];
+  uint8_t pcpn[FETCH_WIDTH];
+  uint32_t predict_next_fetch_address[FETCH_WIDTH];
 
   // ar
   bool arready;
@@ -39,8 +40,9 @@ typedef struct {
   bool mispred;
   bool stall;
   bool exception;
-  bool fire[INST_WAY];
+  bool fire[FETCH_WIDTH];
   uint32_t redirect_pc;
+  Inst_entry commit_entry[COMMIT_WIDTH];
 
   // ar
   uint32_t arvalid; // out

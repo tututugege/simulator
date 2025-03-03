@@ -2,14 +2,17 @@
 #include <config.h>
 
 void alu(Inst_info *inst, FU &fu);
+void bru(Inst_info *inst, FU &fu);
 void ldu_comb(Inst_info *inst, FU &fu);
 void ldu_seq(Inst_info *inst, FU &fu);
 void stu_comb(Inst_info *inst, FU &fu);
 
-FU_TYPE fu_config[ISSUE_WAY] = {FU_ALU, FU_ALU, FU_ALU, FU_ALU, FU_LDU, FU_STU};
+FU_TYPE fu_config[ISSUE_WAY] = {FU_ALU, FU_ALU, FU_ALU, FU_ALU,
+                                FU_LDU, FU_STU, FU_BRU};
 
-void (*fu_comb[FU_NUM])(Inst_info *, FU &) = {alu, ldu_comb, stu_comb};
-void (*fu_seq[FU_NUM])(Inst_info *, FU &) = {nullptr, ldu_seq, nullptr};
+void (*fu_comb[FU_NUM])(Inst_info *, FU &) = {alu, ldu_comb, stu_comb, bru};
+void (*fu_seq[FU_NUM])(Inst_info *, FU &) = {nullptr, ldu_seq, nullptr,
+                                             nullptr};
 
 void EXU::init() {
   for (int i = 0; i < ISSUE_WAY; i++) {

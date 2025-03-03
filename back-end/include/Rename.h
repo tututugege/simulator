@@ -37,7 +37,7 @@ public:
   int arch_RAT[ARF_NUM];
 
 private:
-  Inst_entry dec_ren_r[INST_WAY];
+  Inst_entry dec_ren_r[FETCH_WIDTH];
 
   // register
   uint32_t spec_RAT[ARF_NUM];
@@ -48,5 +48,5 @@ private:
   bool spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
   // 内部信号
-  uint32_t alloc_reg[INST_WAY];
+  uint32_t alloc_reg[FETCH_WIDTH];
 };

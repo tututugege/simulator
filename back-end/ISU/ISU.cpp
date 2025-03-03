@@ -30,7 +30,7 @@ void ISU::init() {
   add_iq(16, 4, IQ_INT);
   add_iq(16, 1, IQ_LD);
   add_iq(16, 1, IQ_ST);
-  add_iq(16, 1, IQ_CSR);
+  add_iq(16, 1, IQ_BR);
 }
 
 void IQ::enq(Inst_info *inst) {
@@ -79,7 +79,7 @@ vector<Inst_entry> IQ::deq(int ready_num) {
 void ISU::comb() {
 
   // ready
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2iss->valid[i]) {
       if (iq[io.ren2iss->inst[i].iq_type].num_temp <
           iq[io.ren2iss->inst[i].iq_type].entry_num) {
@@ -111,11 +111,12 @@ void ISU::comb() {
 
   io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0];
   io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0];
+  io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0];
 }
 
 void ISU::seq() {
   // 入队
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2iss->dis_fire[i]) {
       for (auto &q : iq) {
         if (q.type == io.ren2iss->inst[i].iq_type) {
@@ -152,40 +153,11 @@ void ISU::seq() {
   }
 }
 
-/*void IQ::comb_enq() {*/
-/**/
-/**/
-// 异常处理
-/*if (in.rollback) {*/
-/*  for (int j = 0; j < entry_num; j++) {*/
-/*    entry_1[j].valid = false;*/
-/*  }*/
-/*  return;*/
-/*}*/
-/**/
-/*// 进入iq*/
-/*for (int i = 0; i < INST_WAY; i++) {*/
-/*  if (in.dis_fire[i]) {*/
-/*    if (in.inst[i].src1_en) {*/
-/*      back.int_iq.dependency(in.inst[i].src1_preg);*/
-/*      back.ld_iq.dependency(in.inst[i].src1_preg);*/
-/*    }*/
-/*    if (in.inst[i].src2_en) {*/
-/*      back.int_iq.dependency(in.inst[i].src2_preg);*/
-/*      back.ld_iq.dependency(in.inst[i].src2_preg);*/
-/*    }*/
-/**/
-/*    entry_1[alloc_idx[i]].inst = in.inst[i];*/
-/*    entry_1[alloc_idx[i]].valid = true;*/
-/*    num++;*/
-/*  }*/
-/*}*/
-/*}*/
-
 void IQ::br_clear(uint32_t br_mask) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid && ((1 << entry[i].inst.tag) & br_mask)) {
       entry[i].valid = false;
+      num--;
     }
   }
 }

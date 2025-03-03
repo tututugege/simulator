@@ -1,4 +1,5 @@
 #include "IO.h"
+#include "frontend.h"
 #include <DAG.h>
 #include <RISCV.h>
 #include <ROB.h>
@@ -9,6 +10,7 @@
 #include <util.h>
 
 extern int commit_num;
+extern int branch_num;
 
 // 提交指令
 void ROB::comb() {
@@ -22,7 +24,7 @@ void ROB::comb() {
   }
 
   int num = count;
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (csr_stall || exception_stall) {
       io.rob2ren->ready[i] = false;
     } else {
@@ -39,7 +41,7 @@ void ROB::comb() {
 
   int commit_num = 0;
   io.rob_bc->rollback = io.rob_bc->exception = io.rob_bc->mret = false;
-  for (int i = 0; i < ISSUE_WAY; i++) {
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
     int idx = (deq_ptr + i) % ROB_NUM;
     io.rob_commit->commit_entry[i].inst = entry[idx].inst;
     if (i == 0) {
@@ -71,7 +73,7 @@ void ROB::comb() {
   deq_ptr = (deq_ptr + commit_num) % ROB_NUM;
   count -= commit_num;
 
-  for (int i = commit_num; i < ISSUE_WAY; i++) {
+  for (int i = commit_num; i < COMMIT_WIDTH; i++) {
     io.rob_commit->commit_entry[i].valid = false;
   }
 }
@@ -107,7 +109,7 @@ void ROB::seq() {
   }
 
   // 入队
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2rob->dis_fire[i]) {
       entry[enq_ptr].valid = true;
       entry[enq_ptr].inst = io.ren2rob->inst[i];
@@ -119,7 +121,7 @@ void ROB::seq() {
     }
   }
 
-  for (int i = 0; i < ISSUE_WAY; i++) {
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
       /*if (io.rob_commit->commit_entry[i].inst.op == STORE)*/
       /*  dag_del_node(io.rob_commit->commit_entry[i].inst.rob_idx);*/
@@ -128,15 +130,12 @@ void ROB::seq() {
        * !diff[io.rob_commit->commit_entry[i].inst.rob_idx];*/
       /*      back.difftest(&io.rob_commit->commit_entry[i].inst);*/
       /*#endif*/
-      if (LOG) {
-        cout << "ROB commit PC 0x" << hex
-             << io.rob_commit->commit_entry[i].inst.pc << " idx "
-             << io.rob_commit->commit_entry[i].inst.inst_idx << endl;
-      }
+      if (is_branch(io.rob_commit->commit_entry[i].inst.op))
+        branch_num++;
     }
   }
 
-  /*for (int i = 0; i < INST_WAY; i++) {*/
+  /*for (int i = 0; i < FETCH_WIDTH; i++) {*/
   /*  if (io.ren2rob->dis_fire[i])*/
   /*  dag_add_node(&entry.data[entry.to_sram.waddr[i]]);*/
   /*}*/

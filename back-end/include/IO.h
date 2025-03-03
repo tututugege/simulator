@@ -14,8 +14,8 @@ typedef struct {
 } STQ_entry;
 
 typedef struct {
-  Inst_info inst[INST_WAY];
-  bool valid[INST_WAY];
+  Inst_info inst[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
 } Dec_Ren;
 
 typedef struct {
@@ -23,19 +23,19 @@ typedef struct {
 } Ren_Dec;
 
 typedef struct {
-  bool dec_fire[INST_WAY];
+  bool dec_fire[FETCH_WIDTH];
   bool ready;
 } Dec_Front;
 
 typedef struct {
-  uint32_t inst[INST_WAY];
-  uint32_t pc[INST_WAY];
-  bool valid[INST_WAY];
-  bool predict_dir[INST_WAY];
-  bool alt_pred[INST_WAY];
-  uint8_t altpcpn[INST_WAY];
-  uint8_t pcpn[INST_WAY];
-  uint32_t predict_next_fetch_address;
+  uint32_t inst[FETCH_WIDTH];
+  uint32_t pc[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool predict_dir[FETCH_WIDTH];
+  bool alt_pred[FETCH_WIDTH];
+  uint8_t altpcpn[FETCH_WIDTH];
+  uint8_t pcpn[FETCH_WIDTH];
+  uint32_t predict_next_fetch_address[FETCH_WIDTH];
 
 } Front_Dec;
 
@@ -50,14 +50,14 @@ typedef struct {
 } Rob_Commit;
 
 typedef struct {
-  bool ready[INST_WAY];
+  bool ready[FETCH_WIDTH];
   uint32_t enq_idx;
 } Rob_Ren;
 
 typedef struct {
-  Inst_info inst[INST_WAY];
-  bool valid[INST_WAY];
-  bool dis_fire[INST_WAY];
+  Inst_info inst[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool dis_fire[FETCH_WIDTH];
 } Ren_Rob;
 
 typedef struct {
@@ -65,13 +65,13 @@ typedef struct {
 } Prf_Awake;
 
 typedef struct {
-  Inst_info inst[INST_WAY];
-  bool valid[INST_WAY];
-  bool dis_fire[INST_WAY];
+  Inst_info inst[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool dis_fire[FETCH_WIDTH];
 } Ren_Iss;
 
 typedef struct {
-  bool ready[INST_WAY];
+  bool ready[FETCH_WIDTH];
 } Iss_Ren;
 
 typedef struct {
@@ -113,13 +113,13 @@ typedef struct {
 } Prf_Dec;
 
 typedef struct {
-  uint32_t tag[INST_WAY];
-  bool valid[INST_WAY];
-  bool dis_fire[INST_WAY];
+  uint32_t tag[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool dis_fire[FETCH_WIDTH];
 } Ren_Stq;
 
 typedef struct {
-  bool ready[INST_WAY];
+  bool ready[FETCH_WIDTH];
   bool stq_valid[STQ_NUM];
   uint32_t stq_idx;
 } Stq_Ren;

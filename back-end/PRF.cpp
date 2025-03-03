@@ -12,17 +12,16 @@ void PRF::comb() {
   // 根据分支结果向前端返回信息
 
   io.prf2id->mispred = false;
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (inst_r[i].valid && is_branch(inst_r[i].inst.op) &&
-        inst_r[i].inst.mispred) {
+  if (inst_r[6].valid && is_branch(inst_r[6].inst.op) &&
+      inst_r[6].inst.mispred) {
 
-      io.prf2id->mispred = true;
-      io.prf2id->redirect_pc = inst_r[i].inst.pc_next;
-      io.prf2id->br_tag = inst_r[i].inst.tag;
+    io.prf2id->mispred = true;
+    io.prf2id->redirect_pc = inst_r[6].inst.pc_next;
+    io.prf2id->br_tag = inst_r[6].inst.tag;
 
+    if (LOG)
       cout << "misprediction redirect_pc 0x" << hex << io.prf2id->redirect_pc
            << endl;
-    }
   }
 
   for (int i = 0; i < ISSUE_WAY; i++) {

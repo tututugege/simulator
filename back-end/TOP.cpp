@@ -1,5 +1,6 @@
 #include "CSR.h"
 #include "IO.h"
+#include "frontend.h"
 #include <DAG.h>
 #include <RISCV.h>
 #include <TOP.h>
@@ -134,10 +135,16 @@ void Back_Top::init() {
 
 void Back_Top::Back_comb() {
   // 输出提交的指令
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     idu.io.front2id->valid[i] = in.valid[i];
     idu.io.front2id->pc[i] = in.pc[i];
     idu.io.front2id->inst[i] = in.inst[i];
+    idu.io.front2id->predict_dir[i] = in.predict_dir[i];
+    idu.io.front2id->alt_pred[i] = in.alt_pred[i];
+    idu.io.front2id->altpcpn[i] = in.altpcpn[i];
+    idu.io.front2id->pcpn[i] = in.pcpn[i];
+    idu.io.front2id->predict_next_fetch_address[i] =
+        in.predict_next_fetch_address[i];
   }
 
   // 顺序：rename -> stq/rob/isu
@@ -151,6 +158,10 @@ void Back_Top::Back_comb() {
   idu.comb();
   back.out.mispred = prf.io.prf2id->mispred;
   back.out.redirect_pc = prf.io.prf2id->redirect_pc;
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
+    back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
+  }
+  back.out.redirect_pc = prf.io.prf2id->redirect_pc;
 }
 
 void Back_Top::Back_seq() {
@@ -163,7 +174,7 @@ void Back_Top::Back_seq() {
   rob.seq();
   stq.seq();
 
-  for (int i = 0; i < INST_WAY; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.id2front->dec_fire[i];
   }
 }
