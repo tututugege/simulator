@@ -2,17 +2,42 @@
 
 #include "config.h"
 #include "frontend.h"
+#include "util.h"
 #include <cstdint>
 
-typedef struct {
-  uint32_t addr;
-  uint32_t size;
-  uint32_t data;
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// LSU
 
-  bool compelete;
+typedef struct {
+  op_t ld_st;
+  mem_sz_t mem_sz;
+  int dst_preg;
+  bool sign;
   bool valid;
-  uint32_t tag;
-} STQ_entry;
+} Ren_Lsu;
+
+typedef struct {
+  int lsq_entry;
+  bool valid;
+  bool ready;
+} Lsu_Ren;
+
+typedef struct {
+  bool valid;
+  op_t op;
+  uint32_t vtag;
+  uint32_t index;
+  uint32_t word;
+  uint32_t offset;
+  uint8_t wdata_b4_shf[4];
+  int lsq_entry;
+} Prf_Lsu;
+
+typedef struct {
+  bool ready;
+} Lsu_Prf;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 typedef struct {
   Inst_info inst[FETCH_WIDTH];
@@ -37,7 +62,6 @@ typedef struct {
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
-
 } Front_Dec;
 
 typedef struct {
@@ -113,24 +137,3 @@ typedef struct {
   uint32_t redirect_pc;
   uint32_t br_tag;
 } Prf_Dec;
-
-typedef struct {
-  uint32_t tag[FETCH_WIDTH];
-  bool valid[FETCH_WIDTH];
-  bool dis_fire[FETCH_WIDTH];
-} Ren_Stq;
-
-typedef struct {
-  bool ready[FETCH_WIDTH];
-  bool stq_valid[STQ_NUM];
-  uint32_t stq_idx;
-} Stq_Ren;
-
-typedef struct {
-  // 实际写入
-  Inst_entry entry;
-} Exe_Stq;
-
-typedef struct {
-  bool valid[STQ_NUM];
-} Stq_Iss;

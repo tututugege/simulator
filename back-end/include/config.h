@@ -22,8 +22,8 @@ using namespace std;
 
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE { IQ_INT, IQ_LD, IQ_ST, IQ_BR, IQ_CSR };
-enum FU_TYPE { FU_ALU, FU_LDU, FU_STU, FU_BRU, FU_CSR, FU_NUM };
+enum IQ_TYPE { IQ_INT, IQ_BR, IQ_LD, IQ_ST, IQ_CSR };
+enum FU_TYPE { FU_ALU, FU_BRU, FU_LDU, FU_STU, FU_CSR, FU_NUM };
 enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
 
 extern FU_TYPE fu_config[ISSUE_WAY];
@@ -73,10 +73,9 @@ typedef struct Inst_info {
   uint32_t imm;
   uint32_t pc;
   uint32_t tag;
-  uint32_t rob_idx;
-  uint32_t stq_idx;
-  bool pre_store[STQ_NUM];
-  uint32_t csr_idx;
+  int rob_idx;
+  int csr_idx;
+  int lsu_idx;
 
   // 调度特征
   int inst_idx;

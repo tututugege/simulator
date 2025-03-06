@@ -37,18 +37,11 @@ void Rename::comb() {
   int alloc_num = 0;
   bool stall = false;
   int rob_idx = io.rob2ren->enq_idx;
-  int stq_idx = io.stq2ren->stq_idx;
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2iss->inst[i] = dec_ren_r[i].inst;
 
     if (dec_ren_r[i].valid) {
-      // 分配stq_idx 和 rob_idx
-      if (io.ren2iss->inst[i].op == STORE) {
-        io.ren2iss->inst[i].stq_idx = stq_idx;
-        LOOP_INC(stq_idx, STQ_NUM);
-      }
-
       io.ren2iss->inst[i].rob_idx = rob_idx;
       LOOP_INC(rob_idx, ROB_NUM);
     }
@@ -119,9 +112,20 @@ void Rename::comb() {
     io.ren2rob->inst[i] = io.ren2iss->inst[i];
     io.ren2rob->valid[i] = io.ren2iss->valid[i];
 
-    io.ren2stq->tag[i] = io.ren2iss->inst[i].tag;
-    io.ren2stq->valid[i] =
-        io.ren2iss->valid[i] && io.ren2iss->inst[i].op == STORE;
+    // LSU: FETCH_WIDTH = 1
+    io.ren2lsu->valid =
+        io.ren2iss->valid[i] &&
+        (io.ren2iss->inst[i].op == STORE || io.ren2iss->inst[i].op == LOAD);
+    io.ren2lsu->ld_st = (io.ren2iss->inst[i].op == STORE) ? OP_ST : OP_LD;
+    io.ren2lsu->sign = (io.ren2iss->inst[i].func3 & 0b100) == 0;
+    if (io.ren2iss->inst[i].func3 == 0b00) {
+      io.ren2lsu->mem_sz = BYTE;
+    } else if (io.ren2iss->inst[i].func3 == 0b01) {
+      io.ren2lsu->mem_sz = HALF;
+    } else {
+      io.ren2lsu->mem_sz = WORD;
+    }
+    io.ren2lsu->dst_preg = io.ren2iss->inst[i].dest_preg;
   }
 }
 
@@ -131,28 +135,16 @@ void Rename ::seq() {
   bool pre_stall = false;
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (io.ren2iss->valid[i] && io.ren2iss->inst[i].op == LOAD) {
-      for (int j = 0; j < STQ_NUM; j++) {
-        io.ren2iss->inst[i].pre_store[j] = io.stq2ren->stq_valid[j];
-      }
-
-      // 同一组store 和load
-      for (int j = 0; j < i; j++) {
-        if (io.ren2iss->valid[j] && io.ren2iss->inst[j].op == STORE) {
-          int idx = io.ren2iss->inst[j].stq_idx;
-          io.ren2iss->inst[i].pre_store[idx] = true;
-        }
-      }
-    }
 
     io.ren2iss->dis_fire[i] = (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
                               (io.ren2iss->inst[i].op != STORE ||
-                               io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
+                               // LSU:
+                               io.ren2lsu->valid && io.lsu2ren->ready) &&
                               (io.ren2rob->valid[i] && io.rob2ren->ready[i]) &&
                               !pre_stall && !io.id_bc->mispred;
 
+    io.ren2iss->inst[i].lsu_idx = io.lsu2ren->lsq_entry;
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
-    io.ren2stq->dis_fire[i] = io.ren2iss->dis_fire[i];
     pre_stall = dec_ren_r[i].valid && !io.ren2iss->dis_fire[i];
 
     if (io.ren2iss->dis_fire[i] && io.ren2iss->inst[i].dest_en) {

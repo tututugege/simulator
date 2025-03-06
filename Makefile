@@ -6,6 +6,9 @@ CXXINCLUDE = -I./include/
 CXXINCLUDE += -I./back-end/include/
 CXXINCLUDE += -I./back-end/EXU/include/
 CXXINCLUDE += -I./back-end/ISU/include/
+CXXINCLUDE += -I./back-end/enlightment3-memory/src/include/
+CXXINCLUDE += -I./back-end/enlightment3-memory/src/component/include/
+CXXINCLUDE += -I./back-end/enlightment3-memory/src/arbiter/include/
 CXXINCLUDE += -I./diff/include/
 CXXINCLUDE += -I./front-end/
 

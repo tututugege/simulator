@@ -1,3 +1,4 @@
+#pragma once
 #include "config.h"
 #define LOOP_INC(idx, length) idx = (idx + 1) % (length)
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
@@ -26,3 +27,23 @@ inline bool andR(bool *in, int num) {
     out = out && in[i];
   return out;
 }
+
+enum mem_sz_t {
+  BYTE,
+  HALF,
+  WORD,
+};
+
+enum src_t { RS, LDQ, STQ };
+
+enum op_t { OP_LD, OP_ST };
+
+struct lsq_alloc_req {
+  op_t op_in;
+  mem_sz_t mem_sz_in;
+  int dst_preg_in;
+  bool sign_in;
+  int lsq_entry_out;
+  bool valid_in;
+  bool ready_in;
+};

@@ -39,7 +39,7 @@ Dec_Broadcast id_bc;
 Ren_Dec ren2id;
 Ren_Iss ren2iss;
 Ren_Rob ren2rob;
-Ren_Stq ren2stq;
+Ren_Lsu ren2lsu; // LSU new
 
 Iss_Ren iss2ren;
 Iss_Prf iss2prf;
@@ -48,17 +48,14 @@ Prf_Exe prf2exe;
 Prf_Rob prf2rob;
 Prf_Awake awake;
 Prf_Dec prf2id;
+Prf_Lsu prf2lsu; // LSU new
 
 Exe_Prf exe2prf;
-Exe_Stq exe2stq;
 Exe_Iss exe2iss;
 
 Rob_Ren rob2ren;
 Rob_Broadcast rob_bc;
 Rob_Commit rob_commit;
-
-Stq_Ren stq2ren;
-Stq_Iss stq2iss;
 
 void Back_Top::init() {
 
@@ -78,8 +75,7 @@ void Back_Top::init() {
   rename.io.id_bc = &id_bc;
   rename.io.rob2ren = &rob2ren;
   rename.io.ren2rob = &ren2rob;
-  rename.io.ren2stq = &ren2stq;
-  rename.io.stq2ren = &stq2ren;
+  rename.io.ren2lsu = &ren2lsu;
   rename.io.rob_bc = &rob_bc;
   rename.io.rob_commit = &rob_commit;
   rename.io.awake = &awake;
@@ -90,7 +86,6 @@ void Back_Top::init() {
   isu.io.iss2ren = &iss2ren;
   isu.io.iss2prf = &iss2prf;
   isu.io.awake = &awake;
-  isu.io.stq2iss = &stq2iss;
   isu.io.exe2iss = &exe2iss;
 
   prf.io.iss2prf = &iss2prf;
@@ -100,11 +95,11 @@ void Back_Top::init() {
   prf.io.prf_awake = &awake;
   prf.io.prf2id = &prf2id;
   prf.io.id_bc = &id_bc;
+  prf.io.prf2lsu = &prf2lsu;
 
   exu.io.prf2exe = &prf2exe;
   exu.io.id_bc = &id_bc;
   exu.io.exe2prf = &exe2prf;
-  exu.io.exe2stq = &exe2stq;
   exu.io.exe2iss = &exe2iss;
 
   rob.io.ren2rob = &ren2rob;
@@ -114,13 +109,6 @@ void Back_Top::init() {
   rob.io.id_bc = &id_bc;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2ren = &rob2ren;
-
-  stq.io.exe2stq = &exe2stq;
-  stq.io.rob_commit = &rob_commit;
-  stq.io.ren2stq = &ren2stq;
-  stq.io.stq2iss = &stq2iss;
-  stq.io.stq2ren = &stq2ren;
-  stq.io.id_bc = &id_bc;
 
   idu.init();
   rename.init();
@@ -146,10 +134,10 @@ void Back_Top::Back_comb() {
         in.predict_next_fetch_address[i];
   }
 
-  // 顺序：rename -> stq/rob/isu
+  // 顺序：rename -> mem/rob/isu
   // exu -> iss -> prf
   rename.comb();
-  stq.comb();
+  mem.comb();
   rob.comb();
   exu.comb();
   isu.comb();
@@ -164,14 +152,13 @@ void Back_Top::Back_comb() {
 }
 
 void Back_Top::Back_seq() {
-  // 更新Reg SRAM
+  //  顺序： rename -> idu isu
   rename.seq();
   idu.seq();
   isu.seq();
   prf.seq();
   exu.seq();
   rob.seq();
-  stq.seq();
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.id2front->dec_fire[i];

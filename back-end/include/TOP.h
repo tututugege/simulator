@@ -1,13 +1,14 @@
 #pragma once
+#include "MemTop.h"
 #include "frontend.h"
 #include <CSR.h>
 #include <EXU.h>
 #include <IDU.h>
 #include <ISU.h>
+#include <MemTop.h>
 #include <PRF.h>
 #include <ROB.h>
 #include <Rename.h>
-#include <STQ.h>
 #include <config.h>
 #include <cstdint>
 
@@ -70,8 +71,8 @@ private:
   PRF prf;
   EXU exu;
   CSRU csru;
-  STQ stq;
   ROB rob;
+  Mem_Top mem;
 
 public:
   Back_in in;

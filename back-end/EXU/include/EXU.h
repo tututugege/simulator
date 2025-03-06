@@ -9,7 +9,6 @@ public:
   Dec_Broadcast *id_bc;
 
   Exe_Prf *exe2prf;
-  Exe_Stq *exe2stq;
   Exe_Iss *exe2iss;
 };
 

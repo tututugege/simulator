@@ -4,6 +4,8 @@
 
 class PRF_IO {
 public:
+  Prf_Lsu *prf2lsu;
+  Lsu_Prf *lsu2prf;
   Iss_Prf *iss2prf;
   Prf_Exe *prf2exe;
   Exe_Prf *exe2prf;
