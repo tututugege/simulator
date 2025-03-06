@@ -42,21 +42,21 @@ int main(int argc, char *argv[]) {
   ifstream inst_data(argv[argc - 1], ios::in);
 
   char **ptr = NULL;
-  long i = 0;
 
   // init physical memory
-  for (i = 0; i < PHYSICAL_MEMORY_LENGTH; i++) {
+  long idx = 0;
+  for (idx = 0; idx < PHYSICAL_MEMORY_LENGTH; idx++) {
     if (inst_data.eof())
       break;
     char inst_data_line[20];
     inst_data.getline(inst_data_line, 100);
     uint32_t inst_32b = strtol(inst_data_line, ptr, 16);
-    p_memory[i + POS_MEMORY_SHIFT] = inst_32b;
+    p_memory[idx + POS_MEMORY_SHIFT] = inst_32b;
   }
   const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
 
 #ifdef CONFIG_DIFFTEST
-  init_difftest(diff_so, i * 4);
+  init_difftest(diff_so, idx * 4);
 #endif
 
   back.init();
@@ -70,9 +70,10 @@ int main(int argc, char *argv[]) {
   front_top_out front_out;
   front_top_in front_in;
 
+  int sim_time;
   // main loop
-  for (i = 0; i < MAX_SIM_TIME; i++) {
-    inst_idx = i;
+  for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
+    inst_idx = sim_time;
 
     if (LOG)
       cout << "****************************************************************"
@@ -85,7 +86,7 @@ int main(int argc, char *argv[]) {
 #elif defined(CONFIG_BPU)
 
       // reset
-      if (i == 0) {
+      if (sim_time == 0) {
         front_in.reset = true;
         front_in.FIFO_read_enable = true;
         front_top(&front_in, &front_out);
@@ -109,7 +110,7 @@ int main(int argc, char *argv[]) {
         front_out.FIFO_valid = true;
         front_out.instructions[j] = p_memory[front_out.pc[j] / 4];
         if (LOG)
-          cout << "指令index:" << dec << i << " 当前PC的取值为:" << hex
+          cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
                << number_PC << endl;
 
         front_out.predict_dir[j] = false;
@@ -128,7 +129,7 @@ int main(int argc, char *argv[]) {
         back.in.pc[j] = fetch_PC[j];
         back.in.inst[j] = p_memory[fetch_PC[j] >> 2];
         if (LOG)
-          cout << "指令index:" << dec << i << " 当前PC的取值为:" << hex
+          cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
                << fetch_PC[j] << endl;
 
         if (j != FETCH_WIDTH - 1)
@@ -152,14 +153,15 @@ int main(int argc, char *argv[]) {
         back.in.predict_next_fetch_address[j] =
             front_out.predict_next_fetch_address;
         back.in.inst[j] = front_out.instructions[j];
+
         back.in.predict_dir[j] = front_out.predict_dir[j];
         back.in.alt_pred[j] = front_out.alt_pred[j];
         back.in.altpcpn[j] = front_out.altpcpn[j];
+        back.in.pcpn[j] = front_out.pcpn[j];
 
         if (front_out.predict_dir[j])
           no_taken = false;
       }
-
 #endif
     }
 
@@ -176,7 +178,9 @@ int main(int argc, char *argv[]) {
       if (front_in.back2front_valid[i]) {
         front_in.predict_dir[i] = inst->pred_br_taken;
         front_in.predict_base_pc[i] = inst->pc;
-        front_in.actual_dir[i] = inst->mispred ^ inst->pred_br_taken;
+        /*cout << hex << "commit pc " << inst->pc << endl;*/
+        front_in.actual_dir[i] = inst->br_taken;
+        front_in.actual_target[i] = inst->pc_next;
         int br_type = BR_DIRECT;
 
         if (inst->op == JALR) {
@@ -199,6 +203,7 @@ int main(int argc, char *argv[]) {
     if (back.out.mispred) {
       front_in.refetch = true;
       front_in.refetch_address = back.out.redirect_pc;
+      /*cout << hex << "re pc " << front_in.refetch_address << endl;*/
     } else {
       front_in.refetch = false;
     }
@@ -228,17 +233,29 @@ int main(int argc, char *argv[]) {
 SIM_END:
 
   delete[] p_memory;
+  extern int tage_cnt;
+  extern int tage_miss;
+  extern int dir_ok_addr_error;
+  extern int pred_ok;
+  extern int taken_num;
 
-  if (i != MAX_SIM_TIME) {
+  if (sim_time != MAX_SIM_TIME) {
     if (ret == 0) {
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
       cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
       printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
-      printf("\033[1;32mcycle num      : %ld\033[0m\n", i);
-      printf("\033[1;32mipc            : %f\033[0m\n", (double)commit_num / i);
+      printf("\033[1;32mcycle num      : %d\033[0m\n", sim_time);
+      printf("\033[1;32mipc            : %f\033[0m\n",
+             (double)commit_num / sim_time);
       printf("\033[1;32mbranch num     : %d\033[0m\n", branch_num);
       printf("\033[1;32mmispred num    : %d\033[0m\n", mispred_num);
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
+
+      cout << "addr error :" << dec << dir_ok_addr_error << endl;
+      /*cout << "tage cnt :" << dec << tage_cnt << endl;*/
+      /*cout << "tage miss :" << dec << tage_miss << endl;*/
+      /*cout << "pred ok :" << dec << pred_ok << endl;*/
+      /*cout << "taken_num:" << dec << taken_num << endl;*/
     } else {
       cout << "\033[1;31m------------------------------\033[0m" << endl;
       cout << "\033[1;31mFail!!!!QAQ\033[0m" << endl;

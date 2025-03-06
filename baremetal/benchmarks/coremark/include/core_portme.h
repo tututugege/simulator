@@ -8,7 +8,6 @@
 
 #include <am.h>
 #include <klib-macros.h>
-#include <klib.h>
 
 #define ITERATIONS 1
 #define MEM_METHOD MEM_STATIC
@@ -92,7 +91,7 @@ typedef size_t ee_size_t;
         This macro is used to align an offset to point to a 32b value. It is
    used in the Matrix algorithm to initialize the input memory blocks.
 */
-#define align_mem(x) (void *)(4 + (((unsigned long)(x)-1) & ~3))
+#define align_mem(x) (void *)(4 + (((unsigned long)(x) - 1) & ~3))
 
 /* Configuration : SEED_METHOD
         Defines method to get seed values that cannot be computed at compile

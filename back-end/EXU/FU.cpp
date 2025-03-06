@@ -1,9 +1,9 @@
 #include "TOP.h"
 #include "config.h"
 #include <cstdint>
+#include <iostream>
 
 extern Back_Top back;
-extern int mispred_num;
 
 enum STATE { IDLE, RECV };
 
@@ -87,12 +87,21 @@ void bru(Inst_info *inst, FU &fu) {
   }
 
   if (br_taken && inst->pred_br_taken && inst->pred_br_pc == pc_br ||
-      !br_taken && !inst->pred_br_taken) {
+      !br_taken && !inst->pred_br_taken ||
+      br_taken && !inst->pred_br_taken && pc_br == inst->pc + 4) {
     inst->mispred = false;
   } else {
     inst->mispred = true;
-    mispred_num++;
   }
+  /*cout << "pc: " << inst->pc << hex << " pred: " << inst->pred_br_taken*/
+  /*     << " pred_pc: " << inst->pred_br_pc << " taken: " << br_taken*/
+  /*     << " br_pc: " << pc_br;*/
+  /*if (inst->mispred)*/
+  /*  cout << " error ";*/
+  /**/
+  /*cout << endl;*/
+
+  inst->br_taken = br_taken;
 
   if (br_taken)
     inst->pc_next = pc_br;

@@ -29,8 +29,8 @@ IQ::IQ(int entry_num, int out_num, IQ_TYPE type) {
 void ISU::init() {
   add_iq(32, 4, IQ_INT);
   add_iq(16, 1, IQ_LD);
-  add_iq(16, 1, IQ_ST);
-  add_iq(16, 1, IQ_BR);
+  add_iq(8, 1, IQ_ST);
+  add_iq(8, 1, IQ_BR);
 }
 
 void IQ::enq(Inst_info *inst) {
@@ -50,8 +50,9 @@ vector<Inst_entry> IQ::deq(int ready_num) {
 
   vector<Inst_entry> ret = scheduler(OLDEST_FIRST, ready_num);
   for (auto &e : ret) {
-    if (e.valid)
+    if (e.valid) {
       num--;
+    }
   }
 
   return ret;
@@ -109,9 +110,24 @@ void ISU::comb() {
     issue_idx++;
   }
 
+  // TODO: Magic Number
   io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0];
   io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0];
   io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0];
+
+  for (int i = 0; i < 4; i++) {
+    if (io.iss2prf->iss_entry[i].valid &&
+        io.iss2prf->iss_entry[i].inst.dest_en) {
+      io.iss2ren->wake[i].valid = true;
+      io.iss2ren->wake[i].preg = io.iss2prf->iss_entry[i].inst.dest_preg;
+    } else {
+      io.iss2ren->wake[i].valid = false;
+    }
+  }
+
+  io.iss2ren->wake[4].valid =
+      io.iss2prf->iss_entry[6].valid && io.iss2prf->iss_entry[6].inst.dest_en;
+  io.iss2ren->wake[4].preg = io.iss2prf->iss_entry[6].inst.dest_preg;
 }
 
 void ISU::seq() {
@@ -132,10 +148,19 @@ void ISU::seq() {
 
   // 唤醒
   for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.awake->wake[i].valid)
+    if (io.iss2prf->iss_entry[i].valid &&
+        io.iss2prf->iss_entry[i].inst.dest_en &&
+        io.iss2prf->iss_entry[i].inst.op != LOAD) {
       for (auto &q : iq) {
-        q.wake_up(io.awake->wake[i].preg);
+        q.wake_up(io.iss2prf->iss_entry[i].inst.dest_preg);
       }
+    }
+  }
+
+  if (io.awake->wake.valid) {
+    for (auto &q : iq) {
+      q.wake_up(io.awake->wake.preg);
+    }
   }
 
   // 唤醒load

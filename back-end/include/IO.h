@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "frontend.h"
 #include <cstdint>
 
 typedef struct {
@@ -46,7 +47,7 @@ typedef struct {
 } Dec_Broadcast;
 
 typedef struct {
-  Inst_entry commit_entry[ISSUE_WAY];
+  Inst_entry commit_entry[COMMIT_WIDTH];
 } Rob_Commit;
 
 typedef struct {
@@ -61,7 +62,7 @@ typedef struct {
 } Ren_Rob;
 
 typedef struct {
-  Wake_info wake[ISSUE_WAY];
+  Wake_info wake;
 } Prf_Awake;
 
 typedef struct {
@@ -72,6 +73,7 @@ typedef struct {
 
 typedef struct {
   bool ready[FETCH_WIDTH];
+  Wake_info wake[5];
 } Iss_Ren;
 
 typedef struct {

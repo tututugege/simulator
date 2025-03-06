@@ -4,12 +4,11 @@
 using namespace std;
 
 #define MAX_SIM_TIME 2000000
-#define FETCH_WIDTH 4
 #define ISSUE_WAY 7
 
 #define ARF_NUM 32
 #define PRF_NUM 96
-#define MAX_BR_NUM 16
+#define MAX_BR_NUM 8
 
 #define IQ_NUM 4
 #define ROB_NUM 64
@@ -60,6 +59,7 @@ typedef struct Inst_info {
 
   // 分支预测更新信息
   bool mispred;
+  bool br_taken;
   uint32_t pc_next;
 
   int old_dest_preg;

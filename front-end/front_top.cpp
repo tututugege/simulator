@@ -21,6 +21,7 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
     bpu_in.refetch_address = in->refetch_address;
     bpu_in.actual_dir[i] = in->actual_dir[i];
     bpu_in.actual_br_type[i] = in->actual_br_type[i];
+    bpu_in.actual_target[i] = in->actual_target[i];
     bpu_in.predict_dir[i] = in->predict_dir[i];
     bpu_in.alt_pred[i] = in->alt_pred[i];
     bpu_in.altpcpn[i] = in->altpcpn[i];

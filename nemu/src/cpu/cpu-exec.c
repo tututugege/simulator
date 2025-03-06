@@ -28,7 +28,6 @@
 #define MAX_IRINGBUF_INST 32
 
 int check_wp();
-void ftrace_commit(vaddr_t pc, vaddr_t npc);
 CPU_state cpu = {};
 uint64_t g_nr_guest_inst = 0;
 static uint64_t g_timer = 0; // unit: us
@@ -36,44 +35,8 @@ static bool g_print_step = false;
 
 void device_update();
 
-#ifdef CONFIG_ITRACE
-
-static char iringbuf[MAX_IRINGBUF_INST][128];
-static int iringbuf_idx = 0;
-static void write_iringbuf(char *logbuf) {
-
-  strcpy(iringbuf[iringbuf_idx], logbuf);
-  iringbuf_idx = (iringbuf_idx + 1) % MAX_IRINGBUF_INST;
-}
-
-void display_iringbuf() {
-  int idx = iringbuf_idx;
-  int current_idx = (iringbuf_idx + MAX_IRINGBUF_INST - 1) % MAX_IRINGBUF_INST;
-  for (; idx != current_idx; idx = (idx + 1) % MAX_IRINGBUF_INST) {
-    if (iringbuf[idx][0] != '\0')
-      printf("\t%s\n", iringbuf[idx]);
-  }
-  printf(" -->\t%s\n", iringbuf[idx]);
-}
-
-#endif
-
 static void trace_and_difftest(Decode *_this, vaddr_t dnpc) {
-#ifdef CONFIG_ITRACE_COND
-  if (ITRACE_COND) {
-    log_write("%s\n", _this->logbuf);
-  }
-  write_iringbuf(_this->logbuf);
-#endif
-  if (g_print_step) {
-    IFDEF(CONFIG_ITRACE, puts(_this->logbuf));
-  }
   IFDEF(CONFIG_DIFFTEST, difftest_step(_this->pc, dnpc));
-
-#ifdef CONFIG_FTRACE
-  if (_this->dnpc != _this->snpc)
-    ftrace_commit(_this->pc, _this->dnpc);
-#endif
 
 #ifdef CONFIG_WATCHPOINT
   if (check_wp()) {
@@ -87,62 +50,14 @@ static void exec_once(Decode *s, vaddr_t pc) {
   s->snpc = pc;
   isa_exec_once(s);
   cpu.pc = s->dnpc;
-#ifdef CONFIG_ITRACE
-  char *p = s->logbuf;
-  p += snprintf(p, sizeof(s->logbuf), FMT_WORD ":", s->pc);
-  int ilen = s->snpc - s->pc;
-  int i;
-  uint8_t *inst = (uint8_t *)&s->isa.inst.val;
-  for (i = ilen - 1; i >= 0; i--) {
-    p += snprintf(p, 4, " %02x", inst[i]);
-  }
-  int ilen_max = MUXDEF(CONFIG_ISA_x86, 8, 4);
-  int space_len = ilen_max - ilen;
-  if (space_len < 0)
-    space_len = 0;
-  space_len = space_len * 3 + 1;
-  memset(p, ' ', space_len);
-  p += space_len;
-
-#ifndef CONFIG_ISA_loongarch32r
-  void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
-  disassemble(p, s->logbuf + sizeof(s->logbuf) - p,
-              MUXDEF(CONFIG_ISA_x86, s->snpc, s->pc),
-              (uint8_t *)&s->isa.inst.val, ilen);
-#else
-  p[0] = '\0'; // the upstream llvm does not support loongarch32r
-#endif
-#endif
 }
-
-typedef struct itrace_node {
-  uint32_t pc;
-  int num;
-} itrace_node;
 
 #define CONFIG_CACHE_ITRACE
 static void execute(uint64_t n) {
   Decode s;
-  itrace_node itrace_pc = {.pc = cpu.pc, .num = 1};
-  FILE *fp = NULL;
-  extern bool gen_trace;
-  extern char *trace_path;
-
-  if (gen_trace) {
-    fp = fopen(trace_path, "w");
-  }
 
   for (; n > 0; n--) {
     exec_once(&s, cpu.pc);
-    if (gen_trace) {
-      if (s.snpc == s.dnpc) {
-        itrace_pc.num++;
-      } else {
-        fwrite(&itrace_pc, sizeof(itrace_pc), 1, fp);
-        itrace_pc.pc = cpu.pc;
-        itrace_pc.num = 1;
-      }
-    }
 
     g_nr_guest_inst++;
     trace_and_difftest(&s, cpu.pc);
@@ -150,9 +65,6 @@ static void execute(uint64_t n) {
       break;
     IFDEF(CONFIG_DEVICE, device_update());
   }
-
-  if (gen_trace)
-    fclose(fp);
 }
 
 static void statistic() {
@@ -207,11 +119,8 @@ void cpu_exec(uint64_t n) {
                     ? ANSI_FMT("HIT GOOD TRAP", ANSI_FG_GREEN)
                     : ANSI_FMT("HIT BAD TRAP", ANSI_FG_RED))),
         nemu_state.halt_pc);
-    if (nemu_state.halt_ret != 0)
+    // if (nemu_state.halt_ret != 0)
 
-#ifdef CONFIG_ITRACE
-      display_iringbuf();
-#endif
     // fall through
   case NEMU_QUIT:
     statistic();
