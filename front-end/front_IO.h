@@ -2,7 +2,6 @@
 #define FRONT_IO_H
 
 #include "frontend.h"
-#include <config.h>
 #include <cstdint>
 
 struct front_top_in {
@@ -15,6 +14,7 @@ struct front_top_in {
   bool predict_dir[COMMIT_WIDTH];
   bool actual_dir[COMMIT_WIDTH];
   uint32_t actual_br_type[COMMIT_WIDTH];
+  uint32_t actual_target[COMMIT_WIDTH];
   bool alt_pred[COMMIT_WIDTH];
   uint8_t altpcpn[COMMIT_WIDTH];
   uint8_t pcpn[COMMIT_WIDTH];
@@ -43,6 +43,7 @@ struct BPU_in {
   bool predict_dir[COMMIT_WIDTH];
   bool actual_dir[COMMIT_WIDTH];
   uint32_t actual_br_type[COMMIT_WIDTH];
+  uint32_t actual_target[COMMIT_WIDTH];
   // for TAGE update
   bool alt_pred[COMMIT_WIDTH];
   uint8_t altpcpn[COMMIT_WIDTH];

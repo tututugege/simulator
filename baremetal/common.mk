@@ -1,7 +1,7 @@
 RISCV_ARCH := rv32ia
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
-CFLAGS := -O2
+CFLAGS += -O2
 CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
 
 RISCV_PATH := $(COMMON_DIR)/../../file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-
@@ -21,7 +21,7 @@ BINARY = $(CURDIR)/$(TARGET).bin
 
 all: $(TARGET)
 	cd $(COMMON_DIR) ;python get_memory.py $(BINARY)
-	make -C $(COMMON_DIR)/..
+	make -C $(COMMON_DIR)/.. run
 
 ASM_SRCS += $(COMMON_DIR)/start.S
 ASM_SRCS += $(COMMON_DIR)/trap.S

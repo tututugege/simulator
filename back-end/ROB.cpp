@@ -11,6 +11,10 @@
 
 extern int commit_num;
 extern int branch_num;
+extern int mispred_num;
+
+int dir_ok_addr_error;
+int taken_num;
 
 // 提交指令
 void ROB::comb() {
@@ -123,15 +127,18 @@ void ROB::seq() {
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
-      /*if (io.rob_commit->commit_entry[i].inst.op == STORE)*/
-      /*  dag_del_node(io.rob_commit->commit_entry[i].inst.rob_idx);*/
-      /*#ifdef CONFIG_DIFFTEST*/
-      /*      difftest_skip =
-       * !diff[io.rob_commit->commit_entry[i].inst.rob_idx];*/
-      /*      back.difftest(&io.rob_commit->commit_entry[i].inst);*/
-      /*#endif*/
-      if (is_branch(io.rob_commit->commit_entry[i].inst.op))
+      if (is_branch(io.rob_commit->commit_entry[i].inst.op)) {
+        Inst_info *inst = &io.rob_commit->commit_entry[i].inst;
+        if (inst->mispred) {
+          mispred_num++;
+          if (inst->mispred && (inst->br_taken && inst->pred_br_taken ||
+                                !inst->br_taken && !inst->pred_br_taken)) {
+            dir_ok_addr_error++;
+            assert(inst->pred_br_pc != inst->pc_next);
+          }
+        }
         branch_num++;
+      }
 
       extern bool sim_end;
       if (io.rob_commit->commit_entry[i].inst.op == EBREAK)

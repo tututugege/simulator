@@ -42,6 +42,12 @@ void EXU::comb() {
         !inst_r[i].valid || io.exe2prf->entry[i].valid && io.prf2exe->ready[i];
   }
 
+  /*// bypass*/
+  /*for (int i = 0; i < ISSUE_WAY; i++) {*/
+  /*  io.exe2iss->entry[i] = io.exe2prf->entry[i];*/
+  /*}*/
+
+  // TODO: Magic Number
   // store
   if (inst_r[5].valid) {
     io.exe2stq->entry = io.exe2prf->entry[5];

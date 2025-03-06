@@ -1,4 +1,5 @@
 #include "TOP.h"
+#include "frontend.h"
 #include <Rename.h>
 #include <config.h>
 #include <cstdlib>
@@ -70,9 +71,14 @@ void Rename::comb() {
   }
 
   // busy_table wake up
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.awake->wake[i].valid) {
-      busy_table[io.awake->wake[i].preg] = false;
+  if (io.awake->wake.valid) {
+    busy_table[io.awake->wake.preg] = false;
+  }
+
+  // TODO: Magic Number
+  for (int i = 0; i < 5; i++) {
+    if (io.iss2ren->wake[i].valid) {
+      busy_table[io.iss2ren->wake[i].preg] = false;
     }
   }
 
@@ -172,7 +178,7 @@ void Rename ::seq() {
     }
   }
 
-  for (int i = 0; i < ISSUE_WAY; i++) {
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
       if (io.rob_commit->commit_entry[i].inst.dest_en) {
         free_vec[io.rob_commit->commit_entry[i].inst.old_dest_preg] = true;
@@ -184,7 +190,7 @@ void Rename ::seq() {
              << io.rob_commit->commit_entry[i].inst.pc << " idx "
              << io.rob_commit->commit_entry[i].inst.inst_idx << endl;
       }
-#ifdef CONFIG_DIFFTSETCONFIG_DIFFTSET
+#ifdef CONFIG_DIFFTEST
 
       back.difftest(&(io.rob_commit->commit_entry[i].inst));
 #endif // CONFIG_DIFFTSET

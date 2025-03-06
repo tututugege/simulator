@@ -3,6 +3,7 @@
 #include <cvt.h>
 #include <diff.h>
 #include <dlfcn.h>
+#include <front_IO.h>
 
 enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
 enum { DIFFTEST, BRANCHCHECK };

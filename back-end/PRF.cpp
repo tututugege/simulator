@@ -27,12 +27,36 @@ void PRF::comb() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     io.prf2exe->iss_entry[i] = io.iss2prf->iss_entry[i];
     Inst_entry *entry = &io.prf2exe->iss_entry[i];
+
     if (entry->valid) {
       if (entry->inst.src1_en) {
         entry->inst.src1_rdata = reg_file[entry->inst.src1_preg];
+        for (int j = 0; j < ISSUE_WAY; j++) {
+          if (inst_r[j].valid && inst_r[j].inst.dest_en &&
+              inst_r[j].inst.dest_preg == entry->inst.src1_preg)
+            entry->inst.src1_rdata = inst_r[j].inst.result;
+        }
+
+        for (int j = 0; j < ISSUE_WAY; j++) {
+          if (io.exe2prf->entry[j].valid && io.exe2prf->entry[j].inst.dest_en &&
+              io.exe2prf->entry[j].inst.dest_preg == entry->inst.src1_preg)
+            entry->inst.src1_rdata = io.exe2prf->entry[j].inst.result;
+        }
       }
+
       if (entry->inst.src2_en) {
         entry->inst.src2_rdata = reg_file[entry->inst.src2_preg];
+        for (int j = 0; j < ISSUE_WAY; j++) {
+          if (inst_r[j].valid && inst_r[j].inst.dest_en &&
+              inst_r[j].inst.dest_preg == entry->inst.src2_preg)
+            entry->inst.src2_rdata = inst_r[j].inst.result;
+        }
+
+        for (int j = 0; j < ISSUE_WAY; j++) {
+          if (io.exe2prf->entry[j].valid && io.exe2prf->entry[j].inst.dest_en &&
+              io.exe2prf->entry[j].inst.dest_preg == entry->inst.src2_preg)
+            entry->inst.src2_rdata = io.exe2prf->entry[j].inst.result;
+        }
       }
     }
   }
@@ -44,13 +68,11 @@ void PRF::comb() {
       io.prf2rob->entry[i].valid = false;
   }
 
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (inst_r[i].valid && inst_r[i].inst.dest_en) {
-      io.prf_awake->wake[i].valid = true;
-      io.prf_awake->wake[i].preg = inst_r[i].inst.dest_preg;
-    } else {
-      io.prf_awake->wake[i].valid = false;
-    }
+  if (inst_r[4].valid && inst_r[4].inst.dest_en) {
+    io.prf_awake->wake.valid = true;
+    io.prf_awake->wake.preg = inst_r[4].inst.dest_preg;
+  } else {
+    io.prf_awake->wake.valid = false;
   }
 }
 

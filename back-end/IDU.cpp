@@ -1,4 +1,5 @@
 #include "config.h"
+#include "frontend.h"
 #include <IDU.h>
 #include <RISCV.h>
 #include <cstdint>
@@ -128,7 +129,7 @@ void IDU::seq() {
   }
 
   // 释放tag
-  for (int i = 0; i < ISSUE_WAY; i++) {
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.commit->commit_entry[i].valid &&
         is_branch(io.commit->commit_entry[i].inst.op)) {
       tag_vec[io.commit->commit_entry[i].inst.tag] = true;
@@ -227,7 +228,7 @@ Inst_info decode(uint32_t inst) {
     src2_is_imm = false;
 
     bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_i_type, 21);
+    sign_extend(bit_temp, 32, bit_immi_i_type, 12);
     imm = cvt_bit_to_number_unsigned(bit_temp, 32);
 
     break;
@@ -318,7 +319,8 @@ Inst_info decode(uint32_t inst) {
       } else if (inst == INST_MRET) {
         op = MRET;
       } else {
-        assert(0);
+        cout << hex << inst << endl;
+        /*assert(0);*/
       }
     }
     break;

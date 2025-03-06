@@ -23,6 +23,8 @@ El Dorado Hills, CA, 95762
    initial parameters, tun t he benchmark and report the results.
 */
 #include "coremark.h"
+#include "uart.h"
+#include "xprintf.h"
 
 /* Function: iterate
         Run the benchmark for a specified number of iterations.
@@ -112,8 +114,7 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 #if (MEM_METHOD == MEM_STACK)
   ee_u8 stack_memblock[TOTAL_DATA_SIZE * MULTITHREAD];
 #endif
-
-  ioe_init();
+  uart_init();
 
   ee_printf("Running CoreMark for %d iterations\n", ITERATIONS);
 

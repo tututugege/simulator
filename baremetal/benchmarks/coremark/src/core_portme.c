@@ -42,7 +42,7 @@ volatile ee_s32 seed5_volatile = 0;
 // int uptime_time = 0;
 static uint32_t uptime_ms() {
   // uptime_time++;
-  return io_read(AM_TIMER_UPTIME).us / 1000;
+  return 0;
 }
 
 /** Define Host specific (POSIX), or target specific global time variables. */
