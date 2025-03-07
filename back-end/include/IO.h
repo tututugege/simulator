@@ -13,29 +13,56 @@ typedef struct {
   mem_sz_t mem_sz;
   int dst_preg;
   bool sign;
+  int  id;
   bool valid;
+  bool dis_fire;
 } Ren_Lsu;
 
 typedef struct {
   int lsq_entry;
-  bool valid;
   bool ready;
 } Lsu_Ren;
 
-typedef struct {
-  bool valid;
-  op_t op;
-  uint32_t vtag;
-  uint32_t index;
-  uint32_t word;
-  uint32_t offset;
-  uint8_t wdata_b4_shf[4];
-  int lsq_entry;
-} Prf_Lsu;
+struct lsu_req_master {
+  bool     valid_out;
+  op_t     op_out;
+  uint32_t vtag_out;
+  uint32_t index_out;
+  uint32_t word_out;
+  uint32_t offset_out;
+  uint8_t  wdata_b4_sft_out[4];
+  int      lsq_entry_out;
+  bool     ready_in;
+};
+
+struct lsu_req_slave {
+  bool     valid_in;
+  op_t     op_in;
+  uint32_t vtag_in;
+  uint32_t index_in;
+  uint32_t word_in;
+  uint32_t offset_in;
+  uint8_t  wdata_b4_sft_in[4];
+  int      lsq_entry_in;
+  bool     ready_out;
+};
+
+union lsu_req_t {
+  struct lsu_req_master m;
+  struct lsu_req_slave  s;
+}
+
+struct bcast_res_master {
+  bool    valid_out;
+  uint8_t data_out[4];
+  int     dst_preg_out;
+  bool    ready_in;
+};
 
 typedef struct {
-  bool ready;
-} Lsu_Prf;
+  bool valid;
+  int  retire_num;
+} Rob_Lsq;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

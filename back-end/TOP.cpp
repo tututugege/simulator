@@ -40,6 +40,7 @@ Ren_Dec ren2id;
 Ren_Iss ren2iss;
 Ren_Rob ren2rob;
 Ren_Lsu ren2lsu; // LSU new
+Lsu_Ren lsu2ren; // LSU new
 
 Iss_Ren iss2ren;
 Iss_Prf iss2prf;
@@ -48,7 +49,8 @@ Prf_Exe prf2exe;
 Prf_Rob prf2rob;
 Prf_Awake awake;
 Prf_Dec prf2id;
-Prf_Lsu prf2lsu; // LSU new
+union lsu_req_t lsu_req; // LSU new
+struct bcast_res_master bcast_bus; // LSU new
 
 Exe_Prf exe2prf;
 Exe_Iss exe2iss;
@@ -56,6 +58,8 @@ Exe_Iss exe2iss;
 Rob_Ren rob2ren;
 Rob_Broadcast rob_bc;
 Rob_Commit rob_commit;
+Rob_Lsq    rob2ldq;
+Rob_Lsq    rob2stq;
 
 void Back_Top::init() {
 
@@ -75,7 +79,8 @@ void Back_Top::init() {
   rename.io.id_bc = &id_bc;
   rename.io.rob2ren = &rob2ren;
   rename.io.ren2rob = &ren2rob;
-  rename.io.ren2lsu = &ren2lsu;
+  rename.io.ren2lsu = &ren2lsu;  // LSU new
+  rename.io.lsu2ren = &lsu2ren;
   rename.io.rob_bc = &rob_bc;
   rename.io.rob_commit = &rob_commit;
   rename.io.awake = &awake;
@@ -101,6 +106,13 @@ void Back_Top::init() {
   exu.io.id_bc = &id_bc;
   exu.io.exe2prf = &exe2prf;
   exu.io.exe2iss = &exe2iss;
+// LSU new
+  mem.ren2lsu = &ren2lsu;
+  mem.lsu2ren = &lsu2ren;
+  mem.lsu_req = &lsu_req;
+  mem.bcast_bus = &bcast_bus;
+  mem.rob2ldq = &rob2ldq;
+  mem.rob2stq = &rob2stq;
 
   rob.io.ren2rob = &ren2rob;
   rob.io.id_bc = &id_bc;
@@ -109,12 +121,16 @@ void Back_Top::init() {
   rob.io.id_bc = &id_bc;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2ren = &rob2ren;
+  rob.io.rob2ldq = &rob2ldq; // LSU new
+  rob.io.rob2stq = &rob2stq; // LSU new
 
   idu.init();
   rename.init();
   isu.init();
   prf.init();
   exu.init();
+  mem.init_module();
+  mem.conn_module();
   csru.init();
   rob.init();
   init_dag();
@@ -137,7 +153,6 @@ void Back_Top::Back_comb() {
   // 顺序：rename -> mem/rob/isu
   // exu -> iss -> prf
   rename.comb();
-  mem.comb();
   rob.comb();
   exu.comb();
   isu.comb();

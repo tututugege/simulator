@@ -10,6 +10,7 @@ public:
 
   Exe_Prf *exe2prf;
   Exe_Iss *exe2iss;
+  lsu_req_t *lsu_req;
 };
 
 class EXU {
