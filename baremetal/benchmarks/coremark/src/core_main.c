@@ -114,9 +114,9 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 #if (MEM_METHOD == MEM_STACK)
   ee_u8 stack_memblock[TOTAL_DATA_SIZE * MULTITHREAD];
 #endif
-  uart_init();
+  // uart_init();
 
-  ee_printf("Running CoreMark for %d iterations\n", ITERATIONS);
+  // ee_printf("Running CoreMark for %d iterations\n", ITERATIONS);
 
   /* first call any initializations needed */
   portable_init(&(results[0].port), &argc, argv);
@@ -349,10 +349,10 @@ for (i = 0; i < MULTITHREAD; i++) {
     ee_printf("[%d]crcfinal      : 0x%04x\n", i, results[i].crc);
   ee_printf("Finised in %d ms.\n", (int)total_time);
   if (total_errors == 0) {
-    ee_printf("==================================================\n");
-    ee_printf("CoreMark PASS       %d Marks\n",
-              2921400 / time_in_secs(total_time) * ITERATIONS / 1000);
-    ee_printf("                vs. 100000 Marks (i7-7700K @ 4.20GHz)\n");
+    // ee_printf("==================================================\n");
+    // ee_printf("CoreMark PASS       %d Marks\n",
+    // 2921400 / time_in_secs(total_time) * ITERATIONS / 1000);
+    // ee_printf("                vs. 100000 Marks (i7-7700K @ 4.20GHz)\n");
 
     // extern int uptime_time;
     // ee_printf("uptime: %d\n", uptime_time);

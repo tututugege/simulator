@@ -1,30 +1,30 @@
 #pragma once
 #include <assert.h>
 #include <cstdint>
+
 using namespace std;
 
-#define MAX_SIM_TIME 2000000
-#define ISSUE_WAY 7
+#define MAX_SIM_TIME 100000
+#define ISSUE_WAY 8
 
 #define ARF_NUM 32
 #define PRF_NUM 96
 #define MAX_BR_NUM 8
 
-#define IQ_NUM 4
+#define IQ_NUM 5
 #define ROB_NUM 64
 #define STQ_NUM 8
 
 #define LOG 0
 
 #define CONFIG_DIFFTEST
-#define CONFIG_BRANCHCHECK
+/*#define CONFIG_BRANCHCHECK*/
 /*#define CONFIG_BPU*/
 
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE { IQ_INT, IQ_LD, IQ_ST, IQ_BR, IQ_CSR };
-enum FU_TYPE { FU_ALU, FU_LDU, FU_STU, FU_BRU, FU_CSR, FU_NUM };
-enum Sched_type { OLDEST_FIRST, INDEX, IN_ORDER, DEPENDENCY, GREEDY };
+enum IQ_TYPE { IQ_INT, IQ_BR, IQ_CSR, IQ_LD, IQ_ST };
+enum FU_TYPE { FU_ALU, FU_BRU, FU_CSR, FU_LDU, FU_STU, FU_NUM };
 
 extern FU_TYPE fu_config[ISSUE_WAY];
 
@@ -93,10 +93,6 @@ typedef struct {
   bool valid;
   uint32_t preg;
 } Wake_info;
-
-inline bool is_branch(Inst_op op) {
-  return op == BR || op == JALR || op == JAL;
-}
 
 /*typedef struct Inst_res {*/
 /*  uint32_t result;*/

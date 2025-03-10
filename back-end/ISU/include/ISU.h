@@ -14,7 +14,7 @@ public:
   Inst_entry pop_oldest(vector<Inst_entry> &valid_entry,
                         vector<int> &valid_idx);
 
-  vector<Inst_entry> scheduler(Sched_type, int ready_num);
+  vector<Inst_entry> scheduler(int ready_num);
   vector<Inst_entry> deq(int ready_num);
   void enq(Inst_info *inst);
   void dependency(int dest_idx);

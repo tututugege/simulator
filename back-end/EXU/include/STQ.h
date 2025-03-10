@@ -10,6 +10,7 @@ typedef struct {
   Stq_Ren *stq2ren;
   Rob_Commit *rob_commit;
   Dec_Broadcast *id_bc;
+  Rob_Broadcast *rob_bc;
 } STQ_IO;
 
 typedef struct {

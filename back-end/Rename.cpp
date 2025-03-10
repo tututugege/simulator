@@ -76,7 +76,7 @@ void Rename::comb() {
   }
 
   // TODO: Magic Number
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 6; i++) {
     if (io.iss2ren->wake[i].valid) {
       busy_table[io.iss2ren->wake[i].preg] = false;
     }
@@ -129,6 +129,8 @@ void Rename ::seq() {
   // 分配寄存器
   int alloc_num = 0;
   bool pre_stall = false;
+  bool pre_fire = false; // csr指令需要等前面的指令都发射执行完毕
+  bool csr_stall = false; // csr指令后面的指令都要阻塞
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2iss->valid[i] && io.ren2iss->inst[i].op == LOAD) {
@@ -145,15 +147,23 @@ void Rename ::seq() {
       }
     }
 
-    io.ren2iss->dis_fire[i] = (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
-                              (io.ren2iss->inst[i].op != STORE ||
-                               io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
-                              (io.ren2rob->valid[i] && io.rob2ren->ready[i]) &&
-                              !pre_stall && !io.id_bc->mispred;
+    io.ren2iss->dis_fire[i] =
+        (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
+        (io.ren2iss->inst[i].op != STORE ||
+         io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
+        (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
+        !io.id_bc->mispred && !csr_stall &&
+        (io.ren2iss->inst[i].op != CSR || io.rob2ren->empty && !pre_fire) &&
+        !io.rob2ren->stall;
 
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
     io.ren2stq->dis_fire[i] = io.ren2iss->dis_fire[i];
     pre_stall = dec_ren_r[i].valid && !io.ren2iss->dis_fire[i];
+    pre_fire = io.ren2iss->dis_fire[i];
+    // 异常相关指令需要单独执行
+    if (io.ren2iss->valid[i] && io.ren2iss->inst[i].op == CSR) {
+      csr_stall = true;
+    }
 
     if (io.ren2iss->dis_fire[i] && io.ren2iss->inst[i].dest_en) {
       spec_alloc[alloc_reg[alloc_num]] = true;
@@ -178,6 +188,7 @@ void Rename ::seq() {
     }
   }
 
+  // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
       if (io.rob_commit->commit_entry[i].inst.dest_en) {

@@ -28,9 +28,10 @@ IQ::IQ(int entry_num, int out_num, IQ_TYPE type) {
 
 void ISU::init() {
   add_iq(32, 4, IQ_INT);
+  add_iq(8, 1, IQ_BR);
+  add_iq(1, 1, IQ_CSR);
   add_iq(16, 1, IQ_LD);
   add_iq(8, 1, IQ_ST);
-  add_iq(8, 1, IQ_BR);
 }
 
 void IQ::enq(Inst_info *inst) {
@@ -48,7 +49,7 @@ void IQ::enq(Inst_info *inst) {
 
 vector<Inst_entry> IQ::deq(int ready_num) {
 
-  vector<Inst_entry> ret = scheduler(OLDEST_FIRST, ready_num);
+  vector<Inst_entry> ret = scheduler(ready_num);
   for (auto &e : ret) {
     if (e.valid) {
       num--;
@@ -56,25 +57,6 @@ vector<Inst_entry> IQ::deq(int ready_num) {
   }
 
   return ret;
-
-  /*while (issue_num < iss_port_num) {*/
-  /*  io.iq2isu->valid[issue_num++] = false;*/
-  /*}*/
-  /**/
-  /*// 无效指令 ready为1*/
-  /*for (int i = 0; i < iss_port_num; i++) {*/
-  /*  if (!io.isu2iq->valid[i])*/
-  /*    io.iq2isu->ready[i] = true;*/
-  /*}*/
-  /**/
-  /*// 唤醒load*/
-  /*if (type == MEM && in.st_valid) {*/
-  /*  for (int i = 0; i < entry_num; i++) {*/
-  /*    if (entry[i].valid) {*/
-  /*      entry_1[i].inst.pre_store[in.st_idx] = false;*/
-  /*    }*/
-  /*  }*/
-  /*}*/
 }
 
 void ISU::comb() {
@@ -104,6 +86,7 @@ void ISU::comb() {
       ready_num[fu_config[i]]++;
   }
 
+  // int
   vector<Inst_entry> iss_entry = iq[0].deq(ready_num[0]);
   for (auto entry : iss_entry) {
     io.iss2prf->iss_entry[issue_idx] = entry;
@@ -111,11 +94,12 @@ void ISU::comb() {
   }
 
   // TODO: Magic Number
-  io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0];
-  io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0];
-  io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0];
+  io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0]; // br
+  io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0]; // csr
+  io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0]; // load
+  io.iss2prf->iss_entry[7] = iq[4].deq(ready_num[4])[0]; // store
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 6; i++) {
     if (io.iss2prf->iss_entry[i].valid &&
         io.iss2prf->iss_entry[i].inst.dest_en) {
       io.iss2ren->wake[i].valid = true;
@@ -124,10 +108,6 @@ void ISU::comb() {
       io.iss2ren->wake[i].valid = false;
     }
   }
-
-  io.iss2ren->wake[4].valid =
-      io.iss2prf->iss_entry[6].valid && io.iss2prf->iss_entry[6].inst.dest_en;
-  io.iss2ren->wake[4].preg = io.iss2prf->iss_entry[6].inst.dest_preg;
 }
 
 void ISU::seq() {
@@ -241,7 +221,7 @@ Inst_entry IQ::pop_oldest(vector<Inst_entry> &valid_entry,
 }
 
 // 调度策略
-vector<Inst_entry> IQ::scheduler(Sched_type sched, int ready_num) {
+vector<Inst_entry> IQ::scheduler(int ready_num) {
 
   int issue_num = 0;
   int valid_num = 0;
@@ -258,15 +238,13 @@ vector<Inst_entry> IQ::scheduler(Sched_type sched, int ready_num) {
     }
   }
 
-  if (sched == OLDEST_FIRST) {
-    for (int i = 0; i < out_num; i++) {
-      if (issue_num < ready_num) {
-        iss_entry[i] = pop_oldest(valid_entry, valid_idx);
-        if (iss_entry[i].valid)
-          issue_num++;
-      } else {
-        iss_entry[i].valid = false;
-      }
+  for (int i = 0; i < out_num; i++) {
+    if (issue_num < ready_num) {
+      iss_entry[i] = pop_oldest(valid_entry, valid_idx);
+      if (iss_entry[i].valid)
+        issue_num++;
+    } else {
+      iss_entry[i].valid = false;
     }
   }
 

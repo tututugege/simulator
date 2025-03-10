@@ -11,6 +11,7 @@ public:
   Prf_Dec *prf2id;
   Prf_Awake *prf_awake;
   Dec_Broadcast *id_bc;
+  Rob_Broadcast *rob_bc;
 };
 
 class PRF {

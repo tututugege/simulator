@@ -3,6 +3,7 @@
 #include "config.h"
 #include "frontend.h"
 #include <cstdint>
+#include <sys/types.h>
 
 typedef struct {
   uint32_t addr;
@@ -52,6 +53,8 @@ typedef struct {
 
 typedef struct {
   bool ready[FETCH_WIDTH];
+  bool empty;
+  bool stall;
   uint32_t enq_idx;
 } Rob_Ren;
 
@@ -71,15 +74,18 @@ typedef struct {
   bool dis_fire[FETCH_WIDTH];
 } Ren_Iss;
 
+// TODO: MAGIC NUMBER
 typedef struct {
   bool ready[FETCH_WIDTH];
-  Wake_info wake[5];
+  Wake_info wake[6];
 } Iss_Ren;
 
 typedef struct {
   bool rollback;
-  bool exception;
   bool mret;
+  bool exception;
+  uint32_t pc;
+  uint32_t cause;
 } Rob_Broadcast;
 
 typedef struct {
