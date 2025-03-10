@@ -69,7 +69,7 @@ private:
   ISU isu;
   PRF prf;
   EXU exu;
-  CSRU csru;
+  CSRU csr;
   STQ stq;
   ROB rob;
 

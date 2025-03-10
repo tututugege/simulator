@@ -112,5 +112,16 @@ void STQ::seq() {
     }
   }
 
+  if (io.rob_bc->rollback) {
+    count = 0;
+    enq_ptr = 0;
+    commit_ptr = 0;
+    deq_ptr = 0;
+    for (int i = 0; i < STQ_NUM; i++) {
+      entry[i].valid = false;
+      entry[i].compelete = false;
+    }
+  }
+
   io.stq2ren->stq_idx = enq_ptr;
 }

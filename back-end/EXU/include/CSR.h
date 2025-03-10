@@ -1,4 +1,5 @@
 #pragma once
+#include "IO.h"
 #include <config.h>
 #include <cstdint>
 
@@ -38,29 +39,27 @@ typedef struct {
   uint32_t idx;
   uint32_t wdata;
   uint32_t wcmd;
-
-  // 中断异常
-  bool exception;
-  bool mret;
-  uint32_t cause;
-  uint32_t pc;
-} CSRU_in;
+} Exe_Csr;
 
 typedef struct {
   uint32_t rdata;
   uint32_t mepc;
   uint32_t mtvec;
-} CSRU_out;
+} Csr_Exe;
+
+typedef struct {
+  Exe_Csr *exe2csr;
+  Csr_Exe *csr2exe;
+  Rob_Broadcast *rob_bc;
+} CSR_IO;
 
 class CSRU {
 public:
-  CSRU_in in;
-  CSRU_out out;
+  CSR_IO io;
   void init();
   void comb();
   void seq();
 
 private:
   uint32_t CSR_RegFile[CSR_NUM];
-  uint32_t CSR_RegFile_1[CSR_NUM];
 };

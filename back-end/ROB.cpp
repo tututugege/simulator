@@ -1,12 +1,11 @@
+#include "CSR.h"
 #include "IO.h"
 #include "frontend.h"
-#include <DAG.h>
 #include <RISCV.h>
 #include <ROB.h>
 #include <TOP.h>
 #include <config.h>
 #include <diff.h>
-#include <iostream>
 #include <util.h>
 
 extern int commit_num;
@@ -16,11 +15,11 @@ extern int mispred_num;
 int dir_ok_addr_error;
 int taken_num;
 
-// 提交指令
 void ROB::comb() {
 
   bool csr_stall = (entry[deq_ptr].inst.op == CSR) && entry[deq_ptr].valid;
   bool exception_stall = false;
+
   for (int i = 0; i < ROB_NUM; i++) {
     exception_stall = exception_stall || (exception[i] && entry[i].valid);
     if (exception_stall)
@@ -28,6 +27,9 @@ void ROB::comb() {
   }
 
   int num = count;
+  io.rob2ren->empty = (count == 0);
+  io.rob2ren->stall = csr_stall || exception_stall;
+
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (csr_stall || exception_stall) {
       io.rob2ren->ready[i] = false;
@@ -43,6 +45,7 @@ void ROB::comb() {
     }
   }
 
+  // 提交指令
   int commit_num = 0;
   io.rob_bc->rollback = io.rob_bc->exception = io.rob_bc->mret = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
@@ -64,10 +67,14 @@ void ROB::comb() {
       if (exception[idx]) {
         io.rob_bc->rollback = true;
         exception[idx] = false;
-        if (entry[idx].inst.op == ECALL)
+        if (entry[idx].inst.op == ECALL) {
           io.rob_bc->exception = true;
-        else if (entry[idx].inst.op == MRET)
+          io.rob_bc->pc = io.rob_commit->commit_entry[i].inst.pc;
+          io.rob_bc->cause = M_MODE_ECALL;
+        } else if (entry[idx].inst.op == MRET) {
           io.rob_bc->mret = true;
+        }
+
         break;
       }
     } else {
@@ -89,8 +96,6 @@ void ROB::seq() {
     if (io.prf2rob->entry[i].valid) {
       complete[io.prf2rob->entry[i].inst.rob_idx] = true;
       entry[io.prf2rob->entry[i].inst.rob_idx].inst = io.prf2rob->entry[i].inst;
-      /*if (io.exe2rob->compelte_entry[i].inst.op != STORE)*/
-      /*  dag_del_node(io.exe2rob->compelte_entry[i].inst.rob_idx);*/
     }
   }
 
@@ -106,12 +111,6 @@ void ROB::seq() {
     }
   }
 
-  if (io.rob_bc->rollback) {
-    enq_ptr = 0;
-    deq_ptr = 0;
-    count = 0;
-  }
-
   // 入队
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2rob->dis_fire[i]) {
@@ -120,6 +119,8 @@ void ROB::seq() {
       complete[enq_ptr] = false;
       if (io.ren2rob->inst[i].op == ECALL || io.ren2rob->inst[i].op == MRET)
         exception[enq_ptr] = true;
+      else
+        exception[enq_ptr] = false;
       LOOP_INC(enq_ptr, ROB_NUM);
       count++;
     }
@@ -146,16 +147,20 @@ void ROB::seq() {
     }
   }
 
-  /*for (int i = 0; i < FETCH_WIDTH; i++) {*/
-  /*  if (io.ren2rob->dis_fire[i])*/
-  /*  dag_add_node(&entry.data[entry.to_sram.waddr[i]]);*/
-  /*}*/
+  if (io.rob_bc->rollback) {
+    for (int i = 0; i < ROB_NUM; i++) {
+      complete[i] = false;
+      entry[i].valid = false;
+    }
+    enq_ptr = 0;
+    deq_ptr = 0;
+    count = 0;
+  }
 
   io.rob2ren->enq_idx = enq_ptr;
 }
 
 void ROB::init() {
-
   count = 0;
   deq_ptr = 0;
   enq_ptr = 0;

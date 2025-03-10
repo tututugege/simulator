@@ -320,7 +320,7 @@ Inst_info decode(uint32_t inst) {
         op = MRET;
       } else {
         cout << hex << inst << endl;
-        /*assert(0);*/
+        assert(0);
       }
     }
     break;
@@ -331,7 +331,6 @@ Inst_info decode(uint32_t inst) {
       cerr << "Error: unknown instruction: ";
       cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;
     }
-    /*assert(0);*/
     break;
   }
   }
@@ -359,6 +358,8 @@ Inst_info decode(uint32_t inst) {
     info.iq_type = IQ_ST;
   } else if (is_branch(info.op)) {
     info.iq_type = IQ_BR;
+  } else if (info.op == CSR) {
+    info.iq_type = IQ_CSR;
   } else {
     info.iq_type = IQ_INT;
   }

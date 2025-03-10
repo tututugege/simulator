@@ -2,15 +2,13 @@
 #define LOOP_INC(idx, length) idx = (idx + 1) % (length)
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
 
-inline bool is_branch(Inst_info inst) {
-
-  return (inst.op == BR || inst.op == JALR || inst.op == JAL);
+inline bool is_branch(Inst_op op) {
+  return op == BR || op == JALR || op == JAL;
 }
 
-inline bool is_CSR(Inst_info inst) {
+inline bool is_CSR(Inst_op op) {
 
-  return (inst.op == CSR || inst.op == MRET || inst.op == ECALL ||
-          inst.op == EBREAK);
+  return (op == CSR || op == MRET || op == ECALL || op == EBREAK);
 }
 
 inline bool orR(bool *in, int num) {

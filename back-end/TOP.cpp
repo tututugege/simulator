@@ -1,7 +1,6 @@
 #include "CSR.h"
 #include "IO.h"
 #include "frontend.h"
-#include <DAG.h>
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -60,6 +59,9 @@ Rob_Commit rob_commit;
 Stq_Ren stq2ren;
 Stq_Iss stq2iss;
 
+Csr_Exe csr2exe;
+Exe_Csr exe2csr;
+
 void Back_Top::init() {
 
   idu.io.front2id = &front2id;
@@ -100,12 +102,16 @@ void Back_Top::init() {
   prf.io.prf_awake = &awake;
   prf.io.prf2id = &prf2id;
   prf.io.id_bc = &id_bc;
+  prf.io.rob_bc = &rob_bc;
 
   exu.io.prf2exe = &prf2exe;
   exu.io.id_bc = &id_bc;
+  exu.io.rob_bc = &rob_bc;
   exu.io.exe2prf = &exe2prf;
   exu.io.exe2stq = &exe2stq;
   exu.io.exe2iss = &exe2iss;
+  exu.io.exe2csr = &exe2csr;
+  exu.io.csr2exe = &csr2exe;
 
   rob.io.ren2rob = &ren2rob;
   rob.io.id_bc = &id_bc;
@@ -121,15 +127,19 @@ void Back_Top::init() {
   stq.io.stq2iss = &stq2iss;
   stq.io.stq2ren = &stq2ren;
   stq.io.id_bc = &id_bc;
+  stq.io.rob_bc = &rob_bc;
+
+  csr.io.exe2csr = &exe2csr;
+  csr.io.csr2exe = &csr2exe;
+  csr.io.rob_bc = &rob_bc;
 
   idu.init();
   rename.init();
   isu.init();
   prf.init();
   exu.init();
-  csru.init();
+  csr.init();
   rob.init();
-  init_dag();
 }
 
 void Back_Top::Back_comb() {
@@ -148,30 +158,53 @@ void Back_Top::Back_comb() {
 
   // 顺序：rename -> stq/rob/isu
   // exu -> iss -> prf
+  // exu -> csr
   rename.comb();
   stq.comb();
   rob.comb();
   exu.comb();
+  csr.comb();
   isu.comb();
   prf.comb();
   idu.comb();
-  back.out.mispred = prf.io.prf2id->mispred;
-  back.out.redirect_pc = prf.io.prf2id->redirect_pc;
+
+  if (!rob.io.rob_bc->rollback) {
+    back.out.mispred = prf.io.prf2id->mispred;
+    back.out.redirect_pc = prf.io.prf2id->redirect_pc;
+  } else {
+    back.out.mispred = true;
+    if (rob.io.rob_bc->exception) {
+      back.out.redirect_pc = csr.io.csr2exe->mtvec;
+    } else if (rob.io.rob_bc->mret) {
+      back.out.redirect_pc = csr.io.csr2exe->mepc;
+    } else {
+      assert(0);
+    }
+  }
+
+  // 修正pc_next 以及difftest对应的pc_next
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
+    if (back.out.commit_entry[i].valid &&
+            back.out.commit_entry[i].inst.op == ECALL ||
+        back.out.commit_entry[i].inst.op == MRET) {
+      back.out.commit_entry[i].inst.pc_next = back.out.redirect_pc;
+      rob.io.rob_commit->commit_entry[i].inst.pc_next = back.out.redirect_pc;
+    }
   }
-  back.out.redirect_pc = prf.io.prf2id->redirect_pc;
 }
 
 void Back_Top::Back_seq() {
-  // 更新Reg SRAM
+  // rename -> isu/stq/rob
+  // exu -> prf
   rename.seq();
   idu.seq();
   isu.seq();
-  prf.seq();
   exu.seq();
+  prf.seq();
   rob.seq();
   stq.seq();
+  csr.seq();
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.id2front->dec_fire[i];

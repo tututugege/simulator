@@ -724,7 +724,7 @@ int main()
 /* Main and Proc_0 in the Ada version             */
 {
 
-  uart_init();
+  // uart_init();
   One_Fifty Int_1_Loc;
   REG One_Fifty Int_2_Loc;
   One_Fifty Int_3_Loc;
@@ -755,12 +755,12 @@ int main()
   /* Warning: With 16-Bit processors and Number_Of_Runs > 32000,  */
   /* overflow may occur for this array element.                   */
 
-  xprintf("Dhrystone Benchmark, Version %s\n", Version);
+  // xprintf("Dhrystone Benchmark, Version %s\n", Version);
 
   Done = false;
   while (!Done) {
 
-    xprintf("Trying %d runs through Dhrystone.\n", Number_Of_Runs);
+    // xprintf("Trying %d runs through Dhrystone.\n", Number_Of_Runs);
 
     /***************/
     /* Start timer */
@@ -911,11 +911,11 @@ int main()
     xprintf("        should be:   DHRYSTONE PROGRAM, 2'ND STRING\n");
   }
 
-  xprintf("Finished in %d ms\n", (int)User_Time);
-  xprintf("==================================================\n");
-  xprintf("Dhrystone %s         %d Marks\n", pass ? "PASS" : "FAIL",
-          880900 / (int)User_Time * NUMBER_OF_RUNS / 500000);
-  xprintf("                   vs. 100000 Marks (i7-7700K @ 4.20GHz)\n");
+  // xprintf("Finished in %d ms\n", (int)User_Time);
+  // xprintf("==================================================\n");
+  // xprintf("Dhrystone %s         %d Marks\n", pass ? "PASS" : "FAIL",
+  //         880900 / (int)User_Time * NUMBER_OF_RUNS / 500000);
+  // xprintf("                   vs. 100000 Marks (i7-7700K @ 4.20GHz)\n");
 
   return (pass ? 0 : 1);
 }

@@ -8,7 +8,6 @@ uint32_t CSR_Hash_table[1 << 11];
 
 void CSRU::init() {
   CSR_RegFile[CSR_MSTATUS] = 0x1800;
-  CSR_RegFile_1[CSR_MSTATUS] = 0x1800;
   CSR_Hash_table[number_mstatus] = CSR_MSTATUS;
   CSR_Hash_table[number_mepc] = CSR_MEPC;
   CSR_Hash_table[number_mtvec] = CSR_MTVEC;
@@ -16,29 +15,26 @@ void CSRU::init() {
 }
 
 void CSRU::comb() {
-  int csr_pos = CSR_Hash_table[in.idx];
-  if (in.we) {
-    if (in.wcmd == CSR_W) {
-      CSR_RegFile_1[csr_pos] = in.wdata;
-    } else if (in.wcmd == CSR_S) {
-      CSR_RegFile_1[csr_pos] = in.wdata | (~in.wdata & CSR_RegFile[csr_pos]);
-    } else if (in.wcmd == CSR_C) {
-      CSR_RegFile_1[csr_pos] = (~in.wdata & CSR_RegFile[csr_pos]);
-    }
-  }
-
-  if (in.exception) {
-    CSR_RegFile_1[CSR_MCAUSE] = in.cause;
-    CSR_RegFile_1[CSR_MEPC] = in.pc;
-  }
-
-  out.rdata = CSR_RegFile[CSR_Hash_table[in.idx]];
-  out.mepc = CSR_RegFile[CSR_MEPC];
-  out.mtvec = CSR_RegFile[CSR_MTVEC];
+  io.csr2exe->rdata = CSR_RegFile[CSR_Hash_table[io.exe2csr->idx]];
+  io.csr2exe->mepc = CSR_RegFile[CSR_MEPC];
+  io.csr2exe->mtvec = CSR_RegFile[CSR_MTVEC];
 }
 
 void CSRU::seq() {
-  for (int i = 0; i < CSR_NUM; i++) {
-    CSR_RegFile[i] = CSR_RegFile_1[i];
+  int csr_pos = CSR_Hash_table[io.exe2csr->idx];
+  if (io.exe2csr->we) {
+    if (io.exe2csr->wcmd == CSR_W) {
+      CSR_RegFile[csr_pos] = io.exe2csr->wdata;
+    } else if (io.exe2csr->wcmd == CSR_S) {
+      CSR_RegFile[csr_pos] =
+          io.exe2csr->wdata | (~io.exe2csr->wdata & CSR_RegFile[csr_pos]);
+    } else if (io.exe2csr->wcmd == CSR_C) {
+      CSR_RegFile[csr_pos] = (~io.exe2csr->wdata & CSR_RegFile[csr_pos]);
+    }
+  }
+
+  if (io.rob_bc->exception) {
+    CSR_RegFile[CSR_MCAUSE] = io.rob_bc->cause;
+    CSR_RegFile[CSR_MEPC] = io.rob_bc->pc;
   }
 }
