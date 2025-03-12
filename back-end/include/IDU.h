@@ -18,10 +18,19 @@ public:
 };
 
 class IDU {
+
 public:
+  int in_size = 304;
+  int out_size = 445;
+  int reg_size = 41;
+  bool input[304 + 41];
+  bool output[445 + 41];
+
   void init();
-  void comb(); // 译码
+  void comb();
   void seq();
+  void io_gen();
+  void reg_gen();
   IDU_IO io;
   bool pipeline = true;
 
@@ -31,6 +40,5 @@ private:
   int enq_ptr = 0;
   int deq_ptr = 0;
   int now_tag;
-
   int alloc_tag;
 };

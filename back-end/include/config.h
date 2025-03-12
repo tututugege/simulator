@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 100000
+#define MAX_SIM_TIME 9000000
 #define ISSUE_WAY 8
 
 #define ARF_NUM 32
@@ -19,7 +19,7 @@ using namespace std;
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_BRANCHCHECK*/
-/*#define CONFIG_BPU*/
+#define CONFIG_BPU
 
 #define UART_BASE 0x10000000
 
@@ -61,8 +61,8 @@ typedef struct Inst_info {
   bool mispred;
   bool br_taken;
   uint32_t pc_next;
-
   int old_dest_preg;
+
   IQ_TYPE iq_type;
   bool dest_en, src1_en, src2_en;
   bool src1_busy, src2_busy;
@@ -73,10 +73,10 @@ typedef struct Inst_info {
   uint32_t imm;
   uint32_t pc;
   uint32_t tag;
+  uint32_t csr_idx;
   uint32_t rob_idx;
   uint32_t stq_idx;
   bool pre_store[STQ_NUM];
-  uint32_t csr_idx;
 
   // 调度特征
   int inst_idx;

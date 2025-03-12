@@ -167,6 +167,7 @@ void Back_Top::Back_comb() {
   isu.comb();
   prf.comb();
   idu.comb();
+  /*idu.io_gen();*/
 
   if (!rob.io.rob_bc->rollback) {
     back.out.mispred = prf.io.prf2id->mispred;
@@ -205,8 +206,9 @@ void Back_Top::Back_seq() {
   rob.seq();
   stq.seq();
   csr.seq();
-
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.id2front->dec_fire[i];
   }
+
+  /*idu.reg_gen();*/
 }
