@@ -4,6 +4,7 @@
 #include <RISCV.h>
 #include <cstdint>
 #include <cvt.h>
+#include <fstream>
 #include <util.h>
 
 extern int inst_idx;
@@ -11,6 +12,7 @@ extern int inst_idx;
 Inst_info decode(uint32_t);
 
 void IDU::init() {
+
   for (int i = 1; i < MAX_BR_NUM; i++) {
     tag_vec[i] = true;
   }
@@ -327,10 +329,14 @@ Inst_info decode(uint32_t inst) {
   }
 
   default: {
-    if (LOG) {
-      cerr << "Error: unknown instruction: ";
-      cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;
-    }
+    /*if (LOG) {*/
+    /*  cerr << "Error: unknown instruction: ";*/
+    /*  cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;*/
+    /*}*/
+    dest_en = false;
+    src1_en = false;
+    src2_en = false;
+
     break;
   }
   }
@@ -365,4 +371,155 @@ Inst_info decode(uint32_t inst) {
   }
 
   return info;
+}
+
+void IDU::io_gen() {
+  int in_i = 0, out_i = 0;
+
+  // ************************** input ***************************8
+
+  // front to idu
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    cvt_number_to_bit_unsigned(input + in_i, io.front2id->inst[i], 32);
+    in_i += 32;
+  }
+
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    cvt_number_to_bit_unsigned(input + in_i, io.front2id->pc[i], 32);
+    in_i += 32;
+  }
+
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    cvt_number_to_bit_unsigned(input + in_i, io.front2id->valid[i], 32);
+    in_i += 1;
+  }
+
+  // ren to idu
+  cvt_number_to_bit_unsigned(input + in_i, io.ren2id->ready, 1);
+  in_i += 1;
+
+  // prf to id
+  cvt_number_to_bit_unsigned(input + in_i, io.prf2id->mispred, 1);
+  in_i += 1;
+  cvt_number_to_bit_unsigned(input + in_i, io.prf2id->redirect_pc, 32);
+  in_i += 32;
+  cvt_number_to_bit_unsigned(input + in_i, io.prf2id->br_tag, 3);
+  in_i += 3;
+
+  // rob to idu
+  cvt_number_to_bit_unsigned(input + in_i, io.rob_bc->rollback, 1);
+  in_i += 1;
+
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
+    cvt_number_to_bit_unsigned(
+        input + in_i,
+        io.commit->commit_entry[i].valid &&
+            is_branch(io.commit->commit_entry[i].inst.op),
+        1);
+    in_i += 1;
+  }
+
+  /*// idu 中的 tag_fifo tag_vec now_tag enq_ptr deq_ptr*/
+  /**/
+  /*for (int i = 0; i < MAX_BR_NUM; i++) {*/
+  /*  cvt_number_to_bit_unsigned(input + in_i, tag_vec[i], 1);*/
+  /*  in_i += 1;*/
+  /*}*/
+  /**/
+  /*for (int i = 0; i < MAX_BR_NUM; i++) {*/
+  /*  cvt_number_to_bit_unsigned(input + in_i, tag_fifo[i], 3);*/
+  /*  in_i += 3;*/
+  /*}*/
+  /**/
+  /*cvt_number_to_bit_unsigned(input + in_i, now_tag, 3);*/
+  /*in_i += 3;*/
+  /**/
+  /*cvt_number_to_bit_unsigned(input + in_i, enq_ptr, 3);*/
+  /*in_i += 3;*/
+  /**/
+  /*cvt_number_to_bit_unsigned(input + in_i, deq_ptr, 3);*/
+  /*in_i += 3;*/
+
+  // *********************** output ******************************
+
+  // id to front
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    cvt_number_to_bit_unsigned(output + out_i, io.id2front->dec_fire[i], 1);
+    out_i += 1;
+  }
+  cvt_number_to_bit_unsigned(output + out_i, io.id2front->ready, 1);
+  out_i += 1;
+
+  // id to ren
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->valid[i], 1);
+    out_i += 1;
+
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].pc, 32);
+    out_i += 32;
+
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].dest_areg, 5);
+    out_i += 5;
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].src1_areg, 5);
+    out_i += 5;
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].src2_areg, 5);
+    out_i += 5;
+
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].dest_en, 1);
+    out_i += 1;
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].src1_en, 1);
+    out_i += 1;
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].src2_en, 1);
+    out_i += 1;
+
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].op, 4);
+    out_i += 4;
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].src2_is_imm,
+                               1);
+    out_i += 1;
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].func3, 3);
+    out_i += 3;
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].func7_5, 1);
+    out_i += 1;
+
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].imm, 32);
+    out_i += 32;
+
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].tag, 3);
+    out_i += 3;
+
+    cvt_number_to_bit_unsigned(output + out_i, io.id2ren->inst[i].csr_idx, 12);
+    out_i += 12;
+  }
+
+  // dec tag bcat
+  cvt_number_to_bit_unsigned(output + out_i, io.id_bc->mispred, 1);
+  out_i += 1;
+  cvt_number_to_bit_unsigned(output + out_i, io.id_bc->br_tag, 3);
+  out_i += 3;
+  cvt_number_to_bit_unsigned(output + out_i, io.id_bc->br_mask, MAX_BR_NUM);
+  out_i += MAX_BR_NUM;
+}
+
+void IDU::reg_gen() {
+  copy_indice(input, in_size, output, out_size, reg_size);
+  int out_i = out_size;
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    cvt_number_to_bit_unsigned(output + out_i, tag_vec[i], MAX_BR_NUM);
+    out_i += 1;
+  }
+
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    cvt_number_to_bit_unsigned(output + out_i, tag_fifo[i], MAX_BR_NUM);
+    out_i += 3;
+  }
+
+  cvt_number_to_bit_unsigned(output + out_i, enq_ptr, MAX_BR_NUM);
+  out_i += 3;
+  cvt_number_to_bit_unsigned(output + out_i, deq_ptr, MAX_BR_NUM);
+  out_i += 3;
+  cvt_number_to_bit_unsigned(output + out_i, now_tag, MAX_BR_NUM);
+  out_i += 3;
+
+  // 写入文件
 }

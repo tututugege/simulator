@@ -63,7 +63,7 @@ typedef struct {
 } Back_out;
 
 class Back_Top {
-private:
+public:
   IDU idu;
   Rename rename;
   ISU isu;
@@ -73,7 +73,6 @@ private:
   STQ stq;
   ROB rob;
 
-public:
   Back_in in;
   Back_out out;
   void init();

@@ -55,6 +55,8 @@ int main(int argc, char *argv[]) {
   }
   const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
 
+  /*ofstream idu_io("./idu_io", ios::binary);*/
+
 #ifdef CONFIG_DIFFTEST
   init_difftest(diff_so, idx * 4);
 #endif
@@ -213,6 +215,11 @@ int main(int argc, char *argv[]) {
     store_slave_seq();
     back.Back_seq();
 
+    /*idu_io.write((char *)back.idu.input, back.idu.in_size +
+     * back.idu.reg_size);*/
+    /*idu_io.write((char *)back.idu.output,*/
+    /*             back.idu.out_size + back.idu.reg_size);*/
+
     if (sim_end)
       break;
 
@@ -239,6 +246,7 @@ SIM_END:
   extern int pred_ok;
   extern int taken_num;
 
+  cout << endl;
   if (sim_time != MAX_SIM_TIME) {
     if (ret == 0) {
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
