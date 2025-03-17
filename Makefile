@@ -5,7 +5,7 @@ CXXSRC += ./rv_simu_mmu.cpp
 CXXINCLUDE = -I./include/
 CXXINCLUDE += -I./back-end/include/
 CXXINCLUDE += -I./back-end/EXU/include/
-CXXINCLUDE += -I./back-end/ISU/include/
+CXXINCLUDE += -I./back-end/tools/include/
 CXXINCLUDE += -I./diff/include/
 CXXINCLUDE += -I./front-end/
 

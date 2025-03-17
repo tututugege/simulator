@@ -9,7 +9,7 @@ typedef struct {
   Stq_Iss *stq2iss;
   Stq_Ren *stq2ren;
   Rob_Commit *rob_commit;
-  Dec_Broadcast *id_bc;
+  Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bc;
 } STQ_IO;
 

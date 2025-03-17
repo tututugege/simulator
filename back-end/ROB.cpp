@@ -52,7 +52,8 @@ void ROB::comb() {
     int idx = (deq_ptr + i) % ROB_NUM;
     io.rob_commit->commit_entry[i].inst = entry[idx].inst;
     if (i == 0) {
-      io.rob_commit->commit_entry[i].valid = entry[idx].valid && complete[idx];
+      io.rob_commit->commit_entry[i].valid =
+          entry[idx].valid && complete[idx] && !io.dec_bcast->mispred;
     } else {
       io.rob_commit->commit_entry[i].valid =
           entry[idx].valid && complete[idx] &&
@@ -100,10 +101,10 @@ void ROB::seq() {
   }
 
   // 分支预测失败
-  if (io.id_bc->mispred) {
+  if (io.dec_bcast->mispred) {
     int idx = (enq_ptr - 1 + ROB_NUM) % ROB_NUM;
     while (entry[idx].valid &&
-           ((1 << entry[idx].inst.tag) & io.id_bc->br_mask)) {
+           ((1 << entry[idx].inst.tag) & io.dec_bcast->br_mask)) {
       entry[idx].valid = false;
       idx = (idx - 1 + ROB_NUM) % ROB_NUM;
       count--;
@@ -117,7 +118,8 @@ void ROB::seq() {
       entry[enq_ptr].valid = true;
       entry[enq_ptr].inst = io.ren2rob->inst[i];
       complete[enq_ptr] = false;
-      if (io.ren2rob->inst[i].op == ECALL || io.ren2rob->inst[i].op == MRET)
+      if (io.ren2rob->inst[i].op == ECALL || io.ren2rob->inst[i].op == MRET ||
+          io.ren2rob->inst[i].op == EBREAK)
         exception[enq_ptr] = true;
       else
         exception[enq_ptr] = false;

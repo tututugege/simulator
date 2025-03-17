@@ -1,9 +1,10 @@
 #include "../front_IO.h"
 #include "../frontend.h"
 #include <array>
+#include <assert.h>
 #include <queue>
 
-#define FIFO_SIZE 8
+#define FIFO_SIZE 10000
 
 struct FIFO_entry {
   std::array<uint32_t, FETCH_WIDTH> instructions;
@@ -29,6 +30,8 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
     out->full = false;
     out->empty = true;
   }
+  if (fifo.size() >= FIFO_SIZE)
+    assert(0);
 
   // if FIFO is not full and icache has new data
   if (fifo.size() < FIFO_SIZE && in->write_enable) {

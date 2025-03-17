@@ -1,5 +1,6 @@
 #include <EXU.h>
 #include <config.h>
+#include <util.h>
 
 void alu(Inst_info *inst, FU &fu);
 void bru(Inst_info *inst, FU &fu);
@@ -32,8 +33,8 @@ void EXU::comb() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     io.exe2prf->entry[i].valid = false;
     io.exe2prf->entry[i].inst = inst_r[i].inst;
-    if (inst_r[i].valid) {
-      if (inst_r[i].inst.op != CSR) {
+    if (inst_r[i].valid && !io.dec_bcast->mispred) {
+      if (!is_CSR(inst_r[i].inst.op)) {
         fu[i].comb(&io.exe2prf->entry[i].inst, fu[i]);
         if (fu[i].complete) {
           io.exe2prf->entry[i].valid = true;
@@ -41,20 +42,22 @@ void EXU::comb() {
           io.exe2prf->entry[i].valid = false;
         }
       } else {
-        io.exe2prf->entry[i].valid = true;
         fu[i].complete = true;
-        io.exe2csr->we =
-            inst_r[i].inst.func3 == 1 || inst_r[i].inst.src1_areg != 0;
+        io.exe2prf->entry[i].valid = true;
+        if (inst_r[i].inst.op == CSR) {
+          io.exe2csr->we =
+              inst_r[i].inst.func3 == 1 || inst_r[i].inst.src1_areg != 0;
 
-        io.exe2csr->re =
-            inst_r[i].inst.func3 != 1 || inst_r[i].inst.dest_areg != 0;
+          io.exe2csr->re =
+              inst_r[i].inst.func3 != 1 || inst_r[i].inst.dest_areg != 0;
 
-        io.exe2csr->idx = inst_r[i].inst.csr_idx;
-        io.exe2csr->wcmd = inst_r[i].inst.func3 & 0b11;
-        if (inst_r[i].inst.src2_is_imm) {
-          io.exe2csr->wdata = inst_r[i].inst.imm;
-        } else {
-          io.exe2csr->wdata = inst_r[i].inst.src1_rdata;
+          io.exe2csr->idx = inst_r[i].inst.csr_idx;
+          io.exe2csr->wcmd = inst_r[i].inst.func3 & 0b11;
+          if (inst_r[i].inst.src2_is_imm) {
+            io.exe2csr->wdata = inst_r[i].inst.imm;
+          } else {
+            io.exe2csr->wdata = inst_r[i].inst.src1_rdata;
+          }
         }
       }
     }
@@ -83,7 +86,7 @@ void EXU::seq() {
 
     if (io.prf2exe->iss_entry[i].valid && io.exe2prf->ready[i]) {
       inst_r[i] = io.prf2exe->iss_entry[i];
-    } else if (inst_r[i].valid && fu[i].complete) {
+    } else if (io.exe2prf->entry[i].valid && io.prf2exe->ready[i]) {
       inst_r[i].valid = false;
     }
 
@@ -91,9 +94,10 @@ void EXU::seq() {
       fu[i].seq(&io.exe2prf->entry[i].inst, fu[i]);
   }
 
-  if (io.id_bc->mispred) {
+  if (io.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WAY; i++) {
-      if (inst_r[i].valid && (io.id_bc->br_mask & (1 << inst_r[i].inst.tag))) {
+      if (inst_r[i].valid &&
+          (io.dec_bcast->br_mask & (1 << inst_r[i].inst.tag))) {
         inst_r[i].valid = false;
       }
     }

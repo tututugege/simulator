@@ -80,10 +80,11 @@ void ISU::comb() {
   // 出队
   int issue_idx = 0;
   int ready_num[IQ_NUM] = {0};
-
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.exe2iss->ready[i])
-      ready_num[fu_config[i]]++;
+  if (!io.dec_bcast->mispred) {
+    for (int i = 0; i < ISSUE_WAY; i++) {
+      if (io.exe2iss->ready[i])
+        ready_num[fu_config[i]]++;
+    }
   }
 
   // int
@@ -151,9 +152,9 @@ void ISU::seq() {
   }
 
   // 分支处理
-  if (io.id_bc->mispred) {
+  if (io.dec_bcast->mispred) {
     for (auto &q : iq) {
-      q.br_clear(io.id_bc->br_mask);
+      q.br_clear(io.dec_bcast->br_mask);
     }
   }
 }

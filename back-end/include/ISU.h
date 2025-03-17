@@ -34,7 +34,7 @@ private:
 class ISU_IO {
 public:
   Rob_Broadcast *rob_bc;
-  Dec_Broadcast *id_bc;
+  Dec_Broadcast *dec_bcast;
 
   Ren_Iss *ren2iss;
   Iss_Ren *iss2ren; // ready
