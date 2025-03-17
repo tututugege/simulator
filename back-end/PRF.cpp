@@ -74,9 +74,9 @@ void PRF::comb_read() {
   }
 
   // TODO: MAGIC NUMBER
-  if (inst_r[6].valid && inst_r[6].inst.dest_en) {
+  if (inst_r[5].valid && inst_r[5].inst.dest_en) {
     io.prf_awake->wake.valid = true;
-    io.prf_awake->wake.preg = inst_r[6].inst.dest_preg;
+    io.prf_awake->wake.preg = inst_r[5].inst.dest_preg;
   } else {
     io.prf_awake->wake.valid = false;
   }

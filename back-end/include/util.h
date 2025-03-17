@@ -6,10 +6,10 @@ inline bool is_branch(Inst_op op) {
   return op == BR || op == JALR || op == JAL;
 }
 
-inline bool is_CSR(Inst_op op) {
-
-  return (op == CSR || op == MRET || op == ECALL || op == EBREAK);
-}
+/*inline bool is_CSR(Inst_op op) {*/
+/**/
+/*  return (op == CSR || op == MRET || op == ECALL || op == EBREAK);*/
+/*}*/
 
 inline bool orR(bool *in, int num) {
   bool out = false;

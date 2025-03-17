@@ -1,4 +1,3 @@
-#include "CSR.h"
 #include "IO.h"
 #include "frontend.h"
 #include <RISCV.h>
@@ -59,9 +58,6 @@ Rob_Commit rob_commit;
 Stq_Ren stq2ren;
 Stq_Iss stq2iss;
 
-Csr_Exe csr2exe;
-Exe_Csr exe2csr;
-
 void Back_Top::init() {
 
   idu.io.front2dec = &front2dec;
@@ -110,8 +106,6 @@ void Back_Top::init() {
   exu.io.exe2prf = &exe2prf;
   exu.io.exe2stq = &exe2stq;
   exu.io.exe2iss = &exe2iss;
-  exu.io.exe2csr = &exe2csr;
-  exu.io.csr2exe = &csr2exe;
 
   rob.io.ren2rob = &ren2rob;
   rob.io.dec_bcast = &dec_bcast;
@@ -129,16 +123,11 @@ void Back_Top::init() {
   stq.io.dec_bcast = &dec_bcast;
   stq.io.rob_bc = &rob_bc;
 
-  csr.io.exe2csr = &exe2csr;
-  csr.io.csr2exe = &csr2exe;
-  csr.io.rob_bc = &rob_bc;
-
   idu.init();
   rename.init();
   isu.init();
   prf.init();
   exu.init();
-  csr.init();
   rob.init();
 }
 
@@ -157,14 +146,12 @@ void Back_Top::Back_comb() {
   }
 
   // exu -> iss -> prf
-  // exu -> csr
 
   // rename -> idu.comb_fire
   // prf->idu.comb_branch
   // isu/stq/rob -> rename.fire -> idu.fire
   idu.comb_decode();
   idu.comb_release_tag();
-  rename.comb_commit();
   rename.comb_alloc();
   prf.comb_branch();
   idu.comb_branch();
@@ -175,9 +162,9 @@ void Back_Top::Back_comb() {
   rename.comb_rename();
   stq.comb();
   rob.comb();
+  rename.comb_commit();
   rename.comb_fire();
   idu.comb_fire();
-  csr.comb();
   rename.comb_branch();
   rename.comb_store();
   rename.comb_pipeline();
@@ -189,22 +176,18 @@ void Back_Top::Back_comb() {
     back.out.redirect_pc = prf.io.prf2dec->redirect_pc;
   } else {
     back.out.mispred = true;
-    if (rob.io.rob_bc->exception) {
-      back.out.redirect_pc = csr.io.csr2exe->mtvec;
-    } else if (rob.io.rob_bc->mret) {
-      back.out.redirect_pc = csr.io.csr2exe->mepc;
-    }
   }
 
   // 修正pc_next 以及difftest对应的pc_next
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
-    if (back.out.commit_entry[i].valid &&
-            back.out.commit_entry[i].inst.op == ECALL ||
-        back.out.commit_entry[i].inst.op == MRET) {
-      back.out.commit_entry[i].inst.pc_next = back.out.redirect_pc;
-      rob.io.rob_commit->commit_entry[i].inst.pc_next = back.out.redirect_pc;
-    }
+    /*if (back.out.commit_entry[i].valid &&*/
+    /*        back.out.commit_entry[i].inst.op == ECALL ||*/
+    /*    back.out.commit_entry[i].inst.op == MRET) {*/
+    /*  back.out.commit_entry[i].inst.pc_next = back.out.redirect_pc;*/
+    /*  rob.io.rob_commit->commit_entry[i].inst.pc_next =
+     * back.out.redirect_pc;*/
+    /*}*/
   }
 }
 
@@ -218,7 +201,6 @@ void Back_Top::Back_seq() {
   prf.seq();
   rob.seq();
   stq.seq();
-  csr.seq();
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.dec2front->fire[i];
   }

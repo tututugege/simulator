@@ -24,7 +24,6 @@ public:
 private:
   Inst_entry entry[ROB_NUM];
   bool complete[ROB_NUM];
-  bool exception[ROB_NUM];
   int enq_ptr;
   int deq_ptr;
   int count;

@@ -1,4 +1,3 @@
-#include "CSR.h"
 #include "IO.h"
 #include "frontend.h"
 #include <RISCV.h>
@@ -17,31 +16,16 @@ int taken_num;
 
 void ROB::comb() {
 
-  bool csr_stall = (entry[deq_ptr].inst.op == CSR) && entry[deq_ptr].valid;
-  bool exception_stall = false;
-
-  for (int i = 0; i < ROB_NUM; i++) {
-    exception_stall = exception_stall || (exception[i] && entry[i].valid);
-    if (exception_stall)
-      break;
-  }
-
   int num = count;
-  io.rob2ren->empty = (count == 0);
-  io.rob2ren->stall = csr_stall || exception_stall;
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (csr_stall || exception_stall) {
-      io.rob2ren->ready[i] = false;
+    if (!io.ren2rob->valid[i]) {
+      io.rob2ren->ready[i] = true;
+    } else if (num < ROB_NUM) {
+      io.rob2ren->ready[i] = true;
+      num++;
     } else {
-      if (!io.ren2rob->valid[i]) {
-        io.rob2ren->ready[i] = true;
-      } else if (num < ROB_NUM) {
-        io.rob2ren->ready[i] = true;
-        num++;
-      } else {
-        io.rob2ren->ready[i] = false;
-      }
+      io.rob2ren->ready[i] = false;
     }
   }
 
@@ -65,19 +49,19 @@ void ROB::comb() {
       complete[idx] = false;
       entry[idx].valid = false;
 
-      if (exception[idx]) {
-        io.rob_bc->rollback = true;
-        exception[idx] = false;
-        if (entry[idx].inst.op == ECALL) {
-          io.rob_bc->exception = true;
-          io.rob_bc->pc = io.rob_commit->commit_entry[i].inst.pc;
-          io.rob_bc->cause = M_MODE_ECALL;
-        } else if (entry[idx].inst.op == MRET) {
-          io.rob_bc->mret = true;
-        }
-
-        break;
-      }
+      /*if (exception[idx]) {*/
+      /*  io.rob_bc->rollback = true;*/
+      /*  exception[idx] = false;*/
+      /*  if (entry[idx].inst.op == ECALL) {*/
+      /*    io.rob_bc->exception = true;*/
+      /*    io.rob_bc->pc = io.rob_commit->commit_entry[i].inst.pc;*/
+      /*    io.rob_bc->cause = M_MODE_ECALL;*/
+      /*  } else if (entry[idx].inst.op == MRET) {*/
+      /*    io.rob_bc->mret = true;*/
+      /*  }*/
+      /**/
+      /*  break;*/
+      /*}*/
     } else {
       break;
     }
@@ -118,11 +102,12 @@ void ROB::seq() {
       entry[enq_ptr].valid = true;
       entry[enq_ptr].inst = io.ren2rob->inst[i];
       complete[enq_ptr] = false;
-      if (io.ren2rob->inst[i].op == ECALL || io.ren2rob->inst[i].op == MRET ||
-          io.ren2rob->inst[i].op == EBREAK)
-        exception[enq_ptr] = true;
-      else
-        exception[enq_ptr] = false;
+      /*if (io.ren2rob->inst[i].op == ECALL || io.ren2rob->inst[i].op == MRET
+       * ||*/
+      /*    io.ren2rob->inst[i].op == EBREAK)*/
+      /*  exception[enq_ptr] = true;*/
+      /*else*/
+      /*  exception[enq_ptr] = false;*/
       LOOP_INC(enq_ptr, ROB_NUM);
       count++;
     }

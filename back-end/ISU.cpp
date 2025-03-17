@@ -27,10 +27,9 @@ IQ::IQ(int entry_num, int out_num, IQ_TYPE type) {
 }
 
 void ISU::init() {
-  add_iq(32, 4, IQ_INT);
-  add_iq(8, 1, IQ_BR);
-  add_iq(1, 1, IQ_CSR);
-  add_iq(16, 1, IQ_LD);
+  add_iq(16, 4, IQ_INT);
+  add_iq(4, 1, IQ_BR);
+  add_iq(8, 1, IQ_LD);
   add_iq(8, 1, IQ_ST);
 }
 
@@ -96,11 +95,10 @@ void ISU::comb() {
 
   // TODO: Magic Number
   io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0]; // br
-  io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0]; // csr
-  io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0]; // load
-  io.iss2prf->iss_entry[7] = iq[4].deq(ready_num[4])[0]; // store
+  io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0]; // load
+  io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0]; // store
 
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 5; i++) {
     if (io.iss2prf->iss_entry[i].valid &&
         io.iss2prf->iss_entry[i].inst.dest_en) {
       io.iss2ren->wake[i].valid = true;

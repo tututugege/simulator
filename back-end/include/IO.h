@@ -53,8 +53,6 @@ typedef struct {
 
 typedef struct {
   bool ready[FETCH_WIDTH];
-  bool empty;
-  bool stall;
   uint32_t enq_idx;
 } Rob_Ren;
 
@@ -77,7 +75,7 @@ typedef struct {
 // TODO: MAGIC NUMBER
 typedef struct {
   bool ready[FETCH_WIDTH];
-  Wake_info wake[6];
+  Wake_info wake[5];
 } Iss_Ren;
 
 typedef struct {

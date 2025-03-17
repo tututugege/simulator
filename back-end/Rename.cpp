@@ -85,7 +85,7 @@ void Rename::comb_wake() {
   }
 
   // TODO: Magic Number
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 5; i++) {
     if (io.iss2ren->wake[i].valid) {
       busy_table_1[io.iss2ren->wake[i].preg] = false;
     }
@@ -163,23 +163,16 @@ void Rename::comb_fire() {
   bool csr_stall = false; // csr指令后面的指令都要阻塞
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2iss->dis_fire[i] =
-        (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
-        (io.ren2iss->inst[i].op != STORE ||
-         io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
-        (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
-        !io.dec_bcast->mispred && !csr_stall &&
-        (io.ren2iss->inst[i].op != CSR || io.rob2ren->empty && !pre_fire) &&
-        !io.rob2ren->stall;
+    io.ren2iss->dis_fire[i] = (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
+                              (io.ren2iss->inst[i].op != STORE ||
+                               io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
+                              (io.ren2rob->valid[i] && io.rob2ren->ready[i]) &&
+                              !pre_stall && !io.dec_bcast->mispred;
 
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
     io.ren2stq->dis_fire[i] = io.ren2iss->dis_fire[i];
     pre_stall = inst_r[i].valid && !io.ren2iss->dis_fire[i];
     pre_fire = io.ren2iss->dis_fire[i];
-    // 异常相关指令需要单独执行
-    if (io.ren2iss->valid[i] && io.ren2iss->inst[i].op == CSR) {
-      csr_stall = true;
-    }
 
     if (io.ren2iss->dis_fire[i] && io.ren2iss->inst[i].dest_en) {
       int dest_preg = io.ren2iss->inst[i].dest_preg;
@@ -287,7 +280,9 @@ void Rename ::seq() {
     free_vec[i] = free_vec_1[i];
     busy_table[i] = busy_table_1[i];
     spec_alloc[i] = spec_alloc_1[i];
+    /*cout << free_vec[i];*/
   }
+  /*cout << endl;*/
 
   for (int i = 0; i < MAX_BR_NUM; i++) {
     for (int j = 0; j < ARF_NUM; j++) {
