@@ -11,7 +11,7 @@ public:
 
   Rob_Broadcast *rob_bc;
   Rob_Commit *rob_commit;
-  Dec_Broadcast *id_bc;
+  Dec_Broadcast *dec_bcast;
 };
 
 class ROB {

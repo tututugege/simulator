@@ -14,6 +14,7 @@
 int inst_idx;
 int mispred_num = 0;
 int branch_num = 0;
+int back2front_num = 0;
 
 using namespace std;
 
@@ -55,8 +56,6 @@ int main(int argc, char *argv[]) {
   }
   const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
 
-  /*ofstream idu_io("./idu_io", ios::binary);*/
-
 #ifdef CONFIG_DIFFTEST
   init_difftest(diff_so, idx * 4);
 #endif
@@ -92,6 +91,7 @@ int main(int argc, char *argv[]) {
         front_in.reset = true;
         front_in.FIFO_read_enable = true;
         front_top(&front_in, &front_out);
+        cout << hex << front_out.pc[0] << endl;
         front_in.reset = false;
 
         for (int j = 0; j < FETCH_WIDTH; j++) {
@@ -103,8 +103,19 @@ int main(int argc, char *argv[]) {
 
       // 取指令
       front_in.FIFO_read_enable = true;
+      front_in.refetch = false;
+
+      for (int i = 0; i < COMMIT_WIDTH; i++) {
+        if (front_in.back2front_valid[i]) {
+          back2front_num++;
+        }
+      }
 
       front_top(&front_in, &front_out);
+
+      if (sim_time == 0) {
+        cout << front_out.pc[0] << endl;
+      }
 
 #else
       for (int j = 0; j < FETCH_WIDTH; j++) {
@@ -155,6 +166,10 @@ int main(int argc, char *argv[]) {
         back.in.predict_next_fetch_address[j] =
             front_out.predict_next_fetch_address;
         back.in.inst[j] = front_out.instructions[j];
+        if (LOG && back.in.valid[j]) {
+          cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
+               << front_out.pc[j] << " Inst: " << back.in.inst[j] << endl;
+        }
 
         back.in.predict_dir[j] = front_out.predict_dir[j];
         back.in.alt_pred[j] = front_out.alt_pred[j];
@@ -164,6 +179,7 @@ int main(int argc, char *argv[]) {
         if (front_out.predict_dir[j])
           no_taken = false;
       }
+
 #endif
     }
 
@@ -178,6 +194,7 @@ int main(int argc, char *argv[]) {
       Inst_info *inst = &back.out.commit_entry[i].inst;
       front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
       if (front_in.back2front_valid[i]) {
+
         front_in.predict_dir[i] = inst->pred_br_taken;
         front_in.predict_base_pc[i] = inst->pc;
         /*cout << hex << "commit pc " << inst->pc << endl;*/
@@ -209,16 +226,19 @@ int main(int argc, char *argv[]) {
     } else {
       front_in.refetch = false;
     }
+
+    front_top(&front_in, &front_out);
+
+    for (int i = 0; i < COMMIT_WIDTH; i++) {
+      front_in.back2front_valid[i] = false;
+    }
+
+    front_in.refetch = false;
 #endif
 
     load_slave_seq();
     store_slave_seq();
     back.Back_seq();
-
-    /*idu_io.write((char *)back.idu.input, back.idu.in_size +
-     * back.idu.reg_size);*/
-    /*idu_io.write((char *)back.idu.output,*/
-    /*             back.idu.out_size + back.idu.reg_size);*/
 
     if (sim_end)
       break;
@@ -246,7 +266,6 @@ SIM_END:
   extern int pred_ok;
   extern int taken_num;
 
-  cout << endl;
   if (sim_time != MAX_SIM_TIME) {
     if (ret == 0) {
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
@@ -260,8 +279,9 @@ SIM_END:
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
       cout << "addr error :" << dec << dir_ok_addr_error << endl;
-      /*cout << "tage cnt :" << dec << tage_cnt << endl;*/
-      /*cout << "tage miss :" << dec << tage_miss << endl;*/
+      cout << "tage cnt :" << dec << tage_cnt << endl;
+      cout << "tage miss :" << dec << tage_miss << endl;
+      cout << "b2f miss :" << dec << back2front_num << endl;
       /*cout << "pred ok :" << dec << pred_ok << endl;*/
       /*cout << "taken_num:" << dec << taken_num << endl;*/
     } else {

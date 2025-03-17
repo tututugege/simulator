@@ -9,23 +9,25 @@ void PRF::init() {
     io.prf2exe->ready[i] = true;
 }
 
-void PRF::comb() {
+void PRF::comb_branch() {
   // 根据分支结果向前端返回信息
 
   // TODO: Magic number
-  io.prf2id->mispred = false;
+  io.prf2dec->mispred = false;
   if (inst_r[4].valid && is_branch(inst_r[4].inst.op) &&
       inst_r[4].inst.mispred) {
 
-    io.prf2id->mispred = true;
-    io.prf2id->redirect_pc = inst_r[4].inst.pc_next;
-    io.prf2id->br_tag = inst_r[4].inst.tag;
+    io.prf2dec->mispred = true;
+    io.prf2dec->redirect_pc = inst_r[4].inst.pc_next;
+    io.prf2dec->br_tag = inst_r[4].inst.tag;
 
     if (LOG)
-      cout << "misprediction redirect_pc 0x" << hex << io.prf2id->redirect_pc
+      cout << "misprediction redirect_pc 0x" << hex << io.prf2dec->redirect_pc
            << endl;
   }
+}
 
+void PRF::comb_read() {
   // bypass
   for (int i = 0; i < ISSUE_WAY; i++) {
     io.prf2exe->iss_entry[i] = io.iss2prf->iss_entry[i];
@@ -93,9 +95,10 @@ void PRF::seq() {
     }
   }
 
-  if (io.id_bc->mispred) {
+  if (io.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WAY; i++) {
-      if (inst_r[i].valid && (io.id_bc->br_mask & (1 << inst_r[i].inst.tag))) {
+      if (inst_r[i].valid &&
+          (io.dec_bcast->br_mask & (1 << inst_r[i].inst.tag))) {
         inst_r[i].valid = false;
       }
     }

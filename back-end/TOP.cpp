@@ -29,13 +29,13 @@ void Back_Top::difftest(Inst_info *inst) {
 /*Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST)
  * {}*/
 
-Front_Dec front2id;
-Dec_Front id2front;
+Front_Dec front2dec;
+Dec_Front dec2front;
 
-Dec_Ren id2ren;
-Dec_Broadcast id_bc;
+Dec_Ren dec2ren;
+Dec_Broadcast dec_bcast;
 
-Ren_Dec ren2id;
+Ren_Dec ren2dec;
 Ren_Iss ren2iss;
 Ren_Rob ren2rob;
 Ren_Stq ren2stq;
@@ -46,7 +46,7 @@ Iss_Prf iss2prf;
 Prf_Exe prf2exe;
 Prf_Rob prf2rob;
 Prf_Awake awake;
-Prf_Dec prf2id;
+Prf_Dec prf2dec;
 
 Exe_Prf exe2prf;
 Exe_Stq exe2stq;
@@ -64,20 +64,20 @@ Exe_Csr exe2csr;
 
 void Back_Top::init() {
 
-  idu.io.front2id = &front2id;
-  idu.io.id2front = &id2front;
-  idu.io.id2ren = &id2ren;
-  idu.io.ren2id = &ren2id;
-  idu.io.id_bc = &id_bc;
-  idu.io.prf2id = &prf2id;
+  idu.io.front2dec = &front2dec;
+  idu.io.dec2front = &dec2front;
+  idu.io.dec2ren = &dec2ren;
+  idu.io.ren2dec = &ren2dec;
+  idu.io.dec_bcast = &dec_bcast;
+  idu.io.prf2dec = &prf2dec;
   idu.io.rob_bc = &rob_bc;
   idu.io.commit = &rob_commit;
 
-  rename.io.dec2ren = &id2ren;
-  rename.io.ren2dec = &ren2id;
+  rename.io.dec2ren = &dec2ren;
+  rename.io.ren2dec = &ren2dec;
   rename.io.ren2iss = &ren2iss;
   rename.io.iss2ren = &iss2ren;
-  rename.io.id_bc = &id_bc;
+  rename.io.dec_bcast = &dec_bcast;
   rename.io.rob2ren = &rob2ren;
   rename.io.ren2rob = &ren2rob;
   rename.io.ren2stq = &ren2stq;
@@ -87,7 +87,7 @@ void Back_Top::init() {
   rename.io.awake = &awake;
 
   isu.io.rob_bc = &rob_bc;
-  isu.io.id_bc = &id_bc;
+  isu.io.dec_bcast = &dec_bcast;
   isu.io.ren2iss = &ren2iss;
   isu.io.iss2ren = &iss2ren;
   isu.io.iss2prf = &iss2prf;
@@ -100,12 +100,12 @@ void Back_Top::init() {
   prf.io.prf2exe = &prf2exe;
   prf.io.exe2prf = &exe2prf;
   prf.io.prf_awake = &awake;
-  prf.io.prf2id = &prf2id;
-  prf.io.id_bc = &id_bc;
+  prf.io.prf2dec = &prf2dec;
+  prf.io.dec_bcast = &dec_bcast;
   prf.io.rob_bc = &rob_bc;
 
   exu.io.prf2exe = &prf2exe;
-  exu.io.id_bc = &id_bc;
+  exu.io.dec_bcast = &dec_bcast;
   exu.io.rob_bc = &rob_bc;
   exu.io.exe2prf = &exe2prf;
   exu.io.exe2stq = &exe2stq;
@@ -114,10 +114,10 @@ void Back_Top::init() {
   exu.io.csr2exe = &csr2exe;
 
   rob.io.ren2rob = &ren2rob;
-  rob.io.id_bc = &id_bc;
+  rob.io.dec_bcast = &dec_bcast;
   rob.io.prf2rob = &prf2rob;
   rob.io.rob_bc = &rob_bc;
-  rob.io.id_bc = &id_bc;
+  rob.io.dec_bcast = &dec_bcast;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2ren = &rob2ren;
 
@@ -126,7 +126,7 @@ void Back_Top::init() {
   stq.io.ren2stq = &ren2stq;
   stq.io.stq2iss = &stq2iss;
   stq.io.stq2ren = &stq2ren;
-  stq.io.id_bc = &id_bc;
+  stq.io.dec_bcast = &dec_bcast;
   stq.io.rob_bc = &rob_bc;
 
   csr.io.exe2csr = &exe2csr;
@@ -145,41 +145,54 @@ void Back_Top::init() {
 void Back_Top::Back_comb() {
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    idu.io.front2id->valid[i] = in.valid[i];
-    idu.io.front2id->pc[i] = in.pc[i];
-    idu.io.front2id->inst[i] = in.inst[i];
-    idu.io.front2id->predict_dir[i] = in.predict_dir[i];
-    idu.io.front2id->alt_pred[i] = in.alt_pred[i];
-    idu.io.front2id->altpcpn[i] = in.altpcpn[i];
-    idu.io.front2id->pcpn[i] = in.pcpn[i];
-    idu.io.front2id->predict_next_fetch_address[i] =
+    idu.io.front2dec->valid[i] = in.valid[i];
+    idu.io.front2dec->pc[i] = in.pc[i];
+    idu.io.front2dec->inst[i] = in.inst[i];
+    idu.io.front2dec->predict_dir[i] = in.predict_dir[i];
+    idu.io.front2dec->alt_pred[i] = in.alt_pred[i];
+    idu.io.front2dec->altpcpn[i] = in.altpcpn[i];
+    idu.io.front2dec->pcpn[i] = in.pcpn[i];
+    idu.io.front2dec->predict_next_fetch_address[i] =
         in.predict_next_fetch_address[i];
   }
 
-  // 顺序：rename -> stq/rob/isu
   // exu -> iss -> prf
   // exu -> csr
-  rename.comb();
+
+  // rename -> idu.comb_fire
+  // prf->idu.comb_branch
+  // isu/stq/rob -> rename.fire -> idu.fire
+  idu.comb_decode();
+  idu.comb_release_tag();
+  rename.comb_commit();
+  rename.comb_alloc();
+  prf.comb_branch();
+  idu.comb_branch();
+  exu.comb();
+  isu.comb();
+  prf.comb_read();
+  rename.comb_wake();
+  rename.comb_rename();
   stq.comb();
   rob.comb();
-  exu.comb();
+  rename.comb_fire();
+  idu.comb_fire();
   csr.comb();
-  isu.comb();
-  prf.comb();
-  idu.comb();
+  rename.comb_branch();
+  rename.comb_store();
+  rename.comb_pipeline();
   /*idu.io_gen();*/
 
   if (!rob.io.rob_bc->rollback) {
-    back.out.mispred = prf.io.prf2id->mispred;
-    back.out.redirect_pc = prf.io.prf2id->redirect_pc;
+    back.out.mispred = prf.io.prf2dec->mispred;
+    back.out.stall = !idu.io.dec2front->ready;
+    back.out.redirect_pc = prf.io.prf2dec->redirect_pc;
   } else {
     back.out.mispred = true;
     if (rob.io.rob_bc->exception) {
       back.out.redirect_pc = csr.io.csr2exe->mtvec;
     } else if (rob.io.rob_bc->mret) {
       back.out.redirect_pc = csr.io.csr2exe->mepc;
-    } else {
-      assert(0);
     }
   }
 
@@ -207,7 +220,7 @@ void Back_Top::Back_seq() {
   stq.seq();
   csr.seq();
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    out.fire[i] = idu.io.id2front->dec_fire[i];
+    out.fire[i] = idu.io.dec2front->fire[i];
   }
 
   /*idu.reg_gen();*/

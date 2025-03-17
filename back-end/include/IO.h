@@ -25,7 +25,7 @@ typedef struct {
 } Ren_Dec;
 
 typedef struct {
-  bool dec_fire[FETCH_WIDTH];
+  bool fire[FETCH_WIDTH];
   bool ready;
 } Dec_Front;
 

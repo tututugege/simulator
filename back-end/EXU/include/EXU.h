@@ -7,7 +7,7 @@
 class EXU_IO {
 public:
   Prf_Exe *prf2exe;
-  Dec_Broadcast *id_bc;
+  Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bc;
 
   Exe_Prf *exe2prf;

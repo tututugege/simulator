@@ -101,10 +101,10 @@ void STQ::seq() {
   }
 
   // 分支清空
-  if (io.id_bc->mispred) {
+  if (io.dec_bcast->mispred) {
     for (int i = 0; i < STQ_NUM; i++) {
       if (entry[i].valid && !entry[i].compelete &&
-          (io.id_bc->br_mask & (1 << entry[i].tag))) {
+          (io.dec_bcast->br_mask & (1 << entry[i].tag))) {
         entry[i].valid = false;
         count--;
         LOOP_DEC(enq_ptr, STQ_NUM);
