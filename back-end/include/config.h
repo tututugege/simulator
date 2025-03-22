@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 2000100
+#define MAX_SIM_TIME 2000000
 #define ISSUE_WAY 7
 
 #define ARF_NUM 32
