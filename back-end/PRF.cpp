@@ -14,6 +14,7 @@ void PRF::comb_branch() {
 
   // TODO: Magic number
   io.prf2dec->mispred = false;
+  io.prf2rob->mispred = false;
   if (inst_r[4].valid && is_branch(inst_r[4].inst.op) &&
       inst_r[4].inst.mispred) {
 
@@ -21,6 +22,8 @@ void PRF::comb_branch() {
     io.prf2dec->redirect_pc = inst_r[4].inst.pc_next;
     io.prf2dec->br_tag = inst_r[4].inst.tag;
 
+    io.prf2rob->mispred = true;
+    io.prf2rob->redirect_rob_idx = inst_r[4].inst.rob_idx;
     if (LOG)
       cout << "misprediction redirect_pc 0x" << hex << io.prf2dec->redirect_pc
            << endl;

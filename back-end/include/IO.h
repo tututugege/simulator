@@ -110,6 +110,8 @@ typedef struct {
 
 typedef struct {
   Inst_entry entry[ISSUE_WAY];
+  bool mispred;
+  uint32_t redirect_rob_idx;
 } Prf_Rob;
 
 typedef struct {

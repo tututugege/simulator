@@ -37,18 +37,18 @@ public:
   void io_gen_0(bool *input, bool *output);
   void io_gen_1(bool *input, bool *output);
 
-  bool pop = false;   // 是否mispred恢复
+  int pop = false;
   bool push = false;  // 是否分配了新tag
   uint32_t alloc_tag; // 是否分配了新tag
   list<uint32_t> tag_list;
 
   bool tag_vec[MAX_BR_NUM];
   int now_tag;
-  int br_tag;
+  /*int br_tag;*/
   int state;
 
   bool tag_vec_1[MAX_BR_NUM];
   int now_tag_1;
-  int br_tag_1;
+  /*int br_tag_1;*/
   int state_1;
 };

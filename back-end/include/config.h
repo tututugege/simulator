@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 2000000
+#define MAX_SIM_TIME 3000
 #define ISSUE_WAY 7
 
 #define ARF_NUM 32
@@ -15,7 +15,7 @@ using namespace std;
 #define ROB_NUM 32
 #define STQ_NUM 8
 
-#define LOG 0
+#define LOG 1
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_BRANCHCHECK*/

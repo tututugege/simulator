@@ -21,7 +21,7 @@ void ROB::comb_ready() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (!io.ren2rob->valid[i]) {
       io.rob2ren->ready[i] = true;
-    } else if (num < ROB_NUM) {
+    } else if (num < ROB_NUM - 1) {
       io.rob2ren->ready[i] = true;
       num++;
     } else {
@@ -38,8 +38,7 @@ void ROB::comb_commit() {
     int idx = (deq_ptr + i) % ROB_NUM;
     io.rob_commit->commit_entry[i].inst = entry[idx].inst;
     if (i == 0) {
-      io.rob_commit->commit_entry[i].valid =
-          entry[idx].valid && complete[idx] && !io.dec_bcast->mispred;
+      io.rob_commit->commit_entry[i].valid = entry[idx].valid && complete[idx];
     } else {
       io.rob_commit->commit_entry[i].valid =
           entry[idx].valid && complete[idx] &&
@@ -77,14 +76,15 @@ void ROB::comb_complete() {
 
 void ROB::comb_branch() {
   // 分支预测失败
-  if (io.dec_bcast->mispred) {
-    int idx = (enq_ptr - 1 + ROB_NUM) % ROB_NUM;
-    while (entry[idx].valid &&
-           ((1 << entry[idx].inst.tag) & io.dec_bcast->br_mask)) {
+  if (io.prf2rob->mispred) {
+    enq_ptr_1 = (io.prf2rob->redirect_rob_idx + 1) % ROB_NUM;
+
+    int idx = enq_ptr_1;
+    while (idx != enq_ptr) {
       entry_1[idx].valid = false;
-      LOOP_DEC(idx, ROB_NUM);
+      complete_1[idx] = false;
+      LOOP_INC(idx, ROB_NUM);
       count_1--;
-      LOOP_DEC(enq_ptr_1, ROB_NUM);
     }
   }
 }

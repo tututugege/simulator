@@ -71,28 +71,33 @@ void IDU::comb_decode() {
 }
 
 void IDU::comb_branch() {
-  if (io.prf2dec->mispred) {
-    br_tag_1 = io.prf2dec->br_tag;
-  }
+  /*if (io.prf2dec->mispred) {*/
+  /*  br_tag_1 = io.prf2dec->br_tag;*/
+  /*}*/
 
-  if (state == MISPRED || io.prf2dec->mispred) {
-    io.dec_bcast->br_mask = 1 << tag_list.back();
+  /*if (state == MISPRED || io.prf2dec->mispred) {*/
+  if (io.prf2dec->mispred) {
     io.dec_bcast->mispred = true;
-    io.dec_bcast->br_tag = br_tag_1;
+    io.dec_bcast->br_tag = io.prf2dec->br_tag;
 
     auto it = tag_list.end();
+    auto it_prev = tag_list.end();
     it--;
-    it--;
-    // 如果倒数第二个tag等于当前分支的tag，表示已经结束
-    if (*it == br_tag_1) {
-      pop = false;
-      state_1 = NORMAL;
-      now_tag_1 = tag_list.back();
-    } else {
-      state_1 = MISPRED;
-      pop = true;
-      tag_vec_1[tag_list.back()] = true;
+    it_prev--;
+    it_prev--;
+    pop = 0;
+    io.dec_bcast->br_mask = 0;
+    while (*it_prev != io.prf2dec->br_tag) {
+      io.dec_bcast->br_mask |= 1 << *it;
+      tag_vec_1[*it] = true;
+      pop++;
+      it--;
+      it_prev--;
     }
+    io.dec_bcast->br_mask |= 1 << *it;
+    now_tag_1 = *it;
+
+    state_1 = NORMAL;
   } else {
     pop = false;
     io.dec_bcast->br_mask = 0;
@@ -135,14 +140,15 @@ void IDU::comb_release_tag() {
 
 void IDU::seq() {
   now_tag = now_tag_1;
-  br_tag = br_tag_1;
+  /*br_tag = br_tag_1;*/
   state = state_1;
   for (int i = 0; i < MAX_BR_NUM; i++) {
     tag_vec[i] = tag_vec_1[i];
   }
 
-  if (pop) {
+  while (pop > 0) {
     tag_list.pop_back();
+    pop--;
   }
 
   if (push) {
