@@ -212,7 +212,8 @@ void Rename::comb_branch() {
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
-      free_vec_1[j] = free_vec[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
+      free_vec_1[j] =
+          free_vec_1[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
       spec_alloc_1[j] =
           spec_alloc[j] && !alloc_checkpoint[io.dec_bcast->br_tag][j];
     }
