@@ -151,10 +151,10 @@ void Back_Top::Back_comb() {
   // prf->idu.comb_branch
   // isu/stq/rob -> rename.fire -> idu.fire
   idu.comb_decode();
+  rob.comb_commit();
   idu.comb_release_tag();
   prf.comb_branch();
   idu.comb_branch();
-  rob.comb_commit();
   rename.comb_alloc();
   exu.comb();
   isu.comb();

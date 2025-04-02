@@ -357,7 +357,8 @@ Inst_info decode(uint32_t inst) {
                     .src2_is_imm = src2_is_imm,
                     .func3 = number_funct3_unsigned,
                     .func7_5 = (bool)(number_funct7_unsigned >> 5),
-                    .imm = imm};
+                    .imm = imm,
+                    .dependency = 0};
 
   if (info.op == LOAD) {
     info.iq_type = IQ_LD;

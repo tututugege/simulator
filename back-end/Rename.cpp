@@ -29,6 +29,7 @@ void Rename::init() {
   }
 }
 
+extern int sim_time;
 void Rename::comb_alloc() {
   // 可用寄存器个数 大于FETCH_WIDTH时为FETCH_WIDTH
   int alloc_reg[FETCH_WIDTH];
@@ -48,6 +49,7 @@ void Rename::comb_alloc() {
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2iss->inst[i] = inst_r[i].inst;
+    io.ren2iss->inst[i].inst_idx = sim_time * FETCH_WIDTH + i;
 
     if (inst_r[i].valid) {
       // 分配stq_idx 和 rob_idx
@@ -85,7 +87,7 @@ void Rename::comb_wake() {
   }
 
   // TODO: Magic Number
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < BRU_IDX + 1; i++) {
     if (io.iss2ren->wake[i].valid) {
       busy_table_1[io.iss2ren->wake[i].preg] = false;
     }

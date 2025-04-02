@@ -4,8 +4,13 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 3000
-#define ISSUE_WAY 7
+#define MAX_SIM_TIME 30000000
+#define ISSUE_WAY 5
+
+#define ALU_NUM 2
+#define BRU_IDX 2
+#define LDU_IDX 3
+#define STU_IDX 4
 
 #define ARF_NUM 32
 #define PRF_NUM 64
@@ -15,11 +20,11 @@ using namespace std;
 #define ROB_NUM 32
 #define STQ_NUM 8
 
-#define LOG 1
+#define LOG 0
 
 #define CONFIG_DIFFTEST
-/*#define CONFIG_BRANCHCHECK*/
-#define CONFIG_BPU
+#define CONFIG_BRANCHCHECK
+/*#define CONFIG_BPU*/
 
 #define UART_BASE 0x10000000
 

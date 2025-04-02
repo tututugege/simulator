@@ -94,11 +94,11 @@ void ISU::comb() {
   }
 
   // TODO: Magic Number
-  io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0]; // br
-  io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0]; // load
-  io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0]; // store
+  io.iss2prf->iss_entry[BRU_IDX] = iq[1].deq(ready_num[1])[0]; // br
+  io.iss2prf->iss_entry[LDU_IDX] = iq[2].deq(ready_num[2])[0]; // load
+  io.iss2prf->iss_entry[STU_IDX] = iq[3].deq(ready_num[3])[0]; // store
 
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 4; i++) {
     if (io.iss2prf->iss_entry[i].valid &&
         io.iss2prf->iss_entry[i].inst.dest_en) {
       io.iss2ren->wake[i].valid = true;
@@ -113,6 +113,19 @@ void ISU::seq() {
   // 入队
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (io.ren2iss->dis_fire[i]) {
+
+      if (io.ren2iss->inst[i].src1_en) {
+        for (auto &q : iq) {
+          q.add_depend(io.ren2iss->inst[i].src1_preg);
+        }
+      }
+
+      if (io.ren2iss->inst[i].src2_en) {
+        for (auto &q : iq) {
+          q.add_depend(io.ren2iss->inst[i].src2_preg);
+        }
+      }
+
       for (auto &q : iq) {
         if (q.type == io.ren2iss->inst[i].iq_type) {
           q.enq(&io.ren2iss->inst[i]);
@@ -205,9 +218,23 @@ Inst_entry IQ::pop_oldest(vector<Inst_entry> &valid_entry,
   int oldest_idx = 0;
   int i;
 
+  /*for (i = 1; i < valid_entry.size(); i++) {*/
+  /*  if (valid_entry[i].inst.inst_idx < valid_entry[oldest_idx].inst.inst_idx)
+   * {*/
+  /*    oldest_idx = i;*/
+  /*  }*/
+  /*}*/
+
   for (i = 1; i < valid_entry.size(); i++) {
-    if (valid_entry[i].inst.inst_idx < valid_entry[oldest_idx].inst.inst_idx) {
+    if (valid_entry[i].inst.dependency >
+        valid_entry[oldest_idx].inst.dependency) {
       oldest_idx = i;
+    } else if (valid_entry[i].inst.dependency ==
+               valid_entry[oldest_idx].inst.dependency) {
+      if (valid_entry[i].inst.inst_idx <
+          valid_entry[oldest_idx].inst.inst_idx) {
+        oldest_idx = i;
+      }
     }
   }
 
@@ -248,4 +275,12 @@ vector<Inst_entry> IQ::scheduler(int ready_num) {
   }
 
   return iss_entry;
+}
+
+void IQ::add_depend(int preg) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid && entry[i].inst.dest_en &&
+        entry[i].inst.dest_preg == preg)
+      entry[i].inst.dependency++;
+  }
 }

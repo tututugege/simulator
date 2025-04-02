@@ -11,10 +11,10 @@
 #include <front_module.h>
 #include <fstream>
 
-int inst_idx;
 int mispred_num = 0;
 int branch_num = 0;
 int back2front_num = 0;
+int sim_time;
 
 using namespace std;
 
@@ -71,11 +71,8 @@ int main(int argc, char *argv[]) {
   front_top_out front_out;
   front_top_in front_in;
 
-  int sim_time;
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
-    inst_idx = sim_time;
-
     if (LOG)
       cout << "****************************************************************"
            << endl;

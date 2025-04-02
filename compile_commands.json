@@ -154,22 +154,6 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-g",
-      "./back-end/tools/FIFO.cpp"
-    ],
-    "directory": "/home/tututu/qimeng/simulator",
-    "file": "/home/tututu/qimeng/simulator/back-end/tools/FIFO.cpp"
-  },
-  {
-    "arguments": [
-      "/usr/bin/g++",
-      "-c",
-      "-I./include/",
-      "-I./back-end/include/",
-      "-I./back-end/EXU/include/",
-      "-I./back-end/tools/include/",
-      "-I./diff/include/",
-      "-I./front-end/",
-      "-g",
       "./back-end/TOP.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",

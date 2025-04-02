@@ -75,7 +75,7 @@ typedef struct {
 // TODO: MAGIC NUMBER
 typedef struct {
   bool ready[FETCH_WIDTH];
-  Wake_info wake[5];
+  Wake_info wake[BRU_IDX + 1];
 } Iss_Ren;
 
 typedef struct {

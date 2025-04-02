@@ -15,15 +15,15 @@ void PRF::comb_branch() {
   // TODO: Magic number
   io.prf2dec->mispred = false;
   io.prf2rob->mispred = false;
-  if (inst_r[4].valid && is_branch(inst_r[4].inst.op) &&
-      inst_r[4].inst.mispred) {
+  if (inst_r[BRU_IDX].valid && is_branch(inst_r[BRU_IDX].inst.op) &&
+      inst_r[BRU_IDX].inst.mispred) {
 
     io.prf2dec->mispred = true;
-    io.prf2dec->redirect_pc = inst_r[4].inst.pc_next;
-    io.prf2dec->br_tag = inst_r[4].inst.tag;
+    io.prf2dec->redirect_pc = inst_r[BRU_IDX].inst.pc_next;
+    io.prf2dec->br_tag = inst_r[BRU_IDX].inst.tag;
 
     io.prf2rob->mispred = true;
-    io.prf2rob->redirect_rob_idx = inst_r[4].inst.rob_idx;
+    io.prf2rob->redirect_rob_idx = inst_r[BRU_IDX].inst.rob_idx;
     if (LOG)
       cout << "misprediction redirect_pc 0x" << hex << io.prf2dec->redirect_pc
            << endl;
@@ -77,9 +77,9 @@ void PRF::comb_read() {
   }
 
   // TODO: MAGIC NUMBER
-  if (inst_r[5].valid && inst_r[5].inst.dest_en) {
+  if (inst_r[LDU_IDX].valid && inst_r[LDU_IDX].inst.dest_en) {
     io.prf_awake->wake.valid = true;
-    io.prf_awake->wake.preg = inst_r[5].inst.dest_preg;
+    io.prf_awake->wake.preg = inst_r[LDU_IDX].inst.dest_preg;
   } else {
     io.prf_awake->wake.valid = false;
   }

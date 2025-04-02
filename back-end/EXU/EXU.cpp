@@ -8,8 +8,7 @@ void ldu_comb(Inst_info *inst, FU &fu);
 void ldu_seq(Inst_info *inst, FU &fu);
 void stu_comb(Inst_info *inst, FU &fu);
 
-FU_TYPE fu_config[ISSUE_WAY] = {FU_ALU, FU_ALU, FU_ALU, FU_ALU,
-                                FU_BRU, FU_LDU, FU_STU};
+FU_TYPE fu_config[ISSUE_WAY] = {FU_ALU, FU_ALU, FU_BRU, FU_LDU, FU_STU};
 
 void (*fu_comb[FU_NUM])(Inst_info *, FU &) = {alu, bru, ldu_comb, stu_comb};
 void (*fu_seq[FU_NUM])(Inst_info *, FU &) = {nullptr, nullptr, ldu_seq,
@@ -45,8 +44,8 @@ void EXU::comb() {
 
   // TODO: Magic Number
   // store
-  if (inst_r[6].valid) {
-    io.exe2stq->entry = io.exe2prf->entry[6];
+  if (inst_r[STU_IDX].valid) {
+    io.exe2stq->entry = io.exe2prf->entry[4];
   } else {
     io.exe2stq->entry.valid = false;
   }
