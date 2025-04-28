@@ -18,7 +18,7 @@ using namespace std;
 #define LOG 0
 
 #define CONFIG_DIFFTEST
-#define CONFIG_BRANCHCHECK
+/*#define CONFIG_BRANCHCHECK*/
 /*#define CONFIG_BPU*/
 
 #define UART_BASE 0x10000000

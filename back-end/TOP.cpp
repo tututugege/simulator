@@ -163,10 +163,9 @@ void Back_Top::Back_comb() {
   // prf->idu.comb_branch
   // isu/stq/rob -> rename.fire -> idu.fire
   idu.comb_decode();
-  idu.comb_release_tag();
-  rename.comb_commit();
   rename.comb_alloc();
   prf.comb_branch();
+  rob.comb();
   idu.comb_branch();
   exu.comb();
   isu.comb();
@@ -174,14 +173,14 @@ void Back_Top::Back_comb() {
   rename.comb_wake();
   rename.comb_rename();
   stq.comb();
-  rob.comb();
+  idu.comb_release_tag();
   rename.comb_fire();
   idu.comb_fire();
+  idu.comb_rollback();
   csr.comb();
   rename.comb_branch();
   rename.comb_store();
   rename.comb_pipeline();
-  /*idu.io_gen();*/
 
   if (!rob.io.rob_bc->rollback) {
     back.out.mispred = prf.io.prf2dec->mispred;
@@ -206,6 +205,7 @@ void Back_Top::Back_comb() {
       rob.io.rob_commit->commit_entry[i].inst.pc_next = back.out.redirect_pc;
     }
   }
+  rename.comb_commit();
 }
 
 void Back_Top::Back_seq() {

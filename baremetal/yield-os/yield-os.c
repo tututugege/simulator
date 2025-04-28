@@ -1,5 +1,6 @@
 #include <am.h>
 #include <uart.h>
+#include <xprintf.h>
 #define STACK_SIZE (4096 * 8)
 typedef union {
   uint8_t stack[STACK_SIZE];
@@ -10,8 +11,13 @@ typedef union {
 static PCB pcb[2], pcb_boot, *current = &pcb_boot;
 
 static void f(void *arg) {
+  int i = 0;
   while (1) {
-    uart_putc("?AB"[(uintptr_t)arg > 2 ? 0 : (uintptr_t)arg]);
+    if ((uint32_t)arg == 1) {
+      xprintf("This is proc 1(%d)\n", i);
+    } else {
+      xprintf("This is proc 2(%d)\n", i);
+    }
     yield();
   }
 }
