@@ -1,4 +1,5 @@
 #include "TOP.h"
+#include "frontend.h"
 #include <STQ.h>
 #include <config.h>
 #include <util.h>
@@ -92,7 +93,7 @@ void STQ::seq() {
   }
 
   // commit标记为可执行
-  for (int i = 0; i < ISSUE_WAY; i++) {
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid &&
         io.rob_commit->commit_entry[i].inst.op == STORE) {
       entry[commit_ptr].compelete = true;

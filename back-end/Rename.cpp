@@ -169,7 +169,7 @@ void Rename::comb_fire() {
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
         !io.dec_bcast->mispred && !csr_stall &&
-        (io.ren2iss->inst[i].op != CSR || io.rob2ren->empty && !pre_fire) &&
+        (!is_CSR(io.ren2iss->inst[i].op) || io.rob2ren->empty && !pre_fire) &&
         !io.rob2ren->stall;
 
     io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
@@ -177,7 +177,7 @@ void Rename::comb_fire() {
     pre_stall = inst_r[i].valid && !io.ren2iss->dis_fire[i];
     pre_fire = io.ren2iss->dis_fire[i];
     // 异常相关指令需要单独执行
-    if (io.ren2iss->valid[i] && io.ren2iss->inst[i].op == CSR) {
+    if (io.ren2iss->valid[i] && is_CSR(io.ren2iss->inst[i].op)) {
       csr_stall = true;
     }
 
