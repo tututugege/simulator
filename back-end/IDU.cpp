@@ -362,7 +362,7 @@ Inst_info decode(uint32_t inst) {
         op = MRET;
       } else {
         cout << hex << inst << endl;
-        assert(0);
+        /*assert(0);*/
       }
     }
     break;

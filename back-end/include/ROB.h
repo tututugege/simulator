@@ -18,7 +18,12 @@ class ROB {
 public:
   void init();
   void seq();
-  void comb();
+  void comb_ready();
+  void comb_commit();
+  void comb_complete();
+  void comb_fire();
+  void comb_branch();
+  void comb_rollback();
   ROB_IO io;
 
 private:
@@ -28,6 +33,13 @@ private:
   int enq_ptr;
   int deq_ptr;
   int count;
+
+  Inst_entry entry_1[ROB_NUM];
+  bool complete_1[ROB_NUM];
+  bool exception_1[ROB_NUM];
+  int enq_ptr_1;
+  int deq_ptr_1;
+  int count_1;
 
 #ifdef CONFIG_DIFFTEST
   bool diff[ROB_NUM];
