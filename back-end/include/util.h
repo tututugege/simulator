@@ -11,6 +11,14 @@ inline bool is_CSR(Inst_op op) {
   return (op == CSR || op == MRET || op == ECALL || op == EBREAK);
 }
 
+inline bool is_load(Inst_op op) {
+  return (op == LOAD || op == LR || op == AMO);
+}
+
+inline bool is_store(Inst_op op) {
+  return (op == STORE || op == SC || op == AMO);
+}
+
 inline bool orR(bool *in, int num) {
   bool out = false;
   for (int i = 0; i < num; i++)

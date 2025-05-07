@@ -27,11 +27,11 @@ IQ::IQ(int entry_num, int out_num, IQ_TYPE type) {
 }
 
 void ISU::init() {
-  add_iq(32, 4, IQ_INT);
-  add_iq(8, 1, IQ_BR);
+  add_iq(64, 4, IQ_INT);
   add_iq(1, 1, IQ_CSR);
   add_iq(16, 1, IQ_LD);
   add_iq(8, 1, IQ_ST);
+  add_iq(8, 1, IQ_BR);
 }
 
 void IQ::enq(Inst_info *inst) {
@@ -59,23 +59,26 @@ vector<Inst_entry> IQ::deq(int ready_num) {
   return ret;
 }
 
-void ISU::comb() {
-
+void ISU::comb_ready() {
   // ready
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (io.ren2iss->valid[i]) {
-      if (iq[io.ren2iss->inst[i].iq_type].num_temp <
-          iq[io.ren2iss->inst[i].iq_type].entry_num) {
-        io.iss2ren->ready[i] = true;
-        iq[io.ren2iss->inst[i].iq_type].num_temp++;
-      }
+  for (int i = 0; i < IQ_NUM; i++) {
+    for (int j = 0; j < FETCH_WIDTH; j++) {
+      if (io.ren2iss->valid[i][j]) {
+        if (iq[i].num_temp < iq[i].entry_num) {
+          io.iss2ren->ready[i][j] = true;
+          iq[i].num_temp++;
+        }
 
-      else
-        io.iss2ren->ready[i] = false;
-    } else {
-      io.iss2ren->ready[i] = true;
+        else
+          io.iss2ren->ready[i][j] = false;
+      } else {
+        io.iss2ren->ready[i][j] = true;
+      }
     }
   }
+}
+
+void ISU::comb_deq() {
 
   // 出队
   int issue_idx = 0;
@@ -95,12 +98,16 @@ void ISU::comb() {
   }
 
   // TODO: Magic Number
-  io.iss2prf->iss_entry[4] = iq[1].deq(ready_num[1])[0]; // br
-  io.iss2prf->iss_entry[5] = iq[2].deq(ready_num[2])[0]; // csr
-  io.iss2prf->iss_entry[6] = iq[3].deq(ready_num[3])[0]; // load
-  io.iss2prf->iss_entry[7] = iq[4].deq(ready_num[4])[0]; // store
+  io.iss2prf->iss_entry[CSR_ISS_IDX] =
+      iq[CSR_IQ_IDX].deq(ready_num[CSR_IQ_IDX])[0]; // csr
+  io.iss2prf->iss_entry[LDU_ISS_IDX] =
+      iq[LD_IQ_IDX].deq(ready_num[LD_IQ_IDX])[0]; // load
+  io.iss2prf->iss_entry[STU_ISS_IDX] =
+      iq[ST_IQ_IDX].deq(ready_num[ST_IQ_IDX])[0]; // store
+  io.iss2prf->iss_entry[BRU_ISS_IDX] =
+      iq[BR_IQ_IDX].deq(ready_num[BR_IQ_IDX])[0]; // br
 
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < ALU_NUM + 1; i++) {
     if (io.iss2prf->iss_entry[i].valid &&
         io.iss2prf->iss_entry[i].inst.dest_en) {
       io.iss2ren->wake[i].valid = true;
@@ -113,18 +120,14 @@ void ISU::comb() {
 
 void ISU::seq() {
   // 入队
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (io.ren2iss->dis_fire[i]) {
-      for (auto &q : iq) {
-        if (q.type == io.ren2iss->inst[i].iq_type) {
-          q.enq(&io.ren2iss->inst[i]);
-        }
+  for (int i = 0; i < IQ_NUM; i++) {
+    for (int j = 0; j < FETCH_WIDTH; j++) {
+      if (io.ren2iss->dis_fire[i][j]) {
+        iq[i].enq(&io.ren2iss->inst[j]);
       }
     }
-  }
 
-  for (auto &q : iq) {
-    q.num_temp = q.num;
+    iq[i].num_temp = iq[i].num;
   }
 
   // 唤醒

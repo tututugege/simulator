@@ -9,17 +9,28 @@ void PRF::init() {
     io.prf2exe->ready[i] = true;
 }
 
+void PRF::comb_amo() {
+  io.prf2stq->amoop = inst_r[STU_ISS_IDX].inst.amoop;
+  io.prf2stq->load_data = inst_r[STU_ISS_IDX].inst.result;
+  io.prf2stq->stq_idx = inst_r[STU_ISS_IDX].inst.stq_idx;
+  if (inst_r[STU_ISS_IDX].valid && inst_r[STU_ISS_IDX].inst.op == AMO) {
+    io.prf2stq->valid = true;
+  } else {
+    io.prf2stq->valid = false;
+  }
+}
+
 void PRF::comb_branch() {
   // 根据分支结果向前端返回信息
 
   // TODO: Magic number
   io.prf2dec->mispred = false;
-  if (inst_r[4].valid && is_branch(inst_r[4].inst.op) &&
-      inst_r[4].inst.mispred) {
+  if (inst_r[BRU_ISS_IDX].valid && is_branch(inst_r[BRU_ISS_IDX].inst.op) &&
+      inst_r[BRU_ISS_IDX].inst.mispred) {
 
     io.prf2dec->mispred = true;
-    io.prf2dec->redirect_pc = inst_r[4].inst.pc_next;
-    io.prf2dec->br_tag = inst_r[4].inst.tag;
+    io.prf2dec->redirect_pc = inst_r[BRU_ISS_IDX].inst.pc_next;
+    io.prf2dec->br_tag = inst_r[BRU_ISS_IDX].inst.tag;
 
     if (LOG)
       cout << "misprediction redirect_pc 0x" << hex << io.prf2dec->redirect_pc
@@ -74,20 +85,22 @@ void PRF::comb_read() {
   }
 
   // TODO: MAGIC NUMBER
-  if (inst_r[6].valid && inst_r[6].inst.dest_en) {
+  if (inst_r[LDU_ISS_IDX].valid && inst_r[LDU_ISS_IDX].inst.dest_en) {
     io.prf_awake->wake.valid = true;
-    io.prf_awake->wake.preg = inst_r[6].inst.dest_preg;
+    io.prf_awake->wake.preg = inst_r[LDU_ISS_IDX].inst.dest_preg;
   } else {
     io.prf_awake->wake.valid = false;
   }
 }
 
 void PRF::seq() {
-  for (int i = 0; i < ISSUE_WAY; i++) {
+  for (int i = 0; i < ALU_NUM + 2; i++) {
     if (inst_r[i].valid && inst_r[i].inst.dest_en) {
       reg_file[inst_r[i].inst.dest_preg] = inst_r[i].inst.result;
     }
+  }
 
+  for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.exe2prf->entry[i].valid && io.prf2exe->ready[i]) {
       inst_r[i] = io.exe2prf->entry[i];
     } else {

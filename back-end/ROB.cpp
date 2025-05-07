@@ -54,16 +54,19 @@ void ROB::comb_commit() {
     io.rob_commit->commit_entry[i].inst = entry[idx].inst;
     if (i == 0) {
       io.rob_commit->commit_entry[i].valid =
-          entry[idx].valid && complete[idx] && !io.dec_bcast->mispred;
+          entry[idx].valid &&
+          (complete_uop_num[idx] == entry[idx].inst.uop_num) &&
+          !io.dec_bcast->mispred;
     } else {
       io.rob_commit->commit_entry[i].valid =
-          entry[idx].valid && complete[idx] &&
+          entry[idx].valid &&
+          (complete_uop_num[idx] == entry[idx].inst.uop_num) &&
           io.rob_commit->commit_entry[i - 1].valid;
     }
 
     if (io.rob_commit->commit_entry[i].valid) {
       commit_num++;
-      complete_1[idx] = false;
+      complete_uop_num_1[idx] = 0;
       entry_1[idx].valid = false;
 
       if (exception[idx]) {
@@ -97,9 +100,10 @@ void ROB::comb_complete() {
   //  执行完毕的标记
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.prf2rob->entry[i].valid) {
-      complete_1[io.prf2rob->entry[i].inst.rob_idx] = true;
-      entry_1[io.prf2rob->entry[i].inst.rob_idx].inst =
-          io.prf2rob->entry[i].inst;
+      complete_uop_num_1[io.prf2rob->entry[i].inst.rob_idx]++;
+      if (i == BRU_ISS_IDX)
+        entry_1[io.prf2rob->entry[i].inst.rob_idx].inst.pc_next =
+            io.prf2rob->entry[i].inst.pc_next;
     }
   }
 }
@@ -111,7 +115,7 @@ void ROB::comb_branch() {
     while (entry[idx].valid &&
            ((1 << entry[idx].inst.tag) & io.dec_bcast->br_mask)) {
       entry_1[idx].valid = false;
-      complete_1[idx] = false;
+      complete_uop_num_1[idx] = 0;
       count_1--;
       LOOP_DEC(idx, ROB_NUM);
       LOOP_DEC(enq_ptr_1, ROB_NUM);
@@ -125,7 +129,7 @@ void ROB::comb_fire() {
     if (io.ren2rob->dis_fire[i]) {
       entry_1[enq_ptr_1].valid = true;
       entry_1[enq_ptr_1].inst = io.ren2rob->inst[i];
-      complete_1[enq_ptr_1] = false;
+      complete_uop_num_1[enq_ptr_1] = 0;
       if (io.ren2rob->inst[i].op == ECALL || io.ren2rob->inst[i].op == MRET ||
           io.ren2rob->inst[i].op == EBREAK)
         exception_1[enq_ptr_1] = true;
@@ -140,7 +144,7 @@ void ROB::comb_fire() {
 void ROB::comb_rollback() {
   if (io.rob_bc->rollback) {
     for (int i = 0; i < ROB_NUM; i++) {
-      complete_1[i] = false;
+      complete_uop_num_1[i] = 0;
       entry_1[i].valid = false;
     }
     enq_ptr_1 = 0;
@@ -173,7 +177,7 @@ void ROB::seq() {
 
   for (int i = 0; i < ROB_NUM; i++) {
     entry[i] = entry_1[i];
-    complete[i] = complete_1[i];
+    complete_uop_num[i] = complete_uop_num_1[i];
     exception[i] = exception_1[i];
   }
 

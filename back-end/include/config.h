@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 2000000
+#define MAX_SIM_TIME 500000
 #define ISSUE_WAY 8
 
 #define ARF_NUM 32
@@ -15,6 +15,22 @@ using namespace std;
 #define ROB_NUM 64
 #define STQ_NUM 8
 
+#define CSR_ISS_IDX 4
+#define LDU_ISS_IDX 5
+#define STU_ISS_IDX 6
+#define BRU_ISS_IDX 7
+
+#define INT_IQ_IDX 0
+#define CSR_IQ_IDX 1
+#define LD_IQ_IDX 2
+#define ST_IQ_IDX 3
+#define BR_IQ_IDX 4
+
+#define ALU_NUM 4
+#define BRU_NUM 1
+#define LDU_NUM 1
+#define STU_NUM 1
+
 #define LOG 0
 
 #define CONFIG_DIFFTEST
@@ -23,8 +39,8 @@ using namespace std;
 
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE { IQ_INT, IQ_BR, IQ_CSR, IQ_LD, IQ_ST };
-enum FU_TYPE { FU_ALU, FU_BRU, FU_CSR, FU_LDU, FU_STU, FU_NUM };
+enum IQ_TYPE { IQ_INT, IQ_CSR, IQ_LD, IQ_ST, IQ_BR };
+enum FU_TYPE { FU_ALU, FU_CSR, FU_LDU, FU_STU, FU_BRU, FU_NUM };
 
 extern FU_TYPE fu_config[ISSUE_WAY];
 
@@ -41,7 +57,22 @@ enum Inst_op {
   CSR,
   ECALL,
   EBREAK,
-  MRET
+  MRET,
+  LR,
+  SC,
+  AMO
+};
+
+enum AMO_op {
+  AMOSWAP,
+  AMOADD,
+  AMOXOR,
+  AMOAND,
+  AMOOR,
+  AMOMIN,
+  AMOMAX,
+  AMOMINU,
+  AMOMAXU,
 };
 
 typedef struct Inst_info {
@@ -63,10 +94,8 @@ typedef struct Inst_info {
   uint32_t pc_next;
   int old_dest_preg;
 
-  IQ_TYPE iq_type;
   bool dest_en, src1_en, src2_en;
   bool src1_busy, src2_busy;
-  Inst_op op;
   bool src2_is_imm;
   uint32_t func3;
   bool func7_5;
@@ -82,6 +111,10 @@ typedef struct Inst_info {
   int inst_idx;
   int dependency;
 
+  AMO_op amoop;
+  Inst_op op;
+  int uop_num;
+  IQ_TYPE iq_type[3];
 } Inst_info;
 
 typedef struct Inst_entry {

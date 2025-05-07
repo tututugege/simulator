@@ -2,6 +2,7 @@
 #include "frontend.h"
 #include <STQ.h>
 #include <config.h>
+#include <cstdint>
 #include <util.h>
 
 extern Back_Top back;
@@ -90,6 +91,57 @@ void STQ::seq() {
     entry[idx].data = inst->src2_rdata;
     entry[idx].addr = inst->result;
     entry[idx].size = inst->func3;
+  }
+
+  // AMO指令处理
+  idx = io.prf2stq->stq_idx;
+  if (io.prf2stq->valid) {
+    switch (io.prf2stq->amoop) {
+    case AMOADD: { // amoadd.w
+      entry[idx].data += io.prf2stq->load_data;
+      break;
+    }
+    case AMOSWAP: { // amoswap.w
+      entry[idx].data = io.prf2stq->load_data;
+      break;
+    }
+    case AMOXOR: { // amoxor.w
+      entry[idx].data ^= io.prf2stq->load_data;
+      break;
+    }
+    case AMOOR: { // amoor.w
+      entry[idx].data |= io.prf2stq->load_data;
+      break;
+    }
+    case AMOAND: { // amoand.w
+      entry[idx].data &= io.prf2stq->load_data;
+      break;
+    }
+    case AMOMIN: { // amomin.w
+      if ((int)entry[idx].data > (int)io.prf2stq->load_data) {
+        entry[idx].data = io.prf2stq->load_data;
+      }
+      break;
+    }
+    case AMOMAX: { // amomax.w
+      if ((int)entry[idx].data < (int)io.prf2stq->load_data) {
+        entry[idx].data = io.prf2stq->load_data;
+      }
+      break;
+    }
+    case AMOMINU: { // amominu.w
+      if ((uint32_t)entry[idx].data > (uint32_t)io.prf2stq->load_data) {
+        entry[idx].data = io.prf2stq->load_data;
+      }
+      break;
+    }
+    case AMOMAXU: { // amomaxu.w
+      if ((uint32_t)entry[idx].data < (uint32_t)io.prf2stq->load_data) {
+        entry[idx].data = io.prf2stq->load_data;
+      }
+      break;
+    }
+    }
   }
 
   // commit标记为可执行

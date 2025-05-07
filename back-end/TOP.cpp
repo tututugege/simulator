@@ -44,6 +44,7 @@ Iss_Ren iss2ren;
 Iss_Prf iss2prf;
 
 Prf_Exe prf2exe;
+Prf_Stq prf2stq;
 Prf_Rob prf2rob;
 Prf_Awake awake;
 Prf_Dec prf2dec;
@@ -98,6 +99,7 @@ void Back_Top::init() {
   prf.io.iss2prf = &iss2prf;
   prf.io.prf2rob = &prf2rob;
   prf.io.prf2exe = &prf2exe;
+  prf.io.prf2stq = &prf2stq;
   prf.io.exe2prf = &exe2prf;
   prf.io.prf_awake = &awake;
   prf.io.prf2dec = &prf2dec;
@@ -126,6 +128,7 @@ void Back_Top::init() {
   stq.io.ren2stq = &ren2stq;
   stq.io.stq2iss = &stq2iss;
   stq.io.stq2ren = &stq2ren;
+  stq.io.prf2stq = &prf2stq;
   stq.io.dec_bcast = &dec_bcast;
   stq.io.rob_bc = &rob_bc;
 
@@ -168,8 +171,10 @@ void Back_Top::Back_comb() {
   prf.comb_branch();
   idu.comb_branch();
   exu.comb();
-  isu.comb();
+  isu.comb_ready();
+  isu.comb_deq();
   prf.comb_read();
+  prf.comb_amo();
   rename.comb_wake();
   rename.comb_rename();
   stq.comb();

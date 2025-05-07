@@ -53,7 +53,8 @@ public:
   void init();
   void add_iq(int entry_num, int out_num, IQ_TYPE);
   vector<IQ> iq;
-  void comb();
+  void comb_ready();
+  void comb_deq();
   void seq(); // 写入IQ
   int iq_num = 0;
 };
