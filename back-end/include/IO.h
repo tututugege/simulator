@@ -69,15 +69,22 @@ typedef struct {
 } Prf_Awake;
 
 typedef struct {
+  bool valid;
+  AMO_op amoop;
+  uint32_t load_data;
+  uint32_t stq_idx;
+} Prf_Stq;
+
+typedef struct {
   Inst_info inst[FETCH_WIDTH];
-  bool valid[FETCH_WIDTH];
-  bool dis_fire[FETCH_WIDTH];
+  bool valid[IQ_NUM][FETCH_WIDTH];
+  bool dis_fire[IQ_NUM][FETCH_WIDTH];
 } Ren_Iss;
 
 // TODO: MAGIC NUMBER
 typedef struct {
-  bool ready[FETCH_WIDTH];
-  Wake_info wake[6];
+  bool ready[IQ_NUM][FETCH_WIDTH];
+  Wake_info wake[ALU_NUM + 1];
 } Iss_Ren;
 
 typedef struct {

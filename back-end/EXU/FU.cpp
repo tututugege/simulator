@@ -43,8 +43,6 @@ void bru(Inst_info *inst, FU &fu) {
     operand2 = inst->src2_rdata;
   }
 
-  inst->result = operand1 + operand2;
-
   uint32_t pc_br = inst->pc + inst->imm;
   bool br_taken = true;
 
@@ -52,29 +50,28 @@ void bru(Inst_info *inst, FU &fu) {
   if (inst->op == BR) {
     switch (inst->func3) {
     case BEQ:
-      inst->result = (operand1 == operand2);
+      br_taken = (operand1 == operand2);
       break;
     case BNE:
-      inst->result = (operand1 != operand2);
+      br_taken = (operand1 != operand2);
       break;
     case BGE:
-      inst->result = ((signed)operand1 >= (signed)operand2);
+      br_taken = ((signed)operand1 >= (signed)operand2);
       break;
     case BLT:
-      inst->result = ((signed)operand1 < (signed)operand2);
+      br_taken = ((signed)operand1 < (signed)operand2);
       break;
     case BGEU:
-      inst->result = ((unsigned)operand1 >= (unsigned)operand2);
+      br_taken = ((unsigned)operand1 >= (unsigned)operand2);
       break;
     case BLTU:
-      inst->result = ((unsigned)operand1 < (unsigned)operand2);
+      br_taken = ((unsigned)operand1 < (unsigned)operand2);
       break;
     }
   }
 
   switch (inst->op) {
   case BR:
-    br_taken = inst->result;
     break;
   case JAL:
     br_taken = true;
@@ -114,7 +111,7 @@ void alu(Inst_info *inst, FU &fu) {
   fu.complete = true;
 
   uint32_t operand1, operand2;
-  if (inst->op == AUIPC)
+  if (inst->op == AUIPC || inst->op == JALR || inst->op == JAL)
     operand1 = inst->pc;
   else if (inst->op == LUI)
     operand1 = 0;

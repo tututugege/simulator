@@ -186,8 +186,10 @@ Inst_info decode(uint32_t inst) {
   bool src2_is_imm;
   bool src2_is_4;
   Inst_op op;
+  AMO_op amoop;
   uint32_t imm;
   uint32_t csr_idx;
+
   bool inst_bit[32];
   cvt_number_to_bit_unsigned(inst_bit, inst, 32);
 
@@ -257,6 +259,7 @@ Inst_info decode(uint32_t inst) {
     src2_en = false;
     src2_is_imm = false;
     op = JAL;
+
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_j_type, 21);
     imm = cvt_bit_to_number_unsigned(bit_temp, 32);
@@ -367,6 +370,61 @@ Inst_info decode(uint32_t inst) {
     }
     break;
   }
+  case number_11_opcode_lrw: {
+    op = AMO;
+    dest_en = true;
+    src1_en = true;
+    src2_en = true;
+    imm = 0;
+
+    switch (number_funct7_unsigned >> 2) {
+    case 0: { // amoadd.w
+      amoop = AMOADD;
+      break;
+    }
+    case 1: { // amoswap.w
+      amoop = AMOSWAP;
+      break;
+    }
+    case 2: { // lr.w
+      src2_en = false;
+      op = LR;
+      break;
+    }
+    case 3: { // sc.w
+      op = SC;
+      break;
+    }
+    case 4: { // amoxor.w
+      amoop = AMOXOR;
+      break;
+    }
+    case 8: { // amoor.w
+      amoop = AMOOR;
+      break;
+    }
+    case 12: { // amoand.w
+      amoop = AMOAND;
+      break;
+    }
+    case 16: { // amomin.w
+      amoop = AMOMIN;
+      break;
+    }
+    case 20: { // amomax.w
+      amoop = AMOMAX;
+      break;
+    }
+    case 24: { // amominu.w
+      amoop = AMOMINU;
+      break;
+    }
+    case 28: { // amomaxu.w
+      amoop = AMOMAXU;
+      break;
+    }
+    }
+  }
 
   default: {
     /*if (LOG) {*/
@@ -391,23 +449,41 @@ Inst_info decode(uint32_t inst) {
                     .dest_en = dest_en,
                     .src1_en = src1_en,
                     .src2_en = src2_en,
-                    .op = op,
                     .src2_is_imm = src2_is_imm,
                     .func3 = number_funct3_unsigned,
                     .func7_5 = (bool)(number_funct7_unsigned >> 5),
                     .imm = imm,
-                    .csr_idx = csr_idx};
+                    .csr_idx = csr_idx,
+                    .amoop = amoop,
+                    .op = op};
 
-  if (info.op == LOAD) {
-    info.iq_type = IQ_LD;
-  } else if (info.op == STORE) {
-    info.iq_type = IQ_ST;
-  } else if (is_branch(info.op)) {
-    info.iq_type = IQ_BR;
-  } else if (is_CSR(op)) {
-    info.iq_type = IQ_CSR;
+  if (op == JALR || op == JAL || op == AMO || op == SC) {
+    info.uop_num = 2;
   } else {
-    info.iq_type = IQ_INT;
+    info.uop_num = 1;
+  }
+
+  if (info.op == LOAD || info.op == LR) {
+    info.iq_type[0] = IQ_LD;
+  } else if (info.op == STORE) {
+    info.iq_type[0] = IQ_ST;
+  } else if (info.op == SC) {
+    info.iq_type[0] = IQ_INT;
+    info.iq_type[1] = IQ_ST;
+  } else if (is_branch(info.op)) {
+    if (info.op == JAL || info.op == JALR) {
+      info.iq_type[0] = IQ_INT;
+      info.iq_type[1] = IQ_BR;
+    } else {
+      info.iq_type[0] = IQ_BR;
+    }
+  } else if (op == AMO) {
+    info.iq_type[0] = IQ_LD;
+    info.iq_type[1] = IQ_ST;
+  } else if (is_CSR(op)) {
+    info.iq_type[0] = IQ_CSR;
+  } else {
+    info.iq_type[0] = IQ_INT;
   }
 
   return info;

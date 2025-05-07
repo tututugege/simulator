@@ -122,10 +122,11 @@ int main(int argc, char *argv[]) {
         front_out.pc[j] = number_PC;
         front_out.FIFO_valid = true;
         front_out.instructions[j] = p_memory[front_out.pc[j] / 4];
-        if (LOG)
-          cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-               << number_PC << endl;
-
+        /*if (LOG)*/
+        /*  cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" <<
+         * hex*/
+        /*       << number_PC << endl;*/
+        /**/
         front_out.predict_dir[j] = false;
         number_PC += 4;
       }
