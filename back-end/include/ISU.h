@@ -6,7 +6,7 @@
 
 class IQ {
 public:
-  IQ(int entry_num, int out_num, IQ_TYPE);
+  IQ(int entry_num, IQ_TYPE);
   void init();
   void wake_up(uint32_t);
   void store_wake_up(bool *);
@@ -14,9 +14,9 @@ public:
   Inst_entry pop_oldest(vector<Inst_entry> &valid_entry,
                         vector<int> &valid_idx);
 
-  vector<Inst_entry> scheduler(int ready_num);
-  vector<Inst_entry> deq(int ready_num);
-  void enq(Inst_info *inst);
+  Inst_entry scheduler();
+  Inst_entry deq();
+  void enq(Inst_uop *inst);
   void dependency(int dest_idx);
 
   int num;
@@ -24,7 +24,6 @@ public:
 
   // config
   int entry_num;
-  int out_num;
   IQ_TYPE type;
 
 private:
@@ -51,7 +50,7 @@ class ISU {
 public:
   ISU_IO io;
   void init();
-  void add_iq(int entry_num, int out_num, IQ_TYPE);
+  void add_iq(int entry_num, IQ_TYPE);
   vector<IQ> iq;
   void comb_ready();
   void comb_deq();

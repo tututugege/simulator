@@ -1,19 +1,23 @@
 #include "config.h"
+#include "frontend.h"
 #include <IDU.h>
 #include <RISCV.h>
 #include <cstdint>
 #include <cstdlib>
 #include <cvt.h>
+#include <ios>
 #include <util.h>
 
-Inst_info decode(uint32_t);
+int decode(Inst_uop uop[2], uint32_t instruction);
+
 void IDU::init() {
-  state = 0;
-  state_1 = 0;
+  /*state = 0;*/
+  /*state_1 = 0;*/
   for (int i = 1; i < MAX_BR_NUM; i++) {
     tag_vec[i] = true;
     tag_vec_1[i] = true;
   }
+
   tag_vec_1[0] = false;
   now_tag = 0;
   tag_list.push_back(0);
@@ -37,36 +41,77 @@ void IDU::comb_decode() {
     alloc_tag = 0;
   }
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dec2ren->inst[i] = decode(io.front2dec->inst[i]);
-    io.dec2ren->inst[i].tag = (has_br) ? alloc_tag : now_tag;
-    io.dec2ren->inst[i].pc = io.front2dec->pc[i];
-    io.dec2ren->inst[i].pred_br_taken = io.front2dec->predict_dir[i];
-    io.dec2ren->inst[i].alt_pred = io.front2dec->alt_pred[i];
-    io.dec2ren->inst[i].altpcpn = io.front2dec->altpcpn[i];
-    io.dec2ren->inst[i].pcpn = io.front2dec->pcpn[i];
-    io.dec2ren->inst[i].pred_br_pc =
-        io.front2dec->predict_next_fetch_address[i];
-
-    if (io.front2dec->valid[i] && !stall) {
-      if (!is_branch(io.dec2ren->inst[i].op))
-        io.dec2ren->inst[i].pc_next = io.front2dec->pc[i] + 4;
-
-      // 分配新tag 一组指令只能有一个分支指令
-      if (is_branch(io.dec2ren->inst[i].op)) {
-        if (!no_tag && !has_br) {
-          io.dec2ren->valid[i] = true;
-          has_br = true;
-        } else {
-          io.dec2ren->valid[i] = false;
-          stall = true;
-        }
-      } else {
-        io.dec2ren->valid[i] = true;
-      }
+  int dec_uop_num = 0;
+  int i;
+  for (i = 0; i < FETCH_WIDTH; i++) {
+    int uop_num;
+    if (io.front2dec->valid[i]) {
+      uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
     } else {
-      io.dec2ren->valid[i] = false;
+      uop_valid[i][0] = false;
+      uop_valid[i][1] = false;
+      dec_valid[i] = false;
+      continue;
     }
+
+    for (int j = 0; j < 2; j++) {
+      dec_uop[i][j].tag = (has_br) ? alloc_tag : now_tag;
+      dec_uop[i][j].pc = io.front2dec->pc[i];
+      dec_uop[i][j].pred_br_taken = io.front2dec->predict_dir[i];
+      dec_uop[i][j].alt_pred = io.front2dec->alt_pred[i];
+      dec_uop[i][j].altpcpn = io.front2dec->altpcpn[i];
+      dec_uop[i][j].pcpn = io.front2dec->pcpn[i];
+      dec_uop[i][j].pred_br_pc = io.front2dec->predict_next_fetch_address[i];
+      dec_uop[i][j].pc_next = dec_uop[i][j].pc + 4;
+    }
+
+    // stall的情况：分支Tag不足 uop数目过多
+    if (uop_num + dec_uop_num > DECODE_WIDTH) {
+      stall = true;
+      break;
+    }
+
+    if (dec_uop[i][0].op == BR || dec_uop[i][1].op == JUMP) {
+      if (!no_tag && !has_br) {
+        has_br = true;
+      } else {
+        stall = true;
+        break;
+      }
+    }
+
+    dec_valid[i] = true;
+    dec_uop_num += uop_num;
+    if (uop_num == 2) {
+      uop_valid[i][0] = true;
+      uop_valid[i][1] = true;
+    } else {
+      uop_valid[i][0] = true;
+      uop_valid[i][1] = false;
+    }
+  }
+
+  if (stall) {
+    for (; i < FETCH_WIDTH; i++) {
+      uop_valid[i][0] = false;
+      uop_valid[i][1] = false;
+      dec_valid[i] = false;
+    }
+  }
+
+  int port = 0;
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    for (int j = 0; j < 2; j++) {
+      if (uop_valid[i][j]) {
+        io.dec2ren->uop[port] = dec_uop[i][j];
+        io.dec2ren->valid[port] = true;
+        port++;
+      }
+    }
+  }
+
+  for (; port < DECODE_WIDTH; port++) {
+    io.dec2ren->valid[port] = false;
   }
 }
 
@@ -97,18 +142,18 @@ void IDU::comb_branch() {
     io.dec_bcast->br_mask |= 1 << *it;
     now_tag_1 = *it;
 
-    state_1 = NORMAL;
+    /*state_1 = NORMAL;*/
   } else {
     pop = false;
     io.dec_bcast->br_mask = 0;
     io.dec_bcast->mispred = false;
-    state_1 = NORMAL;
+    /*state_1 = NORMAL;*/
   }
 }
 
 void IDU::comb_rollback() {
   if (io.rob_bc->rollback) {
-    state_1 = 0;
+    /*state_1 = 0;*/
     for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
     }
@@ -121,20 +166,21 @@ void IDU::comb_rollback() {
 
 void IDU::comb_fire() {
   push = false;
-  io.dec2front->ready =
-      (state == NORMAL) && io.ren2dec->ready && !io.prf2dec->mispred;
+  io.dec2front->ready = io.ren2dec->ready && !io.prf2dec->mispred;
 
-  if (state == MISPRED || io.prf2dec->mispred) {
-    for (int i = 0; i < FETCH_WIDTH; i++) {
+  if (io.prf2dec->mispred) {
+    for (int i = 0; i < DECODE_WIDTH; i++) {
       io.dec2ren->valid[i] = false;
     }
   }
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dec2front->fire[i] = io.dec2ren->valid[i] && io.ren2dec->ready;
-    io.dec2front->ready = io.dec2front->ready &&
-                          (!io.front2dec->valid[i] || io.dec2ren->valid[i]);
-    if (io.dec2front->fire[i] && is_branch(io.dec2ren->inst[i].op)) {
+    io.dec2front->fire[i] = dec_valid[i] && io.ren2dec->ready;
+    io.dec2front->ready =
+        io.dec2front->ready && (!io.front2dec->valid[i] || dec_valid[i]);
+    if (io.dec2front->fire[i] &&
+        (uop_valid[i][0] && is_branch(dec_uop[i][0].op) ||
+         uop_valid[i][1] && is_branch(dec_uop[i][1].op))) {
       push = true;
       now_tag_1 = alloc_tag;
       tag_vec_1[alloc_tag] = false;
@@ -145,15 +191,15 @@ void IDU::comb_fire() {
 void IDU::comb_release_tag() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.commit->commit_entry[i].valid &&
-        is_branch(io.commit->commit_entry[i].inst.op)) {
-      tag_vec_1[io.commit->commit_entry[i].inst.tag] = true;
+        is_branch(io.commit->commit_entry[i].uop.op)) {
+      tag_vec_1[io.commit->commit_entry[i].uop.tag] = true;
     }
   }
 }
 
 void IDU::seq() {
   now_tag = now_tag_1;
-  state = state_1;
+  /*state = state_1;*/
   for (int i = 0; i < MAX_BR_NUM; i++) {
     tag_vec[i] = tag_vec_1[i];
   }
@@ -180,15 +226,11 @@ void IDU::seq() {
   /*cout << endl;*/
 }
 
-Inst_info decode(uint32_t inst) {
+int decode(Inst_uop uop[2], uint32_t inst) {
   // 操作数来源以及type
-  bool dest_en, src1_en, src2_en;
-  bool src2_is_imm;
-  bool src2_is_4;
-  Inst_op op;
-  AMO_op amoop;
   uint32_t imm;
   uint32_t csr_idx;
+  int uop_num = 1;
 
   bool inst_bit[32];
   cvt_number_to_bit_unsigned(inst_bit, inst, 32);
@@ -234,135 +276,188 @@ Inst_info decode(uint32_t inst) {
   int reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
   int reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
 
-  src2_is_imm = true;
+  uop[0] = {.dest_areg = reg_d_index,
+            .src1_areg = reg_a_index,
+            .src2_areg = reg_b_index,
+            .src1_is_pc = false,
+            .src2_is_imm = true,
+            .func3 = number_funct3_unsigned,
+            .func7_5 = (bool)(number_funct7_unsigned >> 5),
+            .csr_idx = csr_idx,
+            .is_last_uop = true,
+            .amoop = AMONONE};
+
+  uop[1] = {.dest_areg = reg_d_index,
+            .src1_areg = reg_a_index,
+            .src2_areg = reg_b_index,
+            .src1_is_pc = false,
+            .src2_is_imm = true,
+            .func3 = number_funct3_unsigned,
+            .func7_5 = (bool)(number_funct7_unsigned >> 5),
+            .csr_idx = csr_idx,
+            .is_last_uop = true,
+            .amoop = AMONONE};
+
+  uop[1].op = NONE;
 
   switch (number_op_code_unsigned) {
   case number_0_opcode_lui: { // lui
-    dest_en = true;
-    src1_en = false;
-    src2_en = false;
-    op = LUI;
-    imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
+    uop[0].dest_en = true;
+    uop[0].src1_en = true;
+    uop[0].src1_areg = 0;
+    uop[0].src2_en = false;
+    uop[0].op = ADD;
+    uop[0].func3 = 0;
+    uop[0].func7_5 = 0;
+    uop[0].imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
     break;
   }
   case number_1_opcode_auipc: { // auipc
-    dest_en = true;
-    src1_en = false;
-    src2_en = false;
-    op = AUIPC;
-    imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
+    uop[0].dest_en = true;
+    uop[0].src1_en = false;
+    uop[0].src2_en = false;
+    uop[0].src1_is_pc = true;
+    uop[0].op = ADD;
+    uop[0].func3 = 0;
+    uop[0].func7_5 = 0;
+    uop[0].imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
     break;
   }
   case number_2_opcode_jal: { // jal
-    dest_en = true;
-    src1_en = false;
-    src2_en = false;
-    src2_is_imm = false;
-    op = JAL;
+    uop_num = 2;
+    uop[0].dest_en = true;
+    uop[0].src1_en = false;
+    uop[0].src2_en = false;
+    uop[0].src1_is_pc = true;
+    uop[0].src2_is_imm = true;
+    uop[0].is_last_uop = false;
+    uop[0].func3 = 0;
+    uop[0].func7_5 = 0;
+    uop[0].imm = 4;
+    uop[0].op = ADD;
+
+    uop[1].dest_en = false;
+    uop[1].src1_en = false;
+    uop[1].src2_en = false;
+    uop[1].op = JUMP;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_j_type, 21);
-    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop[1].imm = cvt_bit_to_number_unsigned(bit_temp, 32);
     break;
   }
   case number_3_opcode_jalr: { // jalr
-    dest_en = true;
-    src1_en = true;
-    src2_en = false;
-    op = JALR;
-    src2_is_imm = false;
+    uop_num = 2;
+    uop[0].dest_en = true;
+    uop[0].src1_en = false;
+    uop[0].src2_en = false;
+    uop[0].src1_is_pc = true;
+    uop[0].src2_is_imm = true;
+    uop[0].is_last_uop = false;
+    uop[0].imm = 4;
+    uop[0].func3 = 0;
+    uop[0].func7_5 = 0;
+    uop[0].op = ADD;
+
+    uop[1].dest_en = false;
+    uop[1].src1_en = true;
+    uop[1].src2_en = false;
+    uop[1].op = JUMP;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_i_type, 12);
     imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop[1].imm = cvt_bit_to_number_unsigned(bit_temp, 32);
 
     break;
   }
   case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
-    dest_en = false;
-    src1_en = true;
-    src2_en = true;
-    op = BR;
-    src2_is_imm = false;
+    uop[0].dest_en = false;
+    uop[0].src1_en = true;
+    uop[0].src2_en = true;
+    uop[0].op = BR;
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop[0].imm = cvt_bit_to_number_unsigned(bit_temp, 32);
 
     break;
   }
   case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
-    dest_en = true;
-    src1_en = true;
-    src2_en = false;
-    op = LOAD;
+    uop[0].dest_en = true;
+    uop[0].src1_en = true;
+    uop[0].src2_en = false;
+    uop[0].op = LOAD;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop[0].imm = cvt_bit_to_number_unsigned(bit_temp, 32);
 
     break;
   }
   case number_6_opcode_sb: { // sb, sh, sw
-    dest_en = false;
-    src1_en = true;
-    src2_en = true;
-    op = STORE;
+    uop[0].dest_en = false;
+    uop[0].src1_en = true;
+    uop[0].src2_en = true;
+    uop[0].op = STORE;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_s_type, 12);
-    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop[0].imm = cvt_bit_to_number_unsigned(bit_temp, 32);
 
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
     // srli, srai
-    dest_en = true;
-    src1_en = true;
-    src2_en = false;
-    op = ADD;
+    uop[0].dest_en = true;
+    uop[0].src1_en = true;
+    uop[0].src2_en = false;
+    uop[0].op = ADD;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop[0].imm = cvt_bit_to_number_unsigned(bit_temp, 32);
 
     break;
   }
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
-    dest_en = true;
-    src1_en = true;
-    src2_en = true;
-    src2_is_imm = false;
-    op = ADD;
+    uop[0].dest_en = true;
+    uop[0].src1_en = true;
+    uop[0].src2_en = true;
+    uop[0].src2_is_imm = false;
+    uop[0].op = ADD;
     break;
   }
   case number_9_opcode_fence: { // fence, fence.i
-    dest_en = false;
-    src1_en = false;
-    src2_en = false;
-    op = ADD;
+    uop[0].dest_en = false;
+    uop[0].src1_en = false;
+    uop[0].src2_en = false;
+    uop[0].op = NONE;
     break;
   }
   case number_10_opcode_ecall: { // ecall, ebreak, csrrw, csrrs, csrrc, csrrwi,
                                  // csrrsi, csrrci
-    src2_is_imm = bit_funct3[0] && (bit_funct3[2] || bit_funct3[1]);
+    uop[0].src2_is_imm = bit_funct3[0] && (bit_funct3[2] || bit_funct3[1]);
+
     if (bit_funct3[2] || bit_funct3[1]) {
-      op = CSR;
-      dest_en = true;
-      src1_en = true;
-      src2_en = !src2_is_imm;
-      imm = reg_a_index;
-      csr_idx = inst >> 20;
+      uop[0].op = CSR;
+      uop[0].dest_en = true;
+      uop[0].src1_en = true;
+      uop[0].src2_en = !uop[0].src2_is_imm;
+      uop[0].imm = reg_a_index;
+      uop[0].csr_idx = inst >> 20;
     } else {
-      dest_en = false;
-      src1_en = false;
-      src2_en = false;
+      uop[0].dest_en = false;
+      uop[0].src1_en = false;
+      uop[0].src2_en = false;
 
       if (inst == INST_ECALL) {
-        op = ECALL;
+        uop[0].op = ECALL;
       } else if (inst == INST_EBREAK) {
-        op = EBREAK;
+        uop[0].op = EBREAK;
       } else if (inst == INST_MRET) {
-        op = MRET;
+        uop[0].op = MRET;
+      } else if (inst == INST_WFI) {
+        uop[0].op = NONE;
       } else {
         cout << hex << inst << endl;
         /*assert(0);*/
@@ -370,60 +465,80 @@ Inst_info decode(uint32_t inst) {
     }
     break;
   }
+
   case number_11_opcode_lrw: {
-    op = AMO;
-    dest_en = true;
-    src1_en = true;
-    src2_en = true;
-    imm = 0;
+    uop_num = 2;
+    uop[0].dest_en = true;
+    uop[0].src1_en = true;
+    uop[0].src2_en = true;
+    uop[0].imm = 0;
+    uop[0].op = LOAD;
+    uop[0].is_last_uop = false;
+
+    uop[1].dest_en = true;
+    uop[1].src1_en = true;
+    uop[1].src2_en = true;
+    uop[1].imm = 0;
+    uop[1].op = STORE;
 
     switch (number_funct7_unsigned >> 2) {
     case 0: { // amoadd.w
-      amoop = AMOADD;
+      uop[0].amoop = AMOADD;
       break;
     }
     case 1: { // amoswap.w
-      amoop = AMOSWAP;
+      uop[0].amoop = AMOADD;
+
       break;
     }
     case 2: { // lr.w
-      src2_en = false;
-      op = LR;
+      uop_num = 1;
+      uop[0].src2_en = false;
+      uop[0].op = LOAD;
+      uop[0].amoop = LR;
+      uop[0].is_last_uop = true;
+
+      uop[1].op = NONE;
       break;
     }
     case 3: { // sc.w
-      op = SC;
+      uop[0].op = STORE;
+      uop[0].amoop = SC;
+      uop[1].op = ADD;
       break;
     }
     case 4: { // amoxor.w
-      amoop = AMOXOR;
+      uop[0].amoop = AMOXOR;
       break;
     }
     case 8: { // amoor.w
-      amoop = AMOOR;
+      uop[0].amoop = AMOOR;
       break;
     }
     case 12: { // amoand.w
-      amoop = AMOAND;
+      uop[0].amoop = AMOAND;
       break;
     }
     case 16: { // amomin.w
-      amoop = AMOMIN;
+      uop[0].amoop = AMOMIN;
       break;
     }
     case 20: { // amomax.w
-      amoop = AMOMAX;
+      uop[0].amoop = AMOMAX;
       break;
     }
     case 24: { // amominu.w
-      amoop = AMOMINU;
+      uop[0].amoop = AMOMINU;
       break;
     }
     case 28: { // amomaxu.w
-      amoop = AMOMAXU;
+      uop[0].amoop = AMOMAXU;
       break;
     }
     }
+
+    uop[1].amoop = uop[0].amoop;
+    break;
   }
 
   default: {
@@ -431,60 +546,34 @@ Inst_info decode(uint32_t inst) {
     /*  cerr << "Error: unknown instruction: ";*/
     /*  cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;*/
     /*}*/
-    dest_en = false;
-    src1_en = false;
-    src2_en = false;
+    uop[0].dest_en = false;
+    uop[0].src1_en = false;
+    uop[0].src2_en = false;
+    uop[0].op = NONE;
 
     break;
   }
   }
 
   // 不写0寄存器
-  if (reg_d_index == 0)
-    dest_en = 0;
-
-  Inst_info info = {.dest_areg = reg_d_index,
-                    .src1_areg = reg_a_index,
-                    .src2_areg = reg_b_index,
-                    .dest_en = dest_en,
-                    .src1_en = src1_en,
-                    .src2_en = src2_en,
-                    .src2_is_imm = src2_is_imm,
-                    .func3 = number_funct3_unsigned,
-                    .func7_5 = (bool)(number_funct7_unsigned >> 5),
-                    .imm = imm,
-                    .csr_idx = csr_idx,
-                    .amoop = amoop,
-                    .op = op};
-
-  if (op == JALR || op == JAL || op == AMO || op == SC) {
-    info.uop_num = 2;
-  } else {
-    info.uop_num = 1;
+  if (reg_d_index == 0) {
+    uop[0].dest_en = 0;
+    uop[1].dest_en = 0;
   }
 
-  if (info.op == LOAD || info.op == LR) {
-    info.iq_type[0] = IQ_LD;
-  } else if (info.op == STORE) {
-    info.iq_type[0] = IQ_ST;
-  } else if (info.op == SC) {
-    info.iq_type[0] = IQ_INT;
-    info.iq_type[1] = IQ_ST;
-  } else if (is_branch(info.op)) {
-    if (info.op == JAL || info.op == JALR) {
-      info.iq_type[0] = IQ_INT;
-      info.iq_type[1] = IQ_BR;
+  for (int i = 0; i < uop_num; i++) {
+    if (is_branch(uop[i].op)) {
+      uop[i].iq_type = IQ_BR;
+    } else if (is_load(uop[i].op) || is_store(uop[i].op)) {
+      uop[i].iq_type = IQ_LS;
     } else {
-      info.iq_type[0] = IQ_BR;
+      if (rand() % 2) {
+        uop[i].iq_type = IQ_INTD;
+      } else {
+        uop[i].iq_type = IQ_INTM;
+      }
     }
-  } else if (op == AMO) {
-    info.iq_type[0] = IQ_LD;
-    info.iq_type[1] = IQ_ST;
-  } else if (is_CSR(op)) {
-    info.iq_type[0] = IQ_CSR;
-  } else {
-    info.iq_type[0] = IQ_INT;
   }
 
-  return info;
+  return uop_num;
 }

@@ -45,19 +45,18 @@ int main(int argc, char *argv[]) {
   char **ptr = NULL;
 
   // init physical memory
-  long idx = 0;
-  for (idx = 0; idx < PHYSICAL_MEMORY_LENGTH; idx++) {
+  int img_size;
+  for (img_size = 0; img_size < PHYSICAL_MEMORY_LENGTH; img_size++) {
     if (inst_data.eof())
       break;
     char inst_data_line[20];
     inst_data.getline(inst_data_line, 100);
     uint32_t inst_32b = strtol(inst_data_line, ptr, 16);
-    p_memory[idx + POS_MEMORY_SHIFT] = inst_32b;
+    p_memory[img_size + POS_MEMORY_SHIFT] = inst_32b;
   }
-  const char *diff_so = "./nemu/build/riscv32-nemu-interpreter-so";
 
 #ifdef CONFIG_DIFFTEST
-  init_difftest(diff_so, idx * 4);
+  init_difftest(img_size);
 #endif
 
   back.init();
@@ -184,15 +183,15 @@ int main(int argc, char *argv[]) {
 #endif
     }
 
-    load_slave_comb();
-    store_slave_comb();
+    /*load_slave_comb();*/
+    /*store_slave_comb();*/
     back.Back_comb();
 
 #ifdef CONFIG_BPU
 
     front_in.FIFO_read_enable = false;
     for (int i = 0; i < COMMIT_WIDTH; i++) {
-      Inst_info *inst = &back.out.commit_entry[i].inst;
+      Inst_uop *inst = &back.out.commit_entry[i].inst;
       front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
       if (front_in.back2front_valid[i]) {
 
@@ -237,8 +236,8 @@ int main(int argc, char *argv[]) {
     front_in.refetch = false;
 #endif
 
-    load_slave_seq();
-    store_slave_seq();
+    /*load_slave_seq();*/
+    /*store_slave_seq();*/
     back.Back_seq();
 
     if (sim_end)
@@ -297,11 +296,6 @@ SIM_END:
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     exit(1);
   }
-
-#ifdef CONFIG_DIFFTEST
-  extern void *handle;
-  dlclose(handle);
-#endif
 
   return 0;
 }

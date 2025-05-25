@@ -31,16 +31,14 @@ void Rename::init() {
 
 void Rename::comb_alloc() {
   // valid初始化为0
-  for (int i = 0; i < IQ_NUM; i++) {
-    for (int j = 0; j < FETCH_WIDTH; j++) {
-      io.ren2iss->valid[i][j] = false;
-    }
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    io.ren2iss->valid[i] = false;
   }
 
-  // 可用寄存器个数 大于FETCH_WIDTH时为FETCH_WIDTH
-  int alloc_reg[FETCH_WIDTH];
+  // 可用寄存器个数 大于DECODE_WIDTH时为DECODE_WIDTH
+  int alloc_reg[DECODE_WIDTH];
   int num = 0;
-  for (int i = 0; i < PRF_NUM && num < FETCH_WIDTH; i++) {
+  for (int i = 0; i < PRF_NUM && num < DECODE_WIDTH; i++) {
     if (free_vec[i]) {
       alloc_reg[num] = i;
       num++;
@@ -53,35 +51,31 @@ void Rename::comb_alloc() {
   int rob_idx = io.rob2ren->enq_idx;
   int stq_idx = io.stq2ren->stq_idx;
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2iss->inst[i] = inst_r[i].inst;
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    io.ren2iss->uop[i] = inst_r[i].uop;
 
     if (inst_r[i].valid) {
       // 分配stq_idx 和 rob_idx
-      if (is_store(io.ren2iss->inst[i].op)) {
-        io.ren2iss->inst[i].stq_idx = stq_idx;
+      if (is_store(io.ren2iss->uop[i].op)) {
+        io.ren2iss->uop[i].stq_idx = stq_idx;
         LOOP_INC(stq_idx, STQ_NUM);
       }
 
-      io.ren2iss->inst[i].rob_idx = rob_idx;
+      io.ren2iss->uop[i].rob_idx = rob_idx;
       LOOP_INC(rob_idx, ROB_NUM);
     }
 
-    if (inst_r[i].valid && inst_r[i].inst.dest_en && !stall) {
+    if (inst_r[i].valid && inst_r[i].uop.dest_en && !stall) {
       // 分配寄存器
       if (alloc_num < num) {
-        for (int j = 0; j < inst_r[i].inst.uop_num; j++) {
-          io.ren2iss->valid[inst_r[i].inst.iq_type[j]][i] = true;
-        }
-        io.ren2iss->inst[i].dest_preg = alloc_reg[alloc_num];
+        io.ren2iss->valid[i] = true;
+        io.ren2iss->uop[i].dest_preg = alloc_reg[alloc_num];
         alloc_num++;
       } else {
         stall = true;
       }
-    } else if (inst_r[i].valid && !inst_r[i].inst.dest_en) {
-      for (int j = 0; j < inst_r[i].inst.uop_num; j++) {
-        io.ren2iss->valid[inst_r[i].inst.iq_type[j]][i] = !stall;
-      }
+    } else if (inst_r[i].valid && !inst_r[i].uop.dest_en) {
+      io.ren2iss->valid[i] = !stall;
     }
   }
 }
@@ -93,7 +87,7 @@ void Rename::comb_wake() {
   }
 
   // TODO: Magic Number
-  for (int i = 0; i < ALU_NUM + 1; i++) {
+  for (int i = 0; i < ALU_NUM; i++) {
     if (io.iss2ren->wake[i].valid) {
       busy_table_1[io.iss2ren->wake[i].preg] = false;
     }
@@ -103,61 +97,60 @@ void Rename::comb_wake() {
 void Rename::comb_rename() {
 
   // 无waw raw的输出 读spec_RAT和busy_table
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2iss->inst[i].old_dest_preg = spec_RAT[inst_r[i].inst.dest_areg];
-    io.ren2iss->inst[i].src1_preg = spec_RAT[inst_r[i].inst.src1_areg];
-    io.ren2iss->inst[i].src2_preg = spec_RAT[inst_r[i].inst.src2_areg];
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    io.ren2iss->uop[i].old_dest_preg = spec_RAT[inst_r[i].uop.dest_areg];
+    io.ren2iss->uop[i].src1_preg = spec_RAT[inst_r[i].uop.src1_areg];
+    io.ren2iss->uop[i].src2_preg = spec_RAT[inst_r[i].uop.src2_areg];
     // 唤醒的bypass
-    io.ren2iss->inst[i].src1_busy =
-        busy_table_1[io.ren2iss->inst[i].src1_preg] && inst_r[i].inst.src1_en;
-    io.ren2iss->inst[i].src2_busy =
-        busy_table_1[io.ren2iss->inst[i].src2_preg] && inst_r[i].inst.src2_en;
+    io.ren2iss->uop[i].src1_busy =
+        busy_table_1[io.ren2iss->uop[i].src1_preg] && inst_r[i].uop.src1_en;
+    io.ren2iss->uop[i].src2_busy =
+        busy_table_1[io.ren2iss->uop[i].src2_preg] && inst_r[i].uop.src2_en;
   }
 
   // 针对RAT 和busy_table的raw的bypass
-  for (int i = 1; i < FETCH_WIDTH; i++) {
+  for (int i = 1; i < DECODE_WIDTH; i++) {
     for (int j = 0; j < i; j++) {
-      if (!inst_r[j].valid || !inst_r[j].inst.dest_en)
+      if (!inst_r[j].valid || !inst_r[j].uop.dest_en)
         continue;
 
-      if (inst_r[i].inst.src1_areg == inst_r[j].inst.dest_areg) {
-        io.ren2iss->inst[i].src1_preg = io.ren2iss->inst[j].dest_preg;
-        io.ren2iss->inst[i].src1_busy = true;
+      if (inst_r[i].uop.src1_areg == inst_r[j].uop.dest_areg) {
+        io.ren2iss->uop[i].src1_preg = io.ren2iss->uop[j].dest_preg;
+        io.ren2iss->uop[i].src1_busy = true;
       }
 
-      if (inst_r[i].inst.src2_areg == inst_r[j].inst.dest_areg) {
-        io.ren2iss->inst[i].src2_preg = io.ren2iss->inst[j].dest_preg;
-        io.ren2iss->inst[i].src2_busy = true;
+      if (inst_r[i].uop.src2_areg == inst_r[j].uop.dest_areg) {
+        io.ren2iss->uop[i].src2_preg = io.ren2iss->uop[j].dest_preg;
+        io.ren2iss->uop[i].src2_busy = true;
       }
 
-      if (inst_r[i].inst.dest_areg == inst_r[j].inst.dest_areg) {
-        io.ren2iss->inst[i].old_dest_preg = io.ren2iss->inst[j].dest_preg;
+      if (inst_r[i].uop.dest_areg == inst_r[j].uop.dest_areg) {
+        io.ren2iss->uop[i].old_dest_preg = io.ren2iss->uop[j].dest_preg;
       }
     }
   }
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2rob->inst[i] = io.ren2iss->inst[i];
-    io.ren2rob->valid[i] = io.ren2iss->valid[i];
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    io.ren2rob->uop[i] = io.ren2iss->uop[i];
+    io.ren2rob->valid[i] = inst_r[i].valid;
 
-    io.ren2stq->tag[i] = io.ren2iss->inst[i].tag;
-    io.ren2stq->valid[i] =
-        io.ren2iss->valid[i] && is_store(io.ren2iss->inst[i].op);
+    io.ren2stq->tag[i] = io.ren2iss->uop[i].tag;
+    io.ren2stq->valid[i] = inst_r[i].valid && is_store(io.ren2iss->uop[i].op);
   }
 }
 
 void Rename::comb_store() {
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (io.ren2iss->valid[i] && is_load(io.ren2iss->inst[i].op)) {
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (io.ren2iss->valid[i] && is_load(io.ren2iss->uop[i].op)) {
       for (int j = 0; j < STQ_NUM; j++) {
-        io.ren2iss->inst[i].pre_store[j] = io.stq2ren->stq_valid[j];
+        io.ren2iss->uop[i].pre_store[j] = io.stq2ren->stq_valid[j];
       }
 
       // 同一组store 和load
       for (int j = 0; j < i; j++) {
-        if (io.ren2iss->valid[j] && is_store(io.ren2iss->inst[j].op)) {
-          int idx = io.ren2iss->inst[j].stq_idx;
-          io.ren2iss->inst[i].pre_store[idx] = true;
+        if (io.ren2iss->valid[j] && is_store(io.ren2iss->uop[j].op)) {
+          int idx = io.ren2iss->uop[j].stq_idx;
+          io.ren2iss->uop[i].pre_store[idx] = true;
         }
       }
     }
@@ -169,74 +162,53 @@ void Rename::comb_fire() {
   bool pre_stall = false;
   bool pre_fire = false; // csr指令需要等前面的指令都发射执行完毕
   bool csr_stall = false; // csr指令后面的指令都要阻塞
-  bool fire[FETCH_WIDTH];
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    bool valid = false;
-    bool ready = true;
+  for (int i = 0; i < DECODE_WIDTH; i++) {
 
-    for (int j = 0; j < IQ_NUM; j++) {
-      valid = valid || io.ren2iss->valid[j][i];
-    }
+    io.ren2iss->dis_fire[i] =
+        io.ren2iss->valid[i] && io.iss2ren->ready[i] &&
+        (!is_store(io.ren2iss->uop[i].op) ||
+         io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
+        (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
+        !io.dec_bcast->mispred && !csr_stall &&
+        (!is_CSR(io.ren2iss->uop[i].op) || io.rob2ren->empty && !pre_fire) &&
+        !io.rob2ren->stall;
 
-    for (int j = 0; j < IQ_NUM; j++) {
-      if (io.ren2iss->valid[j][i] && !io.iss2ren->ready[j][i]) {
-        ready = false;
-        break;
-      }
-    }
-
-    for (int j = 0; j < IQ_NUM; j++) {
-      io.ren2iss->dis_fire[j][i] =
-          io.ren2iss->valid[j][i] && valid && ready &&
-          (!is_store(io.ren2iss->inst[i].op) ||
-           io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
-          (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
-          !io.dec_bcast->mispred && !csr_stall &&
-          (!is_CSR(io.ren2iss->inst[i].op) || io.rob2ren->empty && !pre_fire) &&
-          !io.rob2ren->stall;
-    }
-
-    fire[i] = false;
-    for (int j = 0; j < IQ_NUM; j++) {
-      fire[i] = fire[i] || io.ren2iss->dis_fire[j][i];
-    }
-
-    io.ren2rob->dis_fire[i] = fire[i];
-    io.ren2stq->dis_fire[i] = fire[i];
-    pre_stall = inst_r[i].valid && !fire[i];
-    pre_fire = fire[i];
+    io.ren2rob->dis_fire[i] = io.ren2iss->dis_fire[i];
+    io.ren2stq->dis_fire[i] = io.ren2iss->dis_fire[i];
+    pre_stall = inst_r[i].valid && !io.ren2iss->dis_fire[i];
+    pre_fire = io.ren2iss->dis_fire[i];
 
     // 异常相关指令需要单独执行
-    if (io.ren2iss->valid[i] && is_CSR(io.ren2iss->inst[i].op)) {
+    if (io.ren2rob->valid[i] && is_CSR(io.ren2iss->uop[i].op)) {
       csr_stall = true;
     }
 
-    if (fire[i] && io.ren2iss->inst[i].dest_en) {
-      int dest_preg = io.ren2iss->inst[i].dest_preg;
+    if (io.ren2iss->dis_fire[i] && io.ren2iss->uop[i].dest_en) {
+      int dest_preg = io.ren2iss->uop[i].dest_preg;
       spec_alloc_1[dest_preg] = true;
       free_vec_1[dest_preg] = false;
       busy_table_1[dest_preg] = true;
-      spec_RAT_1[inst_r[i].inst.dest_areg] = dest_preg;
+      spec_RAT_1[inst_r[i].uop.dest_areg] = dest_preg;
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][dest_preg] = true;
     }
 
     // 保存checkpoint
-    if (fire[i] && is_branch(inst_r[i].inst.op)) {
+    if (io.ren2iss->dis_fire[i] && is_branch(inst_r[i].uop.op)) {
       for (int j = 0; j < ARF_NUM; j++) {
-        RAT_checkpoint_1[inst_r[i].inst.tag][j] = spec_RAT_1[j];
+        RAT_checkpoint_1[inst_r[i].uop.tag][j] = spec_RAT_1[j];
       }
 
       for (int j = 0; j < PRF_NUM; j++) {
-        alloc_checkpoint_1[inst_r[i].inst.tag][j] = false;
+        alloc_checkpoint_1[inst_r[i].uop.tag][j] = false;
       }
     }
   }
 
   io.ren2dec->ready = true;
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2dec->ready &= fire[i] || !inst_r[i].valid;
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    io.ren2dec->ready &= io.ren2iss->dis_fire[i] || !inst_r[i].valid;
   }
 }
 
@@ -274,29 +246,29 @@ void Rename ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
-      if (io.rob_commit->commit_entry[i].inst.dest_en) {
-        free_vec_1[io.rob_commit->commit_entry[i].inst.old_dest_preg] = true;
-        spec_alloc_1[io.rob_commit->commit_entry[i].inst.dest_preg] = false;
+      if (io.rob_commit->commit_entry[i].uop.dest_en) {
+        free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
+        spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
       }
       commit_num++;
       if (LOG) {
         cout << "ROB commit PC 0x" << hex
-             << io.rob_commit->commit_entry[i].inst.pc << " idx "
-             << io.rob_commit->commit_entry[i].inst.inst_idx << endl;
+             << io.rob_commit->commit_entry[i].uop.pc << " idx "
+             << io.rob_commit->commit_entry[i].uop.inst_idx << endl;
       }
 #ifdef CONFIG_DIFFTEST
-      back.difftest(&(io.rob_commit->commit_entry[i].inst));
+      back.difftest(&(io.rob_commit->commit_entry[i].uop));
 #endif // CONFIG_DIFFTSET
     }
   }
 }
 
 void Rename ::comb_pipeline() {
-  for (int i = 0; i < FETCH_WIDTH; i++) {
+  for (int i = 0; i < DECODE_WIDTH; i++) {
     if (io.rob_bc->rollback || io.dec_bcast->mispred) {
       inst_r_1[i].valid = false;
     } else if (io.ren2dec->ready) {
-      inst_r_1[i].inst = io.dec2ren->inst[i];
+      inst_r_1[i].uop = io.dec2ren->uop[i];
       inst_r_1[i].valid = io.dec2ren->valid[i];
     } else {
       inst_r_1[i].valid = inst_r[i].valid && !io.ren2rob->dis_fire[i];
@@ -306,7 +278,7 @@ void Rename ::comb_pipeline() {
 
 void Rename ::seq() {
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
+  for (int i = 0; i < DECODE_WIDTH; i++) {
     inst_r[i] = inst_r_1[i];
   }
 

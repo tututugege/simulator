@@ -3,6 +3,7 @@
 #include "IO.h"
 #include <FU.h>
 #include <config.h>
+#include <vector>
 
 class EXU_IO {
 public:
@@ -18,12 +19,25 @@ public:
   Csr_Exe *csr2exe;
 };
 
+/*class Fu_Group {*/
+/*public:*/
+/*  Fu_Group(IQ_TYPE, int fu_num, int write_port_num);*/
+/*  void exec(vector<Inst_entry> iss_entry);*/
+/*  vector<Inst_entry> inst_r;*/
+/*  vector<FU> fu;*/
+/*  IQ_TYPE type;*/
+/*  int fu_num;*/
+/*  int write_port_num;*/
+/*};*/
+
 class EXU {
 public:
   void init();
-  void comb();
+  void comb_exec();
+  void comb_csr();
+  void comb_ready();
   void seq();
-  Inst_entry inst_r[ISSUE_WAY];
   FU fu[ISSUE_WAY];
+  Inst_entry inst_r[ISSUE_WAY];
   EXU_IO io;
 };

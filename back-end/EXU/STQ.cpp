@@ -3,14 +3,15 @@
 #include <STQ.h>
 #include <config.h>
 #include <cstdint>
+#include <iostream>
 #include <util.h>
 
 extern Back_Top back;
 
 enum STATE { IDLE, WAIT };
 void STQ::comb() {
-  back.out.bready = true;
-  back.out.wvalid = false;
+  /*back.out.bready = true;*/
+  /*back.out.wvalid = false;*/
 
   static int state;
   for (int i = 0; i < STQ_NUM; i++) {
@@ -19,7 +20,7 @@ void STQ::comb() {
 
   int num = count;
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
+  for (int i = 0; i < DECODE_WIDTH; i++) {
     if (!io.ren2stq->valid[i]) {
       io.stq2ren->ready[i] = true;
     } else {
@@ -34,36 +35,74 @@ void STQ::comb() {
 
   // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
-    if (state == IDLE) {
-      back.out.wvalid = true;
-      back.out.wdata = entry[deq_ptr].data;
-      back.out.waddr = entry[deq_ptr].addr;
-      if (entry[deq_ptr].size == 0b00)
-        back.out.wstrb = 0b1;
-      else if (entry[deq_ptr].size == 0b01)
-        back.out.wstrb = 0b11;
-      else
-        back.out.wstrb = 0b1111;
+    /*if (state == IDLE) {*/
+    /*  back.out.wvalid = true;*/
+    /*  back.out.wdata = entry[deq_ptr].data;*/
+    /*  back.out.waddr = entry[deq_ptr].addr;*/
+    /*  if (entry[deq_ptr].size == 0b00)*/
+    /*    back.out.wstrb = 0b1;*/
+    /*  else if (entry[deq_ptr].size == 0b01)*/
+    /*    back.out.wstrb = 0b11;*/
+    /*  else*/
+    /*    back.out.wstrb = 0b1111;*/
+    /**/
+    /*  int offset = entry[deq_ptr].addr & 0x3;*/
+    /*  back.out.wstrb = back.out.wstrb << offset;*/
+    /*  back.out.wdata = back.out.wdata << (offset * 8);*/
+    /**/
+    /*  if (back.out.wvalid && back.in.wready) {*/
+    /*    state = WAIT;*/
+    /*  }*/
+    /*} else if (state == WAIT) {*/
+    /*  if (back.in.bvalid && back.out.bready) {*/
+    /*    entry[deq_ptr].valid = false;*/
+    /*    entry[deq_ptr].compelete = false;*/
+    /*    io.stq2iss->valid[deq_ptr] = true;*/
+    /*    LOOP_INC(deq_ptr, STQ_NUM);*/
+    /*    count--;*/
+    /*    state = IDLE;*/
+    /*  }*/
+    /*} else {*/
+    /*  back.out.wvalid = false;*/
+    /*}*/
+    extern uint32_t *p_memory;
+    uint32_t wdata = entry[deq_ptr].data;
+    uint32_t waddr = entry[deq_ptr].addr;
+    uint32_t wstrb;
+    if (entry[deq_ptr].size == 0b00)
+      wstrb = 0b1;
+    else if (entry[deq_ptr].size == 0b01)
+      wstrb = 0b11;
+    else
+      wstrb = 0b1111;
 
-      int offset = entry[deq_ptr].addr & 0x3;
-      back.out.wstrb = back.out.wstrb << offset;
-      back.out.wdata = back.out.wdata << (offset * 8);
+    int offset = entry[deq_ptr].addr & 0x3;
+    wstrb = wstrb << offset;
+    wdata = wdata << (offset * 8);
 
-      if (back.out.wvalid && back.in.wready) {
-        state = WAIT;
-      }
-    } else if (state == WAIT) {
-      if (back.in.bvalid && back.out.bready) {
-        entry[deq_ptr].valid = false;
-        entry[deq_ptr].compelete = false;
-        io.stq2iss->valid[deq_ptr] = true;
-        LOOP_INC(deq_ptr, STQ_NUM);
-        count--;
-        state = IDLE;
-      }
-    } else {
-      back.out.wvalid = false;
+    uint32_t old_data = p_memory[waddr / 4];
+    uint32_t mask = 0;
+    if (wstrb & 0b1)
+      mask |= 0xFF;
+    if (wstrb & 0b10)
+      mask |= 0xFF00;
+    if (wstrb & 0b100)
+      mask |= 0xFF0000;
+    if (wstrb & 0b1000)
+      mask |= 0xFF000000;
+
+    p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
+
+    if (waddr == UART_BASE) {
+      char temp = wdata & 0xFF;
+      cout << temp;
     }
+
+    entry[deq_ptr].valid = false;
+    entry[deq_ptr].compelete = false;
+    io.stq2iss->valid[deq_ptr] = true;
+    LOOP_INC(deq_ptr, STQ_NUM);
+    count--;
   }
 
   // 指令store依赖信息
@@ -75,7 +114,7 @@ void STQ::comb() {
 void STQ::seq() {
 
   // 入队
-  for (int i = 0; i < FETCH_WIDTH; i++) {
+  for (int i = 0; i < DECODE_WIDTH; i++) {
     if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i]) {
       entry[enq_ptr].tag = io.ren2stq->tag[i];
       entry[enq_ptr].valid = true;
@@ -85,7 +124,7 @@ void STQ::seq() {
   }
 
   // 地址数据写入 若项无效说明被br清除
-  Inst_info *inst = &io.exe2stq->entry.inst;
+  Inst_uop *inst = &io.exe2stq->entry.uop;
   int idx = inst->stq_idx;
   if (io.exe2stq->entry.valid && entry[idx].valid) {
     entry[idx].data = inst->src2_rdata;
@@ -147,7 +186,7 @@ void STQ::seq() {
   // commit标记为可执行
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid &&
-        io.rob_commit->commit_entry[i].inst.op == STORE) {
+        is_store(io.rob_commit->commit_entry[i].uop.op)) {
       entry[commit_ptr].compelete = true;
       LOOP_INC(commit_ptr, STQ_NUM);
     }

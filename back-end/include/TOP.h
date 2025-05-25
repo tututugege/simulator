@@ -81,5 +81,5 @@ public:
   bool pre_br_check(uint32_t *br_pc);
 
   // debug
-  void difftest(Inst_info *inst);
+  void difftest(Inst_uop *inst);
 };

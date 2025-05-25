@@ -1,82 +1,40 @@
+#include "../include/RISCV.h"
 #include <config.h>
 #include <cstdint>
 #include <cvt.h>
 #include <diff.h>
-#include <dlfcn.h>
 #include <front_IO.h>
+bool USE_LINUX_SIMU = 1; // 是否为启动 Linux 模式
 
 enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
 enum { DIFFTEST, BRANCHCHECK };
 
 CPU_state dut, ref;
-bool difftest_skip = false;
 extern uint32_t *p_memory;
 extern uint32_t next_PC[FETCH_WIDTH];
 extern uint32_t fetch_PC[FETCH_WIDTH];
 
-void (*ref_difftest_memcpy[2])(uint32_t addr, void *buf, size_t n,
-                               bool direction);
+static uint32_t last_pc = 0;
 
-void (*ref_difftest_regcpy[2])(void *dut, bool direction);
-void (*ref_difftest_exec[2])(uint64_t n);
+// relocate the init_difftest function to avoid multiple definition error
+void init_difftest(int img_size) {
+  // 1. memory copy
+  memcpy(ref_memory + 0x80000000 / 4, p_memory + 0x80000000 / 4,
+         img_size * sizeof(uint32_t));
 
-void isa_reg_display();
-void *handle[2];
-
-void init_difftest(const char *ref_so_file, long img_size) {
-
-  assert(ref_so_file != NULL);
-
-#ifdef CONFIG_BRANCHCHECK
-  for (int i = 0; i < 2; i++) {
-#else
-  for (int i = 0; i < 1; i++) {
-#endif
-    if (i == 0)
-      handle[i] = dlopen(ref_so_file, RTLD_LAZY);
-    else
-      handle[i] =
-          dlopen("./nemu/build/riscv32-nemu-interpreter-so2", RTLD_LAZY);
-    assert(handle[i]);
-
-    ref_difftest_memcpy[i] = (void (*)(uint32_t, void *, size_t, bool))dlsym(
-        handle[i], "difftest_memcpy");
-    assert(ref_difftest_memcpy[i]);
-
-    ref_difftest_regcpy[i] =
-        (void (*)(void *, bool))dlsym(handle[i], "difftest_regcpy");
-    assert(ref_difftest_regcpy[i]);
-
-    ref_difftest_exec[i] =
-        (void (*)(uint64_t))dlsym(handle[i], "difftest_exec");
-    assert(ref_difftest_exec[i]);
-
-    void (*ref_difftest_init)() = (void (*)())dlsym(handle[i], "difftest_init");
-    assert(ref_difftest_init);
-
-    ref_difftest_init();
-    ref_difftest_memcpy[i](0x80000000, p_memory + 0x80000000 / 4, img_size,
-                           DIFFTEST_TO_REF);
-
-    for (int i = 0; i < ARF_NUM; i++) {
-      ref.gpr[i] = 0;
-      dut.gpr[i] = 0;
-    }
+  // 2. init the ref and dut
+  for (int i = 0; i < ARF_NUM; i++) {
+    ref.gpr[i] = 0;
+    dut.gpr[i] = 0;
+  }
+  if (USE_LINUX_SIMU) {
     ref.pc = 0x80000000;
     dut.pc = 0x80000000;
-
-    ref_difftest_regcpy[i](&ref, DIFFTEST_TO_REF);
+  } else {
+    ref.pc = 0x80000000;
+    dut.pc = 0x80000000;
   }
-
-#ifdef CONFIG_BRANCHCHECK
-
-  fetch_PC[0] = 0x80000000;
-  for (int i = 0; i < FETCH_WIDTH - 1; i++) {
-    ref_difftest_exec[BRANCHCHECK](1);
-    ref_difftest_regcpy[BRANCHCHECK](&ref, DIFFTEST_TO_DUT);
-    fetch_PC[i + 1] = ref.pc;
-  }
-#endif
+  v1_difftest_init(ref.pc);
 }
 
 static void checkregs() {
@@ -90,8 +48,13 @@ static void checkregs() {
       break;
   }
 
-  if (i == ARF_NUM)
+  if (i == ARF_NUM) {
+    static int commit_idx = 0;
+    /*cout << "- idx: " << dec << commit_idx++ << " commit pc: " << hex <<
+     * last_pc*/
+    /*     << endl; // debug for linux simu*/
     return;
+  }
 
 fault:
 
@@ -104,33 +67,40 @@ fault:
       printf("\t Error");
     putchar('\n');
   }
+
   printf("PC:\t%08x\t%08x\n", ref.pc, dut.pc);
-  dlclose(handle[0]);
-  dlclose(handle[1]);
+  extern int commit_num;
+  /*printf("commit_num (dec): %d\n", commit_num);*/
+  /*cout << "last_pc: " << hex << last_pc << endl;*/
+  /*cout << "p_memory[last_pc]: " << hex << p_memory[last_pc / 4] << endl;*/
+  /*cout << "ref_memory[last_pc]: " << hex << ref_memory[last_pc / 4] << endl;*/
+  //
+  // 仍然使用 ENLIGHTENMENT_V1 继续执行
+  //
+  /*for (;;) {*/
+  /*  v1_difftest_exec();*/
+  /*}*/
   exit(1);
 }
 
 void difftest_step() {
-  if (difftest_skip) {
-    // to skip the checking of an instruction, just copy the reg state to
-    // reference design
-    for (int i = 0; i < ARF_NUM; i++) {
-      ref.gpr[i] = dut.gpr[i];
-    }
-    ref.pc = dut.pc;
-    ref_difftest_regcpy[DIFFTEST](&ref, DIFFTEST_TO_REF);
-    difftest_skip = false;
-  } else {
-    ref_difftest_exec[DIFFTEST](1);
-    ref_difftest_regcpy[DIFFTEST](&ref, DIFFTEST_TO_DUT);
-    checkregs();
-  }
+  last_pc = ref.pc;
+  // printf("current check_type: %u\n", check_type);
+  // using ENLIGHTENMENT_V1 as reference design
+  static int v1_commit_num = 0;
+  // cout << "v1_commit_num: " << dec << v1_commit_num << endl;
+  v1_difftest_exec();
+  // cout << "v1 regcpy start..." << endl;
+  v1_difftest_regcpy(&ref, DIFFTEST_TO_REF);
+  checkregs();
+  // cout << "pass v1 checkregs!!!" << endl;
+  v1_commit_num++;
 }
 
-void branch_check() {
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    ref_difftest_exec[BRANCHCHECK](1);
-    ref_difftest_regcpy[BRANCHCHECK](&ref, DIFFTEST_TO_DUT);
-    next_PC[i] = ref.pc;
-  }
-}
+/*void branch_check() {*/
+/*  for (int i = 0; i < FETCH_WIDTH; i++) {*/
+/*    ref_difftest_exec[BRANCHCHECK](1);*/
+/*    ref_difftest_regcpy[BRANCHCHECK](&ref, DIFFTEST_TO_DUT);*/
+/*    next_PC[i] = ref.pc;*/
+/*  }*/
+/*}*/
