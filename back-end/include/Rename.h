@@ -1,6 +1,7 @@
 #pragma once
 #include "IO.h"
 #include "config.h"
+#include "frontend.h"
 
 class REN_IO {
 public:
@@ -45,7 +46,7 @@ public:
 
 private:
   // register
-  Inst_entry inst_r[FETCH_WIDTH];
+  Inst_entry inst_r[DECODE_WIDTH];
   uint32_t spec_RAT[ARF_NUM];
   uint32_t RAT_checkpoint[MAX_BR_NUM][ARF_NUM];
   bool free_vec[PRF_NUM];
@@ -53,7 +54,7 @@ private:
   bool busy_table[PRF_NUM];
   bool spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
-  Inst_entry inst_r_1[FETCH_WIDTH];
+  Inst_entry inst_r_1[DECODE_WIDTH];
   uint32_t spec_RAT_1[ARF_NUM];
   uint32_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM];
   bool free_vec_1[PRF_NUM];

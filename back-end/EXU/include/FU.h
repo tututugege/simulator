@@ -4,11 +4,8 @@
 
 class FU {
 public:
-  void (*comb)(Inst_info *, FU &);
-  void (*seq)(Inst_info *, FU &);
-  FU_TYPE type;
+  void exec(Inst_uop &);
   int latency = 0;
   int cycle = 0;
-  int state;
   bool complete = false;
 };

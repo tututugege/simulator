@@ -4,32 +4,16 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 500000
-#define ISSUE_WAY 8
+#define MAX_SIM_TIME 5000000
+#define ISSUE_WAY 4
 
 #define ARF_NUM 32
 #define PRF_NUM 96
 #define MAX_BR_NUM 8
 
-#define IQ_NUM 5
 #define ROB_NUM 64
 #define STQ_NUM 8
-
-#define CSR_ISS_IDX 4
-#define LDU_ISS_IDX 5
-#define STU_ISS_IDX 6
-#define BRU_ISS_IDX 7
-
-#define INT_IQ_IDX 0
-#define CSR_IQ_IDX 1
-#define LD_IQ_IDX 2
-#define ST_IQ_IDX 3
-#define BR_IQ_IDX 4
-
-#define ALU_NUM 4
-#define BRU_NUM 1
-#define LDU_NUM 1
-#define STU_NUM 1
+#define ALU_NUM 2
 
 #define LOG 0
 
@@ -39,17 +23,14 @@ using namespace std;
 
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE { IQ_INT, IQ_CSR, IQ_LD, IQ_ST, IQ_BR };
-enum FU_TYPE { FU_ALU, FU_CSR, FU_LDU, FU_STU, FU_BRU, FU_NUM };
+enum IQ_TYPE { IQ_INTM, IQ_INTD, IQ_LS, IQ_BR, IQ_NUM };
+enum FU_TYPE { FU_ALU, FU_LSU, FU_BRU, FU_MUL, FU_DIV, FU_TYPE_NUM };
 
-extern FU_TYPE fu_config[ISSUE_WAY];
+extern int fu_config[ISSUE_WAY];
 
 enum Inst_op {
   NONE,
-  LUI,
-  AUIPC,
-  JAL,
-  JALR,
+  JUMP,
   ADD,
   BR,
   LOAD,
@@ -58,12 +39,13 @@ enum Inst_op {
   ECALL,
   EBREAK,
   MRET,
-  LR,
-  SC,
-  AMO
+  MUL,
 };
 
 enum AMO_op {
+  AMONONE,
+  LR,
+  SC,
   AMOSWAP,
   AMOADD,
   AMOXOR,
@@ -75,7 +57,7 @@ enum AMO_op {
   AMOMAXU,
 };
 
-typedef struct Inst_info {
+typedef struct Inst_uop {
   int dest_areg, src1_areg, src2_areg;
   int dest_preg, src1_preg, src2_preg;
   uint32_t src1_rdata, src2_rdata;
@@ -96,6 +78,7 @@ typedef struct Inst_info {
 
   bool dest_en, src1_en, src2_en;
   bool src1_busy, src2_busy;
+  bool src1_is_pc;
   bool src2_is_imm;
   uint32_t func3;
   bool func7_5;
@@ -107,19 +90,22 @@ typedef struct Inst_info {
   uint32_t stq_idx;
   bool pre_store[STQ_NUM];
 
+  bool is_last_uop;
+
   // 调度特征
   int inst_idx;
   int dependency;
 
-  AMO_op amoop;
   Inst_op op;
-  int uop_num;
-  IQ_TYPE iq_type[3];
-} Inst_info;
+  IQ_TYPE iq_type;
+
+  // 原子指令信息
+  AMO_op amoop;
+} Inst_uop;
 
 typedef struct Inst_entry {
   bool valid;
-  Inst_info inst;
+  Inst_uop uop;
 } Inst_entry;
 
 typedef struct {

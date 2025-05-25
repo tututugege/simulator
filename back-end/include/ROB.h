@@ -28,14 +28,14 @@ public:
 
 private:
   Inst_entry entry[ROB_NUM];
-  int complete_uop_num[ROB_NUM];
+  bool complete[ROB_NUM];
   bool exception[ROB_NUM];
   int enq_ptr;
   int deq_ptr;
   int count;
 
   Inst_entry entry_1[ROB_NUM];
-  int complete_uop_num_1[ROB_NUM];
+  int complete_1[ROB_NUM];
   bool exception_1[ROB_NUM];
   int enq_ptr_1;
   int deq_ptr_1;

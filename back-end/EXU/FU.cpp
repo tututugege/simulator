@@ -24,31 +24,17 @@ enum STATE { IDLE, RECV };
 #define BLTU 0b110
 #define BGEU 0b111
 
-void bru(Inst_info *inst, FU &fu) {
-  fu.complete = true;
-
+void bru(Inst_uop &inst) {
   uint32_t operand1, operand2;
-  if (inst->op == JAL || inst->op == JALR)
-    operand1 = inst->pc;
-  else if (inst->op == LUI)
-    operand1 = 0;
-  else
-    operand1 = inst->src1_rdata;
+  operand1 = inst.src1_rdata;
+  operand2 = inst.src2_rdata;
 
-  if (inst->src2_is_imm) {
-    operand2 = inst->imm;
-  } else if (inst->op == JALR || inst->op == JAL) {
-    operand2 = 4;
-  } else {
-    operand2 = inst->src2_rdata;
-  }
-
-  uint32_t pc_br = inst->pc + inst->imm;
+  uint32_t pc_br = inst.pc + inst.imm;
   bool br_taken = true;
 
-  assert(is_branch(inst->op));
-  if (inst->op == BR) {
-    switch (inst->func3) {
+  assert(is_branch(inst.op));
+  if (inst.op == BR) {
+    switch (inst.func3) {
     case BEQ:
       br_taken = (operand1 == operand2);
       break;
@@ -70,94 +56,88 @@ void bru(Inst_info *inst, FU &fu) {
     }
   }
 
-  switch (inst->op) {
+  switch (inst.op) {
   case BR:
     break;
-  case JAL:
+  case JUMP:
     br_taken = true;
-    break;
-  case JALR:
-    br_taken = true;
-    pc_br = (inst->src1_rdata + inst->imm) & (~0x1);
+    if (inst.src1_en)
+      pc_br = (inst.src1_rdata + inst.imm) & (~0x1);
     break;
   default:
     br_taken = false;
   }
 
-  if (br_taken && inst->pred_br_taken && inst->pred_br_pc == pc_br ||
-      !br_taken && !inst->pred_br_taken ||
-      br_taken && !inst->pred_br_taken && pc_br == inst->pc + 4) {
-    inst->mispred = false;
+  if (br_taken && inst.pred_br_taken && inst.pred_br_pc == pc_br ||
+      !br_taken && !inst.pred_br_taken ||
+      br_taken && !inst.pred_br_taken && pc_br == inst.pc + 4) {
+    inst.mispred = false;
   } else {
-    inst->mispred = true;
+    inst.mispred = true;
   }
-  /*cout << "pc: " << inst->pc << hex << " pred: " << inst->pred_br_taken*/
-  /*     << " pred_pc: " << inst->pred_br_pc << " taken: " << br_taken*/
+  /*cout << "pc: " << inst.pc << hex << " pred: " << inst.pred_br_taken*/
+  /*     << " pred_pc: " << inst.pred_br_pc << " taken: " << br_taken*/
   /*     << " br_pc: " << pc_br;*/
-  /*if (inst->mispred)*/
+  /*if (inst.mispred)*/
   /*  cout << " error ";*/
   /**/
   /*cout << endl;*/
 
-  inst->br_taken = br_taken;
+  inst.br_taken = br_taken;
 
   if (br_taken)
-    inst->pc_next = pc_br;
+    inst.pc_next = pc_br;
   else
-    inst->pc_next = inst->pc + 4;
+    inst.pc_next = inst.pc + 4;
 }
 
-void alu(Inst_info *inst, FU &fu) {
-  fu.complete = true;
-
+void alu(Inst_uop &inst) {
   uint32_t operand1, operand2;
-  if (inst->op == AUIPC || inst->op == JALR || inst->op == JAL)
-    operand1 = inst->pc;
-  else if (inst->op == LUI)
-    operand1 = 0;
+  if (inst.src1_is_pc)
+    operand1 = inst.pc;
   else
-    operand1 = inst->src1_rdata;
+    operand1 = inst.src1_rdata;
 
-  if (inst->src2_is_imm) {
-    operand2 = inst->imm;
-  } else if (inst->op == JALR || inst->op == JAL) {
+  if (inst.src2_is_imm) {
+    operand2 = inst.imm;
+  } else if (inst.op == JUMP) {
     operand2 = 4;
   } else {
-    operand2 = inst->src2_rdata;
+    operand2 = inst.src2_rdata;
   }
 
-  switch (inst->op) {
+  switch (inst.op) {
   case ADD: {
-    switch (inst->func3) {
+    switch (inst.func3) {
     case SUB:
-      if (inst->func7_5 && !inst->src2_is_imm)
-        inst->result = operand1 - operand2;
+      if (inst.func7_5 && !inst.src2_is_imm)
+        inst.result = operand1 - operand2;
       else
-        inst->result = operand1 + operand2;
+        inst.result = operand1 + operand2;
       break;
     case SLL:
-      inst->result = operand1 << operand2;
+      inst.result = operand1 << operand2;
       break;
     case SLT:
-      inst->result = ((signed)operand1 < (signed)operand2);
+      inst.result = ((signed)operand1 < (signed)operand2);
       break;
     case SLTU:
-      inst->result = ((unsigned)operand1 < (unsigned)operand2);
+      inst.result = ((unsigned)operand1 < (unsigned)operand2);
       break;
     case XOR:
-      inst->result = (operand1 ^ operand2);
+      inst.result = (operand1 ^ operand2);
       break;
     case SRL:
-      if (inst->func7_5)
-        inst->result = ((signed)operand1 >> operand2);
+      if (inst.func7_5)
+        inst.result = ((signed)operand1 >> operand2);
       else
-        inst->result = ((unsigned)operand1 >> operand2);
+        inst.result = ((unsigned)operand1 >> operand2);
       break;
     case OR:
-      inst->result = (operand1 | operand2);
+      inst.result = (operand1 | operand2);
       break;
     case AND:
-      inst->result = (operand1 & operand2);
+      inst.result = (operand1 & operand2);
       break;
     default:
       assert(0);
@@ -165,76 +145,43 @@ void alu(Inst_info *inst, FU &fu) {
     break;
   }
   default: {
-    inst->result = operand1 + operand2;
+    inst.result = operand1 + operand2;
     break;
   }
   }
 }
 
-void ldu_comb(Inst_info *inst, FU &fu) {
-  int addr = inst->src1_rdata + inst->imm;
-  back.out.rready = true;
+void ldu(Inst_uop &inst) {
+  uint32_t addr = inst.src1_rdata + inst.imm;
+  int size = inst.func3 & 0b11;
+  int offset = addr & 0b11;
+  uint32_t mask = 0;
+  uint32_t sign = 0;
 
-  if (fu.state == IDLE) {
-    back.out.araddr = addr;
-    back.out.arvalid = true;
-    if (back.in.arready && back.out.arvalid) {
-      back.out.rready = true;
-    }
-  } else if (fu.state == RECV) {
-    int data;
+  extern uint32_t *p_memory;
+  uint32_t data = p_memory[addr >> 2];
 
-    if (back.out.rready && back.in.rvalid) {
-      data = back.in.rdata;
-      fu.complete = true;
-    } else {
-      return;
-    }
-
-    int size = inst->func3 & 0b11;
-    int offset = addr & 0b11;
-    uint32_t mask = 0;
-    uint32_t sign = 0;
-
-    data = data >> (offset * 8);
-    if (size == 0) {
-      mask = 0xFF;
-      if (data & 0x80)
-        sign = 0xFFFFFF00;
-    } else if (size == 0b01) {
-      mask = 0xFFFF;
-      if (data & 0x8000)
-        sign = 0xFFFF0000;
-    } else {
-      mask = 0xFFFFFFFF;
-    }
-
-    data = data & mask;
-
-    // 有符号数
-    if (!(inst->func3 & 0b100)) {
-      data = data | sign;
-    }
-
-    inst->result = data;
+  data = data >> (offset * 8);
+  if (size == 0) {
+    mask = 0xFF;
+    if (data & 0x80)
+      sign = 0xFFFFFF00;
+  } else if (size == 0b01) {
+    mask = 0xFFFF;
+    if (data & 0x8000)
+      sign = 0xFFFF0000;
+  } else {
+    mask = 0xFFFFFFFF;
   }
-}
 
-void ldu_seq(Inst_info *inst, FU &fu) {
-  if (fu.state == IDLE) {
-    if (back.in.arready && back.out.arvalid) {
-      back.out.arvalid = false;
-      fu.state = RECV;
-    }
-  } else if (fu.state == RECV) {
-    if (back.out.rready && back.in.rvalid) {
-      fu.state = IDLE;
-      fu.complete = false;
-    }
+  data = data & mask;
+
+  // 有符号数
+  if (!(inst.func3 & 0b100)) {
+    data = data | sign;
   }
+
+  inst.result = data;
 }
 
-void stu_comb(Inst_info *inst, FU &fu) {
-  inst->result = inst->src1_rdata + inst->imm;
-  fu.complete = true;
-}
+void stu(Inst_uop &inst) { inst.result = inst.src1_rdata + inst.imm; }

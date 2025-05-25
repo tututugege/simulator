@@ -5,8 +5,6 @@
 
 #define M_MODE_ECALL 0xb
 
-enum csr_reg { CSR_MTVEC, CSR_MEPC, CSR_MCAUSE, CSR_MSTATUS, CSR_NUM };
-
 enum enum_number_csr_code {
   number_mtvec = 0x305,
   number_mepc = 0x341,
@@ -61,5 +59,5 @@ public:
   void seq();
 
 private:
-  uint32_t CSR_RegFile[CSR_NUM];
+  uint32_t CSR_RegFile[1 << 12];
 };

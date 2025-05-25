@@ -14,20 +14,19 @@ extern int commit_num;
 void load_data();
 /*void store_data();*/
 
-void Back_Top::difftest(Inst_info *inst) {
+void Back_Top::difftest(Inst_uop *inst) {
   if (inst->dest_en)
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
 
-  for (int i = 0; i < ARF_NUM; i++) {
-    dut.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
+  if (inst->is_last_uop) {
+    for (int i = 0; i < ARF_NUM; i++) {
+      dut.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
+    }
+
+    dut.pc = inst->pc_next;
+    difftest_step();
   }
-
-  dut.pc = inst->pc_next;
-  difftest_step();
 }
-
-/*Back_Top::Back_Top() : int_iq(8, 2, INT), ld_iq(4, 1, LD), st_iq(4, 1, ST)
- * {}*/
 
 Front_Dec front2dec;
 Dec_Front dec2front;
@@ -170,13 +169,15 @@ void Back_Top::Back_comb() {
   rename.comb_alloc();
   prf.comb_branch();
   idu.comb_branch();
-  exu.comb();
-  isu.comb_ready();
+  exu.comb_exec();
+  exu.comb_csr();
+  exu.comb_ready();
   isu.comb_deq();
   prf.comb_read();
   prf.comb_amo();
   rename.comb_wake();
   rename.comb_rename();
+  isu.comb_ready();
   stq.comb();
   rob.comb_ready();
   rob.comb_complete();
@@ -209,10 +210,10 @@ void Back_Top::Back_comb() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
     if (back.out.commit_entry[i].valid &&
-            back.out.commit_entry[i].inst.op == ECALL ||
-        back.out.commit_entry[i].inst.op == MRET) {
-      back.out.commit_entry[i].inst.pc_next = back.out.redirect_pc;
-      rob.io.rob_commit->commit_entry[i].inst.pc_next = back.out.redirect_pc;
+            back.out.commit_entry[i].uop.op == ECALL ||
+        back.out.commit_entry[i].uop.op == MRET) {
+      back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
+      rob.io.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
     }
   }
   rename.comb_commit();
