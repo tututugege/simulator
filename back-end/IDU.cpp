@@ -276,6 +276,8 @@ int decode(Inst_uop uop[2], uint32_t inst) {
   int reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
   int reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
 
+  csr_idx = inst >> 20;
+
   uop[0] = {.dest_areg = reg_d_index,
             .src1_areg = reg_a_index,
             .src2_areg = reg_b_index,
@@ -424,7 +426,15 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     uop[0].src1_en = true;
     uop[0].src2_en = true;
     uop[0].src2_is_imm = false;
-    uop[0].op = ADD;
+    if (number_funct7_unsigned == 1) { // mul div
+      if (number_funct3_unsigned & 0b100) {
+        uop[0].op = DIV;
+      } else {
+        uop[0].op = MUL;
+      }
+    } else {
+      uop[0].op = ADD;
+    }
     break;
   }
   case number_9_opcode_fence: { // fence, fence.i
@@ -439,12 +449,30 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     uop[0].src2_is_imm = bit_funct3[0] && (bit_funct3[2] || bit_funct3[1]);
 
     if (bit_funct3[2] || bit_funct3[1]) {
-      uop[0].op = CSR;
-      uop[0].dest_en = true;
-      uop[0].src1_en = true;
-      uop[0].src2_en = !uop[0].src2_is_imm;
-      uop[0].imm = reg_a_index;
-      uop[0].csr_idx = inst >> 20;
+      if (csr_idx != number_mtvec && csr_idx != number_mepc &&
+          csr_idx != number_mcause && csr_idx != number_mie &&
+          csr_idx != number_mip && csr_idx != number_mtval &&
+          csr_idx != number_mscratch && csr_idx != number_mstatus &&
+          csr_idx != number_mideleg && csr_idx != number_medeleg &&
+          csr_idx != number_sepc && csr_idx != number_stvec &&
+          csr_idx != number_scause && csr_idx != number_sscratch &&
+          csr_idx != number_stval && csr_idx != number_sstatus &&
+          csr_idx != number_sie && csr_idx != number_sip &&
+          csr_idx != number_satp && csr_idx != number_mhartid &&
+          csr_idx != number_misa && csr_idx != number_time &&
+          csr_idx != number_timeh) {
+        uop[0].op = NONE;
+        uop[0].dest_en = false;
+        uop[0].src1_en = false;
+        uop[0].src2_en = false;
+
+      } else {
+        uop[0].op = CSR;
+        uop[0].dest_en = true;
+        uop[0].src1_en = true;
+        uop[0].src2_en = !uop[0].src2_is_imm;
+        uop[0].imm = reg_a_index;
+      }
     } else {
       uop[0].dest_en = false;
       uop[0].src1_en = false;
@@ -470,12 +498,12 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     uop_num = 2;
     uop[0].dest_en = true;
     uop[0].src1_en = true;
-    uop[0].src2_en = true;
+    uop[0].src2_en = false;
     uop[0].imm = 0;
     uop[0].op = LOAD;
     uop[0].is_last_uop = false;
 
-    uop[1].dest_en = true;
+    uop[1].dest_en = false;
     uop[1].src1_en = true;
     uop[1].src2_en = true;
     uop[1].imm = 0;
@@ -505,6 +533,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
       uop[0].op = STORE;
       uop[0].amoop = SC;
       uop[1].op = ADD;
+      uop[1].dest_en = true;
       break;
     }
     case 4: { // amoxor.w
@@ -566,6 +595,12 @@ int decode(Inst_uop uop[2], uint32_t inst) {
       uop[i].iq_type = IQ_BR;
     } else if (is_load(uop[i].op) || is_store(uop[i].op)) {
       uop[i].iq_type = IQ_LS;
+    } else if (uop[i].op == MUL) {
+      uop[i].iq_type = IQ_INTM;
+    } else if (uop[i].op == DIV) {
+      uop[i].iq_type = IQ_INTD;
+    } else if (is_CSR(uop[i].op)) {
+      uop[i].iq_type = IQ_INTM;
     } else {
       if (rand() % 2) {
         uop[i].iq_type = IQ_INTD;

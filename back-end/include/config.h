@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 5000000
+#define MAX_SIM_TIME 246000
 #define ISSUE_WAY 4
 
 #define ARF_NUM 32
@@ -15,7 +15,7 @@ using namespace std;
 #define STQ_NUM 8
 #define ALU_NUM 2
 
-#define LOG 0
+#define LOG 1
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_BRANCHCHECK*/
@@ -40,6 +40,7 @@ enum Inst_op {
   EBREAK,
   MRET,
   MUL,
+  DIV
 };
 
 enum AMO_op {

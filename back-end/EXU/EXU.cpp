@@ -6,14 +6,16 @@ void alu(Inst_uop &inst);
 void bru(Inst_uop &inst);
 void ldu(Inst_uop &inst);
 void stu(Inst_uop &inst);
+void mul(Inst_uop &inst);
+void div(Inst_uop &inst);
 
 void FU::exec(Inst_uop &inst) {
 
   if (cycle == 0) {
-    if (inst.op == MUL && !(inst.func3 & 0b100)) { // mul
-      latency = 2;
-    } else if (inst.op == MUL && (inst.func3 & 0b100)) { // div
-      latency = 16;
+    if (inst.op == MUL) { // mul
+      latency = 1;
+    } else if (inst.op == DIV) { // div
+      latency = 1;
     } else if (inst.op == LOAD) {
       latency = 3;
     } else {
@@ -29,9 +31,12 @@ void FU::exec(Inst_uop &inst) {
       stu(inst);
     } else if (is_branch(inst.op)) {
       bru(inst);
-    } else {
+    } else if (inst.op == MUL) {
+      mul(inst);
+    } else if (inst.op == DIV) {
+      div(inst);
+    } else
       alu(inst);
-    }
 
     complete = true;
     cycle = 0;

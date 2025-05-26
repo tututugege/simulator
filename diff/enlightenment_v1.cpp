@@ -100,9 +100,9 @@ void v1_difftest_exec() {
     // MISA: U/S/I/A
     //
     cvt_number_to_bit_unsigned(input_data_to_RISCV + 1664 * sizeof(bool),
-                               0x40140101, 32); // 0x4014112d //0x40140101
+                               0x40141101, 32); // 0x4014112d //0x40140101
     cvt_number_to_bit_unsigned(output_data_from_RISCV + 1664 * sizeof(bool),
-                               0x40140101, 32);
+                               0x40141101, 32);
     if (USE_LINUX_SIMU)
       ref_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
     // machine state

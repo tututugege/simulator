@@ -94,8 +94,36 @@ void STQ::comb() {
     p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
 
     if (waddr == UART_BASE) {
-      char temp = wdata & 0xFF;
+      char temp;
+      temp = wdata & 0x000000ff;
+      p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
       cout << temp;
+    }
+
+    if (waddr == 0x10000001 && (wdata & 0x000000ff) == 7) {
+      // cerr << "UART enabled!" << endl;
+      /*output_data_from_RISCV[1152 + 31 - 9] = 1; // mip*/
+      /*output_data_from_RISCV[1568 + 31 - 9] = 1; // sip*/
+      p_memory[0xc201004 / 4] = 0xa;
+      // log = true;
+      p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xfff0ffff;
+    }
+    if (waddr == 0x10000001 && (wdata & 0x000000ff) == 5) {
+      // cerr << "UART disabled2!" << endl;
+      //  ref_memory[0xc201004/4] = 0x0;
+      p_memory[0x10000000 / 4] =
+          p_memory[0x10000000 / 4] & 0xfff0ffff | 0x00030000;
+    }
+    if (waddr == 0xc201004 && (wdata & 0x000000ff) == 0xa) {
+      // cerr << "UART disabled1!" << endl;
+      p_memory[0xc201004 / 4] = 0x0;
+      /*output_data_from_RISCV[1152 + 31 - 9] = 0; // mip*/
+      /*output_data_from_RISCV[1568 + 31 - 9] = 0; // sip*/
+    }
+
+    if (LOG) {
+      cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
+           << " in " << (waddr & 0xFFFFFFFC) << endl;
     }
 
     entry[deq_ptr].valid = false;
@@ -180,6 +208,8 @@ void STQ::seq() {
       }
       break;
     }
+    default:
+      break;
     }
   }
 

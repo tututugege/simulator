@@ -232,6 +232,7 @@ void RISCV_32I(bool input_data[bit_width], bool *output_data) {
     sign_extend(bit_temp, 32, bit_immi_s_type, 12);
     add_bit_list(bit_store_address, bit_reg_data_a, bit_temp, 32);
     init_indice(bit_store_data, 0, 32);
+
     switch (number_funct3_unsigned) {
     case 0: { // sb
       copy_indice(bit_store_data, 24, bit_reg_data_b, 24, 8);
@@ -246,6 +247,12 @@ void RISCV_32I(bool input_data[bit_width], bool *output_data) {
       break;
     }
     }
+    /*cout << "store data " << hex*/
+    /*     << cvt_bit_to_number_unsigned(bit_store_data, 32) << " addr " <<
+     * hex*/
+    /*     << cvt_bit_to_number_unsigned(bit_store_address, 32) << " size "*/
+    /*     << number_funct3_unsigned << endl;*/
+
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,

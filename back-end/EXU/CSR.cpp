@@ -4,7 +4,10 @@
 #define CSR_S 0b10
 #define CSR_C 0b11
 
-void CSRU::init() { CSR_RegFile[number_mstatus] = 0x1800; }
+void CSRU::init() {
+  /*CSR_RegFile[number_mstatus] = 0x1800;*/
+  CSR_RegFile[number_misa] = 0x40141101; // U/S/M  RV32I/A/M
+}
 
 void CSRU::comb() {
   io.csr2exe->rdata = CSR_RegFile[io.exe2csr->idx];

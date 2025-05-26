@@ -1,7 +1,6 @@
 #include "TOP.h"
 #include "config.h"
 #include <cstdint>
-#include <iostream>
 #include <util.h>
 
 extern Back_Top back;
@@ -23,6 +22,55 @@ enum STATE { IDLE, RECV };
 #define BGE 0b101
 #define BLTU 0b110
 #define BGEU 0b111
+
+void mul(Inst_uop &inst) {
+  switch (inst.func3) {
+  case 0: { // mul
+    inst.result = (int32_t)inst.src1_rdata * (int32_t)inst.src2_rdata;
+    break;
+  }
+  case 1: { // mulh
+    inst.result = ((int64_t)inst.src1_rdata * (int64_t)inst.src2_rdata) >> 32;
+    break;
+  }
+  case 2: { // mulsu
+    inst.result = ((int32_t)inst.src1_rdata * (uint32_t)inst.src2_rdata);
+    break;
+  }
+  case 3: { // mulhu
+    inst.result = ((uint64_t)inst.src1_rdata * (uint64_t)inst.src2_rdata) >> 32;
+    break;
+  }
+  default:
+    assert(0);
+    break;
+  }
+}
+
+void div(Inst_uop &inst) {
+  switch (inst.func3) {
+
+  case 4: { // div
+    inst.result = ((int32_t)inst.src1_rdata / (int32_t)inst.src2_rdata);
+    break;
+  }
+  case 5: { // divu
+    inst.result = ((uint32_t)inst.src1_rdata / (uint32_t)inst.src2_rdata);
+    break;
+  }
+  case 6: { // rem
+    inst.result = ((int32_t)inst.src1_rdata % (int32_t)inst.src2_rdata);
+    break;
+  }
+  case 7: { // remu
+    inst.result = ((uint32_t)inst.src1_rdata % (uint32_t)inst.src2_rdata);
+    break;
+  }
+  default:
+    assert(0);
+    break;
+  }
+}
 
 void bru(Inst_uop &inst) {
   uint32_t operand1, operand2;
@@ -157,6 +205,11 @@ void ldu(Inst_uop &inst) {
   int offset = addr & 0b11;
   uint32_t mask = 0;
   uint32_t sign = 0;
+
+  if (inst.amoop != AMONONE) {
+    size = 0b10;
+    offset = 0b0;
+  }
 
   extern uint32_t *p_memory;
   uint32_t data = p_memory[addr >> 2];
