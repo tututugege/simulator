@@ -15,7 +15,7 @@ using namespace std;
 #define STQ_NUM 8
 #define ALU_NUM 2
 
-#define LOG 1
+#define LOG 0
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_BRANCHCHECK*/
