@@ -61,6 +61,8 @@ int main(int argc, char *argv[]) {
 
   back.init();
 
+  p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+
   uint32_t number_PC;
   ofstream outfile;
   bool stall, misprediction, exception;
@@ -365,10 +367,10 @@ void store_slave_seq() {
 
       p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
 
-      if (waddr == UART_BASE) {
-        char temp = wdata & 0xFF;
-        cout << temp;
-      }
+      /*if (waddr == UART_BASE) {*/
+      /*  char temp = wdata & 0xFF;*/
+      /*  cout << temp;*/
+      /*}*/
 
       if (LOG) {
         cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
