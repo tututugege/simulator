@@ -362,7 +362,7 @@ void v1_difftest_exec() {
         char temp;
         temp = number_store_data & 0x000000ff;
         ref_memory[0x10000000 / 4] = ref_memory[0x10000000 / 4] & 0xffffff00;
-        cerr << temp;
+        /*cerr << temp;*/
 
         if (temp == 0x3F) {
           cerr << hex << time_i << endl;
