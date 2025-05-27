@@ -68,9 +68,6 @@ void EXU::comb_exec() {
         io.exe2prf->entry[i].valid = false;
       }
     }
-
-    io.exe2iss->ready[i] =
-        !inst_r[i].valid || io.exe2prf->entry[i].valid && io.prf2exe->ready[i];
   }
 
   // TODO: Magic Number
