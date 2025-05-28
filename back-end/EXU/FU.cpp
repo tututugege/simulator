@@ -199,6 +199,18 @@ void alu(Inst_uop &inst) {
   }
 }
 
+void lsu(Inst_uop &inst) {
+  mem_top->addr_trans_arb->rs_trans_req->m.valid_out = true;
+  if (is_load(inst.op))
+    mem_top->addr_trans_arb->rs_trans_req->m.op_out = OP_LD;
+  else 
+    mem_top->addr_trans_arb->rs_trans_req->m.op_out = OP_ST;
+  mem_top->addr_trans_arb->rs_trans_req->m.mem_sz_out = inst.func3 & 0b11; // 存疑
+  mem_top->addr_trans_arb->rs_trans_req->m.rs1_out = inst.src1_rdata;
+  mem_top->addr_trans_arb->rs_trans_req->m.rs2_out = inst.imm;
+  mem_top->comb();
+}
+
 void ldu(Inst_uop &inst) {
   uint32_t addr = inst.src1_rdata + inst.imm;
   int size = inst.func3 & 0b11;

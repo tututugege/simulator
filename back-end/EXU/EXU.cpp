@@ -11,6 +11,7 @@ void div(Inst_uop &inst);
 
 void FU::exec(Inst_uop &inst) {
 
+  // 设置latency
   if (cycle == 0) {
     if (inst.op == MUL) { // mul
       latency = 1;
