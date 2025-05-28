@@ -20,10 +20,10 @@ void Back_Top::difftest(Inst_uop *inst) {
 
   if (inst->is_last_uop) {
     for (int i = 0; i < ARF_NUM; i++) {
-      dut.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
+      dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
     }
 
-    dut.pc = inst->pc_next;
+    dut_cpu.pc = inst->pc_next;
     difftest_step();
   }
 }

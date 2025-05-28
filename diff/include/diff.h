@@ -14,8 +14,8 @@ typedef struct CPU_state {
   uint32_t pc;
 } CPU_state;
 
-extern CPU_state ref;
-extern CPU_state dut;
+extern CPU_state ref_cpu;
+extern CPU_state dut_cpu;
 
 extern uint32_t *p_memory;
 extern uint32_t *ref_memory; // memory for dut
