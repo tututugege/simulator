@@ -59,7 +59,7 @@ static long i = 0;
 // static bool USE_MMU_PHYSICAL_MEMORY = true;
 
 uint32_t *ref_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
-extern CPU_state dut, ref;
+extern CPU_state dut_cpu, ref_cpu;
 
 void v1_difftest_init(uint32_t pc_start) {
   // copy 0x80000000 to output_data_from_RISCV+POS_OUT_PC
@@ -599,15 +599,15 @@ void v1_difftest_exec() {
   }
 }
 
-void v1_difftest_regcpy(CPU_state *ref, bool direction) {
+void v1_difftest_regcpy(CPU_state *ref_cpu, bool direction) {
   if (direction == DIFFTEST_TO_REF) {
     // copy gpr state from output of v1
     for (int i = 0; i < 32; i++) {
       uint32_t number_temp =
           cvt_bit_to_number_unsigned(output_data_from_RISCV + 32 * i, 32);
-      ref->gpr[i] = number_temp;
+      ref_cpu->gpr[i] = number_temp;
     }
-    ref->pc =
+    ref_cpu->pc =
         cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
     // TODO: copy csr state from output of v1
   } else {
