@@ -115,8 +115,10 @@ void Rename::comb_rename() {
         continue;
 
       if (inst_r[i].uop.src1_areg == inst_r[j].uop.dest_areg) {
-        io.ren2iss->uop[i].src1_preg = io.ren2iss->uop[j].dest_preg;
-        io.ren2iss->uop[i].src1_busy = true;
+        if (!(io.ren2iss->uop[i].op == JUMP && j == i - 1)) {
+          io.ren2iss->uop[i].src1_preg = io.ren2iss->uop[j].dest_preg;
+          io.ren2iss->uop[i].src1_busy = true;
+        }
       }
 
       if (inst_r[i].uop.src2_areg == inst_r[j].uop.dest_areg) {

@@ -1,16 +1,10 @@
 /*#include <top_config.h>*/
 #include <config.h>
 #include <cstdint>
-#include <string>
-
-#define USE_ENLIGHTENMENT_V1 // 是否使用 ENLIGHTENMENT_V1
-                             // 作为参考设计；注释后，则使用 NEMU 作为参考设计
 
 typedef struct CPU_state {
   uint32_t gpr[32];
-#ifdef USE_ENLIGHTENMENT_V1
   uint32_t csr[21];
-#endif
   uint32_t pc;
 } CPU_state;
 

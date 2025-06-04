@@ -41,8 +41,8 @@ typedef struct {
 
 typedef struct {
   uint32_t rdata;
-  uint32_t mepc;
-  uint32_t mtvec;
+  uint32_t epc;
+  uint32_t trap_pc;
 } Csr_Exe;
 
 typedef struct {
@@ -60,4 +60,5 @@ public:
 
 private:
   uint32_t CSR_RegFile[1 << 12];
+  uint32_t privilege = 0b11;
 };

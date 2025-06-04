@@ -47,7 +47,8 @@ void ROB::comb_ready() {
 void ROB::comb_commit() {
   // 提交指令
   int commit_num = 0;
-  io.rob_bc->rollback = io.rob_bc->exception = io.rob_bc->mret = false;
+  io.rob_bc->rollback = io.rob_bc->exception = io.rob_bc->mret =
+      io.rob_bc->sret = io.rob_bc->ecall = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     int idx = (deq_ptr + i) % ROB_NUM;
     io.rob_commit->commit_entry[i].uop = entry[idx].uop;
@@ -67,15 +68,17 @@ void ROB::comb_commit() {
 
       if (exception[idx]) {
         io.rob_bc->rollback = true;
+        io.rob_bc->exception = true;
         exception_1[idx] = false;
         if (entry[idx].uop.op == ECALL) {
-          io.rob_bc->exception = true;
+          io.rob_bc->ecall = true;
           io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
           io.rob_bc->cause = M_MODE_ECALL;
         } else if (entry[idx].uop.op == MRET) {
           io.rob_bc->mret = true;
+        } else if (entry[idx].uop.op == SRET) {
+          io.rob_bc->sret = true;
         }
-
         break;
       }
     } else {
@@ -127,7 +130,7 @@ void ROB::comb_fire() {
       entry_1[enq_ptr_1].uop = io.ren2rob->uop[i];
       complete_1[enq_ptr_1] = false;
       if (io.ren2rob->uop[i].op == ECALL || io.ren2rob->uop[i].op == MRET ||
-          io.ren2rob->uop[i].op == EBREAK)
+          io.ren2rob->uop[i].op == EBREAK || io.ren2rob->uop[i].op == SRET)
         exception_1[enq_ptr_1] = true;
       else
         exception_1[enq_ptr_1] = false;
