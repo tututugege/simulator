@@ -200,9 +200,11 @@ void Back_Top::Back_comb() {
   } else {
     back.out.mispred = true;
     if (rob.io.rob_bc->exception) {
-      back.out.redirect_pc = csr.io.csr2exe->mtvec;
-    } else if (rob.io.rob_bc->mret) {
-      back.out.redirect_pc = csr.io.csr2exe->mepc;
+      if (rob.io.rob_bc->mret || rob.io.rob_bc->sret) {
+        back.out.redirect_pc = csr.io.csr2exe->epc;
+      } else {
+        back.out.redirect_pc = csr.io.csr2exe->trap_pc;
+      }
     }
   }
 
