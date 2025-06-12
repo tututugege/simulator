@@ -15,6 +15,7 @@ void PRF::comb_amo() {
   io.prf2stq->stq_idx = inst_r[IQ_LS].uop.stq_idx;
   if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.op == LOAD &&
       inst_r[IQ_LS].uop.amoop != AMONONE) {
+    assert(io.prf2stq->stq_idx == 0);
     io.prf2stq->valid = true;
   } else {
     io.prf2stq->valid = false;
@@ -96,7 +97,8 @@ void PRF::comb_read() {
 
 void PRF::seq() {
   for (int i = 0; i < ALU_NUM + 1; i++) {
-    if (inst_r[i].valid && inst_r[i].uop.dest_en) {
+    if (inst_r[i].valid && inst_r[i].uop.dest_en &&
+        !is_page_fault(inst_r[i].uop)) {
       reg_file[inst_r[i].uop.dest_preg] = inst_r[i].uop.result;
     }
   }
@@ -118,7 +120,7 @@ void PRF::seq() {
     }
   }
 
-  if (io.rob_bc->rollback) {
+  if (io.rob_bc->flush) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       inst_r[i].valid = false;
     }

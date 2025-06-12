@@ -23,7 +23,7 @@ public:
   void comb_complete();
   void comb_fire();
   void comb_branch();
-  void comb_rollback();
+  void comb_flush();
   ROB_IO io;
 
 private:

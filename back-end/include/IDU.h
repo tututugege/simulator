@@ -32,7 +32,7 @@ public:
   void comb_decode(); // 译码并分配tag
   void comb_branch(); // 分支处理
   void comb_fire();   // 与前端握手
-  void comb_rollback();
+  void comb_flush();
   void comb_release_tag(); // 释放分支tag
   void seq();
 

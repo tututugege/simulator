@@ -20,6 +20,7 @@ typedef struct {
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
+  bool page_fault_inst[FETCH_WIDTH];
 
   // ar
   bool arready;

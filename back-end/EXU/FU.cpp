@@ -1,9 +1,14 @@
 #include "TOP.h"
 #include "config.h"
 #include <cstdint>
+#include <cvt.h>
 #include <util.h>
 
 extern Back_Top back;
+
+bool load_data(uint32_t &data, uint32_t v_addr);
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege);
 
 enum STATE { IDLE, RECV };
 
@@ -211,30 +216,60 @@ void ldu(Inst_uop &inst) {
     offset = 0b0;
   }
 
-  extern uint32_t *p_memory;
-  uint32_t data = p_memory[addr >> 2];
+  uint32_t data;
+  bool page_fault = !load_data(data, addr);
 
-  data = data >> (offset * 8);
-  if (size == 0) {
-    mask = 0xFF;
-    if (data & 0x80)
-      sign = 0xFFFFFF00;
-  } else if (size == 0b01) {
-    mask = 0xFFFF;
-    if (data & 0x8000)
-      sign = 0xFFFF0000;
+  if (!page_fault) {
+    data = data >> (offset * 8);
+    if (size == 0) {
+      mask = 0xFF;
+      if (data & 0x80)
+        sign = 0xFFFFFF00;
+    } else if (size == 0b01) {
+      mask = 0xFFFF;
+      if (data & 0x8000)
+        sign = 0xFFFF0000;
+    } else {
+      mask = 0xFFFFFFFF;
+    }
+
+    data = data & mask;
+
+    // 有符号数
+    if (!(inst.func3 & 0b100)) {
+      data = data | sign;
+    }
+    inst.result = data;
   } else {
-    mask = 0xFFFFFFFF;
+    inst.page_fault_load = true;
   }
-
-  data = data & mask;
-
-  // 有符号数
-  if (!(inst.func3 & 0b100)) {
-    data = data | sign;
-  }
-
-  inst.result = data;
 }
 
-void stu(Inst_uop &inst) { inst.result = inst.src1_rdata + inst.imm; }
+void stu(Inst_uop &inst) {
+  uint32_t v_addr = inst.src1_rdata + inst.imm;
+
+  if (inst.pc == 0xc011f4f0) {
+    cout << inst.pc << endl;
+  }
+
+  uint32_t p_addr = v_addr;
+  bool page_fault = false;
+  if (back.csr.CSR_RegFile[number_satp] & 0x80000000 &&
+      back.csr.privilege != 3) {
+    bool mstatus[32], sstatus[32];
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
+                               32);
+
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
+                               32);
+
+    page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 2,
+                        mstatus, sstatus, back.csr.privilege);
+  }
+
+  if (page_fault) {
+    inst.page_fault_store = true;
+  } else {
+    inst.result = p_addr;
+  }
+}

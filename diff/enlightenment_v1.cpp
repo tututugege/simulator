@@ -1,3 +1,4 @@
+#include "cvt.h"
 const int bit_width = 1798 + 64;
 bool log = false;
 int time_i = 0;
@@ -609,7 +610,12 @@ void v1_difftest_regcpy(CPU_state *ref_cpu, bool direction) {
     }
     ref_cpu->pc =
         cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC, 32);
-    // TODO: copy csr state from output of v1
+
+    for (int i = 0; i < CSR_NUM; i++) {
+      ref_cpu->csr[i] = cvt_bit_to_number_unsigned(
+          output_data_from_RISCV + 1024 + 32 * i, 32);
+    }
+
   } else {
     // this should not happen in current design
     std::cerr << "v1_difftest_regcpy: direction is not DIFFTEST_TO_REF"

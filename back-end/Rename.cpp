@@ -172,7 +172,7 @@ void Rename::comb_fire() {
         (!is_store(io.ren2iss->uop[i].op) ||
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
-        !io.dec_bcast->mispred && !csr_stall &&
+        !io.dec_bcast->mispred && !io.rob_bc->flush && !csr_stall &&
         (!is_CSR(io.ren2iss->uop[i].op) || io.rob2ren->empty && !pre_fire) &&
         !io.rob2ren->stall;
 
@@ -216,7 +216,7 @@ void Rename::comb_fire() {
 
 void Rename::comb_branch() {
   // 分支处理
-  if (io.dec_bcast->mispred) {
+  if (io.dec_bcast->mispred && !io.rob_bc->flush) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM; i++) {
       spec_RAT_1[i] = RAT_checkpoint[io.dec_bcast->br_tag][i];
@@ -229,8 +229,10 @@ void Rename::comb_branch() {
           spec_alloc[j] && !alloc_checkpoint[io.dec_bcast->br_tag][j];
     }
   }
+}
 
-  if (io.rob_bc->rollback) {
+void Rename ::comb_flush() {
+  if (io.rob_bc->flush) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM; i++) {
       spec_RAT_1[i] = arch_RAT[i];
@@ -238,7 +240,7 @@ void Rename::comb_branch() {
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
-      free_vec_1[j] = free_vec[j] || spec_alloc[j];
+      free_vec_1[j] = free_vec_1[j] || spec_alloc_1[j];
       spec_alloc_1[j] = false;
     }
   }
@@ -267,7 +269,7 @@ void Rename ::comb_commit() {
 
 void Rename ::comb_pipeline() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (io.rob_bc->rollback || io.dec_bcast->mispred) {
+    if (io.rob_bc->flush || io.dec_bcast->mispred) {
       inst_r_1[i].valid = false;
     } else if (io.ren2dec->ready) {
       inst_r_1[i].uop = io.dec2ren->uop[i];
@@ -303,4 +305,17 @@ void Rename ::seq() {
       alloc_checkpoint[i][j] = alloc_checkpoint_1[i][j];
     }
   }
+
+  /*static int count = 0;*/
+  /**/
+  /*count++;*/
+  /*if (count % 10000 == 0) {*/
+  /*  for (int i = 0; i < PRF_NUM; i++) {*/
+  /*    cout << free_vec[i];*/
+
+  /*if (i % 32 == 0)*/
+  /*  cout << endl;*/
+  /*}*/
+  /*cout << endl;*/
+  /*}*/
 }

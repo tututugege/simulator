@@ -13,6 +13,10 @@ inline bool is_load(Inst_op op) { return (op == LOAD); }
 
 inline bool is_store(Inst_op op) { return (op == STORE); }
 
+inline bool is_page_fault(Inst_uop uop) {
+  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;
+}
+
 inline bool orR(bool *in, int num) {
   bool out = false;
   for (int i = 0; i < num; i++)
