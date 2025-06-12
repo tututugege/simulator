@@ -46,7 +46,20 @@ void IDU::comb_decode() {
   for (i = 0; i < FETCH_WIDTH; i++) {
     int uop_num;
     if (io.front2dec->valid[i]) {
-      uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
+
+      if (io.front2dec->page_fault_inst[i]) {
+        uop_num = 1;
+        dec_uop[i][0].page_fault_inst = true;
+        dec_uop[i][0].op = NONE;
+        dec_uop[i][0].src1_en = dec_uop[i][0].src2_en = dec_uop[i][0].dest_en =
+            false;
+
+        dec_uop[i][1].op = NONE;
+        uop_valid[i][0] = true;
+        uop_valid[i][1] = false;
+      } else {
+        uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
+      }
     } else {
       uop_valid[i][0] = false;
       uop_valid[i][1] = false;
@@ -151,8 +164,8 @@ void IDU::comb_branch() {
   }
 }
 
-void IDU::comb_rollback() {
-  if (io.rob_bc->rollback) {
+void IDU::comb_flush() {
+  if (io.rob_bc->flush) {
     /*state_1 = 0;*/
     for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
@@ -486,8 +499,11 @@ int decode(Inst_uop uop[2], uint32_t inst) {
         uop[0].op = MRET;
       } else if (inst == INST_WFI) {
         uop[0].op = NONE;
+      } else if (inst == INST_SRET) {
+        uop[0].op = SRET;
       } else {
-        cout << hex << inst << endl;
+        uop[0].op = NONE;
+        /*cout << hex << inst << endl;*/
         /*assert(0);*/
       }
     }
@@ -521,6 +537,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     }
     case 2: { // lr.w
       uop_num = 1;
+      uop[0].imm = 0;
       uop[0].src2_en = false;
       uop[0].op = LOAD;
       uop[0].amoop = LR;
@@ -531,8 +548,14 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     }
     case 3: { // sc.w
       uop[0].op = STORE;
+      uop[0].imm = 0;
       uop[0].amoop = SC;
+      uop[0].src2_en = true;
+      uop[0].dest_en = false;
+
       uop[1].op = ADD;
+      uop[1].src1_areg = 0;
+      uop[1].src2_areg = 0;
       uop[1].dest_en = true;
       break;
     }

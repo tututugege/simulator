@@ -10,6 +10,7 @@ extern int time_i;
 #define INST_EBREAK 0x00100073
 #define INST_ECALL 0x00000073
 #define INST_MRET 0x30200073
+#define INST_SRET 0x10200073
 #define INST_WFI 0x10500073
 
 extern Back_Top back;

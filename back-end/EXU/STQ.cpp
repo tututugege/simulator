@@ -121,10 +121,11 @@ void STQ::comb() {
       /*output_data_from_RISCV[1568 + 31 - 9] = 0; // sip*/
     }
 
-    if (LOG) {
-      cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
-           << " in " << (waddr & 0xFFFFFFFC) << endl;
-    }
+    /*extern int sim_time;*/
+    /*if (MEM_LOG && sim_time > 10620000) {*/
+    /*  cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))*/
+    /*       << " in " << (waddr & 0xFFFFFFFC) << endl;*/
+    /*}*/
 
     entry[deq_ptr].valid = false;
     entry[deq_ptr].compelete = false;
@@ -234,7 +235,7 @@ void STQ::seq() {
     }
   }
 
-  if (io.rob_bc->rollback) {
+  if (io.rob_bc->flush) {
     count = 0;
     enq_ptr = 0;
     commit_ptr = 0;

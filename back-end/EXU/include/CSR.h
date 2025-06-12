@@ -58,7 +58,6 @@ public:
   void comb();
   void seq();
 
-private:
   uint32_t CSR_RegFile[1 << 12];
   uint32_t privilege = 0b11;
 };

@@ -39,6 +39,7 @@ typedef struct {
   uint8_t pcpn[FETCH_WIDTH];
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
 
+  bool page_fault_inst[FETCH_WIDTH];
 } Front_Dec;
 
 typedef struct {
@@ -88,11 +89,17 @@ typedef struct {
 } Iss_Ren;
 
 typedef struct {
-  bool rollback;
+  bool flush;
   bool mret;
   bool sret;
   bool ecall;
   bool exception;
+
+  bool page_fault_inst;
+  bool page_fault_load;
+  bool page_fault_store;
+  uint32_t page_fault_addr;
+
   uint32_t pc;
   uint32_t cause;
 } Rob_Broadcast;

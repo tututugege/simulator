@@ -126,7 +126,7 @@ void EXU::seq() {
     }
   }
 
-  if (io.rob_bc->rollback) {
+  if (io.rob_bc->flush) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       inst_r[i].valid = false;
       fu[i].complete = false;

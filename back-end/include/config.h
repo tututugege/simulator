@@ -4,18 +4,21 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 1000000
+#define MAX_SIM_TIME 20000000
 #define ISSUE_WAY 4
 
 #define ARF_NUM 32
 #define PRF_NUM 96
 #define MAX_BR_NUM 8
 
+#define CSR_NUM 21
+
 #define ROB_NUM 64
 #define STQ_NUM 8
 #define ALU_NUM 2
 
-#define LOG 1
+#define LOG 0
+#define MEM_LOG 0
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_BRANCHCHECK*/
@@ -94,6 +97,11 @@ typedef struct Inst_uop {
 
   bool is_last_uop;
 
+  // page_fault
+  bool page_fault_inst;
+  bool page_fault_load;
+  bool page_fault_store;
+
   // 调度特征
   int inst_idx;
   int dependency;
@@ -114,9 +122,3 @@ typedef struct {
   bool valid;
   uint32_t preg;
 } Wake_info;
-
-/*typedef struct Inst_res {*/
-/*  uint32_t result;*/
-/*  uint32_t pc_next;*/
-/*  bool branch;*/
-/*} Inst_res;*/

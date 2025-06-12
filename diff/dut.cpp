@@ -4,6 +4,8 @@
 #include <cvt.h>
 #include <diff.h>
 #include <front_IO.h>
+#include <iomanip>
+
 bool USE_LINUX_SIMU = 1; // 是否为启动 Linux 模式
 
 enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
@@ -43,32 +45,51 @@ static void checkregs() {
   if (ref_cpu.pc != dut_cpu.pc)
     goto fault;
 
+  // 通用寄存器
   for (i = 0; i < ARF_NUM; i++) {
     if (ref_cpu.gpr[i] != dut_cpu.gpr[i])
-      break;
+      goto fault;
   }
 
-  if (i == ARF_NUM) {
-    static int commit_idx = 0;
-    /*cout << "- idx: " << dec << commit_idx++ << " commit pc: " << hex <<
-     * last_pc*/
-    /*     << endl; // debug for linux simu*/
-    return;
+  // csr
+  for (i = 0; i < CSR_NUM; i++) {
+    if (ref_cpu.csr[i] != dut_cpu.csr[i])
+      goto fault;
   }
+
+  return;
+
+  /*if (i == ARF_NUM) {*/
+  /*  static int commit_idx = 0;*/
+  /*cout << "- idx: " << dec << commit_idx++ << " commit pc: " << hex <<
+   * last_pc*/
+  /*     << endl; // debug for linux simu*/
+  /*  return;*/
+  /*}*/
 
 fault:
-
+  extern int sim_time;
   cout << "Difftest: error" << endl;
-  cout << "\tReference\tDut" << endl;
+  cout << "cycle: " << dec << sim_time << endl;
+  cout << "\t\tReference\tDut" << endl;
   for (int i = 0; i < ARF_NUM; i++) {
-    cout << reg_names[i] << ":\t";
+    cout << setw(10) << reg_names[i] << ":\t";
     printf("%08x\t%08x", ref_cpu.gpr[i], dut_cpu.gpr[i]);
     if (ref_cpu.gpr[i] != dut_cpu.gpr[i])
       printf("\t Error");
     putchar('\n');
   }
 
-  printf("PC:\t%08x\t%08x\n", ref_cpu.pc, dut_cpu.pc);
+  printf("        PC:\t%08x\t%08x\n", ref_cpu.pc, dut_cpu.pc);
+  cout << endl;
+  for (int i = 0; i < CSR_NUM; i++) {
+    cout << setw(10) << csr_names[i] << ":\t";
+    printf("%08x\t%08x", ref_cpu.csr[i], dut_cpu.csr[i]);
+    if (ref_cpu.csr[i] != dut_cpu.csr[i])
+      printf("\t Error");
+    putchar('\n');
+  }
+
   extern int commit_num;
   /*printf("commit_num (dec): %d\n", commit_num);*/
   /*cout << "last_pc: " << hex << last_pc << endl;*/

@@ -31,6 +31,7 @@ struct front_top_out {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  bool page_fault_inst[FETCH_WIDTH];
 };
 
 struct BPU_in {
