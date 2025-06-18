@@ -49,17 +49,17 @@ void Rename::comb_alloc() {
   int alloc_num = 0;
   bool stall = false;
   int rob_idx = io.rob2ren->enq_idx;
-  int stq_idx = io.stq2ren->stq_idx;
+  //int stq_idx = io.stq2ren->stq_idx; // 需再次检查和确认
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2iss->uop[i] = inst_r[i].uop;
 
     if (inst_r[i].valid) {
       // 分配stq_idx 和 rob_idx
-      if (is_store(io.ren2iss->uop[i].op)) {
-        io.ren2iss->uop[i].stq_idx = stq_idx;
-        LOOP_INC(stq_idx, STQ_NUM);
-      }
+      // if (is_store(io.ren2iss->uop[i].op)) {
+      //   io.ren2iss->uop[i].stq_idx = stq_idx;
+      //   LOOP_INC(stq_idx, STQ_NUM);
+      // } // 需再次检查和确认
 
       io.ren2iss->uop[i].rob_idx = rob_idx;
       LOOP_INC(rob_idx, ROB_NUM);

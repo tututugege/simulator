@@ -1,4 +1,3 @@
-#pragma once
 #include "AXI.h"
 
 enum stat_t {

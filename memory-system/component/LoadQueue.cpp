@@ -1,7 +1,10 @@
 #include "LoadQueue.h"
+#include "StoreQueue.h"
+#include "Dcache.h"
 #include "Mshr.h"
 #include "AddrTransArb.h"
-#include "StoreQueue.h"
+#include "MemUtil.h"
+#include "frontend.h"
 
 void Load_Queue::default_val() {
     ldq_trans_req->m.valid_out = false;
@@ -9,7 +12,7 @@ void Load_Queue::default_val() {
     ldq_trans_req->m.ldq_entry_out = 0;
 
     ldq_cache_req->m.valid_out = false;
-    ldq_cache_req->m.op_out = op_t::OP_LD;
+    ldq_cache_req->m.op_out = OP_LD;
     ldq_cache_req->m.tagv_out = false;
     ldq_cache_req->m.tag_out = 0;
     ldq_cache_req->m.index_out = 0;
@@ -36,6 +39,18 @@ void Load_Queue::default_val() {
 }
 
 void Load_Queue::alloc() {
+    for (int i = 0; i < DECODE_WIDTH; i++) {
+        if (ldq_alloc[i].valid_in && (tail_r + 1) % 4 != head_r) {
+            ldq_io[tail_r].valid    = true;
+            ldq_io[tail_r].mem_sz   = ldq_alloc[i].mem_sz_in;
+            ldq_io[tail_r].dst_preg = ldq_alloc[i].dst_preg_in;
+            ldq_io[tail_r].sign     = ldq_alloc[i].sign_in;
+            ldq_alloc[i].ready_out   = true;
+            ldq_alloc[i].ldq_idx_out = tail_r;
+            tail_r = (tail_r + 1) % 4;
+        }
+    }
+    tail_r_io = tail_r;
 }
 
 void Load_Queue::free() {
@@ -64,7 +79,7 @@ void Load_Queue::fire_ld2cache_forepart() {
     for (int i = head_r; i != tail_r; i = (i + 1) % 4)
         if (ldq[i].valid && ldq[i].abort && ldq[i].paddrv) {
             ldq_cache_req->m.valid_out = true;
-            ldq_cache_req->m.op_out = op_t::OP_LD;
+            ldq_cache_req->m.op_out = OP_LD;
             ldq_cache_req->m.tagv_out = true;
             ldq_cache_req->m.tag_out = ldq[i].tag;
             ldq_cache_req->m.index_out = ldq[i].index;
@@ -87,7 +102,7 @@ void Load_Queue::fill_addr() {
         ldq_io[ldq_entry].paddrv     = ldq_fill_req->s.paddrv_in;
         ldq_io[ldq_entry].tag        = ldq_fill_req->s.tag_in;
         ldq_io[ldq_entry].abort      = false;
-        if (ldq_fill_req->s.src_in == src_t::RS) {
+        if (ldq_fill_req->s.src_in == RS) {
             ldq_io[ldq_entry].index      = ldq_fill_req->s.index_in;
             ldq_io[ldq_entry].word       = ldq_fill_req->s.word_in;
             ldq_io[ldq_entry].offset     = ldq_fill_req->s.offset_in;
@@ -126,7 +141,7 @@ void Load_Queue::fill_fwd_data() {
 
 void Load_Queue::recv_cache_res() {
     int ldq_entry = cache_res->s.lsq_entry_in;
-    if (cache_res->s.valid_in && cache_res->s.op_in == op_t::OP_LD) {
+    if (cache_res->s.valid_in && cache_res->s.op_in == OP_LD) {
         if (cache_res->s.hit_in) {
             ldq_io[ldq_entry].done = true;
             for (int byte = 0; byte < 4; byte++)
@@ -155,52 +170,52 @@ void Load_Queue::recv_refill_data() {
 void Load_Queue::bcast_res_bus() {
     for (int i = head_r; i != tail_r; i = (i + 1) % 8) {
         if (ldq[i].valid && ldq[i].done && !ldq[i].bcast) {
-            bcast_bus.valid_out = true;
-            bcast_bus.dst_preg_out = ldq[i].dst_preg;
+            bcast_bus->valid_out = true;
+            bcast_bus->dst_preg_out = ldq[i].dst_preg;
 
             if (ldq[i].offset == 0x0) {
-                if (ldq[i].mem_sz == mem_sz_t::BYTE)  {
+                if (ldq[i].mem_sz == BYTE)  {
                     if (ldq[i].sign && ldq[i].data_b4_bcast[0] > 0x8)
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0xf;
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0xf;
                     else
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0x0;
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0x0;
                 }
-                else if (ldq[i].mem_sz == mem_sz_t::HALF) {
+                else if (ldq[i].mem_sz == HALF) {
                     if (ldq[i].sign && ldq[i].data_b4_bcast[1] > 0x8)
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = 0xf;
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = 0xf;
                     else
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = 0x0;
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = 0x0;
                 }
             }
             else if (ldq[i].offset == 0x1) {
-                bcast_bus.data_out[0] = ldq[i].data_b4_bcast[1];
-                if (ldq[i].sign && bcast_bus.data_out[0] > 0x8)
-                    bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0xf;
+                bcast_bus->data_out[0] = ldq[i].data_b4_bcast[1];
+                if (ldq[i].sign && bcast_bus->data_out[0] > 0x8)
+                    bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0xf;
                 else
-                    bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0x0;
+                    bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0x0;
             }
             else if (ldq[i].offset == 0x2) {
-                bcast_bus.data_out[0] = ldq[i].data_b4_bcast[2];
-                bcast_bus.data_out[1] = ldq[i].data_b4_bcast[3];
-                if (ldq[i].mem_sz == mem_sz_t::BYTE) {
-                    if (ldq[i].sign && bcast_bus.data_out[0] > 0x8)
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0xf;
+                bcast_bus->data_out[0] = ldq[i].data_b4_bcast[2];
+                bcast_bus->data_out[1] = ldq[i].data_b4_bcast[3];
+                if (ldq[i].mem_sz == BYTE) {
+                    if (ldq[i].sign && bcast_bus->data_out[0] > 0x8)
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0xf;
                     else
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0x0;
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0x0;
                 }
-                else if (ldq[i].mem_sz == mem_sz_t::HALF) {
-                    if (ldq[i].sign && bcast_bus.data_out[1] > 0x8)
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = 0xf;
+                else if (ldq[i].mem_sz == HALF) {
+                    if (ldq[i].sign && bcast_bus->data_out[1] > 0x8)
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = 0xf;
                     else
-                        bcast_bus.data_out[3] = bcast_bus.data_out[2] = 0x0;
+                        bcast_bus->data_out[3] = bcast_bus->data_out[2] = 0x0;
                 }
             }
             else if (ldq[i].offset == 0x3) {
-                bcast_bus.data_out[0] = ldq[i].data_b4_bcast[3];
-                if (ldq[i].sign && bcast_bus.data_out[0] > 0x8)
-                    bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0xf;
+                bcast_bus->data_out[0] = ldq[i].data_b4_bcast[3];
+                if (ldq[i].sign && bcast_bus->data_out[0] > 0x8)
+                    bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0xf;
                 else
-                    bcast_bus.data_out[3] = bcast_bus.data_out[2] = bcast_bus.data_out[1] = 0x0;
+                    bcast_bus->data_out[3] = bcast_bus->data_out[2] = bcast_bus->data_out[1] = 0x0;
             }
         }
         return;

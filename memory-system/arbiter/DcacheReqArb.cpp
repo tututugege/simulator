@@ -1,4 +1,5 @@
 #include "DcacheReqArb.h"
+#include "Dcache.h"
 
 void Dcache_Req_Arb::arbit_req_forepart() {
     if (ldq_cache_req->s.valid_in) {

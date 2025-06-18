@@ -34,6 +34,8 @@ class EXU {
 public:
   void init();
   void comb_exec();
+  void comb_lsu_forepart();
+  void comb_lsu_backpart();
   void comb_csr();
   void comb_ready();
   void seq();

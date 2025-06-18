@@ -1,16 +1,15 @@
-#pragma once
-#include "util.h"
 #include <cstdint>
+
 struct mmu_req_master {
     bool     valid_out;
     uint32_t vtag_out;
-    op_t     op_out;
+    uint8_t  op_out;
 };
 
 struct mmu_req_slave {
     bool     valid_in;
     uint32_t vtag_in;
-    op_t     op_in;
+    uint8_t  op_in;
 };
 
 union mmu_req_t {

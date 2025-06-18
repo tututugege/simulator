@@ -10,6 +10,8 @@
 #include <STQ.h>
 #include <config.h>
 #include <cstdint>
+#include "MemTop.h"
+#include "Adaptor.h"
 
 typedef struct {
   uint32_t inst[FETCH_WIDTH];
@@ -72,6 +74,8 @@ public:
   CSRU csr;
   STQ stq;
   ROB rob;
+  Mem_Top mem;
+  Adaptor adaptor; 
 
   Back_in in;
   Back_out out;

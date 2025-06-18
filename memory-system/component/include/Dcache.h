@@ -1,13 +1,11 @@
-#pragma once
 #include <cstdint>
-#include <vector>
-using namespace std;
-class Mshr;
-#include "util.h"
+union mshr_alloc_req_t;
+union mshr_info_t;
+union mmu_resp_t;
 
 struct cache_req_master {
     bool     valid_out;
-    op_t     op_out;
+    uint8_t  op_out;
     bool     tagv_out;
     uint32_t tag_out;
     uint32_t index_out;
@@ -21,7 +19,7 @@ struct cache_req_master {
 
 struct cache_req_slave {
     bool     valid_in;
-    op_t     op_in;
+    uint8_t  op_in;
     bool     tagv_in;
     uint32_t tag_in;
     uint32_t index_in;
@@ -41,7 +39,7 @@ union cache_req_t {
 struct cache_req_info_t {
     bool     valid;
     bool     abort;
-    op_t     op;
+    uint8_t  op;
     bool     tagv;
     uint32_t tag;
     uint32_t index;
@@ -65,7 +63,7 @@ struct cache_fwd_info_t {
 
 struct cache_res_master {
     bool    valid_out;
-    op_t    op_out;
+    uint8_t op_out;
     bool    hit_out;
     bool    miss_out;
     bool    abort_out;
@@ -75,14 +73,14 @@ struct cache_res_master {
 };
 
 struct cache_res_slave {
-    bool valid_in;
-    op_t op_in;
-    bool hit_in;
-    bool miss_in;
-    bool abort_in;
+    bool    valid_in;
+    uint8_t op_in;
+    bool    hit_in;
+    bool    miss_in;
+    bool    abort_in;
     uint8_t data_in[4];
-    int mshr_entry_in;
-    int lsq_entry_in;
+    int     mshr_entry_in;
+    int     lsq_entry_in;
 };
 
 union cache_res_t {
@@ -117,7 +115,6 @@ struct Byte_ram_io {
 class Dcache {
     public:
     union cache_req_t      *cache_req;
-    union stq_fwd_data_t   *stq_fwd_data;
     union cache_res_t      *cache_res;
     union mshr_alloc_req_t *mshr_alc_req;
     union mshr_info_t      *mshr_info;
@@ -139,8 +136,6 @@ class Dcache {
     struct cache_fwd_info_t fwd_info_r3_io;
 
     bool abort_w3;
-
-    Mshr *mshr;
 
     public:
     void default_val();

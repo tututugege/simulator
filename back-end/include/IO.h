@@ -126,17 +126,33 @@ typedef struct {
   uint32_t br_tag;
 } Prf_Dec;
 
+// TODO:
+// typedef struct {
+//   uint32_t tag[DECODE_WIDTH];
+//   bool valid[DECODE_WIDTH];
+//   bool dis_fire[DECODE_WIDTH];
+// } Ren_Stq;
+
+// typedef struct {
+//   bool ready[DECODE_WIDTH];
+//   bool stq_valid[STQ_NUM];
+//   uint32_t stq_idx;
+// } Stq_Ren;
+
 typedef struct {
-  uint32_t tag[DECODE_WIDTH];
-  bool valid[DECODE_WIDTH];
-  bool dis_fire[DECODE_WIDTH];
+  bool    valid[DECODE_WIDTH];
+  uint8_t mem_sz[DECODE_WIDTH];
+  uint8_t wstrb[DECODE_WIDTH][4];
+  bool dis_fire[DECODE_WIDTH]; // 没用，准备删
+  uint32_t tag[DECODE_WIDTH]; // 没用，准备删
 } Ren_Stq;
 
 typedef struct {
   bool ready[DECODE_WIDTH];
   bool stq_valid[STQ_NUM];
-  uint32_t stq_idx;
+  int  stq_idx[DECODE_WIDTH];
 } Stq_Ren;
+////////////////////////
 
 typedef struct {
   // 实际写入
@@ -146,3 +162,17 @@ typedef struct {
 typedef struct {
   bool valid[STQ_NUM];
 } Stq_Iss;
+
+// TODO: 
+typedef struct {
+  bool    valid[DECODE_WIDTH];
+  uint8_t mem_sz[DECODE_WIDTH];
+  bool    wstrb[DECODE_WIDTH][4];
+  uint8_t dst_reg[DECODE_WIDTH];
+  bool    sign[DECODE_WIDTH]; 
+} Ren_Ldq;
+
+typedef struct {
+  bool ready[DECODE_WIDTH];
+  int  ldq_idx[DECODE_WIDTH];
+} Ldq_Ren;

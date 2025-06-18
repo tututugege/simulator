@@ -1,10 +1,11 @@
+#include "Mshr.h"
 #include "Dcache.h"
-#include "StoreQueue.h"
-#include "util.h"
+#include "MMU.h"
+#include "MemUtil.h"
 
 void Dcache::default_val() {
     cache_res->m.valid_out = false;
-    cache_res->m.op_out        = op_t::OP_LD;
+    cache_res->m.op_out        = OP_LD;
     cache_res->m.hit_out       = false;
     cache_res->m.miss_out      = false;
     cache_res->m.abort_out     = false;
@@ -23,7 +24,7 @@ void Dcache::default_val() {
 
     req_info_r2_io.valid = false;
     req_info_r2_io.abort = false;
-    req_info_r2_io.op        = op_t::OP_LD;
+    req_info_r2_io.op        = OP_LD;
     req_info_r2_io.tagv      = false;
     req_info_r2_io.tag       = 0;
     req_info_r2_io.index     = 0;
@@ -37,7 +38,7 @@ void Dcache::default_val() {
 
     req_info_r3_io.valid = false;
     req_info_r3_io.abort = false;
-    req_info_r3_io.op        = op_t::OP_LD;
+    req_info_r3_io.op        = OP_LD;
     req_info_r3_io.tagv      = false;
     req_info_r3_io.tag       = 0;
     req_info_r3_io.index     = 0;
@@ -51,18 +52,18 @@ void Dcache::default_val() {
 }
 
 void Dcache::stage1() {
-    cache_req->s.addr_ok_out = !mshr_info->s.cache_refill_in && !(mshr_info->s.cache_replace_in && cache_req->s.op_in == op_t::OP_ST);
+    cache_req->s.addr_ok_out = !mshr_info->s.cache_refill_in && !(mshr_info->s.cache_replace_in && cache_req->s.op_in == OP_ST);
     if (cache_req->s.valid_in && cache_req->s.addr_ok_out)
         for (int way = 0; way < 2; way++) {
             tagv_ram_io[way].en = true;
             tagv_ram_io[way].addr = cache_req->s.index_in;
-            if (cache_req->s.op_in == op_t::OP_LD) {
+            if (cache_req->s.op_in == OP_LD) {
                 data_ram_io[way][cache_req->s.word_in].en = true;
                 data_ram_io[way][cache_req->s.word_in].addr = cache_req->s.index_in;
             }
         }
     req_info_r2_io.valid     = cache_req->s.valid_in && cache_req->s.addr_ok_out;
-    if (cache_res->m.abort_out && cache_res->m.op_out == op_t::OP_ST && cache_req->s.op_in == op_t::OP_ST)
+    if (cache_res->m.abort_out && cache_res->m.op_out == OP_ST && cache_req->s.op_in == OP_ST)
         req_info_r2_io.abort = true;
     else
         req_info_r2_io.abort = false;
@@ -113,9 +114,9 @@ void Dcache::stage2() {
     if (req_info_r2.valid && !req_info_r2.tagv && !mmu_resp->s.okay_in)
         req_info_r3_io.abort = true;
     else if (req_info_r2.valid && mshr_info->s.cache_replace_in) {
-        if (req_info_r2.op == op_t::OP_ST)
+        if (req_info_r2.op == OP_ST)
             req_info_r3_io.abort = true;
-        else if (req_info_r2.op == op_t::OP_LD && !hit_info_r3_io.hit)
+        else if (req_info_r2.op == OP_LD && !hit_info_r3_io.hit)
 
             req_info_r3_io.abort = true;
     }
@@ -123,16 +124,16 @@ void Dcache::stage2() {
         if (!hit_info_r3_io.hit)
             req_info_r3_io.abort = true;
     }
-    else if (req_info_r2.valid && cache_res->m.abort_out && cache_res->m.op_out == op_t::OP_ST && req_info_r2.op == op_t::OP_ST)
+    else if (req_info_r2.valid && cache_res->m.abort_out && cache_res->m.op_out == OP_ST && req_info_r2.op == OP_ST)
         req_info_r3_io.abort = true; 
 }
 
 void Dcache::stage3_forepart() {
-    abort_w3 = req_info_r3.abort || (mshr_info->s.cache_replace_in || cache_req->s.valid_in && cache_req->s.op_in == op_t::OP_LD) && req_info_r3.valid && req_info_r3.op == op_t::OP_ST && hit_info_r3.hit;
+    abort_w3 = req_info_r3.abort || (mshr_info->s.cache_replace_in || cache_req->s.valid_in && cache_req->s.op_in == OP_LD) && req_info_r3.valid && req_info_r3.op == OP_ST && hit_info_r3.hit;
 
-    if (req_info_r3.valid && req_info_r3.op == op_t::OP_LD && hit_info_r3.hit && !abort_w3) {
+    if (req_info_r3.valid && req_info_r3.op == OP_LD && hit_info_r3.hit && !abort_w3) {
         cache_res->m.valid_out     = true;
-        cache_res->m.op_out        = op_t::OP_LD;
+        cache_res->m.op_out        = OP_LD;
         cache_res->m.hit_out       = true;
         cache_res->m.miss_out      = false;
         cache_res->m.abort_out     = false;
@@ -140,13 +141,13 @@ void Dcache::stage3_forepart() {
         for (int byte = 0; byte < 4; byte++)
             cache_res->m.data_out[byte] = hit_info_r3.rdata[byte];
     }
-    else if (req_info_r3.valid && req_info_r3.op == op_t::OP_LD && !hit_info_r3.hit && !abort_w3) {
+    else if (req_info_r3.valid && req_info_r3.op == OP_LD && !hit_info_r3.hit && !abort_w3) {
         mshr_alc_req->m.valid_out = true;
         mshr_alc_req->m.tag_out   = req_info_r3.tag;
         mshr_alc_req->m.index_out = req_info_r3.index;
         mshr_alc_req->m.word_out  = req_info_r3.word;
     }
-    else if (req_info_r3.valid && req_info_r3.op == op_t::OP_ST && hit_info_r3.hit && !abort_w3) {
+    else if (req_info_r3.valid && req_info_r3.op == OP_ST && hit_info_r3.hit && !abort_w3) {
         data_ram_io[hit_info_r3.hit_way][req_info_r3.word].en = true;
         for (int byte = 0; byte < 4; byte++) {
             data_ram_io[hit_info_r3.hit_way][req_info_r3.word].we[byte] = req_info_r3.wstrb[byte];
@@ -155,13 +156,13 @@ void Dcache::stage3_forepart() {
         data_ram_io[hit_info_r3.hit_way][req_info_r3.word].addr = req_info_r3.index;
         
         cache_res->m.valid_out     = true;
-        cache_res->m.op_out        = op_t::OP_ST;
+        cache_res->m.op_out        = OP_ST;
         cache_res->m.hit_out       = true;
         cache_res->m.miss_out      = false;
         cache_res->m.abort_out     = false;
         cache_res->m.lsq_entry_out = req_info_r3.lsq_entry;
     }
-    else if (req_info_r3.valid && req_info_r3.op == op_t::OP_ST && !hit_info_r3.hit && !abort_w3) {
+    else if (req_info_r3.valid && req_info_r3.op == OP_ST && !hit_info_r3.hit && !abort_w3) {
         mshr_alc_req->m.valid_out = true;
         mshr_alc_req->m.tag_out   = req_info_r3.tag;
         mshr_alc_req->m.index_out = req_info_r3.index;
@@ -182,10 +183,10 @@ void Dcache::stage3_forepart() {
 }
 
 void Dcache::stage3_backpart() {
-    if (req_info_r3.valid && req_info_r3.op == op_t::OP_LD && !hit_info_r3.hit && !abort_w3) {
+    if (req_info_r3.valid && req_info_r3.op == OP_LD && !hit_info_r3.hit && !abort_w3) {
         if (!mshr_alc_req->m.ok_in) {
             cache_res->m.valid_out      = true;
-            cache_res->m.op_out         = op_t::OP_LD;
+            cache_res->m.op_out         = OP_LD;
             cache_res->m.hit_out        = false;
             cache_res->m.miss_out       = false;
             cache_res->m.abort_out      = true;
@@ -193,7 +194,7 @@ void Dcache::stage3_backpart() {
         }
         else {
             cache_res->m.valid_out      = true;
-            cache_res->m.op_out         = op_t::OP_LD;
+            cache_res->m.op_out         = OP_LD;
             cache_res->m.hit_out        = false;
             cache_res->m.miss_out       = mshr_alc_req->m.ok_in;
             cache_res->m.abort_out      = !mshr_alc_req->m.ok_in;
@@ -201,10 +202,10 @@ void Dcache::stage3_backpart() {
             cache_res->m.lsq_entry_out  = req_info_r3.lsq_entry;
         }
     }
-    else if (req_info_r3.valid && req_info_r3.op == op_t::OP_ST && !hit_info_r3.hit && !abort_w3) {
+    else if (req_info_r3.valid && req_info_r3.op == OP_ST && !hit_info_r3.hit && !abort_w3) {
         if (!mshr_alc_req->m.ok_in) {
             cache_res->m.valid_out      = true;
-            cache_res->m.op_out         = op_t::OP_ST;
+            cache_res->m.op_out         = OP_ST;
             cache_res->m.hit_out        = false;
             cache_res->m.miss_out       = false;
             cache_res->m.abort_out      = true;
@@ -212,7 +213,7 @@ void Dcache::stage3_backpart() {
         }
         else {
             cache_res->m.valid_out      = true;
-            cache_res->m.op_out         = op_t::OP_ST;
+            cache_res->m.op_out         = OP_ST;
             cache_res->m.hit_out        = false;
             cache_res->m.miss_out       = mshr_alc_req->m.ok_in;
             cache_res->m.abort_out      = !mshr_alc_req->m.ok_in;

@@ -1,13 +1,12 @@
-#pragma once
 #include "Dcache.h"
 #include "Mshr.h"
 #include "AddrTransArb.h"
 #include "MMU.h"
 #include "LoadQueue.h"
 #include "StoreQueue.h"
-#include "AXI.h"
 #include "DcacheReqArb.h"
 #include "Memory.h"
+#include "LSU.h"
 
 class Mem_Top {
     public:
@@ -20,8 +19,9 @@ class Mem_Top {
     union mshr_alloc_req_t mshr_alloc_req;
     union mshr_info_t      mshr_info;
     union refill_bus_t     refill_bus;
+    struct bcast_res_bus_master bcast_bus;
 
-    union rs_trans_req_t  rs_trans_req;
+    struct rs_trans_req_slave rs_trans_req;
     union ldq_trans_req_t ldq_trans_req;
     union stq_trans_req_t stq_trans_req;
     union out_trans_req_t out_trans_req;
@@ -52,6 +52,7 @@ class Mem_Top {
     void init_module();
     void conn_module();
     void default_val();
+    void dispatch();
     void comb();
     void seq();
 };

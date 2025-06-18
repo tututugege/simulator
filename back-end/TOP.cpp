@@ -170,6 +170,9 @@ void Back_Top::Back_comb() {
   prf.comb_branch();
   idu.comb_branch();
   exu.comb_exec();
+  adaptor.mem_fire_adpt(); // new
+  mem.comb(); // new
+  adaptor.mem_return_adpt(); // new
   exu.comb_csr();
   exu.comb_ready();
   isu.comb_deq();
@@ -178,7 +181,9 @@ void Back_Top::Back_comb() {
   rename.comb_wake();
   rename.comb_rename();
   isu.comb_ready();
-  stq.comb();
+  adaptor.lsq_alloc_forepart(); // new
+  mem.dispatch(); // new
+  adaptor.lsq_alloc_backpart(); // new
   rob.comb_ready();
   rob.comb_complete();
   idu.comb_release_tag();
