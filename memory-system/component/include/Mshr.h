@@ -1,7 +1,10 @@
-#pragma once
-#include "AXI.h"
+#include <cstdint>
 class Dcache;
 class Memory;
+union axi_ar_channel;
+union axi_r_channel;
+union axi_aw_channel;
+union axi_b_channel;
 
 struct axi_r_req_t {
     int mshr_entry;

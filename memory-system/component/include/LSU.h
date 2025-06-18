@@ -1,12 +1,16 @@
-#pragma once
-#include "Dcache.h"
-#include "MMU.h"
+#include <cstdint>
+union out_trans_req_t;
+union mmu_req_t;
+union mmu_resp_t;
+union cache_req_t;
+union ldq_fill_req_t;
+union stq_fill_req_t;
 
 struct lsu_info_t {
     bool     valid;
-    op_t     op;
-    src_t    src;
-    mem_sz_t mem_sz;
+    uint8_t  op;
+    uint8_t  src;
+    uint8_t  mem_sz;
     uint32_t vtag;
     uint32_t index;
     uint32_t word;

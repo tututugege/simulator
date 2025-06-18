@@ -1,5 +1,4 @@
-#pragma once
-#include "Dcache.h"
+union cache_req_t;
 
 class Dcache_Req_Arb {
     public:

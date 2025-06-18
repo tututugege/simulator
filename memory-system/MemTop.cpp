@@ -41,9 +41,9 @@ void Mem_Top::conn_module() {
     load_queue->stq_fwd_req = &stq_fwd_req;
     store_queue->stq_fwd_req = &stq_fwd_req;
     store_queue->stq_fwd_data = &stq_fwd_data;
+    load_queue->bcast_bus = &bcast_bus;
 
     dcache->mmu_resp = &mmu_resp;
-    dcache->stq_fwd_data = &stq_fwd_data;
 
     dcache->cache_res = &cache_res;
     load_queue->cache_res = &cache_res;
@@ -68,7 +68,7 @@ void Mem_Top::conn_module() {
 }
 
 void Mem_Top::default_val() {
-    rs_trans_req.m.valid_out  = false;
+    rs_trans_req.valid_in  = false;
     ldq_trans_req.m.valid_out = false;
     stq_trans_req.m.valid_out = false;
 
@@ -91,6 +91,11 @@ void Mem_Top::default_val() {
     axi_r.m.rvalid_out = false;
     axi_aw.m.awvalid_out = false;
     axi_b.m.bvalid_out = false;
+}
+
+void Mem_Top::dispatch() {
+    load_queue->alloc();
+    store_queue->alloc();
 }
 
 void Mem_Top::comb() {

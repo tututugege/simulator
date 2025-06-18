@@ -10,15 +10,12 @@ void mul(Inst_uop &inst);
 void div(Inst_uop &inst);
 
 void FU::exec(Inst_uop &inst) {
-
   // 设置latency
   if (cycle == 0) {
     if (inst.op == MUL) { // mul
       latency = 1;
     } else if (inst.op == DIV) { // div
       latency = 1;
-    } else if (inst.op == LOAD) {
-      latency = 3;
     } else {
       latency = 1;
     }
@@ -26,11 +23,7 @@ void FU::exec(Inst_uop &inst) {
 
   cycle++;
   if (cycle == latency) {
-    if (is_load(inst.op)) {
-      ldu(inst);
-    } else if (is_store(inst.op)) {
-      stu(inst);
-    } else if (is_branch(inst.op)) {
+    if (is_branch(inst.op)) {
       bru(inst);
     } else if (inst.op == MUL) {
       mul(inst);
@@ -59,6 +52,10 @@ void EXU::comb_ready() {
 
 void EXU::comb_exec() {
   for (int i = 0; i < ISSUE_WAY; i++) {
+
+    if (i == IQ_LS)
+      continue;
+
     io.exe2prf->entry[i].valid = false;
     io.exe2prf->entry[i].uop = inst_r[i].uop;
     if (inst_r[i].valid && !io.dec_bcast->mispred) {
@@ -69,14 +66,6 @@ void EXU::comb_exec() {
         io.exe2prf->entry[i].valid = false;
       }
     }
-  }
-
-  // TODO: Magic Number
-  // store
-  if (inst_r[IQ_LS].valid && is_store(inst_r[IQ_LS].uop.op)) {
-    io.exe2stq->entry = io.exe2prf->entry[IQ_LS];
-  } else {
-    io.exe2stq->entry.valid = false;
   }
 }
 

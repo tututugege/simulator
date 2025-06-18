@@ -1,8 +1,31 @@
 #include "StoreQueue.h"
+#include "AddrTransArb.h"
 #include "Dcache.h"
+#include "Mshr.h"
+#include "MemUtil.h"
+#include "frontend.h"
+
+void Store_Queue::default_val() {
+    for (int i = 0; i < 4; i++) {
+        stq_io[i].valid = false;
+        stq_io[i].fired = false;
+        stq_io[i].done  = false;
+        stq_io[i].miss  = false;
+    }
+}
 
 void Store_Queue::alloc() {
-
+    for (int i = 0; i < DECODE_WIDTH; i++) {
+        if (stq_alloc[i].valid_in && (tail_r + 1) % 4 != head_r) {
+            stq_io[tail_r].mem_sz = stq_alloc[i].mem_sz_in;
+            for (int j = 0; j < 4; j++)
+                stq_io[tail_r].wstrb[j]  = stq_alloc[i].wstrb_in[j]; 
+            stq_alloc[i].ready_out = true;
+            stq_alloc[i].stq_idx_out = tail_r;
+            tail_r = (tail_r + 1) % 4;
+        }
+    }
+    tail_r_io = tail_r;
 }
 
 void Store_Queue::free() {
@@ -13,8 +36,7 @@ void Store_Queue::free() {
 }
 
 void Store_Queue::retire() {
-    int retire_num;
-    retire_r_io = (retire_r + retire_num) % 8;
+    retire_r_io = (retire_r + *retire_num_in) % 8;
 }
 
 void Store_Queue::addr_trans_req_forepart() {
@@ -36,7 +58,7 @@ void Store_Queue::fire_st2cache_forepart() {
     for (int i = head_r; i != retire_r; i = (i + 1) % 8)
         if (stq[i].valid && !stq[i].fired && stq[i].paddrv) {
             stq_cache_req->m.valid_out = true;
-            stq_cache_req->m.op_out = op_t::OP_ST;
+            stq_cache_req->m.op_out = OP_ST;
             stq_cache_req->m.tagv_out = true;
             stq_cache_req->m.tag_out = stq[i].tag;
             stq_cache_req->m.index_out = stq[i].index;
@@ -78,7 +100,7 @@ void Store_Queue::fill_addr() {
         stq_io[stq_entry].paddrv     = stq_fill_req->s.paddrv_in;
         stq_io[stq_entry].tag        = stq_fill_req->s.tag_in;
 
-        if (stq_fill_req->s.src_in == src_t::RS) {
+        if (stq_fill_req->s.src_in == RS) {
             stq_io[stq_entry].tag = stq_fill_req->s.tag_in;
             stq_io[stq_entry].index = stq_fill_req->s.index_in;
             stq_io[stq_entry].word = stq_fill_req->s.word_in;
@@ -102,9 +124,9 @@ void Store_Queue::fill_addr() {
                 stq_io[stq_entry].wdata_aft_sft[3] = stq_fill_req->s.wdata_b4_sft_in[0];
 
             if (stq_fill_req->s.offset_in == 0x0)
-                if (stq[stq_entry].mem_sz == mem_sz_t::BYTE)
+                if (stq[stq_entry].mem_sz == BYTE)
                     stq_io[stq_entry].wstrb[0] = true;
-                else if (stq[stq_entry].mem_sz == mem_sz_t::HALF) {
+                else if (stq[stq_entry].mem_sz == HALF) {
                     stq_io[stq_entry].wstrb[0] = true;
                     stq_io[stq_entry].wstrb[1] = true;
                 }
@@ -117,7 +139,7 @@ void Store_Queue::fill_addr() {
             else if (stq_fill_req->s.offset_in == 0x1)
                 stq_io[stq_entry].wstrb[1] = true;
             else if (stq_fill_req->s.offset_in == 0x2)
-                if (stq[stq_entry].mem_sz == mem_sz_t::BYTE) {
+                if (stq[stq_entry].mem_sz == BYTE) {
                     stq_io[stq_entry].wstrb[2] = true;
                     stq_io[stq_entry].wstrb[3] = true;
                 }
@@ -129,7 +151,7 @@ void Store_Queue::fill_addr() {
 
 void Store_Queue::recv_cache_res() {
     int stq_entry = cache_res->s.lsq_entry_in;
-    if (cache_res->s.valid_in && cache_res->s.op_in == op_t::OP_ST) 
+    if (cache_res->s.valid_in && cache_res->s.op_in == OP_ST) 
         if (cache_res->s.hit_in)
             stq_io[stq_entry].done = true;
         else if (cache_res->s.miss_in) {

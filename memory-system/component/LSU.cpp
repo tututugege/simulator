@@ -3,13 +3,14 @@
 #include "LoadQueue.h"
 #include "StoreQueue.h"
 #include "Dcache.h"
-#include "util.h"
+#include "MMU.h"
+#include "MemUtil.h"
 
 void LSU::default_val() {
     stage2_info_r_io.valid = false;
 
     lsu_cache_req->m.valid_out        = false;
-    lsu_cache_req->m.op_out           = op_t::OP_LD;
+    lsu_cache_req->m.op_out           = OP_LD;
     lsu_cache_req->m.tagv_out         = false;
     lsu_cache_req->m.index_out        = 0;
     lsu_cache_req->m.word_out         = 0;
@@ -18,12 +19,12 @@ void LSU::default_val() {
 
     mmu_req->m.valid_out = false;
     mmu_req->m.vtag_out  = 0;
-    mmu_req->m.op_out    = op_t::OP_LD;
+    mmu_req->m.op_out    = OP_LD;
     out_trans_req->s.ready_out = false;
 
-    stage2_info_r_io.op        = op_t::OP_LD;
-    stage2_info_r_io.src       = src_t::LDQ;
-    stage2_info_r_io.mem_sz    = mem_sz_t::BYTE;
+    stage2_info_r_io.op        = OP_LD;
+    stage2_info_r_io.src       = LDQ;
+    stage2_info_r_io.mem_sz    = BYTE;
     stage2_info_r_io.vtag      = 0;
     stage2_info_r_io.index     = 0;
     stage2_info_r_io.word      = 0;
@@ -34,7 +35,7 @@ void LSU::default_val() {
 
     ldq_fill_req->m.valid_out = false;
     ldq_fill_req->m.ldq_entry_out = 0;
-    ldq_fill_req->m.src_out       = src_t::LDQ;
+    ldq_fill_req->m.src_out       = LDQ;
     ldq_fill_req->m.tag_out = 0;
     ldq_fill_req->m.addr_trans_out = false;
     ldq_fill_req->m.paddrv_out = false;
@@ -44,7 +45,7 @@ void LSU::default_val() {
 
     stq_fill_req->m.valid_out     = false;
     stq_fill_req->m.stq_entry_out = 0;
-    stq_fill_req->m.src_out       = src_t::LDQ;
+    stq_fill_req->m.src_out       = LDQ;
     stq_fill_req->m.tag_out = 0;
     stq_fill_req->m.addr_trans_out = false;
     stq_fill_req->m.paddrv_out = false;
@@ -58,9 +59,9 @@ void LSU::default_val() {
 
 void LSU::stage1_forepart() {
     if (out_trans_req->s.valid_in) {
-        if (out_trans_req->s.op_in == op_t::OP_LD) {
+        if (out_trans_req->s.op_in == OP_LD) {
             lsu_cache_req->m.valid_out        = true;
-            lsu_cache_req->m.op_out           = op_t::OP_LD;
+            lsu_cache_req->m.op_out           = OP_LD;
             lsu_cache_req->m.tagv_out         = false;
             lsu_cache_req->m.index_out        = out_trans_req->s.index_in;
             lsu_cache_req->m.word_out         = out_trans_req->s.word_in;
@@ -71,7 +72,7 @@ void LSU::stage1_forepart() {
             lsu_cache_req->m.valid_out = false;
             mmu_req->m.valid_out   = true;
             mmu_req->m.vtag_out    = out_trans_req->s.vtag_in;
-            mmu_req->m.op_out      = op_t::OP_ST;
+            mmu_req->m.op_out      = OP_ST;
             stage2_info_r_io.valid      = true;
             out_trans_req->s.ready_out  = true;
         }
@@ -81,10 +82,10 @@ void LSU::stage1_forepart() {
 void LSU::stage1_backpart() {
     if (out_trans_req->s.valid_in) {
         // 
-        if (out_trans_req->s.op_in == op_t::OP_LD && lsu_cache_req->m.valid_out && lsu_cache_req->m.addr_ok_in) {
+        if (out_trans_req->s.op_in == OP_LD && lsu_cache_req->m.valid_out && lsu_cache_req->m.addr_ok_in) {
             mmu_req->m.valid_out = true;
             mmu_req->m.vtag_out  = out_trans_req->s.vtag_in;
-            mmu_req->m.op_out    = op_t::OP_LD;
+            mmu_req->m.op_out    = OP_LD;
             stage2_info_r_io.valid      = true;
             out_trans_req->s.ready_out  = true;
         }
@@ -104,10 +105,10 @@ void LSU::stage1_backpart() {
 
 void LSU::stage2() {
     if (stage2_info_r.valid) {
-        if (stage2_info_r.src != src_t::RS && stage2_info_r.op == op_t::OP_LD) {
+        if (stage2_info_r.src != RS && stage2_info_r.op == OP_LD) {
             ldq_fill_req->m.valid_out     = true;
             ldq_fill_req->m.ldq_entry_out = stage2_info_r.lsq_entry;
-            ldq_fill_req->m.src_out       = src_t::LDQ;
+            ldq_fill_req->m.src_out       = LDQ;
             if (mmu_resp->s.okay_in) {
                 ldq_fill_req->m.tag_out = mmu_resp->s.ptag_in;
                 ldq_fill_req->m.addr_trans_out = true;
@@ -121,10 +122,10 @@ void LSU::stage2() {
             else {
             }
         }
-        else if (stage2_info_r.src != src_t::RS && stage2_info_r.op == op_t::OP_ST) {
+        else if (stage2_info_r.src != RS && stage2_info_r.op == OP_ST) {
             stq_fill_req->m.valid_out     = true;
             stq_fill_req->m.stq_entry_out = stage2_info_r.lsq_entry;
-            stq_fill_req->m.src_out       = src_t::STQ;
+            stq_fill_req->m.src_out       = STQ;
             if (mmu_resp->s.okay_in) {
                 stq_fill_req->m.tag_out = mmu_resp->s.ptag_in;
                 stq_fill_req->m.addr_trans_out = true;
@@ -138,10 +139,10 @@ void LSU::stage2() {
             else {
             }
         }
-        else if (stage2_info_r.op == op_t::OP_LD) {
+        else if (stage2_info_r.op == OP_LD) {
             ldq_fill_req->m.valid_out     = true;
             ldq_fill_req->m.ldq_entry_out = stage2_info_r.lsq_entry;
-            ldq_fill_req->m.src_out       = src_t::RS;
+            ldq_fill_req->m.src_out       = RS;
             ldq_fill_req->m.index_out     = stage2_info_r.index;
             ldq_fill_req->m.word_out      = stage2_info_r.word;
             ldq_fill_req->m.offset_out    = stage2_info_r.offset;
@@ -161,7 +162,7 @@ void LSU::stage2() {
         else {
             stq_fill_req->m.valid_out     = true;
             stq_fill_req->m.stq_entry_out = stage2_info_r.lsq_entry;
-            stq_fill_req->m.src_out       = src_t::RS;
+            stq_fill_req->m.src_out       = RS;
             stq_fill_req->m.index_out     = stage2_info_r.index;
             stq_fill_req->m.word_out      = stage2_info_r.word;
             stq_fill_req->m.offset_out    = stage2_info_r.offset;

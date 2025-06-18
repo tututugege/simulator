@@ -1,7 +1,16 @@
-#pragma once
-#include "AddrTransArb.h"
-#include "Dcache.h"
-#include "Mshr.h"
+#include <cstdint>
+union stq_trans_req_t;
+union cache_req_t;
+union cache_res_t;
+union refill_bus_t;
+
+struct stq_alloc_slave {
+    bool    valid_in;
+    uint8_t mem_sz_in;
+    uint8_t wstrb_in[4];
+    bool    ready_out;
+    int     stq_idx_out;
+};
 
 struct stq_fwd_req_master {
     uint32_t tag_out;
@@ -40,7 +49,7 @@ union stq_fwd_data_t {
 struct stq_fill_req_master {
     bool     valid_out;
     int      stq_entry_out;
-    src_t    src_out;
+    uint8_t  src_out;
     bool     addr_trans_out;
     bool     paddrv_out;
     uint32_t tag_out;
@@ -53,7 +62,7 @@ struct stq_fill_req_master {
 struct stq_fill_req_slave {
     bool     valid_in;
     int      stq_entry_in;
-    src_t    src_in;
+    uint8_t  src_in;
     bool     addr_trans_in;
     bool     paddrv_in;
     uint32_t tag_in;
@@ -78,10 +87,10 @@ struct stq_entry_t {
     uint32_t tag;
     uint32_t index;
     uint32_t word;
-    mem_sz_t mem_sz;
     uint8_t  wdata_aft_sft[4];
-    bool     wstrb[4];
     int      mshr_entry;
+    uint8_t  mem_sz;
+    bool     wstrb[4];
 };
 
 class Store_Queue {
@@ -93,6 +102,8 @@ class Store_Queue {
     union cache_req_t     *stq_cache_req;
     union cache_res_t     *cache_res;
     union refill_bus_t    *refill_bus;
+    struct stq_alloc_slave stq_alloc[4];
+    int *retire_num_in;
 
     struct stq_entry_t stq[8];
     struct stq_entry_t stq_io[8];

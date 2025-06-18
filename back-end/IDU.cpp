@@ -56,6 +56,7 @@ void IDU::comb_decode() {
 
     for (int j = 0; j < 2; j++) {
       dec_uop[i][j].tag = (has_br) ? alloc_tag : now_tag;
+      dec_uop[i][j].mem_tag = mem_tag; // new
       dec_uop[i][j].pc = io.front2dec->pc[i];
       dec_uop[i][j].pred_br_taken = io.front2dec->predict_dir[i];
       dec_uop[i][j].alt_pred = io.front2dec->alt_pred[i];

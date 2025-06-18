@@ -1,32 +1,14 @@
-#pragma once
-#include "LSU.h"
-#include "util.h"
-
-struct rs_trans_req_master {
-    bool     valid_out;
-    op_t     op_out;
-    mem_sz_t mem_sz_out;
-    uint32_t rs1;
-    uint32_t rs2;
-    uint8_t  wdata_b4_sft_out[4];
-    int      lsq_entry_out;
-    bool     ready_in; 
-};
+#include <cstdint>
 
 struct rs_trans_req_slave {
     bool     valid_in;
-    op_t     op_in;
-    mem_sz_t mem_sz_in;
-    uint32_t rs1;
-    uint32_t rs2;
+    uint8_t  op_in;
+    uint8_t  mem_sz_in;
+    uint32_t rs1_in;
+    uint32_t rs2_in;
     uint8_t  wdata_b4_sft_in[4];
     int      lsq_entry_in;
     bool     ready_out; 
-};
-
-union rs_trans_req_t {
-    struct rs_trans_req_master m;
-    struct rs_trans_req_slave  s;
 };
 
 struct ldq_trans_req_master {
@@ -69,9 +51,11 @@ union stq_trans_req_t {
 
 struct out_trans_req_master {
     bool     valid_out;
-    op_t     op_out;
-    src_t    src_out;
-    mem_sz_t mem_sz_out;
+    uint8_t  op_out;
+    uint8_t  src_out;
+    uint8_t  mem_sz_out;
+    uint32_t rs1_out;
+    uint32_t rs2_out;
     uint32_t vtag_out;
     uint32_t index_out;
     uint32_t word_out;
@@ -83,9 +67,11 @@ struct out_trans_req_master {
 
 struct out_trans_req_slave {
     bool     valid_in;
-    op_t     op_in;
-    src_t    src_in;
-    mem_sz_t mem_sz_in;
+    uint8_t  op_in;
+    uint8_t  src_in;
+    uint8_t  mem_sz_in;
+    uint32_t rs1_in;
+    uint32_t rs2_in;
     uint32_t vtag_in;
     uint32_t index_in;
     uint32_t word_in;
@@ -102,12 +88,10 @@ union out_trans_req_t {
 
 class Addr_Trans_Arb {
     public:
-    union rs_trans_req_t  *rs_trans_req;
+    struct rs_trans_req_slave *rs_trans_req;
     union ldq_trans_req_t *ldq_trans_req;
     union stq_trans_req_t *stq_trans_req;
     union out_trans_req_t *out_trans_req;
-
-    LSU * lsu;
 
     public:
     void default_val();
