@@ -9,18 +9,18 @@ void PRF::init() {
     io.prf2exe->ready[i] = true;
 }
 
-void PRF::comb_amo() {
-  io.prf2stq->amoop = inst_r[IQ_LS].uop.amoop;
-  io.prf2stq->load_data = inst_r[IQ_LS].uop.result;
-  io.prf2stq->stq_idx = inst_r[IQ_LS].uop.stq_idx;
-  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.op == LOAD &&
-      inst_r[IQ_LS].uop.amoop != AMONONE) {
-    assert(io.prf2stq->stq_idx == 0);
-    io.prf2stq->valid = true;
-  } else {
-    io.prf2stq->valid = false;
-  }
-}
+/*void PRF::comb_amo() {*/
+/*  io.prf2stq->amoop = inst_r[IQ_LS].uop.amoop;*/
+/*  io.prf2stq->load_data = inst_r[IQ_LS].uop.result;*/
+/*  io.prf2stq->stq_idx = inst_r[IQ_LS].uop.stq_idx;*/
+/*  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.op == LOAD &&*/
+/*      inst_r[IQ_LS].uop.amoop != AMONONE) {*/
+/*    assert(io.prf2stq->stq_idx == 0);*/
+/*    io.prf2stq->valid = true;*/
+/*  } else {*/
+/*    io.prf2stq->valid = false;*/
+/*  }*/
+/*}*/
 
 void PRF::comb_branch() {
   // 根据分支结果向前端返回信息
@@ -48,7 +48,13 @@ void PRF::comb_read() {
 
     if (entry->valid) {
       if (entry->uop.src1_en) {
-        entry->uop.src1_rdata = reg_file[entry->uop.src1_preg];
+        if (entry->uop.src1_areg == 0 &&
+            (entry->uop.amoop == AMONONE || entry->uop.amoop == LR ||
+             entry->uop.amoop == SC)) {
+          entry->uop.src1_rdata = 0;
+        } else {
+          entry->uop.src1_rdata = reg_file[entry->uop.src1_preg];
+        }
         for (int j = 0; j < ISSUE_WAY; j++) {
           if (inst_r[j].valid && inst_r[j].uop.dest_en &&
               inst_r[j].uop.dest_preg == entry->uop.src1_preg)
@@ -63,7 +69,13 @@ void PRF::comb_read() {
       }
 
       if (entry->uop.src2_en) {
-        entry->uop.src2_rdata = reg_file[entry->uop.src2_preg];
+        if (entry->uop.src2_areg == 0 &&
+            (entry->uop.amoop == AMONONE || entry->uop.amoop == LR ||
+             entry->uop.amoop == SC)) {
+          entry->uop.src2_rdata = 0;
+        } else {
+          entry->uop.src2_rdata = reg_file[entry->uop.src2_preg];
+        }
         for (int j = 0; j < ISSUE_WAY; j++) {
           if (inst_r[j].valid && inst_r[j].uop.dest_en &&
               inst_r[j].uop.dest_preg == entry->uop.src2_preg)

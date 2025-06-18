@@ -9,7 +9,7 @@ public:
   Exe_Prf *exe2prf;
   Prf_Rob *prf2rob;
   Prf_Dec *prf2dec;
-  Prf_Stq *prf2stq;
+  /*Prf_Stq *prf2stq;*/
   Prf_Awake *prf_awake;
   Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bc;
@@ -22,7 +22,6 @@ public:
 
   void comb_branch();
   void comb_read();
-  void comb_amo();
   void init();
   void seq();
 

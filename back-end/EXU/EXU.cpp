@@ -5,7 +5,8 @@
 void alu(Inst_uop &inst);
 void bru(Inst_uop &inst);
 void ldu(Inst_uop &inst);
-void stu(Inst_uop &inst);
+void st_addr(Inst_uop &inst);
+void st_data(Inst_uop &inst);
 void mul(Inst_uop &inst);
 void div(Inst_uop &inst);
 
@@ -28,7 +29,9 @@ void FU::exec(Inst_uop &inst) {
     if (is_load(inst.op)) {
       ldu(inst);
     } else if (is_store(inst.op)) {
-      stu(inst);
+      st_addr(inst);
+    } else if (inst.op == STD) {
+      st_data(inst);
     } else if (is_branch(inst.op)) {
       bru(inst);
     } else if (inst.op == MUL) {
@@ -70,12 +73,16 @@ void EXU::comb_exec() {
     }
   }
 
-  // TODO: Magic Number
-  // store
   if (inst_r[IQ_LS].valid && is_store(inst_r[IQ_LS].uop.op)) {
-    io.exe2stq->entry = io.exe2prf->entry[IQ_LS];
+    io.exe2stq->sta_entry = io.exe2prf->entry[IQ_LS];
   } else {
-    io.exe2stq->entry.valid = false;
+    io.exe2stq->sta_entry.valid = false;
+  }
+
+  if (inst_r[IQ_STD].valid) {
+    io.exe2stq->std_entry = io.exe2prf->entry[IQ_STD];
+  } else {
+    io.exe2stq->std_entry.valid = false;
   }
 }
 

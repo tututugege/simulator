@@ -245,7 +245,7 @@ void ldu(Inst_uop &inst) {
   }
 }
 
-void stu(Inst_uop &inst) {
+void st_addr(Inst_uop &inst) {
   uint32_t v_addr = inst.src1_rdata + inst.imm;
 
   if (inst.pc == 0xc011f4f0) {
@@ -271,5 +271,53 @@ void stu(Inst_uop &inst) {
     inst.page_fault_store = true;
   } else {
     inst.result = p_addr;
+  }
+}
+
+void st_data(Inst_uop &inst) {
+  uint32_t src1_rdata = inst.src1_rdata;
+  uint32_t src2_rdata = inst.src2_rdata;
+  switch (inst.amoop) {
+  case AMOADD: { // amoadd.w
+    inst.result = src1_rdata + src2_rdata;
+    break;
+  }
+  case AMOSWAP: { // amoswap.w
+    inst.result = src2_rdata;
+    break;
+  }
+  case AMOXOR: { // amoxor.w
+    inst.result = src1_rdata ^ src2_rdata;
+    break;
+  }
+  case AMOOR: { // amoor.w
+    inst.result = src1_rdata | src2_rdata;
+    break;
+  }
+  case AMOAND: { // amoand.w
+    inst.result = src1_rdata & src2_rdata;
+    break;
+  }
+  case AMOMIN: { // amomin.w
+    inst.result = ((int)src1_rdata > (int)src2_rdata) ? src2_rdata : src1_rdata;
+    break;
+  }
+  case AMOMAX: { // amomax.w
+    inst.result = ((int)src1_rdata > (int)src2_rdata) ? src1_rdata : src2_rdata;
+    break;
+  }
+  case AMOMINU: { // amominu.w
+    inst.result =
+        ((uint32_t)src1_rdata > (uint32_t)src2_rdata) ? src2_rdata : src1_rdata;
+    break;
+  }
+  case AMOMAXU: { // amomaxu.w
+    inst.result =
+        ((uint32_t)src1_rdata > (uint32_t)src2_rdata) ? src1_rdata : src2_rdata;
+    break;
+  }
+
+  default:
+    inst.result = inst.src2_rdata;
   }
 }

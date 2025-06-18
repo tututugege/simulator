@@ -56,9 +56,10 @@ void Rename::comb_alloc() {
 
     if (inst_r[i].valid) {
       // 分配stq_idx 和 rob_idx
-      if (is_store(io.ren2iss->uop[i].op)) {
+      if (is_store(io.ren2iss->uop[i].op) || io.ren2iss->uop[i].op == STD) {
         io.ren2iss->uop[i].stq_idx = stq_idx;
-        LOOP_INC(stq_idx, STQ_NUM);
+        if (io.ren2iss->uop[i].op == STD)
+          LOOP_INC(stq_idx, STQ_NUM);
       }
 
       io.ren2iss->uop[i].rob_idx = rob_idx;
@@ -98,7 +99,12 @@ void Rename::comb_rename() {
 
   // 无waw raw的输出 读spec_RAT和busy_table
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    io.ren2iss->uop[i].old_dest_preg = spec_RAT[inst_r[i].uop.dest_areg];
+    if (io.ren2iss->uop[i].dest_areg == 0) {
+      io.ren2iss->uop[i].old_dest_preg = io.ren2iss->uop[i].dest_preg;
+    } else {
+      io.ren2iss->uop[i].old_dest_preg = spec_RAT[inst_r[i].uop.dest_areg];
+    }
+
     io.ren2iss->uop[i].src1_preg = spec_RAT[inst_r[i].uop.src1_areg];
     io.ren2iss->uop[i].src2_preg = spec_RAT[inst_r[i].uop.src2_areg];
     // 唤醒的bypass
@@ -137,7 +143,7 @@ void Rename::comb_rename() {
     io.ren2rob->valid[i] = inst_r[i].valid;
 
     io.ren2stq->tag[i] = io.ren2iss->uop[i].tag;
-    io.ren2stq->valid[i] = inst_r[i].valid && is_store(io.ren2iss->uop[i].op);
+    io.ren2stq->valid[i] = inst_r[i].valid && io.ren2iss->uop[i].op == STA;
   }
 }
 

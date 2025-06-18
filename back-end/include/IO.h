@@ -69,12 +69,12 @@ typedef struct {
   Wake_info wake;
 } Prf_Awake;
 
-typedef struct {
-  bool valid;
-  AMO_op amoop;
-  uint32_t load_data;
-  uint32_t stq_idx;
-} Prf_Stq;
+/*typedef struct {*/
+/*  bool valid;*/
+/*  AMO_op amoop;*/
+/*  uint32_t load_data;*/
+/*  uint32_t stq_idx;*/
+/*} Prf_Stq;*/
 
 typedef struct {
   Inst_uop uop[DECODE_WIDTH];
@@ -148,8 +148,10 @@ typedef struct {
 } Stq_Ren;
 
 typedef struct {
-  // 实际写入
-  Inst_entry entry;
+  // 写入地址
+  Inst_entry sta_entry;
+  // 写入数据
+  Inst_entry std_entry;
 } Exe_Stq;
 
 typedef struct {

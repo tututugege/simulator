@@ -5,7 +5,7 @@
 using namespace std;
 
 #define MAX_SIM_TIME 20000000
-#define ISSUE_WAY 4
+#define ISSUE_WAY 5
 
 #define ARF_NUM 32
 #define PRF_NUM 96
@@ -26,8 +26,8 @@ using namespace std;
 
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE { IQ_INTM, IQ_INTD, IQ_LS, IQ_BR, IQ_NUM };
-enum FU_TYPE { FU_ALU, FU_LSU, FU_BRU, FU_MUL, FU_DIV, FU_TYPE_NUM };
+enum IQ_TYPE { IQ_INTM, IQ_INTD, IQ_LS, IQ_STD, IQ_BR, IQ_NUM };
+enum FU_TYPE { FU_ALU, FU_LSU, FU_STD, FU_BRU, FU_MUL, FU_DIV, FU_TYPE_NUM };
 
 extern int fu_config[ISSUE_WAY];
 
@@ -37,7 +37,8 @@ enum Inst_op {
   ADD,
   BR,
   LOAD,
-  STORE,
+  STA,
+  STD,
   CSR,
   ECALL,
   EBREAK,

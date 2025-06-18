@@ -29,6 +29,7 @@ void ISU::init() {
   add_iq(16, IQ_INTM);
   add_iq(16, IQ_INTD);
   add_iq(16, IQ_LS);
+  add_iq(8, IQ_STD);
   add_iq(8, IQ_BR);
 }
 
