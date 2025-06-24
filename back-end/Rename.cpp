@@ -295,9 +295,7 @@ void Rename ::comb_commit() {
              << io.rob_commit->commit_entry[i].uop.pc << " idx "
              << io.rob_commit->commit_entry[i].uop.inst_idx << endl;
       }
-#ifdef CONFIG_DIFFTEST
       back.difftest(&(io.rob_commit->commit_entry[i].uop));
-#endif // CONFIG_DIFFTSET
     }
   }
 }

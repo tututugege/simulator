@@ -9,7 +9,6 @@ extern Back_Top back;
 
 void ISU::add_iq(int entry_num, IQ_TYPE type) {
   iq.push_back(IQ(entry_num, type));
-  iq_num++;
 }
 
 IQ::IQ(int entry_num, IQ_TYPE type) {
@@ -71,7 +70,6 @@ void ISU::comb_ready() {
   }
 }
 
-#include <iostream>
 void ISU::comb_deq() {
 
   // 出队
@@ -81,10 +79,6 @@ void ISU::comb_deq() {
     else
       io.iss2prf->iss_entry[i].valid = false;
   }
-
-  /*if (io.iss2prf->iss_entry[2].uop.pc == 0xc0001fe8) {*/
-  /*  cout << "test" << back.exu.inst_r[1].uop.pc << endl;*/
-  /*}*/
 
   for (int i = 0; i < ALU_NUM; i++) {
     if (io.iss2prf->iss_entry[i].valid &&

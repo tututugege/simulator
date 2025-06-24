@@ -28,6 +28,7 @@ void Back_Top::difftest(Inst_uop *inst) {
   if (inst->dest_en && !inst->page_fault_load)
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
 
+#ifdef CONFIG_DIFFTEST
   if (inst->is_last_uop) {
 
     if (LOG) {
@@ -70,6 +71,7 @@ void Back_Top::difftest(Inst_uop *inst) {
       difftest_step();
     }
   }
+#endif
 }
 
 Front_Dec front2dec;

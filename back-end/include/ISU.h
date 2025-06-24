@@ -55,5 +55,4 @@ public:
   void comb_ready();
   void comb_deq();
   void seq(); // 写入IQ
-  int iq_num = 0;
 };

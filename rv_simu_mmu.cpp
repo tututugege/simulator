@@ -20,11 +20,6 @@ int back2front_num = 0;
 
 using namespace std;
 
-void load_slave_comb();
-void load_slave_seq();
-void store_slave_seq();
-void store_slave_comb();
-
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege);
 
@@ -47,6 +42,11 @@ int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
 
   ifstream inst_data(argv[argc - 1], ios::in);
+
+  if (!inst_data.is_open()) {
+    cout << "Error: Image " << argv[argc - 1] << " does not exist" << endl;
+    exit(0);
+  }
 
   char **ptr = NULL;
 
@@ -80,10 +80,12 @@ int main(int argc, char *argv[]) {
   init_difftest(img_size);
 #endif
 
-  /*while (1) {*/
-  /*  v1_difftest_exec();*/
-  /*  sim_time++;*/
-  /*}*/
+#ifdef CONFIG_RUN_V1
+  while (1) {
+    v1_difftest_exec();
+    sim_time++;
+  }
+#endif
 
   back.init();
 
@@ -99,10 +101,6 @@ int main(int argc, char *argv[]) {
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
     inst_idx = sim_time;
-
-    if (sim_time == 2077600) {
-      cout << "yes" << endl;
-    }
 
     if (LOG)
       cout << "****************************************************************"
@@ -176,11 +174,6 @@ int main(int argc, char *argv[]) {
           front_out.instructions[j] = p_memory[number_PC / 4];
         }
 
-        /*if (LOG)*/
-        /*  cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" <<
-         * hex*/
-        /*       << number_PC << endl;*/
-        /**/
         front_out.predict_dir[j] = false;
         number_PC += 4;
       }
@@ -240,8 +233,6 @@ int main(int argc, char *argv[]) {
 #endif
     }
 
-    /*load_slave_comb();*/
-    /*store_slave_comb();*/
     back.Back_comb();
 
 #ifdef CONFIG_BPU
@@ -293,8 +284,6 @@ int main(int argc, char *argv[]) {
     front_in.refetch = false;
 #endif
 
-    /*load_slave_seq();*/
-    /*store_slave_seq();*/
     back.Back_seq();
 
     if (sim_end)
@@ -357,88 +346,6 @@ SIM_END:
   return 0;
 }
 
-enum STATE { IDLE, RET };
-int load_slave_state = IDLE;
-uint32_t load_slave_addr = 0;
-
-void load_slave_comb() {
-
-  if (load_slave_state == IDLE) {
-    back.in.arready = true;
-  } else if (load_slave_state == RET) {
-    back.in.arready = false;
-    back.in.rdata = p_memory[load_slave_addr >> 2];
-    back.in.rvalid = true;
-  }
-}
-
-void load_slave_seq() {
-  if (load_slave_state == IDLE) {
-    if (back.out.arvalid && back.in.arready) {
-      load_slave_state = RET;
-      load_slave_addr = back.out.araddr;
-    }
-  } else if (load_slave_state == RET) {
-    if (back.out.rready && back.in.rvalid) {
-      load_slave_state = IDLE;
-    }
-  }
-}
-
-int store_slave_state = IDLE;
-void store_slave_comb() {
-  if (store_slave_state == IDLE) {
-    back.in.wready = true;
-  } else if (store_slave_state == RET) {
-    back.in.wready = false;
-    back.in.bvalid = true;
-  }
-}
-
-void store_slave_seq() {
-  if (store_slave_state == IDLE) {
-    if (back.out.wvalid && back.in.wready) {
-      store_slave_state = RET;
-      uint32_t wdata = back.out.wdata;
-      uint32_t waddr = back.out.waddr;
-      uint32_t wstrb = back.out.wstrb;
-
-      /*if (waddr == 0x1c) {*/
-      /*  ret = wdata;*/
-      /*  sim_end = true;*/
-      /*  return;*/
-      /*}*/
-
-      uint32_t old_data = p_memory[waddr / 4];
-      uint32_t mask = 0;
-      if (wstrb & 0b1)
-        mask |= 0xFF;
-      if (wstrb & 0b10)
-        mask |= 0xFF00;
-      if (wstrb & 0b100)
-        mask |= 0xFF0000;
-      if (wstrb & 0b1000)
-        mask |= 0xFF000000;
-
-      p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
-
-      /*if (waddr == UART_BASE) {*/
-      /*  char temp = wdata & 0xFF;*/
-      /*  cout << temp;*/
-      /*}*/
-
-      if (MEM_LOG) {
-        cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
-             << " in " << (waddr & 0xFFFFFFFC) << endl;
-      }
-    }
-  } else if (store_slave_state == RET) {
-    if (back.out.bready && back.in.bvalid) {
-      store_slave_state = IDLE;
-    }
-  }
-}
-
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege) {
   uint32_t d = 24;
@@ -499,9 +406,6 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
       ((pte1_entry << 2) & 0xFFFFF000) | ((v_addr >> 10) & 0xFFC);
   uint32_t pte2_entry = p_memory[uint32_t(pte2_addr / 4)];
 
-  /*if (log)*/
-  /*  cout << "pte2: " << hex << number_pte2_stored << endl;*/
-
   bool bit_pte2_stored[32];
   cvt_number_to_bit_unsigned(bit_pte2_stored, pte2_entry, 32);
 
@@ -559,5 +463,3 @@ bool load_data(uint32_t &data, uint32_t v_addr) {
 
   return ret;
 }
-
-/*bool store_data(uint32_t data, uint32_t addr, uint32_t mask) {}*/
