@@ -26,6 +26,7 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
   uint32_t number_pte1_stored = p_memory[uint32_t(number_pte1 / 4)];
   if (log)
     cout << "pte1:" << hex << number_pte1_stored << endl;
+
   bool bit_pte1_stored[32];
   cvt_number_to_bit_unsigned(bit_pte1_stored, number_pte1_stored, 32);
   if (bit_pte1_stored[v] == false ||
@@ -59,6 +60,12 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
   copy_indice(pte2, 20, v_addr, 10, 10);
   uint32_t number_pte2 = cvt_bit_to_number_unsigned(pte2, 32);
   uint32_t number_pte2_stored = p_memory[uint32_t(number_pte2 / 4)];
+
+  if (cvt_bit_to_number_unsigned(v_addr, 32) == 0xc082bf74) {
+    cout << "ref: " << number_pte2_stored << endl;
+    cout << "ref: " << number_pte2 << endl;
+  }
+
   if (log)
     cout << "pte2: " << hex << number_pte2_stored << endl;
   bool bit_pte2_stored[32];
@@ -88,5 +95,5 @@ bool va2pa(bool *p_addr, bool *satp, bool *v_addr, uint32_t *p_memory,
     return true;
   }
 
-  return true;
+  return false;
 }

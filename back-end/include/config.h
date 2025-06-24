@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define MAX_SIM_TIME 20000000
+#define MAX_SIM_TIME 2000000000
 #define ISSUE_WAY 4
 
 #define ARF_NUM 32
@@ -17,8 +17,11 @@ using namespace std;
 #define STQ_NUM 8
 #define ALU_NUM 2
 
-#define LOG 0
-#define MEM_LOG 0
+#define LOG_START 218409200
+#define LOG (0 && (sim_time > LOG_START))
+#define MEM_LOG (0 && (sim_time > LOG_START))
+
+extern long long sim_time;
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_BRANCHCHECK*/
@@ -63,6 +66,8 @@ enum AMO_op {
 };
 
 typedef struct Inst_uop {
+  uint32_t instruction;
+
   int dest_areg, src1_areg, src2_areg;
   int dest_preg, src1_preg, src2_preg;
   uint32_t src1_rdata, src2_rdata;
@@ -102,6 +107,9 @@ typedef struct Inst_uop {
   bool page_fault_load;
   bool page_fault_store;
 
+  // illegal
+  bool illegal_inst;
+
   // 调度特征
   int inst_idx;
   int dependency;
@@ -111,6 +119,8 @@ typedef struct Inst_uop {
 
   // 原子指令信息
   AMO_op amoop;
+
+  bool difftest_skip;
 } Inst_uop;
 
 typedef struct Inst_entry {

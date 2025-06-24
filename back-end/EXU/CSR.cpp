@@ -8,7 +8,6 @@
 #define CSR_C 0b11
 
 void CSRU::init() {
-  /*CSR_RegFile[number_mstatus] = 0x1800;*/
   CSR_RegFile[number_misa] = 0x40141101; // U/S/M  RV32I/A/M
 }
 
@@ -38,6 +37,7 @@ void CSRU::comb() {
     bool page_fault_inst = io.rob_bc->page_fault_inst;
     bool page_fault_load = io.rob_bc->page_fault_load;
     bool page_fault_store = io.rob_bc->page_fault_store;
+    bool illegal_exception = io.rob_bc->illegal_inst;
 
     bool mstatus_mie = mstatus[31 - 3];
     bool medeleg_U_ecall = medeleg[31 - 8];
@@ -106,7 +106,7 @@ void CSRU::comb() {
         (ecall && (privilege == 3)) // MTrap下的ecall一定在MTrap处理
         || (page_fault_inst && !medeleg_page_fault_inst) ||
         (page_fault_load && !medeleg_page_fault_load) ||
-        (page_fault_store && !medeleg_page_fault_store);
+        (page_fault_store && !medeleg_page_fault_store) || illegal_exception;
 
     bool STrap = S_software_interrupt || S_timer_interrupt ||
                  S_external_interrupt ||
@@ -136,9 +136,9 @@ void CSRU::comb() {
                : (ecall && (privilege == 1) && !medeleg_S_ecall) ? 9
                : (page_fault_inst && !medeleg_page_fault_inst)   ? 12
                : (page_fault_load && !medeleg_page_fault_load)   ? 13
-               : (page_fault_store && !medeleg_page_fault_store)
-                   ? 15
-                   : 0; // 给后31位赋值
+               : (page_fault_store && !medeleg_page_fault_store) ? 15
+               : (illegal_exception)                             ? 2
+                                     : 0; // 给后31位赋值
 
       CSR_RegFile[number_mcause] = cause;
 
@@ -163,7 +163,11 @@ void CSRU::comb() {
       privilege = 0b11;
 
       if (page_fault_store || page_fault_load || page_fault_inst) {
-        CSR_RegFile[number_mtval] = io.rob_bc->page_fault_addr;
+        CSR_RegFile[number_mtval] = io.rob_bc->trap_val;
+      } else if (illegal_exception) {
+        CSR_RegFile[number_mtval] = io.rob_bc->trap_val;
+      } else {
+        CSR_RegFile[number_mtval] = 0;
       }
 
     } else if (STrap) {
@@ -205,7 +209,9 @@ void CSRU::comb() {
       sstatus[31 - 1] = 0;               // next_sstatus.SIE = 0;
       privilege = 1;
       if (page_fault_store || page_fault_load || page_fault_inst) {
-        CSR_RegFile[number_stval] = io.rob_bc->page_fault_addr;
+        CSR_RegFile[number_stval] = io.rob_bc->trap_val;
+      } else {
+        CSR_RegFile[number_stval] = 0;
       }
 
     } else if (io.rob_bc->mret) {
@@ -249,6 +255,10 @@ void CSRU::seq() {
       csr_wdata = (~io.exe2csr->wdata & CSR_RegFile[csr_idx]);
     }
 
+    /*if (csr_idx == number_sscratch) {*/
+    /*  cout << "yes" << endl;*/
+    /*}*/
+
     if (csr_idx == number_mie || csr_idx == number_sie) {
 
       if (csr_idx == number_sie)
@@ -272,8 +282,18 @@ void CSRU::seq() {
       CSR_RegFile[number_mip] = csr_wdata;
       CSR_RegFile[number_sip] = csr_wdata;
     } else if (csr_idx == number_mstatus || csr_idx == number_sstatus) {
+
+      if (csr_idx == number_sstatus) {
+        csr_wdata = (CSR_RegFile[number_sstatus] & 0x7ff21ecc) |
+                    (csr_wdata & (~0x7ff21ecc));
+      } else {
+        csr_wdata = (CSR_RegFile[number_mstatus] & 0x7f800644) |
+                    (csr_wdata & (~0x7f800644));
+      }
+
       CSR_RegFile[number_mstatus] = csr_wdata;
       CSR_RegFile[number_sstatus] = csr_wdata;
+
     } else {
       CSR_RegFile[csr_idx] = csr_wdata;
     }

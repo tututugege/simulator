@@ -6,6 +6,7 @@
 #include <TOP.h>
 #include <cmath>
 #include <config.h>
+#include <cstdlib>
 #include <iostream>
 #include <util.h>
 
@@ -56,21 +57,20 @@ void ROB::comb_commit() {
       io.rob_bc->ecall = false;
 
   io.rob_bc->page_fault_inst = io.rob_bc->page_fault_load =
-      io.rob_bc->page_fault_store = false;
+      io.rob_bc->page_fault_store = io.rob_bc->illegal_inst = false;
 
   stall_cycle++;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     int idx = (deq_ptr + i) % ROB_NUM;
     io.rob_commit->commit_entry[i].uop = entry[idx].uop;
     if (i == 0) {
-      io.rob_commit->commit_entry[i].valid =
-          entry[idx].valid && complete[idx] && !io.dec_bcast->mispred;
+      io.rob_commit->commit_entry[i].valid = entry[idx].valid && complete[idx];
 
       if (io.rob_commit->commit_entry[i].valid)
         stall_cycle = 0;
     } else {
       io.rob_commit->commit_entry[i].valid =
-          entry[idx].valid && complete[idx] &&
+          entry[idx].valid && complete[idx] && !exception[idx] &&
           io.rob_commit->commit_entry[i - 1].valid;
     }
 
@@ -84,31 +84,35 @@ void ROB::comb_commit() {
         io.rob_bc->exception = exception[idx];
         exception_1[idx] = false;
 
-        /*if (entry[idx].uop.op != CSR && entry[idx].uop.op != ECALL &&*/
-        /*    entry[idx].uop.op != MRET && entry[idx].uop.op != SRET) {*/
-        /*  io.rob_commit->commit_entry[i].valid = false;*/
-        /*}*/
-
         if (entry[idx].uop.op == ECALL) {
           io.rob_bc->ecall = true;
           io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
-          io.rob_bc->cause = M_MODE_ECALL;
         } else if (entry[idx].uop.op == MRET) {
           io.rob_bc->mret = true;
         } else if (entry[idx].uop.op == SRET) {
           io.rob_bc->sret = true;
         } else if (entry[idx].uop.page_fault_store) {
           io.rob_bc->page_fault_store = true;
+          io.rob_bc->trap_val = entry[idx].uop.result;
           io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
         } else if (entry[idx].uop.page_fault_load) {
           io.rob_bc->page_fault_load = true;
+          io.rob_bc->trap_val = entry[idx].uop.result;
           io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
         } else if (entry[idx].uop.page_fault_inst) {
           io.rob_bc->page_fault_inst = true;
-          io.rob_bc->page_fault_addr = entry[idx].uop.pc;
+          io.rob_bc->trap_val = entry[idx].uop.pc;
           io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
+        } else if (entry[idx].uop.illegal_inst) {
+          io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
+          io.rob_bc->illegal_inst = true;
+          io.rob_bc->trap_val = entry[idx].uop.instruction;
         } else {
-          assert(entry[idx].uop.op == CSR);
+          if (entry[idx].uop.op != CSR) {
+            cout << hex << entry[idx].uop.instruction << endl;
+            exit(1);
+          }
+
           io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc + 4;
         }
         break;
@@ -126,7 +130,8 @@ void ROB::comb_commit() {
 
   io.rob2ren->enq_idx = enq_ptr;
 
-  if (stall_cycle > 100) {
+  if (stall_cycle > 250) {
+    cout << dec << sim_time << endl;
     cout << "卡死了" << endl;
     exit(1);
   }
@@ -137,6 +142,8 @@ void ROB::comb_complete() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.prf2rob->entry[i].valid) {
       complete_1[io.prf2rob->entry[i].uop.rob_idx] = true;
+      entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.difftest_skip =
+          io.prf2rob->entry[i].uop.difftest_skip;
       if (i == IQ_BR)
         entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.pc_next =
             io.prf2rob->entry[i].uop.pc_next;
@@ -144,6 +151,12 @@ void ROB::comb_complete() {
       if (i == IQ_LS) {
         if (is_page_fault(io.prf2rob->entry[i].uop)) {
           exception_1[io.prf2rob->entry[i].uop.rob_idx] = true;
+          entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.result =
+              io.prf2rob->entry[i].uop.result;
+          entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.page_fault_load =
+              io.prf2rob->entry[i].uop.page_fault_load;
+          entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.page_fault_store =
+              io.prf2rob->entry[i].uop.page_fault_store;
         }
       }
     }
@@ -152,7 +165,7 @@ void ROB::comb_complete() {
 
 void ROB::comb_branch() {
   // 分支预测失败
-  if (io.dec_bcast->mispred) {
+  if (io.dec_bcast->mispred && !io.rob_bc->flush) {
     int idx = (enq_ptr - 1 + ROB_NUM) % ROB_NUM;
     while (entry[idx].valid &&
            ((1 << entry[idx].uop.tag) & io.dec_bcast->br_mask)) {
@@ -174,7 +187,7 @@ void ROB::comb_fire() {
       complete_1[enq_ptr_1] = false;
       if (io.ren2rob->uop[i].op == ECALL || io.ren2rob->uop[i].op == MRET ||
           io.ren2rob->uop[i].op == EBREAK || io.ren2rob->uop[i].op == SRET ||
-          is_page_fault(io.ren2rob->uop[i]))
+          is_page_fault(io.ren2rob->uop[i]) || io.ren2rob->uop[i].illegal_inst)
         exception_1[enq_ptr_1] = true;
       else
         exception_1[enq_ptr_1] = false;

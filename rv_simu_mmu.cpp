@@ -5,6 +5,7 @@
 #include <TOP.h>
 #include <config.h>
 #include <cstdint>
+#include <cstdlib>
 #include <cvt.h>
 #include <diff.h>
 #include <dlfcn.h>
@@ -36,7 +37,7 @@ uint32_t fetch_PC[FETCH_WIDTH];
 Back_Top back;
 bool ret;
 bool sim_end = false;
-int sim_time;
+long long sim_time;
 
 void branch_check();
 
@@ -60,18 +61,36 @@ int main(int argc, char *argv[]) {
     p_memory[img_size + POS_MEMORY_SHIFT] = inst_32b;
   }
 
+  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
+  p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
+  p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
+  p_memory[uint32_t(0xc / 4)] = 0x00028067;
+
+  p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0
+  p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi            a2,t0,40
+  p_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero
+  p_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw              a1,32(t0)
+  p_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw              t0,24(t0)
+  p_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
+  p_memory[uint32_t(0x00001018 / 4)] = 0x80000000;
+  p_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
+  p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+
 #ifdef CONFIG_DIFFTEST
   init_difftest(img_size);
 #endif
 
-  back.init();
+  /*while (1) {*/
+  /*  v1_difftest_exec();*/
+  /*  sim_time++;*/
+  /*}*/
 
-  p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+  back.init();
 
   uint32_t number_PC;
   ofstream outfile;
   bool stall, misprediction, exception;
-  number_PC = 0x80000000;
+  number_PC = 0x00000000;
   stall = misprediction = exception = false;
 
   front_top_out front_out;
@@ -80,6 +99,10 @@ int main(int argc, char *argv[]) {
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
     inst_idx = sim_time;
+
+    if (sim_time == 2077600) {
+      cout << "yes" << endl;
+    }
 
     if (LOG)
       cout << "****************************************************************"
@@ -137,18 +160,22 @@ int main(int argc, char *argv[]) {
         cvt_number_to_bit_unsigned(sstatus,
                                    back.csr.CSR_RegFile[number_sstatus], 32);
 
-        if (back.csr.CSR_RegFile[number_satp] & 0x80000000 &&
+        if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
             back.csr.privilege != 3) {
 
           front_out.page_fault_inst[j] =
               !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[number_satp], 0,
                      mstatus, sstatus, back.csr.privilege);
+          if (front_out.page_fault_inst[j]) {
+            front_out.instructions[j] = 0;
+          } else {
+            front_out.instructions[j] = p_memory[p_addr / 4];
+          }
         } else {
           front_out.page_fault_inst[j] = false;
-          p_addr = number_PC;
+          front_out.instructions[j] = p_memory[number_PC / 4];
         }
 
-        front_out.instructions[j] = p_memory[p_addr / 4];
         /*if (LOG)*/
         /*  cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" <<
          * hex*/
@@ -195,6 +222,7 @@ int main(int argc, char *argv[]) {
             front_out.predict_next_fetch_address;
         back.in.page_fault_inst[j] = front_out.page_fault_inst[j];
         back.in.inst[j] = front_out.instructions[j];
+
         if (LOG && back.in.valid[j]) {
           cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
                << front_out.pc[j] << " Inst: " << back.in.inst[j] << endl;
@@ -300,7 +328,7 @@ SIM_END:
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
       cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
       printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
-      printf("\033[1;32mcycle num      : %d\033[0m\n", sim_time);
+      printf("\033[1;32mcycle num      : %lld\033[0m\n", sim_time);
       printf("\033[1;32mipc            : %f\033[0m\n",
              (double)commit_num / sim_time);
       printf("\033[1;32mbranch num     : %d\033[0m\n", branch_num);
@@ -501,7 +529,7 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
     return true;
   }
 
-  return true;
+  return false;
 }
 
 bool load_data(uint32_t &data, uint32_t v_addr) {
@@ -521,7 +549,13 @@ bool load_data(uint32_t &data, uint32_t v_addr) {
                 sstatus, back.csr.privilege);
   }
 
-  data = p_memory[p_addr >> 2];
+  if (p_addr == 0x1fd0e000) {
+    data = commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  } else {
+    data = p_memory[p_addr >> 2];
+  }
 
   return ret;
 }

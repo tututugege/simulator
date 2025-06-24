@@ -7,6 +7,7 @@
 #include <util.h>
 
 extern Back_Top back;
+uint32_t amo(uint32_t src1, uint32_t src2, AMO_op amoop);
 
 enum STATE { IDLE, WAIT };
 void STQ::comb() {
@@ -34,7 +35,7 @@ void STQ::comb() {
   }
 
   // 写端口 同时给ld_IQ发送唤醒信息
-  if (entry[deq_ptr].valid && entry[deq_ptr].compelete) {
+  if (entry[deq_ptr].valid && entry[deq_ptr].complete) {
     /*if (state == IDLE) {*/
     /*  back.out.wvalid = true;*/
     /*  back.out.wdata = entry[deq_ptr].data;*/
@@ -56,7 +57,7 @@ void STQ::comb() {
     /*} else if (state == WAIT) {*/
     /*  if (back.in.bvalid && back.out.bready) {*/
     /*    entry[deq_ptr].valid = false;*/
-    /*    entry[deq_ptr].compelete = false;*/
+    /*    entry[deq_ptr].complete = false;*/
     /*    io.stq2iss->valid[deq_ptr] = true;*/
     /*    LOOP_INC(deq_ptr, STQ_NUM);*/
     /*    count--;*/
@@ -122,13 +123,13 @@ void STQ::comb() {
     }
 
     /*extern int sim_time;*/
-    /*if (MEM_LOG && sim_time > 10620000) {*/
-    /*  cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))*/
-    /*       << " in " << (waddr & 0xFFFFFFFC) << endl;*/
-    /*}*/
+    if (MEM_LOG) {
+      cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
+           << " in " << (waddr & 0xFFFFFFFC) << endl;
+    }
 
     entry[deq_ptr].valid = false;
-    entry[deq_ptr].compelete = false;
+    entry[deq_ptr].complete = false;
     io.stq2iss->valid[deq_ptr] = true;
     LOOP_INC(deq_ptr, STQ_NUM);
     count--;
@@ -147,6 +148,8 @@ void STQ::seq() {
     if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i]) {
       entry[enq_ptr].tag = io.ren2stq->tag[i];
       entry[enq_ptr].valid = true;
+      entry[enq_ptr].amo_data1_valid = false;
+      entry[enq_ptr].amo_data2_valid = false;
       count++;
       LOOP_INC(enq_ptr, STQ_NUM);
     }
@@ -156,69 +159,35 @@ void STQ::seq() {
   Inst_uop *inst = &io.exe2stq->entry.uop;
   int idx = inst->stq_idx;
   if (io.exe2stq->entry.valid && entry[idx].valid) {
-    entry[idx].data = inst->src2_rdata;
     entry[idx].addr = inst->result;
     entry[idx].size = inst->func3;
+
+    if (!entry[idx].amo_data1_valid) {
+      entry[idx].data = inst->src2_rdata;
+      entry[idx].amo_data2_valid = true;
+    } else {
+      entry[idx].data = amo(entry[idx].data, inst->src2_rdata, inst->amoop);
+    }
   }
 
   // AMO指令处理
   idx = io.prf2stq->stq_idx;
   if (io.prf2stq->valid) {
-    switch (io.prf2stq->amoop) {
-    case AMOADD: { // amoadd.w
-      entry[idx].data += io.prf2stq->load_data;
-      break;
-    }
-    case AMOSWAP: { // amoswap.w
+    if (!entry[idx].amo_data2_valid) {
+      entry[idx].amo_data1_valid = true;
       entry[idx].data = io.prf2stq->load_data;
-      break;
-    }
-    case AMOXOR: { // amoxor.w
-      entry[idx].data ^= io.prf2stq->load_data;
-      break;
-    }
-    case AMOOR: { // amoor.w
-      entry[idx].data |= io.prf2stq->load_data;
-      break;
-    }
-    case AMOAND: { // amoand.w
-      entry[idx].data &= io.prf2stq->load_data;
-      break;
-    }
-    case AMOMIN: { // amomin.w
-      if ((int)entry[idx].data > (int)io.prf2stq->load_data) {
-        entry[idx].data = io.prf2stq->load_data;
-      }
-      break;
-    }
-    case AMOMAX: { // amomax.w
-      if ((int)entry[idx].data < (int)io.prf2stq->load_data) {
-        entry[idx].data = io.prf2stq->load_data;
-      }
-      break;
-    }
-    case AMOMINU: { // amominu.w
-      if ((uint32_t)entry[idx].data > (uint32_t)io.prf2stq->load_data) {
-        entry[idx].data = io.prf2stq->load_data;
-      }
-      break;
-    }
-    case AMOMAXU: { // amomaxu.w
-      if ((uint32_t)entry[idx].data < (uint32_t)io.prf2stq->load_data) {
-        entry[idx].data = io.prf2stq->load_data;
-      }
-      break;
-    }
-    default:
-      break;
+    } else {
+      entry[idx].data =
+          amo(io.prf2stq->load_data, entry[idx].data, io.prf2stq->amoop);
     }
   }
 
   // commit标记为可执行
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid &&
-        is_store(io.rob_commit->commit_entry[i].uop.op)) {
-      entry[commit_ptr].compelete = true;
+        is_store(io.rob_commit->commit_entry[i].uop.op) &&
+        !io.rob_commit->commit_entry[i].uop.page_fault_store) {
+      entry[commit_ptr].complete = true;
       LOOP_INC(commit_ptr, STQ_NUM);
     }
   }
@@ -226,9 +195,10 @@ void STQ::seq() {
   // 分支清空
   if (io.dec_bcast->mispred) {
     for (int i = 0; i < STQ_NUM; i++) {
-      if (entry[i].valid && !entry[i].compelete &&
+      if (entry[i].valid && !entry[i].complete &&
           (io.dec_bcast->br_mask & (1 << entry[i].tag))) {
         entry[i].valid = false;
+        entry[i].complete = false;
         count--;
         LOOP_DEC(enq_ptr, STQ_NUM);
       }
@@ -236,15 +206,62 @@ void STQ::seq() {
   }
 
   if (io.rob_bc->flush) {
-    count = 0;
-    enq_ptr = 0;
-    commit_ptr = 0;
-    deq_ptr = 0;
     for (int i = 0; i < STQ_NUM; i++) {
-      entry[i].valid = false;
-      entry[i].compelete = false;
+      if (entry[i].valid && !entry[i].complete) {
+        entry[i].valid = false;
+        entry[i].complete = false;
+        count--;
+        LOOP_DEC(enq_ptr, STQ_NUM);
+      }
     }
   }
 
   io.stq2ren->stq_idx = enq_ptr;
+}
+
+uint32_t amo(uint32_t src1, uint32_t src2, AMO_op amoop) {
+  uint32_t res;
+  switch (amoop) {
+  case AMOADD: { // amoadd.w
+    res = src1 + src2;
+    break;
+  }
+  case AMOSWAP: { // amoswap.w
+    res = src2;
+    break;
+  }
+  case AMOXOR: { // amoxor.w
+    res = src1 ^ src2;
+    break;
+  }
+  case AMOOR: { // amoor.w
+    res = src1 | src2;
+    break;
+  }
+  case AMOAND: { // amoand.w
+    res = src1 & src2;
+    break;
+  }
+  case AMOMIN: { // amomin.w
+    res = ((int)src1 > (int)src2) ? src2 : src1;
+    break;
+  }
+  case AMOMAX: { // amomax.w
+    res = ((int)src1 > (int)src2) ? src1 : src2;
+    break;
+  }
+  case AMOMINU: { // amominu.w
+    res = ((uint32_t)src1 > (uint32_t)src2) ? src2 : src1;
+    break;
+  }
+  case AMOMAXU: { // amomaxu.w
+    res = ((uint32_t)src1 > (uint32_t)src2) ? src1 : src2;
+    break;
+  }
+  default:
+    res = src2;
+    break;
+  }
+
+  return res;
 }

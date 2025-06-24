@@ -39,7 +39,6 @@ public:
   int enq_ptr;
   int deq_ptr;
 
-private:
   STQ_entry entry[STQ_NUM];
   int commit_ptr = 0;
   int count = 0;

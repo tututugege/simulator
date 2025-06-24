@@ -1,4 +1,5 @@
 #include "cvt.h"
+#include <cstdint>
 const int bit_width = 1798 + 64;
 bool log = false;
 int time_i = 0;
@@ -15,7 +16,8 @@ int time_i = 0;
 #define USE_MMU_PHYSICAL_MEMORY 1
 extern bool USE_LINUX_SIMU; // 是否为启动 Linux 模式
 
-enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
+uint32_t store_paddr;
+bool is_store;
 
 // 控制是否使用 v1 在 uart 输出
 bool v1_uart_enable = true;
@@ -42,7 +44,6 @@ const int POS_PAGE_FAULT_LOAD = 1794;
 const int POS_PAGE_FAULT_STORE = 1795;
 
 // const long VIRTUAL_MEMORY_LENGTH = 1024 * 1024 * 1024; //4B
-
 static bool input_data_to_RISCV[BIT_WIDTH_INPUT] = {0};
 static bool output_data_from_RISCV[BIT_WIDTH_OUTPUT] = {0};
 
@@ -80,6 +81,7 @@ void v1_difftest_exec() {
             "************************"
          << endl;
 
+  is_store = false;
   time_i = i++;
   // copy registers states, include: 32+21 (include satp)
   copy_indice(input_data_to_RISCV, 0, output_data_from_RISCV, 0,
@@ -104,8 +106,21 @@ void v1_difftest_exec() {
                                0x40141101, 32); // 0x4014112d //0x40140101
     cvt_number_to_bit_unsigned(output_data_from_RISCV + 1664 * sizeof(bool),
                                0x40141101, 32);
-    if (USE_LINUX_SIMU)
-      ref_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+    ref_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+    ref_memory[uint32_t(0x0 / 4)] = 0xf1402573;
+    ref_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
+    ref_memory[uint32_t(0x8 / 4)] = 0x800002b7;
+    ref_memory[uint32_t(0xc / 4)] = 0x00028067;
+
+    ref_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0
+    ref_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi a2,t0,40
+    ref_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero
+    ref_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw a1,32(t0)
+    ref_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw t0,24(t0)
+    ref_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
+    ref_memory[uint32_t(0x00001018 / 4)] = 0x80000000;
+    ref_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
+
     // machine state
     // 11 -> M, 3
     // 01 -> S, 1
@@ -127,6 +142,10 @@ void v1_difftest_exec() {
     output_data_from_RISCV[1824] = false;
     output_data_from_RISCV[1825] = true;
   }
+
+  /*if (number_PC == 0x11edd4) {*/
+  /*  cout << "yes" << endl;*/
+  /*}*/
 
   bool bit_inst[32] = {false};
   bool *satp = &input_data_to_RISCV[1600];
@@ -282,9 +301,11 @@ void v1_difftest_exec() {
 
     // store data ( physical or virtual)
     bool *satp = &output_data_from_RISCV[1600];
+    is_store = true;
     if (USE_MMU_PHYSICAL_MEMORY && satp[0] != 0 && privilege != 3) { // physical
       MMU_ret_state = va2pa(p_addr, satp, bit_store_address, ref_memory, 2,
                             mstatus, privilege, sstatus);
+      store_paddr = cvt_bit_to_number_unsigned(p_addr, 32);
       input_data_to_RISCV[POS_PAGE_FAULT_STORE] = !MMU_ret_state;
       if (!MMU_ret_state) { // can't load inst, give flag and let core process
         if (log)
@@ -297,6 +318,7 @@ void v1_difftest_exec() {
       number_memory_temp = ref_memory[uint32_t(number_store_address / 4)];
     } else if (USE_MMU_PHYSICAL_MEMORY) {
       number_store_address = cvt_bit_to_number_unsigned(bit_store_address, 32);
+      store_paddr = number_store_address;
       number_memory_temp = ref_memory[uint32_t(number_store_address / 4)];
     }
 
@@ -451,10 +473,12 @@ void v1_difftest_exec() {
 
       // store data ( physical or virtual)
       bool *satp = &output_data_from_RISCV[1600];
+      bool is_store = true;
       if (USE_MMU_PHYSICAL_MEMORY && satp[0] != 0 &&
           privilege != 3) { // physical
         MMU_ret_state = va2pa(p_addr, satp, bit_store_address, ref_memory, 2,
                               mstatus, privilege, sstatus);
+        store_paddr = cvt_bit_to_number_unsigned(p_addr, 32);
         input_data_to_RISCV[POS_PAGE_FAULT_STORE] = !MMU_ret_state;
         if (!MMU_ret_state) { // can't load inst, give flag and let core process
           if (log)
@@ -472,6 +496,7 @@ void v1_difftest_exec() {
       } else if (USE_MMU_PHYSICAL_MEMORY) {
         number_store_address =
             cvt_bit_to_number_unsigned(bit_store_address, 32);
+        store_paddr = number_store_address;
         copy_indice(bit_store_data, 0, output_data_from_RISCV,
                     POS_OUT_STORE_DATA, 32); // get data
         uint32_t number_store_data =
@@ -501,10 +526,13 @@ void v1_difftest_exec() {
                   POS_OUT_LOAD_ADDR, 32); // 从output中读取address
 
       bool *satp = &output_data_from_RISCV[1600];
+      bool is_store = true;
       if (USE_MMU_PHYSICAL_MEMORY && satp[0] != 0 && privilege != 3) {
         // mmu
         MMU_ret_state = va2pa(p_addr, satp, bit_load_address, ref_memory, 1,
                               mstatus, privilege, sstatus);
+
+        store_paddr = cvt_bit_to_number_unsigned(p_addr, 32);
         input_data_to_RISCV[POS_PAGE_FAULT_LOAD] = !MMU_ret_state;
 
         if (MMU_ret_state) { // page fault
@@ -523,6 +551,7 @@ void v1_difftest_exec() {
         }
       } else if (USE_MMU_PHYSICAL_MEMORY) {
         number_load_address = cvt_bit_to_number_unsigned(bit_load_address, 32);
+        store_paddr = number_load_address;
         number_load_data = ref_memory[uint32_t(number_load_address / 4)];
         cvt_number_to_bit_unsigned(bit_load_data, number_load_data, 32);
         copy_indice(input_data_to_RISCV, POS_IN_LOAD_DATA, bit_load_data, 0,
@@ -598,6 +627,24 @@ void v1_difftest_exec() {
     // (int q = 1792; q < 1792+2; q++) outfile << output_data_from_RISCV[q]; //
     // store_address outfile << endl;
   }
+
+  /*if (number_PC == 0x11edd4) {*/
+  /*  cout << cvt_bit_to_number_unsigned(output_data_from_RISCV + POS_OUT_PC,
+   * 32)*/
+  /*       << endl;*/
+  /*  cout << cvt_bit_to_number_unsigned(*/
+  /*              output_data_from_RISCV + POS_PAGE_FAULT_INST, 1)*/
+  /*       << endl;*/
+  /*  cout << MMU_ret_state << endl;*/
+  /*}*/
+}
+
+void difftest_skip() {
+  v1_difftest_exec();
+  for (int i = 0; i < 32; i++) {
+    cvt_number_to_bit_unsigned(output_data_from_RISCV + 32 * i, dut_cpu.gpr[i],
+                               32);
+  }
 }
 
 void v1_difftest_regcpy(CPU_state *ref_cpu, bool direction) {
@@ -616,6 +663,10 @@ void v1_difftest_regcpy(CPU_state *ref_cpu, bool direction) {
           output_data_from_RISCV + 1024 + 32 * i, 32);
     }
 
+    ref_cpu->store = is_store;
+    ref_cpu->store_addr = store_paddr;
+    ref_cpu->store_data = cvt_bit_to_number_unsigned(
+        output_data_from_RISCV + POS_OUT_STORE_DATA, 32);
   } else {
     // this should not happen in current design
     std::cerr << "v1_difftest_regcpy: direction is not DIFFTEST_TO_REF"

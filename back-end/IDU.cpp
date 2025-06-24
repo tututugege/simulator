@@ -1,3 +1,4 @@
+#include "CSR.h"
 #include "config.h"
 #include "frontend.h"
 #include <IDU.h>
@@ -5,7 +6,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cvt.h>
-#include <ios>
 #include <util.h>
 
 int decode(Inst_uop uop[2], uint32_t instruction);
@@ -50,7 +50,10 @@ void IDU::comb_decode() {
       if (io.front2dec->page_fault_inst[i]) {
         uop_num = 1;
         dec_uop[i][0].page_fault_inst = true;
+        dec_uop[i][0].page_fault_load = false;
+        dec_uop[i][0].page_fault_store = false;
         dec_uop[i][0].op = NONE;
+        dec_uop[i][0].is_last_uop = true;
         dec_uop[i][0].src1_en = dec_uop[i][0].src2_en = dec_uop[i][0].dest_en =
             false;
 
@@ -132,6 +135,7 @@ void IDU::comb_branch() {
   /*if (io.prf2dec->mispred) {*/
   /*  br_tag_1 = io.prf2dec->br_tag;*/
   /*}*/
+  pop = 0;
 
   /*if (state == MISPRED || io.prf2dec->mispred) {*/
   if (io.prf2dec->mispred) {
@@ -143,7 +147,6 @@ void IDU::comb_branch() {
     it--;
     it_prev--;
     it_prev--;
-    pop = 0;
     io.dec_bcast->br_mask = 0;
     while (*it_prev != io.prf2dec->br_tag) {
       io.dec_bcast->br_mask |= 1 << *it;
@@ -157,7 +160,6 @@ void IDU::comb_branch() {
 
     /*state_1 = NORMAL;*/
   } else {
-    pop = false;
     io.dec_bcast->br_mask = 0;
     io.dec_bcast->mispred = false;
     /*state_1 = NORMAL;*/
@@ -291,7 +293,8 @@ int decode(Inst_uop uop[2], uint32_t inst) {
 
   csr_idx = inst >> 20;
 
-  uop[0] = {.dest_areg = reg_d_index,
+  uop[0] = {.instruction = inst,
+            .dest_areg = reg_d_index,
             .src1_areg = reg_a_index,
             .src2_areg = reg_b_index,
             .src1_is_pc = false,
@@ -300,19 +303,13 @@ int decode(Inst_uop uop[2], uint32_t inst) {
             .func7_5 = (bool)(number_funct7_unsigned >> 5),
             .csr_idx = csr_idx,
             .is_last_uop = true,
+            .page_fault_inst = false,
+            .page_fault_load = false,
+            .page_fault_store = false,
+            .illegal_inst = false,
             .amoop = AMONONE};
 
-  uop[1] = {.dest_areg = reg_d_index,
-            .src1_areg = reg_a_index,
-            .src2_areg = reg_b_index,
-            .src1_is_pc = false,
-            .src2_is_imm = true,
-            .func3 = number_funct3_unsigned,
-            .func7_5 = (bool)(number_funct7_unsigned >> 5),
-            .csr_idx = csr_idx,
-            .is_last_uop = true,
-            .amoop = AMONONE};
-
+  uop[1] = uop[0];
   uop[1].op = NONE;
 
   switch (number_op_code_unsigned) {
@@ -472,12 +469,14 @@ int decode(Inst_uop uop[2], uint32_t inst) {
           csr_idx != number_stval && csr_idx != number_sstatus &&
           csr_idx != number_sie && csr_idx != number_sip &&
           csr_idx != number_satp && csr_idx != number_mhartid &&
-          csr_idx != number_misa && csr_idx != number_time &&
-          csr_idx != number_timeh) {
+          csr_idx != number_misa) {
         uop[0].op = NONE;
         uop[0].dest_en = false;
         uop[0].src1_en = false;
         uop[0].src2_en = false;
+
+        if (csr_idx == number_time || csr_idx == number_timeh)
+          uop[0].illegal_inst = true;
 
       } else {
         uop[0].op = CSR;
@@ -502,7 +501,9 @@ int decode(Inst_uop uop[2], uint32_t inst) {
       } else if (inst == INST_SRET) {
         uop[0].op = SRET;
       } else {
+
         uop[0].op = NONE;
+        /*uop[0].illegal_inst = true;*/
         /*cout << hex << inst << endl;*/
         /*assert(0);*/
       }
@@ -531,7 +532,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
       break;
     }
     case 1: { // amoswap.w
-      uop[0].amoop = AMOADD;
+      uop[0].amoop = AMOSWAP;
 
       break;
     }
@@ -602,7 +603,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     uop[0].src1_en = false;
     uop[0].src2_en = false;
     uop[0].op = NONE;
-
+    uop[0].illegal_inst = true;
     break;
   }
   }
