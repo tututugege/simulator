@@ -23,7 +23,7 @@ using namespace std;
 
 extern long long sim_time;
 
-#define CONFIG_DIFFTEST
+/*#define CONFIG_DIFFTEST*/
 /*#define CONFIG_BRANCHCHECK*/
 /*#define CONFIG_BPU*/
 

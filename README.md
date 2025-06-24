@@ -2,7 +2,7 @@
 
 back-end/中分出了各个模块，每个模块有时序逻辑（seq）和组合逻辑（comb)
 
-diff/是difftest部分，使用启蒙1号模拟器作为参考，比对每条指令提交的结果是否正确
+diff/是difftest部分，使用启蒙1号模拟器作为参考，比对每条指令提交后的寄存器以及对内存的操作是否正确
 
 
 ![后端架构图](./arch.svg)
@@ -11,8 +11,12 @@ diff/是difftest部分，使用启蒙1号模拟器作为参考，比对每条指
 
 ## 用法
 
+`./a.out memory`
+
+参数为需要执行的程序
+
 交叉编译工具为师兄提供的环境，需要修改baremetal/common.mk
-中的`RISCV_PATH`为正确的目录或自己编译安装toolchains
+中的`RISCV_PATH`为正确的目录或自己编译安装toolchains，主要是Uart相关
 
 
 模拟器通过ebreak指令来判断程序是否结束
@@ -25,9 +29,9 @@ baremental/中的test移植了一生一芯项目的测试小程序，例：`make
 
 ![所有测试](./all.png)
 
-目前支持RV32IMA，能够成功启动OpenSBI
+目前支持RV32IMA，大概能够成功启动Linux
 
-![所有测试](./opensbi.png)
+![Linux](./opensbi.png)
 
 `./back-end/include/config.h`中的`LOG`可以控制是否打印信息（取指令，rob提交），
 `MAX_SIM_TIME`控制最多的周期，超过这个周期认为超时
