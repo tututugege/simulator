@@ -31,7 +31,7 @@ baremental/中的test移植了一生一芯项目的测试小程序，例：`make
 
 目前支持RV32IMA，大概能够成功启动Linux
 
-![Linux](./opensbi.png)
+![Linux](./Linux.png)
 
 `./back-end/include/config.h`中的`LOG`可以控制是否打印信息（取指令，rob提交），
 `MAX_SIM_TIME`控制最多的周期，超过这个周期认为超时
