@@ -14,8 +14,8 @@ void PRF::comb_amo() {
   io.prf2stq->load_data = inst_r[IQ_LS].uop.result;
   io.prf2stq->stq_idx = inst_r[IQ_LS].uop.stq_idx;
   if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.op == LOAD &&
-      inst_r[IQ_LS].uop.amoop != AMONONE) {
-    assert(io.prf2stq->stq_idx == 0);
+      inst_r[IQ_LS].uop.amoop != AMONONE && inst_r[IQ_LS].uop.amoop != LR) {
+    /*assert(io.prf2stq->stq_idx == 0);*/
     io.prf2stq->valid = true;
   } else {
     io.prf2stq->valid = false;
@@ -28,14 +28,15 @@ void PRF::comb_branch() {
   // TODO: Magic number
   io.prf2dec->mispred = false;
   if (inst_r[IQ_BR].valid && is_branch(inst_r[IQ_BR].uop.op) &&
-      inst_r[IQ_BR].uop.mispred) {
+      inst_r[IQ_BR].uop.mispred && !io.rob_bc->flush) {
 
     io.prf2dec->mispred = true;
     io.prf2dec->redirect_pc = inst_r[IQ_BR].uop.pc_next;
     io.prf2dec->br_tag = inst_r[IQ_BR].uop.tag;
 
     if (LOG)
-      cout << "misprediction redirect_pc 0x" << hex << io.prf2dec->redirect_pc
+      cout << "PC " << hex << inst_r[IQ_BR].uop.pc
+           << " misprediction redirect_pc 0x" << hex << io.prf2dec->redirect_pc
            << endl;
   }
 }
@@ -87,7 +88,8 @@ void PRF::comb_read() {
   }
 
   // TODO: MAGIC NUMBER
-  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.dest_en) {
+  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.dest_en &&
+      !inst_r[IQ_LS].uop.page_fault_load) {
     io.prf_awake->wake.valid = true;
     io.prf_awake->wake.preg = inst_r[IQ_LS].uop.dest_preg;
   } else {

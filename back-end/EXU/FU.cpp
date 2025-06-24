@@ -206,6 +206,11 @@ void alu(Inst_uop &inst) {
 
 void ldu(Inst_uop &inst) {
   uint32_t addr = inst.src1_rdata + inst.imm;
+
+  if (addr == 0x1fd0e000) {
+    inst.difftest_skip = true;
+  }
+
   int size = inst.func3 & 0b11;
   int offset = addr & 0b11;
   uint32_t mask = 0;
@@ -242,18 +247,18 @@ void ldu(Inst_uop &inst) {
     inst.result = data;
   } else {
     inst.page_fault_load = true;
+    inst.result = addr;
   }
 }
 
 void stu(Inst_uop &inst) {
   uint32_t v_addr = inst.src1_rdata + inst.imm;
-
-  if (inst.pc == 0xc011f4f0) {
-    cout << inst.pc << endl;
-  }
+  /*if (v_addr == 0xcf42bc28)*/
+  /*  cout << hex << inst.pc << endl;*/
 
   uint32_t p_addr = v_addr;
   bool page_fault = false;
+
   if (back.csr.CSR_RegFile[number_satp] & 0x80000000 &&
       back.csr.privilege != 3) {
     bool mstatus[32], sstatus[32];
@@ -269,6 +274,7 @@ void stu(Inst_uop &inst) {
 
   if (page_fault) {
     inst.page_fault_store = true;
+    inst.result = v_addr;
   } else {
     inst.result = p_addr;
   }

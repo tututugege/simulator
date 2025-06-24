@@ -13,7 +13,7 @@ MEM_DIR=./baremetal
 IMG=./baremetal/memory
 
 default: $(CXXSRC) 
-	g++ $(CXXINCLUDE) $(CXXSRC) -g
+	g++ $(CXXINCLUDE) $(CXXSRC) -O3 -g
 
 run: 
 	./a.out $(IMG)

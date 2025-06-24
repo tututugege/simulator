@@ -10,8 +10,10 @@ typedef struct {
   uint32_t size;
   uint32_t data;
 
-  bool compelete;
+  bool complete;
   bool valid;
+  bool amo_data1_valid;
+  bool amo_data2_valid;
   uint32_t tag;
 } STQ_entry;
 
@@ -98,10 +100,10 @@ typedef struct {
   bool page_fault_inst;
   bool page_fault_load;
   bool page_fault_store;
-  uint32_t page_fault_addr;
+  bool illegal_inst;
+  uint32_t trap_val;
 
   uint32_t pc;
-  uint32_t cause;
 } Rob_Broadcast;
 
 typedef struct {

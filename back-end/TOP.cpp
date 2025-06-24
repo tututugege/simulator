@@ -12,6 +12,7 @@
 extern int commit_num;
 
 void load_data();
+
 /*void store_data();*/
 
 int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
@@ -23,10 +24,22 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_satp,     number_mhartid,  number_misa};
 
 void Back_Top::difftest(Inst_uop *inst) {
-  if (inst->dest_en)
+
+  if (inst->dest_en && !inst->page_fault_load)
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
 
   if (inst->is_last_uop) {
+
+    if (LOG) {
+      cout << "Instruction: " << inst->instruction << endl;
+      if (inst->page_fault_inst)
+        cout << "page fault inst " << endl;
+      if (inst->page_fault_load)
+        cout << "page fault load " << endl;
+      if (inst->page_fault_store)
+        cout << "page fault store " << endl;
+    }
+
     for (int i = 0; i < ARF_NUM; i++) {
       dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
     }
@@ -35,8 +48,27 @@ void Back_Top::difftest(Inst_uop *inst) {
       dut_cpu.csr[i] = csr.CSR_RegFile[csr_idx[i]];
     }
 
+    if (inst->op == STORE && !inst->page_fault_store) {
+      dut_cpu.store = true;
+      dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
+      if (stq.entry[inst->stq_idx].size == 0b00)
+        dut_cpu.store_data = stq.entry[inst->stq_idx].data & 0xFF;
+      else if (stq.entry[inst->stq_idx].size == 0b01)
+        dut_cpu.store_data = stq.entry[inst->stq_idx].data & 0xFFFF;
+      else
+        dut_cpu.store_data = stq.entry[inst->stq_idx].data;
+
+    } else {
+      dut_cpu.store = false;
+    }
+
     dut_cpu.pc = inst->pc_next;
-    difftest_step();
+
+    if (inst->difftest_skip) {
+      difftest_skip();
+    } else {
+      difftest_step();
+    }
   }
 }
 
@@ -230,7 +262,8 @@ void Back_Top::Back_comb() {
     back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
     Inst_op op = back.out.commit_entry[i].uop.op;
     if (back.out.commit_entry[i].valid && op == ECALL || op == MRET ||
-        op == SRET || is_page_fault(back.out.commit_entry[i].uop)) {
+        op == SRET || is_page_fault(back.out.commit_entry[i].uop) ||
+        back.out.commit_entry[i].uop.illegal_inst) {
       back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
       rob.io.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
     }
@@ -253,6 +286,4 @@ void Back_Top::Back_seq() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.dec2front->fire[i];
   }
-
-  /*idu.reg_gen();*/
 }

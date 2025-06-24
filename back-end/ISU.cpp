@@ -71,6 +71,7 @@ void ISU::comb_ready() {
   }
 }
 
+#include <iostream>
 void ISU::comb_deq() {
 
   // 出队
@@ -80,6 +81,10 @@ void ISU::comb_deq() {
     else
       io.iss2prf->iss_entry[i].valid = false;
   }
+
+  /*if (io.iss2prf->iss_entry[2].uop.pc == 0xc0001fe8) {*/
+  /*  cout << "test" << back.exu.inst_r[1].uop.pc << endl;*/
+  /*}*/
 
   for (int i = 0; i < ALU_NUM; i++) {
     if (io.iss2prf->iss_entry[i].valid &&
@@ -108,10 +113,9 @@ void ISU::seq() {
   }
 
   // 唤醒
-  for (int i = 0; i < ISSUE_WAY; i++) {
+  for (int i = 0; i < ALU_NUM; i++) {
     if (io.iss2prf->iss_entry[i].valid &&
-        io.iss2prf->iss_entry[i].uop.dest_en &&
-        !is_load(io.iss2prf->iss_entry[i].uop.op)) {
+        io.iss2prf->iss_entry[i].uop.dest_en) {
       for (auto &q : iq) {
         q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
       }
@@ -125,16 +129,18 @@ void ISU::seq() {
   }
 
   // 唤醒load
-  for (auto &q : iq) {
-    if (q.type == IQ_LS) {
-      q.store_wake_up(io.stq2iss->valid);
-    }
-  }
+  iq[IQ_LS].store_wake_up(io.stq2iss->valid);
 
   // 分支处理
   if (io.dec_bcast->mispred) {
     for (auto &q : iq) {
       q.br_clear(io.dec_bcast->br_mask);
+    }
+  }
+
+  if (io.rob_bc->flush) {
+    for (auto &q : iq) {
+      q.br_clear((1 << MAX_BR_NUM) - 1);
     }
   }
 }

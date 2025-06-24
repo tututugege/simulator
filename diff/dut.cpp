@@ -1,4 +1,3 @@
-#include "../include/RISCV.h"
 #include <config.h>
 #include <cstdint>
 #include <cvt.h>
@@ -8,14 +7,12 @@
 
 bool USE_LINUX_SIMU = 1; // 是否为启动 Linux 模式
 
-enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
 enum { DIFFTEST, BRANCHCHECK };
 
 CPU_state dut_cpu, ref_cpu;
 extern uint32_t *p_memory;
 extern uint32_t next_PC[FETCH_WIDTH];
 extern uint32_t fetch_PC[FETCH_WIDTH];
-
 static uint32_t last_pc = 0;
 
 // relocate the init_difftest function to avoid multiple definition error
@@ -29,13 +26,8 @@ void init_difftest(int img_size) {
     ref_cpu.gpr[i] = 0;
     dut_cpu.gpr[i] = 0;
   }
-  if (USE_LINUX_SIMU) {
-    ref_cpu.pc = 0x80000000;
-    dut_cpu.pc = 0x80000000;
-  } else {
-    ref_cpu.pc = 0x80000000;
-    dut_cpu.pc = 0x80000000;
-  }
+  ref_cpu.pc = 0x00000000;
+  dut_cpu.pc = 0x00000000;
   v1_difftest_init(ref_cpu.pc);
 }
 
@@ -57,6 +49,14 @@ static void checkregs() {
       goto fault;
   }
 
+  if (dut_cpu.store) {
+    if (dut_cpu.store_data != ref_cpu.store_data)
+      goto fault;
+
+    if (dut_cpu.store_addr != ref_cpu.store_addr)
+      goto fault;
+  }
+
   return;
 
   /*if (i == ARF_NUM) {*/
@@ -68,7 +68,6 @@ static void checkregs() {
   /*}*/
 
 fault:
-  extern int sim_time;
   cout << "Difftest: error" << endl;
   cout << "cycle: " << dec << sim_time << endl;
   cout << "\t\tReference\tDut" << endl;
@@ -89,6 +88,13 @@ fault:
       printf("\t Error");
     putchar('\n');
   }
+
+  cout << endl << setw(10) << "store" << ":\t";
+  printf("%8x\t%8x\n", ref_cpu.store, dut_cpu.store);
+  cout << setw(10) << "data" << ":\t";
+  printf("%08x\t%08x\n", ref_cpu.store_data, dut_cpu.store_data);
+  cout << setw(10) << "addr" << ":\t";
+  printf("%08x\t%08x\n", ref_cpu.store_addr, dut_cpu.store_addr);
 
   extern int commit_num;
   /*printf("commit_num (dec): %d\n", commit_num);*/
