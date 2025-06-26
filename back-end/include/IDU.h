@@ -29,7 +29,11 @@ class IDU {
 public:
   IDU_IO io;
   void init();
-  void comb_decode(); // 译码并分配tag
+  void default_val();
+  int  mem_tag_alloc();
+  int  bra_tag_alloc();
+  void comb_decode(); 
+  void comb_ren_req(); 
   void comb_branch(); // 分支处理
   void comb_fire();   // 与前端握手
   void comb_rollback();
@@ -41,6 +45,7 @@ public:
 
   Inst_uop dec_uop[FETCH_WIDTH][2];
   bool dec_valid[FETCH_WIDTH];
+  int  dec_uop_num[FETCH_WIDTH];
   bool uop_valid[FETCH_WIDTH][2];
 
   int pop = false;
@@ -55,4 +60,8 @@ public:
   bool tag_vec_1[MAX_BR_NUM];
   int now_tag_1;
   int state_1;
+  bool stall, port_stall, mem_tag_stall, bra_tag_stall;
+  int dec2ren_port;
+  int alloc_mem_tag;
+  int alloc_bra_tag;
 };

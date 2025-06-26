@@ -97,16 +97,15 @@ typedef struct {
 
 typedef struct {
   Inst_entry iss_entry[ISSUE_WAY];
-} Iss_Prf;
+} Iss_Exe;
 
 typedef struct {
   bool ready[ISSUE_WAY];
-} Prf_Iss;
+} Exe_Iss;
 
 typedef struct {
   Inst_entry iss_entry[ISSUE_WAY];
-  bool ready[ISSUE_WAY];
-} Prf_Exe;
+} Iss_Prf;
 
 typedef struct {
   Inst_entry entry[ISSUE_WAY];
@@ -114,7 +113,7 @@ typedef struct {
 
 typedef struct {
   bool ready[ISSUE_WAY];
-} Exe_Iss;
+} Prf_Exe;
 
 typedef struct {
   Inst_entry entry[ISSUE_WAY];
@@ -140,11 +139,10 @@ typedef struct {
 // } Stq_Ren;
 
 typedef struct {
-  bool    valid[DECODE_WIDTH];
-  uint8_t mem_sz[DECODE_WIDTH];
-  uint8_t wstrb[DECODE_WIDTH][4];
-  bool dis_fire[DECODE_WIDTH]; // 没用，准备删
-  uint32_t tag[DECODE_WIDTH]; // 没用，准备删
+  bool     valid[DECODE_WIDTH];
+  uint8_t  mem_sz[DECODE_WIDTH];
+  uint32_t mem_tag[DECODE_WIDTH];
+  bool     dis_fire[DECODE_WIDTH];
 } Ren_Stq;
 
 typedef struct {
@@ -167,9 +165,9 @@ typedef struct {
 typedef struct {
   bool    valid[DECODE_WIDTH];
   uint8_t mem_sz[DECODE_WIDTH];
-  bool    wstrb[DECODE_WIDTH][4];
   uint8_t dst_reg[DECODE_WIDTH];
   bool    sign[DECODE_WIDTH]; 
+  bool    dis_fire[DECODE_WIDTH];
 } Ren_Ldq;
 
 typedef struct {

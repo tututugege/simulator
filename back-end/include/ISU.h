@@ -7,9 +7,8 @@
 class IQ {
 public:
   IQ(int entry_num, IQ_TYPE);
-  void init();
   void wake_up(uint32_t);
-  void store_wake_up(bool *);
+  void store_wake_up(int);
   void br_clear(uint32_t br_mask);
   Inst_entry pop_oldest(vector<Inst_entry> &valid_entry,
                         vector<int> &valid_idx);
@@ -40,6 +39,7 @@ public:
 
   Iss_Prf *iss2prf;
   Exe_Iss *exe2iss;
+  Iss_Exe *iss2exe;
 
   Stq_Iss *stq2iss;
 
@@ -50,9 +50,12 @@ class ISU {
 public:
   ISU_IO io;
   void init();
+  void default_val();
   void add_iq(int entry_num, IQ_TYPE);
   vector<IQ> iq;
-  void comb_ready();
+  void comb_ren_rdy();
+  void comb_fire();
+  void comb_wake();
   void comb_deq();
   void seq(); // 写入IQ
   int iq_num = 0;

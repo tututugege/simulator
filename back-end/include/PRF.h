@@ -23,7 +23,10 @@ public:
   void comb_branch();
   void comb_read();
   void comb_amo();
+  void comb_rob_complete();
+  void comb_wake();
   void init();
+  void default_val();
   void seq();
 
 private:
