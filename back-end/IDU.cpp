@@ -11,8 +11,6 @@
 int decode(Inst_uop uop[2], uint32_t instruction);
 
 void IDU::init() {
-  /*state = 0;*/
-  /*state_1 = 0;*/
   for (int i = 1; i < MAX_BR_NUM; i++) {
     tag_vec[i] = true;
     tag_vec_1[i] = true;
@@ -23,105 +21,93 @@ void IDU::init() {
   tag_list.push_back(0);
 }
 
-// 译码并分配tag
-void IDU::comb_decode() {
-  bool has_br = false; // 一周期只能解码一条分支指令
-  bool stall = false;
-  bool no_tag = false;
-
-  // 查找新的tag
-  for (alloc_tag = 0; alloc_tag < MAX_BR_NUM; alloc_tag++) {
-    if (tag_vec[alloc_tag])
-      break;
-  }
-
-  // 无剩余的tag
-  if (alloc_tag == MAX_BR_NUM) {
-    no_tag = true;
-    alloc_tag = 0;
-  }
-
-  int dec_uop_num = 0;
-  int i;
-  for (i = 0; i < FETCH_WIDTH; i++) {
-    int uop_num;
-    if (io.front2dec->valid[i]) {
-      uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
-    } else {
-      uop_valid[i][0] = false;
-      uop_valid[i][1] = false;
-      dec_valid[i] = false;
-      continue;
-    }
-
-    for (int j = 0; j < 2; j++) {
-      dec_uop[i][j].tag = (has_br) ? alloc_tag : now_tag;
-      dec_uop[i][j].mem_tag = mem_tag; // new
-      dec_uop[i][j].pc = io.front2dec->pc[i];
-      dec_uop[i][j].pred_br_taken = io.front2dec->predict_dir[i];
-      dec_uop[i][j].alt_pred = io.front2dec->alt_pred[i];
-      dec_uop[i][j].altpcpn = io.front2dec->altpcpn[i];
-      dec_uop[i][j].pcpn = io.front2dec->pcpn[i];
-      dec_uop[i][j].pred_br_pc = io.front2dec->predict_next_fetch_address[i];
-      dec_uop[i][j].pc_next = dec_uop[i][j].pc + 4;
-    }
-
-    // stall的情况：分支Tag不足 uop数目过多
-    if (uop_num + dec_uop_num > DECODE_WIDTH) {
-      stall = true;
-      break;
-    }
-
-    if (dec_uop[i][0].op == BR || dec_uop[i][1].op == JUMP) {
-      if (!no_tag && !has_br) {
-        has_br = true;
-      } else {
-        stall = true;
-        break;
-      }
-    }
-
-    dec_valid[i] = true;
-    dec_uop_num += uop_num;
-    if (uop_num == 2) {
-      uop_valid[i][0] = true;
-      uop_valid[i][1] = true;
-    } else {
-      uop_valid[i][0] = true;
-      uop_valid[i][1] = false;
-    }
-  }
-
-  if (stall) {
-    for (; i < FETCH_WIDTH; i++) {
-      uop_valid[i][0] = false;
-      uop_valid[i][1] = false;
-      dec_valid[i] = false;
-    }
-  }
-
-  int port = 0;
+void IDU::default_val() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    for (int j = 0; j < 2; j++) {
-      if (uop_valid[i][j]) {
-        io.dec2ren->uop[port] = dec_uop[i][j];
-        io.dec2ren->valid[port] = true;
-        port++;
+    dec_valid[i] = false;
+  }
+  dec2ren_port = 0;
+}
+
+// 分配mem_tag
+int IDU::mem_tag_alloc() {
+  return -1;
+}
+
+int IDU::bra_tag_alloc() {
+  for (int alloc_bra_tag = 0; alloc_bra_tag < MAX_BR_NUM; alloc_bra_tag++) {
+    if (tag_vec[alloc_bra_tag])
+      return alloc_bra_tag;
+  }
+  return -1;
+}
+
+// 完成指令包译码，直到该指令包的全部uop流入rename级，才译码下一个指令包
+void IDU::comb_decode() {
+  if (stall)
+    return;
+  else {
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      if (io.front2dec->valid[i]) {
+        dec_uop_num[i] = decode(dec_uop[i], io.front2dec->inst[i]);
+        for (int j = 0; j < 2; j++) {
+          dec_uop[i][j].pc = io.front2dec->pc[i];
+          dec_uop[i][j].pred_br_taken = io.front2dec->predict_dir[i];
+          dec_uop[i][j].alt_pred = io.front2dec->alt_pred[i];
+          dec_uop[i][j].altpcpn = io.front2dec->altpcpn[i];
+          dec_uop[i][j].pcpn = io.front2dec->pcpn[i];
+          dec_uop[i][j].pred_br_pc = io.front2dec->predict_next_fetch_address[i];
+          dec_uop[i][j].pc_next = dec_uop[i][j].pc + 4;
+        }
       }
     }
   }
+}
 
-  for (; port < DECODE_WIDTH; port++) {
-    io.dec2ren->valid[port] = false;
+// 分配访存tag 分配分支tag
+void IDU::comb_ren_req() {
+  bool no_tag = false;
+  bool has_br = false;
+  if ((alloc_bra_tag = bra_tag_alloc()) == -1)
+    no_tag = true;
+
+  for (int i = 0; !stall && i < FETCH_WIDTH; i++) {
+    if (io.front2dec->valid[i]) {
+      // decode-->rename端口不够
+      if (dec2ren_port + dec_uop_num[i] > DECODE_WIDTH) {
+        port_stall = true;
+      }
+      // store指令尝试分配访存tag
+      if (dec_uop[i][0].op == STORE) {
+        if ((alloc_mem_tag = mem_tag_alloc()) == -1)
+          mem_tag_stall = true;
+      }
+      // 分支指令尝试分配分支tag
+      if (dec_uop[i][0].op == BR || dec_uop[i][1].op == JUMP) {
+        if (!no_tag && !has_br) {
+          has_br = true;
+        } else {
+          bra_tag_stall = true;
+          break;
+        }
+      }
+
+      // 发起decode-->rename请求
+      stall = port_stall || mem_tag_stall || bra_tag_stall;
+      if (!stall) {
+        dec_valid[i] = true;
+        for (int j = 0; j < dec_uop_num[i]; j++) {
+          dec_uop[i][j].bra_tag = has_br ? alloc_bra_tag : now_tag;
+          dec_uop[i][j].mem_tag = alloc_mem_tag;
+          io.dec2ren->uop[dec2ren_port] = dec_uop[i][j];
+          io.dec2ren->valid[dec2ren_port] = true;
+          dec2ren_port++;
+        }
+      }
+    }
   }
 }
 
 void IDU::comb_branch() {
-  /*if (io.prf2dec->mispred) {*/
-  /*  br_tag_1 = io.prf2dec->br_tag;*/
-  /*}*/
-
-  /*if (state == MISPRED || io.prf2dec->mispred) {*/
   if (io.prf2dec->mispred) {
     io.dec_bcast->mispred = true;
     io.dec_bcast->br_tag = io.prf2dec->br_tag;
@@ -142,19 +128,15 @@ void IDU::comb_branch() {
     }
     io.dec_bcast->br_mask |= 1 << *it;
     now_tag_1 = *it;
-
-    /*state_1 = NORMAL;*/
   } else {
     pop = false;
     io.dec_bcast->br_mask = 0;
     io.dec_bcast->mispred = false;
-    /*state_1 = NORMAL;*/
   }
 }
 
 void IDU::comb_rollback() {
   if (io.rob_bc->rollback) {
-    /*state_1 = 0;*/
     for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
     }
@@ -200,7 +182,6 @@ void IDU::comb_release_tag() {
 
 void IDU::seq() {
   now_tag = now_tag_1;
-  /*state = state_1;*/
   for (int i = 0; i < MAX_BR_NUM; i++) {
     tag_vec[i] = tag_vec_1[i];
   }
@@ -217,14 +198,6 @@ void IDU::seq() {
   while (tag_list.size() > MAX_BR_NUM) {
     tag_list.pop_front();
   }
-
-  /*static int idx = 0;*/
-  /*cout << idx++ << " ";*/
-  /*for (int i = 0; i < MAX_BR_NUM; i++) {*/
-  /*  cout << tag_vec[i];*/
-  /*}*/
-  /**/
-  /*cout << endl;*/
 }
 
 int decode(Inst_uop uop[2], uint32_t inst) {

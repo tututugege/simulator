@@ -13,7 +13,8 @@ using namespace std;
 
 #define ROB_NUM 64
 #define STQ_NUM 8
-#define ALU_NUM 2
+#define ALU_PORT 2
+#define LSU_PORT 1
 
 #define LOG 0
 
@@ -85,11 +86,13 @@ typedef struct Inst_uop {
   bool func7_5;
   uint32_t imm;
   uint32_t pc;
-  uint32_t tag;
+  uint32_t bra_tag;
+  uint32_t mem_tag;
   uint32_t csr_idx;
   uint32_t rob_idx;
   uint32_t stq_idx;
-  bool pre_store[STQ_NUM];
+  uint32_t ldq_idx;
+  bool st_issue_pend[STQ_NUM];
 
   bool is_last_uop;
 

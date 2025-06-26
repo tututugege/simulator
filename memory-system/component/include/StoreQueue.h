@@ -89,6 +89,8 @@ struct stq_entry_t {
     uint32_t word;
     uint8_t  wdata_aft_sft[4];
     int      mshr_entry;
+    int      age;
+    bool     age_bit;
     uint8_t  mem_sz;
     bool     wstrb[4];
 };
@@ -117,7 +119,8 @@ class Store_Queue {
 
     public:
     void free();
-    void alloc();
+    void alloc_forepart();
+    void alloc_backpart();
     void retire();
     void addr_trans_req_forepart();
     void addr_trans_req_backpart();

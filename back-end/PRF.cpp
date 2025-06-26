@@ -9,6 +9,14 @@ void PRF::init() {
     io.prf2exe->ready[i] = true;
 }
 
+void PRF::default_val() {
+  io.prf2dec->mispred = false;
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    io.prf2rob->entry[i].valid = false;
+  }
+  io.prf_awake->wake.valid = false;
+}
+
 void PRF::comb_amo() {
   io.prf2stq->amoop = inst_r[IQ_LS].uop.amoop;
   io.prf2stq->load_data = inst_r[IQ_LS].uop.result;
@@ -21,17 +29,15 @@ void PRF::comb_amo() {
   }
 }
 
+// 向前端返回分支预测对错信息
 void PRF::comb_branch() {
-  // 根据分支结果向前端返回信息
-
   // TODO: Magic number
-  io.prf2dec->mispred = false;
   if (inst_r[IQ_BR].valid && is_branch(inst_r[IQ_BR].uop.op) &&
       inst_r[IQ_BR].uop.mispred) {
 
     io.prf2dec->mispred = true;
     io.prf2dec->redirect_pc = inst_r[IQ_BR].uop.pc_next;
-    io.prf2dec->br_tag = inst_r[IQ_BR].uop.tag;
+    io.prf2dec->br_tag = inst_r[IQ_BR].uop.bra_tag;
 
     if (LOG)
       cout << "misprediction redirect_pc 0x" << hex << io.prf2dec->redirect_pc
@@ -39,21 +45,22 @@ void PRF::comb_branch() {
   }
 }
 
+// 读物理寄存器并完成数据前递
 void PRF::comb_read() {
-  // bypass
   for (int i = 0; i < ISSUE_WAY; i++) {
-    io.prf2exe->iss_entry[i] = io.iss2prf->iss_entry[i];
-    Inst_entry *entry = &io.prf2exe->iss_entry[i];
+    Inst_entry *entry = &io.iss2prf->iss_entry[i];
 
     if (entry->valid) {
       if (entry->uop.src1_en) {
         entry->uop.src1_rdata = reg_file[entry->uop.src1_preg];
+        // 写回级数据前递
         for (int j = 0; j < ISSUE_WAY; j++) {
           if (inst_r[j].valid && inst_r[j].uop.dest_en &&
               inst_r[j].uop.dest_preg == entry->uop.src1_preg)
             entry->uop.src1_rdata = inst_r[j].uop.result;
         }
 
+        // 执行级数据前递
         for (int j = 0; j < ISSUE_WAY; j++) {
           if (io.exe2prf->entry[j].valid && io.exe2prf->entry[j].uop.dest_en &&
               io.exe2prf->entry[j].uop.dest_preg == entry->uop.src1_preg)
@@ -77,25 +84,28 @@ void PRF::comb_read() {
       }
     }
   }
+}
 
+// 通知ROB指令已写回
+void PRF::comb_rob_complete() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (inst_r[i].valid)
       io.prf2rob->entry[i] = inst_r[i];
-    else
-      io.prf2rob->entry[i].valid = false;
-  }
-
-  // TODO: MAGIC NUMBER
-  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.dest_en) {
-    io.prf_awake->wake.valid = true;
-    io.prf_awake->wake.preg = inst_r[IQ_LS].uop.dest_preg;
-  } else {
-    io.prf_awake->wake.valid = false;
   }
 }
 
+// TODO: MAGIC NUMBER
+// 写回级唤醒后续有依赖的指令
+void PRF::comb_wake() {
+  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.dest_en) {
+    io.prf_awake->wake.valid = true;
+    io.prf_awake->wake.preg = inst_r[IQ_LS].uop.dest_preg;
+  }
+}
+
+
 void PRF::seq() {
-  for (int i = 0; i < ALU_NUM + 1; i++) {
+  for (int i = 0; i < ALU_PORT + LSU_PORT; i++) {
     if (inst_r[i].valid && inst_r[i].uop.dest_en) {
       reg_file[inst_r[i].uop.dest_preg] = inst_r[i].uop.result;
     }

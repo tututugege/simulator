@@ -14,18 +14,26 @@ void Store_Queue::default_val() {
     }
 }
 
-void Store_Queue::alloc() {
+void Store_Queue::alloc_forepart() {
+    int tail = tail_r;
     for (int i = 0; i < DECODE_WIDTH; i++) {
-        if (stq_alloc[i].valid_in && (tail_r + 1) % 4 != head_r) {
-            stq_io[tail_r].mem_sz = stq_alloc[i].mem_sz_in;
-            for (int j = 0; j < 4; j++)
-                stq_io[tail_r].wstrb[j]  = stq_alloc[i].wstrb_in[j]; 
+        if (stq_alloc[i].valid_in && (tail + 1) % 4 != head_r) {
             stq_alloc[i].ready_out = true;
-            stq_alloc[i].stq_idx_out = tail_r;
-            tail_r = (tail_r + 1) % 4;
+            stq_alloc[i].stq_idx_out = tail;
+            tail = (tail + 1) % 4;
         }
     }
-    tail_r_io = tail_r;
+}
+
+void Store_Queue::alloc_backpart() {
+    for (int i = 0; i < DECODE_WIDTH; i++) {
+        if (stq_alloc[i].fire) {
+            stq_io[tail_r_io].age     = stq_alloc[i].mem_tag;
+            stq_io[tail_r_io].age_bit = stq_alloc[i].mem_tag_bit;
+            stq_io[tail_r_io].mem_sz  = stq_alloc[i].mem_sz_in;
+            tail_r_io = (tail_r_io + 1) % 4; 
+        }
+    }
 }
 
 void Store_Queue::free() {

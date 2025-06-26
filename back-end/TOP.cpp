@@ -164,9 +164,12 @@ void Back_Top::Back_comb() {
   // rename -> idu.comb_fire
   // prf->idu.comb_branch
   // isu/stq/rob -> rename.fire -> idu.fire
-  idu.comb_decode();
   rob.comb_commit();
+  idu.comb_decode();
   rename.comb_alloc();
+  // adaptor.lsq_alloc_forepart(); // new
+  // mem.dispatch(); //new 
+  // adaptor.lsq_alloc_backpart(); // new
   prf.comb_branch();
   idu.comb_branch();
   exu.comb_exec();
@@ -181,9 +184,6 @@ void Back_Top::Back_comb() {
   rename.comb_wake();
   rename.comb_rename();
   isu.comb_ready();
-  adaptor.lsq_alloc_forepart(); // new
-  mem.dispatch(); // new
-  adaptor.lsq_alloc_backpart(); // new
   rob.comb_ready();
   rob.comb_complete();
   idu.comb_release_tag();

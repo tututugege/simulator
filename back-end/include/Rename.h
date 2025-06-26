@@ -19,6 +19,8 @@ public:
 
   Ren_Stq *ren2stq;
   Stq_Ren *stq2ren;
+  Ren_Ldq *ren2ldq;
+  Ldq_Ren *ldq2ren;
 
   Rob_Broadcast *rob_bc;
   Rob_Commit *rob_commit;
@@ -30,9 +32,9 @@ public:
 
   void init();
   void comb_rename(); // 重命名
-  void comb_fire();
+  void comb_fire_forepart();
+  void comb_fire_backpart();
   void comb_wake();
-  void comb_alloc(); // 分配寄存器
   void comb_store();
   void comb_branch();
   void comb_commit();
