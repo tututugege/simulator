@@ -22,7 +22,7 @@ IQ::IQ(int entry_num, IQ_TYPE type) {
 
 void IQ::br_clear(uint32_t br_mask) {
   for (int i = 0; i < entry_num; i++) {
-    if (entry[i].valid && ((1 << entry[i].uop.tag) & br_mask)) {
+    if (entry[i].valid && ((1 << entry[i].uop.bra_tag) & br_mask)) {
       entry[i].valid = false;
       num--;
     }
@@ -85,7 +85,8 @@ Inst_entry IQ::scheduler() {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid && (!entry[i].uop.src1_en || !entry[i].uop.src1_busy) &&
         (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
-        !(is_load(entry[i].uop.op) && orR(entry[i].uop.st_issue_pend, STQ_NUM))) {
+        !(is_load(entry[i].uop.op) &&
+          orR(entry[i].uop.st_issue_pend, STQ_NUM))) {
       if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
         iss_entry = entry[i];
         iss_idx = i;
@@ -113,7 +114,6 @@ void ISU::default_val() {
     io.iss2ren->st_issue[i].valid = true;
   for (int i = 0; i < ISSUE_WAY; i++)
     io.iss2prf->iss_entry[i].valid = false;
-
 }
 
 // ISU回复Rename的派遣请求
@@ -151,8 +151,9 @@ void ISU::comb_fire() {
 
   // 更新st_issue_pend
   for (int i = 0; i < LSU_PORT; i++) {
-    if (io.iss2prf->iss_entry[i].valid && is_store(io.iss2prf->iss_entry[i].uop)) {
-      io.iss2ren->st_issue[i].valid   = true;
+    if (io.iss2prf->iss_entry[i].valid &&
+        is_store(io.iss2prf->iss_entry[i].uop)) {
+      io.iss2ren->st_issue[i].valid = true;
       io.iss2ren->st_issue[i].stq_idx = io.iss2prf->iss_entry[i].uop.stq_idx;
     }
   }
@@ -162,7 +163,8 @@ void ISU::comb_wake() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.iss2prf->iss_entry[i].valid) {
       // 执行延迟为1的指令，发射当拍唤醒其他指令
-      if (io.iss2prf->iss_entry[i].uop.dest_en && !is_load(io.iss2prf->iss_entry[i].uop.op)) {
+      if (io.iss2prf->iss_entry[i].uop.dest_en &&
+          !is_load(io.iss2prf->iss_entry[i].uop.op)) {
         for (auto &q : iq)
           q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
       }
@@ -172,7 +174,7 @@ void ISU::comb_wake() {
         for (auto &q : iq) {
           if (q.type == IQ_LS)
             q.store_wake_up(io.iss2prf->iss_entry[i].uop.stq_idx);
-        }   
+        }
       }
     }
   }

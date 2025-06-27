@@ -103,7 +103,6 @@ void PRF::comb_wake() {
   }
 }
 
-
 void PRF::seq() {
   for (int i = 0; i < ALU_PORT + LSU_PORT; i++) {
     if (inst_r[i].valid && inst_r[i].uop.dest_en) {
@@ -122,7 +121,7 @@ void PRF::seq() {
   if (io.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       if (inst_r[i].valid &&
-          (io.dec_bcast->br_mask & (1 << inst_r[i].uop.tag))) {
+          (io.dec_bcast->br_mask & (1 << inst_r[i].uop.bra_tag))) {
         inst_r[i].valid = false;
       }
     }

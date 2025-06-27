@@ -84,10 +84,13 @@ typedef struct Inst_uop {
   bool src2_is_imm;
   uint32_t func3;
   bool func7_5;
+  uint32_t mem_sz;
+  bool mem_sign;
   uint32_t imm;
   uint32_t pc;
   uint32_t bra_tag;
   uint32_t mem_tag;
+  bool mem_tag_bit;
   uint32_t csr_idx;
   uint32_t rob_idx;
   uint32_t stq_idx;

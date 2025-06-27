@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cvt.h>
-#include <ios>
 #include <util.h>
 
 int decode(Inst_uop uop[2], uint32_t instruction);
@@ -29,9 +28,7 @@ void IDU::default_val() {
 }
 
 // 分配mem_tag
-int IDU::mem_tag_alloc() {
-  return -1;
-}
+int IDU::mem_tag_alloc() { return -1; }
 
 int IDU::bra_tag_alloc() {
   for (int alloc_bra_tag = 0; alloc_bra_tag < MAX_BR_NUM; alloc_bra_tag++) {
@@ -55,7 +52,8 @@ void IDU::comb_decode() {
           dec_uop[i][j].alt_pred = io.front2dec->alt_pred[i];
           dec_uop[i][j].altpcpn = io.front2dec->altpcpn[i];
           dec_uop[i][j].pcpn = io.front2dec->pcpn[i];
-          dec_uop[i][j].pred_br_pc = io.front2dec->predict_next_fetch_address[i];
+          dec_uop[i][j].pred_br_pc =
+              io.front2dec->predict_next_fetch_address[i];
           dec_uop[i][j].pc_next = dec_uop[i][j].pc + 4;
         }
       }
@@ -175,7 +173,7 @@ void IDU::comb_release_tag() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.commit->commit_entry[i].valid &&
         is_branch(io.commit->commit_entry[i].uop.op)) {
-      tag_vec_1[io.commit->commit_entry[i].uop.tag] = true;
+      tag_vec_1[io.commit->commit_entry[i].uop.bra_tag] = true;
     }
   }
 }
@@ -259,21 +257,13 @@ int decode(Inst_uop uop[2], uint32_t inst) {
             .src2_is_imm = true,
             .func3 = number_funct3_unsigned,
             .func7_5 = (bool)(number_funct7_unsigned >> 5),
+            .mem_sz = number_funct3_unsigned & 0b11,
+            .mem_sign = !(bool)((number_funct3_unsigned >> 2) & 0b1),
             .csr_idx = csr_idx,
             .is_last_uop = true,
             .amoop = AMONONE};
 
-  uop[1] = {.dest_areg = reg_d_index,
-            .src1_areg = reg_a_index,
-            .src2_areg = reg_b_index,
-            .src1_is_pc = false,
-            .src2_is_imm = true,
-            .func3 = number_funct3_unsigned,
-            .func7_5 = (bool)(number_funct7_unsigned >> 5),
-            .csr_idx = csr_idx,
-            .is_last_uop = true,
-            .amoop = AMONONE};
-
+  uop[1] = uop[0];
   uop[1].op = NONE;
 
   switch (number_op_code_unsigned) {
@@ -461,7 +451,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
       } else if (inst == INST_WFI) {
         uop[0].op = NONE;
       } else {
-        cout << hex << inst << endl;
+        /*cout << hex << inst << endl;*/
         /*assert(0);*/
       }
     }
@@ -475,12 +465,15 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     uop[0].src2_en = false;
     uop[0].imm = 0;
     uop[0].op = LOAD;
+    uop[0].mem_sz = 0b10;
+    uop[0].mem_sign = true;
     uop[0].is_last_uop = false;
 
     uop[1].dest_en = false;
     uop[1].src1_en = true;
     uop[1].src2_en = true;
     uop[1].imm = 0;
+    uop[1].mem_sz = 0b10;
     uop[1].op = STORE;
 
     switch (number_funct7_unsigned >> 2) {

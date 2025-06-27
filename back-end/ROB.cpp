@@ -109,7 +109,7 @@ void ROB::comb_branch() {
   if (io.dec_bcast->mispred) {
     int idx = (enq_ptr - 1 + ROB_NUM) % ROB_NUM;
     while (entry[idx].valid &&
-           ((1 << entry[idx].uop.tag) & io.dec_bcast->br_mask)) {
+           ((1 << entry[idx].uop.bra_tag) & io.dec_bcast->br_mask)) {
       entry_1[idx].valid = false;
       complete_1[idx] = 0;
       count_1--;

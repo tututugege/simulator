@@ -139,7 +139,7 @@ void Back_Top::init() {
   rename.init();
   isu.init();
   prf.init();
-  exu.init();
+  exu.default_val();
   csr.init();
   rob.init();
 }
@@ -166,28 +166,28 @@ void Back_Top::Back_comb() {
   // isu/stq/rob -> rename.fire -> idu.fire
   rob.comb_commit();
   idu.comb_decode();
-  rename.comb_alloc();
+  rename.comb_fire_forepart();
   // adaptor.lsq_alloc_forepart(); // new
-  // mem.dispatch(); //new 
+  // mem.dispatch(); //new
   // adaptor.lsq_alloc_backpart(); // new
   prf.comb_branch();
   idu.comb_branch();
   exu.comb_exec();
-  adaptor.mem_fire_adpt(); // new
-  mem.comb(); // new
+  adaptor.mem_fire_adpt();   // new
+  mem.comb();                // new
   adaptor.mem_return_adpt(); // new
   exu.comb_csr();
-  exu.comb_ready();
+  exu.comb_iss_rdy();
   isu.comb_deq();
   prf.comb_read();
   prf.comb_amo();
   rename.comb_wake();
   rename.comb_rename();
-  isu.comb_ready();
+  isu.comb_ren_rdy();
   rob.comb_ready();
   rob.comb_complete();
   idu.comb_release_tag();
-  rename.comb_fire();
+  rename.comb_fire_backpart();
   rob.comb_fire();
   idu.comb_fire();
   rob.comb_rollback();

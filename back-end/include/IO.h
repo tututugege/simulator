@@ -84,7 +84,8 @@ typedef struct {
 // TODO: MAGIC NUMBER
 typedef struct {
   bool ready[DECODE_WIDTH];
-  Wake_info wake[ALU_NUM];
+  Wake_info wake[ALU_PORT];
+
 } Iss_Ren;
 
 typedef struct {
@@ -139,16 +140,18 @@ typedef struct {
 // } Stq_Ren;
 
 typedef struct {
-  bool     valid[DECODE_WIDTH];
-  uint8_t  mem_sz[DECODE_WIDTH];
+  bool valid[DECODE_WIDTH];
+  uint8_t mem_sz[DECODE_WIDTH];
   uint32_t mem_tag[DECODE_WIDTH];
-  bool     dis_fire[DECODE_WIDTH];
+  bool mem_tag_bit[DECODE_WIDTH];
+  bool dis_fire[DECODE_WIDTH];
+  bool wstrb[DECODE_WIDTH][4];
 } Ren_Stq;
 
 typedef struct {
   bool ready[DECODE_WIDTH];
   bool stq_valid[STQ_NUM];
-  int  stq_idx[DECODE_WIDTH];
+  int stq_idx[DECODE_WIDTH];
 } Stq_Ren;
 ////////////////////////
 
@@ -161,16 +164,18 @@ typedef struct {
   bool valid[STQ_NUM];
 } Stq_Iss;
 
-// TODO: 
+// TODO:
 typedef struct {
-  bool    valid[DECODE_WIDTH];
+  bool valid[DECODE_WIDTH];
   uint8_t mem_sz[DECODE_WIDTH];
+  uint8_t mem_tag[DECODE_WIDTH];
+  bool mem_tag_bit[DECODE_WIDTH];
   uint8_t dst_reg[DECODE_WIDTH];
-  bool    sign[DECODE_WIDTH]; 
-  bool    dis_fire[DECODE_WIDTH];
+  bool sign[DECODE_WIDTH];
+  bool dis_fire[DECODE_WIDTH];
 } Ren_Ldq;
 
 typedef struct {
   bool ready[DECODE_WIDTH];
-  int  ldq_idx[DECODE_WIDTH];
+  int ldq_idx[DECODE_WIDTH];
 } Ldq_Ren;
