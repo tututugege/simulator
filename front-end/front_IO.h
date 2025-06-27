@@ -80,6 +80,7 @@ struct icache_out {
   bool icache_read_ready;
   // to instruction FIFO
   uint32_t fetch_group[FETCH_WIDTH];
+  bool page_fault_inst[FETCH_WIDTH];
 };
 
 struct instruction_FIFO_in {
@@ -88,6 +89,7 @@ struct instruction_FIFO_in {
   // from icache
   bool write_enable;
   uint32_t fetch_group[FETCH_WIDTH];
+  bool page_fault_inst[FETCH_WIDTH];
   // from back-end
   bool read_enable;
 };
@@ -98,6 +100,7 @@ struct instruction_FIFO_out {
   // to back-end
   bool FIFO_valid;
   uint32_t instructions[FETCH_WIDTH];
+  bool page_fault_inst[FETCH_WIDTH];
 };
 
 struct PTAB_in {

@@ -107,6 +107,9 @@ void ROB::comb_commit() {
           io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
           io.rob_bc->illegal_inst = true;
           io.rob_bc->trap_val = entry[idx].uop.instruction;
+        } else if (entry[idx].uop.op == EBREAK) {
+          extern bool sim_end;
+          sim_end = true;
         } else {
           if (entry[idx].uop.op != CSR) {
             cout << hex << entry[idx].uop.instruction << endl;
@@ -144,9 +147,14 @@ void ROB::comb_complete() {
       complete_1[io.prf2rob->entry[i].uop.rob_idx] = true;
       entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.difftest_skip =
           io.prf2rob->entry[i].uop.difftest_skip;
-      if (i == IQ_BR)
+      if (i == IQ_BR) {
         entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.pc_next =
             io.prf2rob->entry[i].uop.pc_next;
+        entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.mispred =
+            io.prf2rob->entry[i].uop.mispred;
+        entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.br_taken =
+            io.prf2rob->entry[i].uop.br_taken;
+      }
 
       if (i == IQ_LS) {
         if (is_page_fault(io.prf2rob->entry[i].uop)) {
@@ -224,9 +232,6 @@ void ROB::seq() {
         }
         branch_num++;
       }
-      extern bool sim_end;
-      if (io.rob_commit->commit_entry[i].uop.op == EBREAK)
-        sim_end = true;
     }
   }
 

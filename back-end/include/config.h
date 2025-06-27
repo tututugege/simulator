@@ -110,10 +110,6 @@ typedef struct Inst_uop {
   // illegal
   bool illegal_inst;
 
-  // 调度特征
-  int inst_idx;
-  int dependency;
-
   Inst_op op;
   IQ_TYPE iq_type;
 
@@ -121,6 +117,7 @@ typedef struct Inst_uop {
   AMO_op amoop;
 
   bool difftest_skip;
+  int64_t inst_idx;
 } Inst_uop;
 
 typedef struct Inst_entry {
