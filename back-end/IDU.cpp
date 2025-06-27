@@ -231,14 +231,6 @@ void IDU::seq() {
   while (tag_list.size() > MAX_BR_NUM) {
     tag_list.pop_front();
   }
-
-  /*static int idx = 0;*/
-  /*cout << idx++ << " ";*/
-  /*for (int i = 0; i < MAX_BR_NUM; i++) {*/
-  /*  cout << tag_vec[i];*/
-  /*}*/
-  /**/
-  /*cout << endl;*/
 }
 
 int decode(Inst_uop uop[2], uint32_t inst) {
@@ -293,6 +285,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
 
   csr_idx = inst >> 20;
 
+  extern long long sim_time;
   uop[0] = {.instruction = inst,
             .dest_areg = reg_d_index,
             .src1_areg = reg_a_index,
@@ -307,7 +300,8 @@ int decode(Inst_uop uop[2], uint32_t inst) {
             .page_fault_load = false,
             .page_fault_store = false,
             .illegal_inst = false,
-            .amoop = AMONONE};
+            .amoop = AMONONE,
+            .inst_idx = sim_time};
 
   uop[1] = uop[0];
   uop[1].op = NONE;
@@ -595,10 +589,6 @@ int decode(Inst_uop uop[2], uint32_t inst) {
   }
 
   default: {
-    /*if (LOG) {*/
-    /*  cerr << "Error: unknown instruction: ";*/
-    /*  cerr << cvt_bit_to_number_unsigned(inst_bit, 32) << endl;*/
-    /*}*/
     uop[0].dest_en = false;
     uop[0].src1_en = false;
     uop[0].src2_en = false;

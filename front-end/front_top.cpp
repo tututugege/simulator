@@ -47,6 +47,7 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
   fifo_in.write_enable = icache_out.icache_read_ready;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     fifo_in.fetch_group[i] = icache_out.fetch_group[i];
+    fifo_in.page_fault_inst[i] = icache_out.page_fault_inst[i];
   }
 
   // run FIFO
@@ -73,6 +74,7 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
   out->FIFO_valid = fifo_out.FIFO_valid;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out->instructions[i] = fifo_out.instructions[i];
+    out->page_fault_inst[i] = fifo_out.page_fault_inst[i];
     out->predict_dir[i] = ptab_out.predict_dir[i];
     out->pc[i] = ptab_out.predict_base_pc[i];
     out->alt_pred[i] = ptab_out.alt_pred[i];

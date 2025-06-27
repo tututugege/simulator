@@ -111,10 +111,6 @@ typedef struct {
 } Iss_Prf;
 
 typedef struct {
-  bool ready[ISSUE_WAY];
-} Prf_Iss;
-
-typedef struct {
   Inst_entry iss_entry[ISSUE_WAY];
   bool ready[ISSUE_WAY];
 } Prf_Exe;

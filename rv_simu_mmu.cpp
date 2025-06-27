@@ -13,7 +13,6 @@
 #include <front_module.h>
 #include <fstream>
 
-int inst_idx;
 int mispred_num = 0;
 int branch_num = 0;
 int back2front_num = 0;
@@ -100,8 +99,6 @@ int main(int argc, char *argv[]) {
 
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
-    inst_idx = sim_time;
-
     if (LOG)
       cout << "****************************************************************"
            << endl;
@@ -120,10 +117,8 @@ int main(int argc, char *argv[]) {
         cout << hex << front_out.pc[0] << endl;
         front_in.reset = false;
 
-        for (int j = 0; j < FETCH_WIDTH; j++) {
-          for (int i = 0; i < COMMIT_WIDTH; i++) {
-            front_in.back2front_valid[i] = false;
-          }
+        for (int i = 0; i < COMMIT_WIDTH; i++) {
+          front_in.back2front_valid[i] = false;
         }
       }
 
@@ -138,10 +133,6 @@ int main(int argc, char *argv[]) {
       }
 
       front_top(&front_in, &front_out);
-
-      if (sim_time == 0) {
-        cout << front_out.pc[0] << endl;
-      }
 
 #else
       for (int j = 0; j < FETCH_WIDTH; j++) {
@@ -239,23 +230,22 @@ int main(int argc, char *argv[]) {
 
     front_in.FIFO_read_enable = false;
     for (int i = 0; i < COMMIT_WIDTH; i++) {
-      Inst_uop *inst = &back.out.commit_entry[i].inst;
+      Inst_uop *inst = &back.out.commit_entry[i].uop;
       front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
       if (front_in.back2front_valid[i]) {
 
         front_in.predict_dir[i] = inst->pred_br_taken;
         front_in.predict_base_pc[i] = inst->pc;
-        /*cout << hex << "commit pc " << inst->pc << endl;*/
         front_in.actual_dir[i] = inst->br_taken;
         front_in.actual_target[i] = inst->pc_next;
         int br_type = BR_DIRECT;
 
-        if (inst->op == JALR) {
+        if (inst->op == JUMP && inst->src1_en) {
           if (inst->src1_areg == 1)
             br_type = BR_RET;
           else
             br_type = BR_IDIRECT;
-        } else if (inst->op == JAL) {
+        } else if (inst->op == JUMP) {
           if (inst->dest_areg == 1)
             br_type = BR_CALL;
         }
@@ -270,7 +260,6 @@ int main(int argc, char *argv[]) {
     if (back.out.mispred) {
       front_in.refetch = true;
       front_in.refetch_address = back.out.redirect_pc;
-      /*cout << hex << "re pc " << front_in.refetch_address << endl;*/
     } else {
       front_in.refetch = false;
     }
