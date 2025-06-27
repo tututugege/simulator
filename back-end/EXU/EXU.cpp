@@ -37,7 +37,9 @@ void FU::exec(Inst_uop &inst) {
   }
 }
 
-int fu_config[ISSUE_WAY] = {(1 << FU_ALU) | (1 << FU_MUL),(1 << FU_ALU) | (1 << FU_DIV), 1 << FU_LSU,1 << FU_BRU};
+int fu_config[ISSUE_WAY] = {(1 << FU_ALU) | (1 << FU_MUL),
+                            (1 << FU_ALU) | (1 << FU_DIV), 1 << FU_LSU,
+                            1 << FU_BRU};
 
 void EXU::default_val() {
   for (int i = 0; i < ISSUE_WAY; i++) {
@@ -50,8 +52,8 @@ void EXU::default_val() {
 // EXU回应ISU的指令发射请求
 void EXU::comb_iss_rdy() {
   for (int i = 0; i < ISSUE_WAY; i++) {
-    io.exe2iss->ready[i] = (!inst_r[i].valid || fu[i].complete) && 
-                            !io.dec_bcast->mispred;
+    io.exe2iss->ready[i] =
+        (!inst_r[i].valid || fu[i].complete) && !io.dec_bcast->mispred;
   }
 }
 
@@ -114,7 +116,7 @@ void EXU::seq() {
   if (io.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       if (inst_r[i].valid &&
-          (io.dec_bcast->br_mask & (1 << inst_r[i].uop.tag))) {
+          (io.dec_bcast->br_mask & (1 << inst_r[i].uop.bra_tag))) {
         inst_r[i].valid = false;
         fu[i].complete = false;
         fu[i].cycle = 0;

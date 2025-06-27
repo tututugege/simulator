@@ -39,6 +39,10 @@ public:
   void comb_branch();
   void comb_commit();
   void comb_pipeline();
+
+  void default_val();   // new
+  void comb_st_issue(); // new
+
   void seq();
 
   // debug

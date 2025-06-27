@@ -13,6 +13,8 @@ inline bool is_load(Inst_op op) { return (op == LOAD); }
 
 inline bool is_store(Inst_op op) { return (op == STORE); }
 
+inline bool is_store(Inst_uop uop) { return (uop.op == STORE); }
+
 inline bool orR(bool *in, int num) {
   bool out = false;
   for (int i = 0; i < num; i++)
