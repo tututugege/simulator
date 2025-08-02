@@ -383,7 +383,7 @@ void RISCV_32I(bool input_data[bit_width], bool *output_data) {
       case 3: { // mulhu
         uint64_t number_a = cvt_bit_to_number(bit_reg_data_a, 32);
         uint64_t number_b = cvt_bit_to_number(bit_reg_data_b, 32);
-        uint64_t number_temp = (number_a * number_b);
+        uint64_t number_temp = (number_a * number_b) >> 32;
         bool bit_temp[32];
         cvt_number_to_bit(bit_temp, number_temp, 32);
         copy_indice(next_general_regs, reg_d_index * 32, bit_temp, 0, 32);

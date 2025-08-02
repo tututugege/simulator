@@ -83,4 +83,5 @@ public:
 
   // debug
   void difftest(Inst_uop *inst);
+  void update_conf();
 };
