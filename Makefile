@@ -13,7 +13,7 @@ MEM_DIR=./baremetal
 IMG=./baremetal/memory
 
 default: $(CXXSRC) 
-	g++ $(CXXINCLUDE) $(CXXSRC) -O3 -g
+	g++ $(CXXINCLUDE) $(CXXSRC) -O3
 
 run: 
 	./a.out $(IMG)
@@ -24,6 +24,7 @@ clean:
 	rm -rf ./baremetal/test.code
 
 gdb:
+	g++ $(CXXINCLUDE) $(CXXSRC) -g
 	gdb --args ./a.out $(IMG)
 
 .PHONY: all clean mem run

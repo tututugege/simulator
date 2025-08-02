@@ -4,7 +4,7 @@ RISCV_MCMODEL := medlow
 CFLAGS := -O2 
 CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
 
-RISCV_PATH := $(COMMON_DIR)/../../file/baremetal/toolchains/riscv-elf32-ia/bin/riscv32-unknown-elf-
+RISCV_PATH := /opt/riscv32/bin/riscv32-unknown-elf-
 
 RISCV_GCC     := $(abspath $(RISCV_PATH)gcc)
 RISCV_AS      := $(abspath $(RISCV_PATH)as)

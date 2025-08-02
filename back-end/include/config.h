@@ -17,13 +17,14 @@ using namespace std;
 #define STQ_NUM 8
 #define ALU_NUM 2
 
-#define LOG_START 218409200
+#define LOG_START 345000
 #define LOG (0 && (sim_time > LOG_START))
 #define MEM_LOG (0 && (sim_time > LOG_START))
 
 extern long long sim_time;
 
 /*#define CONFIG_DIFFTEST*/
+/*#define CONFIG_RUN_V1*/
 /*#define CONFIG_BRANCHCHECK*/
 /*#define CONFIG_BPU*/
 
@@ -117,7 +118,11 @@ typedef struct Inst_uop {
   AMO_op amoop;
 
   bool difftest_skip;
+
   int64_t inst_idx;
+  int prior;
+  int br_conf;
+  bool cache_miss;
 } Inst_uop;
 
 typedef struct Inst_entry {

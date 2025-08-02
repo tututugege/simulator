@@ -12,6 +12,7 @@
 #include <front_IO.h>
 #include <front_module.h>
 #include <fstream>
+#include <util.h>
 
 int mispred_num = 0;
 int branch_num = 0;
@@ -102,6 +103,10 @@ int main(int argc, char *argv[]) {
     if (LOG)
       cout << "****************************************************************"
            << endl;
+
+    /*if (sim_time % 10000000 == 0) {*/
+    /*  cout << "yes" << endl;*/
+    /*}*/
 
     if (!stall || misprediction || exception) {
 
@@ -231,23 +236,25 @@ int main(int argc, char *argv[]) {
     front_in.FIFO_read_enable = false;
     for (int i = 0; i < COMMIT_WIDTH; i++) {
       Inst_uop *inst = &back.out.commit_entry[i].uop;
-      front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
+      front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
+                                     is_branch(back.out.commit_entry[i].uop.op);
       if (front_in.back2front_valid[i]) {
-
         front_in.predict_dir[i] = inst->pred_br_taken;
         front_in.predict_base_pc[i] = inst->pc;
         front_in.actual_dir[i] = inst->br_taken;
         front_in.actual_target[i] = inst->pc_next;
         int br_type = BR_DIRECT;
 
-        if (inst->op == JUMP && inst->src1_en) {
-          if (inst->src1_areg == 1)
-            br_type = BR_RET;
-          else
-            br_type = BR_IDIRECT;
-        } else if (inst->op == JUMP) {
-          if (inst->dest_areg == 1)
-            br_type = BR_CALL;
+        if (inst->op == JUMP) {
+          if (inst->src1_en) {
+            if (inst->src1_areg == 1)
+              br_type = BR_RET;
+            else
+              br_type = BR_IDIRECT;
+          } else {
+            if (inst->dest_areg == 1)
+              br_type = BR_CALL;
+          }
         }
 
         front_in.actual_br_type[i] = br_type;
@@ -311,14 +318,25 @@ SIM_END:
              (double)commit_num / sim_time);
       printf("\033[1;32mbranch num     : %d\033[0m\n", branch_num);
       printf("\033[1;32mmispred num    : %d\033[0m\n", mispred_num);
+      printf("\033[1;32mbranch accuracy: %f\033[0m\n",
+             (branch_num - mispred_num) / (double)branch_num);
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
       cout << "addr error :" << dec << dir_ok_addr_error << endl;
       cout << "tage cnt :" << dec << tage_cnt << endl;
       cout << "tage miss :" << dec << tage_miss << endl;
       cout << "b2f miss :" << dec << back2front_num << endl;
-      /*cout << "pred ok :" << dec << pred_ok << endl;*/
-      /*cout << "taken_num:" << dec << taken_num << endl;*/
+
+      extern uint32_t br_num[0x10000000 / 4];
+      extern uint32_t br_mispred[0x1000000 / 4];
+
+      for (int i = 0; i < 0x10000000 / 4; i++) {
+        if (br_num[i]) {
+          cout << "pc: " << hex << i * 4 + 0x80000000 << dec
+               << " br_num: " << br_num[i] << " mispred: " << br_mispred[i]
+               << endl;
+        }
+      }
     } else {
       cout << "\033[1;31m------------------------------\033[0m" << endl;
       cout << "\033[1;31mFail!!!!QAQ\033[0m" << endl;

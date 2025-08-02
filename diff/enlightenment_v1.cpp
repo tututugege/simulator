@@ -73,8 +73,8 @@ void v1_difftest_init(uint32_t pc_start) {
 }
 
 void v1_difftest_exec() {
-  if (i % 1000000 == 0) {
-    cout << hex << i << ' ' << number_PC << endl;
+  if (i % 100000000 == 0) {
+    cout << dec << i << ' ' << hex << number_PC << endl;
   }
   if (log)
     cout << "******************************************************************"
@@ -385,7 +385,7 @@ void v1_difftest_exec() {
         char temp;
         temp = number_store_data & 0x000000ff;
         ref_memory[0x10000000 / 4] = ref_memory[0x10000000 / 4] & 0xffffff00;
-        /*cerr << temp;*/
+        cerr << temp;
 
         if (temp == 0x3F) {
           cerr << hex << time_i << endl;

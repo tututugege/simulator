@@ -18,6 +18,7 @@ public:
   Inst_entry deq();
   void enq(Inst_uop *inst);
   void dependency(int dest_idx);
+  void update_prior(Inst_uop &dest_idx);
 
   int num;
   int num_temp;

@@ -1,4 +1,4 @@
-memory = ['00000000'] * (256//4*500)
+memory = ['00000000'] * (256//4*10000)
 
 def read(path, offset):
     with open(path, 'r') as f:

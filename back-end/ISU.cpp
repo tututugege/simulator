@@ -44,6 +44,36 @@ void IQ::enq(Inst_uop *inst) {
   assert(i != entry_num);
 }
 
+void IQ::update_prior(Inst_uop &uop) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid) {
+      if (entry[i].uop.dest_en && uop.src1_en &&
+          entry[i].uop.dest_preg == uop.src1_preg) {
+        if (entry[i].uop.prior < 3) {
+          entry[i].uop.prior++;
+        }
+      }
+
+      if (entry[i].uop.dest_en && uop.src2_en &&
+          entry[i].uop.dest_preg == uop.src2_preg) {
+        if (entry[i].uop.prior < 3) {
+          entry[i].uop.prior++;
+        }
+      }
+    }
+  }
+
+  if (is_branch(uop.op) && uop.br_conf < 3) {
+    for (int i = 0; i < entry_num; i++) {
+      if (entry[i].valid && entry[i].uop.tag == uop.tag) {
+        if (entry[i].uop.prior < 3) {
+          entry[i].uop.prior++;
+        }
+      }
+    }
+  }
+}
+
 Inst_entry IQ::deq() {
 
   Inst_entry ret = scheduler();
@@ -95,9 +125,16 @@ void ISU::seq() {
   // 入队
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (io.ren2iss->dis_fire[i]) {
+
       for (auto &q : iq) {
-        if (q.type == io.ren2iss->uop[i].iq_type)
+        if (q.type == io.ren2iss->uop[i].iq_type) {
           q.enq(&io.ren2iss->uop[i]);
+          break;
+        }
+      }
+
+      for (auto &q : iq) {
+        q.update_prior(io.ren2iss->uop[i]);
       }
     }
   }
@@ -175,6 +212,8 @@ void IQ::store_wake_up(bool valid[]) {
   }
 }
 
+#define CONFIG_PRIOR
+
 // 调度策略
 Inst_entry IQ::scheduler() {
 
@@ -186,10 +225,28 @@ Inst_entry IQ::scheduler() {
     if (entry[i].valid && (!entry[i].uop.src1_en || !entry[i].uop.src1_busy) &&
         (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
         !(is_load(entry[i].uop.op) && orR(entry[i].uop.pre_store, STQ_NUM))) {
+#ifdef CONFIG_PRIOR
+      if (!iss_entry.valid) {
+        iss_entry = entry[i];
+        iss_idx = i;
+      } else {
+
+        if (iss_entry.uop.prior < entry[i].uop.prior) {
+          iss_entry = entry[i];
+          iss_idx = i;
+        } else if (iss_entry.uop.prior == entry[i].uop.prior &&
+                   iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
+          iss_entry = entry[i];
+          iss_idx = i;
+        }
+      }
+#else
       if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
         iss_entry = entry[i];
         iss_idx = i;
       }
+
+#endif
     }
   }
 

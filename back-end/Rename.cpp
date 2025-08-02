@@ -29,6 +29,8 @@ void Rename::init() {
   }
 }
 
+int read_br_conf(uint32_t pc);
+
 void Rename::comb_alloc() {
   // valid初始化为0
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -53,6 +55,10 @@ void Rename::comb_alloc() {
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2iss->uop[i] = inst_r[i].uop;
+
+    if (is_branch(inst_r[i].uop.op)) {
+      io.ren2iss->uop[i].br_conf = read_br_conf(inst_r[i].uop.pc);
+    }
 
     if (inst_r[i].valid) {
       // 分配stq_idx 和 rob_idx
