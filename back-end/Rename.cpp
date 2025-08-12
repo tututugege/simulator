@@ -9,6 +9,9 @@
 extern Back_Top back;
 extern int commit_num;
 
+int ren_stall_reg = 0;
+int ren_stall_csr = 0;
+
 void Rename::init() {
   for (int i = 0; i < ARF_NUM; i++) {
     free_vec[i] = false;
@@ -160,23 +163,27 @@ void Rename::comb_rename() {
   }
 }
 
-void Rename::comb_store() {
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (io.ren2iss->valid[i] && is_load(io.ren2iss->uop[i].op)) {
-      for (int j = 0; j < STQ_NUM; j++) {
-        io.ren2iss->uop[i].pre_store[j] = io.stq2ren->stq_valid[j];
-      }
-
-      // 同一组store 和load
-      for (int j = 0; j < i; j++) {
-        if (io.ren2iss->valid[j] && is_store(io.ren2iss->uop[j].op)) {
-          int idx = io.ren2iss->uop[j].stq_idx;
-          io.ren2iss->uop[i].pre_store[idx] = true;
-        }
-      }
-    }
-  }
-}
+/*void Rename::comb_store() {*/
+/*  for (int i = 0; i < DECODE_WIDTH; i++) {*/
+/*    if (io.ren2iss->valid[i] && is_load(io.ren2iss->uop[i].op)) {*/
+/*      for (int j = 0; j < back.isu.iq[IQ_LS].entry_num; j++) {*/
+/*        if (back.isu.iq[IQ_LS].entry[j].valid &&*/
+/*            is_store(back.isu.iq[IQ_LS].entry[j].uop.op)) {*/
+/*          io.ren2iss->uop[i].pre_store[j] = true;*/
+/*        } else {*/
+/*          io.ren2iss->uop[i].pre_store[j] = false;*/
+/*        }*/
+/*      }*/
+/**/
+/*      // 同一组store 和load*/
+/*      for (int j = 0; j < i; j++) {*/
+/*        if (io.ren2iss->valid[j] && is_store(io.ren2iss->uop[j].op)) {*/
+/*          io.ren2iss->uop[i].pre_store_num++;*/
+/*        }*/
+/*      }*/
+/*    }*/
+/*  }*/
+/*}*/
 
 void Rename::comb_fire() {
   // 分配寄存器

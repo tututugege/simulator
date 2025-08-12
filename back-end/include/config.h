@@ -8,16 +8,16 @@ using namespace std;
 #define ISSUE_WAY 4
 
 #define ARF_NUM 32
-#define PRF_NUM 96
-#define MAX_BR_NUM 8
+#define PRF_NUM 128
+#define MAX_BR_NUM 20
 
 #define CSR_NUM 21
 
-#define ROB_NUM 64
-#define STQ_NUM 8
+#define ROB_NUM 128
+#define STQ_NUM 16
 #define ALU_NUM 2
 
-#define LOG_START 345000
+#define LOG_START 0
 #define LOG (0 && (sim_time > LOG_START))
 #define MEM_LOG (0 && (sim_time > LOG_START))
 
@@ -26,8 +26,7 @@ extern long long sim_time;
 /*#define CONFIG_DIFFTEST*/
 /*#define CONFIG_RUN_V1*/
 /*#define CONFIG_BRANCHCHECK*/
-/*#define CONFIG_BPU*/
-
+#define CONFIG_BPU
 #define UART_BASE 0x10000000
 
 enum IQ_TYPE { IQ_INTM, IQ_INTD, IQ_LS, IQ_BR, IQ_NUM };
@@ -99,17 +98,17 @@ typedef struct Inst_uop {
   uint32_t csr_idx;
   uint32_t rob_idx;
   uint32_t stq_idx;
-  bool pre_store[STQ_NUM];
+  bool pre_store[32];
 
   bool is_last_uop;
 
   // page_fault
-  bool page_fault_inst;
-  bool page_fault_load;
-  bool page_fault_store;
+  bool page_fault_inst = false;
+  bool page_fault_load = false;
+  bool page_fault_store = false;
 
   // illegal
-  bool illegal_inst;
+  bool illegal_inst = false;
 
   Inst_op op;
   IQ_TYPE iq_type;

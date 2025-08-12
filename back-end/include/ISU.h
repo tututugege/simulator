@@ -9,7 +9,7 @@ public:
   IQ(int entry_num, IQ_TYPE);
   void init();
   void wake_up(uint32_t);
-  void store_wake_up(bool *);
+  void store_wake_up(int);
   void br_clear(uint32_t br_mask);
   Inst_entry pop_oldest(vector<Inst_entry> &valid_entry,
                         vector<int> &valid_idx);
@@ -27,7 +27,6 @@ public:
   int entry_num;
   IQ_TYPE type;
 
-private:
   vector<Inst_entry> entry;
 };
 

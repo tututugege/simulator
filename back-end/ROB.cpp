@@ -1,4 +1,3 @@
-#include "CSR.h"
 #include "IO.h"
 #include "frontend.h"
 #include <RISCV.h>
@@ -16,6 +15,7 @@ extern int mispred_num;
 
 int dir_ok_addr_error;
 int taken_num;
+int rob_stall;
 
 void ROB::comb_ready() {
   bool exception_stall = false;
@@ -41,6 +41,7 @@ void ROB::comb_ready() {
         io.rob2ren->ready[i] = true;
         num++;
       } else {
+        rob_stall++;
         io.rob2ren->ready[i] = false;
       }
     }

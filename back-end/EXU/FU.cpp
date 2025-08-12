@@ -6,7 +6,7 @@
 
 extern Back_Top back;
 
-bool load_data(uint32_t &data, uint32_t v_addr);
+bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege);
 
@@ -222,7 +222,7 @@ void ldu(Inst_uop &inst) {
   }
 
   uint32_t data;
-  bool page_fault = !load_data(data, addr);
+  bool page_fault = !load_data(data, addr, inst.rob_idx);
 
   if (!page_fault) {
     data = data >> (offset * 8);

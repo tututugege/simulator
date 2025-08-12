@@ -17,7 +17,7 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == DIV) { // div
       latency = 1;
     } else if (inst.op == LOAD) {
-      latency = 3;
+      latency = 1;
     } else {
       latency = 1;
     }
@@ -60,7 +60,7 @@ void EXU::comb_exec() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     io.exe2prf->entry[i].valid = false;
     io.exe2prf->entry[i].uop = inst_r[i].uop;
-    if (inst_r[i].valid && !io.dec_bcast->mispred) {
+    if (inst_r[i].valid) {
       fu[i].exec(io.exe2prf->entry[i].uop);
       if (fu[i].complete) {
         io.exe2prf->entry[i].valid = true;

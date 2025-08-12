@@ -18,6 +18,16 @@ int mispred_num = 0;
 int branch_num = 0;
 int back2front_num = 0;
 
+// stall counter
+extern int ren_stall_reg;
+extern int ren_stall_csr;
+extern int isu_stall[ISSUE_WAY];
+extern int rob_stall;
+extern int id_stall_uop;
+extern int id_stall_tag;
+extern int isu_ready_num[ISSUE_WAY];
+extern int raw_stall_num[ISSUE_WAY];
+
 using namespace std;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
@@ -320,6 +330,26 @@ SIM_END:
       printf("\033[1;32mmispred num    : %d\033[0m\n", mispred_num);
       printf("\033[1;32mbranch accuracy: %f\033[0m\n",
              (branch_num - mispred_num) / (double)branch_num);
+
+      cout << endl;
+      printf("\033[1;32mid uop stall   : %d\033[0m\n", id_stall_uop);
+      printf("\033[1;32mid tag stall   : %d\033[0m\n", id_stall_tag);
+      for (int i = 0; i < ISSUE_WAY; i++) {
+        printf("\033[1;32misu stall      : %d\033[0m\n", isu_stall[i]);
+      }
+      printf("\033[1;32mrob stall      : %d\033[0m\n", rob_stall);
+      printf("\033[1;32mren stall reg  : %d\033[0m\n", ren_stall_reg);
+      printf("\033[1;32mren stall csr  : %d\033[0m\n", ren_stall_csr);
+
+      for (int i = 0; i < ISSUE_WAY; i++) {
+        printf("\033[1;32misu ready num: %f\033[0m\n",
+               isu_ready_num[i] / (double)sim_time);
+      }
+
+      for (int i = 0; i < ISSUE_WAY; i++) {
+        printf("\033[1;32mraw stall num: %d\033[0m\n", raw_stall_num[i]);
+      }
+
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
       cout << "addr error :" << dec << dir_ok_addr_error << endl;
@@ -330,13 +360,13 @@ SIM_END:
       extern uint32_t br_num[0x10000000 / 4];
       extern uint32_t br_mispred[0x1000000 / 4];
 
-      for (int i = 0; i < 0x10000000 / 4; i++) {
-        if (br_num[i]) {
-          cout << "pc: " << hex << i * 4 + 0x80000000 << dec
-               << " br_num: " << br_num[i] << " mispred: " << br_mispred[i]
-               << endl;
-        }
-      }
+      /*for (int i = 0; i < 0x10000000 / 4; i++) {*/
+      /*  if (br_num[i]) {*/
+      /*    cout << "pc: " << hex << i * 4 + 0x80000000 << dec*/
+      /*         << " br_num: " << br_num[i] << " mispred: " << br_mispred[i]*/
+      /*         << endl;*/
+      /*  }*/
+      /*}*/
     } else {
       cout << "\033[1;31m------------------------------\033[0m" << endl;
       cout << "\033[1;31mFail!!!!QAQ\033[0m" << endl;
@@ -443,7 +473,7 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   return false;
 }
 
-bool load_data(uint32_t &data, uint32_t v_addr) {
+bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   uint32_t p_addr = v_addr;
   bool ret = true;
 
@@ -466,6 +496,7 @@ bool load_data(uint32_t &data, uint32_t v_addr) {
     data = 0;
   } else {
     data = p_memory[p_addr >> 2];
+    back.stq.st2ld_fwd(p_addr, data, rob_idx);
   }
 
   return ret;

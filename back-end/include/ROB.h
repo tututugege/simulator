@@ -26,7 +26,6 @@ public:
   void comb_flush();
   ROB_IO io;
 
-private:
   Inst_entry entry[ROB_NUM];
   bool complete[ROB_NUM];
   bool exception[ROB_NUM];
