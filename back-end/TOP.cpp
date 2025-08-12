@@ -241,7 +241,7 @@ void Back_Top::Back_comb() {
   csr.comb();
   rob.comb_branch();
   rename.comb_branch();
-  rename.comb_store();
+  /*rename.comb_store();*/
   rename.comb_pipeline();
 
   if (!rob.io.rob_bc->flush) {

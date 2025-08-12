@@ -34,7 +34,9 @@ class STQ {
 public:
   STQ_IO io;
   void comb();
+  void st2ld_fwd(uint32_t, uint32_t &, int rob_idx);
   void seq();
+
   void init();
   int enq_ptr;
   int deq_ptr;

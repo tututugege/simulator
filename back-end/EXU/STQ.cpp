@@ -219,6 +219,84 @@ void STQ::seq() {
   io.stq2ren->stq_idx = enq_ptr;
 }
 
+extern uint32_t *p_memory;
+void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
+
+  int i = deq_ptr;
+  while (i != commit_ptr) {
+    if (entry[i].addr == addr) {
+      uint32_t wdata = entry[i].data;
+      uint32_t waddr = entry[i].addr;
+      uint32_t wstrb;
+      if (entry[i].size == 0b00)
+        wstrb = 0b1;
+      else if (entry[i].size == 0b01)
+        wstrb = 0b11;
+      else
+        wstrb = 0b1111;
+
+      int offset = entry[i].addr & 0x3;
+      wstrb = wstrb << offset;
+      wdata = wdata << (offset * 8);
+
+      uint32_t old_data = entry[i].data;
+      uint32_t mask = 0;
+      if (wstrb & 0b1)
+        mask |= 0xFF;
+      if (wstrb & 0b10)
+        mask |= 0xFF00;
+      if (wstrb & 0b100)
+        mask |= 0xFF0000;
+      if (wstrb & 0b1000)
+        mask |= 0xFF000000;
+
+      data = (mask & wdata) | (~mask & old_data);
+    }
+    LOOP_INC(i, STQ_NUM);
+  }
+
+  LOOP_DEC(rob_idx, ROB_NUM);
+  int end_idx = back.rob.deq_ptr;
+  LOOP_DEC(end_idx, ROB_NUM);
+  while (rob_idx != end_idx) {
+    // TODO:: amo inst forward
+
+    if (is_store(back.rob.entry[rob_idx].uop.op)) {
+      int stq_idx = back.rob.entry[rob_idx].uop.stq_idx;
+      if (entry[stq_idx].addr == addr && entry[stq_idx].amo_data2_valid) {
+        uint32_t wdata = entry[stq_idx].data;
+        uint32_t waddr = entry[stq_idx].addr;
+        uint32_t wstrb;
+        if (entry[stq_idx].size == 0b00)
+          wstrb = 0b1;
+        else if (entry[stq_idx].size == 0b01)
+          wstrb = 0b11;
+        else
+          wstrb = 0b1111;
+
+        int offset = entry[stq_idx].addr & 0x3;
+        wstrb = wstrb << offset;
+        wdata = wdata << (offset * 8);
+
+        uint32_t old_data = entry[stq_idx].data;
+        uint32_t mask = 0;
+        if (wstrb & 0b1)
+          mask |= 0xFF;
+        if (wstrb & 0b10)
+          mask |= 0xFF00;
+        if (wstrb & 0b100)
+          mask |= 0xFF0000;
+        if (wstrb & 0b1000)
+          mask |= 0xFF000000;
+
+        data = (mask & wdata) | (~mask & old_data);
+        break;
+      }
+    }
+    LOOP_DEC(rob_idx, ROB_NUM);
+  }
+}
+
 uint32_t amo(uint32_t src1, uint32_t src2, AMO_op amoop) {
   uint32_t res;
   switch (amoop) {

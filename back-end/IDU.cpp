@@ -8,6 +8,9 @@
 #include <cvt.h>
 #include <util.h>
 
+int id_stall_uop = 0;
+int id_stall_tag = 0;
+
 int decode(Inst_uop uop[2], uint32_t instruction);
 
 void IDU::init() {
@@ -84,6 +87,7 @@ void IDU::comb_decode() {
     // stall的情况：分支Tag不足 uop数目过多
     if (uop_num + dec_uop_num > DECODE_WIDTH) {
       stall = true;
+      id_stall_uop++;
       break;
     }
 
@@ -92,6 +96,8 @@ void IDU::comb_decode() {
         has_br = true;
       } else {
         stall = true;
+        if (no_tag)
+          id_stall_tag++;
         break;
       }
     }
@@ -190,7 +196,8 @@ void IDU::comb_fire() {
   }
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dec2front->fire[i] = dec_valid[i] && io.ren2dec->ready;
+    io.dec2front->fire[i] =
+        dec_valid[i] && io.ren2dec->ready && !io.dec_bcast->mispred;
     io.dec2front->ready =
         io.dec2front->ready && (!io.front2dec->valid[i] || dec_valid[i]);
     if (io.dec2front->fire[i] &&
@@ -217,7 +224,11 @@ void IDU::seq() {
   /*state = state_1;*/
   for (int i = 0; i < MAX_BR_NUM; i++) {
     tag_vec[i] = tag_vec_1[i];
+    /*if (sim_time % 10000 == 0)*/
+    /*  cout << tag_vec[i];*/
   }
+  /*if (sim_time % 10000 == 0)*/
+  /*  cout << endl;*/
 
   while (pop > 0) {
     tag_list.pop_back();
@@ -616,11 +627,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     } else if (is_CSR(uop[i].op)) {
       uop[i].iq_type = IQ_INTM;
     } else {
-      if (rand() % 2) {
-        uop[i].iq_type = IQ_INTD;
-      } else {
-        uop[i].iq_type = IQ_INTM;
-      }
+      uop[i].iq_type = (IQ_TYPE)(rand() % ALU_NUM);
     }
   }
 
