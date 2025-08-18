@@ -2,15 +2,35 @@
 #include <diff.h>
 
 class Ref_cpu {
-  CPU_state state;
-
+public:
   uint32_t *memory;
+  uint32_t Instruction;
+  CPU_state state;
+  uint8_t privilege;
   bool asy;
   bool page_fault_inst;
   bool page_fault_load;
   bool page_fault_store;
-  bool privilege[2];
+  bool illegal_exception;
 
-  void init();
+  bool M_software_interrupt;
+  bool M_timer_interrupt;
+  bool M_external_interrupt;
+  bool S_software_interrupt;
+  bool S_timer_interrupt;
+  bool S_external_interrupt;
+
+  bool is_br;
+  bool br_taken;
+
+  bool reg_wen;
+  uint32_t reg_wdata;
+
+  void init(uint32_t reset_pc);
   void exec();
+  void RISCV();
+  void RV32IM();
+  void RV32A();
+  void RV32CSR();
+  void exception(uint32_t trap_val);
 };

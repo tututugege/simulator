@@ -2,7 +2,6 @@
 #include "../front_module.h"
 #include "../frontend.h"
 #include "TOP.h"
-#include "config.h"
 #include "cvt.h"
 #include <cstdint>
 #include <cstdio>
@@ -11,7 +10,7 @@
 extern uint32_t *p_memory;
 extern Back_Top back;
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege);
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
 void icache_top(struct icache_in *in, struct icache_out *out) {
   if (in->reset) {
@@ -38,7 +37,7 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
 
         out->page_fault_inst[i] =
             !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 0,
-                   mstatus, sstatus, back.csr.privilege);
+                   mstatus, sstatus, back.csr.privilege, p_memory);
         if (out->page_fault_inst[i]) {
           out->fetch_group[i] = 0;
         } else {

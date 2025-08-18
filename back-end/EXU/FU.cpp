@@ -1,5 +1,6 @@
 #include "TOP.h"
 #include "config.h"
+#include "diff.h"
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
@@ -8,7 +9,7 @@ extern Back_Top back;
 
 bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege);
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
 enum STATE { IDLE, RECV };
 
@@ -269,7 +270,7 @@ void stu(Inst_uop &inst) {
                                32);
 
     page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 2,
-                        mstatus, sstatus, back.csr.privilege);
+                        mstatus, sstatus, back.csr.privilege, p_memory);
   }
 
   if (page_fault) {
