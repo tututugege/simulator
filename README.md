@@ -2,7 +2,9 @@
 
 back-end/中分出了各个模块，每个模块有时序逻辑（seq）和组合逻辑（comb)
 
-diff/是difftest部分，使用启蒙1号模拟器作为参考，比对每条指令提交后的寄存器以及对内存的操作是否正确
+back-end/include/IO.h中有各个模块之间的接口，存在一些冗余变量用于辅助debug或者探索优化空间
+
+diff/是difftest部分，使用内置的简单模拟器Ref_cpu类作为参考，比对每条指令提交后的寄存器以及对内存的操作是否正确
 
 
 ![后端架构图](./arch.svg)
@@ -15,8 +17,8 @@ diff/是difftest部分，使用启蒙1号模拟器作为参考，比对每条指
 
 参数为需要执行的程序
 
-交叉编译工具为师兄提供的环境，需要修改baremetal/common.mk
-中的`RISCV_PATH`为正确的目录或自己编译安装toolchains，主要是Uart相关
+交叉编译工具为riscv32ia套件，需要修改baremetal/common.mk
+中的`RISCV_PATH`为正确的目录或自己编译安装toolchains
 
 
 模拟器通过ebreak指令来判断程序是否结束
