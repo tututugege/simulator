@@ -3,10 +3,6 @@
 #include <cstdint>
 #include <cvt.h>
 
-#define CSR_W 0b01
-#define CSR_S 0b10
-#define CSR_C 0b11
-
 void CSRU::init() {
   CSR_RegFile[number_misa] = 0x40141101; // U/S/M  RV32I/A/M
 }

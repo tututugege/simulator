@@ -31,22 +31,20 @@ extern int raw_stall_num[ISSUE_WAY];
 using namespace std;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege);
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
-uint32_t next_PC[FETCH_WIDTH];
-uint32_t fetch_PC[FETCH_WIDTH];
 
 // 后端执行
 Back_Top back;
 bool ret;
 bool sim_end = false;
 long long sim_time;
-
-void branch_check();
-
 int commit_num;
+
+void perfect_bpu_run(bool redirect);
+void perfect_bpu_init(int img_size);
 
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
@@ -71,7 +69,7 @@ int main(int argc, char *argv[]) {
     p_memory[img_size + POS_MEMORY_SHIFT] = inst_32b;
   }
 
-  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
+  p_memory[uint32_t(0x0 / 4)] = 0x13;
   p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
   p_memory[uint32_t(0xc / 4)] = 0x00028067;
@@ -90,9 +88,13 @@ int main(int argc, char *argv[]) {
   init_difftest(img_size);
 #endif
 
-#ifdef CONFIG_RUN_V1
+#ifdef CONFIG_PERFECT_BPU
+  perfect_bpu_init(img_size);
+#endif
+
+#ifdef CONFIG_RUN_REF
   while (1) {
-    v1_difftest_exec();
+    difftest_step();
     sim_time++;
   }
 #endif
@@ -120,7 +122,11 @@ int main(int argc, char *argv[]) {
 
     if (!stall || misprediction || exception) {
 
-#if defined(CONFIG_BRANCHCHECK)
+#if defined(CONFIG_PERFECT_BPU)
+      extern bool perfect_fetch_valid[FETCH_WIDTH];
+      extern uint32_t perfect_pred_PC[FETCH_WIDTH];
+      extern uint32_t perfect_fetch_PC[FETCH_WIDTH];
+      extern bool perfect_pred_dir[FETCH_WIDTH];
 
 #elif defined(CONFIG_BPU)
 
@@ -169,7 +175,7 @@ int main(int argc, char *argv[]) {
 
           front_out.page_fault_inst[j] =
               !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[number_satp], 0,
-                     mstatus, sstatus, back.csr.privilege);
+                     mstatus, sstatus, back.csr.privilege, p_memory);
           if (front_out.page_fault_inst[j]) {
             front_out.instructions[j] = 0;
           } else {
@@ -188,28 +194,19 @@ int main(int argc, char *argv[]) {
 
 #endif
 
-#ifdef CONFIG_BRANCHCHECK
+#ifdef CONFIG_PERFECT_BPU
 
-      branch_check();
+      perfect_bpu_run(back.out.mispred);
       for (int j = 0; j < FETCH_WIDTH; j++) {
-        back.in.valid[j] = true;
-        back.in.pc[j] = fetch_PC[j];
-        back.in.inst[j] = p_memory[fetch_PC[j] >> 2];
+        back.in.valid[j] = perfect_fetch_valid[j];
+        back.in.pc[j] = perfect_fetch_PC[j];
+        back.in.inst[j] = p_memory[perfect_fetch_PC[j] >> 2];
+        back.in.page_fault_inst[j] = false;
         if (LOG)
           cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-               << fetch_PC[j] << endl;
-
-        if (j != FETCH_WIDTH - 1)
-          back.in.predict_next_fetch_address[j] = fetch_PC[j + 1];
-        else
-          back.in.predict_next_fetch_address[j] = next_PC[0];
-
-        back.in.predict_dir[j] =
-            (back.in.predict_next_fetch_address[j] != fetch_PC[j] + 4);
-      }
-
-      for (int j = 0; j < FETCH_WIDTH; j++) {
-        fetch_PC[j] = next_PC[j];
+               << perfect_fetch_PC[j] << endl;
+        back.in.predict_next_fetch_address[j] = perfect_pred_PC[j];
+        back.in.predict_dir[j] = perfect_pred_dir[j];
       }
 
 #else
@@ -384,7 +381,7 @@ SIM_END:
 }
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege) {
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory) {
   uint32_t d = 24;
   uint32_t a = 25;
   uint32_t g = 26;
@@ -487,7 +484,7 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
                                32);
 
     ret = va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 1, mstatus,
-                sstatus, back.csr.privilege);
+                sstatus, back.csr.privilege, p_memory);
   }
 
   if (p_addr == 0x1fd0e000) {

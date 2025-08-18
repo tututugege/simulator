@@ -1,8 +1,5 @@
 #pragma once
 #include <TOP.h>
-#define BIT_WIDTH 3500
-extern const int bit_width;
-extern int time_i;
 
 #define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
 #define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B

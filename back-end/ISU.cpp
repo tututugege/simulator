@@ -200,7 +200,7 @@ void ISU::seq() {
     for (auto e : q.entry)
       if (e.valid && (!e.uop.src1_en || !e.uop.src1_busy) &&
           (!e.uop.src2_en || !e.uop.src2_busy) &&
-          !(is_load(e.uop.op) && orR(e.uop.pre_store, 16))) {
+          !(is_load(e.uop.op) && orR(e.uop.pre_store, 32))) {
         isu_ready_num[q.type]++;
       }
 }
@@ -248,7 +248,7 @@ Inst_entry IQ::scheduler() {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid && (!entry[i].uop.src1_en || !entry[i].uop.src1_busy) &&
         (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
-        !(is_load(entry[i].uop.op) && orR(entry[i].uop.pre_store, 16))) {
+        !(is_load(entry[i].uop.op) && orR(entry[i].uop.pre_store, 32))) {
 #ifdef CONFIG_PRIOR
       if (!iss_entry.valid) {
         iss_entry = entry[i];

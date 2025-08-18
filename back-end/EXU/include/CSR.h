@@ -4,6 +4,9 @@
 #include <cstdint>
 
 #define M_MODE_ECALL 0xb
+#define CSR_W 0b01
+#define CSR_S 0b10
+#define CSR_C 0b11
 
 enum enum_number_csr_code {
   number_mtvec = 0x305,
@@ -29,6 +32,32 @@ enum enum_number_csr_code {
   number_misa = 0x301,
   number_time = 0xc01,
   number_timeh = 0xc81,
+};
+
+enum enum_csr {
+  csr_mtvec,
+  csr_mepc,
+  csr_mcause,
+  csr_mie,
+  csr_mip,
+  csr_mtval,
+  csr_mscratch,
+  csr_mstatus,
+  csr_mideleg,
+  csr_medeleg,
+  csr_sepc,
+  csr_stvec,
+  csr_scause,
+  csr_sscratch,
+  csr_stval,
+  csr_sstatus,
+  csr_sie,
+  csr_sip,
+  csr_satp,
+  csr_mhartid,
+  csr_misa,
+  csr_time,
+  csr_timeh,
 };
 
 typedef struct {
