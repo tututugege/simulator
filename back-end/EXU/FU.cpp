@@ -252,10 +252,8 @@ void ldu(Inst_uop &inst) {
   }
 }
 
-void stu(Inst_uop &inst) {
+void stu_addr(Inst_uop &inst) {
   uint32_t v_addr = inst.src1_rdata + inst.imm;
-  /*if (v_addr == 0xcf42bc28)*/
-  /*  cout << hex << inst.pc << endl;*/
 
   uint32_t p_addr = v_addr;
   bool page_fault = false;
@@ -278,5 +276,58 @@ void stu(Inst_uop &inst) {
     inst.result = v_addr;
   } else {
     inst.result = p_addr;
+  }
+}
+
+void stu_data(Inst_uop &inst) {
+  switch (inst.amoop) {
+  case AMOADD: { // amoadd.w
+    inst.result = inst.src1_rdata + inst.src2_rdata;
+    break;
+  }
+  case AMOSWAP: { // amoswap.w
+    inst.result = inst.src2_rdata;
+    break;
+  }
+  case AMOXOR: { // amoxor.w
+    inst.result = inst.src1_rdata ^ inst.src2_rdata;
+    break;
+  }
+  case AMOOR: { // amoor.w
+
+    inst.result = inst.src1_rdata | inst.src2_rdata;
+    break;
+  }
+  case AMOAND: { // amoand.w
+    inst.result = inst.src1_rdata & inst.src2_rdata;
+    break;
+  }
+  case AMOMIN: { // amomin.w
+    inst.result = ((int)inst.src1_rdata > (int)inst.src2_rdata)
+                      ? inst.src2_rdata
+                      : inst.src1_rdata;
+    break;
+  }
+  case AMOMAX: { // amomax.w
+    inst.result = ((int)inst.src1_rdata > (int)inst.src2_rdata)
+                      ? inst.src1_rdata
+                      : inst.src2_rdata;
+    break;
+  }
+  case AMOMINU: { // amominu.w
+    inst.result = ((uint32_t)inst.src1_rdata > (uint32_t)inst.src2_rdata)
+                      ? inst.src2_rdata
+                      : inst.src1_rdata;
+    break;
+  }
+  case AMOMAXU: { // amomaxu.w
+    inst.result = ((uint32_t)inst.src1_rdata > (uint32_t)inst.src2_rdata)
+                      ? inst.src1_rdata
+                      : inst.src2_rdata;
+    break;
+  }
+  default:
+    inst.result = inst.src2_rdata;
+    break;
   }
 }

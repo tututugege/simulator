@@ -5,7 +5,8 @@
 using namespace std;
 
 #define MAX_SIM_TIME 2000000000
-#define ISSUE_WAY 4
+#define ISSUE_WAY 6
+#define MAX_UOP_NUM 3
 
 #define ARF_NUM 32
 #define PRF_NUM 128
@@ -18,18 +19,18 @@ using namespace std;
 #define ALU_NUM 2
 
 #define LOG_START 0
-#define LOG (0 && (sim_time > LOG_START))
-#define MEM_LOG (0 && (sim_time > LOG_START))
+#define LOG (0 && (sim_time >= LOG_START))
+#define MEM_LOG (0 && (sim_time >= LOG_START))
 
 extern long long sim_time;
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_RUN_REF*/
-#define CONFIG_PERFECT_BPU
+/*#define CONFIG_PERFECT_BPU*/
 /*#define CONFIG_BPU*/
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE { IQ_INTM, IQ_INTD, IQ_LS, IQ_BR, IQ_NUM };
+enum IQ_TYPE { IQ_INTM, IQ_INTD, IQ_LD, IQ_STA, IQ_STD, IQ_BR, IQ_NUM };
 enum FU_TYPE { FU_ALU, FU_LSU, FU_BRU, FU_MUL, FU_DIV, FU_TYPE_NUM };
 
 extern int fu_config[ISSUE_WAY];
@@ -40,7 +41,8 @@ enum Inst_op {
   ADD,
   BR,
   LOAD,
-  STORE,
+  STA,
+  STD,
   CSR,
   ECALL,
   EBREAK,
@@ -98,9 +100,12 @@ typedef struct Inst_uop {
   uint32_t csr_idx;
   uint32_t rob_idx;
   uint32_t stq_idx;
-  bool pre_store[32];
+  bool pre_sta[16];
+  bool pre_std[16];
 
   bool is_last_uop;
+  int uop_num;
+  bool valid_commit;
 
   // page_fault
   bool page_fault_inst = false;

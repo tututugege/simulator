@@ -1,3 +1,4 @@
+#pragma once
 #include "config.h"
 #include <EXU.h>
 #include <IO.h>
@@ -22,7 +23,6 @@ public:
 
   void comb_branch();
   void comb_read();
-  void comb_amo();
   void init();
   void seq();
 

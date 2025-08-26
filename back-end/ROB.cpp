@@ -61,69 +61,94 @@ void ROB::comb_commit() {
       io.rob_bc->page_fault_store = io.rob_bc->illegal_inst = false;
 
   stall_cycle++;
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
+  int i = 0;
+  while (i < COMMIT_WIDTH) {
     int idx = (deq_ptr + i) % ROB_NUM;
-    io.rob_commit->commit_entry[i].uop = entry[idx].uop;
-    if (i == 0) {
-      io.rob_commit->commit_entry[i].valid = entry[idx].valid && complete[idx];
-
-      if (io.rob_commit->commit_entry[i].valid)
-        stall_cycle = 0;
-    } else {
-      io.rob_commit->commit_entry[i].valid =
-          entry[idx].valid && complete[idx] && !exception[idx] &&
-          io.rob_commit->commit_entry[i - 1].valid;
+    int uop_num = entry[idx].uop.uop_num;
+    if (i + uop_num >= COMMIT_WIDTH) {
+      break;
     }
 
-    if (io.rob_commit->commit_entry[i].valid) {
-      commit_num++;
-      complete_1[idx] = false;
-      entry_1[idx].valid = false;
+    // 判断下一个inst的所有uop是否执行完毕
+    int temp_idx = idx;
+    int temp_i = i;
+    bool all_complete = true;
+    for (int j = 0; j < uop_num; j++) {
+      if (temp_i == 0) {
+        io.rob_commit->commit_entry[temp_i].valid =
+            entry[temp_idx].valid && complete[temp_idx];
+      } else {
+        io.rob_commit->commit_entry[temp_i].valid =
+            entry[temp_idx].valid && complete[temp_idx] &&
+            !exception[temp_idx] &&
+            io.rob_commit->commit_entry[temp_i - 1].valid;
+      }
 
-      if (exception[idx] || entry[idx].uop.op == CSR) {
-        io.rob_bc->flush = true;
-        io.rob_bc->exception = exception[idx];
-        exception_1[idx] = false;
-
-        if (entry[idx].uop.op == ECALL) {
-          io.rob_bc->ecall = true;
-          io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
-        } else if (entry[idx].uop.op == MRET) {
-          io.rob_bc->mret = true;
-        } else if (entry[idx].uop.op == SRET) {
-          io.rob_bc->sret = true;
-        } else if (entry[idx].uop.page_fault_store) {
-          io.rob_bc->page_fault_store = true;
-          io.rob_bc->trap_val = entry[idx].uop.result;
-          io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
-        } else if (entry[idx].uop.page_fault_load) {
-          io.rob_bc->page_fault_load = true;
-          io.rob_bc->trap_val = entry[idx].uop.result;
-          io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
-        } else if (entry[idx].uop.page_fault_inst) {
-          io.rob_bc->page_fault_inst = true;
-          io.rob_bc->trap_val = entry[idx].uop.pc;
-          io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
-        } else if (entry[idx].uop.illegal_inst) {
-          io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
-          io.rob_bc->illegal_inst = true;
-          io.rob_bc->trap_val = entry[idx].uop.instruction;
-        } else if (entry[idx].uop.op == EBREAK) {
-          extern bool sim_end;
-          sim_end = true;
-        } else {
-          if (entry[idx].uop.op != CSR) {
-            cout << hex << entry[idx].uop.instruction << endl;
-            exit(1);
-          }
-
-          io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc + 4;
-        }
+      if (!io.rob_commit->commit_entry[temp_i].valid) {
+        all_complete = false;
         break;
+      }
+      LOOP_INC(temp_idx, ROB_NUM);
+      temp_i++;
+    }
+
+    if (all_complete && uop_num >= 1) {
+      stall_cycle = 0;
+      for (int j = 0; j < uop_num; j++) {
+        io.rob_commit->commit_entry[i].uop = entry[idx].uop;
+        complete_1[idx] = false;
+        entry_1[idx].valid = false;
+
+        if (exception[idx] || entry[idx].uop.op == CSR) {
+          io.rob_bc->flush = true;
+          io.rob_bc->exception = exception[idx];
+          exception_1[idx] = false;
+
+          if (entry[idx].uop.op == ECALL) {
+            io.rob_bc->ecall = true;
+            io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
+          } else if (entry[idx].uop.op == MRET) {
+            io.rob_bc->mret = true;
+          } else if (entry[idx].uop.op == SRET) {
+            io.rob_bc->sret = true;
+          } else if (entry[idx].uop.page_fault_store) {
+            io.rob_bc->page_fault_store = true;
+            io.rob_bc->trap_val = entry[idx].uop.result;
+            io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
+          } else if (entry[idx].uop.page_fault_load) {
+            io.rob_bc->page_fault_load = true;
+            io.rob_bc->trap_val = entry[idx].uop.result;
+            io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
+          } else if (entry[idx].uop.page_fault_inst) {
+            io.rob_bc->page_fault_inst = true;
+            io.rob_bc->trap_val = entry[idx].uop.pc;
+            io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
+          } else if (entry[idx].uop.illegal_inst) {
+            io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc;
+            io.rob_bc->illegal_inst = true;
+            io.rob_bc->trap_val = entry[idx].uop.instruction;
+          } else if (entry[idx].uop.op == EBREAK) {
+            extern bool sim_end;
+            sim_end = true;
+          } else {
+            if (entry[idx].uop.op != CSR) {
+              cout << hex << entry[idx].uop.instruction << endl;
+              exit(1);
+            }
+
+            io.rob_bc->pc = io.rob_commit->commit_entry[i].uop.pc + 4;
+          }
+        }
+        i++;
+        LOOP_INC(idx, ROB_NUM);
+        commit_num++;
       }
     } else {
       break;
     }
+
+    if (io.rob_bc->exception)
+      break;
   }
   deq_ptr_1 = (deq_ptr + commit_num) % ROB_NUM;
   count_1 -= commit_num;
@@ -134,10 +159,11 @@ void ROB::comb_commit() {
 
   io.rob2ren->enq_idx = enq_ptr;
 
-  if (stall_cycle > 250) {
+  if (stall_cycle > 300) {
     cout << dec << sim_time << endl;
     cout << "卡死了" << endl;
-    exit(1);
+    cout << hex << entry[deq_ptr].uop.instruction;
+    /*exit(1);*/
   }
 }
 
@@ -157,14 +183,25 @@ void ROB::comb_complete() {
             io.prf2rob->entry[i].uop.br_taken;
       }
 
-      if (i == IQ_LS) {
+      if (i == IQ_LD || i == IQ_STA) {
         if (is_page_fault(io.prf2rob->entry[i].uop)) {
-          exception_1[io.prf2rob->entry[i].uop.rob_idx] = true;
-          entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.result =
-              io.prf2rob->entry[i].uop.result;
-          entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.page_fault_load =
+          int idx = io.prf2rob->entry[i].uop.rob_idx;
+          while (!entry[idx].uop.is_last_uop) {
+            LOOP_INC(idx, ROB_NUM);
+          }
+
+          entry_1[idx].uop.is_last_uop = false;
+          for (int j = 0; j < entry[idx].uop.uop_num - 1; j++) {
+            entry[idx].uop.valid_commit = false;
+            LOOP_DEC(idx, ROB_NUM);
+          }
+
+          exception_1[idx] = true;
+          entry_1[idx].uop.is_last_uop = true;
+          entry_1[idx].uop.result = io.prf2rob->entry[i].uop.result;
+          entry_1[idx].uop.page_fault_load =
               io.prf2rob->entry[i].uop.page_fault_load;
-          entry_1[io.prf2rob->entry[i].uop.rob_idx].uop.page_fault_store =
+          entry_1[idx].uop.page_fault_store =
               io.prf2rob->entry[i].uop.page_fault_store;
         }
       }

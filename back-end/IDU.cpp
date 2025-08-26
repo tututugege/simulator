@@ -11,7 +11,7 @@
 int id_stall_uop = 0;
 int id_stall_tag = 0;
 
-int decode(Inst_uop uop[2], uint32_t instruction);
+int decode(Inst_uop uop[MAX_UOP_NUM], uint32_t instruction);
 
 void IDU::init() {
   /*state = 0;*/
@@ -52,6 +52,7 @@ void IDU::comb_decode() {
 
       if (io.front2dec->page_fault_inst[i]) {
         uop_num = 1;
+        dec_uop[i][0].uop_num = 1;
         dec_uop[i][0].page_fault_inst = true;
         dec_uop[i][0].page_fault_load = false;
         dec_uop[i][0].page_fault_store = false;
@@ -59,21 +60,25 @@ void IDU::comb_decode() {
         dec_uop[i][0].is_last_uop = true;
         dec_uop[i][0].src1_en = dec_uop[i][0].src2_en = dec_uop[i][0].dest_en =
             false;
-
-        dec_uop[i][1].op = NONE;
         uop_valid[i][0] = true;
-        uop_valid[i][1] = false;
+
+        for (int j = 1; j < MAX_UOP_NUM; j++) {
+          dec_uop[i][j].op = NONE;
+          uop_valid[i][j] = false;
+        }
       } else {
         uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
       }
     } else {
-      uop_valid[i][0] = false;
-      uop_valid[i][1] = false;
       dec_valid[i] = false;
+      for (int j = 0; j < MAX_UOP_NUM; j++) {
+        dec_uop[i][j].op = NONE;
+        uop_valid[i][j] = false;
+      }
       continue;
     }
 
-    for (int j = 0; j < 2; j++) {
+    for (int j = 0; j < MAX_UOP_NUM; j++) {
       dec_uop[i][j].tag = (has_br) ? alloc_tag : now_tag;
       dec_uop[i][j].pc = io.front2dec->pc[i];
       dec_uop[i][j].pred_br_taken = io.front2dec->predict_dir[i];
@@ -104,26 +109,28 @@ void IDU::comb_decode() {
 
     dec_valid[i] = true;
     dec_uop_num += uop_num;
-    if (uop_num == 2) {
-      uop_valid[i][0] = true;
-      uop_valid[i][1] = true;
-    } else {
-      uop_valid[i][0] = true;
-      uop_valid[i][1] = false;
+
+    for (int j = 0; j < uop_num; j++) {
+      uop_valid[i][j] = true;
+    }
+
+    for (int j = uop_num; j < MAX_UOP_NUM; j++) {
+      uop_valid[i][j] = false;
     }
   }
 
   if (stall) {
     for (; i < FETCH_WIDTH; i++) {
-      uop_valid[i][0] = false;
-      uop_valid[i][1] = false;
       dec_valid[i] = false;
+      for (int j = 0; j < MAX_UOP_NUM; j++) {
+        uop_valid[i][j] = false;
+      }
     }
   }
 
   int port = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    for (int j = 0; j < 2; j++) {
+    for (int j = 0; j < MAX_UOP_NUM; j++) {
       if (uop_valid[i][j]) {
         io.dec2ren->uop[port] = dec_uop[i][j];
         io.dec2ren->valid[port] = true;
@@ -297,25 +304,27 @@ int decode(Inst_uop uop[2], uint32_t inst) {
   csr_idx = inst >> 20;
 
   extern long long sim_time;
-  uop[0] = {.instruction = inst,
-            .dest_areg = reg_d_index,
-            .src1_areg = reg_a_index,
-            .src2_areg = reg_b_index,
-            .src1_is_pc = false,
-            .src2_is_imm = true,
-            .func3 = number_funct3_unsigned,
-            .func7_5 = (bool)(number_funct7_unsigned >> 5),
-            .csr_idx = csr_idx,
-            .is_last_uop = true,
-            .page_fault_inst = false,
-            .page_fault_load = false,
-            .page_fault_store = false,
-            .illegal_inst = false,
-            .amoop = AMONONE,
-            .inst_idx = sim_time};
 
-  uop[1] = uop[0];
-  uop[1].op = NONE;
+  for (int i = 0; i < MAX_UOP_NUM; i++) {
+    uop[i] = {.instruction = inst,
+              .dest_areg = reg_d_index,
+              .src1_areg = reg_a_index,
+              .src2_areg = reg_b_index,
+              .src1_is_pc = false,
+              .src2_is_imm = true,
+              .func3 = number_funct3_unsigned,
+              .func7_5 = (bool)(number_funct7_unsigned >> 5),
+              .csr_idx = csr_idx,
+              .is_last_uop = true,
+              .valid_commit = true,
+              .page_fault_inst = false,
+              .page_fault_load = false,
+              .page_fault_store = false,
+              .illegal_inst = false,
+              .op = NONE,
+              .amoop = AMONONE,
+              .inst_idx = sim_time};
+  }
 
   switch (number_op_code_unsigned) {
   case number_0_opcode_lui: { // lui
@@ -412,10 +421,18 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     break;
   }
   case number_6_opcode_sb: { // sb, sh, sw
+    uop_num = 2;
+
     uop[0].dest_en = false;
     uop[0].src1_en = true;
-    uop[0].src2_en = true;
-    uop[0].op = STORE;
+    uop[0].src2_en = false;
+    uop[0].op = STA;
+    uop[0].is_last_uop = false;
+
+    uop[1].dest_en = false;
+    uop[1].src1_en = false;
+    uop[1].src2_en = true;
+    uop[1].op = STD;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_s_type, 12);
@@ -517,7 +534,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
   }
 
   case number_11_opcode_lrw: {
-    uop_num = 2;
+    uop_num = 3;
     uop[0].dest_en = true;
     uop[0].src1_en = true;
     uop[0].src2_en = false;
@@ -527,9 +544,23 @@ int decode(Inst_uop uop[2], uint32_t inst) {
 
     uop[1].dest_en = false;
     uop[1].src1_en = true;
-    uop[1].src2_en = true;
+    uop[1].src2_en = false;
     uop[1].imm = 0;
-    uop[1].op = STORE;
+    uop[1].op = STA;
+    uop[1].is_last_uop = false;
+
+    uop[2].dest_en = false;
+    uop[2].src1_en = true;
+    uop[2].src2_en = true;
+    uop[2].src1_areg = reg_d_index;
+    uop[2].imm = 0;
+    uop[2].op = STD;
+    uop[2].is_last_uop = true;
+
+    if (reg_d_index == 0) {
+      uop[0].dest_areg = 32;
+      uop[2].src1_areg = 32;
+    }
 
     switch (number_funct7_unsigned >> 2) {
     case 0: { // amoadd.w
@@ -548,21 +579,25 @@ int decode(Inst_uop uop[2], uint32_t inst) {
       uop[0].op = LOAD;
       uop[0].amoop = LR;
       uop[0].is_last_uop = true;
-
-      uop[1].op = NONE;
       break;
     }
     case 3: { // sc.w
-      uop[0].op = STORE;
+      uop_num = 3;
+      uop[0].op = STA;
       uop[0].imm = 0;
       uop[0].amoop = SC;
-      uop[0].src2_en = true;
       uop[0].dest_en = false;
 
-      uop[1].op = ADD;
-      uop[1].src1_areg = 0;
-      uop[1].src2_areg = 0;
-      uop[1].dest_en = true;
+      uop[1].op = STD;
+      uop[1].imm = 0;
+      uop[1].src2_en = false;
+      uop[1].src2_en = true;
+      uop[1].dest_en = false;
+
+      uop[2].op = ADD;
+      uop[2].src1_areg = 0;
+      uop[2].src2_areg = 0;
+      uop[2].dest_en = true;
       break;
     }
     case 4: { // amoxor.w
@@ -596,6 +631,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
     }
 
     uop[1].amoop = uop[0].amoop;
+    uop[2].amoop = uop[0].amoop;
     break;
   }
 
@@ -610,16 +646,24 @@ int decode(Inst_uop uop[2], uint32_t inst) {
   }
 
   // 不写0寄存器
-  if (reg_d_index == 0) {
-    uop[0].dest_en = 0;
-    uop[1].dest_en = 0;
+  for (int i = 0; i < MAX_UOP_NUM; i++) {
+    if (uop[i].dest_areg == 0)
+      uop[i].dest_en = false;
+  }
+
+  for (int i = 0; i < MAX_UOP_NUM; i++) {
+    uop[i].uop_num = uop_num;
   }
 
   for (int i = 0; i < uop_num; i++) {
     if (is_branch(uop[i].op)) {
       uop[i].iq_type = IQ_BR;
-    } else if (is_load(uop[i].op) || is_store(uop[i].op)) {
-      uop[i].iq_type = IQ_LS;
+    } else if (uop[i].op == LOAD) {
+      uop[i].iq_type = IQ_LD;
+    } else if (uop[i].op == STA) {
+      uop[i].iq_type = IQ_STA;
+    } else if (uop[i].op == STD) {
+      uop[i].iq_type = IQ_STD;
     } else if (uop[i].op == MUL) {
       uop[i].iq_type = IQ_INTM;
     } else if (uop[i].op == DIV) {

@@ -11,9 +11,9 @@ typedef struct {
   uint32_t data;
 
   bool complete;
+  bool addr_valid;
+  bool data_valid;
   bool valid;
-  bool amo_data1_valid;
-  bool amo_data2_valid;
   uint32_t tag;
 } STQ_entry;
 
@@ -146,8 +146,10 @@ typedef struct {
 } Stq_Ren;
 
 typedef struct {
-  // 实际写入
-  Inst_entry entry;
+  // 地址写入
+  Inst_entry addr_entry;
+  // 数据写入
+  Inst_entry data_entry;
 } Exe_Stq;
 
 typedef struct {

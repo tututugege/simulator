@@ -1,25 +1,14 @@
+#include "TOP.h"
 #include "config.h"
 #include <IO.h>
 #include <PRF.h>
 #include <iostream>
 #include <util.h>
+extern Back_Top back;
 
 void PRF::init() {
   for (int i = 0; i < ISSUE_WAY; i++)
     io.prf2exe->ready[i] = true;
-}
-
-void PRF::comb_amo() {
-  io.prf2stq->amoop = inst_r[IQ_LS].uop.amoop;
-  io.prf2stq->load_data = inst_r[IQ_LS].uop.result;
-  io.prf2stq->stq_idx = inst_r[IQ_LS].uop.stq_idx;
-  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.op == LOAD &&
-      inst_r[IQ_LS].uop.amoop != AMONONE && inst_r[IQ_LS].uop.amoop != LR) {
-    /*assert(io.prf2stq->stq_idx == 0);*/
-    io.prf2stq->valid = true;
-  } else {
-    io.prf2stq->valid = false;
-  }
 }
 
 void PRF::comb_branch() {
@@ -87,11 +76,10 @@ void PRF::comb_read() {
       io.prf2rob->entry[i].valid = false;
   }
 
-  // TODO: MAGIC NUMBER
-  if (inst_r[IQ_LS].valid && inst_r[IQ_LS].uop.dest_en &&
-      !inst_r[IQ_LS].uop.page_fault_load) {
+  if (inst_r[IQ_LD].valid && inst_r[IQ_LD].uop.dest_en &&
+      !inst_r[IQ_LD].uop.page_fault_load) {
     io.prf_awake->wake.valid = true;
-    io.prf_awake->wake.preg = inst_r[IQ_LS].uop.dest_preg;
+    io.prf_awake->wake.preg = inst_r[IQ_LD].uop.dest_preg;
   } else {
     io.prf_awake->wake.valid = false;
   }
