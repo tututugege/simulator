@@ -31,22 +31,14 @@ IQ::IQ(int entry_num, IQ_TYPE type) {
 void ISU::init() {
   add_iq(16, IQ_INTM);
   add_iq(16, IQ_INTD);
-  add_iq(32, IQ_LS);
+  add_iq(16, IQ_LD);
+  add_iq(16, IQ_STA);
+  add_iq(16, IQ_STD);
   add_iq(MAX_BR_NUM, IQ_BR);
 }
 
 void IQ::enq(Inst_uop *inst) {
   int i;
-
-  if (is_load(inst->op)) {
-    for (i = 0; i < entry_num; i++) {
-      if (entry[i].valid && is_store(entry[i].uop.op)) {
-        inst->pre_store[i] = true;
-      } else {
-        inst->pre_store[i] = false;
-      }
-    }
-  }
 
   for (i = 0; i < entry_num; i++) {
     if (entry[i].valid == false) {
@@ -82,8 +74,7 @@ void IQ::update_prior(Inst_uop &uop) {
 
   if (is_branch(uop.op) && uop.br_conf < 3) {
     for (int i = 0; i < entry_num; i++) {
-      if (entry[i].valid && entry[i].uop.tag == uop.tag &&
-          !is_store(entry[i].uop.op)) {
+      if (entry[i].valid && entry[i].uop.tag == uop.tag) {
         if (entry[i].uop.prior < 3) {
           entry[i].uop.prior++;
         }
@@ -152,57 +143,73 @@ void ISU::seq() {
 
       for (auto &q : iq) {
         if (q.type == io.ren2iss->uop[i].iq_type) {
+          if (q.type == IQ_LD) {
+            for (int j = 0; j < iq[IQ_STA].entry_num; j++) {
+              if (iq[IQ_STA].entry[j].valid)
+                io.ren2iss->uop[i].pre_sta[j] = true;
+              else
+                io.ren2iss->uop[i].pre_sta[j] = false;
+            }
+
+            for (int j = 0; j < iq[IQ_STD].entry_num; j++) {
+              if (iq[IQ_STD].entry[j].valid)
+                io.ren2iss->uop[i].pre_std[j] = true;
+              else
+                io.ren2iss->uop[i].pre_std[j] = false;
+            }
+          }
           q.enq(&io.ren2iss->uop[i]);
           break;
         }
-      }
 
+        for (auto &q : iq) {
+          q.update_prior(io.ren2iss->uop[i]);
+        }
+      }
+    }
+
+    // 唤醒
+    for (int i = 0; i < ALU_NUM; i++) {
+      if (io.iss2prf->iss_entry[i].valid &&
+          io.iss2prf->iss_entry[i].uop.dest_en) {
+        for (auto &q : iq) {
+          q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
+        }
+      }
+    }
+
+    if (io.awake->wake.valid) {
       for (auto &q : iq) {
-        q.update_prior(io.ren2iss->uop[i]);
+        q.wake_up(io.awake->wake.preg);
       }
     }
-  }
 
-  // 唤醒
-  for (int i = 0; i < ALU_NUM; i++) {
-    if (io.iss2prf->iss_entry[i].valid &&
-        io.iss2prf->iss_entry[i].uop.dest_en) {
+    // 分支处理
+    if (io.dec_bcast->mispred) {
       for (auto &q : iq) {
-        q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
+        q.br_clear(io.dec_bcast->br_mask);
       }
     }
-  }
 
-  if (io.awake->wake.valid) {
-    for (auto &q : iq) {
-      q.wake_up(io.awake->wake.preg);
-    }
-  }
-
-  // 分支处理
-  if (io.dec_bcast->mispred) {
-    for (auto &q : iq) {
-      q.br_clear(io.dec_bcast->br_mask);
-    }
-  }
-
-  if (io.rob_bc->flush) {
-    for (auto &q : iq) {
-      q.br_clear((1 << MAX_BR_NUM) - 1);
-    }
-  }
-
-  for (auto &q : iq) {
-    q.num_temp = q.num;
-  }
-
-  for (auto q : iq)
-    for (auto e : q.entry)
-      if (e.valid && (!e.uop.src1_en || !e.uop.src1_busy) &&
-          (!e.uop.src2_en || !e.uop.src2_busy) &&
-          !(is_load(e.uop.op) && orR(e.uop.pre_store, 32))) {
-        isu_ready_num[q.type]++;
+    if (io.rob_bc->flush) {
+      for (auto &q : iq) {
+        q.br_clear((1 << MAX_BR_NUM) - 1);
       }
+    }
+
+    for (auto &q : iq) {
+      q.num_temp = q.num;
+    }
+
+    for (auto q : iq)
+      for (auto e : q.entry)
+        if (e.valid && (!e.uop.src1_en || !e.uop.src1_busy) &&
+            (!e.uop.src2_en || !e.uop.src2_busy) &&
+            !(is_load(e.uop.op) &&
+              (orR(e.uop.pre_sta, 16) || orR(e.uop.pre_std, 16)))) {
+          isu_ready_num[q.type]++;
+        }
+  }
 }
 
 void IQ::br_clear(uint32_t br_mask) {
@@ -229,10 +236,17 @@ void IQ::wake_up(uint32_t dest_preg) {
   }
 }
 
-void IQ::store_wake_up(int idx) {
+void IQ::sta_wake_up(int idx) {
   for (int j = 0; j < entry_num; j++) {
     if (entry[j].valid)
-      entry[j].uop.pre_store[idx] = false;
+      entry[j].uop.pre_sta[idx] = false;
+  }
+}
+
+void IQ::std_wake_up(int idx) {
+  for (int j = 0; j < entry_num; j++) {
+    if (entry[j].valid)
+      entry[j].uop.pre_std[idx] = false;
   }
 }
 
@@ -248,7 +262,8 @@ Inst_entry IQ::scheduler() {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid && (!entry[i].uop.src1_en || !entry[i].uop.src1_busy) &&
         (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
-        !(is_load(entry[i].uop.op) && orR(entry[i].uop.pre_store, 32))) {
+        !(is_load(entry[i].uop.op) &&
+          (orR(entry[i].uop.pre_sta, 16) || orR(entry[i].uop.pre_std, 16)))) {
 #ifdef CONFIG_PRIOR
       if (!iss_entry.valid) {
         iss_entry = entry[i];
@@ -276,9 +291,14 @@ Inst_entry IQ::scheduler() {
 
   if (iss_entry.valid) {
     // 唤醒load
-    if (is_store(iss_entry.uop.op)) {
-      store_wake_up(iss_idx);
+    if (is_sta(iss_entry.uop.op)) {
+      back.isu.iq[IQ_LD].sta_wake_up(iss_idx);
     }
+
+    if (is_std(iss_entry.uop.op)) {
+      back.isu.iq[IQ_LD].std_wake_up(iss_idx);
+    }
+
     entry[iss_idx].valid = false;
   }
 

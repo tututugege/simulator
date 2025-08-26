@@ -354,7 +354,7 @@ SIM_END:
       cout << "tage miss :" << dec << tage_miss << endl;
       cout << "b2f miss :" << dec << back2front_num << endl;
 
-      extern uint32_t br_num[0x10000000 / 4];
+      extern uint32_t br_num[0x1000000 / 4];
       extern uint32_t br_mispred[0x1000000 / 4];
 
       /*for (int i = 0; i < 0x10000000 / 4; i++) {*/
@@ -492,6 +492,7 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   } else if (p_addr == 0x1fd0e004) {
     data = 0;
   } else {
+
     data = p_memory[p_addr >> 2];
     back.stq.st2ld_fwd(p_addr, data, rob_idx);
   }

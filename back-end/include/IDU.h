@@ -39,9 +39,9 @@ public:
   void io_gen_0(bool *input, bool *output);
   void io_gen_1(bool *input, bool *output);
 
-  Inst_uop dec_uop[FETCH_WIDTH][2];
+  Inst_uop dec_uop[FETCH_WIDTH][MAX_UOP_NUM];
   bool dec_valid[FETCH_WIDTH];
-  bool uop_valid[FETCH_WIDTH][2];
+  bool uop_valid[FETCH_WIDTH][MAX_UOP_NUM];
 
   int pop = false;
   bool push = false;  // 是否分配了新tag

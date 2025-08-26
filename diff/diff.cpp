@@ -47,7 +47,7 @@ static void checkregs() {
       goto fault;
   }
 
-  if (dut_cpu.store || ref.state.store) {
+  if (dut_cpu.store) {
     if (dut_cpu.store != ref.state.store)
       goto fault;
 

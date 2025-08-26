@@ -43,21 +43,21 @@ public:
   // debug
   void print_reg();
   void print_RAT();
-  int arch_RAT[ARF_NUM];
+  int arch_RAT[ARF_NUM + 1];
 
 private:
   // register
   Inst_entry inst_r[DECODE_WIDTH];
-  uint32_t spec_RAT[ARF_NUM];
-  uint32_t RAT_checkpoint[MAX_BR_NUM][ARF_NUM];
+  uint32_t spec_RAT[ARF_NUM + 1];
+  uint32_t RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
   bool free_vec[PRF_NUM];
   bool alloc_checkpoint[MAX_BR_NUM][PRF_NUM];
   bool busy_table[PRF_NUM];
   bool spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
   Inst_entry inst_r_1[DECODE_WIDTH];
-  uint32_t spec_RAT_1[ARF_NUM];
-  uint32_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM];
+  uint32_t spec_RAT_1[ARF_NUM + 1];
+  uint32_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];
   bool free_vec_1[PRF_NUM];
   bool alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
   bool busy_table_1[PRF_NUM];

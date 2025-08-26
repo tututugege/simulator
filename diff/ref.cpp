@@ -752,7 +752,7 @@ void Ref_cpu::RV32IM() {
       uint32_t data = memory[p_addr >> 2];
       uint32_t offset = p_addr & 0b11;
       uint32_t size = number_funct3_unsigned & 0b11;
-      uint32_t sign, mask;
+      uint32_t sign = 0, mask;
       data = data >> (offset * 8);
       if (size == 0) {
         mask = 0xFF;
@@ -805,6 +805,11 @@ void Ref_cpu::RV32IM() {
       exception(v_addr);
       return;
     } else {
+
+      /*if (p_addr == 0x80833e68 && Instruction == 0xff240423 &&*/
+      /*    sim_time > 8006000) {*/
+      /*  cout << " " << endl;*/
+      /*}*/
       uint32_t wstrb;
       uint32_t wdata = reg_rdata2;
       if (number_funct3_unsigned == 0b00) {
@@ -844,8 +849,12 @@ void Ref_cpu::RV32IM() {
       state.store = true;
       state.store_addr = p_addr;
 
-      /*cout << "store data " << hex << state.store_data << " in " << hex*/
-      /*     << state.store_addr << endl;*/
+      /*if ((v_addr & 0xFFFFFFFC) == (0xc0433e80 - 24)) {*/
+      /*  cout << "store data " << hex << state.store_data << " in " << hex*/
+      /*       << state.store_addr << " funct3:" << number_funct3_unsigned*/
+      /*       << endl;*/
+      /*  cout << Instruction << endl;*/
+      /*}*/
 
       if (p_addr == UART_BASE) {
         char temp;

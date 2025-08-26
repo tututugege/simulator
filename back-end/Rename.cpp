@@ -24,7 +24,7 @@ void Rename::init() {
     spec_alloc_1[i] = false;
   }
 
-  for (int i = ARF_NUM; i < PRF_NUM; i++) {
+  for (int i = ARF_NUM + 1; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
     free_vec[i] = true;
     spec_alloc_1[i] = false;
@@ -65,12 +65,10 @@ void Rename::comb_alloc() {
 
     if (inst_r[i].valid) {
       // 分配stq_idx 和 rob_idx
-      if (is_store(io.ren2iss->uop[i].op) ||
-          (io.ren2iss->uop[i].op == LOAD &&
-           io.ren2iss->uop[i].amoop != AMONONE)) {
+      if (is_sta(io.ren2iss->uop[i].op) || is_std(io.ren2iss->uop[i].op)) {
         io.ren2iss->uop[i].stq_idx = stq_idx;
 
-        if (io.ren2iss->uop[i].op == STORE) {
+        if (is_std(io.ren2iss->uop[i].op)) {
           LOOP_INC(stq_idx, STQ_NUM);
         }
       }
@@ -128,9 +126,10 @@ void Rename::comb_rename() {
       if (!inst_r[j].valid || !inst_r[j].uop.dest_en)
         continue;
 
+      // 拆分的指令 有的不需要前递
       if (inst_r[i].uop.src1_areg == inst_r[j].uop.dest_areg) {
         if (!((io.ren2iss->uop[i].op == JUMP ||
-               io.ren2iss->uop[i].op == STORE &&
+               (io.ren2iss->uop[i].op == STA) &&
                    io.ren2iss->uop[i].amoop != AMONONE &&
                    io.ren2iss->uop[i].amoop != SC) &&
               j == i - 1)) {
@@ -140,9 +139,9 @@ void Rename::comb_rename() {
       }
 
       if (inst_r[i].uop.src2_areg == inst_r[j].uop.dest_areg) {
-        if (!(io.ren2iss->uop[i].op == STORE &&
+        if (!(io.ren2iss->uop[i].op == STD &&
               io.ren2iss->uop[i].amoop != AMONONE &&
-              io.ren2iss->uop[i].amoop != SC && j == i - 1)) {
+              io.ren2iss->uop[i].amoop != SC && j == i - 2)) {
           io.ren2iss->uop[i].src2_preg = io.ren2iss->uop[j].dest_preg;
           io.ren2iss->uop[i].src2_busy = true;
         }
@@ -152,6 +151,17 @@ void Rename::comb_rename() {
         io.ren2iss->uop[i].old_dest_preg = io.ren2iss->uop[j].dest_preg;
       }
     }
+
+    if (io.ren2iss->uop[i].dest_areg == 32) {
+      io.ren2iss->uop[i].old_dest_preg = io.ren2iss->uop[i].dest_preg;
+    }
+  }
+
+  // 特殊处理 临时使用的32号寄存器提交时可以直接回收物理寄存器
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (io.ren2iss->uop[i].dest_areg == 32) {
+      io.ren2iss->uop[i].old_dest_preg = io.ren2iss->uop[i].dest_preg;
+    }
   }
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -159,31 +169,9 @@ void Rename::comb_rename() {
     io.ren2rob->valid[i] = inst_r[i].valid;
 
     io.ren2stq->tag[i] = io.ren2iss->uop[i].tag;
-    io.ren2stq->valid[i] = inst_r[i].valid && is_store(io.ren2iss->uop[i].op);
+    io.ren2stq->valid[i] = inst_r[i].valid && is_sta(io.ren2iss->uop[i].op);
   }
 }
-
-/*void Rename::comb_store() {*/
-/*  for (int i = 0; i < DECODE_WIDTH; i++) {*/
-/*    if (io.ren2iss->valid[i] && is_load(io.ren2iss->uop[i].op)) {*/
-/*      for (int j = 0; j < back.isu.iq[IQ_LS].entry_num; j++) {*/
-/*        if (back.isu.iq[IQ_LS].entry[j].valid &&*/
-/*            is_store(back.isu.iq[IQ_LS].entry[j].uop.op)) {*/
-/*          io.ren2iss->uop[i].pre_store[j] = true;*/
-/*        } else {*/
-/*          io.ren2iss->uop[i].pre_store[j] = false;*/
-/*        }*/
-/*      }*/
-/**/
-/*      // 同一组store 和load*/
-/*      for (int j = 0; j < i; j++) {*/
-/*        if (io.ren2iss->valid[j] && is_store(io.ren2iss->uop[j].op)) {*/
-/*          io.ren2iss->uop[i].pre_store_num++;*/
-/*        }*/
-/*      }*/
-/*    }*/
-/*  }*/
-/*}*/
 
 void Rename::comb_fire() {
   // 分配寄存器
@@ -194,7 +182,7 @@ void Rename::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2iss->dis_fire[i] =
         io.ren2iss->valid[i] && io.iss2ren->ready[i] &&
-        (!is_store(io.ren2iss->uop[i].op) ||
+        (!is_sta(io.ren2iss->uop[i].op) ||
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
         !io.dec_bcast->mispred && !io.rob_bc->flush && !csr_stall &&
@@ -302,7 +290,8 @@ void Rename ::comb_commit() {
         free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
         spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
       }
-      commit_num++;
+      if (io.rob_commit->commit_entry[i].uop.is_last_uop)
+        commit_num++;
       if (LOG) {
         cout << "ROB commit PC 0x" << hex
              << io.rob_commit->commit_entry[i].uop.pc << " idx "

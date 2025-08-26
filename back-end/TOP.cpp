@@ -14,7 +14,7 @@ extern int commit_num;
 
 void load_data();
 
-uint32_t br_num[0x10000000 / 4];
+uint32_t br_num[0x1000000 / 4];
 uint32_t br_mispred[0x1000000 / 4];
 
 int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
@@ -51,7 +51,7 @@ void Back_Top::difftest(Inst_uop *inst) {
       dut_cpu.csr[i] = csr.CSR_RegFile[csr_idx[i]];
     }
 
-    if (inst->op == STORE && !inst->page_fault_store) {
+    if (inst->op == STD && !(inst - 1)->page_fault_store) {
       dut_cpu.store = true;
       dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
       if (stq.entry[inst->stq_idx].size == 0b00)
@@ -225,7 +225,6 @@ void Back_Top::Back_comb() {
   exu.comb_ready();
   isu.comb_deq();
   prf.comb_read();
-  prf.comb_amo();
   rename.comb_wake();
   rename.comb_rename();
   isu.comb_ready();
@@ -280,9 +279,9 @@ void Back_Top::Back_comb() {
     if (back.out.commit_entry[i].valid) {
       Inst_uop uop = back.out.commit_entry[i].uop;
       if (is_branch(uop.op)) {
-        br_num[(uop.pc & 0xFFFFFFF) >> 2]++;
+        br_num[(uop.pc & 0xFFFFFF) >> 2]++;
         if (uop.mispred)
-          br_mispred[(uop.pc & 0xFFFFFFF) >> 2]++;
+          br_mispred[(uop.pc & 0xFFFFFF) >> 2]++;
       }
     }
   }
