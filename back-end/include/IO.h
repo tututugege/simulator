@@ -141,7 +141,6 @@ typedef struct {
 
 typedef struct {
   bool ready[DECODE_WIDTH];
-  bool stq_valid[STQ_NUM];
   uint32_t stq_idx;
 } Stq_Ren;
 

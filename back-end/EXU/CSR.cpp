@@ -251,10 +251,6 @@ void CSRU::seq() {
       csr_wdata = (~io.exe2csr->wdata & CSR_RegFile[csr_idx]);
     }
 
-    /*if (csr_idx == number_sscratch) {*/
-    /*  cout << "yes" << endl;*/
-    /*}*/
-
     if (csr_idx == number_mie || csr_idx == number_sie) {
 
       if (csr_idx == number_sie)

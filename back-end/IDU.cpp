@@ -53,6 +53,7 @@ void IDU::comb_decode() {
       if (io.front2dec->page_fault_inst[i]) {
         uop_num = 1;
         dec_uop[i][0].uop_num = 1;
+        dec_uop[i][0].iq_type = IQ_INTM;
         dec_uop[i][0].page_fault_inst = true;
         dec_uop[i][0].page_fault_load = false;
         dec_uop[i][0].page_fault_store = false;

@@ -806,10 +806,6 @@ void Ref_cpu::RV32IM() {
       return;
     } else {
 
-      /*if (p_addr == 0x80833e68 && Instruction == 0xff240423 &&*/
-      /*    sim_time > 8006000) {*/
-      /*  cout << " " << endl;*/
-      /*}*/
       uint32_t wstrb;
       uint32_t wdata = reg_rdata2;
       if (number_funct3_unsigned == 0b00) {
@@ -849,7 +845,7 @@ void Ref_cpu::RV32IM() {
       state.store = true;
       state.store_addr = p_addr;
 
-      /*if ((v_addr & 0xFFFFFFFC) == (0xc0433e80 - 24)) {*/
+      /*if ((p_addr & 0xFFFFFFFC) == (0x8fe06d44)) {*/
       /*  cout << "store data " << hex << state.store_data << " in " << hex*/
       /*       << state.store_addr << " funct3:" << number_funct3_unsigned*/
       /*       << endl;*/

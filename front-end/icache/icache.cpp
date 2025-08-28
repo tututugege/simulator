@@ -1,6 +1,7 @@
 #include "../front_IO.h"
 #include "../front_module.h"
 #include "../frontend.h"
+#include "RISCV.h"
 #include "TOP.h"
 #include "cvt.h"
 #include <cstdint>
@@ -39,7 +40,7 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
             !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 0,
                    mstatus, sstatus, back.csr.privilege, p_memory);
         if (out->page_fault_inst[i]) {
-          out->fetch_group[i] = 0;
+          out->fetch_group[i] = INST_NOP;
         } else {
           out->fetch_group[i] = p_memory[p_addr / 4];
         }

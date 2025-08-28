@@ -9,6 +9,7 @@
 #define INST_MRET 0x30200073
 #define INST_SRET 0x10200073
 #define INST_WFI 0x10500073
+#define INST_NOP 0x00000013
 
 extern Back_Top back;
 enum enum_number_opcode {

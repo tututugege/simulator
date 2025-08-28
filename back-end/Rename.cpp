@@ -67,7 +67,6 @@ void Rename::comb_alloc() {
       // 分配stq_idx 和 rob_idx
       if (is_sta(io.ren2iss->uop[i].op) || is_std(io.ren2iss->uop[i].op)) {
         io.ren2iss->uop[i].stq_idx = stq_idx;
-
         if (is_std(io.ren2iss->uop[i].op)) {
           LOOP_INC(stq_idx, STQ_NUM);
         }
@@ -169,7 +168,7 @@ void Rename::comb_rename() {
     io.ren2rob->valid[i] = inst_r[i].valid;
 
     io.ren2stq->tag[i] = io.ren2iss->uop[i].tag;
-    io.ren2stq->valid[i] = inst_r[i].valid && is_sta(io.ren2iss->uop[i].op);
+    io.ren2stq->valid[i] = inst_r[i].valid && is_std(io.ren2iss->uop[i].op);
   }
 }
 
@@ -182,7 +181,7 @@ void Rename::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2iss->dis_fire[i] =
         io.ren2iss->valid[i] && io.iss2ren->ready[i] &&
-        (!is_sta(io.ren2iss->uop[i].op) ||
+        (!is_std(io.ren2iss->uop[i].op) ||
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
         !io.dec_bcast->mispred && !io.rob_bc->flush && !csr_stall &&
@@ -226,7 +225,7 @@ void Rename::comb_fire() {
 
     // 保存checkpoint
     if (io.ren2iss->dis_fire[i] && is_branch(inst_r[i].uop.op)) {
-      for (int j = 0; j < ARF_NUM; j++) {
+      for (int j = 0; j < ARF_NUM + 1; j++) {
         RAT_checkpoint_1[inst_r[i].uop.tag][j] = spec_RAT_1[j];
       }
 
@@ -240,20 +239,13 @@ void Rename::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2dec->ready &= io.ren2iss->dis_fire[i] || !inst_r[i].valid;
   }
-
-  /*for (int i = 0; i < DECODE_WIDTH; i++) {*/
-  /*  if (io.ren2iss->valid[i] && !io.ren2iss->uop[i].is_last_uop) {*/
-  /*    if ((io.ren2iss->dis_fire[i] && !io.ren2iss->dis_fire[i + 1]))*/
-  /*      cout << "error" << endl;*/
-  /*  }*/
-  /*}*/
 }
 
 void Rename::comb_branch() {
   // 分支处理
   if (io.dec_bcast->mispred && !io.rob_bc->flush) {
     // 恢复重命名表
-    for (int i = 0; i < ARF_NUM; i++) {
+    for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = RAT_checkpoint[io.dec_bcast->br_tag][i];
     }
 
@@ -269,7 +261,7 @@ void Rename::comb_branch() {
 void Rename ::comb_flush() {
   if (io.rob_bc->flush) {
     // 恢复重命名表
-    for (int i = 0; i < ARF_NUM; i++) {
+    for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = arch_RAT[i];
     }
 
@@ -321,7 +313,7 @@ void Rename ::seq() {
     inst_r[i] = inst_r_1[i];
   }
 
-  for (int i = 0; i < ARF_NUM; i++) {
+  for (int i = 0; i < ARF_NUM + 1; i++) {
     spec_RAT[i] = spec_RAT_1[i];
   }
 
@@ -332,7 +324,7 @@ void Rename ::seq() {
   }
 
   for (int i = 0; i < MAX_BR_NUM; i++) {
-    for (int j = 0; j < ARF_NUM; j++) {
+    for (int j = 0; j < ARF_NUM + 1; j++) {
       RAT_checkpoint[i][j] = RAT_checkpoint_1[i][j];
     }
 
