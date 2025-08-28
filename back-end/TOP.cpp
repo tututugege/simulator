@@ -51,7 +51,7 @@ void Back_Top::difftest(Inst_uop *inst) {
       dut_cpu.csr[i] = csr.CSR_RegFile[csr_idx[i]];
     }
 
-    if (inst->op == STD && !(inst - 1)->page_fault_store) {
+    if (inst->op == STD) {
       dut_cpu.store = true;
       dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
       if (stq.entry[inst->stq_idx].size == 0b00)
@@ -61,9 +61,16 @@ void Back_Top::difftest(Inst_uop *inst) {
       else
         dut_cpu.store_data = stq.entry[inst->stq_idx].data;
 
-    } else {
+    } else if (inst->amoop == SC) {
+      dut_cpu.store = true;
+      int rob_idx = inst->rob_idx;
+      LOOP_DEC(rob_idx, ROB_NUM);
+      int stq_idx = rob.entry[rob_idx].uop.stq_idx;
+      dut_cpu.store_addr = stq.entry[stq_idx].addr;
+      dut_cpu.store_data = stq.entry[stq_idx].data;
+
+    } else
       dut_cpu.store = false;
-    }
 
     dut_cpu.pc = inst->pc_next;
 

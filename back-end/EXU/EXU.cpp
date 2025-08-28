@@ -34,7 +34,7 @@ void FU::exec(Inst_uop &inst) {
 
   cycle++;
 
-  if (inst.op == LOAD) {
+  if (cycle == latency && inst.op == LOAD) {
     uint32_t v_addr = inst.src1_rdata + inst.imm;
     inst.result = v_addr;
 

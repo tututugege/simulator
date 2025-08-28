@@ -35,36 +35,6 @@ void STQ::comb() {
 
   // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].complete) {
-    /*if (state == IDLE) {*/
-    /*  back.out.wvalid = true;*/
-    /*  back.out.wdata = entry[deq_ptr].data;*/
-    /*  back.out.waddr = entry[deq_ptr].addr;*/
-    /*  if (entry[deq_ptr].size == 0b00)*/
-    /*    back.out.wstrb = 0b1;*/
-    /*  else if (entry[deq_ptr].size == 0b01)*/
-    /*    back.out.wstrb = 0b11;*/
-    /*  else*/
-    /*    back.out.wstrb = 0b1111;*/
-    /**/
-    /*  int offset = entry[deq_ptr].addr & 0x3;*/
-    /*  back.out.wstrb = back.out.wstrb << offset;*/
-    /*  back.out.wdata = back.out.wdata << (offset * 8);*/
-    /**/
-    /*  if (back.out.wvalid && back.in.wready) {*/
-    /*    state = WAIT;*/
-    /*  }*/
-    /*} else if (state == WAIT) {*/
-    /*  if (back.in.bvalid && back.out.bready) {*/
-    /*    entry[deq_ptr].valid = false;*/
-    /*    entry[deq_ptr].complete = false;*/
-    /*    io.stq2iss->valid[deq_ptr] = true;*/
-    /*    LOOP_INC(deq_ptr, STQ_NUM);*/
-    /*    count--;*/
-    /*    state = IDLE;*/
-    /*  }*/
-    /*} else {*/
-    /*  back.out.wvalid = false;*/
-    /*}*/
     extern uint32_t *p_memory;
     uint32_t wdata = entry[deq_ptr].data;
     uint32_t waddr = entry[deq_ptr].addr;
@@ -132,11 +102,6 @@ void STQ::comb() {
     io.stq2iss->valid[deq_ptr] = true;
     LOOP_INC(deq_ptr, STQ_NUM);
     count--;
-  }
-
-  // 指令store依赖信息
-  for (int i = 0; i < STQ_NUM; i++) {
-    io.stq2ren->stq_valid[i] = entry[i].valid;
   }
 }
 

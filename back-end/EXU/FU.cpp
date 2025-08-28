@@ -253,6 +253,9 @@ void ldu(Inst_uop &inst) {
 }
 
 void stu_addr(Inst_uop &inst) {
+
+  if (inst.pc == 0x0018768c && sim_time >= 165435100)
+    cout << "yes";
   uint32_t v_addr = inst.src1_rdata + inst.imm;
 
   uint32_t p_addr = v_addr;
@@ -280,6 +283,7 @@ void stu_addr(Inst_uop &inst) {
 }
 
 void stu_data(Inst_uop &inst) {
+
   switch (inst.amoop) {
   case AMOADD: { // amoadd.w
     inst.result = inst.src1_rdata + inst.src2_rdata;

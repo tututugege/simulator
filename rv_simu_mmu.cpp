@@ -116,10 +116,6 @@ int main(int argc, char *argv[]) {
       cout << "****************************************************************"
            << endl;
 
-    /*if (sim_time % 10000000 == 0) {*/
-    /*  cout << "yes" << endl;*/
-    /*}*/
-
     if (!stall || misprediction || exception) {
 
 #if defined(CONFIG_PERFECT_BPU)
@@ -177,7 +173,7 @@ int main(int argc, char *argv[]) {
               !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[number_satp], 0,
                      mstatus, sstatus, back.csr.privilege, p_memory);
           if (front_out.page_fault_inst[j]) {
-            front_out.instructions[j] = 0;
+            front_out.instructions[j] = INST_NOP;
           } else {
             front_out.instructions[j] = p_memory[p_addr / 4];
           }
