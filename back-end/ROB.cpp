@@ -13,6 +13,9 @@ extern int commit_num;
 extern int branch_num;
 extern int mispred_num;
 
+extern bool vp_validation(Inst_uop &uop);
+void perfect_vp_continue();
+
 int dir_ok_addr_error;
 int taken_num;
 int rob_stall;
@@ -99,7 +102,8 @@ void ROB::comb_commit() {
         complete_1[idx] = false;
         entry_1[idx].valid = false;
 
-        if (exception[idx] || entry[idx].uop.op == CSR) {
+        if (exception[idx] || entry[idx].uop.op == CSR ||
+            entry[idx].uop.vp_valid && !vp_validation(entry[idx].uop)) {
           io.rob_bc->flush = true;
           io.rob_bc->exception = exception[idx];
           exception_1[idx] = false;
@@ -130,6 +134,8 @@ void ROB::comb_commit() {
           } else if (entry[idx].uop.op == EBREAK) {
             extern bool sim_end;
             sim_end = true;
+          } else if (entry[idx].uop.vp_valid) {
+            perfect_vp_continue();
           } else {
             if (entry[idx].uop.op != CSR) {
               cout << hex << entry[idx].uop.instruction << endl;
@@ -147,7 +153,7 @@ void ROB::comb_commit() {
       break;
     }
 
-    if (io.rob_bc->exception)
+    if (io.rob_bc->flush)
       break;
   }
   deq_ptr_1 = (deq_ptr + commit_num) % ROB_NUM;
@@ -159,11 +165,11 @@ void ROB::comb_commit() {
 
   io.rob2ren->enq_idx = enq_ptr;
 
-  if (stall_cycle > 300) {
+  if (stall_cycle > 200) {
     cout << dec << sim_time << endl;
     cout << "卡死了" << endl;
     cout << hex << entry[deq_ptr].uop.instruction;
-    /*exit(1);*/
+    exit(1);
   }
 }
 
@@ -230,7 +236,12 @@ void ROB::comb_fire() {
     if (io.ren2rob->dis_fire[i]) {
       entry_1[enq_ptr_1].valid = true;
       entry_1[enq_ptr_1].uop = io.ren2rob->uop[i];
-      complete_1[enq_ptr_1] = false;
+
+      if (io.ren2rob->uop[i].vp_valid) {
+        complete_1[enq_ptr_1] = true;
+      } else {
+        complete_1[enq_ptr_1] = false;
+      }
       if (io.ren2rob->uop[i].op == ECALL || io.ren2rob->uop[i].op == MRET ||
           io.ren2rob->uop[i].op == EBREAK || io.ren2rob->uop[i].op == SRET ||
           is_page_fault(io.ren2rob->uop[i]) || io.ren2rob->uop[i].illegal_inst)
@@ -282,6 +293,20 @@ void ROB::seq() {
   deq_ptr = deq_ptr_1;
   enq_ptr = enq_ptr_1;
   count = count_1;
+}
+
+void alu(Inst_uop &inst);
+
+bool vp_validation(Inst_uop &uop) {
+  if (uop.src1_en)
+    uop.src1_rdata = back.prf.reg_file[uop.src1_preg];
+  if (uop.src2_en)
+    uop.src2_rdata = back.prf.reg_file[uop.src2_preg];
+
+  uint32_t vp_result = uop.result;
+  alu(uop);
+
+  return (vp_result == uop.result);
 }
 
 void ROB::init() {

@@ -8,6 +8,7 @@ public:
   Iss_Prf *iss2prf;
   Prf_Exe *prf2exe;
   Exe_Prf *exe2prf;
+  Ren_Prf *ren2prf;
   Prf_Rob *prf2rob;
   Prf_Dec *prf2dec;
   Prf_Stq *prf2stq;

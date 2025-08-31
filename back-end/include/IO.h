@@ -42,6 +42,10 @@ typedef struct {
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
 
   bool page_fault_inst[FETCH_WIDTH];
+
+  bool vp_valid[FETCH_WIDTH];
+  uint32_t vp_src1_rdata[FETCH_WIDTH];
+  uint32_t vp_src2_rdata[FETCH_WIDTH];
 } Front_Dec;
 
 typedef struct {
@@ -143,6 +147,12 @@ typedef struct {
   bool ready[DECODE_WIDTH];
   uint32_t stq_idx;
 } Stq_Ren;
+
+typedef struct {
+  bool valid[DECODE_WIDTH];
+  uint32_t reg_wdata[DECODE_WIDTH];
+  uint32_t dest_preg[DECODE_WIDTH];
+} Ren_Prf;
 
 typedef struct {
   // 地址写入

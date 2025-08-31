@@ -7,7 +7,7 @@
 #include <random>
 #include <ref.h>
 
-static Ref_cpu br_ref;
+Ref_cpu br_ref;
 
 bool perfect_fetch_valid[FETCH_WIDTH];
 uint32_t perfect_fetch_PC[FETCH_WIDTH];
@@ -55,7 +55,7 @@ void perfect_bpu_run(bool redirect) {
     perfect_fetch_PC[i] = br_ref.state.pc;
     br_ref.exec();
     if (br_ref.is_br) {
-      mispred = (dis(gen) > 75);
+      mispred = (dis(gen) > 90);
 
       if (mispred) {
         perfect_pred_dir[i] = !br_ref.br_taken;

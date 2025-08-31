@@ -23,9 +23,6 @@ public:
   bool is_br;
   bool br_taken;
 
-  bool reg_wen;
-  uint32_t reg_wdata;
-
   void init(uint32_t reset_pc);
   void exec();
   void RISCV();
@@ -33,4 +30,6 @@ public:
   void RV32A();
   void RV32CSR();
   void exception(uint32_t trap_val);
+
+  bool vp_decode(bool &, bool &, int &, int &);
 };

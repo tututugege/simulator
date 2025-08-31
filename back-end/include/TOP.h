@@ -22,6 +22,10 @@ typedef struct {
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
 
+  bool vp_valid[FETCH_WIDTH];
+  uint32_t vp_src1_rdata[FETCH_WIDTH];
+  uint32_t vp_src2_rdata[FETCH_WIDTH];
+
   // ar
   bool arready;
 

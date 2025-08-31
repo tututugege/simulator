@@ -93,6 +93,7 @@ Ren_Dec ren2dec;
 Ren_Iss ren2iss;
 Ren_Rob ren2rob;
 Ren_Stq ren2stq;
+Ren_Prf ren2prf;
 
 Iss_Ren iss2ren;
 Iss_Prf iss2prf;
@@ -137,6 +138,7 @@ void Back_Top::init() {
   rename.io.ren2rob = &ren2rob;
   rename.io.ren2stq = &ren2stq;
   rename.io.stq2ren = &stq2ren;
+  rename.io.ren2prf = &ren2prf;
   rename.io.rob_bc = &rob_bc;
   rename.io.rob_commit = &rob_commit;
   rename.io.awake = &awake;
@@ -154,6 +156,7 @@ void Back_Top::init() {
   prf.io.prf2rob = &prf2rob;
   prf.io.prf2exe = &prf2exe;
   prf.io.prf2stq = &prf2stq;
+  prf.io.ren2prf = &ren2prf;
   prf.io.exe2prf = &exe2prf;
   prf.io.prf_awake = &awake;
   prf.io.prf2dec = &prf2dec;
@@ -213,6 +216,9 @@ void Back_Top::Back_comb() {
         in.predict_next_fetch_address[i];
 
     idu.io.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
+    idu.io.front2dec->vp_valid[i] = in.vp_valid[i];
+    idu.io.front2dec->vp_src1_rdata[i] = in.vp_src1_rdata[i];
+    idu.io.front2dec->vp_src2_rdata[i] = in.vp_src2_rdata[i];
   }
 
   // exu -> iss -> prf
@@ -239,6 +245,7 @@ void Back_Top::Back_comb() {
   rob.comb_ready();
   rob.comb_complete();
   idu.comb_release_tag();
+  rename.comb_vp_exec();
   rename.comb_fire();
   rob.comb_fire();
   idu.comb_fire();
