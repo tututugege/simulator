@@ -1,6 +1,7 @@
 #include "BPU/target_predictor/btb.h"
 #include "CSR.h"
 #include "frontend.h"
+#include "ref.h"
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -28,6 +29,9 @@ extern int id_stall_tag;
 extern int isu_ready_num[ISSUE_WAY];
 extern int raw_stall_num[ISSUE_WAY];
 
+extern Ref_cpu br_ref;
+extern Ref_cpu vp_ref;
+
 using namespace std;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
@@ -45,6 +49,13 @@ int commit_num;
 
 void perfect_bpu_run(bool redirect);
 void perfect_bpu_init(int img_size);
+
+extern bool vp_valid[FETCH_WIDTH];
+extern uint32_t vp_src1_rdata[FETCH_WIDTH];
+extern uint32_t vp_src2_rdata[FETCH_WIDTH];
+
+void perfect_vp_run(bool *);
+void perfect_vp_init(int);
 
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
@@ -92,6 +103,10 @@ int main(int argc, char *argv[]) {
   perfect_bpu_init(img_size);
 #endif
 
+#ifdef CONFIG_PERFECT_VP
+  perfect_vp_init(img_size);
+#endif
+
 #ifdef CONFIG_RUN_REF
   while (1) {
     difftest_step();
@@ -115,6 +130,10 @@ int main(int argc, char *argv[]) {
     if (LOG)
       cout << "****************************************************************"
            << endl;
+
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      back.in.vp_valid[i] = false;
+    }
 
     if (!stall || misprediction || exception) {
 
@@ -230,10 +249,19 @@ int main(int argc, char *argv[]) {
       }
 
 #endif
+
+#ifdef CONFIG_PERFECT_VP
+      perfect_vp_run(back.in.valid);
+      for (int i = 0; i < FETCH_WIDTH; i++) {
+        back.in.vp_valid[i] = vp_valid[i];
+        back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
+        back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
+      }
+      assert(vp_ref.state.pc == br_ref.state.pc);
+#endif
     }
 
     back.Back_comb();
-
 #ifdef CONFIG_BPU
 
     front_in.FIFO_read_enable = false;

@@ -69,6 +69,14 @@ void IDU::comb_decode() {
         }
       } else {
         uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
+
+        if (io.front2dec->vp_valid[i]) {
+          for (int j = 0; j < uop_num; j++) {
+            dec_uop[i][j].vp_valid = true;
+            dec_uop[i][j].src1_rdata = io.front2dec->vp_src1_rdata[i];
+            dec_uop[i][j].src2_rdata = io.front2dec->vp_src2_rdata[i];
+          }
+        }
       }
     } else {
       dec_valid[i] = false;
@@ -324,6 +332,7 @@ int decode(Inst_uop uop[2], uint32_t inst) {
               .illegal_inst = false,
               .op = NONE,
               .amoop = AMONONE,
+              .vp_valid = false,
               .inst_idx = sim_time};
   }
 

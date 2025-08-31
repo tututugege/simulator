@@ -26,7 +26,8 @@ extern long long sim_time;
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_RUN_REF*/
-/*#define CONFIG_PERFECT_BPU*/
+#define CONFIG_PERFECT_BPU
+#define CONFIG_PERFECT_VP
 /*#define CONFIG_BPU*/
 #define UART_BASE 0x10000000
 
@@ -122,6 +123,9 @@ typedef struct Inst_uop {
   AMO_op amoop;
 
   bool difftest_skip;
+
+  // 值预测信息
+  bool vp_valid;
 
   int64_t inst_idx;
   int prior;

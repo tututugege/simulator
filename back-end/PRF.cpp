@@ -1,5 +1,6 @@
 #include "TOP.h"
 #include "config.h"
+#include "frontend.h"
 #include <IO.h>
 #include <PRF.h>
 #include <iostream>
@@ -98,6 +99,12 @@ void PRF::seq() {
       inst_r[i] = io.exe2prf->entry[i];
     } else {
       inst_r[i].valid = false;
+    }
+  }
+
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (io.ren2prf->valid[i]) {
+      reg_file[io.ren2prf->dest_preg[i]] = io.ren2prf->reg_wdata[i];
     }
   }
 
