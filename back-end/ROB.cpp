@@ -22,7 +22,9 @@ int rob_stall;
 
 void ROB::comb_ready() {
   bool exception_stall = false;
-  bool csr_stall = (entry[deq_ptr].uop.op == CSR) && entry[deq_ptr].valid;
+  bool csr_stall =
+      (entry[deq_ptr].uop.op == CSR || entry[deq_ptr].uop.op == SFENCE_VMA) &&
+      entry[deq_ptr].valid;
   int num = count;
 
   for (int i = 0; i < ROB_NUM; i++) {
@@ -103,6 +105,7 @@ void ROB::comb_commit() {
         entry_1[idx].valid = false;
 
         if (exception[idx] || entry[idx].uop.op == CSR ||
+            entry[idx].uop.op == SFENCE_VMA ||
             entry[idx].uop.vp_valid && !vp_validation(entry[idx].uop)) {
           io.rob_bc->flush = true;
           io.rob_bc->exception = exception[idx];

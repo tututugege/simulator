@@ -532,6 +532,9 @@ int decode(Inst_uop uop[2], uint32_t inst) {
         uop[0].op = NONE;
       } else if (inst == INST_SRET) {
         uop[0].op = SRET;
+      } else if (number_funct7_unsigned == 0b0001001 &&
+                 number_funct3_unsigned == 0 && reg_d_index == 0) {
+        uop[0].op = SFENCE_VMA;
       } else {
 
         uop[0].op = NONE;
