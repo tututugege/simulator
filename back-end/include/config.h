@@ -47,6 +47,7 @@ enum Inst_op {
   CSR,
   ECALL,
   EBREAK,
+  SFENCE_VMA,
   MRET,
   SRET,
   MUL,

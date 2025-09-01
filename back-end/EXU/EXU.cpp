@@ -70,6 +70,10 @@ void FU::exec(Inst_uop &inst) {
       mul(inst);
     } else if (inst.op == DIV) {
       div(inst);
+    } else if (inst.op == SFENCE_VMA) {
+      uint32_t vaddr = 0;
+      uint32_t asid = 0;
+      // TODO: sfence.vma
     } else
       alu(inst);
 
