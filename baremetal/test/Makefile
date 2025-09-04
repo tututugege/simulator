@@ -16,7 +16,7 @@ $(ALL): %: Makefile.%
 
 Makefile.%: cpu-tests/%.c
 	/bin/echo -e "COMMON_DIR = ..\nTARGET = $*\nC_SRCS = $<\ninclude ../common.mk" > $@
-	if make -s -f $@; then \
+	if make -f  $@; then \
 		printf "[%14s] $(COLOR_GREEN)PASS$(COLOR_NONE)\n" $* >> $(RESULT); \
 	else \
 		printf "[%14s] $(COLOR_RED)***FAIL***$(COLOR_NONE)\n" $* >> $(RESULT); \

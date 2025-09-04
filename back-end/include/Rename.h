@@ -30,7 +30,7 @@ class Rename {
 public:
   REN_IO io;
 
-  void init();
+  Rename();
   void comb_rename(); // 重命名
   void comb_fire();
   void comb_wake();

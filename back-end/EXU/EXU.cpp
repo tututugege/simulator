@@ -82,7 +82,7 @@ void FU::exec(Inst_uop &inst) {
   }
 }
 
-void EXU::init() {}
+void EXU::init() { memset(inst_r, 0, sizeof(Inst_entry) * ISSUE_WAY); }
 
 void EXU::comb_ready() {
   for (int i = 0; i < ISSUE_WAY; i++) {

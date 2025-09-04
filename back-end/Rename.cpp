@@ -3,6 +3,7 @@
 #include <Rename.h>
 #include <config.h>
 #include <cstdlib>
+#include <cstring>
 #include <cvt.h>
 #include <util.h>
 
@@ -14,7 +15,7 @@ void alu(Inst_uop &inst);
 int ren_stall_reg = 0;
 int ren_stall_csr = 0;
 
-void Rename::init() {
+Rename::Rename() {
   for (int i = 0; i < ARF_NUM; i++) {
     free_vec[i] = false;
     arch_RAT[i] = i;
@@ -31,6 +32,10 @@ void Rename::init() {
     free_vec[i] = true;
     spec_alloc_1[i] = false;
     free_vec_1[i] = true;
+  }
+
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    inst_r[i].valid = false;
   }
 }
 

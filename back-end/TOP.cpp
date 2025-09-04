@@ -194,7 +194,6 @@ void Back_Top::init() {
   csr.io.rob_bc = &rob_bc;
 
   idu.init();
-  rename.init();
   isu.init();
   prf.init();
   exu.init();

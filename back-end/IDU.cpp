@@ -251,7 +251,7 @@ void IDU::seq() {
     pop--;
   }
 
-  if (push) {
+  if (push && !io.rob_bc->flush) {
     tag_list.push_back(alloc_tag);
   }
 
@@ -536,7 +536,6 @@ int decode(Inst_uop uop[2], uint32_t inst) {
                  number_funct3_unsigned == 0 && reg_d_index == 0) {
         uop[0].op = SFENCE_VMA;
       } else {
-
         uop[0].op = NONE;
         /*uop[0].illegal_inst = true;*/
         /*cout << hex << inst << endl;*/
