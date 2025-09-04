@@ -57,7 +57,7 @@ void perfect_vp_run(bool *fetch_valid) {
         fetch_valid[i]) {
       vp_valid[i] = true;
       // 值预测正确的概率
-      if (dis(gen) > 10) {
+      if (1) {
         if (src1_en) {
           vp_src1_rdata[i] = vp_ref.state.gpr[src1_areg];
         } else {

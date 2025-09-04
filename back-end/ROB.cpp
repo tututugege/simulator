@@ -140,7 +140,7 @@ void ROB::comb_commit() {
           } else if (entry[idx].uop.vp_valid) {
             perfect_vp_continue();
           } else {
-            if (entry[idx].uop.op != CSR) {
+            if (entry[idx].uop.op != CSR && entry[idx].uop.op != SFENCE_VMA) {
               cout << hex << entry[idx].uop.instruction << endl;
               exit(1);
             }
