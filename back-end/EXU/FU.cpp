@@ -123,8 +123,7 @@ void bru(Inst_uop &inst) {
   }
 
   if (br_taken && inst.pred_br_taken && inst.pred_br_pc == pc_br ||
-      !br_taken && !inst.pred_br_taken ||
-      br_taken && !inst.pred_br_taken && pc_br == inst.pc + 4) {
+      !br_taken && !inst.pred_br_taken) {
     inst.mispred = false;
   } else {
     inst.mispred = true;
@@ -254,8 +253,6 @@ void ldu(Inst_uop &inst) {
 
 void stu_addr(Inst_uop &inst) {
 
-  if (inst.pc == 0x0018768c && sim_time >= 165435100)
-    cout << "yes";
   uint32_t v_addr = inst.src1_rdata + inst.imm;
 
   uint32_t p_addr = v_addr;

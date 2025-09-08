@@ -3,6 +3,8 @@
 #include "RISCV.h"
 #include "config.h"
 #include "cvt.h"
+#include "diff.h"
+#include "util.h"
 #include <cstdint>
 
 #define BITMASK(bits) ((1ull << (bits)) - 1)
@@ -51,7 +53,7 @@ void Ref_cpu::init(uint32_t reset_pc) {
 }
 
 void Ref_cpu::exec() {
-  is_br = br_taken = false;
+  is_csr = is_exception = is_br = br_taken = false;
   illegal_exception = page_fault_load = page_fault_inst = page_fault_store =
       asy = false;
   state.store = false;
@@ -81,6 +83,7 @@ void Ref_cpu::exec() {
 
 void Ref_cpu::exception(uint32_t trap_val) {
 
+  is_exception = true;
   uint32_t next_pc = state.pc + 4;
   bool ecall = (Instruction == INST_ECALL);
   bool MRET = (Instruction == INST_MRET);
@@ -354,6 +357,13 @@ void Ref_cpu::RISCV() {
   } else if (asy || Instruction == INST_ECALL) {
     exception(0);
   } else if (number_op_code_unsigned == number_10_opcode_ecall) {
+
+    if (Instruction == INST_WFI) {
+      is_csr = false;
+    } else {
+      is_csr = true;
+    }
+
     RV32CSR();
   } else if (number_op_code_unsigned == number_11_opcode_lrw) {
     RV32A();
@@ -548,17 +558,18 @@ void Ref_cpu::RV32A() {
   if (number_funct5_unsigned != 2) {
     state.store = true;
     state.store_addr = p_addr;
+    state.store_strb = 0b1111;
   }
 
   switch (number_funct5_unsigned) {
   case 0: { // amoadd.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] = memory[p_addr >> 2] + reg_rdata2;
+    state.store_data = memory[p_addr >> 2] + reg_rdata2;
     break;
   }
   case 1: { // amoswap.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] = reg_rdata2;
+    state.store_data = reg_rdata2;
     break;
   }
   case 2: { // lr.w
@@ -566,55 +577,51 @@ void Ref_cpu::RV32A() {
     break;
   }
   case 3: { // sc.w
-    state.store_data = memory[p_addr >> 2] = reg_rdata2;
+    state.store_data = reg_rdata2;
     state.gpr[reg_d_index] = 0;
     break;
   }
   case 4: { // amoxor.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] = memory[p_addr >> 2] ^ reg_rdata2;
+    state.store_data = memory[p_addr >> 2] ^ reg_rdata2;
     break;
   }
   case 8: { // amoor.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] = memory[p_addr >> 2] | reg_rdata2;
+    state.store_data = memory[p_addr >> 2] | reg_rdata2;
     break;
   }
   case 12: { // amoand.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] = memory[p_addr >> 2] & reg_rdata2;
+    state.store_data = memory[p_addr >> 2] & reg_rdata2;
     break;
   }
   case 16: { // amomin.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] =
-        ((int32_t)memory[p_addr >> 2] > (int32_t)reg_rdata2)
-            ? reg_rdata2
-            : memory[p_addr >> 2];
+    state.store_data = ((int32_t)memory[p_addr >> 2] > (int32_t)reg_rdata2)
+                           ? reg_rdata2
+                           : memory[p_addr >> 2];
     break;
   }
   case 20: { // amomax.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] =
-        ((int32_t)memory[p_addr >> 2] > (int32_t)reg_rdata2)
-            ? memory[p_addr >> 2]
-            : reg_rdata2;
+    state.store_data = ((int32_t)memory[p_addr >> 2] > (int32_t)reg_rdata2)
+                           ? memory[p_addr >> 2]
+                           : reg_rdata2;
     break;
   }
   case 24: { // amominu.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] =
-        ((uint32_t)memory[p_addr >> 2] < (uint32_t)reg_rdata2)
-            ? memory[p_addr >> 2]
-            : reg_rdata2;
+    state.store_data = ((uint32_t)memory[p_addr >> 2] < (uint32_t)reg_rdata2)
+                           ? memory[p_addr >> 2]
+                           : reg_rdata2;
     break;
   }
   case 28: { // amomaxu.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] =
-        ((uint32_t)memory[p_addr >> 2] > (uint32_t)reg_rdata2)
-            ? memory[p_addr >> 2]
-            : reg_rdata2;
+    state.store_data = ((uint32_t)memory[p_addr >> 2] > (uint32_t)reg_rdata2)
+                           ? memory[p_addr >> 2]
+                           : reg_rdata2;
     break;
   }
   default: {
@@ -622,6 +629,7 @@ void Ref_cpu::RV32A() {
   }
   }
 
+  store_data();
   state.pc = next_pc;
 }
 
@@ -774,7 +782,7 @@ void Ref_cpu::RV32IM() {
       }
 
       if (p_addr == 0x1fd0e000) {
-        data = sim_time;
+        data = 0;
       }
       if (p_addr == 0x1fd0e004) {
         data = 0;
@@ -806,73 +814,25 @@ void Ref_cpu::RV32IM() {
       return;
     } else {
 
-      uint32_t wstrb;
-      uint32_t wdata = reg_rdata2;
+      state.store = true;
+      state.store_addr = p_addr;
+      state.store_data = reg_rdata2;
       if (number_funct3_unsigned == 0b00) {
-        wstrb = 0b1;
-        state.store_data = wdata & 0xFF;
+        state.store_strb = 0b1;
+        state.store_data &= 0xFF;
       } else if (number_funct3_unsigned == 0b01) {
-        wstrb = 0b11;
-        state.store_data = wdata & 0xFFFF;
+        state.store_strb = 0b11;
+        state.store_data &= 0xFFFF;
       } else {
-        wstrb = 0b1111;
-        state.store_data = wdata;
+        state.store_strb = 0b1111;
       }
 
       int offset = p_addr & 0x3;
-      wstrb = wstrb << offset;
-      wdata = wdata << (offset * 8);
-
-      uint32_t old_data = memory[p_addr / 4];
-      uint32_t mask = 0;
-      if (wstrb & 0b1)
-        mask |= 0xFF;
-      if (wstrb & 0b10)
-        mask |= 0xFF00;
-      if (wstrb & 0b100)
-        mask |= 0xFF0000;
-      if (wstrb & 0b1000)
-        mask |= 0xFF000000;
-      if ((number_funct3_unsigned == 1 && p_addr % 2 == 1) ||
-          (number_funct3_unsigned == 2 && p_addr % 4 != 0)) {
-        cout << "Store Memory Address Align Error!!!" << endl;
-        cout << "funct3 code: " << dec << number_funct3_unsigned << endl;
-        cout << "addr: " << hex << p_addr << endl;
-        exit(-1);
-      }
-
-      memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
-      state.store = true;
-      state.store_addr = p_addr;
-
-      /*if ((p_addr & 0xFFFFFFFC) == (0x8fe06d44)) {*/
-      /*  cout << "store data " << hex << state.store_data << " in " << hex*/
-      /*       << state.store_addr << " funct3:" << number_funct3_unsigned*/
-      /*       << endl;*/
-      /*  cout << Instruction << endl;*/
-      /*}*/
-
-      if (p_addr == UART_BASE) {
-        char temp;
-        temp = wdata & 0x000000ff;
-        memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
-        /*cout << temp;*/
-      }
-
-      if (p_addr == 0x10000001 && (wdata & 0x000000ff) == 7) {
-        memory[0xc201004 / 4] = 0xa;
-        memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xfff0ffff;
-      }
-
-      if (p_addr == 0x10000001 && (wdata & 0x000000ff) == 5) {
-        memory[0x10000000 / 4] =
-            memory[0x10000000 / 4] & 0xfff0ffff | 0x00030000;
-      }
-
-      if (p_addr == 0xc201004 && (wdata & 0x000000ff) == 0xa) {
-        memory[0xc201004 / 4] = 0x0;
-      }
+      state.store_strb = state.store_strb << offset;
+      state.store_data = state.store_data << (offset * 8);
+      store_data();
     }
+
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
@@ -1181,4 +1141,73 @@ bool Ref_cpu::vp_decode(bool &src1_en, bool &src2_en, int &src1_areg,
     ret = false;
 
   return ret;
+}
+
+void Ref_cpu::store_data() {
+  uint32_t p_addr = state.store_addr;
+  uint32_t wstrb = state.store_strb;
+  uint32_t wdata = state.store_data;
+
+  uint32_t old_data = memory[p_addr / 4];
+  store_buffer_addr[store_buffer_ptr] = p_addr;
+  store_buffer_data[store_buffer_ptr] = old_data;
+  LOOP_INC(store_buffer_ptr, STQ_NUM);
+  uint32_t mask = 0;
+  if (wstrb & 0b1)
+    mask |= 0xFF;
+  if (wstrb & 0b10)
+    mask |= 0xFF00;
+  if (wstrb & 0b100)
+    mask |= 0xFF0000;
+  if (wstrb & 0b1000)
+    mask |= 0xFF000000;
+  /*if ((number_funct3_unsigned == 1 && p_addr % 2 == 1) ||*/
+  /*    (number_funct3_unsigned == 2 && p_addr % 4 != 0)) {*/
+  /*  cout << "Store Memory Address Align Error!!!" << endl;*/
+  /*  cout << "funct3 code: " << dec << number_funct3_unsigned << endl;*/
+  /*  cout << "addr: " << hex << p_addr << endl;*/
+  /*  exit(-1);*/
+  /*}*/
+
+  memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
+
+  if (p_addr == UART_BASE) {
+    char temp;
+    temp = wdata & 0x000000ff;
+    memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
+    /*cout << temp;*/
+  }
+
+  if (p_addr == 0x10000001 && (wdata & 0x000000ff) == 7) {
+    memory[0xc201004 / 4] = 0xa;
+    memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xfff0ffff;
+  }
+
+  if (p_addr == 0x10000001 && (wdata & 0x000000ff) == 5) {
+    memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xfff0ffff | 0x00030000;
+  }
+
+  if (p_addr == 0xc201004 && (wdata & 0x000000ff) == 0xa) {
+    memory[0xc201004 / 4] = 0x0;
+  }
+}
+
+extern int csr_idx[CSR_NUM];
+
+void Ref_cpu::restore(int flush_store_num) {
+  assert(flush_store_num < STQ_NUM);
+  for (int i = 0; i < ARF_NUM; i++) {
+    state.gpr[i] = back.prf.reg_file[back.rename.arch_RAT[i]];
+  }
+
+  for (int i = 0; i < CSR_NUM; i++) {
+    state.csr[i] = back.csr.CSR_RegFile[csr_idx[i]];
+  }
+  state.pc = back.out.redirect_pc;
+
+  for (int i = 0; i < flush_store_num; i++) {
+    LOOP_DEC(store_buffer_ptr, STQ_NUM);
+    memory[store_buffer_addr[store_buffer_ptr] >> 2] =
+        store_buffer_data[store_buffer_ptr];
+  }
 }

@@ -1,6 +1,8 @@
+#include "TOP.h"
 #include "frontend.h"
 #include <config.h>
 #include <cstdint>
+#include <cstdlib>
 #include <cvt.h>
 #include <diff.h>
 #include <front_IO.h>
@@ -8,11 +10,14 @@
 #include <ref.h>
 
 Ref_cpu br_ref;
+extern Back_Top back;
 
 bool perfect_fetch_valid[FETCH_WIDTH];
 uint32_t perfect_fetch_PC[FETCH_WIDTH];
 uint32_t perfect_pred_PC[FETCH_WIDTH];
 bool perfect_pred_dir[FETCH_WIDTH];
+
+int flush_store_num = 0;
 
 void perfect_bpu_init(int img_size) {
   br_ref.init(0);
@@ -33,15 +38,31 @@ void perfect_bpu_init(int img_size) {
   br_ref.memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
 }
 
-void perfect_bpu_run(bool redirect) {
+void perfect_bpu_run(bool br_redirect, bool flush) {
   int i;
   static bool mispred = false;
   random_device rd;
   mt19937 gen(rd());
   uniform_int_distribution<int> dis(1, 100);
 
-  if (redirect)
+  if (br_redirect) {
+    assert(br_ref.state.pc == back.out.redirect_pc);
+    assert(mispred);
     mispred = false;
+
+    if (flush) {
+      for (int i = 0; i < 32; i++) {
+        if (br_ref.state.gpr[i] != back.prf.reg_file[back.rename.arch_RAT[i]]) {
+          cout << sim_time << endl;
+          for (int i = 0; i < 32; i++) {
+            cout << br_ref.state.gpr[i] << " "
+                 << back.prf.reg_file[back.rename.arch_RAT[i]] << endl;
+          }
+          exit(1);
+        }
+      }
+    }
+  }
 
   if (mispred) {
     for (i = 0; i < FETCH_WIDTH; i++) {
@@ -54,11 +75,20 @@ void perfect_bpu_run(bool redirect) {
     perfect_fetch_valid[i] = true;
     perfect_fetch_PC[i] = br_ref.state.pc;
     br_ref.exec();
+
+    if (br_ref.is_exception || br_ref.is_csr) {
+      perfect_pred_dir[i] = false;
+      mispred = true;
+      break;
+    }
+
     if (br_ref.is_br) {
-      mispred = (dis(gen) > 90);
+      mispred = (rand() % 100 > 90);
 
       if (mispred) {
+
         perfect_pred_dir[i] = !br_ref.br_taken;
+        perfect_pred_PC[i] = 0;
       } else {
         perfect_pred_PC[i] = br_ref.state.pc;
         perfect_pred_dir[i] = br_ref.br_taken;

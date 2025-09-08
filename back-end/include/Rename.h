@@ -48,7 +48,6 @@ public:
   void print_RAT();
   int arch_RAT[ARF_NUM + 1];
 
-private:
   // register
   Inst_entry inst_r[DECODE_WIDTH];
   uint32_t spec_RAT[ARF_NUM + 1];

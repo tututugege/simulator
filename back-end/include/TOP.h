@@ -44,7 +44,7 @@ typedef struct {
   // to front-end
   bool mispred;
   bool stall;
-  bool exception;
+  bool flush;
   bool fire[FETCH_WIDTH];
   uint32_t redirect_pc;
   Inst_entry commit_entry[COMMIT_WIDTH];

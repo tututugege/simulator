@@ -23,13 +23,21 @@ public:
   bool is_br;
   bool br_taken;
 
+  bool is_exception;
+  bool is_csr;
+
   void init(uint32_t reset_pc);
   void exec();
   void RISCV();
   void RV32IM();
   void RV32A();
   void RV32CSR();
+  void restore(int flush_store_num);
   void exception(uint32_t trap_val);
-
+  void store_data();
   bool vp_decode(bool &, bool &, int &, int &);
+
+  uint32_t store_buffer_addr[STQ_NUM];
+  uint32_t store_buffer_data[STQ_NUM];
+  int store_buffer_ptr = 0;
 };
