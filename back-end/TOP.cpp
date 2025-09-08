@@ -30,6 +30,11 @@ void Back_Top::difftest(Inst_uop *inst) {
   if (inst->dest_en && !inst->page_fault_load)
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
 
+  if (inst->op == STD && inst->is_last_uop && !inst->page_fault_store) {
+    extern int flush_store_num;
+    flush_store_num--;
+  }
+
 #ifdef CONFIG_DIFFTEST
   if (inst->is_last_uop) {
 
@@ -60,6 +65,9 @@ void Back_Top::difftest(Inst_uop *inst) {
         dut_cpu.store_data = stq.entry[inst->stq_idx].data & 0xFFFF;
       else
         dut_cpu.store_data = stq.entry[inst->stq_idx].data;
+
+      dut_cpu.store_data = dut_cpu.store_data
+                           << (dut_cpu.store_addr & 0b11) * 8;
 
     } else if (inst->amoop == SC) {
       dut_cpu.store = true;
@@ -256,11 +264,16 @@ void Back_Top::Back_comb() {
   /*rename.comb_store();*/
   rename.comb_pipeline();
 
+  back.out.flush = rob.io.rob_bc->flush;
+
   if (!rob.io.rob_bc->flush) {
     back.out.mispred = prf.io.prf2dec->mispred;
     back.out.stall = !idu.io.dec2front->ready;
     back.out.redirect_pc = prf.io.prf2dec->redirect_pc;
   } else {
+
+    if (LOG)
+      cout << "flush" << endl;
     back.out.mispred = true;
     if (rob.io.rob_bc->exception) {
       if (rob.io.rob_bc->mret || rob.io.rob_bc->sret) {

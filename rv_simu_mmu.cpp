@@ -47,7 +47,7 @@ bool sim_end = false;
 long long sim_time;
 int commit_num;
 
-void perfect_bpu_run(bool redirect);
+void perfect_bpu_run(bool redirect, bool flush);
 void perfect_bpu_init(int img_size);
 
 extern bool vp_valid[FETCH_WIDTH];
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
     p_memory[img_size + POS_MEMORY_SHIFT] = inst_32b;
   }
 
-  p_memory[uint32_t(0x0 / 4)] = 0x13;
+  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
   p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
   p_memory[uint32_t(0xc / 4)] = 0x00028067;
@@ -118,9 +118,9 @@ int main(int argc, char *argv[]) {
 
   uint32_t number_PC;
   ofstream outfile;
-  bool stall, misprediction, exception;
+  bool stall, misprediction, flush;
   number_PC = 0x00000000;
-  stall = misprediction = exception = false;
+  stall = misprediction = flush = false;
 
   front_top_out front_out;
   front_top_in front_in;
@@ -135,7 +135,7 @@ int main(int argc, char *argv[]) {
       back.in.vp_valid[i] = false;
     }
 
-    if (!stall || misprediction || exception) {
+    if (!stall || misprediction || flush) {
 
 #if defined(CONFIG_PERFECT_BPU)
       extern bool perfect_fetch_valid[FETCH_WIDTH];
@@ -211,17 +211,46 @@ int main(int argc, char *argv[]) {
 
 #ifdef CONFIG_PERFECT_BPU
 
-      perfect_bpu_run(back.out.mispred);
+      perfect_bpu_run(back.out.mispred, back.out.flush);
+
       for (int j = 0; j < FETCH_WIDTH; j++) {
         back.in.valid[j] = perfect_fetch_valid[j];
-        back.in.pc[j] = perfect_fetch_PC[j];
-        back.in.inst[j] = p_memory[perfect_fetch_PC[j] >> 2];
-        back.in.page_fault_inst[j] = false;
-        if (LOG)
-          cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-               << perfect_fetch_PC[j] << endl;
-        back.in.predict_next_fetch_address[j] = perfect_pred_PC[j];
-        back.in.predict_dir[j] = perfect_pred_dir[j];
+
+        if (back.in.valid[j]) {
+          back.in.pc[j] = perfect_fetch_PC[j];
+
+          uint32_t p_addr;
+          bool mstatus[32], sstatus[32];
+          cvt_number_to_bit_unsigned(mstatus,
+                                     back.csr.CSR_RegFile[number_mstatus], 32);
+          cvt_number_to_bit_unsigned(sstatus,
+                                     back.csr.CSR_RegFile[number_sstatus], 32);
+
+          if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
+              back.csr.privilege != 3) {
+
+            front_out.page_fault_inst[j] = !va2pa(
+                p_addr, perfect_fetch_PC[j], back.csr.CSR_RegFile[number_satp],
+                0, mstatus, sstatus, back.csr.privilege, p_memory);
+            if (front_out.page_fault_inst[j]) {
+              front_out.instructions[j] = INST_NOP;
+            } else {
+              front_out.instructions[j] = p_memory[p_addr / 4];
+            }
+          } else {
+            front_out.page_fault_inst[j] = false;
+            front_out.instructions[j] = p_memory[perfect_fetch_PC[j] / 4];
+          }
+
+          back.in.inst[j] = front_out.instructions[j];
+          back.in.page_fault_inst[j] = front_out.page_fault_inst[j];
+          back.in.predict_next_fetch_address[j] = perfect_pred_PC[j];
+          back.in.predict_dir[j] = perfect_pred_dir[j];
+
+          if (LOG)
+            cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
+                 << perfect_fetch_PC[j] << endl;
+        }
       }
 
 #else
@@ -318,9 +347,9 @@ int main(int argc, char *argv[]) {
 
     stall = back.out.stall;
     misprediction = back.out.mispred;
-    exception = back.out.exception;
+    flush = back.out.flush;
 
-    if (misprediction || exception) {
+    if (misprediction || flush) {
       number_PC = back.out.redirect_pc;
     } else if (stall) {
       for (int j = 0; j < FETCH_WIDTH; j++) {

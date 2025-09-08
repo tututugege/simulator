@@ -138,8 +138,9 @@ void Rename::comb_rename() {
 
       // 拆分的指令 有的不需要前递
       if (inst_r[i].uop.src1_areg == inst_r[j].uop.dest_areg) {
+
         if (!((io.ren2rob->uop[i].op == JUMP ||
-               (io.ren2rob->uop[i].op == STA) &&
+               io.ren2rob->uop[i].op == STA &&
                    io.ren2rob->uop[i].amoop != AMONONE &&
                    io.ren2rob->uop[i].amoop != SC) &&
               j == i - 1)) {
@@ -215,14 +216,24 @@ void Rename::comb_fire() {
   }
 
   // split的指令需要同时dispatch
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (io.ren2rob->valid[i] && !io.ren2rob->uop[i].is_last_uop) {
-      if (io.ren2rob->dis_fire[i] && !io.ren2rob->dis_fire[i + 1]) {
+  int i = 0;
+  while (i < DECODE_WIDTH) {
+    if (io.ren2rob->valid[i]) {
+      bool all_fire = true;
+      for (int j = 0; j < io.ren2rob->uop[i].uop_num; j++) {
+        all_fire = all_fire && io.ren2rob->dis_fire[i + j];
+      }
+
+      if (!all_fire) {
         for (int j = i; j < DECODE_WIDTH; j++) {
           io.ren2rob->dis_fire[j] = false;
         }
         break;
       }
+
+      i += io.ren2rob->uop[i].uop_num;
+    } else {
+      i++;
     }
   }
 

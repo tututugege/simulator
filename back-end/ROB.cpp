@@ -168,7 +168,7 @@ void ROB::comb_commit() {
 
   io.rob2ren->enq_idx = enq_ptr;
 
-  if (stall_cycle > 200) {
+  if (stall_cycle > 300) {
     cout << dec << sim_time << endl;
     cout << "卡死了" << endl;
     cout << hex << entry[deq_ptr].uop.instruction;

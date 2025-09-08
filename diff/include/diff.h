@@ -11,6 +11,7 @@ typedef struct CPU_state {
 
   uint32_t store_addr;
   uint32_t store_data;
+  uint32_t store_strb;
   bool store;
 } CPU_state;
 
