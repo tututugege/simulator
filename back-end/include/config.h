@@ -28,7 +28,7 @@ extern long long sim_time;
 /*#define CONFIG_RUN_REF*/
 /*#define CONFIG_PERFECT_BPU*/
 /*#define CONFIG_PERFECT_VP*/
-/*#define CONFIG_BPU*/
+#define CONFIG_BPU
 #define UART_BASE 0x10000000
 
 enum IQ_TYPE { IQ_INTM, IQ_INTD, IQ_LD, IQ_STA, IQ_STD, IQ_BR, IQ_NUM };
