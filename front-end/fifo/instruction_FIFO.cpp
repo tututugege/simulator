@@ -31,7 +31,7 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
     out->full = false;
     out->empty = true;
   }
-  if (fifo.size() >= FIFO_SIZE)
+  if (fifo.size() > FIFO_SIZE)
     assert(0);
 
   // if FIFO is not full and icache has new data
