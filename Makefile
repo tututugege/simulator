@@ -1,7 +1,8 @@
 CXXSRC = $(shell find ./back-end/ -name "*.cpp")
 CXXSRC += $(shell find ./front-end/ -name "*.cpp")
 CXXSRC += $(shell find ./diff/ -name "*.cpp")
-CXXSRC += ./rv_simu_mmu.cpp
+# CXXSRC += ./rv_simu_mmu.cpp
+CXXSRC += ./rv_simu_mmu_v2.cpp # cpp file with main function
 CXXINCLUDE = -I./include/
 CXXINCLUDE += -I./back-end/include/
 CXXINCLUDE += -I./back-end/EXU/include/
