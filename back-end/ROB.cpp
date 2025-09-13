@@ -192,16 +192,18 @@ void ROB::comb_complete() {
 
       if (i == IQ_LD || i == IQ_STA) {
         if (is_page_fault(io.prf2rob->entry[i].uop)) {
-          int idx = io.prf2rob->entry[i].uop.rob_idx;
+          int idx, init_idx;
+          idx = init_idx = io.prf2rob->entry[i].uop.rob_idx;
           while (!entry[idx].uop.is_last_uop) {
             LOOP_INC(idx, ROB_NUM);
           }
 
           entry_1[idx].uop.is_last_uop = false;
-          for (int j = 0; j < entry[idx].uop.uop_num - 1; j++) {
-            entry[idx].uop.valid_commit = false;
-            LOOP_DEC(idx, ROB_NUM);
-          }
+          if (idx != init_idx)
+            for (int j = 0; j < entry[idx].uop.uop_num - 1; j++) {
+              entry[idx].uop.valid_commit = false;
+              LOOP_DEC(idx, ROB_NUM);
+            }
 
           exception_1[idx] = true;
           entry_1[idx].uop.is_last_uop = true;
