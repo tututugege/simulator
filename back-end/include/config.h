@@ -26,8 +26,8 @@ extern long long sim_time;
 
 #define CONFIG_DIFFTEST
 /*#define CONFIG_RUN_REF*/
-/*#define CONFIG_PERFECT_BPU*/
-/*#define CONFIG_PERFECT_VP*/
+#define CONFIG_PERFECT_BPU
+#define CONFIG_PERFECT_VP
 /*#define CONFIG_BPU*/
 #define UART_BASE 0x10000000
 
