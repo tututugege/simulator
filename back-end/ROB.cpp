@@ -14,7 +14,6 @@ extern int branch_num;
 extern int mispred_num;
 
 extern bool vp_validation(Inst_uop &uop);
-void perfect_vp_continue();
 
 int dir_ok_addr_error;
 int taken_num;
@@ -138,7 +137,6 @@ void ROB::comb_commit() {
             extern bool sim_end;
             sim_end = true;
           } else if (entry[idx].uop.vp_valid) {
-            perfect_vp_continue();
           } else {
             if (entry[idx].uop.op != CSR && entry[idx].uop.op != SFENCE_VMA) {
               cout << hex << entry[idx].uop.instruction << endl;

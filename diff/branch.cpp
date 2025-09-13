@@ -16,6 +16,9 @@ bool perfect_fetch_valid[FETCH_WIDTH];
 uint32_t perfect_fetch_PC[FETCH_WIDTH];
 uint32_t perfect_pred_PC[FETCH_WIDTH];
 bool perfect_pred_dir[FETCH_WIDTH];
+bool vp_valid[FETCH_WIDTH];
+uint32_t vp_src1_rdata[FETCH_WIDTH];
+uint32_t vp_src2_rdata[FETCH_WIDTH];
 
 int flush_store_num = 0;
 
@@ -40,15 +43,15 @@ void perfect_bpu_init(int img_size) {
 
 void perfect_bpu_run(bool br_redirect, bool flush) {
   int i;
-  static bool mispred = false;
+  static bool stall = false;
   random_device rd;
   mt19937 gen(rd());
   uniform_int_distribution<int> dis(1, 100);
 
   if (br_redirect) {
     assert(br_ref.state.pc == back.out.redirect_pc);
-    assert(mispred);
-    mispred = false;
+    assert(stall);
+    stall = false;
 
     if (flush) {
       for (int i = 0; i < 32; i++) {
@@ -64,29 +67,69 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
     }
   }
 
-  if (mispred) {
+  if (stall) {
     for (i = 0; i < FETCH_WIDTH; i++) {
       perfect_fetch_valid[i] = false;
     }
+
     return;
   }
 
   for (i = 0; i < FETCH_WIDTH; i++) {
     perfect_fetch_valid[i] = true;
     perfect_fetch_PC[i] = br_ref.state.pc;
+#ifdef CONFIG_PERFECT_VP
+    bool src1_en, src2_en;
+    int src1_areg, src2_areg;
+    // 可以值预测的概率
+    if (br_ref.vp_decode(src1_en, src2_en, src1_areg, src2_areg)) {
+      vp_valid[i] = true;
+      // 值预测正确的概率
+      if (1) {
+        if (src1_en) {
+          vp_src1_rdata[i] = br_ref.state.gpr[src1_areg];
+        } else {
+          vp_src1_rdata[i] = 0;
+        }
+
+        if (src2_en) {
+          vp_src2_rdata[i] = br_ref.state.gpr[src2_areg];
+        } else {
+          vp_src2_rdata[i] = 0;
+        }
+      } else {
+        // 错误预测
+        if (src1_en) {
+          vp_src1_rdata[i] = ~br_ref.state.gpr[src1_areg];
+        }
+
+        if (src2_en) {
+          vp_src2_rdata[i] = br_ref.state.gpr[src2_areg] + 114514;
+        }
+        stall = true;
+        break;
+      }
+    } else {
+      vp_valid[i] = false;
+    }
+
+    if (stall) {
+      break;
+    }
+#endif
+
     br_ref.exec();
 
     if (br_ref.is_exception || br_ref.is_csr) {
       perfect_pred_dir[i] = false;
-      mispred = true;
+      stall = true;
       break;
     }
 
     if (br_ref.is_br) {
-      mispred = (rand() % 100 > 90);
+      stall = (rand() % 100 > 90);
 
-      if (mispred) {
-
+      if (stall) {
         perfect_pred_dir[i] = !br_ref.br_taken;
         perfect_pred_PC[i] = 0;
       } else {
@@ -94,7 +137,7 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
         perfect_pred_dir[i] = br_ref.br_taken;
       }
 
-      if (br_ref.br_taken || mispred)
+      if (br_ref.br_taken || stall)
         break;
     } else {
       perfect_pred_dir[i] = false;

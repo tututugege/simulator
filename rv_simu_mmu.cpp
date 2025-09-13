@@ -30,7 +30,6 @@ extern int isu_ready_num[ISSUE_WAY];
 extern int raw_stall_num[ISSUE_WAY];
 
 extern Ref_cpu br_ref;
-extern Ref_cpu vp_ref;
 
 using namespace std;
 
@@ -53,9 +52,6 @@ void perfect_bpu_init(int img_size);
 extern bool vp_valid[FETCH_WIDTH];
 extern uint32_t vp_src1_rdata[FETCH_WIDTH];
 extern uint32_t vp_src2_rdata[FETCH_WIDTH];
-
-void perfect_vp_run(bool *);
-void perfect_vp_init(int);
 
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
@@ -101,10 +97,6 @@ int main(int argc, char *argv[]) {
 
 #ifdef CONFIG_PERFECT_BPU
   perfect_bpu_init(img_size);
-#endif
-
-#ifdef CONFIG_PERFECT_VP
-  perfect_vp_init(img_size);
 #endif
 
 #ifdef CONFIG_RUN_REF
@@ -253,6 +245,19 @@ int main(int argc, char *argv[]) {
         }
       }
 
+#ifdef CONFIG_PERFECT_VP
+      for (int i = 0; i < FETCH_WIDTH; i++) {
+        back.in.vp_valid[i] = vp_valid[i];
+        back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
+        back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
+      }
+#else
+      for (int i = 0; i < FETCH_WIDTH; i++) {
+        back.in.vp_valid[i] = false;
+      }
+
+#endif
+
 #else
       bool no_taken = true;
       for (int j = 0; j < FETCH_WIDTH; j++) {
@@ -277,16 +282,6 @@ int main(int argc, char *argv[]) {
           no_taken = false;
       }
 
-#endif
-
-#ifdef CONFIG_PERFECT_VP
-      perfect_vp_run(back.in.valid);
-      for (int i = 0; i < FETCH_WIDTH; i++) {
-        back.in.vp_valid[i] = vp_valid[i];
-        back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
-        back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
-      }
-      assert(vp_ref.state.pc == br_ref.state.pc);
 #endif
     }
 
