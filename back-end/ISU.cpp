@@ -34,7 +34,8 @@ void ISU::init() {
   add_iq(16, IQ_LD);
   add_iq(16, IQ_STA);
   add_iq(16, IQ_STD);
-  add_iq(MAX_BR_NUM, IQ_BR);
+  add_iq(MAX_BR_NUM / 2, IQ_BR0);
+  add_iq(MAX_BR_NUM / 2, IQ_BR1);
 }
 
 void IQ::enq(Inst_uop *inst) {
@@ -191,7 +192,7 @@ void ISU::seq() {
       }
     }
 
-    if (io.rob_bc->flush) {
+    if (io.rob_bcast->flush) {
       for (auto &q : iq) {
         q.br_clear((1 << MAX_BR_NUM) - 1);
       }

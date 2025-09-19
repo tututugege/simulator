@@ -76,15 +76,8 @@ typedef struct {
 } Prf_Awake;
 
 typedef struct {
-  bool valid;
-  AMO_op amoop;
-  uint32_t load_data;
-  uint32_t stq_idx;
-} Prf_Stq;
-
-typedef struct {
-  Inst_uop uop[DECODE_WIDTH];
   bool valid[DECODE_WIDTH];
+  Inst_uop uop[DECODE_WIDTH];
   bool dis_fire[DECODE_WIDTH];
 } Ren_Iss;
 
@@ -160,7 +153,3 @@ typedef struct {
   // 数据写入
   Inst_entry data_entry;
 } Exe_Stq;
-
-typedef struct {
-  bool valid[STQ_NUM];
-} Stq_Iss;

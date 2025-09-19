@@ -77,7 +77,7 @@ typedef struct {
 typedef struct {
   Exe_Csr *exe2csr;
   Csr_Exe *csr2exe;
-  Rob_Broadcast *rob_bc;
+  Rob_Broadcast *rob_bcast;
 } CSR_IO;
 
 class CSRU {

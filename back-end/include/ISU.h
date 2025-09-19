@@ -33,7 +33,7 @@ public:
 
 class ISU_IO {
 public:
-  Rob_Broadcast *rob_bc;
+  Rob_Broadcast *rob_bcast;
   Dec_Broadcast *dec_bcast;
 
   Ren_Iss *ren2iss;
@@ -41,8 +41,6 @@ public:
 
   Iss_Prf *iss2prf;
   Exe_Iss *exe2iss;
-
-  Stq_Iss *stq2iss;
 
   Prf_Awake *awake;
 };

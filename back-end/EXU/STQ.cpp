@@ -14,10 +14,6 @@ void STQ::comb() {
   /*back.out.wvalid = false;*/
 
   static int state;
-  for (int i = 0; i < STQ_NUM; i++) {
-    io.stq2iss->valid[i] = false;
-  }
-
   int num = count;
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -99,7 +95,6 @@ void STQ::comb() {
 
     entry[deq_ptr].valid = false;
     entry[deq_ptr].complete = false;
-    io.stq2iss->valid[deq_ptr] = true;
     LOOP_INC(deq_ptr, STQ_NUM);
     count--;
   }
@@ -159,7 +154,7 @@ void STQ::seq() {
     }
   }
 
-  if (io.rob_bc->flush) {
+  if (io.rob_bcast->flush) {
     for (int i = 0; i < STQ_NUM; i++) {
       if (entry[i].valid && !entry[i].complete) {
         entry[i].valid = false;

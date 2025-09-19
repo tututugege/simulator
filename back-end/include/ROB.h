@@ -9,8 +9,8 @@ public:
 
   Prf_Rob *prf2rob;
 
-  Rob_Broadcast *rob_bc;
   Rob_Commit *rob_commit;
+  Rob_Broadcast *rob_bcast;
   Dec_Broadcast *dec_bcast;
 };
 

@@ -189,7 +189,7 @@ void IDU::comb_branch() {
 }
 
 void IDU::comb_flush() {
-  if (io.rob_bc->flush) {
+  if (io.rob_bcast->flush) {
     /*state_1 = 0;*/
     for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
@@ -251,7 +251,7 @@ void IDU::seq() {
     pop--;
   }
 
-  if (push && !io.rob_bc->flush) {
+  if (push && !io.rob_bcast->flush) {
     tag_list.push_back(alloc_tag);
   }
 
@@ -669,7 +669,10 @@ int decode(Inst_uop uop[2], uint32_t inst) {
 
   for (int i = 0; i < uop_num; i++) {
     if (is_branch(uop[i].op)) {
-      uop[i].iq_type = IQ_BR;
+      if (rand() % 2)
+        uop[i].iq_type = IQ_BR1;
+      else
+        uop[i].iq_type = IQ_BR0;
     } else if (uop[i].op == LOAD) {
       uop[i].iq_type = IQ_LD;
     } else if (uop[i].op == STA) {
