@@ -19,7 +19,7 @@ public:
   Dec_Broadcast *dec_bcast;
 
   Prf_Dec *prf2dec;
-  Rob_Broadcast *rob_bc;
+  Rob_Broadcast *rob_bcast;
   Rob_Commit *commit;
 };
 

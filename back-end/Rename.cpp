@@ -202,7 +202,7 @@ void Rename::comb_fire() {
         (!is_std(io.ren2iss->uop[i].op) ||
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
-        !io.dec_bcast->mispred && !io.rob_bc->flush && !csr_stall &&
+        !io.dec_bcast->mispred && !io.rob_bcast->flush && !csr_stall &&
         (!is_CSR(io.ren2iss->uop[i].op) || io.rob2ren->empty && !pre_fire) &&
         !io.rob2ren->stall;
 
@@ -279,7 +279,7 @@ void Rename::comb_fire() {
 
 void Rename::comb_branch() {
   // 分支处理
-  if (io.dec_bcast->mispred && !io.rob_bc->flush) {
+  if (io.dec_bcast->mispred && !io.rob_bcast->flush) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = RAT_checkpoint[io.dec_bcast->br_tag][i];
@@ -295,7 +295,7 @@ void Rename::comb_branch() {
 }
 
 void Rename ::comb_flush() {
-  if (io.rob_bc->flush) {
+  if (io.rob_bcast->flush) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = arch_RAT[i];
@@ -346,7 +346,7 @@ void Rename ::comb_commit() {
 
 void Rename ::comb_pipeline() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (io.rob_bc->flush || io.dec_bcast->mispred) {
+    if (io.rob_bcast->flush || io.dec_bcast->mispred) {
       inst_r_1[i].valid = false;
     } else if (io.ren2dec->ready) {
       inst_r_1[i].uop = io.dec2ren->uop[i];

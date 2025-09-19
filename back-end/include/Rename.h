@@ -22,7 +22,7 @@ public:
 
   Ren_Prf *ren2prf;
 
-  Rob_Broadcast *rob_bc;
+  Rob_Broadcast *rob_bcast;
   Rob_Commit *rob_commit;
 };
 
@@ -35,7 +35,6 @@ public:
   void comb_fire();
   void comb_wake();
   void comb_alloc(); // 分配寄存器
-  void comb_store();
   void comb_branch();
   void comb_commit();
   void comb_pipeline();

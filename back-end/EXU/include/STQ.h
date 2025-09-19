@@ -6,12 +6,10 @@
 typedef struct {
   Ren_Stq *ren2stq;
   Exe_Stq *exe2stq;
-  Prf_Stq *prf2stq;
-  Stq_Iss *stq2iss;
   Stq_Ren *stq2ren;
   Rob_Commit *rob_commit;
   Dec_Broadcast *dec_bcast;
-  Rob_Broadcast *rob_bc;
+  Rob_Broadcast *rob_bcast;
 } STQ_IO;
 
 typedef struct {

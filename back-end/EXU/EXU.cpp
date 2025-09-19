@@ -123,7 +123,7 @@ void EXU::comb_csr() {
   io.exe2csr->we = false;
   io.exe2csr->re = false;
 
-  if (inst_r[0].valid && inst_r[0].uop.op == CSR && !io.rob_bc->flush) {
+  if (inst_r[0].valid && inst_r[0].uop.op == CSR && !io.rob_bcast->flush) {
     io.exe2csr->we = inst_r[0].uop.func3 == 1 || inst_r[0].uop.src1_areg != 0;
 
     io.exe2csr->re = inst_r[0].uop.func3 != 1 || inst_r[0].uop.dest_areg != 0;
@@ -166,7 +166,7 @@ void EXU::seq() {
     }
   }
 
-  if (io.rob_bc->flush) {
+  if (io.rob_bcast->flush) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       inst_r[i].valid = false;
       fu[i].complete = false;

@@ -30,7 +30,6 @@ extern int isu_ready_num[ISSUE_WAY];
 extern int raw_stall_num[ISSUE_WAY];
 
 extern Ref_cpu br_ref;
-extern Ref_cpu vp_ref;
 
 using namespace std;
 
@@ -47,17 +46,15 @@ bool sim_end = false;
 long long sim_time;
 int commit_num;
 
-void perfect_bpu_run(bool redirect);
+void perfect_bpu_run(bool redirect, bool flush);
 void perfect_bpu_init(int img_size);
 
 extern bool vp_valid[FETCH_WIDTH];
 extern uint32_t vp_src1_rdata[FETCH_WIDTH];
 extern uint32_t vp_src2_rdata[FETCH_WIDTH];
 
-void perfect_vp_run(bool *);
-void perfect_vp_init(int);
-
-void front_cycle(bool, bool, bool, front_top_in&, front_top_out&, uint32_t&, bool&);
+void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &,
+                 bool &);
 void back2front_comb(front_top_in &front_in, front_top_out &front_out);
 
 int main(int argc, char *argv[]) {
@@ -83,7 +80,7 @@ int main(int argc, char *argv[]) {
     p_memory[img_size + POS_MEMORY_SHIFT] = inst_32b;
   }
 
-  p_memory[uint32_t(0x0 / 4)] = 0x13;
+  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
   p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
   p_memory[uint32_t(0xc / 4)] = 0x00028067;
@@ -104,10 +101,6 @@ int main(int argc, char *argv[]) {
 
 #ifdef CONFIG_PERFECT_BPU
   perfect_bpu_init(img_size);
-#endif
-
-#ifdef CONFIG_PERFECT_VP
-  perfect_vp_init(img_size);
 #endif
 
 #ifdef CONFIG_RUN_REF
@@ -140,23 +133,24 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     front_in.back2front_valid[i] = false;
   }
-#endif 
+#endif
 
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
     if (LOG)
-      cout << "****************************************************************"
-            << dec << " cycle: " << sim_time
-            << " ****************************************************************"
-            << endl;
-
+      cout
+          << "****************************************************************"
+          << dec << " cycle: " << sim_time
+          << " ****************************************************************"
+          << endl;
 
     for (int i = 0; i < FETCH_WIDTH; i++) {
       back.in.vp_valid[i] = false;
     }
 
     // step1: fetch instructions and fill in back.in
-    front_cycle(stall, misprediction, exception, front_in, front_out, number_PC, non_branch_mispred);
+    front_cycle(stall, misprediction, exception, front_in, front_out, number_PC,
+                non_branch_mispred);
 
     back.Back_comb();
 
@@ -172,7 +166,7 @@ int main(int argc, char *argv[]) {
 
     stall = back.out.stall;
     misprediction = back.out.mispred;
-    exception = back.out.exception;
+    exception = back.out.flush;
 
     if (misprediction || exception) {
       number_PC = back.out.redirect_pc;
@@ -378,7 +372,9 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   return ret;
 }
 
-void front_cycle(bool stall, bool misprediction, bool exception, front_top_in &front_in, front_top_out &front_out, uint32_t &number_PC, bool &non_branch_mispred) {
+void front_cycle(bool stall, bool misprediction, bool exception,
+                 front_top_in &front_in, front_top_out &front_out,
+                 uint32_t &number_PC, bool &non_branch_mispred) {
   if (!stall || misprediction || exception) {
 
 #if defined(CONFIG_PERFECT_BPU)
@@ -403,18 +399,18 @@ void front_cycle(bool stall, bool misprediction, bool exception, front_top_in &f
 
       bool mstatus[32], sstatus[32];
 
-      cvt_number_to_bit_unsigned(mstatus,
-                                  back.csr.CSR_RegFile[number_mstatus], 32);
+      cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
+                                 32);
 
-      cvt_number_to_bit_unsigned(sstatus,
-                                  back.csr.CSR_RegFile[number_sstatus], 32);
+      cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
+                                 32);
 
       if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
           back.csr.privilege != 3) {
 
         front_out.page_fault_inst[j] =
             !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[number_satp], 0,
-                    mstatus, sstatus, back.csr.privilege, p_memory);
+                   mstatus, sstatus, back.csr.privilege, p_memory);
         if (front_out.page_fault_inst[j]) {
           front_out.instructions[j] = INST_NOP;
         } else {
@@ -435,71 +431,73 @@ void front_cycle(bool stall, bool misprediction, bool exception, front_top_in &f
 
 #ifdef CONFIG_PERFECT_BPU
 
-      perfect_bpu_run(back.out.mispred);
-      for (int j = 0; j < FETCH_WIDTH; j++) {
-        back.in.valid[j] = perfect_fetch_valid[j];
-        back.in.pc[j] = perfect_fetch_PC[j];
-        back.in.inst[j] = p_memory[perfect_fetch_PC[j] >> 2];
-        back.in.page_fault_inst[j] = false;
-        if (LOG)
-          cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-               << perfect_fetch_PC[j] << endl;
-        back.in.predict_next_fetch_address[j] = perfect_pred_PC[j];
-        back.in.predict_dir[j] = perfect_pred_dir[j];
-      }
-
-#else
-      bool no_taken = true;
-      for (int j = 0; j < FETCH_WIDTH; j++) {
-        back.in.valid[j] = front_out.FIFO_valid && no_taken;
-        back.in.pc[j] = front_out.pc[j];
-        back.in.predict_next_fetch_address[j] =
-            front_out.predict_next_fetch_address;
-        back.in.page_fault_inst[j] = front_out.page_fault_inst[j];
-        back.in.inst[j] = front_out.instructions[j];
-
-        if (LOG && back.in.valid[j]) {
-          cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-               << front_out.pc[j] << " Inst: " << back.in.inst[j] << endl;
-        }
-
-        back.in.predict_dir[j] = front_out.predict_dir[j];
-        back.in.alt_pred[j] = front_out.alt_pred[j];
-        back.in.altpcpn[j] = front_out.altpcpn[j];
-        back.in.pcpn[j] = front_out.pcpn[j];
-
-        // pre-decode, avoid non-branch instruction be predicted as taken
-        uint32_t op_branch = 0b1100011;
-        uint32_t op_jal = 0b1101111;
-        uint32_t op_jalr = 0b1100111;
-        uint32_t number_op_code_unsigned = front_out.instructions[j] & 0x7f;
-        bool is_branch_inst = (number_op_code_unsigned == op_branch) ||
-                              (number_op_code_unsigned == op_jal) ||
-                              (number_op_code_unsigned == op_jalr);
-        // if (front_out.predict_dir[j])
-        //   no_taken = false;
-        if (front_out.predict_dir[j] && is_branch_inst)
-          no_taken = false;
-      }
-      non_branch_mispred = false;
-      if (no_taken && (front_out.predict_next_fetch_address != front_out.pc[FETCH_WIDTH - 1] + 4) && front_out.FIFO_valid) {
-        // 发生了非分支指令的错误预测
-        non_branch_mispred = true;
-        front_in.refetch = true;
-        // front_out.predict_next_fetch_address = front_out.pc[FETCH_WIDTH - 1] + 4;
-        front_in.refetch_address = front_out.pc[FETCH_WIDTH - 1] + 4;
-      }
-
-#endif
+    perfect_bpu_run(back.out.mispred, back.out.flush);
+    for (int j = 0; j < FETCH_WIDTH; j++) {
+      back.in.valid[j] = perfect_fetch_valid[j];
+      back.in.pc[j] = perfect_fetch_PC[j];
+      back.in.inst[j] = p_memory[perfect_fetch_PC[j] >> 2];
+      back.in.page_fault_inst[j] = false;
+      if (LOG && back.in.valid[j])
+        cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
+             << perfect_fetch_PC[j] << endl;
+      back.in.predict_next_fetch_address[j] = perfect_pred_PC[j];
+      back.in.predict_dir[j] = perfect_pred_dir[j];
+    }
 
 #ifdef CONFIG_PERFECT_VP
-      perfect_vp_run(back.in.valid);
-      for (int i = 0; i < FETCH_WIDTH; i++) {
-        back.in.vp_valid[i] = vp_valid[i];
-        back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
-        back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      back.in.vp_valid[i] = vp_valid[i];
+      back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
+      back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
+    }
+#endif
+
+#else
+    bool no_taken = true;
+    for (int j = 0; j < FETCH_WIDTH; j++) {
+      back.in.valid[j] = front_out.FIFO_valid && no_taken;
+      back.in.pc[j] = front_out.pc[j];
+      back.in.predict_next_fetch_address[j] =
+          front_out.predict_next_fetch_address;
+      back.in.page_fault_inst[j] = front_out.page_fault_inst[j];
+      back.in.inst[j] = front_out.instructions[j];
+
+      if (LOG && back.in.valid[j]) {
+        cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
+             << front_out.pc[j] << " Inst: " << back.in.inst[j] << endl;
       }
-      assert(vp_ref.state.pc == br_ref.state.pc);
+
+      back.in.predict_dir[j] = front_out.predict_dir[j];
+      back.in.alt_pred[j] = front_out.alt_pred[j];
+      back.in.altpcpn[j] = front_out.altpcpn[j];
+      back.in.pcpn[j] = front_out.pcpn[j];
+
+      // pre-decode, avoid non-branch instruction be predicted as taken
+      uint32_t op_branch = 0b1100011;
+      uint32_t op_jal = 0b1101111;
+      uint32_t op_jalr = 0b1100111;
+      uint32_t number_op_code_unsigned = front_out.instructions[j] & 0x7f;
+      bool is_branch_inst = (number_op_code_unsigned == op_branch) ||
+                            (number_op_code_unsigned == op_jal) ||
+                            (number_op_code_unsigned == op_jalr);
+      // if (front_out.predict_dir[j])
+      //   no_taken = false;
+      if (front_out.predict_dir[j] && is_branch_inst)
+        no_taken = false;
+    }
+    non_branch_mispred = false;
+    if (no_taken &&
+        (front_out.predict_next_fetch_address !=
+         front_out.pc[FETCH_WIDTH - 1] + 4) &&
+        front_out.FIFO_valid) {
+      // 发生了非分支指令的错误预测
+      non_branch_mispred = true;
+      front_in.refetch = true;
+      // front_out.predict_next_fetch_address = front_out.pc[FETCH_WIDTH - 1] +
+      // 4;
+      front_in.refetch_address = front_out.pc[FETCH_WIDTH - 1] + 4;
+    }
+
 #endif
 
   } else {
@@ -517,11 +515,11 @@ void front_cycle(bool stall, bool misprediction, bool exception, front_top_in &f
 }
 
 void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
-  front_in.FIFO_read_enable = false;  
+  front_in.FIFO_read_enable = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
-                                    is_branch(back.out.commit_entry[i].uop.op);
+                                   is_branch(back.out.commit_entry[i].uop.op);
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
@@ -548,41 +546,39 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
     }
     if (LOG) {
       cout << " valid: " << front_in.back2front_valid[i]
-            << " 反馈给前端的分支指令PC: " << hex << inst->pc
-            << " 预测结果: " << inst->pred_br_taken
-            << " 实际结果: " << inst->br_taken
-            << " 预测目标地址: " << inst->pred_br_pc
-            << " 实际目标地址: " << inst->pc_next
-            << " 指令: " << inst->instruction
-            << endl;
+           << " 反馈给前端的分支指令PC: " << hex << inst->pc
+           << " 预测结果: " << inst->pred_br_taken
+           << " 实际结果: " << inst->br_taken
+           << " 预测目标地址: " << inst->pred_br_pc
+           << " 实际目标地址: " << inst->pc_next
+           << " 指令: " << inst->instruction << endl;
     }
   }
   if (LOG) {
     // show ROB valid vector
-    cout << "ROB count: " << back.rob.count
-          << " deq_ptr: " << back.rob.deq_ptr
-          << " enq_ptr: " << back.rob.enq_ptr
-          << endl;
+    cout << "ROB count: " << back.rob.count << " deq_ptr: " << back.rob.deq_ptr
+         << " enq_ptr: " << back.rob.enq_ptr << endl;
     cout << "ROB valid: \n";
     for (int i = 0; i < ROB_NUM; i++) {
       cout << back.rob.entry[i].valid << " ";
-      if (i % 32 == 31) cout << endl;
+      if (i % 32 == 31)
+        cout << endl;
     }
     cout << "ROB inst pc/inst:" << endl;
     for (int i = 0; i < ROB_NUM; i++) {
       if (back.rob.entry[i].valid) {
-        cout << hex << back.rob.entry[i].uop.pc << " at " << hex << i << " , inst: "
-              << back.rob.entry[i].uop.instruction 
-              << " , decode at sim_time: " << dec<< back.rob.entry[i].uop.inst_idx 
-              << " , complete: " << back.rob.complete[i]
-              << " , exception: " << back.rob.exception[i]
-              << endl;
+        cout << hex << back.rob.entry[i].uop.pc << " at " << hex << i
+             << " , inst: " << back.rob.entry[i].uop.instruction
+             << " , decode at sim_time: " << dec
+             << back.rob.entry[i].uop.inst_idx
+             << " , complete: " << back.rob.complete[i]
+             << " , exception: " << back.rob.exception[i] << endl;
       }
     }
   }
 
   // if (back.out.mispred) {
-  if (back.out.mispred || back.out.exception) {
+  if (back.out.mispred || back.out.flush) {
     // 若 pre-decode 或后端都检测到 branch mis-prediction，则以后端为准
     front_in.refetch_address = back.out.redirect_pc;
   }

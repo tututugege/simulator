@@ -251,11 +251,6 @@ int main(int argc, char *argv[]) {
         back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
         back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
       }
-#else
-      for (int i = 0; i < FETCH_WIDTH; i++) {
-        back.in.vp_valid[i] = false;
-      }
-
 #endif
 
 #else

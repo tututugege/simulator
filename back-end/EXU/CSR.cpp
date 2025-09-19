@@ -9,7 +9,7 @@ void CSRU::init() {
 
 void CSRU::comb() {
   io.csr2exe->rdata = CSR_RegFile[io.exe2csr->idx];
-  if (io.rob_bc->exception) {
+  if (io.rob_bcast->exception) {
 
     bool mstatus[32];
     bool sstatus[32];
@@ -29,11 +29,11 @@ void CSRU::comb() {
     cvt_number_to_bit_unsigned(mtvec, CSR_RegFile[number_mtvec], 32);
     cvt_number_to_bit_unsigned(stvec, CSR_RegFile[number_stvec], 32);
 
-    bool ecall = io.rob_bc->ecall;
-    bool page_fault_inst = io.rob_bc->page_fault_inst;
-    bool page_fault_load = io.rob_bc->page_fault_load;
-    bool page_fault_store = io.rob_bc->page_fault_store;
-    bool illegal_exception = io.rob_bc->illegal_inst;
+    bool ecall = io.rob_bcast->ecall;
+    bool page_fault_inst = io.rob_bcast->page_fault_inst;
+    bool page_fault_load = io.rob_bcast->page_fault_load;
+    bool page_fault_store = io.rob_bcast->page_fault_store;
+    bool illegal_exception = io.rob_bcast->illegal_inst;
 
     bool mstatus_mie = mstatus[31 - 3];
     bool medeleg_U_ecall = medeleg[31 - 8];
@@ -97,7 +97,7 @@ void CSRU::comb() {
     bool MTrap =
         (M_software_interrupt) || (M_timer_interrupt) ||
         (M_external_interrupt) ||
-        (io.rob_bc->exception && (privilege == 0) && !medeleg_U_ecall) ||
+        (io.rob_bcast->exception && (privilege == 0) && !medeleg_U_ecall) ||
         (ecall && (privilege == 1) && !medeleg_S_ecall) ||
         (ecall && (privilege == 3)) // MTrap下的ecall一定在MTrap处理
         || (page_fault_inst && !medeleg_page_fault_inst) ||
@@ -115,7 +115,7 @@ void CSRU::comb() {
                  (page_fault_store && medeleg_page_fault_store);
 
     if (MTrap) {
-      CSR_RegFile[number_mepc] = io.rob_bc->pc;
+      CSR_RegFile[number_mepc] = io.rob_bcast->pc;
 
       // next_mcause = interruptType;
       uint32_t cause =
@@ -159,15 +159,15 @@ void CSRU::comb() {
       privilege = 0b11;
 
       if (page_fault_store || page_fault_load || page_fault_inst) {
-        CSR_RegFile[number_mtval] = io.rob_bc->trap_val;
+        CSR_RegFile[number_mtval] = io.rob_bcast->trap_val;
       } else if (illegal_exception) {
-        CSR_RegFile[number_mtval] = io.rob_bc->trap_val;
+        CSR_RegFile[number_mtval] = io.rob_bcast->trap_val;
       } else {
         CSR_RegFile[number_mtval] = 0;
       }
 
     } else if (STrap) {
-      CSR_RegFile[number_sepc] = io.rob_bc->pc;
+      CSR_RegFile[number_sepc] = io.rob_bcast->pc;
       uint32_t cause =
           (M_software_interrupt || M_timer_interrupt || M_external_interrupt)
           << 31;
@@ -205,12 +205,12 @@ void CSRU::comb() {
       sstatus[31 - 1] = 0;               // next_sstatus.SIE = 0;
       privilege = 1;
       if (page_fault_store || page_fault_load || page_fault_inst) {
-        CSR_RegFile[number_stval] = io.rob_bc->trap_val;
+        CSR_RegFile[number_stval] = io.rob_bcast->trap_val;
       } else {
         CSR_RegFile[number_stval] = 0;
       }
 
-    } else if (io.rob_bc->mret) {
+    } else if (io.rob_bcast->mret) {
       mstatus[31 - 3] = mstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
       sstatus[31 - 3] = sstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
       privilege = mstatus[31 - 11] + 2 * mstatus[31 - 12];
@@ -222,7 +222,7 @@ void CSRU::comb() {
       sstatus[31 - 12] = 0;
       sstatus[31 - 11] = 0; // next_mstatus.MPP = U;
       io.csr2exe->epc = CSR_RegFile[number_mepc];
-    } else if (io.rob_bc->sret) {
+    } else if (io.rob_bcast->sret) {
       mstatus[31 - 1] = mstatus[31 - 5]; // next_mstatus.SIE = mstatus.SPIE;
       sstatus[31 - 1] = sstatus[31 - 5]; // next_sstatus.SIE = sstatus.SPIE;
       privilege = sstatus[31 - 8];       // next_priviledge = sstatus.SPP;

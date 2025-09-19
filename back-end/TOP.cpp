@@ -107,7 +107,6 @@ Iss_Ren iss2ren;
 Iss_Prf iss2prf;
 
 Prf_Exe prf2exe;
-Prf_Stq prf2stq;
 Prf_Rob prf2rob;
 Prf_Awake awake;
 Prf_Dec prf2dec;
@@ -117,11 +116,10 @@ Exe_Stq exe2stq;
 Exe_Iss exe2iss;
 
 Rob_Ren rob2ren;
-Rob_Broadcast rob_bc;
+Rob_Broadcast rob_bcast;
 Rob_Commit rob_commit;
 
 Stq_Ren stq2ren;
-Stq_Iss stq2iss;
 
 Csr_Exe csr2exe;
 Exe_Csr exe2csr;
@@ -134,7 +132,7 @@ void Back_Top::init() {
   idu.io.ren2dec = &ren2dec;
   idu.io.dec_bcast = &dec_bcast;
   idu.io.prf2dec = &prf2dec;
-  idu.io.rob_bc = &rob_bc;
+  idu.io.rob_bcast = &rob_bcast;
   idu.io.commit = &rob_commit;
 
   rename.io.dec2ren = &dec2ren;
@@ -147,33 +145,31 @@ void Back_Top::init() {
   rename.io.ren2stq = &ren2stq;
   rename.io.stq2ren = &stq2ren;
   rename.io.ren2prf = &ren2prf;
-  rename.io.rob_bc = &rob_bc;
+  rename.io.rob_bcast = &rob_bcast;
   rename.io.rob_commit = &rob_commit;
   rename.io.awake = &awake;
 
-  isu.io.rob_bc = &rob_bc;
+  isu.io.rob_bcast = &rob_bcast;
   isu.io.dec_bcast = &dec_bcast;
   isu.io.ren2iss = &ren2iss;
   isu.io.iss2ren = &iss2ren;
   isu.io.iss2prf = &iss2prf;
   isu.io.awake = &awake;
-  isu.io.stq2iss = &stq2iss;
   isu.io.exe2iss = &exe2iss;
 
   prf.io.iss2prf = &iss2prf;
   prf.io.prf2rob = &prf2rob;
   prf.io.prf2exe = &prf2exe;
-  prf.io.prf2stq = &prf2stq;
   prf.io.ren2prf = &ren2prf;
   prf.io.exe2prf = &exe2prf;
   prf.io.prf_awake = &awake;
   prf.io.prf2dec = &prf2dec;
   prf.io.dec_bcast = &dec_bcast;
-  prf.io.rob_bc = &rob_bc;
+  prf.io.rob_bcast = &rob_bcast;
 
   exu.io.prf2exe = &prf2exe;
   exu.io.dec_bcast = &dec_bcast;
-  exu.io.rob_bc = &rob_bc;
+  exu.io.rob_bcast = &rob_bcast;
   exu.io.exe2prf = &exe2prf;
   exu.io.exe2stq = &exe2stq;
   exu.io.exe2iss = &exe2iss;
@@ -183,7 +179,7 @@ void Back_Top::init() {
   rob.io.ren2rob = &ren2rob;
   rob.io.dec_bcast = &dec_bcast;
   rob.io.prf2rob = &prf2rob;
-  rob.io.rob_bc = &rob_bc;
+  rob.io.rob_bcast = &rob_bcast;
   rob.io.dec_bcast = &dec_bcast;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2ren = &rob2ren;
@@ -191,15 +187,13 @@ void Back_Top::init() {
   stq.io.exe2stq = &exe2stq;
   stq.io.rob_commit = &rob_commit;
   stq.io.ren2stq = &ren2stq;
-  stq.io.stq2iss = &stq2iss;
   stq.io.stq2ren = &stq2ren;
-  stq.io.prf2stq = &prf2stq;
   stq.io.dec_bcast = &dec_bcast;
-  stq.io.rob_bc = &rob_bc;
+  stq.io.rob_bcast = &rob_bcast;
 
   csr.io.exe2csr = &exe2csr;
   csr.io.csr2exe = &csr2exe;
-  csr.io.rob_bc = &rob_bc;
+  csr.io.rob_bcast = &rob_bcast;
 
   idu.init();
   isu.init();
@@ -261,12 +255,11 @@ void Back_Top::Back_comb() {
   csr.comb();
   rob.comb_branch();
   rename.comb_branch();
-  /*rename.comb_store();*/
   rename.comb_pipeline();
 
-  back.out.flush = rob.io.rob_bc->flush;
+  back.out.flush = rob.io.rob_bcast->flush;
 
-  if (!rob.io.rob_bc->flush) {
+  if (!rob.io.rob_bcast->flush) {
     back.out.mispred = prf.io.prf2dec->mispred;
     back.out.stall = !idu.io.dec2front->ready;
     back.out.redirect_pc = prf.io.prf2dec->redirect_pc;
@@ -275,14 +268,14 @@ void Back_Top::Back_comb() {
     if (LOG)
       cout << "flush" << endl;
     back.out.mispred = true;
-    if (rob.io.rob_bc->exception) {
-      if (rob.io.rob_bc->mret || rob.io.rob_bc->sret) {
+    if (rob.io.rob_bcast->exception) {
+      if (rob.io.rob_bcast->mret || rob.io.rob_bcast->sret) {
         back.out.redirect_pc = csr.io.csr2exe->epc;
       } else {
         back.out.redirect_pc = csr.io.csr2exe->trap_pc;
       }
     } else {
-      back.out.redirect_pc = rob.io.rob_bc->pc;
+      back.out.redirect_pc = rob.io.rob_bcast->pc;
     }
   }
 
