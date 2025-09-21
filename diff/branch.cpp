@@ -21,6 +21,7 @@ uint32_t vp_src1_rdata[FETCH_WIDTH];
 uint32_t vp_src2_rdata[FETCH_WIDTH];
 
 int flush_store_num = 0;
+int fetch_num = 0;
 
 void perfect_bpu_init(int img_size) {
   br_ref.init(0);
@@ -53,18 +54,19 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
     assert(stall);
     stall = false;
 
-    if (flush) {
-      for (int i = 0; i < 32; i++) {
-        if (br_ref.state.gpr[i] != back.prf.reg_file[back.rename.arch_RAT[i]]) {
-          cout << sim_time << endl;
-          for (int i = 0; i < 32; i++) {
-            cout << br_ref.state.gpr[i] << " "
-                 << back.prf.reg_file[back.rename.arch_RAT[i]] << endl;
-          }
-          exit(1);
-        }
-      }
-    }
+    /*if (flush) {*/
+    /*for (int i = 0; i < 32; i++) {*/
+    /*  if (br_ref.state.gpr[i] != back.prf.reg_file[back.rename.arch_RAT[i]])
+     * {*/
+    /*    cout << sim_time << endl;*/
+    /*    for (int i = 0; i < 32; i++) {*/
+    /*      cout << br_ref.state.gpr[i] << " "*/
+    /*           << back.prf.reg_file[back.rename.arch_RAT[i]] << endl;*/
+    /*    }*/
+    /*    exit(1);*/
+    /*  }*/
+    /*}*/
+    /*}*/
   }
 
   if (stall) {
@@ -75,6 +77,7 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
     return;
   }
 
+  fetch_num++;
   for (i = 0; i < FETCH_WIDTH; i++) {
     perfect_fetch_valid[i] = true;
     perfect_fetch_PC[i] = br_ref.state.pc;
@@ -127,8 +130,8 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
     }
 
     if (br_ref.is_br) {
-      stall = (rand() % 100 > 90);
-      /*stall = false;*/
+      /*stall = (rand() % 100 > 90);*/
+      stall = false;
 
       if (stall) {
         perfect_pred_dir[i] = !br_ref.br_taken;

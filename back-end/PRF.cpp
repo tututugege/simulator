@@ -22,22 +22,21 @@ void PRF::comb_branch() {
   io.prf2dec->mispred = false;
 
   if (!io.rob_bcast->flush) {
-    int inst_idx = -1;
+    int inst_idx = 0;
     for (int i = 0; i < BRU_NUM; i++) {
       int iq_br = IQ_BR0 + i;
       if (inst_r[iq_br].valid && inst_r[iq_br].uop.mispred) {
 
-        if (!io.dec_bcast->mispred || inst_r[iq_br].uop.inst_idx < inst_idx) {
+        if (!io.prf2dec->mispred || inst_r[iq_br].uop.inst_idx < inst_idx) {
           io.prf2dec->mispred = true;
           io.prf2dec->redirect_pc = inst_r[iq_br].uop.pc_next;
           io.prf2dec->br_tag = inst_r[iq_br].uop.tag;
           inst_idx = inst_r[iq_br].uop.inst_idx;
+          if (LOG)
+            cout << "PC " << hex << inst_r[iq_br].uop.pc
+                 << " misprediction redirect_pc 0x" << hex
+                 << io.prf2dec->redirect_pc << endl;
         }
-
-        /*if (LOG)*/
-        /*  cout << "PC " << hex << inst_r[iq_br].uop.pc*/
-        /*       << " misprediction redirect_pc 0x" << hex*/
-        /*       << io.prf2dec->redirect_pc << endl;*/
       }
     }
   }

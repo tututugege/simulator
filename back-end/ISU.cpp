@@ -31,6 +31,8 @@ IQ::IQ(int entry_num, IQ_TYPE type) {
 void ISU::init() {
   add_iq(16, IQ_INTM);
   add_iq(16, IQ_INTD);
+  add_iq(16, IQ_INT0);
+  add_iq(16, IQ_INT1);
   add_iq(16, IQ_LD);
   add_iq(16, IQ_STA);
   add_iq(16, IQ_STD);

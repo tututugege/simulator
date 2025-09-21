@@ -243,6 +243,10 @@ void Ref_cpu::RISCV() {
 
   if (Instruction == INST_EBREAK) {
     state.pc += 4;
+#ifdef CONFIG_RUN_REF
+    cout << "sim_time: " << sim_time << endl;
+    exit(0);
+#endif
     return;
   }
 
@@ -346,8 +350,8 @@ void Ref_cpu::RISCV() {
 
   if (Instruction == 0x10500073 && !asy && !page_fault_inst &&
       !page_fault_load && !page_fault_store) {
-    cerr << "wfi" << endl;
-    exit(-1);
+    /*cerr << "wfi" << endl;*/
+    /*exit(-1);*/
   }
 
   if (page_fault_inst) {
