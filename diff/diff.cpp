@@ -103,5 +103,7 @@ void difftest_skip() {
 
 void difftest_step() {
   ref.exec();
+#ifndef CONFIG_RUN_REF
   checkregs();
+#endif // !CONFIG
 }

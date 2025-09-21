@@ -16,7 +16,7 @@ using namespace std;
 
 #define ROB_NUM 128
 #define STQ_NUM 16
-#define ALU_NUM 2
+#define ALU_NUM 4
 #define BRU_NUM 2
 
 #define LOG_START 0
@@ -35,6 +35,8 @@ extern long long sim_time;
 enum IQ_TYPE {
   IQ_INTM,
   IQ_INTD,
+  IQ_INT0,
+  IQ_INT1,
   IQ_LD,
   IQ_STA,
   IQ_STD,

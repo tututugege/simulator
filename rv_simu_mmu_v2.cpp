@@ -219,13 +219,16 @@ SIM_END:
         printf("\033[1;32mraw stall num: %d\033[0m\n", raw_stall_num[i]);
       }
 
+      extern int fetch_num;
+      printf("\033[1;32m理论最优ipc  : %f\033[0m\n",
+             commit_num / (double)fetch_num);
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
-      cout << "addr error :" << dec << dir_ok_addr_error << endl;
-      cout << "tage cnt :" << dec << tage_cnt << endl;
-      cout << "tage miss :" << dec << tage_miss << endl;
-      cout << "b2f miss :" << dec << back2front_num << endl;
-
+      /*cout << "addr error :" << dec << dir_ok_addr_error << endl;*/
+      /*cout << "tage cnt :" << dec << tage_cnt << endl;*/
+      /*cout << "tage miss :" << dec << tage_miss << endl;*/
+      /*cout << "b2f miss :" << dec << back2front_num << endl;*/
+      /**/
       extern uint32_t br_num[0x1000000 / 4];
       extern uint32_t br_mispred[0x1000000 / 4];
 
