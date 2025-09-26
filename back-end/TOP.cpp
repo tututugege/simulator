@@ -27,7 +27,8 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
 
 void Back_Top::difftest(Inst_uop *inst) {
 
-  if (inst->dest_en && !inst->page_fault_load)
+  if (inst->dest_en && !inst->page_fault_load &&
+      !(inst->vp_valid && inst->vp_mispred))
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
 
   if (inst->op == STD && inst->is_last_uop && !inst->page_fault_store) {
@@ -36,8 +37,7 @@ void Back_Top::difftest(Inst_uop *inst) {
   }
 
 #ifdef CONFIG_DIFFTEST
-  if (inst->is_last_uop) {
-
+  if (inst->is_last_uop && !(inst->vp_valid && inst->vp_mispred)) {
     if (LOG) {
       cout << "Instruction: " << inst->instruction << endl;
       if (inst->page_fault_inst)
@@ -218,6 +218,7 @@ void Back_Top::Back_comb() {
 
     idu.io.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
     idu.io.front2dec->vp_valid[i] = in.vp_valid[i];
+    idu.io.front2dec->vp_mispred[i] = in.vp_mispred[i];
     idu.io.front2dec->vp_src1_rdata[i] = in.vp_src1_rdata[i];
     idu.io.front2dec->vp_src2_rdata[i] = in.vp_src2_rdata[i];
   }

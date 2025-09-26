@@ -50,6 +50,7 @@ void perfect_bpu_run(bool redirect, bool flush);
 void perfect_bpu_init(int img_size);
 
 extern bool vp_valid[FETCH_WIDTH];
+extern bool vp_mispred[FETCH_WIDTH];
 extern uint32_t vp_src1_rdata[FETCH_WIDTH];
 extern uint32_t vp_src2_rdata[FETCH_WIDTH];
 
@@ -143,10 +144,6 @@ int main(int argc, char *argv[]) {
           << dec << " cycle: " << sim_time
           << " ****************************************************************"
           << endl;
-
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      back.in.vp_valid[i] = false;
-    }
 
     // step1: fetch instructions and fill in back.in
     front_cycle(stall, misprediction, exception, front_in, front_out, number_PC,
@@ -367,7 +364,6 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   } else if (p_addr == 0x1fd0e004) {
     data = 0;
   } else {
-
     data = p_memory[p_addr >> 2];
     back.stq.st2ld_fwd(p_addr, data, rob_idx);
   }
@@ -450,9 +446,15 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 #ifdef CONFIG_PERFECT_VP
     for (int i = 0; i < FETCH_WIDTH; i++) {
       back.in.vp_valid[i] = vp_valid[i];
+      back.in.vp_mispred[i] = vp_mispred[i];
       back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
       back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
     }
+#else
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      back.in.vp_valid[i] = false;
+    }
+
 #endif
 
 #else
@@ -548,36 +550,37 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.pcpn[i] = inst->pcpn;
     }
     if (LOG) {
-      cout << " valid: " << front_in.back2front_valid[i]
-           << " 反馈给前端的分支指令PC: " << hex << inst->pc
-           << " 预测结果: " << inst->pred_br_taken
-           << " 实际结果: " << inst->br_taken
-           << " 预测目标地址: " << inst->pred_br_pc
-           << " 实际目标地址: " << inst->pc_next
-           << " 指令: " << inst->instruction << endl;
+      /*cout << " valid: " << front_in.back2front_valid[i]*/
+      /*     << " 反馈给前端的分支指令PC: " << hex << inst->pc*/
+      /*     << " 预测结果: " << inst->pred_br_taken*/
+      /*     << " 实际结果: " << inst->br_taken*/
+      /*     << " 预测目标地址: " << inst->pred_br_pc*/
+      /*     << " 实际目标地址: " << inst->pc_next*/
+      /*     << " 指令: " << inst->instruction << endl;*/
     }
   }
   if (LOG) {
     // show ROB valid vector
-    cout << "ROB count: " << back.rob.count << " deq_ptr: " << back.rob.deq_ptr
-         << " enq_ptr: " << back.rob.enq_ptr << endl;
-    cout << "ROB valid: \n";
-    for (int i = 0; i < ROB_NUM; i++) {
-      cout << back.rob.entry[i].valid << " ";
-      if (i % 32 == 31)
-        cout << endl;
-    }
-    cout << "ROB inst pc/inst:" << endl;
-    for (int i = 0; i < ROB_NUM; i++) {
-      if (back.rob.entry[i].valid) {
-        cout << hex << back.rob.entry[i].uop.pc << " at " << hex << i
-             << " , inst: " << back.rob.entry[i].uop.instruction
-             << " , decode at sim_time: " << dec
-             << back.rob.entry[i].uop.inst_idx
-             << " , complete: " << back.rob.complete[i]
-             << " , exception: " << back.rob.exception[i] << endl;
-      }
-    }
+    /*cout << "ROB count: " << back.rob.count << " deq_ptr: " <<
+     * back.rob.deq_ptr*/
+    /*     << " enq_ptr: " << back.rob.enq_ptr << endl;*/
+    /*cout << "ROB valid: \n";*/
+    /*for (int i = 0; i < ROB_NUM; i++) {*/
+    /*  cout << back.rob.entry[i].valid << " ";*/
+    /*  if (i % 32 == 31)*/
+    /*    cout << endl;*/
+    /*}*/
+    /*cout << "ROB inst pc/inst:" << endl;*/
+    /*for (int i = 0; i < ROB_NUM; i++) {*/
+    /*  if (back.rob.entry[i].valid) {*/
+    /*    cout << hex << back.rob.entry[i].uop.pc << " at " << hex << i*/
+    /*         << " , inst: " << back.rob.entry[i].uop.instruction*/
+    /*         << " , decode at sim_time: " << dec*/
+    /*         << back.rob.entry[i].uop.inst_idx*/
+    /*         << " , complete: " << back.rob.complete[i]*/
+    /*         << " , exception: " << back.rob.exception[i] << endl;*/
+    /*  }*/
+    /*}*/
   }
 
   // if (back.out.mispred) {

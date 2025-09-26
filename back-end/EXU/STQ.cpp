@@ -8,12 +8,7 @@
 
 extern Back_Top back;
 
-enum STATE { IDLE, WAIT };
 void STQ::comb() {
-  /*back.out.bready = true;*/
-  /*back.out.wvalid = false;*/
-
-  static int state;
   int num = count;
 
   for (int i = 0; i < DECODE_WIDTH; i++) {

@@ -73,6 +73,7 @@ void IDU::comb_decode() {
         if (io.front2dec->vp_valid[i]) {
           for (int j = 0; j < uop_num; j++) {
             dec_uop[i][j].vp_valid = true;
+            dec_uop[i][j].vp_mispred = io.front2dec->vp_mispred[i];
             dec_uop[i][j].src1_rdata = io.front2dec->vp_src1_rdata[i];
             dec_uop[i][j].src2_rdata = io.front2dec->vp_src2_rdata[i];
           }
@@ -325,7 +326,6 @@ int decode(Inst_uop uop[2], uint32_t inst) {
               .func7_5 = (bool)(number_funct7_unsigned >> 5),
               .csr_idx = csr_idx,
               .is_last_uop = true,
-              .valid_commit = true,
               .page_fault_inst = false,
               .page_fault_load = false,
               .page_fault_store = false,

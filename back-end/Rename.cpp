@@ -328,7 +328,9 @@ void Rename ::comb_commit() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
       if (io.rob_commit->commit_entry[i].uop.dest_en &&
-          !io.rob_commit->commit_entry[i].uop.page_fault_load) {
+          !io.rob_commit->commit_entry[i].uop.page_fault_load &&
+          !(io.rob_commit->commit_entry[i].uop.vp_valid &&
+            io.rob_commit->commit_entry[i].uop.vp_mispred)) {
         free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
         spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
       }

@@ -1119,6 +1119,7 @@ bool Ref_cpu::vp_decode(bool &src1_en, bool &src2_en, int &src1_areg,
     src1_en = true;
     src2_en = false;
     ret = true;
+    break;
   }
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
                               // and
