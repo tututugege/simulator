@@ -5,8 +5,8 @@
 
 typedef struct {
   Ren_Stq *ren2stq;
-  Exe_Stq *exe2stq;
   Stq_Ren *stq2ren;
+  Exe_Stq *exe2stq;
   Rob_Commit *rob_commit;
   Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bcast;

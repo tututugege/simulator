@@ -137,6 +137,7 @@ void ROB::comb_commit() {
             extern bool sim_end;
             sim_end = true;
           } else if (entry[idx].uop.vp_valid) {
+            io.rob_bcast->pc = entry[idx].uop.pc;
           } else {
             if (entry[idx].uop.op != CSR && entry[idx].uop.op != SFENCE_VMA) {
               cout << hex << entry[idx].uop.instruction << endl;
@@ -201,7 +202,6 @@ void ROB::comb_complete() {
           entry_1[idx].uop.is_last_uop = false;
           if (idx != init_idx)
             for (int j = 0; j < entry[idx].uop.uop_num - 1; j++) {
-              entry[idx].uop.valid_commit = false;
               LOOP_DEC(idx, ROB_NUM);
             }
 
@@ -301,15 +301,16 @@ void ROB::seq() {
 void alu(Inst_uop &inst);
 
 bool vp_validation(Inst_uop &uop) {
-  if (uop.src1_en)
-    uop.src1_rdata = back.prf.reg_file[uop.src1_preg];
-  if (uop.src2_en)
-    uop.src2_rdata = back.prf.reg_file[uop.src2_preg];
-
-  uint32_t vp_result = uop.result;
-  alu(uop);
-
-  return (vp_result == uop.result);
+  // if (uop.src1_en)
+  //   uop.src1_rdata = back.prf.reg_file[uop.src1_preg];
+  // if (uop.src2_en)
+  //   uop.src2_rdata = back.prf.reg_file[uop.src2_preg];
+  //
+  // uint32_t vp_result = uop.result;
+  // alu(uop);
+  //
+  // return (vp_result == uop.result);
+  return !uop.vp_mispred;
 }
 
 void ROB::init() {

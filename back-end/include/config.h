@@ -28,7 +28,7 @@ extern long long sim_time;
 #define CONFIG_DIFFTEST
 /*#define CONFIG_RUN_REF*/
 #define CONFIG_PERFECT_BPU
-#define CONFIG_PERFECT_VP
+// #define CONFIG_PERFECT_VP
 /*#define CONFIG_BPU*/
 #define UART_BASE 0x10000000
 
@@ -120,7 +120,6 @@ typedef struct Inst_uop {
 
   bool is_last_uop;
   int uop_num;
-  bool valid_commit;
 
   // page_fault
   bool page_fault_inst = false;
@@ -140,6 +139,7 @@ typedef struct Inst_uop {
 
   // 值预测信息
   bool vp_valid;
+  bool vp_mispred;
 
   int64_t inst_idx;
   int prior;
