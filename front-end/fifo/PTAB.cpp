@@ -1,5 +1,6 @@
 #include "../front_IO.h"
 #include "../frontend.h"
+#include <iostream>
 #include <queue>
 
 struct PTAB_entry {
@@ -24,6 +25,7 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
     }
     return;
   }
+
   if (in->refetch) {
     while (!ptab.empty()) {
       ptab.pop();
@@ -44,7 +46,7 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
   }
 
   // output prediction
-  if (in->read_enable) {
+  if (in->read_enable && !ptab.empty()) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       out->predict_dir[i] = ptab.front().predict_dir[i];
       out->predict_base_pc[i] = ptab.front().predict_base_pc[i];

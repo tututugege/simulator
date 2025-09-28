@@ -385,7 +385,6 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 #elif defined(CONFIG_BPU)
 
     front_in.FIFO_read_enable = true;
-    // front_in.refetch = false;
     front_in.refetch = (misprediction || exception || non_branch_mispred);
     front_top(&front_in, &front_out);
 
@@ -490,6 +489,7 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       if (front_out.predict_dir[j] && is_branch_inst)
         no_taken = false;
     }
+
     non_branch_mispred = false;
     if (no_taken &&
         (front_out.predict_next_fetch_address !=

@@ -80,61 +80,64 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
   }
 #endif
 
-  // do branch prediction
-  // traverse instructions in fetch_group, find the first TAGE prediction
-  // that is taken
-  bool found_taken_branch = false;
-  uint32_t branch_pc = pc_reg;
+  if (in->icache_read_ready) {
+    // do branch prediction
+    // traverse instructions in fetch_group, find the first TAGE prediction
+    // that is taken
+    bool found_taken_branch = false;
+    uint32_t branch_pc = pc_reg;
 
 #ifdef IO_GEN_MODE
-  // io_gen_cnt--;
-  // if (io_gen_cnt >= 0) {
+    // io_gen_cnt--;
+    // if (io_gen_cnt >= 0) {
 #ifdef IO_version
-  print_IO_data(pc_reg);
-  printf("\n");
+    print_IO_data(pc_reg);
+    printf("\n");
 #endif
-  // }
+    // }
 #endif
 
-  // do TAGE for FETCH_WIDTH instructions
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    uint32_t current_pc = pc_reg + (i * 4);
-    out->predict_base_pc[i] = current_pc;
+    // do TAGE for FETCH_WIDTH instructions
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      uint32_t current_pc = pc_reg + (i * 4);
+      out->predict_base_pc[i] = current_pc;
 #ifndef IO_version
-    pred_out pred_out = TAGE_get_prediction(current_pc);
+      pred_out pred_out = TAGE_get_prediction(current_pc);
 #else
-    pred_out pred_out = C_TAGE_do_pred_wrapper(current_pc);
+      pred_out pred_out = C_TAGE_do_pred_wrapper(current_pc);
 #endif
-    out->predict_dir[i] = pred_out.pred;
-    out->alt_pred[i] = pred_out.altpred;
-    out->pcpn[i] = pred_out.pcpn;
-    out->altpcpn[i] = pred_out.altpcpn;
-    DEBUG_LOG("[BPU_top] predict_dir[%d]: %d, pc: %x\n", i, out->predict_dir[i],
-              current_pc);
-    if (out->predict_dir[i] && !found_taken_branch) {
-      found_taken_branch = true;
-      branch_pc = current_pc;
+      out->predict_dir[i] = pred_out.pred;
+      out->alt_pred[i] = pred_out.altpred;
+      out->pcpn[i] = pred_out.pcpn;
+      out->altpcpn[i] = pred_out.altpcpn;
+      DEBUG_LOG("[BPU_top] predict_dir[%d]: %d, pc: %x\n", i,
+                out->predict_dir[i], current_pc);
+      if (out->predict_dir[i] && !found_taken_branch) {
+        found_taken_branch = true;
+        branch_pc = current_pc;
+      }
     }
-  }
 
-  if (found_taken_branch) {
-    // only do BTB lookup for taken branches
+    if (found_taken_branch) {
+      // only do BTB lookup for taken branches
 #ifndef IO_version
-    uint32_t btb_target = btb_pred(branch_pc);
+      uint32_t btb_target = btb_pred(branch_pc);
 #else
-    uint32_t btb_target = C_btb_pred_wrapper(branch_pc);
+      uint32_t btb_target = C_btb_pred_wrapper(branch_pc);
 #endif
-    out->predict_next_fetch_address = btb_target;
-    DEBUG_LOG("[BPU_top] base pc: %x, btb_target: %x\n", branch_pc, btb_target);
-  } else {
-    // no prediction for taken branches, execute sequentially
-    out->predict_next_fetch_address = pc_reg + (FETCH_WIDTH * 4);
+      out->predict_next_fetch_address = btb_target;
+      DEBUG_LOG("[BPU_top] base pc: %x, btb_target: %x\n", branch_pc,
+                btb_target);
+    } else {
+      // no prediction for taken branches, execute sequentially
+      out->predict_next_fetch_address = pc_reg + (FETCH_WIDTH * 4);
+    }
+    pc_reg = out->predict_next_fetch_address;
+    DEBUG_LOG("[BPU_top] icache_fetch_address: %x\n", out->fetch_address);
+    DEBUG_LOG("[BPU_top] predict_next_fetch_address: %x\n",
+              out->predict_next_fetch_address);
+    DEBUG_LOG("[BPU_top] predict_dir: %d\n",
+              out->predict_dir[0] || out->predict_dir[1] ||
+                  out->predict_dir[2] || out->predict_dir[3]);
   }
-  pc_reg = out->predict_next_fetch_address;
-  DEBUG_LOG("[BPU_top] icache_fetch_address: %x\n", out->fetch_address);
-  DEBUG_LOG("[BPU_top] predict_next_fetch_address: %x\n",
-            out->predict_next_fetch_address);
-  DEBUG_LOG("[BPU_top] predict_dir: %d\n",
-            out->predict_dir[0] || out->predict_dir[1] || out->predict_dir[2] ||
-                out->predict_dir[3]);
 }

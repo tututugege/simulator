@@ -5,7 +5,7 @@
 #include <iostream>
 #include <queue>
 
-#define FIFO_SIZE 4096
+#define FIFO_SIZE 4
 
 struct FIFO_entry {
   std::array<uint32_t, FETCH_WIDTH> instructions;
@@ -36,7 +36,7 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
   if (fifo.size() > FIFO_SIZE)
     assert(0);
 
-  std::cout << "FIFO size:" << fifo.size() << std::endl;
+  // std::cout << "FIFO size:" << fifo.size() << std::endl;
 
   // if FIFO is not full and icache has new data
   if (fifo.size() < FIFO_SIZE && in->write_enable) {

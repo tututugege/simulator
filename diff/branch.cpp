@@ -135,7 +135,7 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
     }
 
     if (br_ref.is_br) {
-      stall = (rand() % 100 > 90);
+      stall = (rand() % 100 > 65);
       /*stall = false;*/
 
       if (stall) {
