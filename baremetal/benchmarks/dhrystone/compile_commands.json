@@ -1,0 +1,25 @@
+[
+  {
+    "arguments": [
+      "/opt/riscv32/bin/riscv32-unknown-elf-gcc",
+      "-O2",
+      "-DFLAGS_STR=\"-O2 \"",
+      "-I.",
+      "-march=rv32ia",
+      "-mabi=ilp32",
+      "-mcmodel=medlow",
+      "-O2",
+      "--specs=nosys.specs",
+      "-gdwarf",
+      "-I../..",
+      "-I../../include",
+      "-c",
+      "-o",
+      "dry.o",
+      "dry.c"
+    ],
+    "directory": "/home/tututu/qimeng/simulator/baremetal/benchmarks/dhrystone",
+    "file": "/home/tututu/qimeng/simulator/baremetal/benchmarks/dhrystone/dry.c",
+    "output": "/home/tututu/qimeng/simulator/baremetal/benchmarks/dhrystone/dry.o"
+  }
+]

@@ -352,10 +352,11 @@
 
 #include <klib-macros.h>
 #include <stdbool.h>
+#include <string.h>
 #include <xprintf.h>
 
 typedef unsigned int size_t;
-#define NUMBER_OF_RUNS 10000 /* Default number of runs */
+#define NUMBER_OF_RUNS 100000 /* Default number of runs */
 #define PASS2
 
 #ifdef NOSTRUCTASSIGN
@@ -418,7 +419,6 @@ char Ch_1_Glob, Ch_2_Glob;
 int Arr_1_Glob[50];
 int Arr_2_Glob[50][50];
 
-Enumeration Func_1();
 /* forward declaration necessary since Enumeration may not simply be int */
 
 #ifndef REG

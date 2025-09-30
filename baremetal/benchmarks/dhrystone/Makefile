@@ -5,6 +5,7 @@ TARGET = dry
 
 C_SRCS = dry.c
 COMMON_DIR = ../..
+CFLAGS := -Wno-strict-prototypes
 
 include $(COMMON_DIR)/common.mk
 
