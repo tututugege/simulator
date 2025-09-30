@@ -4,18 +4,12 @@
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
-#include <cstdint>
 #include <cstring>
 #include <cvt.h>
 #include <diff.h>
 #include <util.h>
 
-extern int commit_num;
-
 void load_data();
-
-uint32_t br_num[0x1000000 / 4];
-uint32_t br_mispred[0x1000000 / 4];
 
 int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_mie,      number_mip,      number_mtval,
@@ -27,17 +21,11 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
 
 void Back_Top::difftest(Inst_uop *inst) {
 
-  if (inst->dest_en && !inst->page_fault_load &&
-      !(inst->vp_valid && inst->vp_mispred))
+  if (inst->dest_en && !inst->page_fault_load)
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
 
-  if (inst->op == STD && inst->is_last_uop && !inst->page_fault_store) {
-    extern int flush_store_num;
-    flush_store_num--;
-  }
-
 #ifdef CONFIG_DIFFTEST
-  if (inst->is_last_uop && !(inst->vp_valid && inst->vp_mispred)) {
+  if (inst->is_last_uop) {
     if (LOG) {
       cout << "Instruction: " << inst->instruction << endl;
       if (inst->page_fault_inst)
@@ -247,7 +235,6 @@ void Back_Top::Back_comb() {
   rob.comb_ready();
   rob.comb_complete();
   idu.comb_release_tag();
-  rename.comb_vp_exec();
   rename.comb_fire();
   rob.comb_fire();
   idu.comb_fire();
@@ -293,18 +280,6 @@ void Back_Top::Back_comb() {
   }
   rename.comb_commit();
   rename.comb_flush();
-
-  // 统计分支误预测率
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (back.out.commit_entry[i].valid) {
-      Inst_uop uop = back.out.commit_entry[i].uop;
-      if (is_branch(uop.op)) {
-        br_num[(uop.pc & 0xFFFFFF) >> 2]++;
-        if (uop.mispred)
-          br_mispred[(uop.pc & 0xFFFFFF) >> 2]++;
-      }
-    }
-  }
 }
 
 void Back_Top::Back_seq() {
@@ -321,48 +296,4 @@ void Back_Top::Back_seq() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.dec2front->fire[i];
   }
-  update_conf();
-}
-
-#define BR_CONF_NUM 1024
-#define LOAD_CONF_NUM 1024
-
-int br_conf[BR_CONF_NUM];
-int load_conf[LOAD_CONF_NUM];
-
-void Back_Top::update_conf() {
-  int idx;
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (rob.io.rob_commit->commit_entry[i].valid &&
-        is_branch(rob.io.rob_commit->commit_entry[i].uop.op)) {
-      idx =
-          (rob.io.rob_commit->commit_entry[i].uop.pc >> 2) % (BR_CONF_NUM - 1);
-      if (rob.io.rob_commit->commit_entry[i].uop.mispred) {
-        if (br_conf[idx] > 0) {
-          br_conf[idx]--;
-        }
-      } else {
-        if (br_conf[idx] < 3) {
-          br_conf[idx]++;
-        }
-      }
-    } else if (rob.io.rob_commit->commit_entry[i].valid &&
-               is_load(rob.io.rob_commit->commit_entry[i].uop.op)) {
-      idx = (rob.io.rob_commit->commit_entry[i].uop.pc >> 2) %
-            (LOAD_CONF_NUM - 1);
-      if (rob.io.rob_commit->commit_entry[i].uop.cache_miss) {
-        if (load_conf[idx] > 0) {
-          load_conf[idx]--;
-        }
-      } else {
-        if (load_conf[idx] < 3)
-          load_conf[idx]++;
-      }
-    }
-  }
-}
-
-int read_br_conf(uint32_t pc) {
-  int idx = (pc >> 2) % (BR_CONF_NUM - 1);
-  return br_conf[idx];
 }

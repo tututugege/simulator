@@ -9,16 +9,6 @@
 #include <iostream>
 #include <util.h>
 
-extern int commit_num;
-extern int branch_num;
-extern int mispred_num;
-
-extern bool vp_validation(Inst_uop &uop);
-
-int dir_ok_addr_error;
-int taken_num;
-int rob_stall;
-
 void ROB::comb_ready() {
   bool exception_stall = false;
   bool csr_stall =
@@ -45,7 +35,6 @@ void ROB::comb_ready() {
         io.rob2ren->ready[i] = true;
         num++;
       } else {
-        rob_stall++;
         io.rob2ren->ready[i] = false;
       }
     }
@@ -104,8 +93,7 @@ void ROB::comb_commit() {
         entry_1[idx].valid = false;
 
         if (exception[idx] || entry[idx].uop.op == CSR ||
-            entry[idx].uop.op == SFENCE_VMA ||
-            entry[idx].uop.vp_valid && !vp_validation(entry[idx].uop)) {
+            entry[idx].uop.op == SFENCE_VMA) {
           io.rob_bcast->flush = true;
           io.rob_bcast->exception = exception[idx];
           exception_1[idx] = false;
@@ -136,8 +124,6 @@ void ROB::comb_commit() {
           } else if (entry[idx].uop.op == EBREAK) {
             extern bool sim_end;
             sim_end = true;
-          } else if (entry[idx].uop.vp_valid) {
-            io.rob_bcast->pc = entry[idx].uop.pc;
           } else {
             if (entry[idx].uop.op != CSR && entry[idx].uop.op != SFENCE_VMA) {
               cout << hex << entry[idx].uop.instruction << endl;
@@ -239,12 +225,7 @@ void ROB::comb_fire() {
     if (io.ren2rob->dis_fire[i]) {
       entry_1[enq_ptr_1].valid = true;
       entry_1[enq_ptr_1].uop = io.ren2rob->uop[i];
-
-      if (io.ren2rob->uop[i].vp_valid) {
-        complete_1[enq_ptr_1] = true;
-      } else {
-        complete_1[enq_ptr_1] = false;
-      }
+      complete_1[enq_ptr_1] = false;
       if (io.ren2rob->uop[i].op == ECALL || io.ren2rob->uop[i].op == MRET ||
           io.ren2rob->uop[i].op == EBREAK || io.ren2rob->uop[i].op == SRET ||
           is_page_fault(io.ren2rob->uop[i]) || io.ren2rob->uop[i].illegal_inst)
@@ -270,23 +251,6 @@ void ROB::comb_flush() {
 }
 
 void ROB::seq() {
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (io.rob_commit->commit_entry[i].valid) {
-      if (is_branch(io.rob_commit->commit_entry[i].uop.op)) {
-        Inst_uop *inst = &io.rob_commit->commit_entry[i].uop;
-        if (inst->mispred) {
-          mispred_num++;
-          if (inst->mispred && (inst->br_taken && inst->pred_br_taken ||
-                                !inst->br_taken && !inst->pred_br_taken)) {
-            dir_ok_addr_error++;
-            assert(inst->pred_br_pc != inst->pc_next);
-          }
-        }
-        branch_num++;
-      }
-    }
-  }
-
   for (int i = 0; i < ROB_NUM; i++) {
     entry[i] = entry_1[i];
     complete[i] = complete_1[i];
@@ -296,21 +260,6 @@ void ROB::seq() {
   deq_ptr = deq_ptr_1;
   enq_ptr = enq_ptr_1;
   count = count_1;
-}
-
-void alu(Inst_uop &inst);
-
-bool vp_validation(Inst_uop &uop) {
-  // if (uop.src1_en)
-  //   uop.src1_rdata = back.prf.reg_file[uop.src1_preg];
-  // if (uop.src2_en)
-  //   uop.src2_rdata = back.prf.reg_file[uop.src2_preg];
-  //
-  // uint32_t vp_result = uop.result;
-  // alu(uop);
-  //
-  // return (vp_result == uop.result);
-  return !uop.vp_mispred;
 }
 
 void ROB::init() {

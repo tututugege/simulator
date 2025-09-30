@@ -1196,23 +1196,3 @@ void Ref_cpu::store_data() {
     memory[0xc201004 / 4] = 0x0;
   }
 }
-
-extern int csr_idx[CSR_NUM];
-
-void Ref_cpu::restore(int flush_store_num) {
-  assert(flush_store_num < STQ_NUM);
-  for (int i = 0; i < ARF_NUM; i++) {
-    state.gpr[i] = back.prf.reg_file[back.rename.arch_RAT[i]];
-  }
-
-  for (int i = 0; i < CSR_NUM; i++) {
-    state.csr[i] = back.csr.CSR_RegFile[csr_idx[i]];
-  }
-  state.pc = back.out.redirect_pc;
-
-  for (int i = 0; i < flush_store_num; i++) {
-    LOOP_DEC(store_buffer_ptr, STQ_NUM);
-    memory[store_buffer_addr[store_buffer_ptr] >> 2] =
-        store_buffer_data[store_buffer_ptr];
-  }
-}

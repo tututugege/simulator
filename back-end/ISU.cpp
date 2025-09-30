@@ -1,15 +1,10 @@
 #include "TOP.h"
 #include "config.h"
 #include <ISU.h>
-#include <iostream>
 #include <util.h>
 #include <vector>
 
 extern Back_Top back;
-
-int isu_stall[ISSUE_WAY];
-int isu_ready_num[ISSUE_WAY];
-int raw_stall_num[ISSUE_WAY];
 
 void ISU::add_iq(int entry_num, IQ_TYPE type) {
   iq.push_back(IQ(entry_num, type));
@@ -40,48 +35,15 @@ void ISU::init() {
   add_iq(MAX_BR_NUM / 2, IQ_BR1);
 }
 
-void IQ::enq(Inst_uop *inst) {
+void IQ::enq(Inst_uop &inst) {
   int i;
 
   for (i = 0; i < entry_num; i++) {
     if (entry[i].valid == false) {
-      entry[i].uop = *inst;
+      entry[i].uop = inst;
       entry[i].valid = true;
       num++;
       break;
-    }
-  }
-  if (i == entry_num) {
-    cout << "error";
-  }
-}
-
-void IQ::update_prior(Inst_uop &uop) {
-  for (int i = 0; i < entry_num; i++) {
-    if (entry[i].valid) {
-      if (entry[i].uop.dest_en && uop.src1_en &&
-          entry[i].uop.dest_preg == uop.src1_preg) {
-        if (entry[i].uop.prior < 3) {
-          entry[i].uop.prior++;
-        }
-      }
-
-      if (entry[i].uop.dest_en && uop.src2_en &&
-          entry[i].uop.dest_preg == uop.src2_preg) {
-        if (entry[i].uop.prior < 3) {
-          entry[i].uop.prior++;
-        }
-      }
-    }
-  }
-
-  if (is_branch(uop.op) && uop.br_conf < 3) {
-    for (int i = 0; i < entry_num; i++) {
-      if (entry[i].valid && entry[i].uop.tag == uop.tag) {
-        if (entry[i].uop.prior < 3) {
-          entry[i].uop.prior++;
-        }
-      }
     }
   }
 }
@@ -91,10 +53,6 @@ Inst_entry IQ::deq() {
   Inst_entry ret = scheduler();
   if (ret.valid) {
     num--;
-  }
-
-  if (num > 0 && !ret.valid) {
-    raw_stall_num[type]++;
   }
 
   return ret;
@@ -110,7 +68,6 @@ void ISU::comb_ready() {
         iq[io.ren2iss->uop[i].iq_type].num_temp++;
       } else {
         io.iss2ren->ready[i] = false;
-        isu_stall[io.ren2iss->uop[i].iq_type]++;
       }
     } else {
       io.iss2ren->ready[i] = true;
@@ -161,12 +118,8 @@ void ISU::seq() {
                 io.ren2iss->uop[i].pre_std[j] = false;
             }
           }
-          q.enq(&io.ren2iss->uop[i]);
+          q.enq(io.ren2iss->uop[i]);
           break;
-        }
-
-        for (auto &q : iq) {
-          q.update_prior(io.ren2iss->uop[i]);
         }
       }
     }
@@ -203,15 +156,6 @@ void ISU::seq() {
     for (auto &q : iq) {
       q.num_temp = q.num;
     }
-
-    for (auto q : iq)
-      for (auto e : q.entry)
-        if (e.valid && (!e.uop.src1_en || !e.uop.src1_busy) &&
-            (!e.uop.src2_en || !e.uop.src2_busy) &&
-            !(is_load(e.uop.op) &&
-              (orR(e.uop.pre_sta, 16) || orR(e.uop.pre_std, 16)))) {
-          isu_ready_num[q.type]++;
-        }
   }
 }
 
@@ -253,8 +197,6 @@ void IQ::std_wake_up(int idx) {
   }
 }
 
-/*#define CONFIG_PRIOR*/
-
 // 调度策略
 Inst_entry IQ::scheduler() {
 
@@ -267,28 +209,11 @@ Inst_entry IQ::scheduler() {
         (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
         !(is_load(entry[i].uop.op) &&
           (orR(entry[i].uop.pre_sta, 16) || orR(entry[i].uop.pre_std, 16)))) {
-#ifdef CONFIG_PRIOR
-      if (!iss_entry.valid) {
-        iss_entry = entry[i];
-        iss_idx = i;
-      } else {
 
-        if (iss_entry.uop.prior < entry[i].uop.prior) {
-          iss_entry = entry[i];
-          iss_idx = i;
-        } else if (iss_entry.uop.prior == entry[i].uop.prior &&
-                   iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
-          iss_entry = entry[i];
-          iss_idx = i;
-        }
-      }
-#else
-      if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
-        iss_entry = entry[i];
-        iss_idx = i;
-      }
-
-#endif
+      // 根据IQ位置判断优先级 也可以随机 或者oldest-first
+      iss_entry = entry[i];
+      iss_idx = i;
+      break;
     }
   }
 

@@ -128,13 +128,6 @@ void bru(Inst_uop &inst) {
   } else {
     inst.mispred = true;
   }
-  /*cout << "pc: " << inst.pc << hex << " pred: " << inst.pred_br_taken*/
-  /*     << " pred_pc: " << inst.pred_br_pc << " taken: " << br_taken*/
-  /*     << " br_pc: " << pc_br;*/
-  /*if (inst.mispred)*/
-  /*  cout << " error ";*/
-  /**/
-  /*cout << endl;*/
 
   inst.br_taken = br_taken;
 

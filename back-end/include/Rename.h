@@ -39,7 +39,6 @@ public:
   void comb_commit();
   void comb_pipeline();
   void comb_flush();
-  void comb_vp_exec();
   void seq();
 
   // debug

@@ -12,9 +12,6 @@ extern int commit_num;
 
 void alu(Inst_uop &inst);
 
-int ren_stall_reg = 0;
-int ren_stall_csr = 0;
-
 Rename::Rename() {
   for (int i = 0; i < ARF_NUM; i++) {
     free_vec[i] = false;
@@ -38,8 +35,6 @@ Rename::Rename() {
     inst_r[i].valid = false;
   }
 }
-
-int read_br_conf(uint32_t pc);
 
 void Rename::comb_alloc() {
   // valid初始化为0
@@ -65,10 +60,6 @@ void Rename::comb_alloc() {
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2rob->uop[i] = inst_r[i].uop;
-
-    if (is_branch(inst_r[i].uop.op)) {
-      io.ren2rob->uop[i].br_conf = read_br_conf(inst_r[i].uop.pc);
-    }
 
     if (inst_r[i].valid) {
       // 分配stq_idx 和 rob_idx
@@ -146,10 +137,7 @@ void Rename::comb_rename() {
               j == i - 1)) {
           io.ren2rob->uop[i].src1_preg = io.ren2rob->uop[j].dest_preg;
 
-          if (io.ren2rob->uop[j].vp_valid)
-            io.ren2rob->uop[i].src1_busy = false;
-          else
-            io.ren2rob->uop[i].src1_busy = true;
+          io.ren2rob->uop[i].src1_busy = true;
         }
       }
 
@@ -158,10 +146,7 @@ void Rename::comb_rename() {
               io.ren2rob->uop[i].amoop != AMONONE &&
               io.ren2rob->uop[i].amoop != SC && j == i - 2)) {
           io.ren2rob->uop[i].src2_preg = io.ren2rob->uop[j].dest_preg;
-          if (io.ren2rob->uop[j].vp_valid)
-            io.ren2rob->uop[i].src2_busy = false;
-          else
-            io.ren2rob->uop[i].src2_busy = true;
+          io.ren2rob->uop[i].src2_busy = true;
         }
       }
 
@@ -197,8 +182,7 @@ void Rename::comb_fire() {
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2rob->dis_fire[i] =
-        (io.ren2rob->uop[i].vp_valid ||
-         io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
+        (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
         (!is_std(io.ren2iss->uop[i].op) ||
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
@@ -246,10 +230,7 @@ void Rename::comb_fire() {
       spec_alloc_1[dest_preg] = true;
       free_vec_1[dest_preg] = false;
       spec_RAT_1[inst_r[i].uop.dest_areg] = dest_preg;
-      if (io.ren2rob->uop[i].vp_valid)
-        busy_table_1[dest_preg] = false;
-      else
-        busy_table_1[dest_preg] = true;
+      busy_table_1[dest_preg] = true;
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][dest_preg] = true;
     }
@@ -272,8 +253,7 @@ void Rename::comb_fire() {
   }
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    io.ren2prf->valid[i] = io.ren2rob->dis_fire[i] && inst_r[i].uop.vp_valid &&
-                           inst_r[i].uop.dest_en;
+    io.ren2prf->valid[i] = io.ren2rob->dis_fire[i] && inst_r[i].uop.dest_en;
   }
 }
 
@@ -309,28 +289,12 @@ void Rename ::comb_flush() {
   }
 }
 
-void Rename ::comb_vp_exec() {
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (inst_r[i].valid && inst_r[i].uop.vp_valid) {
-      io.ren2iss->valid[i] = false;
-      io.ren2prf->dest_preg[i] = io.ren2rob->uop[i].dest_preg;
-      alu(inst_r[i].uop);
-      io.ren2prf->reg_wdata[i] = inst_r[i].uop.result;
-      io.ren2rob->uop[i].result = inst_r[i].uop.result;
-    } else {
-      io.ren2prf->valid[i] = false;
-    }
-  }
-}
-
 void Rename ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
       if (io.rob_commit->commit_entry[i].uop.dest_en &&
-          !io.rob_commit->commit_entry[i].uop.page_fault_load &&
-          !(io.rob_commit->commit_entry[i].uop.vp_valid &&
-            io.rob_commit->commit_entry[i].uop.vp_mispred)) {
+          !io.rob_commit->commit_entry[i].uop.page_fault_load) {
         free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
         spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
       }
