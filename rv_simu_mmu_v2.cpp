@@ -14,53 +14,25 @@
 #include <front_module.h>
 #include <fstream>
 #include <util.h>
-
-int mispred_num = 0;
-int branch_num = 0;
-int back2front_num = 0;
-
-// stall counter
-extern int ren_stall_reg;
-extern int ren_stall_csr;
-extern int isu_stall[ISSUE_WAY];
-extern int rob_stall;
-extern int id_stall_uop;
-extern int id_stall_tag;
-extern int isu_ready_num[ISSUE_WAY];
-extern int raw_stall_num[ISSUE_WAY];
-
-extern Ref_cpu br_ref;
-
 using namespace std;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-
-uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
-uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
-
-// 后端执行
-Back_Top back;
-bool ret;
-bool sim_end = false;
-long long sim_time;
-int commit_num;
-
-void perfect_bpu_run(bool redirect, bool flush);
-void perfect_bpu_init(int img_size);
-
-extern bool vp_valid[FETCH_WIDTH];
-extern bool vp_mispred[FETCH_WIDTH];
-extern uint32_t vp_src1_rdata[FETCH_WIDTH];
-extern uint32_t vp_src2_rdata[FETCH_WIDTH];
-
 void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &,
                  bool &);
 void back2front_comb(front_top_in &front_in, front_top_out &front_out);
 
+Back_Top back;
+
+int commit_num = 0;
+long long sim_time = 0;
+bool sim_end = false;
+
+uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
+uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
+
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
-
   ifstream inst_data(argv[argc - 1], ios::in);
 
   if (!inst_data.is_open()) {
@@ -98,10 +70,6 @@ int main(int argc, char *argv[]) {
 
 #ifdef CONFIG_DIFFTEST
   init_difftest(img_size);
-#endif
-
-#ifdef CONFIG_PERFECT_BPU
-  perfect_bpu_init(img_size);
 #endif
 
 #ifdef CONFIG_RUN_REF
@@ -178,70 +146,17 @@ int main(int argc, char *argv[]) {
 SIM_END:
 
   delete[] p_memory;
-  extern int tage_cnt;
-  extern int tage_miss;
-  extern int dir_ok_addr_error;
-  extern int pred_ok;
-  extern int taken_num;
 
   if (sim_time != MAX_SIM_TIME) {
-    if (ret == 0) {
-      cout << "\033[1;32m-----------------------------\033[0m" << endl;
-      cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-      printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
-      printf("\033[1;32mcycle num      : %lld\033[0m\n", sim_time);
-      printf("\033[1;32mipc            : %f\033[0m\n",
-             (double)commit_num / sim_time);
-      printf("\033[1;32mbranch num     : %d\033[0m\n", branch_num);
-      printf("\033[1;32mmispred num    : %d\033[0m\n", mispred_num);
-      printf("\033[1;32mbranch accuracy: %f\033[0m\n",
-             (branch_num - mispred_num) / (double)branch_num);
+    cout << "\033[1;32m-----------------------------\033[0m" << endl;
+    cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
+    printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
+    printf("\033[1;32mcycle num      : %lld\033[0m\n", sim_time);
+    printf("\033[1;32mipc            : %f\033[0m\n",
+           (double)commit_num / sim_time);
+    cout << "\033[1;32m-----------------------------\033[0m" << endl;
+    cout << endl;
 
-      cout << endl;
-      printf("\033[1;32mid uop stall   : %d\033[0m\n", id_stall_uop);
-      printf("\033[1;32mid tag stall   : %d\033[0m\n", id_stall_tag);
-      for (int i = 0; i < ISSUE_WAY; i++) {
-        printf("\033[1;32misu stall      : %d\033[0m\n", isu_stall[i]);
-      }
-      printf("\033[1;32mrob stall      : %d\033[0m\n", rob_stall);
-      printf("\033[1;32mren stall reg  : %d\033[0m\n", ren_stall_reg);
-      printf("\033[1;32mren stall csr  : %d\033[0m\n", ren_stall_csr);
-
-      for (int i = 0; i < ISSUE_WAY; i++) {
-        printf("\033[1;32misu ready num: %f\033[0m\n",
-               isu_ready_num[i] / (double)sim_time);
-      }
-
-      for (int i = 0; i < ISSUE_WAY; i++) {
-        printf("\033[1;32mraw stall num: %d\033[0m\n", raw_stall_num[i]);
-      }
-
-      extern int fetch_num;
-      printf("\033[1;32m理论最优ipc  : %f\033[0m\n",
-             commit_num / (double)fetch_num);
-      cout << "\033[1;32m-----------------------------\033[0m" << endl;
-
-      /*cout << "addr error :" << dec << dir_ok_addr_error << endl;*/
-      /*cout << "tage cnt :" << dec << tage_cnt << endl;*/
-      /*cout << "tage miss :" << dec << tage_miss << endl;*/
-      /*cout << "b2f miss :" << dec << back2front_num << endl;*/
-      /**/
-      extern uint32_t br_num[0x1000000 / 4];
-      extern uint32_t br_mispred[0x1000000 / 4];
-
-      /*for (int i = 0; i < 0x10000000 / 4; i++) {*/
-      /*  if (br_num[i]) {*/
-      /*    cout << "pc: " << hex << i * 4 + 0x80000000 << dec*/
-      /*         << " br_num: " << br_num[i] << " mispred: " << br_mispred[i]*/
-      /*         << endl;*/
-      /*  }*/
-      /*}*/
-    } else {
-      cout << "\033[1;31m------------------------------\033[0m" << endl;
-      cout << "\033[1;31mFail!!!!QAQ\033[0m" << endl;
-      cout << "\033[1;31m------------------------------\033[0m" << endl;
-      exit(1);
-    }
   } else {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
@@ -376,13 +291,7 @@ void front_cycle(bool stall, bool misprediction, bool exception,
                  uint32_t &number_PC, bool &non_branch_mispred) {
   if (!stall || misprediction || exception) {
 
-#if defined(CONFIG_PERFECT_BPU)
-    extern bool perfect_fetch_valid[FETCH_WIDTH];
-    extern uint32_t perfect_pred_PC[FETCH_WIDTH];
-    extern uint32_t perfect_fetch_PC[FETCH_WIDTH];
-    extern bool perfect_pred_dir[FETCH_WIDTH];
-
-#elif defined(CONFIG_BPU)
+#if defined(CONFIG_BPU)
 
     front_in.FIFO_read_enable = true;
     front_in.refetch = (misprediction || exception || non_branch_mispred);
@@ -427,36 +336,6 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
 #endif
 
-#ifdef CONFIG_PERFECT_BPU
-
-    perfect_bpu_run(back.out.mispred, back.out.flush);
-    for (int j = 0; j < FETCH_WIDTH; j++) {
-      back.in.valid[j] = perfect_fetch_valid[j];
-      back.in.pc[j] = perfect_fetch_PC[j];
-      back.in.inst[j] = p_memory[perfect_fetch_PC[j] >> 2];
-      back.in.page_fault_inst[j] = false;
-      if (LOG && back.in.valid[j])
-        cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-             << perfect_fetch_PC[j] << endl;
-      back.in.predict_next_fetch_address[j] = perfect_pred_PC[j];
-      back.in.predict_dir[j] = perfect_pred_dir[j];
-    }
-
-#ifdef CONFIG_PERFECT_VP
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      back.in.vp_valid[i] = vp_valid[i];
-      back.in.vp_mispred[i] = vp_mispred[i];
-      back.in.vp_src1_rdata[i] = vp_src1_rdata[i];
-      back.in.vp_src2_rdata[i] = vp_src2_rdata[i];
-    }
-#else
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      back.in.vp_valid[i] = false;
-    }
-
-#endif
-
-#else
     bool no_taken = true;
     for (int j = 0; j < FETCH_WIDTH; j++) {
       back.in.valid[j] = front_out.FIFO_valid && no_taken;
@@ -502,8 +381,6 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       // 4;
       front_in.refetch_address = front_out.pc[FETCH_WIDTH - 1] + 4;
     }
-
-#endif
 
   } else {
 #ifdef CONFIG_BPU

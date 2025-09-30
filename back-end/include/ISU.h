@@ -12,14 +12,9 @@ public:
   void sta_wake_up(int);
   void std_wake_up(int);
   void br_clear(uint32_t br_mask);
-  Inst_entry pop_oldest(vector<Inst_entry> &valid_entry,
-                        vector<int> &valid_idx);
-
   Inst_entry scheduler();
   Inst_entry deq();
-  void enq(Inst_uop *inst);
-  void dependency(int dest_idx);
-  void update_prior(Inst_uop &dest_idx);
+  void enq(Inst_uop &inst);
 
   int num;
   int num_temp;

@@ -26,10 +26,9 @@ using namespace std;
 extern long long sim_time;
 
 #define CONFIG_DIFFTEST
-/*#define CONFIG_RUN_REF*/
-// #define CONFIG_PERFECT_BPU
-// #define CONFIG_PERFECT_VP
+// #define CONFIG_RUN_REF
 #define CONFIG_BPU
+
 #define UART_BASE 0x10000000
 
 enum IQ_TYPE {
@@ -46,8 +45,6 @@ enum IQ_TYPE {
 };
 
 enum FU_TYPE { FU_ALU, FU_LSU, FU_BRU, FU_MUL, FU_DIV, FU_TYPE_NUM };
-
-extern int fu_config[ISSUE_WAY];
 
 enum Inst_op {
   NONE,
@@ -137,14 +134,7 @@ typedef struct Inst_uop {
 
   bool difftest_skip;
 
-  // 值预测信息
-  bool vp_valid;
-  bool vp_mispred;
-
   int64_t inst_idx;
-  int prior;
-  int br_conf;
-  bool cache_miss;
 } Inst_uop;
 
 typedef struct Inst_entry {

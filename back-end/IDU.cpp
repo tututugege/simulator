@@ -8,9 +8,6 @@
 #include <cvt.h>
 #include <util.h>
 
-int id_stall_uop = 0;
-int id_stall_tag = 0;
-
 int decode(Inst_uop uop[MAX_UOP_NUM], uint32_t instruction);
 
 void IDU::init() {
@@ -69,15 +66,6 @@ void IDU::comb_decode() {
         }
       } else {
         uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
-
-        if (io.front2dec->vp_valid[i]) {
-          for (int j = 0; j < uop_num; j++) {
-            dec_uop[i][j].vp_valid = true;
-            dec_uop[i][j].vp_mispred = io.front2dec->vp_mispred[i];
-            dec_uop[i][j].src1_rdata = io.front2dec->vp_src1_rdata[i];
-            dec_uop[i][j].src2_rdata = io.front2dec->vp_src2_rdata[i];
-          }
-        }
       }
     } else {
       dec_valid[i] = false;
@@ -102,7 +90,6 @@ void IDU::comb_decode() {
     // stall的情况：分支Tag不足 uop数目过多
     if (uop_num + dec_uop_num > DECODE_WIDTH) {
       stall = true;
-      id_stall_uop++;
       break;
     }
 
@@ -111,8 +98,6 @@ void IDU::comb_decode() {
         has_br = true;
       } else {
         stall = true;
-        if (no_tag)
-          id_stall_tag++;
         break;
       }
     }
@@ -238,14 +223,9 @@ void IDU::comb_release_tag() {
 
 void IDU::seq() {
   now_tag = now_tag_1;
-  /*state = state_1;*/
   for (int i = 0; i < MAX_BR_NUM; i++) {
     tag_vec[i] = tag_vec_1[i];
-    /*if (sim_time % 10000 == 0)*/
-    /*  cout << tag_vec[i];*/
   }
-  /*if (sim_time % 10000 == 0)*/
-  /*  cout << endl;*/
 
   while (pop > 0) {
     tag_list.pop_back();
@@ -332,7 +312,6 @@ int decode(Inst_uop uop[2], uint32_t inst) {
               .illegal_inst = false,
               .op = NONE,
               .amoop = AMONONE,
-              .vp_valid = false,
               .inst_idx = sim_time};
   }
 

@@ -32,7 +32,6 @@ public:
   void RV32IM();
   void RV32A();
   void RV32CSR();
-  void restore(int flush_store_num);
   void exception(uint32_t trap_val);
   void store_data();
   bool vp_decode(bool &, bool &, int &, int &);
