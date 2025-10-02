@@ -45,8 +45,9 @@ public:
   ISU_IO io;
   void init();
   void add_iq(int entry_num, IQ_TYPE);
-  vector<IQ> iq;
   void comb_ready();
   void comb_deq();
   void seq(); // 写入IQ
+
+  vector<IQ> iq;
 };

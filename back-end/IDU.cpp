@@ -11,8 +11,6 @@
 int decode(Inst_uop uop[MAX_UOP_NUM], uint32_t instruction);
 
 void IDU::init() {
-  /*state = 0;*/
-  /*state_1 = 0;*/
   for (int i = 1; i < MAX_BR_NUM; i++) {
     tag_vec[i] = true;
     tag_vec_1[i] = true;
@@ -140,12 +138,8 @@ void IDU::comb_decode() {
 }
 
 void IDU::comb_branch() {
-  /*if (io.prf2dec->mispred) {*/
-  /*  br_tag_1 = io.prf2dec->br_tag;*/
-  /*}*/
   pop = 0;
 
-  /*if (state == MISPRED || io.prf2dec->mispred) {*/
   if (io.prf2dec->mispred) {
     io.dec_bcast->mispred = true;
     io.dec_bcast->br_tag = io.prf2dec->br_tag;
@@ -166,17 +160,14 @@ void IDU::comb_branch() {
     io.dec_bcast->br_mask |= 1 << *it;
     now_tag_1 = *it;
 
-    /*state_1 = NORMAL;*/
   } else {
     io.dec_bcast->br_mask = 0;
     io.dec_bcast->mispred = false;
-    /*state_1 = NORMAL;*/
   }
 }
 
 void IDU::comb_flush() {
   if (io.rob_bcast->flush) {
-    /*state_1 = 0;*/
     for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
     }

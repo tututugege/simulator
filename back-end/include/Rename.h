@@ -20,8 +20,6 @@ public:
   Ren_Stq *ren2stq;
   Stq_Ren *stq2ren;
 
-  Ren_Prf *ren2prf;
-
   Rob_Broadcast *rob_bcast;
   Rob_Commit *rob_commit;
 };

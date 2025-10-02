@@ -36,18 +36,16 @@ public:
   void comb_release_tag(); // 释放分支tag
   void seq();
 
-  void io_gen_0(bool *input, bool *output);
-  void io_gen_1(bool *input, bool *output);
-
+  // 中间信号
   Inst_uop dec_uop[FETCH_WIDTH][MAX_UOP_NUM];
   bool dec_valid[FETCH_WIDTH];
   bool uop_valid[FETCH_WIDTH][MAX_UOP_NUM];
-
-  int pop = false;
+  int pop = 0;
   bool push = false;  // 是否分配了新tag
   uint32_t alloc_tag; // 是否分配了新tag
-  list<uint32_t> tag_list;
 
+  // 状态
+  list<uint32_t> tag_list;
   bool tag_vec[MAX_BR_NUM];
   int now_tag;
   int state;

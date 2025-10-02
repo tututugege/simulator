@@ -22,10 +22,19 @@ class EXU {
 public:
   void init();
   void comb_exec();
-  void comb_csr();
+  void comb_to_csr();
+  void comb_from_csr();
+  void comb_branch();
+  void comb_flush();
+  void comb_pipeline();
   void comb_ready();
   void seq();
-  FU fu[ISSUE_WAY];
-  Inst_entry inst_r[ISSUE_WAY];
   EXU_IO io;
+
+  // 可以看作一个黑盒电路
+  FU fu[ISSUE_WAY];
+
+  // pipeline
+  Inst_entry inst_r[ISSUE_WAY];
+  Inst_entry inst_r_1[ISSUE_WAY];
 };
