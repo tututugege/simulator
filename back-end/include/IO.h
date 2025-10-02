@@ -36,17 +36,12 @@ typedef struct {
   uint32_t pc[FETCH_WIDTH];
   bool valid[FETCH_WIDTH];
   bool predict_dir[FETCH_WIDTH];
+
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
-
   bool page_fault_inst[FETCH_WIDTH];
-
-  bool vp_valid[FETCH_WIDTH];
-  bool vp_mispred[FETCH_WIDTH];
-  uint32_t vp_src1_rdata[FETCH_WIDTH];
-  uint32_t vp_src2_rdata[FETCH_WIDTH];
 } Front_Dec;
 
 typedef struct {

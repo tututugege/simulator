@@ -26,6 +26,7 @@ public:
   void comb_flush();
   ROB_IO io;
 
+  // 状态
   Inst_entry entry[ROB_NUM];
   bool complete[ROB_NUM];
   bool exception[ROB_NUM];
@@ -39,8 +40,4 @@ public:
   int enq_ptr_1;
   int deq_ptr_1;
   int count_1;
-
-#ifdef CONFIG_DIFFTEST
-  bool diff[ROB_NUM];
-#endif
 };

@@ -34,7 +34,6 @@ public:
   void RV32CSR();
   void exception(uint32_t trap_val);
   void store_data();
-  bool vp_decode(bool &, bool &, int &, int &);
 
   uint32_t store_buffer_addr[STQ_NUM];
   uint32_t store_buffer_data[STQ_NUM];

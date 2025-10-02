@@ -21,24 +21,6 @@ typedef struct {
   uint8_t pcpn[FETCH_WIDTH];
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
-
-  bool vp_valid[FETCH_WIDTH];
-  bool vp_mispred[FETCH_WIDTH];
-  uint32_t vp_src1_rdata[FETCH_WIDTH];
-  uint32_t vp_src2_rdata[FETCH_WIDTH];
-
-  // ar
-  bool arready;
-
-  // r
-  bool rvalid;
-  uint32_t rdata;
-
-  // w
-  bool wready;
-
-  // b
-  bool bvalid;
 } Back_in;
 
 typedef struct {
@@ -49,23 +31,6 @@ typedef struct {
   bool fire[FETCH_WIDTH];
   uint32_t redirect_pc;
   Inst_entry commit_entry[COMMIT_WIDTH];
-
-  // ar
-  uint32_t arvalid; // out
-  uint32_t araddr;  // out
-
-  // r
-  bool rready; // out
-
-  // w
-  bool wvalid;    // out
-  uint32_t waddr; // out
-  uint32_t wdata; // out
-  uint32_t wstrb; // out
-
-  // b
-  bool bready; // out
-
 } Back_out;
 
 class Back_Top {
@@ -84,9 +49,7 @@ public:
   void init();
   void Back_comb();
   void Back_seq();
-  bool pre_br_check(uint32_t *br_pc);
 
   // debug
   void difftest(Inst_uop *inst);
-  void update_conf();
 };

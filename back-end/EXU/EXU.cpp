@@ -82,7 +82,11 @@ void FU::exec(Inst_uop &inst) {
   }
 }
 
-void EXU::init() { memset(inst_r, 0, sizeof(Inst_entry) * ISSUE_WAY); }
+void EXU::init() {
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    inst_r[i].valid = false;
+  }
+}
 
 void EXU::comb_ready() {
   for (int i = 0; i < ISSUE_WAY; i++) {
@@ -97,7 +101,9 @@ void EXU::comb_exec() {
     io.exe2prf->entry[i].uop = inst_r[i].uop;
     if (inst_r[i].valid) {
       fu[i].exec(io.exe2prf->entry[i].uop);
-      if (fu[i].complete) {
+      if (fu[i].complete &&
+          !(io.dec_bcast->mispred &&
+            ((1 << inst_r[i].uop.tag) & io.dec_bcast->br_mask))) {
         io.exe2prf->entry[i].valid = true;
       } else {
         io.exe2prf->entry[i].valid = false;
@@ -119,7 +125,7 @@ void EXU::comb_exec() {
   }
 }
 
-void EXU::comb_csr() {
+void EXU::comb_to_csr() {
   io.exe2csr->we = false;
   io.exe2csr->re = false;
 
@@ -138,39 +144,51 @@ void EXU::comb_csr() {
   }
 }
 
-void EXU::seq() {
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (inst_r[i].valid && inst_r[i].uop.op == CSR && io.exe2csr->re) {
-      io.exe2prf->entry[i].uop.result = io.csr2exe->rdata;
-    }
+void EXU::comb_from_csr() {
+  if (inst_r[0].valid && inst_r[0].uop.op == CSR && io.exe2csr->re) {
+    io.exe2prf->entry[0].uop.result = io.csr2exe->rdata;
+  }
+}
 
+void EXU::comb_pipeline() {
+  for (int i = 0; i < ISSUE_WAY; i++) {
     if (io.prf2exe->iss_entry[i].valid && io.exe2iss->ready[i]) {
-      inst_r[i] = io.prf2exe->iss_entry[i];
+      inst_r_1[i] = io.prf2exe->iss_entry[i];
       fu[i].complete = false;
       fu[i].cycle = 0;
     } else if (io.exe2prf->entry[i].valid && io.prf2exe->ready[i]) {
-      inst_r[i].valid = false;
+      inst_r_1[i].valid = false;
       fu[i].complete = false;
       fu[i].cycle = 0;
     }
   }
+}
 
+void EXU::comb_branch() {
   if (io.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       if (inst_r[i].valid &&
           (io.dec_bcast->br_mask & (1 << inst_r[i].uop.tag))) {
-        inst_r[i].valid = false;
+        inst_r_1[i].valid = false;
         fu[i].complete = false;
         fu[i].cycle = 0;
       }
     }
   }
+}
 
+void EXU::comb_flush() {
   if (io.rob_bcast->flush) {
     for (int i = 0; i < ISSUE_WAY; i++) {
-      inst_r[i].valid = false;
+      inst_r_1[i].valid = false;
       fu[i].complete = false;
       fu[i].cycle = 0;
     }
+  }
+}
+
+void EXU::seq() {
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    inst_r[i] = inst_r_1[i];
   }
 }

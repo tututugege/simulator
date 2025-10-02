@@ -251,10 +251,6 @@ void Rename::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2dec->ready &= io.ren2rob->dis_fire[i] || !inst_r[i].valid;
   }
-
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    io.ren2prf->valid[i] = io.ren2rob->dis_fire[i] && inst_r[i].uop.dest_en;
-  }
 }
 
 void Rename::comb_branch() {
