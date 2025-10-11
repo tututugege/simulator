@@ -7,6 +7,9 @@
 #define RESET_PC 0x00000000
 #define PMEM_OFFSET RESET_PC
 
+/* Whether to use true icache model */
+#define USE_TRUE_ICACHE
+
 /*#define IO_version*/
 
 #define DEBUG_PRINT 0
