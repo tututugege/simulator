@@ -131,6 +131,13 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
     } else {
       // no prediction for taken branches, execute sequentially
       out->predict_next_fetch_address = pc_reg + (FETCH_WIDTH * 4);
+      uint32_t mask = 0xFFFFFFE0;
+      if ((out->predict_next_fetch_address & mask) !=
+          (pc_reg & mask)) { // cross cacheline boundary(32 bytes)
+        out->predict_next_fetch_address &= mask;
+        DEBUG_LOG("[BPU_top] cross cacheline boundary, next_fetch_address: %x\n",
+          out->predict_next_fetch_address);
+      }
     }
     pc_reg = out->predict_next_fetch_address;
     DEBUG_LOG("[BPU_top] icache_fetch_address: %x\n", out->fetch_address);
