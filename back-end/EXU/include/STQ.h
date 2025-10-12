@@ -33,7 +33,6 @@ public:
   STQ_IO io;
   void comb();
   void st2ld_fwd(uint32_t, uint32_t &, int rob_idx);
-  bool check_load_raw(uint32_t addr, int rob_idx);
   void seq();
 
   void init();

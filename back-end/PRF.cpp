@@ -1,6 +1,5 @@
 #include "TOP.h"
 #include "config.h"
-#include "frontend.h"
 #include <IO.h>
 #include <PRF.h>
 #include <cstring>
@@ -9,16 +8,14 @@
 extern Back_Top back;
 
 void PRF::init() {
-  for (int i = 0; i < ISSUE_WAY; i++)
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    inst_r[i].valid = false;
     io.prf2exe->ready[i] = true;
-
-  memset(inst_r, 0, sizeof(Inst_entry) * ISSUE_WAY);
+  }
 }
 
-void PRF::comb_branch() {
+void PRF::comb_br_check() {
   // 根据分支结果向前端返回信息
-
-  // TODO: Magic number
   io.prf2dec->mispred = false;
 
   if (!io.rob_bcast->flush) {
@@ -80,14 +77,18 @@ void PRF::comb_read() {
       }
     }
   }
+}
 
+void PRF::comb_complete() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (inst_r[i].valid)
       io.prf2rob->entry[i] = inst_r[i];
     else
       io.prf2rob->entry[i].valid = false;
   }
+}
 
+void PRF::comb_awake() {
   if (inst_r[IQ_LD].valid && inst_r[IQ_LD].uop.dest_en &&
       !inst_r[IQ_LD].uop.page_fault_load) {
     io.prf_awake->wake.valid = true;
@@ -97,42 +98,60 @@ void PRF::comb_read() {
   }
 }
 
-int reg_w_times[32];
-void PRF::seq() {
-  for (int i = 0; i < ALU_NUM + 1; i++) {
-    if (inst_r[i].valid && inst_r[i].uop.dest_en &&
-        !is_page_fault(inst_r[i].uop)) {
-      reg_file[inst_r[i].uop.dest_preg] = inst_r[i].uop.result;
-      reg_w_times[inst_r[i].uop.dest_areg]++;
-    }
-  }
-
-  for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.exe2prf->entry[i].valid && io.prf2exe->ready[i]) {
-      inst_r[i] = io.exe2prf->entry[i];
-    } else {
-      inst_r[i].valid = false;
-    }
-  }
-
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (io.ren2prf->valid[i]) {
-      reg_file[io.ren2prf->dest_preg[i]] = io.ren2prf->reg_wdata[i];
-    }
-  }
-
+void PRF::comb_branch() {
   if (io.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       if (inst_r[i].valid &&
           (io.dec_bcast->br_mask & (1 << inst_r[i].uop.tag))) {
-        inst_r[i].valid = false;
+        inst_r_1[i].valid = false;
       }
     }
   }
+}
 
+void PRF::comb_flush() {
   if (io.rob_bcast->flush) {
     for (int i = 0; i < ISSUE_WAY; i++) {
-      inst_r[i].valid = false;
+      inst_r_1[i].valid = false;
     }
+  }
+}
+
+int reg_w_times[32];
+void PRF::comb_write() {
+  for (int i = 0; i < ALU_NUM + 1; i++) {
+    if (inst_r[i].valid && inst_r[i].uop.dest_en &&
+        !is_page_fault(inst_r[i].uop)) {
+      reg_file_1[inst_r[i].uop.dest_preg] = inst_r[i].uop.result;
+      reg_w_times[inst_r[i].uop.dest_areg]++;
+    }
+  }
+
+#ifdef CONFIG_PERFECT_VP
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (io.ren2prf->valid[i]) {
+      reg_file_1[io.ren2prf->dest_preg[i]] = io.ren2prf->reg_wdata[i];
+    }
+  }
+#endif
+}
+
+void PRF::comb_pipeline() {
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    if (io.exe2prf->entry[i].valid && io.prf2exe->ready[i]) {
+      inst_r_1[i] = io.exe2prf->entry[i];
+    } else {
+      inst_r_1[i].valid = false;
+    }
+  }
+}
+
+void PRF::seq() {
+  for (int i = 0; i < PRF_NUM; i++) {
+    reg_file[i] = reg_file_1[i];
+  }
+
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    inst_r[i] = inst_r_1[i];
   }
 }

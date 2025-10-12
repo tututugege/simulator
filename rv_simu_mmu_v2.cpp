@@ -220,20 +220,20 @@ SIM_END:
       printf("\033[1;32m理论最优ipc  : %f\033[0m\n",
              commit_num / (double)fetch_num);
 
-      extern int reg_w_times[32];
-
-      int reg_times_all = 0;
-
-      for (int i = 0; i < 32; i++) {
-        reg_times_all += reg_w_times[i];
-      }
-
-      for (int i = 0; i < 32; i++) {
-        cout << reg_names[i] << ": ";
-        printf("%d %f \n", reg_w_times[i],
-               reg_w_times[i] / (double)reg_times_all);
-      }
-
+      // extern int reg_w_times[32];
+      //
+      // int reg_times_all = 0;
+      //
+      // for (int i = 0; i < 32; i++) {
+      //   reg_times_all += reg_w_times[i];
+      // }
+      //
+      // for (int i = 0; i < 32; i++) {
+      //   cout << reg_names[i] << ": ";
+      //   printf("%d %f \n", reg_w_times[i],
+      //          reg_w_times[i] / (double)reg_times_all);
+      // }
+      //
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
       /*cout << "addr error :" << dec << dir_ok_addr_error << endl;*/

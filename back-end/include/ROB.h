@@ -39,8 +39,4 @@ public:
   int enq_ptr_1;
   int deq_ptr_1;
   int count_1;
-
-#ifdef CONFIG_DIFFTEST
-  bool diff[ROB_NUM];
-#endif
 };
