@@ -1,1 +1,4 @@
 baremetal/memory
+
+# Ignore build files
+/build
