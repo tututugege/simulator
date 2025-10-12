@@ -19,13 +19,21 @@ public:
 class PRF {
 public:
   PRF_IO io;
-  uint32_t reg_file[PRF_NUM];
 
+  void comb_br_check();
   void comb_branch();
+  void comb_complete();
+  void comb_awake();
   void comb_read();
+  void comb_flush();
+  void comb_write();
+  void comb_pipeline();
   void init();
   void seq();
 
-private:
+  // 状态
+  uint32_t reg_file[PRF_NUM];
   Inst_entry inst_r[ISSUE_WAY];
+  uint32_t reg_file_1[PRF_NUM];
+  Inst_entry inst_r_1[ISSUE_WAY];
 };

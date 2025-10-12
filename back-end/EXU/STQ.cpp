@@ -234,35 +234,3 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
     LOOP_INC(idx, ROB_NUM);
   }
 }
-
-bool STQ::check_load_raw(uint32_t addr, int rob_idx) {
-  int i = deq_ptr;
-  bool ret = true;
-
-  while (i != commit_ptr) {
-    if ((entry[i].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC) &&
-        !entry[i].data_valid) {
-      ret = false;
-      break;
-    }
-    LOOP_INC(i, STQ_NUM);
-  }
-
-  if (!ret)
-    return ret;
-
-  int idx = back.rob.deq_ptr;
-  while (idx != rob_idx) {
-    if (is_sta(back.rob.entry[idx].uop.op)) {
-      int stq_idx = back.rob.entry[idx].uop.stq_idx;
-      if ((entry[stq_idx].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC) &&
-          !entry[stq_idx].data_valid) {
-        ret = false;
-        break;
-      }
-    }
-    LOOP_INC(idx, ROB_NUM);
-  }
-
-  return ret;
-}

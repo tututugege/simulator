@@ -233,10 +233,12 @@ void Back_Top::Back_comb() {
   idu.comb_decode();
   rob.comb_commit();
   rename.comb_alloc();
-  prf.comb_branch();
+  prf.comb_br_check();
+  prf.comb_complete();
+  prf.comb_awake();
   idu.comb_branch();
   exu.comb_exec();
-  exu.comb_csr();
+  exu.comb_to_csr();
   exu.comb_ready();
   isu.comb_deq();
   prf.comb_read();
@@ -254,9 +256,17 @@ void Back_Top::Back_comb() {
   rob.comb_flush();
   idu.comb_flush();
   csr.comb();
+  exu.comb_from_csr();
   rob.comb_branch();
   rename.comb_branch();
   rename.comb_pipeline();
+  exu.comb_branch();
+  exu.comb_pipeline();
+  exu.comb_flush();
+  prf.comb_write();
+  prf.comb_branch();
+  prf.comb_pipeline();
+  prf.comb_flush();
 
   back.out.flush = rob.io.rob_bcast->flush;
 
