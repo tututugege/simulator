@@ -1,5 +1,4 @@
 #include "IO.h"
-#include "frontend.h"
 #include <RISCV.h>
 #include <ROB.h>
 #include <TOP.h>

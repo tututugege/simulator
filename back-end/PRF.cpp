@@ -1,6 +1,5 @@
 #include "TOP.h"
 #include "config.h"
-#include "frontend.h"
 #include <IO.h>
 #include <PRF.h>
 #include <cstring>

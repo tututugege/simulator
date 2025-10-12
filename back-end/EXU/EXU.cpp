@@ -34,29 +34,6 @@ void FU::exec(Inst_uop &inst) {
 
   cycle++;
 
-  if (cycle == latency && inst.op == LOAD) {
-    uint32_t v_addr = inst.src1_rdata + inst.imm;
-    inst.result = v_addr;
-
-    bool page_fault = false;
-    if (back.csr.CSR_RegFile[number_satp] & 0x80000000 &&
-        back.csr.privilege != 3) {
-      bool mstatus[32], sstatus[32];
-      cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
-                                 32);
-
-      cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
-                                 32);
-
-      page_fault =
-          !va2pa(inst.result, v_addr, back.csr.CSR_RegFile[number_satp], 1,
-                 mstatus, sstatus, back.csr.privilege, p_memory);
-    }
-
-    if (!page_fault && !back.stq.check_load_raw(inst.result, inst.rob_idx))
-      latency++;
-  }
-
   if (cycle == latency) {
     if (is_load(inst.op)) {
       ldu(inst);

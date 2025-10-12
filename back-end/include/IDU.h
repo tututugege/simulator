@@ -24,8 +24,6 @@ public:
 };
 
 class IDU {
-  // 可能进入恢复分支状态
-
 public:
   IDU_IO io;
   void init();

@@ -1,6 +1,5 @@
 #include "CSR.h"
 #include "config.h"
-#include "frontend.h"
 #include <IDU.h>
 #include <RISCV.h>
 #include <cstdint>
