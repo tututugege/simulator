@@ -1,6 +1,5 @@
 #include "CSR.h"
 #include "IO.h"
-#include "frontend.h"
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -8,8 +7,6 @@
 #include <cvt.h>
 #include <diff.h>
 #include <util.h>
-
-void load_data();
 
 int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_mie,      number_mip,      number_mtval,

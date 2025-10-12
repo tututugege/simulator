@@ -4,6 +4,10 @@
 
 using namespace std;
 
+#define FETCH_WIDTH 4
+#define DECODE_WIDTH 5
+#define COMMIT_WIDTH 4
+
 #define MAX_SIM_TIME 2000000000
 #define ISSUE_WAY IQ_NUM
 #define MAX_UOP_NUM 3
@@ -84,6 +88,7 @@ typedef struct Inst_uop {
 
   int dest_areg, src1_areg, src2_areg;
   int dest_preg, src1_preg, src2_preg;
+  int old_dest_preg;
   uint32_t src1_rdata, src2_rdata;
   uint32_t result;
 
@@ -98,7 +103,6 @@ typedef struct Inst_uop {
   bool mispred;
   bool br_taken;
   uint32_t pc_next;
-  int old_dest_preg;
 
   bool dest_en, src1_en, src2_en;
   bool src1_busy, src2_busy;

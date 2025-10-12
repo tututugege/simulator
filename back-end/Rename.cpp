@@ -1,5 +1,4 @@
 #include "TOP.h"
-#include "frontend.h"
 #include <Rename.h>
 #include <config.h>
 #include <cstdlib>
