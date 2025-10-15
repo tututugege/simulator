@@ -1,5 +1,4 @@
 #include "TOP.h"
-#include "frontend.h"
 #include <STQ.h>
 #include <config.h>
 #include <cstdint>
@@ -17,7 +16,10 @@ void STQ::comb() {
     } else {
       if (num < STQ_NUM) {
         io.stq2ren->ready[i] = true;
-        num++;
+
+        if (io.ren2stq->is_std[i]) {
+          num++;
+        }
       } else {
         io.stq2ren->ready[i] = false;
       }
@@ -99,7 +101,8 @@ void STQ::seq() {
 
   // 入队
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i]) {
+    if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i] &&
+        io.ren2stq->is_std[i]) {
       entry[enq_ptr].tag = io.ren2stq->tag[i];
       entry[enq_ptr].valid = true;
       entry[enq_ptr].addr_valid = false;

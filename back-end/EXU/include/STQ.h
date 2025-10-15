@@ -20,12 +20,6 @@ typedef struct {
   uint32_t wdata;
   uint32_t waddr;
   uint32_t wstrb;
-
-  // 唤醒
-  uint32_t st_idx;
-
-  // 当前有效信息
-  bool entry_valid[STQ_NUM];
 } STQ_out;
 
 class STQ {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "config.h"
-#include "frontend.h"
 #include <cstdint>
 #include <sys/types.h>
 
@@ -129,6 +128,7 @@ typedef struct {
 typedef struct {
   uint32_t tag[DECODE_WIDTH];
   bool valid[DECODE_WIDTH];
+  bool is_std[DECODE_WIDTH];
   bool dis_fire[DECODE_WIDTH];
 } Ren_Stq;
 
