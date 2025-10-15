@@ -1,5 +1,4 @@
 #include "TOP.h"
-#include "frontend.h"
 #include <Rename.h>
 #include <config.h>
 #include <cstdlib>
@@ -185,7 +184,9 @@ void Rename::comb_rename() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2iss->uop[i] = io.ren2rob->uop[i];
     io.ren2stq->tag[i] = io.ren2rob->uop[i].tag;
-    io.ren2stq->valid[i] = inst_r[i].valid && is_std(io.ren2rob->uop[i].op);
+    io.ren2stq->valid[i] = inst_r[i].valid && (is_std(io.ren2rob->uop[i].op) ||
+                                               is_sta(io.ren2rob->uop[i].op));
+    io.ren2stq->is_std[i] = is_std(io.ren2rob->uop[i].op);
   }
 }
 
@@ -199,7 +200,7 @@ void Rename::comb_fire() {
     io.ren2rob->dis_fire[i] =
         (io.ren2rob->uop[i].vp_valid ||
          io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
-        (!is_std(io.ren2iss->uop[i].op) ||
+        (!is_std(io.ren2iss->uop[i].op) && !is_sta(io.ren2iss->uop[i].op) ||
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
         !io.dec_bcast->mispred && !io.rob_bcast->flush && !csr_stall &&

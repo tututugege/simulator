@@ -1,9 +1,7 @@
 #ifndef FRONTEND_H
 #define FRONTEND_H
+#include "config.h"
 
-#define FETCH_WIDTH 4
-#define DECODE_WIDTH 5
-#define COMMIT_WIDTH 4
 #define RESET_PC 0x00000000
 #define PMEM_OFFSET RESET_PC
 
