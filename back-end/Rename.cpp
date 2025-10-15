@@ -384,17 +384,4 @@ void Rename ::seq() {
       alloc_checkpoint[i][j] = alloc_checkpoint_1[i][j];
     }
   }
-
-  /*static int count = 0;*/
-  /**/
-  /*count++;*/
-  /*if (count % 10000 == 0) {*/
-  /*  for (int i = 0; i < PRF_NUM; i++) {*/
-  /*    cout << free_vec[i];*/
-
-  /*if (i % 32 == 0)*/
-  /*  cout << endl;*/
-  /*}*/
-  /*cout << endl;*/
-  /*}*/
 }

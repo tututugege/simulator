@@ -220,34 +220,39 @@ SIM_END:
       printf("\033[1;32m理论最优ipc  : %f\033[0m\n",
              commit_num / (double)fetch_num);
 
-      // extern int reg_w_times[32];
-      //
-      // int reg_times_all = 0;
-      //
-      // for (int i = 0; i < 32; i++) {
-      //   reg_times_all += reg_w_times[i];
-      // }
-      //
-      // for (int i = 0; i < 32; i++) {
-      //   cout << reg_names[i] << ": ";
-      //   printf("%d %f \n", reg_w_times[i],
-      //          reg_w_times[i] / (double)reg_times_all);
-      // }
-      //
+      extern int reg_w_times[32];
+      extern int src1_src2_in_ax_num;
+      extern int src1_src2_dest_in_ax_num;
+      extern int src1_src2_dest_in_ax_sp_ra_num;
+
+      int reg_times_all = 0;
+
+      for (int i = 0; i < 32; i++) {
+        reg_times_all += reg_w_times[i];
+      }
+
+      for (int i = 0; i < 32; i++) {
+        cout << reg_names[i] << ": ";
+        printf("%d %f \n", reg_w_times[i],
+               reg_w_times[i] / (double)reg_times_all);
+      }
+
+      printf("src1 src2 in ax %f \n", src1_src2_in_ax_num / (double)commit_num);
+      printf("src1 src2 dest in ax %f \n",
+             src1_src2_dest_in_ax_num / (double)commit_num);
+      printf("src1 src2 dest in ax %f \n",
+             src1_src2_dest_in_ax_sp_ra_num / (double)commit_num);
+
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
-      /*cout << "addr error :" << dec << dir_ok_addr_error << endl;*/
-      /*cout << "tage cnt :" << dec << tage_cnt << endl;*/
-      /*cout << "tage miss :" << dec << tage_miss << endl;*/
-      /*cout << "b2f miss :" << dec << back2front_num << endl;*/
-      /**/
-      extern uint32_t br_num[0x1000000 / 4];
-      extern uint32_t br_mispred[0x1000000 / 4];
+      // extern uint32_t br_num[0x1000000 / 4];
+      // extern uint32_t br_mispred[0x1000000 / 4];
 
       /*for (int i = 0; i < 0x10000000 / 4; i++) {*/
       /*  if (br_num[i]) {*/
       /*    cout << "pc: " << hex << i * 4 + 0x80000000 << dec*/
-      /*         << " br_num: " << br_num[i] << " mispred: " << br_mispred[i]*/
+      /*         << " br_num: " << br_num[i] << " mispred: " <<
+       * br_mispred[i]*/
       /*         << endl;*/
       /*  }*/
       /*}*/

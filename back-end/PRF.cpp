@@ -117,13 +117,11 @@ void PRF::comb_flush() {
   }
 }
 
-int reg_w_times[32];
 void PRF::comb_write() {
   for (int i = 0; i < ALU_NUM + 1; i++) {
     if (inst_r[i].valid && inst_r[i].uop.dest_en &&
         !is_page_fault(inst_r[i].uop)) {
       reg_file_1[inst_r[i].uop.dest_preg] = inst_r[i].uop.result;
-      reg_w_times[inst_r[i].uop.dest_areg]++;
     }
   }
 
