@@ -267,28 +267,32 @@ Inst_entry IQ::scheduler() {
         (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
         !(is_load(entry[i].uop.op) &&
           (orR(entry[i].uop.pre_sta, 16) || orR(entry[i].uop.pre_std, 16)))) {
-#ifdef CONFIG_PRIOR
-      if (!iss_entry.valid) {
-        iss_entry = entry[i];
-        iss_idx = i;
-      } else {
-
-        if (iss_entry.uop.prior < entry[i].uop.prior) {
-          iss_entry = entry[i];
-          iss_idx = i;
-        } else if (iss_entry.uop.prior == entry[i].uop.prior &&
-                   iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
-          iss_entry = entry[i];
-          iss_idx = i;
-        }
-      }
-#else
-      if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
-        iss_entry = entry[i];
-        iss_idx = i;
-      }
-
-#endif
+      // #ifdef CONFIG_PRIOR
+      // if (!iss_entry.valid) {
+      //   iss_entry = entry[i];
+      //   iss_idx = i;
+      // } else {
+      //
+      //   if (iss_entry.uop.prior < entry[i].uop.prior) {
+      //     iss_entry = entry[i];
+      //     iss_idx = i;
+      //   } else if (iss_entry.uop.prior == entry[i].uop.prior &&
+      //              iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
+      //     iss_entry = entry[i];
+      //     iss_idx = i;
+      //   }
+      // }
+      // #else
+      // if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx)
+      // {
+      //   iss_entry = entry[i];
+      //   iss_idx = i;
+      // }
+      //
+      // #endif
+      iss_entry = entry[i];
+      iss_idx = i;
+      break;
     }
   }
 

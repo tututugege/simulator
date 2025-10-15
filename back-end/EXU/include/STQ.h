@@ -12,22 +12,6 @@ typedef struct {
   Rob_Broadcast *rob_bcast;
 } STQ_IO;
 
-typedef struct {
-  bool ready[FETCH_WIDTH];
-
-  // 内存写端口
-  bool wen;
-  uint32_t wdata;
-  uint32_t waddr;
-  uint32_t wstrb;
-
-  // 唤醒
-  uint32_t st_idx;
-
-  // 当前有效信息
-  bool entry_valid[STQ_NUM];
-} STQ_out;
-
 class STQ {
 public:
   STQ_IO io;

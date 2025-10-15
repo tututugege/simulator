@@ -3,6 +3,9 @@
 #include <cstdint>
 
 using namespace std;
+#define FETCH_WIDTH 4
+#define DECODE_WIDTH 5
+#define COMMIT_WIDTH 4
 
 #define MAX_SIM_TIME 2000000000
 #define ISSUE_WAY IQ_NUM
