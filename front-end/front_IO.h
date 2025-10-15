@@ -32,6 +32,7 @@ struct front_top_out {
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
+  bool inst_valid[FETCH_WIDTH];
 };
 
 struct BPU_in {
@@ -70,17 +71,21 @@ struct BPU_out {
 
 struct icache_in {
   bool reset;
+  bool refetch;
   // from BPU
   bool icache_read_valid;
   uint32_t fetch_address;
+  bool run_comb_only;
 };
 
 struct icache_out {
   // to BPU & instruction FIFO
   bool icache_read_ready;
+  bool icache_read_complete; // fetched current fetch group
   // to instruction FIFO
   uint32_t fetch_group[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
+  bool inst_valid[FETCH_WIDTH];
 };
 
 struct instruction_FIFO_in {
@@ -90,6 +95,7 @@ struct instruction_FIFO_in {
   bool write_enable;
   uint32_t fetch_group[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
+  bool inst_valid[FETCH_WIDTH];
   // from back-end
   bool read_enable;
 };
@@ -101,6 +107,7 @@ struct instruction_FIFO_out {
   bool FIFO_valid;
   uint32_t instructions[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
+  bool inst_valid[FETCH_WIDTH];
 };
 
 struct PTAB_in {

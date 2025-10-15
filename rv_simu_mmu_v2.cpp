@@ -301,6 +301,7 @@ void front_cycle(bool stall, bool misprediction, bool exception,
     for (int j = 0; j < FETCH_WIDTH; j++) {
       front_out.pc[j] = number_PC;
       front_out.FIFO_valid = true;
+      front_out.inst_valid[j] = true;
 
       uint32_t p_addr;
 
@@ -337,8 +338,11 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 #endif
 
     bool no_taken = true;
+    uint32_t last_valid_inst_pc = 0;
     for (int j = 0; j < FETCH_WIDTH; j++) {
-      back.in.valid[j] = front_out.FIFO_valid && no_taken;
+      back.in.valid[j] = front_out.FIFO_valid && no_taken && front_out.inst_valid[j];
+      if (back.in.valid[j])
+        last_valid_inst_pc = front_out.pc[j];
       back.in.pc[j] = front_out.pc[j];
       back.in.predict_next_fetch_address[j] =
           front_out.predict_next_fetch_address;
@@ -372,14 +376,12 @@ void front_cycle(bool stall, bool misprediction, bool exception,
     non_branch_mispred = false;
     if (no_taken &&
         (front_out.predict_next_fetch_address !=
-         front_out.pc[FETCH_WIDTH - 1] + 4) &&
+         last_valid_inst_pc + 4) &&
         front_out.FIFO_valid) {
       // 发生了非分支指令的错误预测
       non_branch_mispred = true;
       front_in.refetch = true;
-      // front_out.predict_next_fetch_address = front_out.pc[FETCH_WIDTH - 1] +
-      // 4;
-      front_in.refetch_address = front_out.pc[FETCH_WIDTH - 1] + 4;
+      front_in.refetch_address = last_valid_inst_pc + 4;
     }
 
   } else {
