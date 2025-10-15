@@ -25,11 +25,52 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_sstatus,  number_sie,      number_sip,
                         number_satp,     number_mhartid,  number_misa};
 
+int reg_w_times[32];
+int src1_src2_in_ax_num;
+int src1_src2_dest_in_ax_num;
+int src1_src2_dest_in_ax_sp_ra_num;
+
 void Back_Top::difftest(Inst_uop *inst) {
+  // if (sim_time > 10000000 && sim_time < 10200000) {
+  //   if (inst->src1_en) {
+  //     cout << dec << inst->src1_areg << " ";
+  //   }
+  //
+  //   if (inst->src2_en) {
+  //     cout << dec << inst->src2_areg << " ";
+  //   }
+  //
+  //   if (inst->dest_en) {
+  //     cout << dec << inst->dest_areg << " ";
+  //   }
+  //   cout << endl;
+  // }
 
   if (inst->dest_en && !inst->page_fault_load &&
-      !(inst->vp_valid && inst->vp_mispred))
+      !(inst->vp_valid && inst->vp_mispred)) {
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
+    reg_w_times[inst->dest_areg]++;
+  }
+
+  if ((!inst->src1_en || inst->src1_areg >= 10 && inst->src1_areg <= 17) &&
+      (!inst->src2_en || inst->src2_areg >= 10 && inst->src2_areg <= 17)) {
+    src1_src2_in_ax_num++;
+  }
+
+  if ((!inst->src1_en || inst->src1_areg >= 10 && inst->src1_areg <= 17) &&
+      (!inst->src2_en || inst->src2_areg >= 10 && inst->src2_areg <= 17) &&
+      (!inst->dest_en || inst->dest_areg >= 10 && inst->dest_areg <= 17)) {
+    src1_src2_dest_in_ax_num++;
+  }
+
+  if ((!inst->src1_en || (inst->src1_areg >= 10 && inst->src1_areg <= 15) ||
+       inst->src1_areg == 1 || inst->src1_areg == 2) &&
+      (!inst->src2_en || (inst->src2_areg >= 10 && inst->src2_areg <= 15) ||
+       inst->src2_areg == 1 || inst->src2_areg == 2) &&
+      (!inst->dest_en || (inst->dest_areg >= 10 && inst->dest_areg <= 15) ||
+       inst->src2_areg == 1 || inst->src2_areg == 2)) {
+    src1_src2_dest_in_ax_sp_ra_num++;
+  }
 
   if (inst->op == STD && inst->is_last_uop && !inst->page_fault_store) {
     extern int flush_store_num;
