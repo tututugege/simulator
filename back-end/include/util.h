@@ -1,6 +1,7 @@
 #include "config.h"
 #define LOOP_INC(idx, length) idx = (idx + 1) % (length)
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
+#define FREQ_REG_NUM 6
 
 inline bool is_branch(Inst_op op) { return op == BR || op == JUMP; }
 
@@ -28,4 +29,21 @@ inline bool andR(bool *in, int num) {
   for (int i = 0; i < num; i++)
     out = out && in[i];
   return out;
+}
+
+extern int freq_reg[FREQ_REG_NUM];
+
+inline bool reg_idx_cond(int reg_idx) {
+  // return (reg_idx >= 10 && reg_idx <= 15) || reg_idx == 1 || reg_idx == 2;
+  // return true;
+  // return (reg_idx >= 10 && reg_idx <= 15);
+  if (reg_idx == 0)
+    return true;
+
+  for (int i = 0; i < FREQ_REG_NUM; i++) {
+    if (reg_idx == freq_reg[i])
+      return true;
+  }
+
+  return false;
 }

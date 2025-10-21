@@ -56,35 +56,35 @@ void IQ::enq(Inst_uop *inst) {
   }
 }
 
-void IQ::update_prior(Inst_uop &uop) {
-  for (int i = 0; i < entry_num; i++) {
-    if (entry[i].valid) {
-      if (entry[i].uop.dest_en && uop.src1_en &&
-          entry[i].uop.dest_preg == uop.src1_preg) {
-        if (entry[i].uop.prior < 3) {
-          entry[i].uop.prior++;
-        }
-      }
-
-      if (entry[i].uop.dest_en && uop.src2_en &&
-          entry[i].uop.dest_preg == uop.src2_preg) {
-        if (entry[i].uop.prior < 3) {
-          entry[i].uop.prior++;
-        }
-      }
-    }
-  }
-
-  if (is_branch(uop.op) && uop.br_conf < 3) {
-    for (int i = 0; i < entry_num; i++) {
-      if (entry[i].valid && entry[i].uop.tag == uop.tag) {
-        if (entry[i].uop.prior < 3) {
-          entry[i].uop.prior++;
-        }
-      }
-    }
-  }
-}
+// void IQ::update_prior(Inst_uop &uop) {
+//   for (int i = 0; i < entry_num; i++) {
+//     if (entry[i].valid) {
+//       if (entry[i].uop.dest_en && uop.src1_en &&
+//           entry[i].uop.dest_preg == uop.src1_preg) {
+//         if (entry[i].uop.prior < 3) {
+//           entry[i].uop.prior++;
+//         }
+//       }
+//
+//       if (entry[i].uop.dest_en && uop.src2_en &&
+//           entry[i].uop.dest_preg == uop.src2_preg) {
+//         if (entry[i].uop.prior < 3) {
+//           entry[i].uop.prior++;
+//         }
+//       }
+//     }
+//   }
+//
+//   if (is_branch(uop.op) && uop.br_conf < 3) {
+//     for (int i = 0; i < entry_num; i++) {
+//       if (entry[i].valid && entry[i].uop.tag == uop.tag) {
+//         if (entry[i].uop.prior < 3) {
+//           entry[i].uop.prior++;
+//         }
+//       }
+//     }
+//   }
+// }
 
 Inst_entry IQ::deq() {
 
@@ -165,9 +165,9 @@ void ISU::seq() {
           break;
         }
 
-        for (auto &q : iq) {
-          q.update_prior(io.ren2iss->uop[i]);
-        }
+        // for (auto &q : iq) {
+        //   q.update_prior(io.ren2iss->uop[i]);
+        // }
       }
     }
 

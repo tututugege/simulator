@@ -1,6 +1,5 @@
 #include "BPU/target_predictor/btb.h"
 #include "CSR.h"
-#include "frontend.h"
 #include "ref.h"
 #include <RISCV.h>
 #include <TOP.h>
@@ -9,10 +8,7 @@
 #include <cstdlib>
 #include <cvt.h>
 #include <diff.h>
-#include <dlfcn.h>
-#include <front_IO.h>
 #include <front_module.h>
-#include <fstream>
 #include <util.h>
 
 int mispred_num = 0;
@@ -221,27 +217,22 @@ SIM_END:
              commit_num / (double)fetch_num);
 
       extern int reg_w_times[32];
-      extern int src1_src2_in_ax_num;
       extern int src1_src2_dest_in_ax_num;
-      extern int src1_src2_dest_in_ax_sp_ra_num;
 
       int reg_times_all = 0;
 
-      for (int i = 0; i < 32; i++) {
-        reg_times_all += reg_w_times[i];
-      }
+      // for (int i = 0; i < 32; i++) {
+      //   reg_times_all += reg_w_times[i];
+      // }
 
-      for (int i = 0; i < 32; i++) {
-        cout << reg_names[i] << ": ";
-        printf("%d %f \n", reg_w_times[i],
-               reg_w_times[i] / (double)reg_times_all);
-      }
+      // for (int i = 0; i < 32; i++) {
+      //   cout << reg_names[i] << ": ";
+      //   printf("%d %f \n", reg_w_times[i],
+      //          reg_w_times[i] / (double)reg_times_all);
+      // }
 
-      printf("src1 src2 in ax %f \n", src1_src2_in_ax_num / (double)commit_num);
-      printf("src1 src2 dest in ax %f \n",
+      printf("src1 src2 in ax %f \n",
              src1_src2_dest_in_ax_num / (double)commit_num);
-      printf("src1 src2 dest in ax %f \n",
-             src1_src2_dest_in_ax_sp_ra_num / (double)commit_num);
 
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 

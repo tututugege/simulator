@@ -1,6 +1,5 @@
 #include "CSR.h"
 #include "IO.h"
-#include "frontend.h"
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -10,12 +9,8 @@
 #include <diff.h>
 #include <util.h>
 
-extern int commit_num;
-
-void load_data();
-
-uint32_t br_num[0x1000000 / 4];
-uint32_t br_mispred[0x1000000 / 4];
+// uint32_t br_num[0x1000000 / 4];
+// uint32_t br_mispred[0x1000000 / 4];
 
 int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_mie,      number_mip,      number_mtval,
@@ -26,24 +21,23 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_satp,     number_mhartid,  number_misa};
 
 int reg_w_times[32];
-int src1_src2_in_ax_num;
 int src1_src2_dest_in_ax_num;
-int src1_src2_dest_in_ax_sp_ra_num;
+int vp_num = 0;
 
 void Back_Top::difftest(Inst_uop *inst) {
   // if (sim_time > 10000000 && sim_time < 10200000) {
-  //   if (inst->src1_en) {
-  //     cout << dec << inst->src1_areg << " ";
-  //   }
+  // if (inst->src1_en) {
+  //   cout << dec << inst->src1_areg << " ";
+  // }
   //
-  //   if (inst->src2_en) {
-  //     cout << dec << inst->src2_areg << " ";
-  //   }
+  // if (inst->src2_en) {
+  //   cout << dec << inst->src2_areg << " ";
+  // }
   //
-  //   if (inst->dest_en) {
-  //     cout << dec << inst->dest_areg << " ";
-  //   }
-  //   cout << endl;
+  // if (inst->dest_en) {
+  //   cout << dec << inst->dest_areg << " ";
+  // }
+  // cout << endl;
   // }
 
   if (inst->dest_en && !inst->page_fault_load &&
@@ -52,25 +46,29 @@ void Back_Top::difftest(Inst_uop *inst) {
     reg_w_times[inst->dest_areg]++;
   }
 
-  if ((!inst->src1_en || inst->src1_areg >= 10 && inst->src1_areg <= 17) &&
-      (!inst->src2_en || inst->src2_areg >= 10 && inst->src2_areg <= 17)) {
-    src1_src2_in_ax_num++;
-  }
+  // if ((!inst->src1_en || inst->src1_areg >= 10 && inst->src1_areg <= 17) &&
+  //     (!inst->src2_en || inst->src2_areg >= 10 && inst->src2_areg <= 17)) {
+  //   src1_src2_in_ax_num++;
+  // }
 
-  if ((!inst->src1_en || inst->src1_areg >= 10 && inst->src1_areg <= 17) &&
-      (!inst->src2_en || inst->src2_areg >= 10 && inst->src2_areg <= 17) &&
-      (!inst->dest_en || inst->dest_areg >= 10 && inst->dest_areg <= 17)) {
+  if ((!inst->src1_en || reg_idx_cond(inst->src1_areg)) &&
+      (!inst->src2_en || reg_idx_cond(inst->src2_areg)) &&
+      (!inst->dest_en || reg_idx_cond(inst->dest_areg))) {
     src1_src2_dest_in_ax_num++;
   }
 
-  if ((!inst->src1_en || (inst->src1_areg >= 10 && inst->src1_areg <= 15) ||
-       inst->src1_areg == 1 || inst->src1_areg == 2) &&
-      (!inst->src2_en || (inst->src2_areg >= 10 && inst->src2_areg <= 15) ||
-       inst->src2_areg == 1 || inst->src2_areg == 2) &&
-      (!inst->dest_en || (inst->dest_areg >= 10 && inst->dest_areg <= 15) ||
-       inst->src2_areg == 1 || inst->src2_areg == 2)) {
-    src1_src2_dest_in_ax_sp_ra_num++;
-  }
+  // if (inst->vp_valid) {
+  //   vp_num++;
+  // }
+
+  // if ((!inst->src1_en || (inst->src1_areg >= 10 && inst->src1_areg <= 15) ||
+  //      inst->src1_areg == 1 || inst->src1_areg == 2) &&
+  //     (!inst->src2_en || (inst->src2_areg >= 10 && inst->src2_areg <= 15) ||
+  //      inst->src2_areg == 1 || inst->src2_areg == 2) &&
+  //     (inst->dest_en && (inst->dest_areg >= 10 && inst->dest_areg <= 15) ||
+  //      inst->dest_areg == 1 || inst->dest_areg == 2)) {
+  //   src1_src2_dest_in_ax_sp_ra_num++;
+  // }
 
   if (inst->op == STD && inst->is_last_uop && !inst->page_fault_store) {
     extern int flush_store_num;
@@ -346,16 +344,16 @@ void Back_Top::Back_comb() {
   rename.comb_flush();
 
   // 统计分支误预测率
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (back.out.commit_entry[i].valid) {
-      Inst_uop uop = back.out.commit_entry[i].uop;
-      if (is_branch(uop.op)) {
-        br_num[(uop.pc & 0xFFFFFF) >> 2]++;
-        if (uop.mispred)
-          br_mispred[(uop.pc & 0xFFFFFF) >> 2]++;
-      }
-    }
-  }
+  // for (int i = 0; i < COMMIT_WIDTH; i++) {
+  //   if (back.out.commit_entry[i].valid) {
+  //     Inst_uop uop = back.out.commit_entry[i].uop;
+  //     if (is_branch(uop.op)) {
+  //       br_num[(uop.pc & 0xFFFFFF) >> 2]++;
+  //       if (uop.mispred)
+  //         br_mispred[(uop.pc & 0xFFFFFF) >> 2]++;
+  //     }
+  //   }
+  // }
 }
 
 void Back_Top::Back_seq() {
@@ -372,7 +370,7 @@ void Back_Top::Back_seq() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.io.dec2front->fire[i];
   }
-  update_conf();
+  // update_conf();
 }
 
 #define BR_CONF_NUM 1024
