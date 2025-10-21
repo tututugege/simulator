@@ -1082,7 +1082,7 @@ int cvt_number_to_csr(int csr_idx) {
 }
 
 bool Ref_cpu::vp_decode(bool &src1_en, bool &src2_en, int &src1_areg,
-                        int &src2_areg) {
+                        int &src2_areg, int &dest_areg) {
 
   // split instruction
   bool inst_bit[32];
@@ -1103,6 +1103,7 @@ bool Ref_cpu::vp_decode(bool &src1_en, bool &src2_en, int &src1_areg,
   uint32_t reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
   uint32_t reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
   uint32_t reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
+  dest_areg = reg_d_index;
   bool ret;
 
   src1_areg = reg_a_index;

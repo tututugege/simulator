@@ -6,6 +6,11 @@
 #include <cvt.h>
 #include <util.h>
 
+int reg_count[32];
+#define FREQ_REG_NUM 6
+int freq_reg[FREQ_REG_NUM];
+void update_freq_reg();
+
 extern Back_Top back;
 extern int commit_num;
 
@@ -216,28 +221,6 @@ void Rename::comb_fire() {
     }
   }
 
-  // split的指令需要同时dispatch
-  int i = 0;
-  while (i < DECODE_WIDTH) {
-    if (io.ren2rob->valid[i]) {
-      bool all_fire = true;
-      for (int j = 0; j < io.ren2rob->uop[i].uop_num; j++) {
-        all_fire = all_fire && io.ren2rob->dis_fire[i + j];
-      }
-
-      if (!all_fire) {
-        for (int j = i; j < DECODE_WIDTH; j++) {
-          io.ren2rob->dis_fire[j] = false;
-        }
-        break;
-      }
-
-      i += io.ren2rob->uop[i].uop_num;
-    } else {
-      i++;
-    }
-  }
-
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2iss->dis_fire[i] = io.ren2rob->dis_fire[i] && io.ren2iss->valid[i];
     io.ren2stq->dis_fire[i] = io.ren2rob->dis_fire[i];
@@ -276,6 +259,17 @@ void Rename::comb_fire() {
     io.ren2prf->valid[i] = io.ren2rob->dis_fire[i] && inst_r[i].uop.vp_valid &&
                            inst_r[i].uop.dest_en;
   }
+
+  // for (int i = 0; i < DECODE_WIDTH; i++) {
+  //   if (io.ren2rob->dis_fire[i]) {
+  //     if (io.ren2rob->uop[i].src1_en && io.ren2rob->uop[i].src1_areg != 0)
+  //       reg_count[io.ren2rob->uop[i].src1_areg]++;
+  //     if (io.ren2rob->uop[i].src2_en && io.ren2rob->uop[i].src2_areg != 0)
+  //       reg_count[io.ren2rob->uop[i].src2_areg]++;
+  //     if (io.ren2rob->uop[i].dest_en)
+  //       reg_count[io.ren2rob->uop[i].dest_areg]++;
+  //   }
+  // }
 }
 
 void Rename::comb_branch() {
@@ -292,6 +286,8 @@ void Rename::comb_branch() {
       spec_alloc_1[j] =
           spec_alloc[j] && !alloc_checkpoint[io.dec_bcast->br_tag][j];
     }
+
+    // update_freq_reg();
   }
 }
 
@@ -307,6 +303,8 @@ void Rename ::comb_flush() {
       free_vec_1[j] = free_vec_1[j] || spec_alloc_1[j];
       spec_alloc_1[j] = false;
     }
+
+    // update_freq_reg();
   }
 }
 
@@ -328,6 +326,15 @@ void Rename ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
+
+      Inst_uop *uop = &io.rob_commit->commit_entry[i].uop;
+      if (uop->src1_en)
+        reg_count[uop->src1_areg]++;
+      if (uop->src2_en)
+        reg_count[uop->src2_areg]++;
+      if (uop->dest_en)
+        reg_count[uop->dest_areg]++;
+
       if (io.rob_commit->commit_entry[i].uop.dest_en &&
           !io.rob_commit->commit_entry[i].uop.page_fault_load &&
           !(io.rob_commit->commit_entry[i].uop.vp_valid &&
@@ -362,6 +369,12 @@ void Rename ::comb_pipeline() {
 
 void Rename ::seq() {
 
+  static int time = 0;
+  if (time % 500 == 0) {
+    update_freq_reg();
+  }
+  time++;
+
   for (int i = 0; i < DECODE_WIDTH; i++) {
     inst_r[i] = inst_r_1[i];
   }
@@ -385,4 +398,33 @@ void Rename ::seq() {
       alloc_checkpoint[i][j] = alloc_checkpoint_1[i][j];
     }
   }
+}
+
+void update_freq_reg() {
+  // for (int i = 0; i < FREQ_REG_NUM; i++) {
+  //   int max = 0;
+  //   int max_idx = 0;
+  //
+  //   for (int j = 0; j < 32; j++) {
+  //     if (max < reg_count[j]) {
+  //       max = reg_count[j];
+  //       max_idx = j;
+  //     }
+  //   }
+  //
+  //   freq_reg[i] = max_idx;
+  //   reg_count[max_idx] = 0;
+  // }
+  //
+  // for (int i = 0; i < 32; i++) {
+  //   reg_count[i] = 0;
+  // }
+  for (int i = 0; i < FREQ_REG_NUM; i++) {
+    freq_reg[i] = 10 + i;
+  }
+
+  // for (int i = 0; i < FREQ_REG_NUM; i++) {
+  //   cout << freq_reg[i] << " ";
+  // }
+  // cout << endl;
 }

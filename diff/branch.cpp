@@ -1,5 +1,4 @@
 #include "TOP.h"
-#include "frontend.h"
 #include <config.h>
 #include <cstdint>
 #include <cstdlib>
@@ -8,6 +7,11 @@
 #include <front_IO.h>
 #include <random>
 #include <ref.h>
+#include <util.h>
+
+#define VP_ACCURACY 100
+#define VP_COVERAGE 100
+#define BP_ACCURACY 95
 
 Ref_cpu br_ref;
 extern Back_Top back;
@@ -84,14 +88,15 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
     perfect_fetch_PC[i] = br_ref.state.pc;
 #ifdef CONFIG_PERFECT_VP
     bool src1_en, src2_en;
-    int src1_areg, src2_areg;
+    int src1_areg, src2_areg, dest_areg;
     // 可以值预测的概率
-    if (br_ref.vp_decode(src1_en, src2_en, src1_areg, src2_areg) &&
-        (rand() % 100 > 30)) {
+    if (br_ref.vp_decode(src1_en, src2_en, src1_areg, src2_areg, dest_areg) &&
+        (rand() % 100 >= (100 - VP_COVERAGE)) &&
+        (!src1_en || reg_idx_cond(src1_areg)) &&
+        (!src2_en || reg_idx_cond(src2_areg)) && reg_idx_cond(dest_areg)) {
       vp_valid[i] = true;
       // 值预测正确的概率
-      if ((!src1_en && !src2_en) || (rand() % 1000) > 5) {
-        // if (1) {
+      if ((!src1_en && !src2_en) || (rand() % 100) >= (100 - VP_ACCURACY)) {
         vp_mispred[i] = false;
         if (src1_en) {
           vp_src1_rdata[i] = br_ref.state.gpr[src1_areg];
@@ -135,8 +140,7 @@ void perfect_bpu_run(bool br_redirect, bool flush) {
     }
 
     if (br_ref.is_br) {
-      stall = (rand() % 100 > 65);
-      /*stall = false;*/
+      stall = (rand() % 100 >= BP_ACCURACY);
 
       if (stall) {
         perfect_pred_dir[i] = !br_ref.br_taken;
