@@ -26,7 +26,7 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == DIV) { // div
       latency = 1;
     } else if (inst.op == LOAD) {
-      latency = 1;
+      latency = 3;
     } else {
       latency = 1;
     }

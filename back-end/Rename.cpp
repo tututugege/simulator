@@ -169,9 +169,7 @@ void Rename::comb_rename() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2iss->uop[i] = io.ren2rob->uop[i];
     io.ren2stq->tag[i] = io.ren2rob->uop[i].tag;
-    io.ren2stq->valid[i] = inst_r[i].valid && (is_std(io.ren2rob->uop[i].op) ||
-                                               is_sta(io.ren2rob->uop[i].op));
-    io.ren2stq->is_std[i] = is_std(io.ren2rob->uop[i].op);
+    io.ren2stq->valid[i] = inst_r[i].valid && is_std(io.ren2rob->uop[i].op);
   }
 }
 
@@ -184,7 +182,7 @@ void Rename::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     io.ren2rob->dis_fire[i] =
         (io.ren2iss->valid[i] && io.iss2ren->ready[i]) &&
-        (!is_std(io.ren2iss->uop[i].op) && !is_sta(io.ren2iss->uop[i].op) ||
+        (!is_std(io.ren2iss->uop[i].op) ||
          io.ren2stq->valid[i] && io.stq2ren->ready[i]) &&
         (io.ren2rob->valid[i] && io.rob2ren->ready[i]) && !pre_stall &&
         !io.dec_bcast->mispred && !io.rob_bcast->flush && !csr_stall &&
@@ -197,6 +195,26 @@ void Rename::comb_fire() {
     // 异常相关指令需要单独执行
     if (io.ren2rob->valid[i] && is_CSR(io.ren2iss->uop[i].op)) {
       csr_stall = true;
+    }
+  }
+  int i = 0;
+  while (i < DECODE_WIDTH) {
+    if (io.ren2rob->valid[i]) {
+      bool all_fire = true;
+      for (int j = 0; j < io.ren2rob->uop[i].uop_num; j++) {
+        all_fire = all_fire && io.ren2rob->dis_fire[i + j];
+      }
+
+      if (!all_fire) {
+        for (int j = i; j < DECODE_WIDTH; j++) {
+          io.ren2rob->dis_fire[j] = false;
+        }
+        break;
+      }
+
+      i += io.ren2rob->uop[i].uop_num;
+    } else {
+      i++;
     }
   }
 
@@ -214,6 +232,7 @@ void Rename::comb_fire() {
         alloc_checkpoint_1[j][dest_preg] = true;
     }
 
+    // split的指令同时dispatch
     // 保存checkpoint
     if (io.ren2rob->dis_fire[i] && is_branch(inst_r[i].uop.op)) {
       for (int j = 0; j < ARF_NUM + 1; j++) {

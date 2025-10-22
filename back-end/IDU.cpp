@@ -46,51 +46,52 @@ void IDU::comb_decode() {
 
       if (io.front2dec->page_fault_inst[i]) {
         uop_num = 1;
-        dec_uop[i][0].uop_num = 1;
-        dec_uop[i][0].iq_type = IQ_INTM;
-        dec_uop[i][0].page_fault_inst = true;
-        dec_uop[i][0].page_fault_load = false;
-        dec_uop[i][0].page_fault_store = false;
-        dec_uop[i][0].op = NONE;
-        dec_uop[i][0].is_last_uop = true;
-        dec_uop[i][0].src1_en = dec_uop[i][0].src2_en = dec_uop[i][0].dest_en =
-            false;
-        uop_valid[i][0] = true;
+        io.dec2ren->uop[i][0].uop_num = 1;
+        io.dec2ren->uop[i][0].iq_type = IQ_INTM;
+        io.dec2ren->uop[i][0].page_fault_inst = true;
+        io.dec2ren->uop[i][0].page_fault_load = false;
+        io.dec2ren->uop[i][0].page_fault_store = false;
+        io.dec2ren->uop[i][0].op = NONE;
+        io.dec2ren->uop[i][0].is_last_uop = true;
+        io.dec2ren->uop[i][0].src1_en = io.dec2ren->uop[i][0].src2_en =
+            io.dec2ren->uop[i][0].dest_en = false;
+        io.dec2ren->valid[i][0] = true;
 
         for (int j = 1; j < MAX_UOP_NUM; j++) {
-          dec_uop[i][j].op = NONE;
-          uop_valid[i][j] = false;
+          io.dec2ren->uop[i][j].op = NONE;
+          io.dec2ren->valid[i][j] = false;
         }
       } else {
-        uop_num = decode(dec_uop[i], io.front2dec->inst[i]);
+        uop_num = decode(io.dec2ren->uop[i], io.front2dec->inst[i]);
       }
     } else {
       dec_valid[i] = false;
       for (int j = 0; j < MAX_UOP_NUM; j++) {
-        dec_uop[i][j].op = NONE;
-        uop_valid[i][j] = false;
+        io.dec2ren->valid[i][j] = false;
       }
       continue;
     }
 
     for (int j = 0; j < MAX_UOP_NUM; j++) {
-      dec_uop[i][j].tag = (has_br) ? alloc_tag : now_tag;
-      dec_uop[i][j].pc = io.front2dec->pc[i];
-      dec_uop[i][j].pred_br_taken = io.front2dec->predict_dir[i];
-      dec_uop[i][j].alt_pred = io.front2dec->alt_pred[i];
-      dec_uop[i][j].altpcpn = io.front2dec->altpcpn[i];
-      dec_uop[i][j].pcpn = io.front2dec->pcpn[i];
-      dec_uop[i][j].pred_br_pc = io.front2dec->predict_next_fetch_address[i];
-      dec_uop[i][j].pc_next = dec_uop[i][j].pc + 4;
+      io.dec2ren->uop[i][j].tag = (has_br) ? alloc_tag : now_tag;
+      io.dec2ren->uop[i][j].pc = io.front2dec->pc[i];
+      io.dec2ren->uop[i][j].pred_br_taken = io.front2dec->predict_dir[i];
+      io.dec2ren->uop[i][j].alt_pred = io.front2dec->alt_pred[i];
+      io.dec2ren->uop[i][j].altpcpn = io.front2dec->altpcpn[i];
+      io.dec2ren->uop[i][j].pcpn = io.front2dec->pcpn[i];
+      io.dec2ren->uop[i][j].pred_br_pc =
+          io.front2dec->predict_next_fetch_address[i];
+      io.dec2ren->uop[i][j].pc_next = io.dec2ren->uop[i][j].pc + 4;
     }
 
     // stall的情况：分支Tag不足 uop数目过多
-    if (uop_num + dec_uop_num > DECODE_WIDTH) {
+    if (uop_num + dec_uop_num > RENAME_WIDTH) {
       stall = true;
       break;
     }
 
-    if (dec_uop[i][0].op == BR || dec_uop[i][1].op == JUMP) {
+    if (io.front2dec->valid[i] &&
+        (io.dec2ren->uop[i][0].op == BR || io.dec2ren->uop[i][1].op == JUMP)) {
       if (!no_tag && !has_br) {
         has_br = true;
       } else {
@@ -103,11 +104,11 @@ void IDU::comb_decode() {
     dec_uop_num += uop_num;
 
     for (int j = 0; j < uop_num; j++) {
-      uop_valid[i][j] = true;
+      io.dec2ren->valid[i][j] = true;
     }
 
     for (int j = uop_num; j < MAX_UOP_NUM; j++) {
-      uop_valid[i][j] = false;
+      io.dec2ren->valid[i][j] = false;
     }
   }
 
@@ -115,24 +116,9 @@ void IDU::comb_decode() {
     for (; i < FETCH_WIDTH; i++) {
       dec_valid[i] = false;
       for (int j = 0; j < MAX_UOP_NUM; j++) {
-        uop_valid[i][j] = false;
+        io.dec2ren->valid[i][j] = false;
       }
     }
-  }
-
-  int port = 0;
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    for (int j = 0; j < MAX_UOP_NUM; j++) {
-      if (uop_valid[i][j]) {
-        io.dec2ren->uop[port] = dec_uop[i][j];
-        io.dec2ren->valid[port] = true;
-        port++;
-      }
-    }
-  }
-
-  for (; port < DECODE_WIDTH; port++) {
-    io.dec2ren->valid[port] = false;
   }
 }
 
@@ -182,8 +168,10 @@ void IDU::comb_fire() {
   io.dec2front->ready = io.ren2dec->ready && !io.prf2dec->mispred;
 
   if (io.prf2dec->mispred) {
-    for (int i = 0; i < DECODE_WIDTH; i++) {
-      io.dec2ren->valid[i] = false;
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      for (int j = 0; j < MAX_UOP_NUM; j++) {
+        io.dec2ren->valid[i][j] = false;
+      }
     }
   }
 
@@ -193,8 +181,8 @@ void IDU::comb_fire() {
     io.dec2front->ready =
         io.dec2front->ready && (!io.front2dec->valid[i] || dec_valid[i]);
     if (io.dec2front->fire[i] &&
-        (uop_valid[i][0] && is_branch(dec_uop[i][0].op) ||
-         uop_valid[i][1] && is_branch(dec_uop[i][1].op))) {
+        (io.dec2ren->valid[i][0] && is_branch(io.dec2ren->uop[i][0].op) ||
+         io.dec2ren->valid[i][1] && is_branch(io.dec2ren->uop[i][1].op))) {
       push = true;
       now_tag_1 = alloc_tag;
       tag_vec_1[alloc_tag] = false;

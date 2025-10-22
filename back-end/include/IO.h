@@ -17,8 +17,8 @@ typedef struct {
 } STQ_entry;
 
 typedef struct {
-  Inst_uop uop[DECODE_WIDTH];
-  bool valid[DECODE_WIDTH];
+  Inst_uop uop[FETCH_WIDTH][MAX_UOP_NUM]; // 3 2 2 2
+  bool valid[FETCH_WIDTH][MAX_UOP_NUM];
 } Dec_Ren;
 
 typedef struct {
@@ -54,16 +54,16 @@ typedef struct {
 } Rob_Commit;
 
 typedef struct {
-  bool ready[DECODE_WIDTH];
+  bool ready[RENAME_WIDTH];
   bool empty;
   bool stall;
   uint32_t enq_idx;
 } Rob_Ren;
 
 typedef struct {
-  Inst_uop uop[DECODE_WIDTH];
-  bool valid[DECODE_WIDTH];
-  bool dis_fire[DECODE_WIDTH];
+  Inst_uop uop[RENAME_WIDTH];
+  bool valid[RENAME_WIDTH];
+  bool dis_fire[RENAME_WIDTH];
 } Ren_Rob;
 
 typedef struct {
@@ -71,14 +71,14 @@ typedef struct {
 } Prf_Awake;
 
 typedef struct {
-  bool valid[DECODE_WIDTH];
-  Inst_uop uop[DECODE_WIDTH];
-  bool dis_fire[DECODE_WIDTH];
+  bool valid[RENAME_WIDTH];
+  Inst_uop uop[RENAME_WIDTH];
+  bool dis_fire[RENAME_WIDTH];
 } Ren_Iss;
 
 // TODO: MAGIC NUMBER
 typedef struct {
-  bool ready[DECODE_WIDTH];
+  bool ready[RENAME_WIDTH];
   Wake_info wake[ALU_NUM];
 } Iss_Ren;
 
@@ -126,21 +126,20 @@ typedef struct {
 } Prf_Dec;
 
 typedef struct {
-  uint32_t tag[DECODE_WIDTH];
-  bool valid[DECODE_WIDTH];
-  bool is_std[DECODE_WIDTH];
-  bool dis_fire[DECODE_WIDTH];
+  uint32_t tag[RENAME_WIDTH];
+  bool valid[RENAME_WIDTH];
+  bool dis_fire[RENAME_WIDTH];
 } Ren_Stq;
 
 typedef struct {
-  bool ready[DECODE_WIDTH];
+  bool ready[RENAME_WIDTH];
   uint32_t stq_idx;
 } Stq_Ren;
 
 typedef struct {
-  bool valid[DECODE_WIDTH];
-  uint32_t reg_wdata[DECODE_WIDTH];
-  uint32_t dest_preg[DECODE_WIDTH];
+  bool valid[RENAME_WIDTH];
+  uint32_t reg_wdata[RENAME_WIDTH];
+  uint32_t dest_preg[RENAME_WIDTH];
 } Ren_Prf;
 
 typedef struct {

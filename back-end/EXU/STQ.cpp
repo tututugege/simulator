@@ -10,16 +10,13 @@ extern Back_Top back;
 void STQ::comb() {
   int num = count;
 
-  for (int i = 0; i < DECODE_WIDTH; i++) {
+  for (int i = 0; i < RENAME_WIDTH; i++) {
     if (!io.ren2stq->valid[i]) {
       io.stq2ren->ready[i] = true;
     } else {
       if (num < STQ_NUM) {
         io.stq2ren->ready[i] = true;
-
-        if (io.ren2stq->is_std[i]) {
-          num++;
-        }
+        num++;
       } else {
         io.stq2ren->ready[i] = false;
       }
@@ -100,9 +97,8 @@ void STQ::comb() {
 void STQ::seq() {
 
   // 入队
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i] &&
-        io.ren2stq->is_std[i]) {
+  for (int i = 0; i < RENAME_WIDTH; i++) {
+    if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i]) {
       entry[enq_ptr].tag = io.ren2stq->tag[i];
       entry[enq_ptr].valid = true;
       entry[enq_ptr].addr_valid = false;
