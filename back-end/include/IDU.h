@@ -1,7 +1,6 @@
 #pragma once
 #include "IO.h"
 #include "config.h"
-#include "frontend.h"
 #include <cstdint>
 #include <list>
 
@@ -35,9 +34,7 @@ public:
   void seq();
 
   // 中间信号
-  Inst_uop dec_uop[FETCH_WIDTH][MAX_UOP_NUM];
   bool dec_valid[FETCH_WIDTH];
-  bool uop_valid[FETCH_WIDTH][MAX_UOP_NUM];
   int pop = 0;
   bool push = false;  // 是否分配了新tag
   uint32_t alloc_tag; // 是否分配了新tag

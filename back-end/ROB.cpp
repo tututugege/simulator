@@ -24,7 +24,7 @@ void ROB::comb_ready() {
   io.rob2ren->empty = (count == 0);
   io.rob2ren->stall = csr_stall || exception_stall;
 
-  for (int i = 0; i < DECODE_WIDTH; i++) {
+  for (int i = 0; i < RENAME_WIDTH; i++) {
     if (csr_stall || exception_stall || io.rob_bcast->flush) {
       io.rob2ren->ready[i] = false;
     } else {
@@ -152,7 +152,7 @@ void ROB::comb_commit() {
 
   io.rob2ren->enq_idx = enq_ptr;
 
-  if (stall_cycle > 100) {
+  if (stall_cycle > 300) {
     cout << dec << sim_time << endl;
     cout << "卡死了" << endl;
     cout << hex << entry[deq_ptr].uop.instruction;
@@ -220,7 +220,7 @@ void ROB::comb_branch() {
 
 void ROB::comb_fire() {
   // 入队
-  for (int i = 0; i < DECODE_WIDTH; i++) {
+  for (int i = 0; i < RENAME_WIDTH; i++) {
     if (io.ren2rob->dis_fire[i]) {
       entry_1[enq_ptr_1].valid = true;
       entry_1[enq_ptr_1].uop = io.ren2rob->uop[i];

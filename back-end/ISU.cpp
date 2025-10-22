@@ -60,7 +60,7 @@ Inst_entry IQ::deq() {
 
 void ISU::comb_ready() {
   // ready
-  for (int i = 0; i < DECODE_WIDTH; i++) {
+  for (int i = 0; i < RENAME_WIDTH; i++) {
     if (io.ren2iss->valid[i]) {
       if (iq[io.ren2iss->uop[i].iq_type].num_temp <
           iq[io.ren2iss->uop[i].iq_type].entry_num) {
@@ -98,7 +98,7 @@ void ISU::comb_deq() {
 
 void ISU::seq() {
   // 入队
-  for (int i = 0; i < DECODE_WIDTH; i++) {
+  for (int i = 0; i < RENAME_WIDTH; i++) {
     if (io.ren2iss->dis_fire[i]) {
 
       for (auto &q : iq) {
