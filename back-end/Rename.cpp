@@ -7,12 +7,12 @@
 #include <util.h>
 
 int reg_count[32];
-#define FREQ_REG_NUM 6
 int freq_reg[FREQ_REG_NUM];
 void update_freq_reg();
 
 extern Back_Top back;
 extern int commit_num;
+extern int commit_uop_num;
 
 void alu(Inst_uop &inst);
 
@@ -328,11 +328,11 @@ void Rename ::comb_commit() {
     if (io.rob_commit->commit_entry[i].valid) {
 
       Inst_uop *uop = &io.rob_commit->commit_entry[i].uop;
-      if (uop->src1_en)
+      if (uop->src1_en && uop->src1_areg != 0)
         reg_count[uop->src1_areg]++;
-      if (uop->src2_en)
+      if (uop->src2_en && uop->src2_areg != 0)
         reg_count[uop->src2_areg]++;
-      if (uop->dest_en)
+      if (uop->dest_en && uop->dest_areg != 0)
         reg_count[uop->dest_areg]++;
 
       if (io.rob_commit->commit_entry[i].uop.dest_en &&
@@ -342,6 +342,7 @@ void Rename ::comb_commit() {
         free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
         spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
       }
+      commit_uop_num++;
       if (io.rob_commit->commit_entry[i].uop.is_last_uop)
         commit_num++;
       if (LOG) {
@@ -370,7 +371,7 @@ void Rename ::comb_pipeline() {
 void Rename ::seq() {
 
   static int time = 0;
-  if (time % 500 == 0) {
+  if (time % 100 == 0) {
     update_freq_reg();
   }
   time++;
@@ -401,27 +402,27 @@ void Rename ::seq() {
 }
 
 void update_freq_reg() {
-  // for (int i = 0; i < FREQ_REG_NUM; i++) {
-  //   int max = 0;
-  //   int max_idx = 0;
-  //
-  //   for (int j = 0; j < 32; j++) {
-  //     if (max < reg_count[j]) {
-  //       max = reg_count[j];
-  //       max_idx = j;
-  //     }
-  //   }
-  //
-  //   freq_reg[i] = max_idx;
-  //   reg_count[max_idx] = 0;
-  // }
-  //
-  // for (int i = 0; i < 32; i++) {
-  //   reg_count[i] = 0;
-  // }
   for (int i = 0; i < FREQ_REG_NUM; i++) {
-    freq_reg[i] = 10 + i;
+    int max = 0;
+    int max_idx = 0;
+
+    for (int j = 0; j < 32; j++) {
+      if (max < reg_count[j]) {
+        max = reg_count[j];
+        max_idx = j;
+      }
+    }
+
+    freq_reg[i] = max_idx;
+    reg_count[max_idx] = 0;
   }
+
+  for (int i = 0; i < 32; i++) {
+    reg_count[i] = 0;
+  }
+  // for (int i = 0; i < FREQ_REG_NUM; i++) {
+  //   freq_reg[i] = 10 + i;
+  // }
 
   // for (int i = 0; i < FREQ_REG_NUM; i++) {
   //   cout << freq_reg[i] << " ";

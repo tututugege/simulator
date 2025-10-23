@@ -356,7 +356,7 @@
 #include <xprintf.h>
 
 typedef unsigned int size_t;
-#define NUMBER_OF_RUNS 10 /* Default number of runs */
+#define NUMBER_OF_RUNS 10000 /* Default number of runs */
 #define PASS2
 
 #ifdef NOSTRUCTASSIGN

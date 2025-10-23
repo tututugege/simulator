@@ -46,11 +46,6 @@ void Back_Top::difftest(Inst_uop *inst) {
     reg_w_times[inst->dest_areg]++;
   }
 
-  // if ((!inst->src1_en || inst->src1_areg >= 10 && inst->src1_areg <= 17) &&
-  //     (!inst->src2_en || inst->src2_areg >= 10 && inst->src2_areg <= 17)) {
-  //   src1_src2_in_ax_num++;
-  // }
-
   if ((!inst->src1_en || reg_idx_cond(inst->src1_areg)) &&
       (!inst->src2_en || reg_idx_cond(inst->src2_areg)) &&
       (!inst->dest_en || reg_idx_cond(inst->dest_areg))) {

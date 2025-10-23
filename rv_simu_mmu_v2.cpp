@@ -41,6 +41,7 @@ bool ret;
 bool sim_end = false;
 long long sim_time;
 int commit_num;
+int commit_uop_num;
 
 void perfect_bpu_run(bool redirect, bool flush);
 void perfect_bpu_init(int img_size);
@@ -232,7 +233,9 @@ SIM_END:
       // }
 
       printf("src1 src2 in ax %f \n",
-             src1_src2_dest_in_ax_num / (double)commit_num);
+             src1_src2_dest_in_ax_num / (double)commit_uop_num);
+
+      printf("%d %d\n", commit_num, commit_uop_num);
 
       cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
