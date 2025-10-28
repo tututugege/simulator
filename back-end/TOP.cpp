@@ -40,7 +40,7 @@ void Back_Top::difftest(Inst_uop *inst) {
     dut_cpu.csr[i] = csr.CSR_RegFile[csr_idx[i]];
   }
 
-  if (inst->type == STORE) {
+  if (is_store(*inst)) {
     dut_cpu.store = true;
     dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
     if (stq.entry[inst->stq_idx].size == 0b00)
@@ -272,12 +272,10 @@ void Back_Top::Back_comb() {
     if (LOG)
       cout << "flush" << endl;
     back.out.mispred = true;
-    if (rob.io.rob_bcast->exception) {
-      if (rob.io.rob_bcast->mret || rob.io.rob_bcast->sret) {
-        back.out.redirect_pc = csr.io.csr2exe->epc;
-      } else {
-        back.out.redirect_pc = csr.io.csr2exe->trap_pc;
-      }
+    if (rob.io.rob_bcast->mret || rob.io.rob_bcast->sret) {
+      back.out.redirect_pc = csr.io.csr2exe->epc;
+    } else if (rob.io.rob_bcast->exception) {
+      back.out.redirect_pc = csr.io.csr2exe->trap_pc;
     } else {
       back.out.redirect_pc = rob.io.rob_bcast->pc;
     }

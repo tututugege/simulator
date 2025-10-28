@@ -9,7 +9,8 @@ void CSRU::init() {
 
 void CSRU::comb() {
   io.csr2exe->rdata = CSR_RegFile[io.exe2csr->idx];
-  if (io.rob_bcast->exception) {
+  if (io.rob_bcast->exception || io.rob_bcast->mret || io.rob_bcast->sret ||
+      io.rob_bcast->ecall) {
 
     bool mstatus[32];
     bool sstatus[32];

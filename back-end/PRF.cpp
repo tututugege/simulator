@@ -49,13 +49,13 @@ void PRF::comb_read() {
     if (entry->valid) {
       if (entry->uop.src1_en) {
         entry->uop.src1_rdata = reg_file[entry->uop.src1_preg];
-        for (int j = 0; j < ISSUE_WAY; j++) {
+        for (int j = 0; j < ALU_NUM + 1; j++) {
           if (inst_r[j].valid && inst_r[j].uop.dest_en &&
               inst_r[j].uop.dest_preg == entry->uop.src1_preg)
             entry->uop.src1_rdata = inst_r[j].uop.result;
         }
 
-        for (int j = 0; j < ISSUE_WAY; j++) {
+        for (int j = 0; j < ALU_NUM + 1; j++) {
           if (io.exe2prf->entry[j].valid && io.exe2prf->entry[j].uop.dest_en &&
               io.exe2prf->entry[j].uop.dest_preg == entry->uop.src1_preg)
             entry->uop.src1_rdata = io.exe2prf->entry[j].uop.result;
@@ -64,13 +64,13 @@ void PRF::comb_read() {
 
       if (entry->uop.src2_en) {
         entry->uop.src2_rdata = reg_file[entry->uop.src2_preg];
-        for (int j = 0; j < ISSUE_WAY; j++) {
+        for (int j = 0; j < ALU_NUM + 1; j++) {
           if (inst_r[j].valid && inst_r[j].uop.dest_en &&
               inst_r[j].uop.dest_preg == entry->uop.src2_preg)
             entry->uop.src2_rdata = inst_r[j].uop.result;
         }
 
-        for (int j = 0; j < ISSUE_WAY; j++) {
+        for (int j = 0; j < ALU_NUM + 1; j++) {
           if (io.exe2prf->entry[j].valid && io.exe2prf->entry[j].uop.dest_en &&
               io.exe2prf->entry[j].uop.dest_preg == entry->uop.src2_preg)
             entry->uop.src2_rdata = io.exe2prf->entry[j].uop.result;

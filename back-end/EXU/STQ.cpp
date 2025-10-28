@@ -128,7 +128,7 @@ void STQ::seq() {
   // commit标记为可执行
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid &&
-        (io.rob_commit->commit_entry[i].uop.type == STORE) &&
+        (is_store(io.rob_commit->commit_entry[i].uop)) &&
         !io.rob_commit->commit_entry[i].uop.page_fault_store) {
       entry[commit_ptr].complete = true;
       LOOP_INC(commit_ptr, STQ_NUM);
@@ -203,7 +203,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
     int line_idx = idx >> 2;
     int bank_idx = idx & 0b11;
     if (back.rob.entry[bank_idx][line_idx].valid &&
-        back.rob.entry[bank_idx][line_idx].uop.type == STORE) {
+        is_store(back.rob.entry[bank_idx][line_idx].uop)) {
       int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
       if ((entry[stq_idx].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC)) {
         uint32_t wdata = entry[stq_idx].data;

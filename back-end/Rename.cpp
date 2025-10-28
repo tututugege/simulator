@@ -9,8 +9,6 @@
 extern Back_Top back;
 extern int commit_num;
 
-void alu(Inst_uop &inst);
-
 Rename::Rename() {
   for (int i = 0; i < ARF_NUM; i++) {
     free_vec[i] = false;
@@ -42,6 +40,7 @@ void Rename::comb_alloc() {
   int alloc_num = 0;
   for (int i = 0; i < PRF_NUM && alloc_num < FETCH_WIDTH; i++) {
     if (free_vec[i]) {
+      alloc_valid[alloc_num] = true;
       alloc_reg[alloc_num] = i;
       alloc_num++;
     }

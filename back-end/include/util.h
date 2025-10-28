@@ -6,6 +6,14 @@ inline bool is_branch(Inst_type type) {
   return type == BR || type == JALR || type == JAL;
 }
 
+inline bool is_store(Inst_uop uop) {
+  return uop.type == STORE || uop.type == AMO && uop.amoop != LR;
+}
+
+inline bool is_load(Inst_uop uop) {
+  return uop.type == LOAD || uop.type == AMO && uop.amoop != SC;
+}
+
 inline bool is_CSR(Inst_type type) {
   return (type == CSR || type == MRET || type == ECALL || type == EBREAK);
 }
@@ -28,7 +36,8 @@ inline bool is_page_fault(Inst_uop uop) {
 }
 
 inline bool is_exception(Inst_uop uop) {
-  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;
+  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store ||
+         uop.illegal_inst || uop.type == ECALL;
 }
 
 inline bool is_flush_inst(Inst_uop uop) {
