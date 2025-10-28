@@ -21,12 +21,12 @@ void div(Inst_uop &inst);
 void FU::exec(Inst_uop &inst) {
 
   if (cycle == 0) {
-    if (inst.op == MUL) { // mul
+    if (inst.op == UOP_MUL) { // mul
       latency = 1;
-    } else if (inst.op == DIV) { // div
+    } else if (inst.op == UOP_DIV) { // div
       latency = 1;
-    } else if (inst.op == LOAD) {
-      latency = 3;
+    } else if (inst.op == UOP_LOAD) {
+      latency = 1;
     } else {
       latency = 1;
     }
@@ -35,19 +35,19 @@ void FU::exec(Inst_uop &inst) {
   cycle++;
 
   if (cycle == latency) {
-    if (is_load(inst.op)) {
+    if (is_load_uop(inst.op)) {
       ldu(inst);
-    } else if (is_sta(inst.op)) {
+    } else if (is_sta_uop(inst.op)) {
       stu_addr(inst);
-    } else if (is_std(inst.op)) {
+    } else if (is_std_uop(inst.op)) {
       stu_data(inst);
-    } else if (is_branch(inst.op)) {
+    } else if (is_branch_uop(inst.op)) {
       bru(inst);
-    } else if (inst.op == MUL) {
+    } else if (inst.op == UOP_MUL) {
       mul(inst);
-    } else if (inst.op == DIV) {
+    } else if (inst.op == UOP_DIV) {
       div(inst);
-    } else if (inst.op == SFENCE_VMA) {
+    } else if (inst.op == UOP_SFENCE_VMA) {
       uint32_t vaddr = 0;
       uint32_t asid = 0;
       // TODO: sfence.vma
@@ -106,7 +106,7 @@ void EXU::comb_to_csr() {
   io.exe2csr->we = false;
   io.exe2csr->re = false;
 
-  if (inst_r[0].valid && inst_r[0].uop.op == CSR && !io.rob_bcast->flush) {
+  if (inst_r[0].valid && inst_r[0].uop.op == UOP_CSR && !io.rob_bcast->flush) {
     io.exe2csr->we = inst_r[0].uop.func3 == 1 || inst_r[0].uop.src1_areg != 0;
 
     io.exe2csr->re = inst_r[0].uop.func3 != 1 || inst_r[0].uop.dest_areg != 0;
@@ -122,7 +122,7 @@ void EXU::comb_to_csr() {
 }
 
 void EXU::comb_from_csr() {
-  if (inst_r[0].valid && inst_r[0].uop.op == CSR && io.exe2csr->re) {
+  if (inst_r[0].valid && inst_r[0].uop.op == UOP_CSR && io.exe2csr->re) {
     io.exe2prf->entry[0].uop.result = io.csr2exe->rdata;
   }
 }

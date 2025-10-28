@@ -340,7 +340,8 @@ void front_cycle(bool stall, bool misprediction, bool exception,
     bool no_taken = true;
     uint32_t last_valid_inst_pc = 0;
     for (int j = 0; j < FETCH_WIDTH; j++) {
-      back.in.valid[j] = front_out.FIFO_valid && no_taken && front_out.inst_valid[j];
+      back.in.valid[j] =
+          front_out.FIFO_valid && no_taken && front_out.inst_valid[j];
       if (back.in.valid[j])
         last_valid_inst_pc = front_out.pc[j];
       back.in.pc[j] = front_out.pc[j];
@@ -375,8 +376,7 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
     non_branch_mispred = false;
     if (no_taken &&
-        (front_out.predict_next_fetch_address !=
-         last_valid_inst_pc + 4) &&
+        (front_out.predict_next_fetch_address != last_valid_inst_pc + 4) &&
         front_out.FIFO_valid) {
       // 发生了非分支指令的错误预测
       non_branch_mispred = true;
@@ -403,7 +403,7 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
-                                   is_branch(back.out.commit_entry[i].uop.op);
+                                   is_branch(back.out.commit_entry[i].uop.type);
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
@@ -411,16 +411,13 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.actual_target[i] = inst->pc_next;
       int br_type = BR_DIRECT;
 
-      if (inst->op == JUMP) {
-        if (inst->src1_en) {
-          if (inst->src1_areg == 1)
-            br_type = BR_RET;
-          else
-            br_type = BR_IDIRECT;
-        } else {
-          if (inst->dest_areg == 1)
-            br_type = BR_CALL;
-        }
+      if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
+        br_type = BR_CALL;
+      } else if (inst->type == JALR) {
+        if (inst->src1_areg == 1)
+          br_type = BR_RET;
+        else
+          br_type = BR_IDIRECT;
       }
 
       front_in.actual_br_type[i] = br_type;

@@ -86,8 +86,8 @@ void bru(Inst_uop &inst) {
   uint32_t pc_br = inst.pc + inst.imm;
   bool br_taken = true;
 
-  assert(is_branch(inst.op));
-  if (inst.op == BR) {
+  assert(is_branch_uop(inst.op));
+  if (inst.op == UOP_BR) {
     switch (inst.func3) {
     case BEQ:
       br_taken = (operand1 == operand2);
@@ -111,9 +111,9 @@ void bru(Inst_uop &inst) {
   }
 
   switch (inst.op) {
-  case BR:
+  case UOP_BR:
     break;
-  case JUMP:
+  case UOP_JUMP:
     br_taken = true;
     if (inst.src1_en)
       pc_br = (inst.src1_rdata + inst.imm) & (~0x1);
@@ -146,14 +146,14 @@ void alu(Inst_uop &inst) {
 
   if (inst.src2_is_imm) {
     operand2 = inst.imm;
-  } else if (inst.op == JUMP) {
+  } else if (inst.op == UOP_JUMP) {
     operand2 = 4;
   } else {
     operand2 = inst.src2_rdata;
   }
 
   switch (inst.op) {
-  case ADD: {
+  case UOP_ADD: {
     switch (inst.func3) {
     case SUB:
       if (inst.func7_5 && !inst.src2_is_imm)

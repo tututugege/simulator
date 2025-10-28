@@ -27,6 +27,7 @@ void PRF::comb_br_check() {
         if (!io.prf2dec->mispred || inst_r[iq_br].uop.inst_idx < inst_idx) {
           io.prf2dec->mispred = true;
           io.prf2dec->redirect_pc = inst_r[iq_br].uop.pc_next;
+          io.prf2dec->redirect_rob_idx = inst_r[iq_br].uop.rob_idx;
           io.prf2dec->br_tag = inst_r[iq_br].uop.tag;
           inst_idx = inst_r[iq_br].uop.inst_idx;
           if (LOG)

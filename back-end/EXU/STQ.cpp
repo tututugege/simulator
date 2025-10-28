@@ -10,15 +10,15 @@ extern Back_Top back;
 void STQ::comb() {
   int num = count;
 
-  for (int i = 0; i < RENAME_WIDTH; i++) {
-    if (!io.ren2stq->valid[i]) {
-      io.stq2ren->ready[i] = true;
+  for (int i = 0; i < 2; i++) {
+    if (!io.dis2stq->valid[i]) {
+      io.stq2dis->ready[i] = true;
     } else {
       if (num < STQ_NUM) {
-        io.stq2ren->ready[i] = true;
+        io.stq2dis->ready[i] = true;
         num++;
       } else {
-        io.stq2ren->ready[i] = false;
+        io.stq2dis->ready[i] = false;
       }
     }
   }
@@ -97,9 +97,9 @@ void STQ::comb() {
 void STQ::seq() {
 
   // 入队
-  for (int i = 0; i < RENAME_WIDTH; i++) {
-    if (io.ren2stq->dis_fire[i] && io.ren2stq->valid[i]) {
-      entry[enq_ptr].tag = io.ren2stq->tag[i];
+  for (int i = 0; i < 2; i++) {
+    if (io.dis2stq->dis_fire[i] && io.dis2stq->valid[i]) {
+      entry[enq_ptr].tag = io.dis2stq->tag[i];
       entry[enq_ptr].valid = true;
       entry[enq_ptr].addr_valid = false;
       entry[enq_ptr].data_valid = false;
@@ -128,7 +128,7 @@ void STQ::seq() {
   // commit标记为可执行
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid &&
-        is_std(io.rob_commit->commit_entry[i].uop.op) &&
+        (io.rob_commit->commit_entry[i].uop.type == STORE) &&
         !io.rob_commit->commit_entry[i].uop.page_fault_store) {
       entry[commit_ptr].complete = true;
       LOOP_INC(commit_ptr, STQ_NUM);
@@ -159,7 +159,7 @@ void STQ::seq() {
     }
   }
 
-  io.stq2ren->stq_idx = enq_ptr;
+  io.stq2dis->stq_idx = enq_ptr;
 }
 
 extern uint32_t *p_memory;
@@ -197,11 +197,14 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
     LOOP_INC(i, STQ_NUM);
   }
 
-  int idx = back.rob.deq_ptr;
+  int idx = back.rob.deq_ptr << 2;
+
   while (idx != rob_idx) {
-    // TODO:: amo inst forward
-    if (is_sta(back.rob.entry[idx].uop.op)) {
-      int stq_idx = back.rob.entry[idx].uop.stq_idx;
+    int line_idx = idx >> 2;
+    int bank_idx = idx & 0b11;
+    if (back.rob.entry[bank_idx][line_idx].valid &&
+        back.rob.entry[bank_idx][line_idx].uop.type == STORE) {
+      int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
       if ((entry[stq_idx].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC)) {
         uint32_t wdata = entry[stq_idx].data;
         uint32_t waddr = entry[stq_idx].addr;

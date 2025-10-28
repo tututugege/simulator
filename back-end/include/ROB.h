@@ -1,14 +1,13 @@
 #pragma once
 #include <IO.h>
 #include <config.h>
+#include <cstdint>
 
 class ROB_IO {
 public:
-  Ren_Rob *ren2rob;
-  Rob_Ren *rob2ren;
-
+  Dis_Rob *dis2rob;
+  Rob_Dis *rob2dis;
   Prf_Rob *prf2rob;
-
   Rob_Commit *rob_commit;
   Rob_Broadcast *rob_bcast;
   Dec_Broadcast *dec_bcast;
@@ -27,16 +26,14 @@ public:
   ROB_IO io;
 
   // 状态
-  Inst_entry entry[ROB_NUM];
-  bool complete[ROB_NUM];
-  bool exception[ROB_NUM];
+  Inst_entry entry[ROB_BANK_NUM][ROB_NUM / 4];
+  uint32_t pc[ROB_NUM / 4];
   int enq_ptr;
   int deq_ptr;
   int count;
 
-  Inst_entry entry_1[ROB_NUM];
-  int complete_1[ROB_NUM];
-  bool exception_1[ROB_NUM];
+  Inst_entry entry_1[ROB_BANK_NUM][ROB_NUM / 4];
+  uint32_t pc_1[ROB_NUM / 4];
   int enq_ptr_1;
   int deq_ptr_1;
   int count_1;

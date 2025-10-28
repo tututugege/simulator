@@ -4,8 +4,8 @@
 #include <cstdint>
 
 typedef struct {
-  Ren_Stq *ren2stq;
-  Stq_Ren *stq2ren;
+  Dis_Stq *dis2stq;
+  Stq_Dis *stq2dis;
   Exe_Stq *exe2stq;
   Rob_Commit *rob_commit;
   Dec_Broadcast *dec_bcast;
