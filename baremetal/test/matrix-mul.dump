@@ -161,38 +161,22 @@ main():
 80000120 <__mulsi3>:
 __mulsi3():
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:37
-/* Our RV64 64-bit routine is equivalent to our RV32 32-bit routine.  */
-# define __muldi3 __mulsi3
-#endif
-
-FUNC_BEGIN (__muldi3)
-  mv     a2, a0
 80000120:	00050613          	addi	a2,a0,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:38
-  li     a0, 0
 80000124:	00000513          	addi	a0,zero,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:40
-.L1:
-  andi   a3, a1, 1
 80000128:	0015f693          	andi	a3,a1,1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:41
-  beqz   a3, .L2
 8000012c:	00068463          	beq	a3,zero,80000134 <__mulsi3+0x14>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:42
-  add    a0, a0, a2
 80000130:	00c50533          	add	a0,a0,a2
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:44
-.L2:
-  srli   a1, a1, 1
 80000134:	0015d593          	srli	a1,a1,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:45
-  slli   a2, a2, 1
 80000138:	00161613          	slli	a2,a2,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:46
-  bnez   a1, .L1
 8000013c:	fe0596e3          	bne	a1,zero,80000128 <__mulsi3+0x8>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:47
-  ret
 80000140:	00008067          	jalr	zero,0(ra)
 
 Disassembly of section .data:

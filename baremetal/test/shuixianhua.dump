@@ -202,218 +202,125 @@ main():
 8000014c <__mulsi3>:
 __mulsi3():
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:37
-/* Our RV64 64-bit routine is equivalent to our RV32 32-bit routine.  */
-# define __muldi3 __mulsi3
-#endif
-
-FUNC_BEGIN (__muldi3)
-  mv     a2, a0
 8000014c:	00050613          	addi	a2,a0,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:38
-  li     a0, 0
 80000150:	00000513          	addi	a0,zero,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:40
-.L1:
-  andi   a3, a1, 1
 80000154:	0015f693          	andi	a3,a1,1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:41
-  beqz   a3, .L2
 80000158:	00068463          	beq	a3,zero,80000160 <__mulsi3+0x14>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:42
-  add    a0, a0, a2
 8000015c:	00c50533          	add	a0,a0,a2
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:44
-.L2:
-  srli   a1, a1, 1
 80000160:	0015d593          	srli	a1,a1,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:45
-  slli   a2, a2, 1
 80000164:	00161613          	slli	a2,a2,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:46
-  bnez   a1, .L1
 80000168:	fe0596e3          	bne	a1,zero,80000154 <__mulsi3+0x8>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/muldi3.S:47
-  ret
 8000016c:	00008067          	jalr	zero,0(ra)
 
 80000170 <__divsi3>:
 __divsi3():
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:69
-  li    t0, -1
-  beq   a1, t0, .L20
-#endif
-
-FUNC_BEGIN (__divdi3)
-  bltz  a0, .L10
 80000170:	06054063          	blt	a0,zero,800001d0 <__umodsi3+0x10>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:70
-  bltz  a1, .L11
 80000174:	0605c663          	blt	a1,zero,800001e0 <__umodsi3+0x20>
 
 80000178 <__hidden___udivsi3>:
 __hidden___udivsi3():
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:74
-  /* Since the quotient is positive, fall into __udivdi3.  */
-
-FUNC_BEGIN (__udivdi3)
-  mv    a2, a1
 80000178:	00058613          	addi	a2,a1,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:75
-  mv    a1, a0
 8000017c:	00050593          	addi	a1,a0,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:76
-  li    a0, -1
 80000180:	fff00513          	addi	a0,zero,-1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:77
-  beqz  a2, .L5
 80000184:	02060c63          	beq	a2,zero,800001bc <__hidden___udivsi3+0x44>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:78
-  li    a3, 1
 80000188:	00100693          	addi	a3,zero,1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:79
-  bgeu  a2, a1, .L2
 8000018c:	00b67a63          	bgeu	a2,a1,800001a0 <__hidden___udivsi3+0x28>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:81
-.L1:
-  blez  a2, .L2
 80000190:	00c05863          	bge	zero,a2,800001a0 <__hidden___udivsi3+0x28>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:82
-  slli  a2, a2, 1
 80000194:	00161613          	slli	a2,a2,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:83
-  slli  a3, a3, 1
 80000198:	00169693          	slli	a3,a3,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:84
-  bgtu  a1, a2, .L1
 8000019c:	feb66ae3          	bltu	a2,a1,80000190 <__hidden___udivsi3+0x18>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:86
-.L2:
-  li    a0, 0
 800001a0:	00000513          	addi	a0,zero,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:88
-.L3:
-  bltu  a1, a2, .L4
 800001a4:	00c5e663          	bltu	a1,a2,800001b0 <__hidden___udivsi3+0x38>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:89
-  sub   a1, a1, a2
 800001a8:	40c585b3          	sub	a1,a1,a2
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:90
-  or    a0, a0, a3
 800001ac:	00d56533          	or	a0,a0,a3
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:92
-.L4:
-  srli  a3, a3, 1
 800001b0:	0016d693          	srli	a3,a3,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:93
-  srli  a2, a2, 1
 800001b4:	00165613          	srli	a2,a2,0x1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:94
-  bnez  a3, .L3
 800001b8:	fe0696e3          	bne	a3,zero,800001a4 <__hidden___udivsi3+0x2c>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:96
-.L5:
-  ret
 800001bc:	00008067          	jalr	zero,0(ra)
 
 800001c0 <__umodsi3>:
 __umodsi3():
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:102
-FUNC_END (__udivdi3)
-HIDDEN_DEF (__udivdi3)
-
-FUNC_BEGIN (__umoddi3)
-  /* Call __udivdi3(a0, a1), then return the remainder, which is in a1.  */
-  move  t0, ra
 800001c0:	00008293          	addi	t0,ra,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:103
-  jal   HIDDEN_JUMPTARGET(__udivdi3)
 800001c4:	fb5ff0ef          	jal	ra,80000178 <__hidden___udivsi3>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:104
-  move  a0, a1
 800001c8:	00058513          	addi	a0,a1,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:105
-  jr    t0
 800001cc:	00028067          	jalr	zero,0(t0)
 __divsi3():
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:110
-FUNC_END (__umoddi3)
-
-  /* Handle negative arguments to __divdi3.  */
-.L10:
-  neg   a0, a0
 800001d0:	40a00533          	sub	a0,zero,a0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:112
-  /* Zero is handled as a negative so that the result will not be inverted.  */
-  bgtz  a1, .L12     /* Compute __udivdi3(-a0, a1), then negate the result.  */
 800001d4:	00b04863          	blt	zero,a1,800001e4 <__umodsi3+0x24>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:114
-
-  neg   a1, a1
 800001d8:	40b005b3          	sub	a1,zero,a1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:115
-  j     HIDDEN_JUMPTARGET(__udivdi3)     /* Compute __udivdi3(-a0, -a1).  */
 800001dc:	f9dff06f          	jal	zero,80000178 <__hidden___udivsi3>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:117
-.L11:                /* Compute __udivdi3(a0, -a1), then negate the result.  */
-  neg   a1, a1
 800001e0:	40b005b3          	sub	a1,zero,a1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:119
-.L12:
-  move  t0, ra
 800001e4:	00008293          	addi	t0,ra,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:120
-  jal   HIDDEN_JUMPTARGET(__udivdi3)
 800001e8:	f91ff0ef          	jal	ra,80000178 <__hidden___udivsi3>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:121
-  neg   a0, a0
 800001ec:	40a00533          	sub	a0,zero,a0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:122
-  jr    t0
 800001f0:	00028067          	jalr	zero,0(t0)
 
 800001f4 <__modsi3>:
 __modsi3():
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:126
-FUNC_END (__divdi3)
-
-FUNC_BEGIN (__moddi3)
-  move   t0, ra
 800001f4:	00008293          	addi	t0,ra,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:127
-  bltz   a1, .L31
 800001f8:	0005ca63          	blt	a1,zero,8000020c <__modsi3+0x18>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:128
-  bltz   a0, .L32
 800001fc:	00054c63          	blt	a0,zero,80000214 <__modsi3+0x20>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:130
-.L30:
-  jal    HIDDEN_JUMPTARGET(__udivdi3)    /* The dividend is not negative.  */
 80000200:	f79ff0ef          	jal	ra,80000178 <__hidden___udivsi3>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:131
-  move   a0, a1
 80000204:	00058513          	addi	a0,a1,0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:132
-  jr     t0
 80000208:	00028067          	jalr	zero,0(t0)
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:134
-.L31:
-  neg    a1, a1
 8000020c:	40b005b3          	sub	a1,zero,a1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:135
-  bgez   a0, .L30
 80000210:	fe0558e3          	bge	a0,zero,80000200 <__modsi3+0xc>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:137
-.L32:
-  neg    a0, a0
 80000214:	40a00533          	sub	a0,zero,a0
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:138
-  jal    HIDDEN_JUMPTARGET(__udivdi3)    /* The dividend is hella negative.  */
 80000218:	f61ff0ef          	jal	ra,80000178 <__hidden___udivsi3>
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:139
-  neg    a0, a1
 8000021c:	40b00533          	sub	a0,zero,a1
 /home/tututu/riscv-gnu-toolchain/build-gcc-newlib-stage2/riscv32-unknown-elf/libgcc/../../.././gcc/libgcc/config/riscv/div.S:140
-  jr     t0
 80000220:	00028067          	jalr	zero,0(t0)
 
 Disassembly of section .data:

@@ -15,7 +15,6 @@ IQ::IQ(int entry_num, IQ_TYPE type) {
   this->entry_num = entry_num;
   this->type = type;
   this->num = 0;
-  this->num_temp = 0;
 
   entry.resize(entry_num);
   for (int i = 0; i < entry_num; i++) {
@@ -26,8 +25,6 @@ IQ::IQ(int entry_num, IQ_TYPE type) {
 void ISU::init() {
   add_iq(16, IQ_INTM);
   add_iq(16, IQ_INTD);
-  add_iq(16, IQ_INT0);
-  add_iq(16, IQ_INT1);
   add_iq(16, IQ_LD);
   add_iq(16, IQ_STA);
   add_iq(16, IQ_STD);
@@ -60,17 +57,44 @@ Inst_entry IQ::deq() {
 
 void ISU::comb_ready() {
   // ready
-  for (int i = 0; i < RENAME_WIDTH; i++) {
-    if (io.ren2iss->valid[i]) {
-      if (iq[io.ren2iss->uop[i].iq_type].num_temp <
-          iq[io.ren2iss->uop[i].iq_type].entry_num) {
-        io.iss2ren->ready[i] = true;
-        iq[io.ren2iss->uop[i].iq_type].num_temp++;
-      } else {
-        io.iss2ren->ready[i] = false;
-      }
+  for (int i = 0; i < IQ_NUM; i++) {
+    if (iq[i].entry_num - iq[i].num >= 2) {
+      io.iss2dis->ready[i][0] = true;
+      io.iss2dis->ready[i][1] = true;
+    } else if (iq[i].entry_num - iq[i].num == 1) {
+      io.iss2dis->ready[i][0] = true;
+      io.iss2dis->ready[i][1] = false;
     } else {
-      io.iss2ren->ready[i] = true;
+      io.iss2dis->ready[i][0] = false;
+      io.iss2dis->ready[i][1] = false;
+    }
+  }
+}
+
+void ISU::comb_store() {
+  // 已经经过了发射的bypass
+  for (int i = 0; i < iq[IQ_STA].entry_num; i++) {
+    io.iss2dis->sta_iq_valid[i] = iq[IQ_STA].entry[i].valid;
+  }
+
+  for (int i = 0; i < iq[IQ_STD].entry_num; i++) {
+    io.iss2dis->std_iq_valid[i] = iq[IQ_STD].entry[i].valid;
+  }
+
+  // 需要提供分配的idx以供同组指令中store load RAW的bypass
+  int alloc_num = 0;
+  for (int i = 0; i < iq[IQ_STA].entry_num && alloc_num < 2; i++) {
+    if (!iq[IQ_STA].entry[i].valid) {
+      io.iss2dis->sta_iq_alloc[alloc_num] = i;
+      alloc_num++;
+    }
+  }
+
+  alloc_num = 0;
+  for (int i = 0; i < iq[IQ_STD].entry_num && alloc_num < 2; i++) {
+    if (!iq[IQ_STD].entry[i].valid) {
+      io.iss2dis->std_iq_alloc[alloc_num] = i;
+      alloc_num++;
     }
   }
 }
@@ -88,73 +112,74 @@ void ISU::comb_deq() {
   for (int i = 0; i < ALU_NUM; i++) {
     if (io.iss2prf->iss_entry[i].valid &&
         io.iss2prf->iss_entry[i].uop.dest_en) {
-      io.iss2ren->wake[i].valid = true;
-      io.iss2ren->wake[i].preg = io.iss2prf->iss_entry[i].uop.dest_preg;
+      io.iss_awake->wake[i].valid = true;
+      io.iss_awake->wake[i].preg = io.iss2prf->iss_entry[i].uop.dest_preg;
     } else {
-      io.iss2ren->wake[i].valid = false;
+      io.iss_awake->wake[i].valid = false;
     }
   }
 }
 
 void ISU::seq() {
   // 入队
-  for (int i = 0; i < RENAME_WIDTH; i++) {
-    if (io.ren2iss->dis_fire[i]) {
-
-      for (auto &q : iq) {
-        if (q.type == io.ren2iss->uop[i].iq_type) {
-          if (q.type == IQ_LD) {
-            for (int j = 0; j < iq[IQ_STA].entry_num; j++) {
-              if (iq[IQ_STA].entry[j].valid)
-                io.ren2iss->uop[i].pre_sta[j] = true;
-              else
-                io.ren2iss->uop[i].pre_sta[j] = false;
-            }
-
-            for (int j = 0; j < iq[IQ_STD].entry_num; j++) {
-              if (iq[IQ_STD].entry[j].valid)
-                io.ren2iss->uop[i].pre_std[j] = true;
-              else
-                io.ren2iss->uop[i].pre_std[j] = false;
+  for (int i = 0; i < IQ_NUM; i++) {
+    for (int j = 0; j < 2; j++) {
+      if (io.dis2iss->dis_fire[i][j]) {
+        if (i == IQ_LD) {
+          for (int k = 0; k < iq[IQ_STA].entry_num; k++) {
+            if (iq[IQ_STA].entry[k].valid) {
+              io.dis2iss->uop[i][j].pre_sta_mask |=
+                  (1 << iq[IQ_STA].entry[k].uop.stq_idx);
             }
           }
-          q.enq(io.ren2iss->uop[i]);
-          break;
+
+          for (int k = 0; k < iq[IQ_STD].entry_num; k++) {
+            if (iq[IQ_STD].entry[k].valid) {
+              io.dis2iss->uop[i][j].pre_std_mask |=
+                  (1 << iq[IQ_STD].entry[k].uop.stq_idx);
+            }
+          }
         }
+        iq[i].enq(io.dis2iss->uop[i][j]);
       }
     }
+  }
 
-    // 唤醒
-    for (int i = 0; i < ALU_NUM; i++) {
-      if (io.iss2prf->iss_entry[i].valid &&
-          io.iss2prf->iss_entry[i].uop.dest_en) {
-        for (auto &q : iq) {
-          q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
-        }
-      }
-    }
-
-    if (io.awake->wake.valid) {
+  // 唤醒
+  for (int i = 0; i < ALU_NUM; i++) {
+    if (io.iss2prf->iss_entry[i].valid &&
+        io.iss2prf->iss_entry[i].uop.dest_en) {
       for (auto &q : iq) {
-        q.wake_up(io.awake->wake.preg);
+        q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
       }
     }
+  }
 
-    // 分支处理
-    if (io.dec_bcast->mispred) {
-      for (auto &q : iq) {
-        q.br_clear(io.dec_bcast->br_mask);
-      }
-    }
+  // 唤醒load
+  if (io.iss2prf->iss_entry[IQ_STA].valid) {
+    back.isu.iq[IQ_LD].sta_wake_up(io.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
+  }
 
-    if (io.rob_bcast->flush) {
-      for (auto &q : iq) {
-        q.br_clear((1 << MAX_BR_NUM) - 1);
-      }
-    }
+  if (io.iss2prf->iss_entry[IQ_STD].valid) {
+    back.isu.iq[IQ_LD].std_wake_up(io.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
+  }
 
+  if (io.prf_awake->wake.valid) {
     for (auto &q : iq) {
-      q.num_temp = q.num;
+      q.wake_up(io.prf_awake->wake.preg);
+    }
+  }
+
+  // 分支处理
+  if (io.dec_bcast->mispred) {
+    for (auto &q : iq) {
+      q.br_clear(io.dec_bcast->br_mask);
+    }
+  }
+
+  if (io.rob_bcast->flush) {
+    for (auto &q : iq) {
+      q.br_clear((1 << MAX_BR_NUM) - 1);
     }
   }
 }
@@ -183,17 +208,17 @@ void IQ::wake_up(uint32_t dest_preg) {
   }
 }
 
-void IQ::sta_wake_up(int idx) {
+void IQ::sta_wake_up(int stq_idx) {
   for (int j = 0; j < entry_num; j++) {
     if (entry[j].valid)
-      entry[j].uop.pre_sta[idx] = false;
+      entry[j].uop.pre_sta_mask &= ~(1 << stq_idx);
   }
 }
 
-void IQ::std_wake_up(int idx) {
+void IQ::std_wake_up(int stq_idx) {
   for (int j = 0; j < entry_num; j++) {
     if (entry[j].valid)
-      entry[j].uop.pre_std[idx] = false;
+      entry[j].uop.pre_std_mask &= ~(1 << stq_idx);
   }
 }
 
@@ -207,26 +232,18 @@ Inst_entry IQ::scheduler() {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid && (!entry[i].uop.src1_en || !entry[i].uop.src1_busy) &&
         (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
-        !(is_load(entry[i].uop.op) &&
-          (orR(entry[i].uop.pre_sta, 16) || orR(entry[i].uop.pre_std, 16)))) {
+        !(is_load_uop(entry[i].uop.op) &&
+          (entry[i].uop.pre_sta_mask || entry[i].uop.pre_std_mask))) {
 
       // 根据IQ位置判断优先级 也可以随机 或者oldest-first
-      iss_entry = entry[i];
-      iss_idx = i;
-      break;
+      if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
+        iss_entry = entry[i];
+        iss_idx = i;
+      }
     }
   }
 
   if (iss_entry.valid) {
-    // 唤醒load
-    if (is_sta(iss_entry.uop.op)) {
-      back.isu.iq[IQ_LD].sta_wake_up(iss_idx);
-    }
-
-    if (is_std(iss_entry.uop.op)) {
-      back.isu.iq[IQ_LD].std_wake_up(iss_idx);
-    }
-
     entry[iss_idx].valid = false;
   }
 

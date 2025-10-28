@@ -1,6 +1,6 @@
 #pragma once
-#include "frontend.h"
 #include <CSR.h>
+#include <Dispatch.h>
 #include <EXU.h>
 #include <IDU.h>
 #include <ISU.h>
@@ -37,6 +37,7 @@ class Back_Top {
 public:
   IDU idu;
   Rename rename;
+  Dispatch dis;
   ISU isu;
   PRF prf;
   EXU exu;

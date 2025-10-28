@@ -17,8 +17,8 @@ typedef struct {
 } STQ_entry;
 
 typedef struct {
-  Inst_uop uop[FETCH_WIDTH][MAX_UOP_NUM]; // 3 2 2 2
-  bool valid[FETCH_WIDTH][MAX_UOP_NUM];
+  Inst_uop uop[FETCH_WIDTH]; // 3 2 2 2
+  bool valid[FETCH_WIDTH];
 } Dec_Ren;
 
 typedef struct {
@@ -47,6 +47,7 @@ typedef struct {
   bool mispred;
   uint32_t br_mask;
   uint32_t br_tag;
+  uint32_t redirect_rob_idx;
 } Dec_Broadcast;
 
 typedef struct {
@@ -54,33 +55,50 @@ typedef struct {
 } Rob_Commit;
 
 typedef struct {
-  bool ready[RENAME_WIDTH];
+  bool ready;
   bool empty;
   bool stall;
   uint32_t enq_idx;
-} Rob_Ren;
+} Rob_Dis;
 
 typedef struct {
-  Inst_uop uop[RENAME_WIDTH];
-  bool valid[RENAME_WIDTH];
-  bool dis_fire[RENAME_WIDTH];
-} Ren_Rob;
+  Inst_uop uop[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool dis_fire[FETCH_WIDTH];
+} Dis_Rob;
+
+typedef struct {
+  Inst_uop uop[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool fire[FETCH_WIDTH];
+} Ren_Dis;
+
+typedef struct {
+  bool ready;
+} Dis_Ren;
 
 typedef struct {
   Wake_info wake;
 } Prf_Awake;
 
 typedef struct {
-  bool valid[RENAME_WIDTH];
-  Inst_uop uop[RENAME_WIDTH];
-  bool dis_fire[RENAME_WIDTH];
-} Ren_Iss;
+  bool valid[IQ_NUM][2];
+  Inst_uop uop[IQ_NUM][2];
+  bool dis_fire[IQ_NUM][2];
+} Dis_Iss;
 
 // TODO: MAGIC NUMBER
 typedef struct {
-  bool ready[RENAME_WIDTH];
+  bool ready[IQ_NUM][2];
+  bool sta_iq_valid[16];
+  bool std_iq_valid[16];
+  int sta_iq_alloc[2];
+  int std_iq_alloc[2];
+} Iss_Dis;
+
+typedef struct {
   Wake_info wake[ALU_NUM];
-} Iss_Ren;
+} Iss_Awake;
 
 typedef struct {
   bool flush;
@@ -122,25 +140,26 @@ typedef struct {
 typedef struct {
   bool mispred;
   uint32_t redirect_pc;
+  uint32_t redirect_rob_idx;
   uint32_t br_tag;
 } Prf_Dec;
 
 typedef struct {
-  uint32_t tag[RENAME_WIDTH];
-  bool valid[RENAME_WIDTH];
-  bool dis_fire[RENAME_WIDTH];
-} Ren_Stq;
+  uint32_t tag[FETCH_WIDTH];
+  bool valid[FETCH_WIDTH];
+  bool dis_fire[FETCH_WIDTH];
+} Dis_Stq;
 
 typedef struct {
-  bool ready[RENAME_WIDTH];
+  bool ready[2];
   uint32_t stq_idx;
-} Stq_Ren;
+} Stq_Dis;
 
-typedef struct {
-  bool valid[RENAME_WIDTH];
-  uint32_t reg_wdata[RENAME_WIDTH];
-  uint32_t dest_preg[RENAME_WIDTH];
-} Ren_Prf;
+// typedef struct {
+//   bool valid[RENAME_WIDTH];
+//   uint32_t reg_wdata[RENAME_WIDTH];
+//   uint32_t dest_preg[RENAME_WIDTH];
+// } Ren_Prf;
 
 typedef struct {
   // 地址写入

@@ -7,17 +7,13 @@ public:
   Dec_Ren *dec2ren;
   Ren_Dec *ren2dec;
 
-  Ren_Iss *ren2iss;
-  Iss_Ren *iss2ren;
+  Iss_Awake *iss_awake;
 
   Dec_Broadcast *dec_bcast;
-  Prf_Awake *awake;
+  Prf_Awake *prf_awake;
 
-  Rob_Ren *rob2ren;
-  Ren_Rob *ren2rob;
-
-  Ren_Stq *ren2stq;
-  Stq_Ren *stq2ren;
+  Ren_Dis *ren2dis;
+  Dis_Ren *dis2ren;
 
   Rob_Broadcast *rob_bcast;
   Rob_Commit *rob_commit;
@@ -28,6 +24,7 @@ public:
   REN_IO io;
 
   Rename();
+  void comb_select();
   void comb_rename(); // 重命名
   void comb_fire();
   void comb_wake();
@@ -44,7 +41,7 @@ public:
   int arch_RAT[ARF_NUM + 1];
 
   // register
-  Inst_entry inst_r[FETCH_WIDTH][MAX_UOP_NUM];
+  Inst_entry inst_r[FETCH_WIDTH];
   uint32_t spec_RAT[ARF_NUM + 1];
   uint32_t RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
   bool free_vec[PRF_NUM];
@@ -52,7 +49,7 @@ public:
   bool busy_table[PRF_NUM];
   bool spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
-  Inst_entry inst_r_1[FETCH_WIDTH][MAX_UOP_NUM];
+  Inst_entry inst_r_1[FETCH_WIDTH];
   uint32_t spec_RAT_1[ARF_NUM + 1];
   uint32_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];
   bool free_vec_1[PRF_NUM];

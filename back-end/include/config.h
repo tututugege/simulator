@@ -5,22 +5,24 @@
 using namespace std;
 
 #define FETCH_WIDTH 4
-#define RENAME_WIDTH 5
 #define COMMIT_WIDTH 4
 
-#define MAX_SIM_TIME 2000000000
+#define MAX_SIM_TIME 10000000000
 #define ISSUE_WAY IQ_NUM
 #define MAX_UOP_NUM 3
 
 #define ARF_NUM 32
 #define PRF_NUM 128
-#define MAX_BR_NUM 20
+#define MAX_BR_NUM 16
 
 #define CSR_NUM 21
 
+#define ROB_BANK_NUM 4
 #define ROB_NUM 128
+#define ROB_LINE_NUM (ROB_NUM / ROB_BANK_NUM)
+
 #define STQ_NUM 16
-#define ALU_NUM 4
+#define ALU_NUM 2
 #define BRU_NUM 2
 
 #define LOG_START 0
@@ -38,8 +40,6 @@ extern long long sim_time;
 enum IQ_TYPE {
   IQ_INTM,
   IQ_INTD,
-  IQ_INT0,
-  IQ_INT1,
   IQ_LD,
   IQ_STA,
   IQ_STD,
@@ -50,14 +50,14 @@ enum IQ_TYPE {
 
 enum FU_TYPE { FU_ALU, FU_LSU, FU_BRU, FU_MUL, FU_DIV, FU_TYPE_NUM };
 
-enum Inst_op {
+enum Inst_type {
   NONE,
-  JUMP,
+  JAL,
+  JALR,
   ADD,
   BR,
   LOAD,
-  STA,
-  STD,
+  STORE,
   CSR,
   ECALL,
   EBREAK,
@@ -65,7 +65,25 @@ enum Inst_op {
   MRET,
   SRET,
   MUL,
-  DIV
+  DIV,
+  AMO
+};
+
+enum Inst_op {
+  UOP_JUMP,
+  UOP_ADD,
+  UOP_BR,
+  UOP_LOAD,
+  UOP_STA,
+  UOP_STD,
+  UOP_CSR,
+  UOP_ECALL,
+  UOP_EBREAK,
+  UOP_SFENCE_VMA,
+  UOP_MRET,
+  UOP_SRET,
+  UOP_MUL,
+  UOP_DIV,
 };
 
 enum AMO_op {
@@ -116,10 +134,9 @@ typedef struct Inst_uop {
   uint32_t csr_idx;
   uint32_t rob_idx;
   uint32_t stq_idx;
-  bool pre_sta[16];
-  bool pre_std[16];
+  uint32_t pre_sta_mask;
+  uint32_t pre_std_mask;
 
-  bool is_last_uop;
   int uop_num;
 
   // page_fault
@@ -131,7 +148,7 @@ typedef struct Inst_uop {
   bool illegal_inst = false;
 
   Inst_op op;
-  IQ_TYPE iq_type;
+  Inst_type type;
 
   // 原子指令信息
   AMO_op amoop;
@@ -139,6 +156,9 @@ typedef struct Inst_uop {
   bool difftest_skip;
 
   int64_t inst_idx;
+
+  // ROB 信息
+  int cmp_num;
 } Inst_uop;
 
 typedef struct Inst_entry {

@@ -2,10 +2,6 @@
 #include "IO.h"
 #include "config.h"
 #include <cstdint>
-#include <list>
-
-#define NORMAL 0
-#define MISPRED 1
 
 class IDU_IO {
 public:
@@ -34,18 +30,20 @@ public:
   void seq();
 
   // 中间信号
-  bool dec_valid[FETCH_WIDTH];
   int pop = 0;
   bool push = false;  // 是否分配了新tag
-  uint32_t alloc_tag; // 是否分配了新tag
+  uint32_t alloc_tag; // 新tag
 
   // 状态
-  list<uint32_t> tag_list;
+  uint8_t tag_list[MAX_BR_NUM];
+  uint8_t enq_ptr;
+  uint8_t deq_ptr;
   bool tag_vec[MAX_BR_NUM];
   int now_tag;
-  int state;
 
+  uint8_t tag_list_1[MAX_BR_NUM];
+  uint8_t enq_ptr_1;
+  uint8_t deq_ptr_1;
   bool tag_vec_1[MAX_BR_NUM];
   int now_tag_1;
-  int state_1;
 };

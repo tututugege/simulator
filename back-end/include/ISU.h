@@ -17,7 +17,6 @@ public:
   void enq(Inst_uop &inst);
 
   int num;
-  int num_temp;
 
   // config
   int entry_num;
@@ -31,13 +30,14 @@ public:
   Rob_Broadcast *rob_bcast;
   Dec_Broadcast *dec_bcast;
 
-  Ren_Iss *ren2iss;
-  Iss_Ren *iss2ren; // ready
+  Dis_Iss *dis2iss;
+  Iss_Dis *iss2dis;     // ready
+                        //
+  Iss_Awake *iss_awake; // ready
+  Prf_Awake *prf_awake;
 
   Iss_Prf *iss2prf;
   Exe_Iss *exe2iss;
-
-  Prf_Awake *awake;
 };
 
 class ISU {
@@ -46,6 +46,7 @@ public:
   void init();
   void add_iq(int entry_num, IQ_TYPE);
   void comb_ready();
+  void comb_store();
   void comb_deq();
   void seq(); // 写入IQ
 
