@@ -12,13 +12,11 @@ void ROB::comb_ready() {
   int num = count;
 
   io.rob2dis->stall = false;
+
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    for (int j = 0; j < ROB_LINE_NUM; j++) {
-      if (entry[i][j].valid &&
-          (is_exception(entry[i][j].uop) || is_flush_inst(entry[i][j].uop))) {
-        io.rob2dis->stall = true;
-        break;
-      }
+    if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop)) {
+      io.rob2dis->stall = true;
+      break;
     }
   }
 
@@ -41,58 +39,80 @@ void ROB::comb_commit() {
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     commit = commit &&
              (!entry[i][deq_ptr].valid ||
-              entry[i][deq_ptr].uop.cmp_num == entry[i][deq_ptr].uop.uop_num);
+              (entry[i][deq_ptr].uop.cmp_num == entry[i][deq_ptr].uop.uop_num));
+
+    if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop)) {
+      break;
+    }
   }
 
+  bool flush_stall = false;
+
   if (commit) {
-    count_1--;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       io.rob_commit->commit_entry[i] = entry[i][deq_ptr];
-      if (entry[i][deq_ptr].valid && !io.rob_bcast->flush) {
-        entry_1[i][deq_ptr].valid = false;
+      if (entry[i][deq_ptr].valid && !io.rob_bcast->flush && !flush_stall) {
         if (is_flush_inst(entry[i][deq_ptr].uop)) {
-          io.rob_bcast->flush = true;
-          io.rob_bcast->exception = is_exception(entry[i][deq_ptr].uop);
-          if (entry[i][deq_ptr].uop.type == ECALL) {
-            io.rob_bcast->ecall = true;
-            io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
-          } else if (entry[i][deq_ptr].uop.type == MRET) {
-            io.rob_bcast->mret = true;
-          } else if (entry[i][deq_ptr].uop.type == SRET) {
-            io.rob_bcast->sret = true;
-          } else if (entry[i][deq_ptr].uop.page_fault_store) {
-            io.rob_bcast->page_fault_store = true;
-            io.rob_bcast->trap_val = entry[i][deq_ptr].uop.result;
-            io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
-          } else if (entry[i][deq_ptr].uop.page_fault_load) {
-            io.rob_bcast->page_fault_load = true;
-            io.rob_bcast->trap_val = entry[i][deq_ptr].uop.result;
-            io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
-          } else if (entry[i][deq_ptr].uop.page_fault_inst) {
-            io.rob_bcast->page_fault_inst = true;
-            io.rob_bcast->trap_val = entry[i][deq_ptr].uop.pc;
-            io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
-          } else if (entry[i][deq_ptr].uop.illegal_inst) {
-            io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
-            io.rob_bcast->illegal_inst = true;
-            io.rob_bcast->trap_val = entry[i][deq_ptr].uop.instruction;
-          } else if (entry[i][deq_ptr].uop.type == EBREAK) {
-            extern bool sim_end;
-            sim_end = true;
-          } else {
-            if (entry[i][deq_ptr].uop.type != CSR &&
-                entry[i][deq_ptr].uop.type != SFENCE_VMA) {
-              cout << hex << entry[i][deq_ptr].uop.instruction << endl;
-              exit(1);
+
+          for (int j = 0; j < i; j++) {
+            if (entry[j][deq_ptr].valid) {
+              flush_stall = true;
+              io.rob_commit->commit_entry[i].valid = false;
+              break;
             }
-            io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc + 4;
           }
+
+          if (!flush_stall) {
+            io.rob_bcast->flush = true;
+            io.rob_bcast->exception = is_exception(entry[i][deq_ptr].uop);
+            if (entry[i][deq_ptr].uop.type == ECALL) {
+              io.rob_bcast->ecall = true;
+              io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
+            } else if (entry[i][deq_ptr].uop.type == MRET) {
+              io.rob_bcast->mret = true;
+            } else if (entry[i][deq_ptr].uop.type == SRET) {
+              io.rob_bcast->sret = true;
+            } else if (entry[i][deq_ptr].uop.page_fault_store) {
+              io.rob_bcast->page_fault_store = true;
+              io.rob_bcast->trap_val = entry[i][deq_ptr].uop.result;
+              io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
+            } else if (entry[i][deq_ptr].uop.page_fault_load) {
+              io.rob_bcast->page_fault_load = true;
+              io.rob_bcast->trap_val = entry[i][deq_ptr].uop.result;
+              io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
+            } else if (entry[i][deq_ptr].uop.page_fault_inst) {
+              io.rob_bcast->page_fault_inst = true;
+              io.rob_bcast->trap_val = entry[i][deq_ptr].uop.pc;
+              io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
+            } else if (entry[i][deq_ptr].uop.illegal_inst) {
+              io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc;
+              io.rob_bcast->illegal_inst = true;
+              io.rob_bcast->trap_val = entry[i][deq_ptr].uop.instruction;
+            } else if (entry[i][deq_ptr].uop.type == EBREAK) {
+              extern bool sim_end;
+              sim_end = true;
+            } else {
+              if (entry[i][deq_ptr].uop.type != CSR &&
+                  entry[i][deq_ptr].uop.type != SFENCE_VMA) {
+                cout << hex << entry[i][deq_ptr].uop.instruction << endl;
+                exit(1);
+              }
+              io.rob_bcast->pc = io.rob_commit->commit_entry[i].uop.pc + 4;
+            }
+            entry_1[i][deq_ptr].valid = false;
+          }
+        } else {
+          entry_1[i][deq_ptr].valid = false;
         }
       } else {
         io.rob_commit->commit_entry[i].valid = false;
       }
     }
-    LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
+
+    if (!flush_stall) {
+      LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
+      count_1--;
+    }
     stall_cycle = 0;
   } else {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -103,16 +123,19 @@ void ROB::comb_commit() {
   io.rob2dis->enq_idx = enq_ptr;
 
   stall_cycle++;
-  if (stall_cycle > 50) {
+  if (stall_cycle > 1000) {
     cout << dec << sim_time << endl;
     cout << "卡死了" << endl;
+    cout << "ROB deq inst:" << endl;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
-        cout << hex << entry[i][deq_ptr].uop.instruction << endl;
-        break;
+        cout << hex << entry[i][deq_ptr].uop.instruction
+             << " cmp_num: " << entry[i][deq_ptr].uop.cmp_num
+             << "is_page_fault: " << is_page_fault(entry[i][deq_ptr].uop)
+             << endl;
       }
     }
-    exit(1);
+    // exit(1);
   }
 }
 
@@ -213,10 +236,8 @@ void ROB::seq() {
   deq_ptr = deq_ptr_1;
   enq_ptr = enq_ptr_1;
   count = count_1;
-  if (count != ROB_LINE_NUM &&
-      count != (enq_ptr + ROB_LINE_NUM - deq_ptr) % ROB_LINE_NUM) {
-    cout << "erro" << endl;
-  }
+  assert(count == ROB_LINE_NUM ||
+         count == (enq_ptr + ROB_LINE_NUM - deq_ptr) % ROB_LINE_NUM);
 }
 
 void ROB::init() {

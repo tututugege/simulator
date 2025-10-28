@@ -144,8 +144,8 @@ void IDU::comb_fire() {
         io.dec2ren->valid[i] && io.ren2dec->ready && !io.dec_bcast->mispred;
     io.dec2front->ready = io.dec2front->ready &&
                           (!io.front2dec->valid[i] || io.dec2ren->valid[i]);
-    if (io.dec2front->fire[i] && (is_branch(io.dec2ren->uop[i].type) ||
-                                  is_branch(io.dec2ren->uop[i].type))) {
+
+    if (io.dec2front->fire[i] && is_branch(io.dec2ren->uop[i].type)) {
       now_tag_1 = alloc_tag;
       tag_vec_1[alloc_tag] = false;
       tag_list_1[enq_ptr] = alloc_tag;
@@ -452,16 +452,12 @@ void decode(Inst_uop &uop, uint32_t inst) {
     }
     case 2: { // lr.w
       uop_num = 1;
-      uop.imm = 0;
       uop.src2_en = false;
       uop.amoop = LR;
       break;
     }
     case 3: { // sc.w
-      uop_num = 3;
-      uop.imm = 0;
       uop.amoop = SC;
-      uop.dest_en = false;
       break;
     }
     case 4: { // amoxor.w
@@ -508,6 +504,12 @@ void decode(Inst_uop &uop, uint32_t inst) {
   }
 
   uop.uop_num = uop_num;
+
+  // amo 指令dest为0时特殊处理
+  if (uop.type == AMO && uop.dest_areg == 0 && uop.amoop != LR &&
+      uop.amoop != SC) {
+    uop.dest_areg = 32;
+  }
 
   // 不写0寄存器
   if (uop.dest_areg == 0)
