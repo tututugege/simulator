@@ -1,4 +1,6 @@
+#pragma once
 #include "config.h"
+
 #define LOOP_INC(idx, length) idx = (idx + 1) % (length)
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
 

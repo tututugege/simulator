@@ -31,8 +31,9 @@ public:
   void seq();
 
   // 状态
-  uint32_t reg_file[PRF_NUM];
+  reg32_t reg_file[PRF_NUM];
   Inst_entry inst_r[ISSUE_WAY];
-  uint32_t reg_file_1[PRF_NUM];
+
+  wire32_t reg_file_1[PRF_NUM];
   Inst_entry inst_r_1[ISSUE_WAY];
 };

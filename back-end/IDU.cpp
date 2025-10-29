@@ -23,9 +23,9 @@ void IDU::init() {
 
 // 译码并分配tag
 void IDU::comb_decode() {
+  wire1_t no_tag = false;
   bool has_br = false; // 一周期只能解码一条分支指令
   bool stall = false;
-  bool no_tag = false;
 
   // 查找新的tag
   for (alloc_tag = 0; alloc_tag < MAX_BR_NUM; alloc_tag++) {
@@ -90,8 +90,6 @@ void IDU::comb_decode() {
 }
 
 void IDU::comb_branch() {
-  pop = 0;
-
   // 如果一周期实现不方便，可以用状态机多周期实现
   if (io.prf2dec->mispred) {
     io.dec_bcast->mispred = true;
@@ -130,7 +128,6 @@ void IDU::comb_flush() {
 }
 
 void IDU::comb_fire() {
-  push = false;
   io.dec2front->ready = io.ren2dec->ready && !io.prf2dec->mispred;
 
   if (io.prf2dec->mispred || io.rob_bcast->flush) {

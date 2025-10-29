@@ -1,6 +1,5 @@
 #include "config.h"
 #include <Dispatch.h>
-#include <cstdint>
 #include <cvt.h>
 #include <util.h>
 
@@ -12,7 +11,7 @@ void Dispatch::comb_alloc() {
     io.dis2stq->valid[i] = false;
   }
 
-  uint32_t pre_store_mask = 0;
+  wire16_t pre_store_mask = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     inst_alloc[i] = inst_r[i];
     inst_alloc[i].uop.rob_idx = (io.rob2dis->enq_idx << 2) + i;
@@ -242,7 +241,7 @@ void Dispatch::comb_dispatch() {
     }
   }
 
-  int ready_num[IQ_NUM];
+  wire2_t ready_num[IQ_NUM];
   for (int i = 0; i < IQ_NUM; i++) {
     if (io.iss2dis->ready[i][1]) {
       ready_num[i] = 2;
@@ -309,7 +308,7 @@ void Dispatch::comb_dispatch() {
 
 void Dispatch::comb_fire() {
   // 判断一个inst是否所有uop都能接收
-  bool iss_ready[FETCH_WIDTH];
+  wire1_t iss_ready[FETCH_WIDTH];
   for (int i = 0; i < FETCH_WIDTH; i++) {
     iss_ready[i] = true;
     for (int j = 0; j < IQ_NUM; j++) {
@@ -320,11 +319,11 @@ void Dispatch::comb_fire() {
   }
 
   int store_num = 0;
-  bool pre_stall = false;
-  bool csr_stall = false;
-  bool amo_stall = false;
-  bool pre_fire = false;
-  bool pre_is_flush = false;
+  wire1_t pre_stall = false;
+  wire1_t csr_stall = false;
+  wire1_t amo_stall = false;
+  wire1_t pre_fire = false;
+  wire1_t pre_is_flush = false;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     io.dis2rob->dis_fire[i] =
         (io.dis2rob->valid[i] && io.rob2dis->ready) &&

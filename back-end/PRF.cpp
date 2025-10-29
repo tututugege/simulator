@@ -10,8 +10,6 @@ extern Back_Top back;
 void PRF::init() {
   for (int i = 0; i < ISSUE_WAY; i++)
     io.prf2exe->ready[i] = true;
-
-  memset(inst_r, 0, sizeof(Inst_entry) * ISSUE_WAY);
 }
 
 void PRF::comb_br_check() {

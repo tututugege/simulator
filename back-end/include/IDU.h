@@ -1,7 +1,6 @@
 #pragma once
 #include "IO.h"
 #include "config.h"
-#include <cstdint>
 
 class IDU_IO {
 public:
@@ -22,28 +21,27 @@ class IDU {
 public:
   IDU_IO io;
   void init();
-  void comb_decode(); // 译码并分配tag
-  void comb_branch(); // 分支处理
-  void comb_fire();   // 与前端握手
-  void comb_flush();
+  void comb_decode();      // 译码并分配tag
+  void comb_branch();      // 分支处理
+  void comb_fire();        // 与前端握手
+  void comb_flush();       // flush处理
   void comb_release_tag(); // 释放分支tag
-  void seq();
+  void seq();              // 时钟跳变，状态更新
 
   // 中间信号
-  int pop = 0;
-  bool push = false;  // 是否分配了新tag
-  uint32_t alloc_tag; // 新tag
+  wire4_t alloc_tag; // 新tag
 
   // 状态
-  uint8_t tag_list[MAX_BR_NUM];
-  uint8_t enq_ptr;
-  uint8_t deq_ptr;
-  bool tag_vec[MAX_BR_NUM];
-  int now_tag;
+  reg4_t tag_list[MAX_BR_NUM];
+  reg4_t enq_ptr;
+  reg4_t deq_ptr;
+  reg1_t tag_vec[MAX_BR_NUM];
+  reg4_t now_tag;
 
-  uint8_t tag_list_1[MAX_BR_NUM];
-  uint8_t enq_ptr_1;
-  uint8_t deq_ptr_1;
-  bool tag_vec_1[MAX_BR_NUM];
-  int now_tag_1;
+  // 下一周期状态
+  wire4_t tag_list_1[MAX_BR_NUM];
+  wire4_t enq_ptr_1;
+  wire4_t deq_ptr_1;
+  wire1_t tag_vec_1[MAX_BR_NUM];
+  wire4_t now_tag_1;
 };

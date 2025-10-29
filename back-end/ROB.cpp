@@ -9,8 +9,6 @@
 #include <util.h>
 
 void ROB::comb_ready() {
-  int num = count;
-
   io.rob2dis->stall = false;
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -35,7 +33,8 @@ void ROB::comb_commit() {
       io.rob_bcast->page_fault_store = io.rob_bcast->illegal_inst = false;
 
   // bank的同一行是否都完成？
-  bool commit = !(enq_ptr == deq_ptr && count == 0) && !io.dec_bcast->mispred;
+  wire1_t commit =
+      !(enq_ptr == deq_ptr && count == 0) && !io.dec_bcast->mispred;
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     commit = commit &&
              (!entry[i][deq_ptr].valid ||
@@ -46,7 +45,7 @@ void ROB::comb_commit() {
     }
   }
 
-  bool flush_stall = false;
+  wire1_t flush_stall = false;
 
   if (commit) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -54,6 +53,7 @@ void ROB::comb_commit() {
       if (entry[i][deq_ptr].valid && !io.rob_bcast->flush && !flush_stall) {
         if (is_flush_inst(entry[i][deq_ptr].uop)) {
 
+          // 如果有flush的特殊指令，需要单独提交
           for (int j = 0; j < i; j++) {
             if (entry[j][deq_ptr].valid) {
               flush_stall = true;
@@ -109,6 +109,8 @@ void ROB::comb_commit() {
       }
     }
 
+    // flush_stall时 先把flush的inst前面的指令提交，再单独提交该指令
+    // deq_ptr保持不变
     if (!flush_stall) {
       LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
       count_1--;
@@ -192,7 +194,7 @@ void ROB::comb_branch() {
 
 void ROB::comb_fire() {
   // 入队
-  bool enq = false;
+  wire1_t enq = false;
   if (io.rob2dis->ready) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       if (io.dis2rob->dis_fire[i]) {

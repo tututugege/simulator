@@ -3,51 +3,52 @@
 #include "config.h"
 #include <cstdint>
 #include <sys/types.h>
+#include <util.h>
 
 typedef struct {
-  uint32_t addr;
-  uint32_t size;
-  uint32_t data;
+  reg32_t addr;
+  reg32_t size;
+  reg32_t data;
 
-  bool complete;
-  bool addr_valid;
-  bool data_valid;
-  bool valid;
+  reg1_t complete;
+  reg1_t addr_valid;
+  reg1_t data_valid;
+  reg1_t valid;
   uint32_t tag;
 } STQ_entry;
 
 typedef struct {
   Inst_uop uop[FETCH_WIDTH]; // 3 2 2 2
-  bool valid[FETCH_WIDTH];
+  wire1_t valid[FETCH_WIDTH];
 } Dec_Ren;
 
 typedef struct {
-  bool ready;
+  wire1_t ready;
 } Ren_Dec;
 
 typedef struct {
-  bool fire[FETCH_WIDTH];
-  bool ready;
+  wire1_t fire[FETCH_WIDTH];
+  wire1_t ready;
 } Dec_Front;
 
 typedef struct {
-  uint32_t inst[FETCH_WIDTH];
-  uint32_t pc[FETCH_WIDTH];
-  bool valid[FETCH_WIDTH];
-  bool predict_dir[FETCH_WIDTH];
+  wire32_t inst[FETCH_WIDTH];
+  wire32_t pc[FETCH_WIDTH];
+  wire1_t valid[FETCH_WIDTH];
+  wire1_t predict_dir[FETCH_WIDTH];
 
-  bool alt_pred[FETCH_WIDTH];
-  uint8_t altpcpn[FETCH_WIDTH];
-  uint8_t pcpn[FETCH_WIDTH];
-  uint32_t predict_next_fetch_address[FETCH_WIDTH];
-  bool page_fault_inst[FETCH_WIDTH];
+  wire1_t alt_pred[FETCH_WIDTH];
+  wire8_t altpcpn[FETCH_WIDTH];
+  wire8_t pcpn[FETCH_WIDTH]; // 这仨我也不知道是什么
+  wire32_t predict_next_fetch_address[FETCH_WIDTH];
+  wire1_t page_fault_inst[FETCH_WIDTH];
 } Front_Dec;
 
 typedef struct {
-  bool mispred;
-  uint32_t br_mask;
-  uint32_t br_tag;
-  uint32_t redirect_rob_idx;
+  wire1_t mispred;
+  wire16_t br_mask;
+  wire4_t br_tag;
+  wire7_t redirect_rob_idx;
 } Dec_Broadcast;
 
 typedef struct {
@@ -55,26 +56,26 @@ typedef struct {
 } Rob_Commit;
 
 typedef struct {
-  bool ready;
-  bool empty;
-  bool stall;
-  uint32_t enq_idx;
+  wire1_t ready;
+  wire1_t empty;
+  wire1_t stall;
+  wire7_t enq_idx;
 } Rob_Dis;
 
 typedef struct {
   Inst_uop uop[FETCH_WIDTH];
-  bool valid[FETCH_WIDTH];
-  bool dis_fire[FETCH_WIDTH];
+  wire1_t valid[FETCH_WIDTH];
+  wire1_t dis_fire[FETCH_WIDTH];
 } Dis_Rob;
 
 typedef struct {
   Inst_uop uop[FETCH_WIDTH];
-  bool valid[FETCH_WIDTH];
-  bool fire[FETCH_WIDTH];
+  wire1_t valid[FETCH_WIDTH];
+  wire1_t fire[FETCH_WIDTH];
 } Ren_Dis;
 
 typedef struct {
-  bool ready;
+  wire1_t ready;
 } Dis_Ren;
 
 typedef struct {
@@ -82,18 +83,14 @@ typedef struct {
 } Prf_Awake;
 
 typedef struct {
-  bool valid[IQ_NUM][2];
   Inst_uop uop[IQ_NUM][2];
-  bool dis_fire[IQ_NUM][2];
+  wire1_t valid[IQ_NUM][2];
+  wire1_t dis_fire[IQ_NUM][2];
 } Dis_Iss;
 
 // TODO: MAGIC NUMBER
 typedef struct {
-  bool ready[IQ_NUM][2];
-  bool sta_iq_valid[16];
-  bool std_iq_valid[16];
-  int sta_iq_alloc[2];
-  int std_iq_alloc[2];
+  wire1_t ready[IQ_NUM][2];
 } Iss_Dis;
 
 typedef struct {
@@ -101,19 +98,18 @@ typedef struct {
 } Iss_Awake;
 
 typedef struct {
-  bool flush;
-  bool mret;
-  bool sret;
-  bool ecall;
-  bool exception;
+  wire1_t flush;
+  wire1_t mret;
+  wire1_t sret;
+  wire1_t ecall;
+  wire1_t exception;
 
-  bool page_fault_inst;
-  bool page_fault_load;
-  bool page_fault_store;
-  bool illegal_inst;
-  uint32_t trap_val;
-
-  uint32_t pc;
+  wire1_t page_fault_inst;
+  wire1_t page_fault_load;
+  wire1_t page_fault_store;
+  wire1_t illegal_inst;
+  wire32_t trap_val;
+  wire32_t pc;
 } Rob_Broadcast;
 
 typedef struct {
@@ -122,7 +118,7 @@ typedef struct {
 
 typedef struct {
   Inst_entry iss_entry[ISSUE_WAY];
-  bool ready[ISSUE_WAY];
+  wire1_t ready[ISSUE_WAY];
 } Prf_Exe;
 
 typedef struct {
@@ -130,7 +126,7 @@ typedef struct {
 } Exe_Prf;
 
 typedef struct {
-  bool ready[ISSUE_WAY];
+  wire1_t ready[ISSUE_WAY];
 } Exe_Iss;
 
 typedef struct {
@@ -138,28 +134,22 @@ typedef struct {
 } Prf_Rob;
 
 typedef struct {
-  bool mispred;
-  uint32_t redirect_pc;
-  uint32_t redirect_rob_idx;
-  uint32_t br_tag;
+  wire1_t mispred;
+  wire32_t redirect_pc;
+  wire7_t redirect_rob_idx;
+  wire4_t br_tag;
 } Prf_Dec;
 
 typedef struct {
-  uint32_t tag[FETCH_WIDTH];
-  bool valid[FETCH_WIDTH];
-  bool dis_fire[FETCH_WIDTH];
+  wire4_t tag[FETCH_WIDTH];
+  wire1_t valid[FETCH_WIDTH];
+  wire1_t dis_fire[FETCH_WIDTH];
 } Dis_Stq;
 
 typedef struct {
-  bool ready[2];
-  uint32_t stq_idx;
+  wire1_t ready[2];
+  wire4_t stq_idx;
 } Stq_Dis;
-
-// typedef struct {
-//   bool valid[RENAME_WIDTH];
-//   uint32_t reg_wdata[RENAME_WIDTH];
-//   uint32_t dest_preg[RENAME_WIDTH];
-// } Ren_Prf;
 
 typedef struct {
   // 地址写入
