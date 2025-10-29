@@ -46,7 +46,6 @@ public:
   void init();
   void add_iq(int entry_num, IQ_TYPE);
   void comb_ready();
-  void comb_store();
   void comb_deq();
   void seq(); // 写入IQ
 

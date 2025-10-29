@@ -27,10 +27,10 @@ public:
   DIS_IO io;
 
   // 对每个IQ选择最多2个
-  bool uop_sel[IQ_NUM][FETCH_WIDTH] = {0};
-  bool to_iq[IQ_NUM][FETCH_WIDTH] = {0};
-  int port_idx[IQ_NUM]
-              [2]; // 实际硬件可以写成4bit独热码用于选择，这里为了方便使用idx
+  wire1_t uop_sel[IQ_NUM][FETCH_WIDTH] = {0};
+  wire1_t to_iq[IQ_NUM][FETCH_WIDTH] = {0};
+  // 实际硬件可以写成4bit独热码用于选择，这里为了方便使用idx
+  wire4_t port_idx[IQ_NUM][2];
   Inst_entry inst_alloc[FETCH_WIDTH];
 
   void comb_alloc();

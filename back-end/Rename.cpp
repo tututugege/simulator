@@ -35,8 +35,8 @@ Rename::Rename() {
 
 void Rename::comb_alloc() {
   // 可用寄存器个数 每周期最多使用FETCH_WIDTH个
-  int alloc_reg[FETCH_WIDTH];
-  int alloc_valid[FETCH_WIDTH];
+  wire7_t alloc_reg[FETCH_WIDTH];
+  wire1_t alloc_valid[FETCH_WIDTH];
   int alloc_num = 0;
   for (int i = 0; i < PRF_NUM && alloc_num < FETCH_WIDTH; i++) {
     if (free_vec[i]) {
@@ -51,7 +51,7 @@ void Rename::comb_alloc() {
   }
 
   // 有效且需要寄存器的指令，寄存器不够则对应端口ready为false
-  bool stall = false;
+  wire1_t stall = false;
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2dis->uop[i] = inst_r[i].uop;
@@ -259,17 +259,4 @@ void Rename ::seq() {
       alloc_checkpoint[i][j] = alloc_checkpoint_1[i][j];
     }
   }
-
-  /*static int count = 0;*/
-  /**/
-  /*count++;*/
-  /*if (count % 10000 == 0) {*/
-  /*  for (int i = 0; i < PRF_NUM; i++) {*/
-  /*    cout << free_vec[i];*/
-
-  /*if (i % 32 == 0)*/
-  /*  cout << endl;*/
-  /*}*/
-  /*cout << endl;*/
-  /*}*/
 }

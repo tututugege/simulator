@@ -1,6 +1,28 @@
 #pragma once
 #include <assert.h>
 #include <cstdint>
+typedef bool wire1_t;
+typedef uint8_t wire2_t;
+typedef uint8_t wire3_t;
+typedef uint8_t wire4_t;
+typedef uint8_t wire5_t;
+typedef uint8_t wire6_t;
+typedef uint8_t wire7_t;
+typedef uint8_t wire8_t;
+typedef uint16_t wire12_t;
+typedef uint16_t wire16_t;
+typedef uint32_t wire32_t;
+
+typedef bool reg1_t;
+typedef uint8_t reg2_t;
+typedef uint8_t reg3_t;
+typedef uint8_t reg4_t;
+typedef uint8_t reg5_t;
+typedef uint8_t reg6_t;
+typedef uint8_t reg7_t;
+typedef uint8_t reg8_t;
+typedef uint16_t reg16_t;
+typedef uint32_t reg32_t;
 
 using namespace std;
 
@@ -31,7 +53,7 @@ using namespace std;
 
 extern long long sim_time;
 
-#define CONFIG_DIFFTEST
+// #define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
 #define CONFIG_BPU
 
@@ -102,71 +124,68 @@ enum AMO_op {
 };
 
 typedef struct Inst_uop {
-  uint32_t instruction;
+  wire32_t instruction;
 
-  int dest_areg, src1_areg, src2_areg;
-  int dest_preg, src1_preg, src2_preg;
-  int old_dest_preg;
-  uint32_t src1_rdata, src2_rdata;
-  uint32_t result;
+  wire5_t dest_areg, src1_areg, src2_areg;
+  wire7_t dest_preg, src1_preg, src2_preg; // log2(ROB_NUM)
+  wire7_t old_dest_preg;
+  wire32_t src1_rdata, src2_rdata;
+  wire32_t result;
 
   // 分支预测信息
-  bool pred_br_taken;
-  bool alt_pred;
-  uint8_t altpcpn;
-  uint8_t pcpn;
-  uint32_t pred_br_pc;
+  wire1_t pred_br_taken;
+  wire1_t alt_pred;
+  wire8_t altpcpn;
+  wire8_t pcpn;
+  wire32_t pred_br_pc;
 
   // 分支预测更新信息
-  bool mispred;
-  bool br_taken;
-  uint32_t pc_next;
+  wire1_t mispred;
+  wire1_t br_taken;
+  wire32_t pc_next;
 
-  bool dest_en, src1_en, src2_en;
-  bool src1_busy, src2_busy;
-  bool src1_is_pc;
-  bool src2_is_imm;
-  uint32_t func3;
-  bool func7_5;
-  uint32_t imm;
-  uint32_t pc;
-  uint32_t tag;
-  uint32_t csr_idx;
-  uint32_t rob_idx;
-  uint32_t stq_idx;
-  uint32_t pre_sta_mask;
-  uint32_t pre_std_mask;
-
-  int uop_num;
-
-  // page_fault
-  bool page_fault_inst = false;
-  bool page_fault_load = false;
-  bool page_fault_store = false;
-
-  // illegal
-  bool illegal_inst = false;
-
-  Inst_op op;
-  Inst_type type;
-
-  // 原子指令信息
-  AMO_op amoop;
-
-  bool difftest_skip;
-
-  int64_t inst_idx;
+  wire1_t dest_en, src1_en, src2_en;
+  wire1_t src1_busy, src2_busy;
+  wire1_t src1_is_pc;
+  wire1_t src2_is_imm;
+  wire3_t func3;
+  wire1_t func7_5;
+  wire32_t imm; // 好像不用32bit 先用着
+  wire32_t pc;
+  wire4_t tag;
+  wire12_t csr_idx;
+  wire7_t rob_idx;
+  wire4_t stq_idx;
+  wire16_t pre_sta_mask;
+  wire16_t pre_std_mask;
 
   // ROB 信息
-  int cmp_num;
+  wire2_t uop_num;
+  wire2_t cmp_num;
+
+  // page_fault
+  wire1_t page_fault_inst = false;
+  wire1_t page_fault_load = false;
+  wire1_t page_fault_store = false;
+
+  // illegal
+  wire1_t illegal_inst = false;
+
+  Inst_type type;
+  Inst_op op;
+  AMO_op amoop;
+
+  // for debug
+  bool difftest_skip;
+  int64_t inst_idx;
 } Inst_uop;
 
 typedef struct Inst_entry {
-  bool valid;
+  wire1_t valid;
   Inst_uop uop;
 } Inst_entry;
 
 typedef struct {
-  bool valid;
-  uint32_t preg;
+  wire1_t valid;
+  wire7_t preg;
 } Wake_info;

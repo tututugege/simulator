@@ -71,34 +71,6 @@ void ISU::comb_ready() {
   }
 }
 
-void ISU::comb_store() {
-  // 已经经过了发射的bypass
-  for (int i = 0; i < iq[IQ_STA].entry_num; i++) {
-    io.iss2dis->sta_iq_valid[i] = iq[IQ_STA].entry[i].valid;
-  }
-
-  for (int i = 0; i < iq[IQ_STD].entry_num; i++) {
-    io.iss2dis->std_iq_valid[i] = iq[IQ_STD].entry[i].valid;
-  }
-
-  // 需要提供分配的idx以供同组指令中store load RAW的bypass
-  int alloc_num = 0;
-  for (int i = 0; i < iq[IQ_STA].entry_num && alloc_num < 2; i++) {
-    if (!iq[IQ_STA].entry[i].valid) {
-      io.iss2dis->sta_iq_alloc[alloc_num] = i;
-      alloc_num++;
-    }
-  }
-
-  alloc_num = 0;
-  for (int i = 0; i < iq[IQ_STD].entry_num && alloc_num < 2; i++) {
-    if (!iq[IQ_STD].entry[i].valid) {
-      io.iss2dis->std_iq_alloc[alloc_num] = i;
-      alloc_num++;
-    }
-  }
-}
-
 void ISU::comb_deq() {
 
   // 出队

@@ -1,7 +1,6 @@
 #pragma once
 #include <IO.h>
 #include <config.h>
-#include <cstdint>
 
 class ROB_IO {
 public:
@@ -27,14 +26,12 @@ public:
 
   // 状态
   Inst_entry entry[ROB_BANK_NUM][ROB_NUM / 4];
-  uint32_t pc[ROB_NUM / 4];
-  int enq_ptr;
-  int deq_ptr;
-  int count;
+  reg7_t enq_ptr;
+  reg7_t deq_ptr;
+  reg7_t count;
 
   Inst_entry entry_1[ROB_BANK_NUM][ROB_NUM / 4];
-  uint32_t pc_1[ROB_NUM / 4];
-  int enq_ptr_1;
-  int deq_ptr_1;
-  int count_1;
+  wire7_t enq_ptr_1;
+  wire7_t deq_ptr_1;
+  wire7_t count_1;
 };
