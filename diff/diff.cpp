@@ -19,15 +19,6 @@ void init_difftest(int img_size) {
   ref_cpu.memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   ref_cpu.memory[uint32_t(0x8 / 4)] = 0x800002b7;
   ref_cpu.memory[uint32_t(0xc / 4)] = 0x00028067;
-  ref_cpu.memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0
-  ref_cpu.memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi a2,t0,40
-  ref_cpu.memory[uint32_t(0x00001008 / 4)] =
-      0xf1402573; // csrrs a0,mhartid,zero
-  ref_cpu.memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw a1,32(t0)
-  ref_cpu.memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw t0,24(t0)
-  ref_cpu.memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
-  ref_cpu.memory[uint32_t(0x00001018 / 4)] = 0x80000000;
-  ref_cpu.memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
 }
 
 static void checkregs() {
@@ -92,6 +83,8 @@ fault:
 
   printf("%08x\n", ref_cpu.Instruction);
 
+  // while (1) {
+  // }
   exit(1);
 }
 

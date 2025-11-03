@@ -352,6 +352,7 @@
 
 #include <klib-macros.h>
 #include <stdbool.h>
+#include <string.h>
 #include <xprintf.h>
 
 typedef unsigned int size_t;
@@ -418,7 +419,8 @@ char Ch_1_Glob, Ch_2_Glob;
 int Arr_1_Glob[50];
 int Arr_2_Glob[50][50];
 
-Enumeration Func_1();
+Enumeration Func_1(Capital_Letter, Capital_Letter);
+
 /* forward declaration necessary since Enumeration may not simply be int */
 
 #ifndef REG

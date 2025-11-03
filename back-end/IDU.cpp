@@ -33,7 +33,7 @@ void IDU::comb_decode() {
       break;
   }
 
-  // 无剩余的tag
+  // 无剩余的tag 相当于 tag_vec == 16'b0
   if (alloc_tag == MAX_BR_NUM) {
     no_tag = true;
     alloc_tag = 0;
@@ -137,8 +137,7 @@ void IDU::comb_fire() {
   }
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dec2front->fire[i] =
-        io.dec2ren->valid[i] && io.ren2dec->ready && !io.dec_bcast->mispred;
+    io.dec2front->fire[i] = io.dec2ren->valid[i] && io.ren2dec->ready;
     io.dec2front->ready = io.dec2front->ready &&
                           (!io.front2dec->valid[i] || io.dec2ren->valid[i]);
 

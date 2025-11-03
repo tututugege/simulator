@@ -9,7 +9,7 @@
 #include <am.h>
 #include <klib-macros.h>
 
-#define ITERATIONS 1
+#define ITERATIONS 100
 #define MEM_METHOD MEM_STATIC
 
 /************************/

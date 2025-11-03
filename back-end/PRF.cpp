@@ -1,11 +1,9 @@
-#include "TOP.h"
 #include "config.h"
 #include <IO.h>
 #include <PRF.h>
 #include <cstring>
 #include <iostream>
 #include <util.h>
-extern Back_Top back;
 
 void PRF::init() {
   for (int i = 0; i < ISSUE_WAY; i++)
@@ -14,27 +12,37 @@ void PRF::init() {
 
 void PRF::comb_br_check() {
   // 根据分支结果向前端返回信息
+  bool mispred = false;
+  Inst_uop *mispred_uop;
 
-  io.prf2dec->mispred = false;
-
-  if (!io.rob_bcast->flush) {
-    int inst_idx = 0;
-    for (int i = 0; i < BRU_NUM; i++) {
-      int iq_br = IQ_BR0 + i;
-      if (inst_r[iq_br].valid && inst_r[iq_br].uop.mispred) {
-        if (!io.prf2dec->mispred || inst_r[iq_br].uop.inst_idx < inst_idx) {
-          io.prf2dec->mispred = true;
-          io.prf2dec->redirect_pc = inst_r[iq_br].uop.pc_next;
-          io.prf2dec->redirect_rob_idx = inst_r[iq_br].uop.rob_idx;
-          io.prf2dec->br_tag = inst_r[iq_br].uop.tag;
-          inst_idx = inst_r[iq_br].uop.inst_idx;
-          if (LOG)
-            cout << "PC " << hex << inst_r[iq_br].uop.pc
-                 << " misprediction redirect_pc 0x" << hex
-                 << io.prf2dec->redirect_pc << endl;
-        }
+  for (int i = 0; i < BRU_NUM; i++) {
+    int iq_br = IQ_BR0 + i;
+    if (inst_r[iq_br].valid && inst_r[iq_br].uop.mispred) {
+      if (LOG) {
+        cout << hex << inst_r[iq_br].uop.pc << endl;
+        cout << hex << inst_r[iq_br].uop.pc_next << endl;
+        cout << dec << (int)inst_r[iq_br].uop.rob_idx << endl;
+        cout << dec << (int)inst_r[iq_br].uop.rob_flag << endl;
+      }
+      if (!mispred) {
+        mispred = true;
+        mispred_uop = &inst_r[iq_br].uop;
+      } else if (cmp_inst_age(*mispred_uop, inst_r[iq_br].uop)) {
+        mispred_uop = &inst_r[iq_br].uop;
       }
     }
+  }
+
+  io.prf2dec->mispred = mispred;
+  if (mispred) {
+    io.prf2dec->redirect_pc = mispred_uop->pc_next;
+    io.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;
+    io.prf2dec->br_tag = mispred_uop->tag;
+    if (LOG)
+      cout << "PC " << hex << mispred_uop->pc << " misprediction redirect_pc 0x"
+           << hex << io.prf2dec->redirect_pc << endl;
+  } else {
+    // 任意，以代码简单为准
   }
 }
 

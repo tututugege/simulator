@@ -38,6 +38,7 @@ El Dorado Hills, CA, 95762
 #define MEM_STACK 2
 
 #include "core_portme.h"
+#include "xprintf.h"
 
 #if HAS_STDIO
 #include <stdio.h>
