@@ -16,6 +16,14 @@
 #include <util.h>
 using namespace std;
 
+// 性能计数器
+extern int cache_access_num;
+extern int cache_miss_num;
+extern int cond_br_num;
+extern int indirect_br_num;
+extern int mispred_num;
+int commit_num = 0;
+
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &,
@@ -23,8 +31,6 @@ void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &,
 void back2front_comb(front_top_in &front_in, front_top_out &front_out);
 
 Back_Top back;
-
-int commit_num = 0;
 long long sim_time = 0;
 bool sim_end = false;
 
@@ -57,15 +63,6 @@ int main(int argc, char *argv[]) {
   p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
   p_memory[uint32_t(0xc / 4)] = 0x00028067;
-
-  p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0
-  p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi            a2,t0,40
-  p_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero
-  p_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw              a1,32(t0)
-  p_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw              t0,24(t0)
-  p_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
-  p_memory[uint32_t(0x00001018 / 4)] = 0x80000000;
-  p_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
   p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
 
 #ifdef CONFIG_DIFFTEST
@@ -154,6 +151,11 @@ SIM_END:
     printf("\033[1;32mcycle num      : %lld\033[0m\n", sim_time);
     printf("\033[1;32mipc            : %f\033[0m\n",
            (double)commit_num / sim_time);
+    printf("\033[1;32mcache accuracy : %f\033[0m\n",
+           1 - cache_miss_num / (double)cache_access_num);
+    printf("\033[1;32mbpu   accuracy : %f\033[0m\n",
+           1 - mispred_num / (double)(cond_br_num + indirect_br_num));
+
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << endl;
 
@@ -261,16 +263,13 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   uint32_t p_addr = v_addr;
   bool ret = true;
 
-  if (back.csr.CSR_RegFile[number_satp] & 0x80000000 &&
-      back.csr.privilege != 3) {
+  if (back.csr.CSR_RegFile[csr_satp] & 0x80000000 && back.csr.privilege != 3) {
     bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
-                               32);
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
 
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
-                               32);
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
 
-    ret = va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 1, mstatus,
+    ret = va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 1, mstatus,
                 sstatus, back.csr.privilege, p_memory);
   }
 
@@ -307,17 +306,17 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
       bool mstatus[32], sstatus[32];
 
-      cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
+      cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus],
                                  32);
 
-      cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
+      cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus],
                                  32);
 
-      if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
+      if ((back.csr.CSR_RegFile[csr_satp] & 0x80000000) &&
           back.csr.privilege != 3) {
 
         front_out.page_fault_inst[j] =
-            !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[number_satp], 0,
+            !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[csr_satp], 0,
                    mstatus, sstatus, back.csr.privilege, p_memory);
         if (front_out.page_fault_inst[j]) {
           front_out.instructions[j] = INST_NOP;

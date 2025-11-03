@@ -11,7 +11,8 @@
 #include <queue>
 
 ICache icache;
-// before MMU is implemented, we use a simple ppn_queue to store the ppn for icache
+// before MMU is implemented, we use a simple ppn_queue to store the ppn for
+// icache
 struct ppn_triple {
   uint32_t ppn;
   uint32_t vaddr;
@@ -34,8 +35,9 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
   }
 #ifdef USE_TRUE_ICACHE
   // TODO: implement true icache with real MMU interface
-  static bool mem_busy = false; 
-  static bool current_valid = false; // whether current_vaddr and current_fault are valid
+  static bool mem_busy = false;
+  static bool current_valid =
+      false; // whether current_vaddr and current_fault are valid
 
   // deal with "refetch" signal
   if (in->refetch) {
@@ -82,10 +84,10 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
 
   icache.comb();
   if (in->run_comb_only) {
-    // Only run combinational logic, do not update registers. This is 
+    // Only run combinational logic, do not update registers. This is
     // used for BPU module, which needs to know if icache is ready
     out->icache_read_ready = icache.io.out.ifu_req_ready;
-    return ;
+    return;
   }
   icache.seq();
 
@@ -94,14 +96,15 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     // only push when ifu_req is sent to icache
     uint32_t vaddr = in->fetch_address;
     bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus], 32);
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus], 32);
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
     uint32_t paddr;
     uint32_t ppn;
     bool page_fault_inst = false;
-    if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
-          back.csr.privilege != 3) {
-      page_fault_inst = !va2pa(paddr, vaddr, back.csr.CSR_RegFile[number_satp], 0, mstatus, sstatus, back.csr.privilege, p_memory);
+    if ((back.csr.CSR_RegFile[csr_satp] & 0x80000000) &&
+        back.csr.privilege != 3) {
+      page_fault_inst = !va2pa(paddr, vaddr, back.csr.CSR_RegFile[csr_satp], 0,
+                               mstatus, sstatus, back.csr.privilege, p_memory);
     } else {
       paddr = vaddr;
     }
@@ -113,9 +116,9 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
   bool mem_req_ready = !mem_busy;
   bool mem_req_valid = icache.io.out.mem_req_valid;
   if (mem_req_ready && mem_req_valid) {
-    // send request to memory 
+    // send request to memory
     mem_busy = true;
-  } 
+  }
   bool mem_resp_valid = icache.io.in.mem_resp_valid;
   bool mem_resp_ready = icache.io.out.mem_resp_ready;
   if (mem_resp_valid && mem_resp_ready) {
@@ -141,14 +144,16 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
       ppn_used = true;
     }
     out->icache_read_complete = true;
-    // in current design, miss is useless and always false when ifu_resp is valid
+    // in current design, miss is useless and always false when ifu_resp is
+    // valid
     if (miss) {
       DEBUG_LOG("[icache_top] WARNING: miss is true when ifu_resp is valid\n");
       exit(1);
     }
     // keep index within a cacheline
     uint32_t mask = ICACHE_LINE_SIZE - 1; // work for ICACHE_LINE_SIZE==2^k
-    int base_idx = (current_vaddr & mask) / 4; // index of the instruction in the cacheline
+    int base_idx =
+        (current_vaddr & mask) / 4; // index of the instruction in the cacheline
     for (int i = 0; i < FETCH_WIDTH; i++) {
       if (base_idx + i >= ICACHE_LINE_SIZE / 4) {
         // throw the instruction that exceeds the cacheline
@@ -157,7 +162,8 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
         out->inst_valid[i] = false;
         continue;
       }
-      out->fetch_group[i] = current_fault ? INST_NOP : icache.io.out.rd_data[i+base_idx];
+      out->fetch_group[i] =
+          current_fault ? INST_NOP : icache.io.out.rd_data[i + base_idx];
       out->page_fault_inst[i] = current_fault;
       out->inst_valid[i] = true;
     }
@@ -195,21 +201,19 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     // read instructions from pmem
     bool mstatus[32], sstatus[32];
 
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
-                               32);
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
 
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
-                               32);
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
 
     for (int i = 0; i < FETCH_WIDTH; i++) {
       uint32_t v_addr = in->fetch_address + (i * 4);
       uint32_t p_addr;
-      if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
+      if ((back.csr.CSR_RegFile[csr_satp] & 0x80000000) &&
           back.csr.privilege != 3) {
 
         out->page_fault_inst[i] =
-            !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 0,
-                   mstatus, sstatus, back.csr.privilege, p_memory);
+            !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 0, mstatus,
+                   sstatus, back.csr.privilege, p_memory);
         if (out->page_fault_inst[i]) {
           out->fetch_group[i] = INST_NOP;
         } else {

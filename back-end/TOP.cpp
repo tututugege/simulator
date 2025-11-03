@@ -16,10 +16,43 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_sstatus,  number_sie,      number_sip,
                         number_satp,     number_mhartid,  number_misa};
 
+// 条件分支 beq之类的
+int cond_br_num;
+// 间接跳转 jalr
+int indirect_br_num;
+
+int mispred_num;
+
 void Back_Top::difftest(Inst_uop *inst) {
 
-  if (inst->dest_en && !inst->page_fault_load)
+  if (inst->type == JALR) {
+    indirect_br_num++;
+  } else if (inst->type == BR) {
+    cond_br_num++;
+  }
+
+  if ((inst->type == JALR || inst->type == BR) && inst->mispred) {
+    mispred_num++;
+  }
+
+  if (inst->dest_en && !inst->page_fault_load &&
+      !rob.io.rob2csr->interrupt_resp) {
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
+  }
+
+  if (is_store(*inst)) {
+    if (stq.entry[inst->stq_idx].addr == 0x10000001 &&
+        (stq.entry[inst->stq_idx].data & 0x000000ff) == 7) {
+      csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] | (1 << 9);
+      csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] | (1 << 9);
+    }
+
+    if (stq.entry[inst->stq_idx].addr == 0xc201004 &&
+        (stq.entry[inst->stq_idx].data & 0x000000ff) == 0xa) {
+      csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] & ~(1 << 9);
+      csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] & ~(1 << 9);
+    }
+  }
 
 #ifdef CONFIG_DIFFTEST
   if (LOG) {
@@ -36,10 +69,6 @@ void Back_Top::difftest(Inst_uop *inst) {
     dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
   }
 
-  for (int i = 0; i < CSR_NUM; i++) {
-    dut_cpu.csr[i] = csr.CSR_RegFile[csr_idx[i]];
-  }
-
   if (is_store(*inst)) {
     dut_cpu.store = true;
     dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
@@ -51,18 +80,12 @@ void Back_Top::difftest(Inst_uop *inst) {
       dut_cpu.store_data = stq.entry[inst->stq_idx].data;
 
     dut_cpu.store_data = dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
-
-  } else if (inst->amoop == SC) {
-    dut_cpu.store = true;
-    int rob_idx = inst->rob_idx;
-    LOOP_DEC(rob_idx, ROB_NUM);
-    int stq_idx = rob.entry[rob_idx & 0b11][rob_idx >> 2].uop.stq_idx;
-    dut_cpu.store_addr = stq.entry[stq_idx].addr;
-    dut_cpu.store_data = stq.entry[stq_idx].data;
-
   } else
     dut_cpu.store = false;
 
+  for (int i = 0; i < CSR_NUM; i++) {
+    dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
+  }
   dut_cpu.pc = inst->pc_next;
 
   if (inst->difftest_skip) {
@@ -101,12 +124,14 @@ Exe_Stq exe2stq;
 Exe_Iss exe2iss;
 
 Rob_Dis rob2dis;
+Rob_Csr rob2csr;
 Rob_Broadcast rob_bcast;
 Rob_Commit rob_commit;
 
 Stq_Dis stq2dis;
 
 Csr_Exe csr2exe;
+Csr_Rob csr2rob;
 Exe_Csr exe2csr;
 
 void Back_Top::init() {
@@ -177,6 +202,8 @@ void Back_Top::init() {
   rob.io.dec_bcast = &dec_bcast;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2dis = &rob2dis;
+  rob.io.csr2rob = &csr2rob;
+  rob.io.rob2csr = &rob2csr;
 
   stq.io.exe2stq = &exe2stq;
   stq.io.rob_commit = &rob_commit;
@@ -187,6 +214,8 @@ void Back_Top::init() {
 
   csr.io.exe2csr = &exe2csr;
   csr.io.csr2exe = &csr2exe;
+  csr.io.csr2rob = &csr2rob;
+  csr.io.rob2csr = &rob2csr;
   csr.io.rob_bcast = &rob_bcast;
 
   idu.init();
@@ -219,9 +248,12 @@ void Back_Top::Back_comb() {
   // rename -> idu.comb_fire
   // prf->idu.comb_branch
   // isu/stq/rob -> rename.fire -> idu.fire
+  //
   idu.comb_decode();
   prf.comb_br_check();
   idu.comb_branch();
+  csr.comb_interrupt();
+  rob.comb_ready();
   rob.comb_commit();
   rename.comb_alloc();
   dis.comb_alloc();
@@ -238,7 +270,6 @@ void Back_Top::Back_comb() {
   isu.comb_ready();
   dis.comb_dispatch();
   stq.comb();
-  rob.comb_ready();
   rob.comb_complete();
   idu.comb_release_tag();
   dis.comb_fire();
@@ -247,7 +278,9 @@ void Back_Top::Back_comb() {
   idu.comb_fire();
   rob.comb_flush();
   idu.comb_flush();
-  csr.comb();
+  csr.comb_exception();
+  csr.comb_csr_read();
+  csr.comb_csr_write();
   exu.comb_from_csr();
   rob.comb_branch();
   rename.comb_branch();
@@ -268,16 +301,15 @@ void Back_Top::Back_comb() {
     back.out.stall = !idu.io.dec2front->ready;
     back.out.redirect_pc = prf.io.prf2dec->redirect_pc;
   } else {
-
     if (LOG)
       cout << "flush" << endl;
     back.out.mispred = true;
     if (rob.io.rob_bcast->mret || rob.io.rob_bcast->sret) {
-      back.out.redirect_pc = csr.io.csr2exe->epc;
+      back.out.redirect_pc = csr.io.csr2rob->epc;
     } else if (rob.io.rob_bcast->exception) {
-      back.out.redirect_pc = csr.io.csr2exe->trap_pc;
+      back.out.redirect_pc = csr.io.csr2rob->trap_pc;
     } else {
-      back.out.redirect_pc = rob.io.rob_bcast->pc;
+      back.out.redirect_pc = rob.io.rob_bcast->pc + 4;
     }
   }
 
@@ -285,9 +317,7 @@ void Back_Top::Back_comb() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
     Inst_type type = back.out.commit_entry[i].uop.type;
-    if (back.out.commit_entry[i].valid && type == ECALL || type == MRET ||
-        type == SRET || is_page_fault(back.out.commit_entry[i].uop) ||
-        back.out.commit_entry[i].uop.illegal_inst) {
+    if (back.out.commit_entry[i].valid && back.out.flush) {
       back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
       rob.io.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
     }

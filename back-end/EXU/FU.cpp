@@ -251,16 +251,13 @@ void stu_addr(Inst_uop &inst) {
   uint32_t p_addr = v_addr;
   bool page_fault = false;
 
-  if (back.csr.CSR_RegFile[number_satp] & 0x80000000 &&
-      back.csr.privilege != 3) {
+  if (back.csr.CSR_RegFile[csr_satp] & 0x80000000 && back.csr.privilege != 3) {
     bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
-                               32);
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
 
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
-                               32);
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
 
-    page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 2,
+    page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 2,
                         mstatus, sstatus, back.csr.privilege, p_memory);
   }
 

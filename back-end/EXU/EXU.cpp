@@ -1,4 +1,5 @@
 #include "TOP.h"
+#include <Cache.h>
 #include <EXU.h>
 #include <config.h>
 #include <cstdint>
@@ -6,6 +7,8 @@
 #include <util.h>
 extern Back_Top back;
 extern uint32_t *p_memory;
+
+Cache cache;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
@@ -26,6 +29,7 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_DIV) { // div
       latency = 1;
     } else if (inst.op == UOP_LOAD) {
+      // latency = cache.cache_access(inst.src1_rdata + inst.imm);
       latency = 1;
     } else {
       latency = 1;

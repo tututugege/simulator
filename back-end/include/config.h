@@ -21,6 +21,7 @@ typedef uint8_t reg5_t;
 typedef uint8_t reg6_t;
 typedef uint8_t reg7_t;
 typedef uint8_t reg8_t;
+typedef uint16_t reg12_t;
 typedef uint16_t reg16_t;
 typedef uint32_t reg32_t;
 
@@ -29,7 +30,7 @@ using namespace std;
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
 
-#define MAX_SIM_TIME 10000000000
+#define MAX_SIM_TIME 1000000000000
 #define ISSUE_WAY IQ_NUM
 #define MAX_UOP_NUM 3
 
@@ -47,15 +48,16 @@ using namespace std;
 #define ALU_NUM 2
 #define BRU_NUM 2
 
-#define LOG_START 8643800
+#define LOG_START 0
 #define LOG (0 && (sim_time >= LOG_START))
 #define MEM_LOG (0 && (sim_time >= LOG_START))
 
 extern long long sim_time;
 
-// #define CONFIG_DIFFTEST
-// #define CONFIG_RUN_REF
+#define CONFIG_DIFFTEST
 #define CONFIG_BPU
+// #define CONFIG_RUN_REF
+// #define CONFIG_RUN_REF_PRINT
 
 #define UART_BASE 0x10000000
 
@@ -151,7 +153,7 @@ typedef struct Inst_uop {
   wire3_t func3;
   wire1_t func7_5;
   wire32_t imm; // 好像不用32bit 先用着
-  wire32_t pc;
+  wire32_t pc;  // 未来将会优化pc的获取
   wire4_t tag;
   wire12_t csr_idx;
   wire7_t rob_idx;
@@ -161,14 +163,13 @@ typedef struct Inst_uop {
 
   // ROB 信息
   wire2_t uop_num;
-  wire2_t cmp_num;
+  wire2_t cplt_num;
+  wire1_t rob_flag; // 用于对比指令年龄
 
-  // page_fault
+  // 异常信息
   wire1_t page_fault_inst = false;
   wire1_t page_fault_load = false;
   wire1_t page_fault_store = false;
-
-  // illegal
   wire1_t illegal_inst = false;
 
   Inst_type type;
