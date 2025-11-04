@@ -35,7 +35,7 @@ using namespace std;
 #define MAX_UOP_NUM 3
 
 #define ARF_NUM 32
-#define PRF_NUM 128
+#define PRF_NUM 96
 #define MAX_BR_NUM 16
 
 #define CSR_NUM 21

@@ -8,9 +8,8 @@
 
 extern Back_Top back;
 extern int commit_num;
-
-const int ALLOC_NUM = PRF_NUM / FETCH_WIDTH;
-
+const int ALLOC_NUM =
+    PRF_NUM / FETCH_WIDTH; // 分配寄存器时将preg分成FETCH_WIDTH个部分
 Rename::Rename() {
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
@@ -173,6 +172,7 @@ void Rename::comb_branch() {
     }
 
     // 恢复free_list
+    // mispred和flush不会同时发生，可以不用考虑free_vec_1，直接用free_vec恢复
     for (int j = 0; j < PRF_NUM; j++) {
       free_vec_1[j] = free_vec[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
       spec_alloc_1[j] =
@@ -190,6 +190,7 @@ void Rename ::comb_flush() {
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
+      // 使用free_vec_1  当前周期提交的指令释放的寄存器(例如CSRR)要考虑
       free_vec_1[j] = free_vec_1[j] || spec_alloc_1[j];
       spec_alloc_1[j] = false;
     }
@@ -200,13 +201,19 @@ void Rename ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
-      if (io.rob_commit->commit_entry[i].uop.dest_en &&
-          !io.rob_commit->commit_entry[i].uop.page_fault_load &&
-          !io.rob_bcast->interrupt) {
-        free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
-        spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
-      }
       commit_num++;
+      if (io.rob_commit->commit_entry[i].uop.dest_en) {
+
+        // free_vec_1在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
+        // spec_alloc_1在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
+        // 异常指令要看上去没有执行一样
+        if (!io.rob_commit->commit_entry[i].uop.page_fault_load &&
+            !io.rob_bcast->interrupt && !io.rob_bcast->illegal_inst) {
+          free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
+          spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
+        }
+      }
+
       if (LOG) {
         cout << "ROB commit PC 0x" << hex
              << io.rob_commit->commit_entry[i].uop.pc << " idx "
@@ -255,4 +262,16 @@ void Rename ::seq() {
       alloc_checkpoint[i][j] = alloc_checkpoint_1[i][j];
     }
   }
+
+  // 监控是否产生寄存器泄露
+  // if (sim_time % 10000000 == 0) {
+  //   int free_vec_num = 0;
+  //   for (int i = 0; i < PRF_NUM; i++) {
+  //     if (free_vec[i])
+  //       free_vec_num++;
+  //   }
+  //
+  //   // assert(free_vec_num > 32);
+  //   cout << "free_vec num: " << hex << free_vec_num << endl;
+  // }
 }

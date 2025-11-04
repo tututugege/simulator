@@ -77,11 +77,12 @@ void ROB::comb_commit() {
     }
   }
 
-  // 看第一个valid的inst是否完成，如果完成则single_commit
+  // 看第一个valid的inst是否完成 或者是interrupt，如果完成则single_commit
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     if (entry[i][deq_ptr].valid) {
       single_idx = i;
-      if (entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+      if (!io.rob_bcast->interrupt &&
+          entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
         single_commit = false;
       }
       break;

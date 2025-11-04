@@ -1,10 +1,7 @@
-#include "TOP.h"
 #include "config.h"
 #include <ISU.h>
 #include <util.h>
 #include <vector>
-
-extern Back_Top back;
 
 void ISU::add_iq(int entry_num, IQ_TYPE type) {
   iq.push_back(IQ(entry_num, type));
@@ -129,11 +126,11 @@ void ISU::seq() {
 
   // 唤醒load
   if (io.iss2prf->iss_entry[IQ_STA].valid) {
-    back.isu.iq[IQ_LD].sta_wake_up(io.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
+    iq[IQ_LD].sta_wake_up(io.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
   }
 
   if (io.iss2prf->iss_entry[IQ_STD].valid) {
-    back.isu.iq[IQ_LD].std_wake_up(io.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
+    iq[IQ_LD].std_wake_up(io.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
   }
 
   if (io.prf_awake->wake.valid) {
@@ -208,7 +205,8 @@ Inst_entry IQ::scheduler() {
           (entry[i].uop.pre_sta_mask || entry[i].uop.pre_std_mask))) {
 
       // 根据IQ位置判断优先级 也可以随机 或者oldest-first
-      if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
+      // 这里是oldest-first
+      if (!iss_entry.valid || cmp_inst_age(iss_entry.uop, entry[i].uop)) {
         iss_entry = entry[i];
         iss_idx = i;
       }
