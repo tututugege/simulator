@@ -9,7 +9,7 @@ diff/是difftest部分，使用内置的简单模拟器Ref_cpu类作为参考，
 
 ![后端架构图](./arch.svg)
 
-分为六级流水线   Decode->Rename/Dispatch->Issue/Register Read->Execute->Write Back->Commit
+分为七级流水线   Decode->Rename->Dispatch->Issue/Register Read->Execute->Write Back->Commit
 
 ## 用法
 
@@ -31,7 +31,7 @@ baremental/中的test移植了一生一芯项目的测试小程序，例：`make
 
 ![所有测试](./all.png)
 
-目前支持RV32IMA，大概能够成功启动Linux
+目前支持RV32IMASU，能够成功启动Linux
 
 ![Linux](./Linux.png)
 

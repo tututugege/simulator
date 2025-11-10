@@ -1,4 +1,5 @@
 #include "TOP.h"
+#include <Cache.h>
 #include <STQ.h>
 #include <config.h>
 #include <cstdint>
@@ -6,6 +7,7 @@
 #include <util.h>
 
 extern Back_Top back;
+extern Cache cache;
 
 void STQ::comb() {
   int num = count;
@@ -51,6 +53,8 @@ void STQ::comb() {
     if (wstrb & 0b1000)
       mask |= 0xFF000000;
 
+    cache.cache_access(waddr);
+
     p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
 
     if (waddr == UART_BASE) {
@@ -58,6 +62,16 @@ void STQ::comb() {
       temp = wdata & 0x000000ff;
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
       cout << temp;
+
+      if (temp == '?') {
+        if (perf.perf_start) {
+          perf.perf_print();
+        } else {
+          cout << " perf counter start" << endl;
+          perf.perf_start = true;
+          perf.perf_reset();
+        }
+      }
     }
 
     if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 7) {

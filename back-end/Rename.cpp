@@ -7,7 +7,7 @@
 #include <util.h>
 
 extern Back_Top back;
-extern int commit_num;
+
 const int ALLOC_NUM =
     PRF_NUM / FETCH_WIDTH; // 分配寄存器时将preg分成FETCH_WIDTH个部分
 Rename::Rename() {
@@ -201,7 +201,7 @@ void Rename ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (io.rob_commit->commit_entry[i].valid) {
-      commit_num++;
+      perf.commit_num++;
       if (io.rob_commit->commit_entry[i].uop.dest_en) {
 
         // free_vec_1在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器

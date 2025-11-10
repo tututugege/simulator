@@ -1,9 +1,7 @@
 #include "Cache.h"
+#include "config.h"
 #include <cstdint>
 #include <cstdlib>
-
-int cache_access_num;
-int cache_miss_num;
 
 int Cache::cache_select_evict() { return rand() % way_num; }
 
@@ -15,7 +13,7 @@ void Cache::cache_evict(uint32_t addr) {
 }
 
 int Cache::cache_access(uint32_t addr) {
-  cache_access_num++;
+  perf.cache_access_num++;
   uint32_t tag;
   int i;
 
@@ -28,7 +26,7 @@ int Cache::cache_access(uint32_t addr) {
 
   if (i == way_num) {
     cache_evict(addr);
-    cache_miss_num++;
+    perf.cache_miss_num++;
     return MISS_LATENCY;
   }
 

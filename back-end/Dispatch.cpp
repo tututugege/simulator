@@ -44,10 +44,12 @@ void Dispatch::comb_wake() {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       if (inst_alloc[i].uop.src1_preg == io.prf_awake->wake.preg) {
         inst_alloc[i].uop.src1_busy = false;
+        // inst_alloc[i].uop.src1_latency = 0;
         inst_r_1[i].uop.src1_busy = false;
       }
       if (inst_alloc[i].uop.src2_preg == io.prf_awake->wake.preg) {
         inst_alloc[i].uop.src2_busy = false;
+        // inst_alloc[i].uop.src2_latency = 0;
         inst_r_1[i].uop.src2_busy = false;
       }
     }
@@ -58,10 +60,15 @@ void Dispatch::comb_wake() {
       for (int j = 0; j < FETCH_WIDTH; j++) {
         if (inst_alloc[j].uop.src1_preg == io.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src1_busy = false;
+          // inst_alloc[j].uop.src1_latency = io.iss_awake->wake[i].latency;
+          // 假如Dispatch卡住，需要修改inrt_r_1
+          // 暂时只考虑2周期延迟的乘法指令
+          // 如果dispatch卡了一个周期，则无需修改src_latency
           inst_r_1[j].uop.src1_busy = false;
         }
         if (inst_alloc[j].uop.src2_preg == io.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src2_busy = false;
+          // inst_alloc[j].uop.src2_latency = io.iss_awake->wake[i].latency;
           inst_r_1[j].uop.src2_busy = false;
         }
       }
