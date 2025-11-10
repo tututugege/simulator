@@ -16,23 +16,66 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_sstatus,  number_sie,      number_sip,
                         number_satp,     number_mhartid,  number_misa};
 
-// 条件分支 beq之类的
-int cond_br_num;
-// 间接跳转 jalr
-int indirect_br_num;
-
-int mispred_num;
-
 void Back_Top::difftest(Inst_uop *inst) {
 
   if (inst->type == JALR) {
-    indirect_br_num++;
+    if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+      perf.ret_br_num++;
+    } else {
+      perf.jalr_br_num++;
+    }
   } else if (inst->type == BR) {
-    cond_br_num++;
+    perf.cond_br_num++;
+  } else if (inst->type == JAL) {
+    if (inst->dest_areg == 1) {
+      perf.call_br_num++;
+    } else {
+      perf.jal_br_num++;
+    }
   }
 
-  if ((inst->type == JALR || inst->type == BR) && inst->mispred) {
-    mispred_num++;
+  if (inst->mispred) {
+    if (inst->type == JALR) {
+      if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+        perf.ret_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.ret_dir_mispred++;
+        } else {
+          perf.ret_addr_mispred++;
+        }
+      } else {
+        perf.jalr_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.jalr_dir_mispred++;
+        } else {
+          perf.jalr_addr_mispred++;
+        }
+      }
+    } else if (inst->type == BR) {
+      if (inst->pred_br_taken != inst->br_taken) {
+        perf.cond_dir_mispred++;
+      } else {
+        perf.cond_addr_mispred++;
+      }
+      perf.cond_mispred_num++;
+    } else if (inst->type == JAL) {
+
+      if (inst->dest_areg == 1) {
+        perf.call_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.call_dir_mispred++;
+        } else {
+          perf.call_addr_mispred++;
+        }
+      } else {
+        perf.jal_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.jal_dir_mispred++;
+        } else {
+          perf.jal_addr_mispred++;
+        }
+      }
+    }
   }
 
   if (inst->dest_en && !inst->page_fault_load &&
@@ -248,7 +291,7 @@ void Back_Top::Back_comb() {
   // rename -> idu.comb_fire
   // prf->idu.comb_branch
   // isu/stq/rob -> rename.fire -> idu.fire
-  //
+
   idu.comb_decode();
   prf.comb_br_check();
   idu.comb_branch();

@@ -17,17 +17,14 @@
 using namespace std;
 
 // 性能计数器
-extern int cache_access_num;
-extern int cache_miss_num;
-extern int cond_br_num;
-extern int indirect_br_num;
-extern int mispred_num;
-int commit_num = 0;
+Perf_count perf;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &,
                  bool &);
+
+// bpu 更新信息
 void back2front_comb(front_top_in &front_in, front_top_out &front_out);
 
 Back_Top back;
@@ -96,13 +93,11 @@ int main(int argc, char *argv[]) {
   cout << hex << front_out.pc[0] << endl;
   front_in.reset = false;
 
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    front_in.back2front_valid[i] = false;
-  }
 #endif
 
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
+    perf.cycle++;
     if (LOG)
       cout
           << "****************************************************************"
@@ -111,6 +106,7 @@ int main(int argc, char *argv[]) {
           << endl;
 
     // step1: fetch instructions and fill in back.in
+
     front_cycle(stall, misprediction, exception, front_in, front_out, number_PC,
                 non_branch_mispred);
 
@@ -147,14 +143,16 @@ SIM_END:
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
-    printf("\033[1;32mcycle num      : %lld\033[0m\n", sim_time);
-    printf("\033[1;32mipc            : %f\033[0m\n",
-           (double)commit_num / sim_time);
-    printf("\033[1;32mcache accuracy : %f\033[0m\n",
-           1 - cache_miss_num / (double)cache_access_num);
-    printf("\033[1;32mbpu   accuracy : %f\033[0m\n",
-           1 - mispred_num / (double)(cond_br_num + indirect_br_num));
+    // printf("\033[1;32mcycle num      : %ld\033[0m\n", perf.cycle);
+    // printf("\033[1;32minstruction num: %ld\033[0m\n", perf.commit_num);
+    // printf("\033[1;32mipc            : %f\033[0m\n",
+    //        (double)perf.commit_num / perf.cycle);
+    // printf("\033[1;32mcache accuracy : %f\033[0m\n",
+    //        1 - perf.cache_miss_num / (double)perf.cache_access_num);
+    // printf("\033[1;32mbpu   accuracy : %f\033[0m\n",
+    //        1 - perf.mispred_num /
+    //                (double)(perf.cond_br_num + perf.indirect_br_num));
+    perf.perf_print();
 
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << endl;
@@ -274,7 +272,7 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   }
 
   if (p_addr == 0x1fd0e000) {
-    data = commit_num;
+    data = perf.commit_num;
   } else if (p_addr == 0x1fd0e004) {
     data = 0;
   } else {
@@ -294,6 +292,15 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
     front_in.FIFO_read_enable = true;
     front_in.refetch = (misprediction || exception || non_branch_mispred);
+    // for (int i = 0; i < COMMIT_WIDTH; i++) {
+    //   if (front_in.back2front_valid[i]) {
+    //     Inst_entry *inst = &back.rob.io.rob_commit->commit_entry[i];
+    //     if (!(inst->valid && is_branch(inst->uop.type) &&
+    //           front_in.predict_base_pc[i] == inst->uop.pc)) {
+    //       cout << "error" << endl;
+    //     }
+    //   }
+    // }
     front_top(&front_in, &front_out);
 
 #else
@@ -337,6 +344,9 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 #endif
 
     bool no_taken = true;
+    bool is_br = false;
+    bool is_jal = false;
+    bool is_jalr = false;
     uint32_t last_valid_inst_pc = 0;
     for (int j = 0; j < FETCH_WIDTH; j++) {
       back.in.valid[j] =
@@ -360,17 +370,32 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       back.in.pcpn[j] = front_out.pcpn[j];
 
       // pre-decode, avoid non-branch instruction be predicted as taken
+      // 直接处理jal的跳转
+      // 判断条件跳转的地址是否正确
+      // 判断jalr是否被正确预测为跳转
+
       uint32_t op_branch = 0b1100011;
       uint32_t op_jal = 0b1101111;
       uint32_t op_jalr = 0b1100111;
       uint32_t number_op_code_unsigned = front_out.instructions[j] & 0x7f;
-      bool is_branch_inst = (number_op_code_unsigned == op_branch) ||
-                            (number_op_code_unsigned == op_jal) ||
-                            (number_op_code_unsigned == op_jalr);
-      // if (front_out.predict_dir[j])
-      //   no_taken = false;
+      is_jal = (number_op_code_unsigned == op_jal);
+      is_jalr = (number_op_code_unsigned == op_jalr);
+      is_br = (number_op_code_unsigned == op_branch);
+      bool is_branch_inst = is_br || is_jal || is_jalr;
       if (front_out.predict_dir[j] && is_branch_inst)
         no_taken = false;
+
+      // 预解码处理
+      if (back.in.valid[j]) {
+
+        if (is_jalr) {
+          // 判断jalr是否被正确预测为跳转
+        } else if (is_br) {
+          // 检查预测跳转的地址是否正确
+        } else if (is_jal) {
+          // 直接处理jal的跳转
+        }
+      }
     }
 
     non_branch_mispred = false;
@@ -382,15 +407,24 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       front_in.refetch = true;
       front_in.refetch_address = last_valid_inst_pc + 4;
     }
-
   } else {
 #ifdef CONFIG_BPU
     /*
      * stall && !misprediction && !exception
      */
     front_in.FIFO_read_enable = false;
-    // front_in.refetch = false;
+    front_in.refetch = false;
     front_in.refetch = non_branch_mispred;
+    // for (int i = 0; i < COMMIT_WIDTH; i++) {
+    //   if (front_in.back2front_valid[i]) {
+    //     Inst_entry *inst = &back.rob.io.rob_commit->commit_entry[i];
+    //     if (!(inst->valid && is_branch(inst->uop.type) &&
+    //           front_in.predict_base_pc[i] == inst->uop.pc)) {
+    //       cout << "error" << endl;
+    //     }
+    //   }
+    // }
+
     front_top(&front_in, &front_out);
     non_branch_mispred = false;
 #endif
@@ -401,19 +435,21 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
   front_in.FIFO_read_enable = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
-    front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
-                                   is_branch(back.out.commit_entry[i].uop.type);
+    front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
+    // is_branch(back.out.commit_entry[i].uop.type);
+
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
-      front_in.actual_dir[i] = inst->br_taken;
+      front_in.actual_dir[i] = (is_branch(inst->type)) ? inst->br_taken : false;
+      // front_in.actual_dir[i] = inst->br_taken;
       front_in.actual_target[i] = inst->pc_next;
       int br_type = BR_DIRECT;
 
       if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
         br_type = BR_CALL;
       } else if (inst->type == JALR) {
-        if (inst->src1_areg == 1)
+        if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
           br_type = BR_RET;
         else
           br_type = BR_IDIRECT;

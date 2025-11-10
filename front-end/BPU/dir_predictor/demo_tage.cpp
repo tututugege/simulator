@@ -64,14 +64,14 @@ void TAGE_update_FH(bool new_history) {
 
 // XiangShan : FH1 xor FH2 xor (PC >> 1)
 uint8_t cal_tag(uint32_t PC, int n) {
-  uint8_t ret = FH[1][n] ^ FH[2][n] ^ (PC >> 2) & (0xff);
+  uint8_t ret = FH[1][n] ^ FH[2][n] ^ (PC >> 5) & (0xff);
   return ret;
 }
 
 // XiangShan : FH xor (PC >> 1)
 // 4096 entries
 uint32_t cal_index(uint32_t PC, int n) {
-  uint32_t ret = FH[0][n] ^ (PC >> 2) & (0xfff);
+  uint32_t ret = FH[0][n] ^ (PC >> 5) & (0xfff);
   return ret;
 }
 

@@ -1,5 +1,6 @@
 #include "config.h"
 #include <ISU.h>
+#include <cstdint>
 #include <util.h>
 #include <vector>
 
@@ -83,6 +84,11 @@ void ISU::comb_deq() {
         io.iss2prf->iss_entry[i].uop.dest_en) {
       io.iss_awake->wake[i].valid = true;
       io.iss_awake->wake[i].preg = io.iss2prf->iss_entry[i].uop.dest_preg;
+      // if (io.iss2prf->iss_entry[i].uop.op == UOP_MUL) {
+      //   io.iss_awake->wake[i].latency = 2;
+      // } else {
+      io.iss_awake->wake[i].latency = 1;
+      // }
     } else {
       io.iss_awake->wake[i].valid = false;
     }
@@ -116,10 +122,9 @@ void ISU::seq() {
 
   // 唤醒
   for (int i = 0; i < ALU_NUM; i++) {
-    if (io.iss2prf->iss_entry[i].valid &&
-        io.iss2prf->iss_entry[i].uop.dest_en) {
+    if (io.iss_awake->wake[i].valid) {
       for (auto &q : iq) {
-        q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
+        q.wake_up(io.iss_awake->wake[i].preg, io.iss_awake->wake[i].latency);
       }
     }
   }
@@ -135,7 +140,7 @@ void ISU::seq() {
 
   if (io.prf_awake->wake.valid) {
     for (auto &q : iq) {
-      q.wake_up(io.prf_awake->wake.preg);
+      q.wake_up(io.prf_awake->wake.preg, 0);
     }
   }
 
@@ -162,16 +167,35 @@ void IQ::br_clear(uint32_t br_mask) {
   }
 }
 
-// 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
-void IQ::wake_up(uint32_t dest_preg) {
+void IQ::latency_wake() {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid) {
+      if (entry[i].uop.src1_en && !entry[i].uop.src1_busy &&
+          entry[i].uop.src1_latency != 0) {
+        entry[i].uop.src1_latency--;
+      }
+
+      if (entry[i].uop.src2_en && !entry[i].uop.src2_busy &&
+          entry[i].uop.src2_latency != 0) {
+        entry[i].uop.src2_latency--;
+      }
+    }
+  }
+}
+
+// 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
+void IQ::wake_up(uint32_t dest_preg, uint32_t latency) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid) {
+
       if (entry[i].uop.src1_en && entry[i].uop.src1_preg == dest_preg) {
         entry[i].uop.src1_busy = false;
+        entry[i].uop.src1_latency = latency - 1;
       }
 
       if (entry[i].uop.src2_en && entry[i].uop.src2_preg == dest_preg) {
         entry[i].uop.src2_busy = false;
+        entry[i].uop.src2_latency = latency - 1;
       }
     }
   }

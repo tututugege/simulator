@@ -1,4 +1,4 @@
-RISCV_ARCH := rv32iam_zicsr
+RISCV_ARCH := rv32ima_zicsr
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
 CFLAGS := -O2 

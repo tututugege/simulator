@@ -3,13 +3,13 @@ using namespace std;
 
 #define OFFSET_WIDTH 6
 #define INDEX_WIDTH 6
-#define WAY_NUM 8
+#define WAY_NUM 4
 
 #define TAG(addr) (addr >> (offset_width + index_width))
 #define INDEX(addr) ((addr >> offset_width) & ((1 << index_width) - 1))
 
 #define HIT_LATENCY 2
-#define MISS_LATENCY 100
+#define MISS_LATENCY 50
 
 class Cache {
   uint32_t cache_tag[WAY_NUM][1 << INDEX_WIDTH];
