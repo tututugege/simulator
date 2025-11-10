@@ -55,6 +55,11 @@ void mul(Inst_uop &inst) {
 }
 
 void div(Inst_uop &inst) {
+
+  if (inst.src2_rdata == 0) {
+    return;
+  }
+
   switch (inst.func3) {
 
   case 4: { // div
@@ -87,7 +92,6 @@ void bru(Inst_uop &inst) {
   uint32_t pc_br = inst.pc + inst.imm;
   bool br_taken = true;
 
-  assert(is_branch_uop(inst.op));
   if (inst.op == UOP_BR) {
     switch (inst.func3) {
     case BEQ:

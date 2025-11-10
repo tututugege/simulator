@@ -31,7 +31,7 @@ using namespace std;
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
 
-#define MAX_SIM_TIME 1000000000000
+#define MAX_SIM_TIME 10000000000
 #define ISSUE_WAY IQ_NUM
 #define MAX_UOP_NUM 3
 
@@ -55,7 +55,7 @@ using namespace std;
 
 extern long long sim_time;
 
-// #define CONFIG_DIFFTEST
+#define CONFIG_DIFFTEST
 #define CONFIG_BPU
 #define CONFIG_PERF_COUNTER
 // #define CONFIG_RUN_REF
