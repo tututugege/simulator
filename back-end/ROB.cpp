@@ -69,23 +69,26 @@ void ROB::comb_commit() {
   // 出队一行存在特殊指令则single commit
   wire1_t single_commit = false;
   wire2_t single_idx;
-  for (int i = 0; i < ROB_BANK_NUM; i++) {
-    if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop) ||
-        io.rob2csr->interrupt_resp) {
-      single_commit = true;
-      break;
-    }
-  }
 
-  // 看第一个valid的inst是否完成 或者是interrupt，如果完成则single_commit
-  for (int i = 0; i < ROB_BANK_NUM; i++) {
-    if (entry[i][deq_ptr].valid) {
-      single_idx = i;
-      if (!io.rob_bcast->interrupt &&
-          entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
-        single_commit = false;
+  if (!io.dec_bcast->mispred) {
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop) ||
+          io.rob2csr->interrupt_resp) {
+        single_commit = true;
+        break;
       }
-      break;
+    }
+
+    // 看第一个valid的inst是否完成 或者是interrupt，如果完成则single_commit
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid) {
+        single_idx = i;
+        if (!io.rob_bcast->interrupt &&
+            entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+          single_commit = false;
+        }
+        break;
+      }
     }
   }
 

@@ -327,7 +327,6 @@ void Back_Top::Back_comb() {
   exu.comb_from_csr();
   rob.comb_branch();
   rename.comb_branch();
-  rename.comb_pipeline();
   exu.comb_branch();
   exu.comb_pipeline();
   exu.comb_flush();
@@ -337,8 +336,9 @@ void Back_Top::Back_comb() {
   prf.comb_flush();
   dis.comb_pipeline();
 
+  // 为了debug
+  // 修正pc_next 以及difftest对应的pc_next
   back.out.flush = rob.io.rob_bcast->flush;
-
   if (!rob.io.rob_bcast->flush) {
     back.out.mispred = prf.io.prf2dec->mispred;
     back.out.stall = !idu.io.dec2front->ready;
@@ -356,7 +356,6 @@ void Back_Top::Back_comb() {
     }
   }
 
-  // 修正pc_next 以及difftest对应的pc_next
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
     Inst_type type = back.out.commit_entry[i].uop.type;
@@ -367,6 +366,7 @@ void Back_Top::Back_comb() {
   }
   rename.comb_commit();
   rename.comb_flush();
+  rename.comb_pipeline();
 }
 
 void Back_Top::Back_seq() {

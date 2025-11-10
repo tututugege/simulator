@@ -13,24 +13,35 @@ const int ALLOC_NUM =
 Rename::Rename() {
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
-    spec_alloc_1[i] = false;
 
     // 初始化的时候平均分到free_vec的四个部分
     if (i < ARF_NUM) {
       spec_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
-      spec_RAT_1[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
       arch_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
       free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = false;
-      free_vec_1[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = false;
     } else {
       free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = true;
-      free_vec_1[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = true;
     }
   }
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     inst_r[i].valid = false;
   }
+
+  memcpy(spec_RAT_1, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
+  memcpy(spec_RAT_normal, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
+  memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
+  memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
+
+  memcpy(spec_alloc_mispred, spec_alloc, PRF_NUM);
+  memcpy(spec_alloc_flush, spec_alloc, PRF_NUM);
+  memcpy(spec_alloc_normal, spec_alloc, PRF_NUM);
+  memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
+
+  memcpy(free_vec_mispred, free_vec, PRF_NUM);
+  memcpy(free_vec_flush, free_vec, PRF_NUM);
+  memcpy(free_vec_normal, free_vec, PRF_NUM);
+  memcpy(free_vec_1, free_vec, PRF_NUM);
 }
 
 void Rename::comb_alloc() {
@@ -137,9 +148,9 @@ void Rename::comb_fire() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (fire[i] && io.ren2dis->uop[i].dest_en) {
       int dest_preg = io.ren2dis->uop[i].dest_preg;
-      spec_alloc_1[dest_preg] = true;
-      free_vec_1[dest_preg] = false;
-      spec_RAT_1[inst_r[i].uop.dest_areg] = dest_preg;
+      spec_alloc_normal[dest_preg] = true;
+      free_vec_normal[dest_preg] = false;
+      spec_RAT_normal[inst_r[i].uop.dest_areg] = dest_preg;
       busy_table_1[dest_preg] = true;
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][dest_preg] = true;
@@ -148,7 +159,9 @@ void Rename::comb_fire() {
     // 保存checkpoint
     if (fire[i] && is_branch(inst_r[i].uop.type)) {
       for (int j = 0; j < ARF_NUM + 1; j++) {
-        RAT_checkpoint_1[inst_r[i].uop.tag][j] = spec_RAT_1[j];
+        // 注意这里存在隐藏的旁路
+        // 保存的是本条指令完成后的spec_RAT，不包括同一周期后续指令对spec_RAT的影响
+        RAT_checkpoint_1[inst_r[i].uop.tag][j] = spec_RAT_normal[j];
       }
 
       for (int j = 0; j < PRF_NUM; j++) {
@@ -168,14 +181,15 @@ void Rename::comb_branch() {
   if (io.dec_bcast->mispred && !io.rob_bcast->flush) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM + 1; i++) {
-      spec_RAT_1[i] = RAT_checkpoint[io.dec_bcast->br_tag][i];
+      spec_RAT_mispred[i] = RAT_checkpoint[io.dec_bcast->br_tag][i];
     }
 
     // 恢复free_list
     // mispred和flush不会同时发生，可以不用考虑free_vec_1，直接用free_vec恢复
     for (int j = 0; j < PRF_NUM; j++) {
-      free_vec_1[j] = free_vec[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
-      spec_alloc_1[j] =
+      free_vec_mispred[j] =
+          free_vec[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
+      spec_alloc_mispred[j] =
           spec_alloc[j] && !alloc_checkpoint[io.dec_bcast->br_tag][j];
     }
   }
@@ -185,14 +199,14 @@ void Rename ::comb_flush() {
   if (io.rob_bcast->flush) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM + 1; i++) {
-      spec_RAT_1[i] = arch_RAT[i];
+      spec_RAT_flush[i] = arch_RAT[i];
     }
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
-      // 使用free_vec_1  当前周期提交的指令释放的寄存器(例如CSRR)要考虑
-      free_vec_1[j] = free_vec_1[j] || spec_alloc_1[j];
-      spec_alloc_1[j] = false;
+      // 使用free_vec_normal  当前周期提交的指令释放的寄存器(例如CSRR)要考虑
+      free_vec_flush[j] = free_vec_normal[j] || spec_alloc_normal[j];
+      spec_alloc_flush[j] = false;
     }
   }
 }
@@ -209,8 +223,10 @@ void Rename ::comb_commit() {
         // 异常指令要看上去没有执行一样
         if (!io.rob_commit->commit_entry[i].uop.page_fault_load &&
             !io.rob_bcast->interrupt && !io.rob_bcast->illegal_inst) {
-          free_vec_1[io.rob_commit->commit_entry[i].uop.old_dest_preg] = true;
-          spec_alloc_1[io.rob_commit->commit_entry[i].uop.dest_preg] = false;
+          free_vec_normal[io.rob_commit->commit_entry[i].uop.old_dest_preg] =
+              true;
+          spec_alloc_normal[io.rob_commit->commit_entry[i].uop.dest_preg] =
+              false;
         }
       }
 
@@ -235,23 +251,30 @@ void Rename ::comb_pipeline() {
       inst_r_1[i].valid = inst_r[i].valid && !fire[i];
     }
   }
+
+  if (io.rob_bcast->flush) {
+    memcpy(spec_alloc_1, spec_alloc_flush, PRF_NUM);
+    memcpy(free_vec_1, free_vec_flush, PRF_NUM);
+    memcpy(spec_RAT_1, spec_RAT_flush, (ARF_NUM + 1) * sizeof(reg7_t));
+  } else if (io.dec_bcast->mispred) {
+    memcpy(spec_alloc_1, spec_alloc_mispred, PRF_NUM);
+    memcpy(free_vec_1, free_vec_mispred, PRF_NUM);
+    memcpy(spec_RAT_1, spec_RAT_mispred, (ARF_NUM + 1) * sizeof(reg7_t));
+  } else {
+    memcpy(spec_alloc_1, spec_alloc_normal, PRF_NUM);
+    memcpy(free_vec_1, free_vec_normal, PRF_NUM);
+    memcpy(spec_RAT_1, spec_RAT_normal, (ARF_NUM + 1) * sizeof(reg7_t));
+  }
 }
 
 void Rename ::seq() {
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    inst_r[i] = inst_r_1[i];
-  }
+  memcpy(inst_r, inst_r_1, FETCH_WIDTH * sizeof(Inst_entry));
+  memcpy(spec_RAT, spec_RAT_1, (ARF_NUM + 1) * sizeof(reg7_t));
 
-  for (int i = 0; i < ARF_NUM + 1; i++) {
-    spec_RAT[i] = spec_RAT_1[i];
-  }
-
-  for (int i = 0; i < PRF_NUM; i++) {
-    free_vec[i] = free_vec_1[i];
-    busy_table[i] = busy_table_1[i];
-    spec_alloc[i] = spec_alloc_1[i];
-  }
+  memcpy(free_vec, free_vec_1, PRF_NUM);
+  memcpy(busy_table, busy_table_1, PRF_NUM);
+  memcpy(spec_alloc, spec_alloc_1, PRF_NUM);
 
   for (int i = 0; i < MAX_BR_NUM; i++) {
     for (int j = 0; j < ARF_NUM + 1; j++) {
@@ -262,6 +285,18 @@ void Rename ::seq() {
       alloc_checkpoint[i][j] = alloc_checkpoint_1[i][j];
     }
   }
+
+  memcpy(spec_alloc_normal, spec_alloc, PRF_NUM);
+  // memcpy(spec_alloc_mispred, spec_alloc, PRF_NUM);
+  // memcpy(spec_alloc_flush, spec_alloc, PRF_NUM);
+
+  memcpy(free_vec_normal, free_vec, PRF_NUM);
+  // memcpy(free_vec_mispred, free_vec, PRF_NUM);
+  // memcpy(free_vec_flush, free_vec, PRF_NUM);
+
+  memcpy(spec_RAT_normal, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
+  // memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
+  // memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
 
   // 监控是否产生寄存器泄露
   // if (sim_time % 10000000 == 0) {
