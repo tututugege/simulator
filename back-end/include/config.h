@@ -31,7 +31,7 @@ using namespace std;
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
 
-#define MAX_SIM_TIME 10000000000
+#define MAX_SIM_TIME 1000000000
 #define ISSUE_WAY IQ_NUM
 #define MAX_UOP_NUM 3
 

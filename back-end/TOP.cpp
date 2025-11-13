@@ -285,56 +285,45 @@ void Back_Top::Back_comb() {
     idu.io.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
   }
 
-  // exu -> iss -> prf
-  // exu -> csr
-
-  // rename -> idu.comb_fire
-  // prf->idu.comb_branch
-  // isu/stq/rob -> rename.fire -> idu.fire
-
+  // 每个空行表示分层  下层会依赖上层产生的某个信号
   idu.comb_decode();
   prf.comb_br_check();
-  idu.comb_branch();
   csr.comb_interrupt();
-  rob.comb_ready();
-  rob.comb_commit();
   rename.comb_alloc();
-  dis.comb_alloc();
   prf.comb_complete();
   prf.comb_awake();
+  prf.comb_write();
+  isu.comb_ready();
+
+  idu.comb_branch();
+  rob.comb_complete();
+
+  rob.comb_ready();
+  rob.comb_commit();
+
+  idu.comb_release_tag();
+  dis.comb_alloc();
   exu.comb_exec();
   exu.comb_to_csr();
   exu.comb_ready();
   isu.comb_deq();
-  prf.comb_read();
-  rename.comb_wake();
-  dis.comb_wake();
-  rename.comb_rename();
-  isu.comb_ready();
-  dis.comb_dispatch();
-  stq.comb();
-  rob.comb_complete();
-  idu.comb_release_tag();
-  dis.comb_fire();
-  rename.comb_fire();
-  rob.comb_fire();
-  idu.comb_fire();
-  rob.comb_flush();
-  idu.comb_flush();
+
   csr.comb_exception();
   csr.comb_csr_read();
   csr.comb_csr_write();
   exu.comb_from_csr();
-  rob.comb_branch();
-  rename.comb_branch();
-  exu.comb_branch();
-  exu.comb_pipeline();
-  exu.comb_flush();
-  prf.comb_write();
-  prf.comb_branch();
-  prf.comb_pipeline();
-  prf.comb_flush();
-  dis.comb_pipeline();
+  stq.comb();
+  prf.comb_read();
+  rename.comb_wake();
+  dis.comb_wake();
+  rename.comb_rename();
+
+  dis.comb_dispatch();
+
+  dis.comb_fire();
+  rename.comb_fire();
+  rob.comb_fire();
+  idu.comb_fire();
 
   // 为了debug
   // 修正pc_next 以及difftest对应的pc_next
@@ -364,8 +353,19 @@ void Back_Top::Back_comb() {
       rob.io.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
     }
   }
-  rename.comb_commit();
+  rename.comb_commit(); // difftest在这里
+  rob.comb_flush();
+  prf.comb_flush();
+  exu.comb_flush();
   rename.comb_flush();
+  idu.comb_flush();
+  rob.comb_branch();
+  prf.comb_branch();
+  exu.comb_branch();
+  rename.comb_branch();
+  prf.comb_pipeline();
+  exu.comb_pipeline();
+  dis.comb_pipeline();
   rename.comb_pipeline();
 }
 

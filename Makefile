@@ -16,6 +16,9 @@ IMG=./baremetal/memory
 default: $(CXXSRC) 
 	g++ $(CXXINCLUDE) $(CXXSRC) -O3
 
+cov: $(CXXSRC) 
+	g++ $(CXXINCLUDE) $(CXXSRC) -O0 --coverage 
+
 run: 
 	./a.out $(IMG)
 
