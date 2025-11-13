@@ -147,17 +147,7 @@ SIM_END:
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    // printf("\033[1;32mcycle num      : %ld\033[0m\n", perf.cycle);
-    // printf("\033[1;32minstruction num: %ld\033[0m\n", perf.commit_num);
-    // printf("\033[1;32mipc            : %f\033[0m\n",
-    //        (double)perf.commit_num / perf.cycle);
-    // printf("\033[1;32mcache accuracy : %f\033[0m\n",
-    //        1 - perf.cache_miss_num / (double)perf.cache_access_num);
-    // printf("\033[1;32mbpu   accuracy : %f\033[0m\n",
-    //        1 - perf.mispred_num /
-    //                (double)(perf.cond_br_num + perf.indirect_br_num));
     perf.perf_print();
-
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << endl;
 
@@ -165,7 +155,7 @@ SIM_END:
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
     cout << "\033[1;31m------------------------------\033[0m" << endl;
-    // exit(1);
+    exit(1);
   }
 
   return 0;

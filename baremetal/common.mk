@@ -2,7 +2,6 @@ RISCV_ARCH := rv32ia_zicsr
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
 CFLAGS += -O2 
-CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
 
 RISCV_PATH := /opt/riscv32/bin/riscv32-unknown-elf-
 
@@ -24,7 +23,6 @@ all: $(TARGET)
 	make -C $(COMMON_DIR)/.. run
 
 ASM_SRCS += $(COMMON_DIR)/start.S
-ASM_SRCS += $(COMMON_DIR)/trap.S
 
 C_SRCS += $(wildcard *.c, $(COMMON_DIR)/lib/*.c)
 
