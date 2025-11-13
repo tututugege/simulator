@@ -95,6 +95,7 @@ void STQ::comb() {
     entry[deq_ptr].commit = false;
     LOOP_INC(deq_ptr, STQ_NUM);
     count--;
+    commit_count--;
   }
 
   // commit标记为可执行
@@ -103,6 +104,7 @@ void STQ::comb() {
         (is_store(io.rob_commit->commit_entry[i].uop)) &&
         !io.rob_commit->commit_entry[i].uop.page_fault_store) {
       entry[commit_ptr].commit = true;
+      commit_count++;
       LOOP_INC(commit_ptr, STQ_NUM);
     }
   }
@@ -170,7 +172,8 @@ extern uint32_t *p_memory;
 void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
 
   int i = deq_ptr;
-  while (i != commit_ptr) {
+  int count = commit_count;
+  while (count != 0) {
     if ((entry[i].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC)) {
       uint32_t wdata = entry[i].data;
       uint32_t waddr = entry[i].addr;
@@ -199,6 +202,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
       data = (mask & wdata) | (~mask & data);
     }
     LOOP_INC(i, STQ_NUM);
+    count--;
   }
 
   int idx = back.rob.deq_ptr << 2;
