@@ -33,7 +33,7 @@ void ROB::comb_ready() {
     }
   }
 
-  if (count != 0 && io.csr2rob->interrupt_req) {
+  if (count != 0 && io.csr2rob->interrupt_req && !io.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
         io.rob2csr->interrupt_resp = true;

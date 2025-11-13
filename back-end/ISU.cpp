@@ -55,6 +55,7 @@ Inst_entry IQ::deq() {
 
 void ISU::comb_ready() {
   // ready
+
   for (int i = 0; i < IQ_NUM; i++) {
     if (iq[i].entry_num - iq[i].num >= 2) {
       io.iss2dis->ready[i][0] = true;
@@ -87,7 +88,7 @@ void ISU::comb_deq() {
       // if (io.iss2prf->iss_entry[i].uop.op == UOP_MUL) {
       //   io.iss_awake->wake[i].latency = 2;
       // } else {
-      io.iss_awake->wake[i].latency = 1;
+      // io.iss_awake->wake[i].latency = 1;
       // }
     } else {
       io.iss_awake->wake[i].valid = false;

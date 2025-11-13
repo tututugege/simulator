@@ -68,8 +68,8 @@ void EXU::init() {
 
 void EXU::comb_ready() {
   for (int i = 0; i < ISSUE_WAY; i++) {
-    io.exe2iss->ready[i] =
-        (!inst_r[i].valid || fu[i].complete) && !io.dec_bcast->mispred;
+    io.exe2iss->ready[i] = (!inst_r[i].valid || fu[i].complete) &&
+                           !io.dec_bcast->mispred && !io.rob_bcast->flush;
   }
 }
 
@@ -81,7 +81,8 @@ void EXU::comb_exec() {
       fu[i].exec(io.exe2prf->entry[i].uop);
       if (fu[i].complete &&
           !(io.dec_bcast->mispred &&
-            ((1 << inst_r[i].uop.tag) & io.dec_bcast->br_mask))) {
+            ((1 << inst_r[i].uop.tag) & io.dec_bcast->br_mask)) &&
+          !io.rob_bcast->flush) {
         io.exe2prf->entry[i].valid = true;
       } else {
         io.exe2prf->entry[i].valid = false;

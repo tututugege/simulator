@@ -10,6 +10,7 @@ extern Back_Top back;
 
 const int ALLOC_NUM =
     PRF_NUM / FETCH_WIDTH; // 分配寄存器时将preg分成FETCH_WIDTH个部分
+
 Rename::Rename() {
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
@@ -47,10 +48,9 @@ Rename::Rename() {
 void Rename::comb_alloc() {
   // 可用寄存器个数 每周期最多使用FETCH_WIDTH个
   wire7_t alloc_reg[FETCH_WIDTH];
-  wire1_t alloc_valid[FETCH_WIDTH];
+  wire1_t alloc_valid[FETCH_WIDTH] = {false};
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    alloc_valid[i] = false;
     for (int j = 0; j < ALLOC_NUM; j++) {
       if (free_vec[i * ALLOC_NUM + j]) {
         alloc_reg[i] = i * ALLOC_NUM + j;
@@ -65,10 +65,10 @@ void Rename::comb_alloc() {
   wire1_t stall = false;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     io.ren2dis->uop[i] = inst_r[i].uop;
+    io.ren2dis->uop[i].dest_preg = alloc_reg[i];
     // 分配寄存器
     if (inst_r[i].valid && inst_r[i].uop.dest_en && !stall) {
       io.ren2dis->valid[i] = alloc_valid[i];
-      io.ren2dis->uop[i].dest_preg = alloc_reg[i];
       stall = !alloc_valid[i];
     } else if (inst_r[i].valid && !inst_r[i].uop.dest_en) {
       io.ren2dis->valid[i] = !stall;
@@ -140,7 +140,6 @@ void Rename::comb_rename() {
 }
 
 void Rename::comb_fire() {
-  // 分配寄存器
   for (int i = 0; i < FETCH_WIDTH; i++) {
     fire[i] = io.ren2dis->valid[i] && io.dis2ren->ready;
   }
@@ -185,7 +184,7 @@ void Rename::comb_branch() {
     }
 
     // 恢复free_list
-    // mispred和flush不会同时发生，可以不用考虑free_vec_1，直接用free_vec恢复
+    // mispred和flush不会同时发生
     for (int j = 0; j < PRF_NUM; j++) {
       free_vec_mispred[j] =
           free_vec[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
@@ -218,8 +217,8 @@ void Rename ::comb_commit() {
       perf.commit_num++;
       if (io.rob_commit->commit_entry[i].uop.dest_en) {
 
-        // free_vec_1在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
-        // spec_alloc_1在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
+        // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
+        // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
         // 异常指令要看上去没有执行一样
         if (!io.rob_commit->commit_entry[i].uop.page_fault_load &&
             !io.rob_bcast->interrupt && !io.rob_bcast->illegal_inst) {

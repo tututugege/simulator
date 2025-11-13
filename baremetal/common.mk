@@ -1,4 +1,4 @@
-RISCV_ARCH := rv32ima_zicsr
+RISCV_ARCH := rv32ia_zicsr
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
 CFLAGS := -O2 
@@ -20,7 +20,7 @@ RISCV_READELF := $(abspath $(RISCV_PATH)readelf)
 BINARY = $(CURDIR)/$(TARGET).bin
 
 all: $(TARGET)
-	cd $(COMMON_DIR) ;python get_memory.py $(BINARY)
+	cp $(BINARY) $(COMMON_DIR)/memory
 	make -C $(COMMON_DIR)/.. run
 
 ASM_SRCS += $(COMMON_DIR)/start.S

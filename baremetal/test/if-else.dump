@@ -687,7 +687,7 @@ Disassembly of section .debug_info:
   2a:	0401                	.insn	2, 0x0401
   2c:	0014                	.insn	2, 0x0014
   2e:	0000                	.insn	2, 0x0000
-  30:	0000bf07          	.insn	4, 0xbf07
+  30:	00009007          	.insn	4, 0x9007
   34:	1d00                	.insn	2, 0x1d00
   36:	03164703          	lbu	a4,49(a2)
   3a:	9400                	.insn	2, 0x9400
@@ -702,10 +702,10 @@ Disassembly of section .debug_info:
   4c:	0000                	.insn	2, 0x0000
   4e:	0100                	.insn	2, 0x0100
   50:	0708                	.insn	2, 0x0708
-  52:	009a                	.insn	2, 0x009a
+  52:	010a                	.insn	2, 0x010a
   54:	0000                	.insn	2, 0x0000
   56:	0401                	.insn	2, 0x0401
-  58:	0000a407          	.insn	4, 0xa407
+  58:	00011407          	.insn	4, 0x00011407
   5c:	0100                	.insn	2, 0x0100
   5e:	0601                	.insn	2, 0x0601
   60:	00000067          	jalr	zero,0(zero) # 0 <__stack_size-0x2000000>
@@ -714,18 +714,19 @@ Disassembly of section .debug_info:
   68:	0000                	.insn	2, 0x0000
   6a:	0100                	.insn	2, 0x0100
   6c:	0502                	.insn	2, 0x0502
-  6e:	00000143          	.insn	4, 0x0143
+  6e:	013c                	.insn	2, 0x013c
+  70:	0000                	.insn	2, 0x0000
   72:	0201                	.insn	2, 0x0201
   74:	00007d07          	.insn	4, 0x7d07
   78:	0100                	.insn	2, 0x0100
   7a:	0504                	.insn	2, 0x0504
-  7c:	00b6                	.insn	2, 0x00b6
+  7c:	0126                	.insn	2, 0x0126
   7e:	0000                	.insn	2, 0x0000
   80:	0401                	.insn	2, 0x0401
-  82:	00009f07          	.insn	4, 0x9f07
+  82:	00010f07          	.insn	4, 0x00010f07
   86:	0100                	.insn	2, 0x0100
   88:	0508                	.insn	2, 0x0508
-  8a:	00b1                	.insn	2, 0x00b1
+  8a:	0121                	.insn	2, 0x0121
   8c:	0000                	.insn	2, 0x0000
   8e:	0408                	.insn	2, 0x0408
   90:	6905                	.insn	2, 0x6905
@@ -758,8 +759,8 @@ Disassembly of section .debug_info:
   c8:	0305                	.insn	2, 0x0305
   ca:	00c0                	.insn	2, 0x00c0
   cc:	8000                	.insn	2, 0x8000
-  ce:	900e                	.insn	2, 0x900e
-  d0:	0000                	.insn	2, 0x0000
+  ce:	000e                	.insn	2, 0x000e
+  d0:	0001                	.insn	2, 0x0001
   d2:	0100                	.insn	2, 0x0100
   d4:	006a0513          	addi	a0,s4,6
   d8:	0000                	.insn	2, 0x0000
@@ -778,7 +779,7 @@ Disassembly of section .debug_info:
   f4:	0000                	.insn	2, 0x0000
   f6:	000c                	.insn	2, 0x000c
   f8:	0000                	.insn	2, 0x0000
-  fa:	3610                	.insn	2, 0x3610
+  fa:	2f10                	.insn	2, 0x2f10
   fc:	0001                	.insn	2, 0x0001
   fe:	0100                	.insn	2, 0x0100
  100:	0914                	.insn	2, 0x0914
@@ -854,7 +855,7 @@ Disassembly of section .debug_info:
  196:	6a11                	.insn	2, 0x6a11
  198:	0000                	.insn	2, 0x0000
  19a:	0600                	.insn	2, 0x0600
- 19c:	0095                	.insn	2, 0x0095
+ 19c:	0105                	.insn	2, 0x0105
  19e:	0000                	.insn	2, 0x0000
  1a0:	0401                	.insn	2, 0x0401
  1a2:	6a06                	.insn	2, 0x6a06
@@ -866,12 +867,11 @@ Disassembly of section .debug_info:
  1ae:	aa030d07          	.insn	4, 0xaa030d07
  1b2:	0001                	.insn	2, 0x0001
  1b4:	1600                	.insn	2, 0x1600
- 1b6:	013e                	.insn	2, 0x013e
- 1b8:	0000                	.insn	2, 0x0000
+ 1b6:	00000137          	lui	sp,0x0
  1ba:	0702                	.insn	2, 0x0702
  1bc:	00006a17          	auipc	s4,0x6
  1c0:	0600                	.insn	2, 0x0600
- 1c2:	014d                	.insn	2, 0x014d
+ 1c2:	0146                	.insn	2, 0x0146
  1c4:	0000                	.insn	2, 0x0000
  1c6:	0802                	.insn	2, 0x0802
  1c8:	aa11                	.insn	2, 0xaa11
@@ -1166,83 +1166,80 @@ Disassembly of section .debug_str:
   8a:	2064                	.insn	2, 0x2064
   8c:	6e69                	.insn	2, 0x6e69
   8e:	0074                	.insn	2, 0x0074
-  90:	616d                	.insn	2, 0x616d
-  92:	6e69                	.insn	2, 0x6e69
-  94:	6300                	.insn	2, 0x6300
-  96:	0074736f          	jal	t1,4789c <__stack_size-0x1fb8764>
-  9a:	6f6c                	.insn	2, 0x6f6c
-  9c:	676e                	.insn	2, 0x676e
-  9e:	6c20                	.insn	2, 0x6c20
-  a0:	20676e6f          	jal	t3,762a6 <__stack_size-0x1f89d5a>
-  a4:	6e75                	.insn	2, 0x6e75
-  a6:	6e676973          	csrrsi	s2,0x6e6,14
-  aa:	6465                	.insn	2, 0x6465
-  ac:	6920                	.insn	2, 0x6920
-  ae:	746e                	.insn	2, 0x746e
-  b0:	6c00                	.insn	2, 0x6c00
-  b2:	20676e6f          	jal	t3,762b8 <__stack_size-0x1f89d48>
-  b6:	6f6c                	.insn	2, 0x6f6c
-  b8:	676e                	.insn	2, 0x676e
-  ba:	6920                	.insn	2, 0x6920
-  bc:	746e                	.insn	2, 0x746e
-  be:	4700                	.insn	2, 0x4700
-  c0:	554e                	.insn	2, 0x554e
-  c2:	4320                	.insn	2, 0x4320
-  c4:	3332                	.insn	2, 0x3332
-  c6:	3120                	.insn	2, 0x3120
-  c8:	2e35                	.insn	2, 0x2e35
-  ca:	2e31                	.insn	2, 0x2e31
-  cc:	2030                	.insn	2, 0x2030
-  ce:	6d2d                	.insn	2, 0x6d2d
-  d0:	6261                	.insn	2, 0x6261
-  d2:	3d69                	.insn	2, 0x3d69
-  d4:	6c69                	.insn	2, 0x6c69
-  d6:	3370                	.insn	2, 0x3370
-  d8:	2032                	.insn	2, 0x2032
-  da:	6d2d                	.insn	2, 0x6d2d
-  dc:	646f6d63          	bltu	t5,t1,736 <__stack_size-0x1fff8ca>
-  e0:	6c65                	.insn	2, 0x6c65
-  e2:	6d3d                	.insn	2, 0x6d3d
-  e4:	6465                	.insn	2, 0x6465
-  e6:	6f6c                	.insn	2, 0x6f6c
-  e8:	6d2d2077          	.insn	4, 0x6d2d2077
-  ec:	7369                	.insn	2, 0x7369
-  ee:	2d61                	.insn	2, 0x2d61
-  f0:	63657073          	csrrci	zero,0x636,10
-  f4:	323d                	.insn	2, 0x323d
-  f6:	3130                	.insn	2, 0x3130
-  f8:	3139                	.insn	2, 0x3139
-  fa:	3132                	.insn	2, 0x3132
-  fc:	6d2d2033          	.insn	4, 0x6d2d2033
- 100:	7261                	.insn	2, 0x7261
- 102:	723d6863          	bltu	s10,gp,832 <__stack_size-0x1fff7ce>
- 106:	3376                	.insn	2, 0x3376
- 108:	6932                	.insn	2, 0x6932
- 10a:	616d                	.insn	2, 0x616d
- 10c:	7a5f 6369 7273      	.insn	6, 0x727363697a5f
- 112:	7a5f 6d6d 6c75      	.insn	6, 0x6c756d6d7a5f
- 118:	7a5f 6161 6f6d      	.insn	6, 0x6f6d61617a5f
- 11e:	7a5f 6c61 7372      	.insn	6, 0x73726c617a5f
- 124:	672d2063          	.insn	4, 0x672d2063
- 128:	7764                	.insn	2, 0x7764
- 12a:	7261                	.insn	2, 0x7261
- 12c:	2066                	.insn	2, 0x2066
- 12e:	4f2d                	.insn	2, 0x4f2d
- 130:	2032                	.insn	2, 0x2032
- 132:	4f2d                	.insn	2, 0x4f2d
- 134:	0032                	.insn	2, 0x0032
- 136:	6e61                	.insn	2, 0x6e61
- 138:	64695f73          	csrrwi	t5,hviprio1,18
- 13c:	0078                	.insn	2, 0x0078
- 13e:	646e6f63          	bltu	t3,t1,79c <__stack_size-0x1fff864>
- 142:	7300                	.insn	2, 0x7300
- 144:	6f68                	.insn	2, 0x6f68
- 146:	7472                	.insn	2, 0x7472
- 148:	6920                	.insn	2, 0x6920
- 14a:	746e                	.insn	2, 0x746e
- 14c:	6500                	.insn	2, 0x6500
- 14e:	646e                	.insn	2, 0x646e
- 150:	665f 616c 0067      	.insn	6, 0x0067616c665f
+  90:	20554e47          	.insn	4, 0x20554e47
+  94:	20333243          	.insn	4, 0x20333243
+  98:	3531                	.insn	2, 0x3531
+  9a:	312e                	.insn	2, 0x312e
+  9c:	302e                	.insn	2, 0x302e
+  9e:	2d20                	.insn	2, 0x2d20
+  a0:	616d                	.insn	2, 0x616d
+  a2:	6962                	.insn	2, 0x6962
+  a4:	693d                	.insn	2, 0x693d
+  a6:	706c                	.insn	2, 0x706c
+  a8:	2d203233          	.insn	4, 0x2d203233
+  ac:	636d                	.insn	2, 0x636d
+  ae:	6f6d                	.insn	2, 0x6f6d
+  b0:	6564                	.insn	2, 0x6564
+  b2:	3d6c                	.insn	2, 0x3d6c
+  b4:	656d                	.insn	2, 0x656d
+  b6:	6c64                	.insn	2, 0x6c64
+  b8:	2d20776f          	jal	a4,738a <__stack_size-0x1ff8c76>
+  bc:	696d                	.insn	2, 0x696d
+  be:	732d6173          	csrrsi	sp,mhpmevent18h,26
+  c2:	6570                	.insn	2, 0x6570
+  c4:	30323d63          	.insn	4, 0x30323d63
+  c8:	3931                	.insn	2, 0x3931
+  ca:	3231                	.insn	2, 0x3231
+  cc:	3331                	.insn	2, 0x3331
+  ce:	2d20                	.insn	2, 0x2d20
+  d0:	616d                	.insn	2, 0x616d
+  d2:	6372                	.insn	2, 0x6372
+  d4:	3d68                	.insn	2, 0x3d68
+  d6:	7672                	.insn	2, 0x7672
+  d8:	61693233          	.insn	4, 0x61693233
+  dc:	7a5f 6369 7273      	.insn	6, 0x727363697a5f
+  e2:	7a5f 6161 6f6d      	.insn	6, 0x6f6d61617a5f
+  e8:	7a5f 6c61 7372      	.insn	6, 0x73726c617a5f
+  ee:	672d2063          	.insn	4, 0x672d2063
+  f2:	7764                	.insn	2, 0x7764
+  f4:	7261                	.insn	2, 0x7261
+  f6:	2066                	.insn	2, 0x2066
+  f8:	4f2d                	.insn	2, 0x4f2d
+  fa:	2032                	.insn	2, 0x2032
+  fc:	4f2d                	.insn	2, 0x4f2d
+  fe:	0032                	.insn	2, 0x0032
+ 100:	616d                	.insn	2, 0x616d
+ 102:	6e69                	.insn	2, 0x6e69
+ 104:	6300                	.insn	2, 0x6300
+ 106:	0074736f          	jal	t1,4790c <__stack_size-0x1fb86f4>
+ 10a:	6f6c                	.insn	2, 0x6f6c
+ 10c:	676e                	.insn	2, 0x676e
+ 10e:	6c20                	.insn	2, 0x6c20
+ 110:	20676e6f          	jal	t3,76316 <__stack_size-0x1f89cea>
+ 114:	6e75                	.insn	2, 0x6e75
+ 116:	6e676973          	csrrsi	s2,0x6e6,14
+ 11a:	6465                	.insn	2, 0x6465
+ 11c:	6920                	.insn	2, 0x6920
+ 11e:	746e                	.insn	2, 0x746e
+ 120:	6c00                	.insn	2, 0x6c00
+ 122:	20676e6f          	jal	t3,76328 <__stack_size-0x1f89cd8>
+ 126:	6f6c                	.insn	2, 0x6f6c
+ 128:	676e                	.insn	2, 0x676e
+ 12a:	6920                	.insn	2, 0x6920
+ 12c:	746e                	.insn	2, 0x746e
+ 12e:	6100                	.insn	2, 0x6100
+ 130:	736e                	.insn	2, 0x736e
+ 132:	695f 7864 6300      	.insn	6, 0x63007864695f
+ 138:	00646e6f          	jal	t3,4613e <__stack_size-0x1fb9ec2>
+ 13c:	726f6873          	csrrsi	a6,mhpmevent6h,30
+ 140:	2074                	.insn	2, 0x2074
+ 142:	6e69                	.insn	2, 0x6e69
+ 144:	0074                	.insn	2, 0x0074
+ 146:	6e65                	.insn	2, 0x6e65
+ 148:	5f64                	.insn	2, 0x5f64
+ 14a:	6c66                	.insn	2, 0x6c66
+ 14c:	6761                	.insn	2, 0x6761
+	...
 
 Disassembly of section .debug_loclists:
 

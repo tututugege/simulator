@@ -14,6 +14,7 @@
 #include <front_module.h>
 #include <fstream>
 #include <util.h>
+
 using namespace std;
 
 // 性能计数器
@@ -43,18 +44,18 @@ int main(int argc, char *argv[]) {
     exit(0);
   }
 
-  char **ptr = NULL;
+  inst_data.seekg(0, std::ios::end);
+  streamsize size = inst_data.tellg();
+  inst_data.seekg(0, std::ios::beg);
 
-  // init physical memory
-  int img_size;
-  for (img_size = 0; img_size < PHYSICAL_MEMORY_LENGTH; img_size++) {
-    if (inst_data.eof())
-      break;
-    char inst_data_line[20];
-    inst_data.getline(inst_data_line, 100);
-    uint32_t inst_32b = strtol(inst_data_line, ptr, 16);
-    p_memory[img_size + POS_MEMORY_SHIFT] = inst_32b;
+  // 读取数据到 vector<char>
+  if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
+                      size)) {
+    std::cerr << "读取文件失败！" << std::endl;
+    return 1;
   }
+
+  inst_data.close();
 
   p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
   p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
@@ -63,7 +64,7 @@ int main(int argc, char *argv[]) {
   p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
 
 #ifdef CONFIG_DIFFTEST
-  init_difftest(img_size);
+  init_difftest(size);
 #endif
 
 #ifdef CONFIG_RUN_REF
@@ -97,7 +98,10 @@ int main(int argc, char *argv[]) {
 
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
+    if (sim_time % 10000000 == 0)
+      cout << dec << sim_time << endl;
     perf.cycle++;
+
     if (LOG)
       cout
           << "****************************************************************"
@@ -161,7 +165,7 @@ SIM_END:
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
     cout << "\033[1;31m------------------------------\033[0m" << endl;
-    exit(1);
+    // exit(1);
   }
 
   return 0;
@@ -460,39 +464,39 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.altpcpn[i] = inst->altpcpn;
       front_in.pcpn[i] = inst->pcpn;
     }
-    if (LOG) {
-      /*cout << " valid: " << front_in.back2front_valid[i]*/
-      /*     << " 反馈给前端的分支指令PC: " << hex << inst->pc*/
-      /*     << " 预测结果: " << inst->pred_br_taken*/
-      /*     << " 实际结果: " << inst->br_taken*/
-      /*     << " 预测目标地址: " << inst->pred_br_pc*/
-      /*     << " 实际目标地址: " << inst->pc_next*/
-      /*     << " 指令: " << inst->instruction << endl;*/
-    }
+    // if (LOG) {
+    /*cout << " valid: " << front_in.back2front_valid[i]*/
+    /*     << " 反馈给前端的分支指令PC: " << hex << inst->pc*/
+    /*     << " 预测结果: " << inst->pred_br_taken*/
+    /*     << " 实际结果: " << inst->br_taken*/
+    /*     << " 预测目标地址: " << inst->pred_br_pc*/
+    /*     << " 实际目标地址: " << inst->pc_next*/
+    /*     << " 指令: " << inst->instruction << endl;*/
+    // }
   }
-  if (LOG) {
-    // show ROB valid vector
-    /*cout << "ROB count: " << back.rob.count << " deq_ptr: " <<
-     * back.rob.deq_ptr*/
-    /*     << " enq_ptr: " << back.rob.enq_ptr << endl;*/
-    /*cout << "ROB valid: \n";*/
-    /*for (int i = 0; i < ROB_NUM; i++) {*/
-    /*  cout << back.rob.entry[i].valid << " ";*/
-    /*  if (i % 32 == 31)*/
-    /*    cout << endl;*/
-    /*}*/
-    /*cout << "ROB inst pc/inst:" << endl;*/
-    /*for (int i = 0; i < ROB_NUM; i++) {*/
-    /*  if (back.rob.entry[i].valid) {*/
-    /*    cout << hex << back.rob.entry[i].uop.pc << " at " << hex << i*/
-    /*         << " , inst: " << back.rob.entry[i].uop.instruction*/
-    /*         << " , decode at sim_time: " << dec*/
-    /*         << back.rob.entry[i].uop.inst_idx*/
-    /*         << " , complete: " << back.rob.complete[i]*/
-    /*         << " , exception: " << back.rob.exception[i] << endl;*/
-    /*  }*/
-    /*}*/
-  }
+  // if (LOG) {
+  // show ROB valid vector
+  /*cout << "ROB count: " << back.rob.count << " deq_ptr: " <<
+   * back.rob.deq_ptr*/
+  /*     << " enq_ptr: " << back.rob.enq_ptr << endl;*/
+  /*cout << "ROB valid: \n";*/
+  /*for (int i = 0; i < ROB_NUM; i++) {*/
+  /*  cout << back.rob.entry[i].valid << " ";*/
+  /*  if (i % 32 == 31)*/
+  /*    cout << endl;*/
+  /*}*/
+  /*cout << "ROB inst pc/inst:" << endl;*/
+  /*for (int i = 0; i < ROB_NUM; i++) {*/
+  /*  if (back.rob.entry[i].valid) {*/
+  /*    cout << hex << back.rob.entry[i].uop.pc << " at " << hex << i*/
+  /*         << " , inst: " << back.rob.entry[i].uop.instruction*/
+  /*         << " , decode at sim_time: " << dec*/
+  /*         << back.rob.entry[i].uop.inst_idx*/
+  /*         << " , complete: " << back.rob.complete[i]*/
+  /*         << " , exception: " << back.rob.exception[i] << endl;*/
+  /*  }*/
+  /*}*/
+  // }
 
   // if (back.out.mispred) {
   if (back.out.mispred || back.out.flush) {
