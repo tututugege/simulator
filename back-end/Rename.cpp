@@ -93,41 +93,83 @@ void Rename::comb_wake() {
 
 void Rename::comb_rename() {
 
+  wire7_t src1_preg_normal[FETCH_WIDTH];
+  wire1_t src1_busy_normal[FETCH_WIDTH];
+  wire7_t src1_preg_bypass[FETCH_WIDTH];
+  wire1_t src1_bypass_hit[FETCH_WIDTH];
+
+  wire7_t src2_preg_normal[FETCH_WIDTH];
+  wire1_t src2_busy_normal[FETCH_WIDTH];
+  wire7_t src2_preg_bypass[FETCH_WIDTH];
+  wire1_t src2_bypass_hit[FETCH_WIDTH];
+
+  wire7_t old_dest_preg_normal[FETCH_WIDTH];
+  wire7_t old_dest_preg_bypass[FETCH_WIDTH];
+  wire1_t old_dest_bypass_hit[FETCH_WIDTH];
+
   // 无waw raw的输出 读spec_RAT和busy_table
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2dis->uop[i].old_dest_preg = spec_RAT[inst_r[i].uop.dest_areg];
-    io.ren2dis->uop[i].src1_preg = spec_RAT[inst_r[i].uop.src1_areg];
-    io.ren2dis->uop[i].src2_preg = spec_RAT[inst_r[i].uop.src2_areg];
-    // 唤醒的bypass
-    io.ren2dis->uop[i].src1_busy =
-        busy_table_1[io.ren2dis->uop[i].src1_preg] && inst_r[i].uop.src1_en;
-    io.ren2dis->uop[i].src2_busy =
-        busy_table_1[io.ren2dis->uop[i].src2_preg] && inst_r[i].uop.src2_en;
+    old_dest_preg_normal[i] = spec_RAT[inst_r[i].uop.dest_areg];
+    src1_preg_normal[i] = spec_RAT[inst_r[i].uop.src1_areg];
+    src2_preg_normal[i] = spec_RAT[inst_r[i].uop.src2_areg];
+    // 用busy_table_1  存在隐藏的唤醒的bypass
+    src1_busy_normal[i] = busy_table_1[src1_preg_normal[i]];
+    src2_busy_normal[i] = busy_table_1[src2_preg_normal[i]];
   }
 
   // 针对RAT 和busy_table的raw的bypass
+  src1_bypass_hit[0] = false;
+  src2_bypass_hit[0] = false;
+  old_dest_bypass_hit[0] = false;
   for (int i = 1; i < FETCH_WIDTH; i++) {
+    src1_bypass_hit[i] = false;
+    src2_bypass_hit[i] = false;
+    old_dest_bypass_hit[i] = false;
+
+    // bypass选择最近的 3从012中选 2从01中选 1从0中选
     for (int j = 0; j < i; j++) {
       if (!inst_r[j].valid || !inst_r[j].uop.dest_en)
         continue;
 
       if (inst_r[i].uop.src1_areg == inst_r[j].uop.dest_areg) {
-        io.ren2dis->uop[i].src1_preg = io.ren2dis->uop[j].dest_preg;
-        io.ren2dis->uop[i].src1_busy = true;
+        src1_bypass_hit[i] = true;
+        src1_preg_bypass[i] = io.ren2dis->uop[j].dest_preg;
       }
 
       if (inst_r[i].uop.src2_areg == inst_r[j].uop.dest_areg) {
-        io.ren2dis->uop[i].src2_preg = io.ren2dis->uop[j].dest_preg;
-        io.ren2dis->uop[i].src2_busy = true;
+        src2_bypass_hit[i] = true;
+        src2_preg_bypass[i] = io.ren2dis->uop[j].dest_preg;
       }
 
       if (inst_r[i].uop.dest_areg == inst_r[j].uop.dest_areg) {
-        io.ren2dis->uop[i].old_dest_preg = io.ren2dis->uop[j].dest_preg;
+        old_dest_bypass_hit[i] = true;
+        old_dest_preg_bypass[i] = io.ren2dis->uop[j].dest_preg;
       }
     }
+  }
 
-    if (io.ren2dis->uop[i].dest_areg == 32) {
-      io.ren2dis->uop[i].old_dest_preg = io.ren2dis->uop[i].dest_preg;
+  // 根据是否bypass选择normal or bypass
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (src1_bypass_hit[i]) {
+      io.ren2dis->uop[i].src1_preg = src1_preg_bypass[i];
+      io.ren2dis->uop[i].src1_busy = true;
+    } else {
+      io.ren2dis->uop[i].src1_preg = src1_preg_normal[i];
+      io.ren2dis->uop[i].src1_busy = src1_busy_normal[i];
+    }
+
+    if (src2_bypass_hit[i]) {
+      io.ren2dis->uop[i].src2_preg = src2_preg_bypass[i];
+      io.ren2dis->uop[i].src2_busy = true;
+    } else {
+      io.ren2dis->uop[i].src2_preg = src2_preg_normal[i];
+      io.ren2dis->uop[i].src2_busy = src2_busy_normal[i];
+    }
+
+    if (old_dest_bypass_hit[i]) {
+      io.ren2dis->uop[i].old_dest_preg = old_dest_preg_bypass[i];
+    } else {
+      io.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
     }
   }
 
@@ -175,16 +217,17 @@ void Rename::comb_fire() {
   }
 }
 
+// mispred和flush不会同时发生
 void Rename::comb_branch() {
   // 分支处理
-  if (io.dec_bcast->mispred && !io.rob_bcast->flush) {
+  if (io.dec_bcast->mispred) { // 硬件永远都会生成xx_mispred和xx_flush，然后选择
+                               // 模拟器判断一下为了不做无用功跑快点
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_mispred[i] = RAT_checkpoint[io.dec_bcast->br_tag][i];
     }
 
     // 恢复free_list
-    // mispred和flush不会同时发生
     for (int j = 0; j < PRF_NUM; j++) {
       free_vec_mispred[j] =
           free_vec[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
@@ -275,19 +318,14 @@ void Rename ::seq() {
   memcpy(busy_table, busy_table_1, PRF_NUM);
   memcpy(spec_alloc, spec_alloc_1, PRF_NUM);
 
-  for (int i = 0; i < MAX_BR_NUM; i++) {
-    for (int j = 0; j < ARF_NUM + 1; j++) {
-      RAT_checkpoint[i][j] = RAT_checkpoint_1[i][j];
-    }
-
-    for (int j = 0; j < PRF_NUM; j++) {
-      alloc_checkpoint[i][j] = alloc_checkpoint_1[i][j];
-    }
-  }
+  memcpy(RAT_checkpoint, RAT_checkpoint_1,
+         MAX_BR_NUM * (ARF_NUM + 1) * sizeof(reg7_t));
+  memcpy(alloc_checkpoint, alloc_checkpoint_1,
+         MAX_BR_NUM * PRF_NUM * sizeof(reg1_t));
 
   memcpy(spec_alloc_normal, spec_alloc, PRF_NUM);
   // memcpy(spec_alloc_mispred, spec_alloc, PRF_NUM);
-  // memcpy(spec_alloc_flush, spec_alloc, PRF_NUM);
+  // memcpy(spec_alloc_flush, spec_alloc, PRF_NUM); //
 
   memcpy(free_vec_normal, free_vec, PRF_NUM);
   // memcpy(free_vec_mispred, free_vec, PRF_NUM);
