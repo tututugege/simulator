@@ -1,7 +1,7 @@
 RISCV_ARCH := rv32ia_zicsr
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
-CFLAGS := -O2 
+CFLAGS += -O2 
 CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
 
 RISCV_PATH := /opt/riscv32/bin/riscv32-unknown-elf-
