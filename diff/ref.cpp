@@ -28,6 +28,8 @@
   ((SEXT(BITS(i, 31, 31), 1) << 12) | (BITS(i, 7, 7) << 11) |                  \
    (BITS(i, 30, 25) << 5) | (BITS(i, 11, 8) << 1))
 
+bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -67,7 +69,7 @@ void Ref_cpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    page_fault_inst = !va2pa(p_addr, state.pc, state.csr[csr_satp], 0, mstatus,
+    page_fault_inst = !va2pa_fixed(p_addr, state.pc, state.csr[csr_satp], 0, mstatus,
                              sstatus, privilege, memory);
     if (page_fault_inst) {
       exception(state.pc);
@@ -540,9 +542,9 @@ void Ref_cpu::RV32A() {
   cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
   if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
-    bool page_fault_1 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
+    bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
                                sstatus, privilege, memory);
-    bool page_fault_2 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
+    bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
                                sstatus, privilege, memory);
 
     if (page_fault_1 || page_fault_2) {
@@ -752,7 +754,7 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
-      page_fault_load = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
+      page_fault_load = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
                                sstatus, privilege, memory);
     }
 
@@ -809,7 +811,7 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
-      page_fault_store = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
+      page_fault_store = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
                                 sstatus, privilege, memory);
     }
 

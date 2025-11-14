@@ -53,7 +53,7 @@ using namespace std;
 
 extern long long sim_time;
 
-// #define CONFIG_DIFFTEST
+#define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
 #define CONFIG_BPU
 

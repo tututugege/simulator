@@ -163,10 +163,15 @@ void STQ::seq() {
 }
 
 extern uint32_t *p_memory;
-void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
+void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx, bool &stall_load) {
 
   int i = deq_ptr;
   while (i != commit_ptr) {
+    if (entry[i].valid && (!entry[i].data_valid || !entry[i].addr_valid)) {
+      // 有未准备好的store，阻塞 load
+      stall_load = true;
+      return;
+    }
     if ((entry[i].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC)) {
       uint32_t wdata = entry[i].data;
       uint32_t waddr = entry[i].addr;
@@ -205,6 +210,12 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx) {
     if (back.rob.entry[bank_idx][line_idx].valid &&
         is_store(back.rob.entry[bank_idx][line_idx].uop)) {
       int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
+      if (entry[stq_idx].valid && 
+          (!entry[stq_idx].data_valid || !entry[stq_idx].addr_valid)) {
+        // 有未准备好的store，停止转发
+        stall_load = true;
+        return;
+      }
       if ((entry[stq_idx].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC)) {
         uint32_t wdata = entry[stq_idx].data;
         uint32_t waddr = entry[stq_idx].addr;

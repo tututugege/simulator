@@ -9,6 +9,9 @@
 extern Back_Top back;
 extern int commit_num;
 
+// for Difftest va2pa_fixed() debug
+int ren_commit_idx;
+
 Rename::Rename() {
   for (int i = 0; i < ARF_NUM; i++) {
     free_vec[i] = false;
@@ -216,6 +219,7 @@ void Rename ::comb_commit() {
              << io.rob_commit->commit_entry[i].uop.pc << " idx "
              << io.rob_commit->commit_entry[i].uop.inst_idx << endl;
       }
+      ren_commit_idx = i;
       back.difftest(&(io.rob_commit->commit_entry[i].uop));
     }
   }

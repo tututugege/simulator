@@ -33,12 +33,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 file(GLOB_RECURSE BACKEND_SOURCES "back-end/*.cpp")
 file(GLOB_RECURSE FRONTEND_SOURCES "front-end/*.cpp") 
 file(GLOB_RECURSE DIFF_SOURCES "diff/*.cpp")
+file(GLOB_RECURSE MMU_SOURCES "mmu/*.cpp")
 
 # Combine all sources
 set(SOURCES 
     ${BACKEND_SOURCES}
     ${FRONTEND_SOURCES}
     ${DIFF_SOURCES}
+    ${MMU_SOURCES}
     rv_simu_mmu_v2.cpp
 )
 
@@ -50,6 +52,7 @@ include_directories(
     ./back-end/tools/include/
     ./diff/include/
     ./front-end/
+    ./mmu/include/
 )
 
 # Create executable
