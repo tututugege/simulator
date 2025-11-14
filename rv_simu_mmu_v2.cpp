@@ -4,6 +4,7 @@
 #include "ref.h"
 #include <RISCV.h>
 #include <TOP.h>
+#include <MMU.h>
 #include <config.h>
 #include <cstdint>
 #include <cstdlib>
@@ -21,8 +22,10 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
 void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &,
                  bool &);
 void back2front_comb(front_top_in &front_in, front_top_out &front_out);
+static inline void back2mmu_comb();
 
 Back_Top back;
+MMU mmu;
 
 int commit_num = 0;
 long long sim_time = 0;
@@ -80,6 +83,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   back.init();
+  mmu.reset();
 
   uint32_t number_PC;
   ofstream outfile;
@@ -113,11 +117,19 @@ int main(int argc, char *argv[]) {
           << " ****************************************************************"
           << endl;
 
+    // Backend(CSR) -> mmu
+    back2mmu_comb();
     // step1: fetch instructions and fill in back.in
     front_cycle(stall, misprediction, exception, front_in, front_out, number_PC,
                 non_branch_mispred);
+    mmu.comb_frontend(); // update mmu_ifu_resp according to new ifu_req_valid
 
     back.Back_comb();
+    mmu.comb_backend(); // update mmu_lsu_resp according to new lsu_req_valid
+
+    // Resquest from backend will be set in back.Back_comb()
+    // Resquest from frontend will be set in front_cycle()
+    mmu.comb_ptw();
 
     // step2: feedback to front-end
 #ifdef CONFIG_BPU
@@ -125,6 +137,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     back.Back_seq();
+    mmu.seq();
 
     if (sim_end)
       break;
@@ -257,22 +270,71 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   return false;
 }
 
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
+/*
+ * va2pa_fixed: a fixed version of va2pa
+ *
+ * 基本功能几乎与 va2pa() 相同；但当 dut.cpu 检测到 page fault 时，
+ * 以 dut.cpu 的结果为准，
+ *
+ * 目的：当 SFENCE.VMA 还没有执行、存在两种合法的页表映射时，保证
+ * DUT 与参考模型的页表映射一致，避免 difftest 失败。
+ */
+bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory) {
+  bool ret = va2pa(p_addr, v_addr, satp, type, mstatus, sstatus, privilege, p_memory);
+  extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
+  Inst_entry ren_commit_entry = back.rename.io.rob_commit->commit_entry[ren_commit_idx];
+  bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
+  bool dut_page_fault_load = ren_commit_entry.uop.page_fault_load;
+  bool dut_page_fault_store = ren_commit_entry.uop.page_fault_store;
+
+  // 1. dut page_fault, ref no page_fault -> allow, ret = false
+  // 2. dut no page_fault, ref page_fault -> ERROR
+  switch (type) {
+    case 0: // instruction fetch
+      if (dut_page_fault_inst) {
+        ret = false; // 以 DUT MMU 为准
+      } else if (!dut_page_fault_inst && !ret) {
+        cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault mismatch!" << endl;
+        cout << "VA: " << hex << v_addr << endl;
+        cout << "sim_time: " << dec << sim_time << ", commit_num: " << dec << commit_num << endl;
+        exit(1);
+      }
+      break;
+    case 1: // load
+      if (dut_page_fault_load) {
+        ret = false;
+      } else if (!dut_page_fault_load && !ret) {
+        cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!" << endl;
+        cout << "VA: " << hex << v_addr << endl;
+        cout << "sim_time: " << dec << sim_time << ", commit_num: " << dec << commit_num << endl;
+        exit(1);
+      }
+      break;
+    case 2: // store
+      if (dut_page_fault_store) {
+        ret = false;
+      } else if (!dut_page_fault_store && !ret) {
+        cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!" << endl;
+        cout << "VA: " << hex << v_addr << endl;
+        cout << "sim_time: " << dec << sim_time << ", commit_num: " << dec << commit_num << endl;
+        exit(1);
+      }
+      break;
+    default:
+      cout << "[va2pa_fixed] Error: unknown access type!" << endl;
+      exit(1);
+  }
+  return ret;
+}
+
+// bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
+bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx, bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load) {
   uint32_t p_addr = v_addr;
   bool ret = true;
 
-  if (back.csr.CSR_RegFile[number_satp] & 0x80000000 &&
-      back.csr.privilege != 3) {
-    bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
-                               32);
-
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
-                               32);
-
-    ret = va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 1, mstatus,
-                sstatus, back.csr.privilege, p_memory);
-  }
+  p_addr = mmu_ppn << 12 | (v_addr & 0xFFF);
+  ret = !mmu_page_fault;
 
   if (p_addr == 0x1fd0e000) {
     data = commit_num;
@@ -280,7 +342,7 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
     data = 0;
   } else {
     data = p_memory[p_addr >> 2];
-    back.stq.st2ld_fwd(p_addr, data, rob_idx);
+    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall_load);
   }
 
   return ret;
@@ -435,33 +497,20 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       /*     << " 指令: " << inst->instruction << endl;*/
     }
   }
-  if (LOG) {
-    // show ROB valid vector
-    /*cout << "ROB count: " << back.rob.count << " deq_ptr: " <<
-     * back.rob.deq_ptr*/
-    /*     << " enq_ptr: " << back.rob.enq_ptr << endl;*/
-    /*cout << "ROB valid: \n";*/
-    /*for (int i = 0; i < ROB_NUM; i++) {*/
-    /*  cout << back.rob.entry[i].valid << " ";*/
-    /*  if (i % 32 == 31)*/
-    /*    cout << endl;*/
-    /*}*/
-    /*cout << "ROB inst pc/inst:" << endl;*/
-    /*for (int i = 0; i < ROB_NUM; i++) {*/
-    /*  if (back.rob.entry[i].valid) {*/
-    /*    cout << hex << back.rob.entry[i].uop.pc << " at " << hex << i*/
-    /*         << " , inst: " << back.rob.entry[i].uop.instruction*/
-    /*         << " , decode at sim_time: " << dec*/
-    /*         << back.rob.entry[i].uop.inst_idx*/
-    /*         << " , complete: " << back.rob.complete[i]*/
-    /*         << " , exception: " << back.rob.exception[i] << endl;*/
-    /*  }*/
-    /*}*/
-  }
 
   // if (back.out.mispred) {
   if (back.out.mispred || back.out.flush) {
     // 若 pre-decode 或后端都检测到 branch mis-prediction，则以后端为准
     front_in.refetch_address = back.out.redirect_pc;
   }
+}
+
+static inline void back2mmu_comb() {
+  mmu.io.in.state.satp = reinterpret_cast<satp_t&>(back.csr.CSR_RegFile[number_satp]);
+  mmu.io.in.state.mstatus = back.csr.CSR_RegFile[number_mstatus];
+  mmu.io.in.state.sstatus = back.csr.CSR_RegFile[number_sstatus];
+  mmu.io.in.state.privilege = mmu_n::Privilege(back.csr.privilege);
+  // for flush tlb:
+  // - if request flush, set flush_valid = true in back-end later
+  mmu.io.in.tlb_flush.flush_valid = false;
 }
