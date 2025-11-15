@@ -41,7 +41,7 @@ namespace icache_module_n {
   };
 };
 
-typedef struct {
+struct ICache_in_t {
   // Input from the IFU (Instruction Fetch Unit)
   uint32_t pc;          // Program Counter
   bool ifu_req_valid;   // Fetch enable signal
@@ -50,19 +50,21 @@ typedef struct {
   // Input from MMU (Memory Management Unit)
   uint32_t ppn;     // Physical Page Number
   bool ppn_valid;   // PPN valid signal
+  bool page_fault;       // page fault exception signal
 
   // Input from memory
   bool mem_req_ready;
   bool mem_resp_valid;
   uint32_t mem_resp_data [ICACHE_LINE_SIZE / 4]; // Data from memory (32 bytes)
-} ICache_in_t;
+};
 
-typedef struct {
+struct ICache_out_t {
   // Output to the IFU (Instruction Fetch Unit)
   bool miss; // Cache miss signal
   bool ifu_resp_valid; // Indicates if output data is valid
   bool ifu_req_ready; // Indicates if i-cache is allow to accept next PC
   uint32_t rd_data [ICACHE_LINE_SIZE / 4]; // Data read from cache
+  bool ifu_page_fault; // page fault exception signal
 
   // Output to MMU (Memory Management Unit)
   bool ppn_ready; // ready to accept PPN
@@ -71,13 +73,13 @@ typedef struct {
   bool mem_req_valid; // Memory request signal
   uint32_t mem_req_addr; // Address for memory access
   bool mem_resp_ready;
-} ICache_out_t;
+};
 
 // cache io
-typedef struct {
+struct ICache_IO_t {
   ICache_in_t in;
   ICache_out_t out;
-} ICache_IO_t;
+};
 
 class ICache {
 public:
@@ -129,7 +131,7 @@ private:
   /*
    * Icache Inner connections between 2 pipeline stages
    */
-  typedef struct {
+  struct pipe1_to_pipe2_t {
     // From pipe1 to pipe2 (combination logic/wire)
     bool valid; // Indicates if the data is valid
     uint32_t cache_set_data_w[way_cnt][word_num]; // Data from the cache set
@@ -142,12 +144,12 @@ private:
     uint32_t cache_set_tag_r[way_cnt]; 
     bool cache_set_valid_r[way_cnt];
     uint32_t index_r;
-  } pipe1_to_pipe2_t;
+  };
 
-  typedef struct {
+  struct pipe2_to_pipe1_t {
     // control signals
     bool ready; // Indicates if pipe2 is ready to accept data, set in comb_pipe2
-  } pipe2_to_pipe1_t;
+  };
 
   // pipeline datapath
   pipe1_to_pipe2_t pipe1_to_pipe2;

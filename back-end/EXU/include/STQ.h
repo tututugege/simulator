@@ -26,7 +26,7 @@ class STQ {
 public:
   STQ_IO io;
   void comb();
-  void st2ld_fwd(uint32_t, uint32_t &, int rob_idx);
+  void st2ld_fwd(uint32_t, uint32_t &, int rob_idx, bool &);
   void seq();
 
   void init();

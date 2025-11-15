@@ -61,6 +61,13 @@ extern long long sim_time;
 // #define CONFIG_RUN_REF
 // #define CONFIG_RUN_REF_PRINT
 
+/*
+ * 宽松的va2pa检查：
+ * 允许 DUT 判定为 page fault，但是 REF 判定不为 
+ * page fault 时，通过 DIFFTEST 并以 DUT 为准
+ */
+#define CONFIG_LOOSE_VA2PA 
+
 #define UART_BASE 0x10000000
 
 enum IQ_TYPE {

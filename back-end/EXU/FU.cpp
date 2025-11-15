@@ -7,7 +7,8 @@
 
 extern Back_Top back;
 
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
+bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx, 
+           bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load);
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -207,7 +208,9 @@ void alu(Inst_uop &inst) {
   }
 }
 
-void ldu(Inst_uop &inst) {
+// return: 1 - stall load; 0 - load ok
+bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn) {
+  bool stall_load = false;
   uint32_t addr = inst.src1_rdata + inst.imm;
 
   if (addr == 0x1fd0e000) {
@@ -225,7 +228,8 @@ void ldu(Inst_uop &inst) {
   }
 
   uint32_t data;
-  bool page_fault = !load_data(data, addr, inst.rob_idx);
+  // bool page_fault = !load_data(data, addr, inst.rob_idx);
+  bool page_fault = !load_data(data, addr, inst.rob_idx, mmu_page_fault, mmu_ppn, stall_load);
 
   if (!page_fault) {
     data = data >> (offset * 8);
@@ -252,25 +256,15 @@ void ldu(Inst_uop &inst) {
     inst.page_fault_load = true;
     inst.result = addr;
   }
+  return stall_load;
 }
 
-void stu_addr(Inst_uop &inst) {
+void stu_addr(Inst_uop &inst, bool page_fault, uint32_t mmu_ppn) {
 
   uint32_t v_addr = inst.src1_rdata + inst.imm;
 
   uint32_t p_addr = v_addr;
-  bool page_fault = false;
-
-  if (back.csr.CSR_RegFile[csr_satp] & 0x80000000 && back.csr.privilege != 3) {
-    bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
-
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
-
-    page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 2,
-                        mstatus, sstatus, back.csr.privilege, p_memory);
-  }
-
+  p_addr = (mmu_ppn << 12) | (v_addr & 0xFFF);
   if (page_fault) {
     inst.page_fault_store = true;
     inst.result = v_addr;
