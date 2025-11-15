@@ -416,6 +416,8 @@ void decode(Inst_uop &uop, uint32_t inst) {
       } else if (number_funct7_unsigned == 0b0001001 &&
                  number_funct3_unsigned == 0 && reg_d_index == 0) {
         uop.type = SFENCE_VMA;
+        uop.src1_en = true;
+        uop.src2_en = true;
       } else {
         uop.type = NONE;
         /*uop[0].illegal_inst = true;*/

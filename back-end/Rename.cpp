@@ -11,6 +11,9 @@ extern Back_Top back;
 const int ALLOC_NUM =
     PRF_NUM / FETCH_WIDTH; // 分配寄存器时将preg分成FETCH_WIDTH个部分
 
+// for Difftest va2pa_fixed() debug
+int ren_commit_idx;
+
 Rename::Rename() {
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
@@ -277,6 +280,7 @@ void Rename ::comb_commit() {
              << io.rob_commit->commit_entry[i].uop.pc << " idx "
              << io.rob_commit->commit_entry[i].uop.inst_idx << endl;
       }
+      ren_commit_idx = i;
       back.difftest(&(io.rob_commit->commit_entry[i].uop));
     }
   }
