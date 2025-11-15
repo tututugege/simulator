@@ -1,8 +1,7 @@
-RISCV_ARCH := rv32ia
+RISCV_ARCH := rv32ia_zicsr
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
-CFLAGS := -O2 
-CFLAGS += -DFLAGS_STR=\""$(CFLAGS)"\" -I.
+CFLAGS += -O2 
 
 RISCV_PATH := /opt/riscv32/bin/riscv32-unknown-elf-
 
@@ -20,11 +19,10 @@ RISCV_READELF := $(abspath $(RISCV_PATH)readelf)
 BINARY = $(CURDIR)/$(TARGET).bin
 
 all: $(TARGET)
-	cd $(COMMON_DIR) ;python get_memory.py $(BINARY)
+	cp $(BINARY) $(COMMON_DIR)/memory
 	make -C $(COMMON_DIR)/.. run
 
 ASM_SRCS += $(COMMON_DIR)/start.S
-ASM_SRCS += $(COMMON_DIR)/trap.S
 
 C_SRCS += $(wildcard *.c, $(COMMON_DIR)/lib/*.c)
 

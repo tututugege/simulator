@@ -18,7 +18,6 @@ void IDU::init() {
   tag_vec_1[0] = false;
   now_tag_1 = now_tag = 0;
   enq_ptr_1 = enq_ptr = 1;
-  deq_ptr_1 = deq_ptr = 0;
 }
 
 // 译码并分配tag
@@ -28,12 +27,14 @@ void IDU::comb_decode() {
   bool stall = false;
 
   // 查找新的tag
+  // 即查找01串的第一个1的位置
+  // 如果分配两个可以两头分别找
   for (alloc_tag = 0; alloc_tag < MAX_BR_NUM; alloc_tag++) {
     if (tag_vec[alloc_tag])
       break;
   }
 
-  // 无剩余的tag
+  // 无剩余的tag 相当于 tag_vec == 16'b0
   if (alloc_tag == MAX_BR_NUM) {
     no_tag = true;
     alloc_tag = 0;
@@ -52,6 +53,7 @@ void IDU::comb_decode() {
         io.dec2ren->uop[i].src1_en = io.dec2ren->uop[i].src2_en =
             io.dec2ren->uop[i].dest_en = false;
       } else {
+        // 实际电路中4个译码电路每周期无论是否valid都会运行
         decode(io.dec2ren->uop[i], io.front2dec->inst[i]);
       }
     } else {
@@ -70,9 +72,7 @@ void IDU::comb_decode() {
     // for debug
     io.dec2ren->uop[i].pc_next = io.dec2ren->uop[i].pc + 4;
 
-    if (io.front2dec->valid[i] &&
-        (io.dec2ren->uop[i].type == BR || io.dec2ren->uop[i].type == JAL ||
-         io.dec2ren->uop[i].type == JALR)) {
+    if (io.front2dec->valid[i] && is_branch(io.dec2ren->uop[i].type)) {
       if (!no_tag && !has_br) {
         has_br = true;
       } else {
@@ -121,7 +121,6 @@ void IDU::comb_flush() {
     }
     tag_vec_1[0] = false;
     now_tag_1 = 0;
-    deq_ptr_1 = 0;
     enq_ptr_1 = 1;
     tag_list_1[0] = 0;
   }
@@ -137,8 +136,7 @@ void IDU::comb_fire() {
   }
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dec2front->fire[i] =
-        io.dec2ren->valid[i] && io.ren2dec->ready && !io.dec_bcast->mispred;
+    io.dec2front->fire[i] = io.dec2ren->valid[i] && io.ren2dec->ready;
     io.dec2front->ready = io.dec2front->ready &&
                           (!io.front2dec->valid[i] || io.dec2ren->valid[i]);
 
@@ -156,7 +154,6 @@ void IDU::comb_release_tag() {
     if (io.commit->commit_entry[i].valid &&
         is_branch(io.commit->commit_entry[i].uop.type)) {
       tag_vec_1[io.commit->commit_entry[i].uop.tag] = true;
-      LOOP_INC(deq_ptr_1, MAX_BR_NUM);
     }
   }
 }
@@ -168,7 +165,6 @@ void IDU::seq() {
     tag_list[i] = tag_list_1[i];
   }
   enq_ptr = enq_ptr_1;
-  deq_ptr = deq_ptr_1;
 }
 
 void decode(Inst_uop &uop, uint32_t inst) {

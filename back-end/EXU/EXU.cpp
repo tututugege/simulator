@@ -1,3 +1,4 @@
+#include <Cache.h>
 #include "TOP.h"
 #include <MMU.h>
 #include <EXU.h>
@@ -6,15 +7,14 @@
 #include <cstdint>
 #include <cvt.h>
 #include <iostream>
-#include <type_traits>
 #include <util.h>
 extern Back_Top back;
 extern MMU mmu;
 extern uint32_t *p_memory;
 
+Cache cache; // Cache模拟
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-
 void alu(Inst_uop &inst);
 void bru(Inst_uop &inst);
 // void ldu(Inst_uop &inst);
@@ -51,6 +51,9 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_DIV) { // div
       latency = 1;
     } else if (inst.op == UOP_LOAD) {
+      latency = cache.cache_access(inst.src1_rdata + inst.imm);
+      // latency = 1;
+    } else if (inst.op == UOP_STA) {
       latency = 1;
     } else {
       latency = 1;
@@ -164,8 +167,8 @@ void EXU::init() {
 
 void EXU::comb_ready() {
   for (int i = 0; i < ISSUE_WAY; i++) {
-    io.exe2iss->ready[i] =
-        (!inst_r[i].valid || fu[i].complete) && !io.dec_bcast->mispred;
+    io.exe2iss->ready[i] = (!inst_r[i].valid || fu[i].complete) &&
+                           !io.dec_bcast->mispred && !io.rob_bcast->flush;
   }
 }
 
@@ -184,7 +187,8 @@ void EXU::comb_exec() {
       fu[i].exec(io.exe2prf->entry[i].uop);
       if (fu[i].complete &&
           !(io.dec_bcast->mispred &&
-            ((1 << inst_r[i].uop.tag) & io.dec_bcast->br_mask))) {
+            ((1 << inst_r[i].uop.tag) & io.dec_bcast->br_mask)) &&
+          !io.rob_bcast->flush) {
         io.exe2prf->entry[i].valid = true;
       } else {
         io.exe2prf->entry[i].valid = false;

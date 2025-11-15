@@ -1,10 +1,8 @@
-#include "TOP.h"
 #include "config.h"
 #include <ISU.h>
+#include <cstdint>
 #include <util.h>
 #include <vector>
-
-extern Back_Top back;
 
 void ISU::add_iq(int entry_num, IQ_TYPE type) {
   iq.push_back(IQ(entry_num, type));
@@ -57,6 +55,7 @@ Inst_entry IQ::deq() {
 
 void ISU::comb_ready() {
   // ready
+
   for (int i = 0; i < IQ_NUM; i++) {
     if (iq[i].entry_num - iq[i].num >= 2) {
       io.iss2dis->ready[i][0] = true;
@@ -86,6 +85,11 @@ void ISU::comb_deq() {
         io.iss2prf->iss_entry[i].uop.dest_en) {
       io.iss_awake->wake[i].valid = true;
       io.iss_awake->wake[i].preg = io.iss2prf->iss_entry[i].uop.dest_preg;
+      // if (io.iss2prf->iss_entry[i].uop.op == UOP_MUL) {
+      //   io.iss_awake->wake[i].latency = 2;
+      // } else {
+      // io.iss_awake->wake[i].latency = 1;
+      // }
     } else {
       io.iss_awake->wake[i].valid = false;
     }
@@ -119,26 +123,25 @@ void ISU::seq() {
 
   // 唤醒
   for (int i = 0; i < ALU_NUM; i++) {
-    if (io.iss2prf->iss_entry[i].valid &&
-        io.iss2prf->iss_entry[i].uop.dest_en) {
+    if (io.iss_awake->wake[i].valid) {
       for (auto &q : iq) {
-        q.wake_up(io.iss2prf->iss_entry[i].uop.dest_preg);
+        q.wake_up(io.iss_awake->wake[i].preg, io.iss_awake->wake[i].latency);
       }
     }
   }
 
   // 唤醒load
   if (io.iss2prf->iss_entry[IQ_STA].valid) {
-    back.isu.iq[IQ_LD].sta_wake_up(io.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
+    iq[IQ_LD].sta_wake_up(io.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
   }
 
   if (io.iss2prf->iss_entry[IQ_STD].valid) {
-    back.isu.iq[IQ_LD].std_wake_up(io.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
+    iq[IQ_LD].std_wake_up(io.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
   }
 
   if (io.prf_awake->wake.valid) {
     for (auto &q : iq) {
-      q.wake_up(io.prf_awake->wake.preg);
+      q.wake_up(io.prf_awake->wake.preg, 0);
     }
   }
 
@@ -165,16 +168,35 @@ void IQ::br_clear(uint32_t br_mask) {
   }
 }
 
-// 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
-void IQ::wake_up(uint32_t dest_preg) {
+void IQ::latency_wake() {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid) {
+      if (entry[i].uop.src1_en && !entry[i].uop.src1_busy &&
+          entry[i].uop.src1_latency != 0) {
+        entry[i].uop.src1_latency--;
+      }
+
+      if (entry[i].uop.src2_en && !entry[i].uop.src2_busy &&
+          entry[i].uop.src2_latency != 0) {
+        entry[i].uop.src2_latency--;
+      }
+    }
+  }
+}
+
+// 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
+void IQ::wake_up(uint32_t dest_preg, uint32_t latency) {
+  for (int i = 0; i < entry_num; i++) {
+    if (entry[i].valid) {
+
       if (entry[i].uop.src1_en && entry[i].uop.src1_preg == dest_preg) {
         entry[i].uop.src1_busy = false;
+        entry[i].uop.src1_latency = latency - 1;
       }
 
       if (entry[i].uop.src2_en && entry[i].uop.src2_preg == dest_preg) {
         entry[i].uop.src2_busy = false;
+        entry[i].uop.src2_latency = latency - 1;
       }
     }
   }
@@ -208,7 +230,8 @@ Inst_entry IQ::scheduler() {
           (entry[i].uop.pre_sta_mask || entry[i].uop.pre_std_mask))) {
 
       // 根据IQ位置判断优先级 也可以随机 或者oldest-first
-      if (!iss_entry.valid || iss_entry.uop.inst_idx > entry[i].uop.inst_idx) {
+      // 这里是oldest-first
+      if (!iss_entry.valid || cmp_inst_age(iss_entry.uop, entry[i].uop)) {
         iss_entry = entry[i];
         iss_idx = i;
       }

@@ -1,7 +1,6 @@
 #pragma once
 #include "IO.h"
 #include <config.h>
-#include <cstdint>
 
 #define M_MODE_ECALL 0xb
 #define CSR_W 0b01
@@ -60,23 +59,89 @@ enum enum_csr {
   csr_timeh,
 };
 
-typedef struct {
-  bool we;
-  bool re;
-  uint32_t idx;
-  uint32_t wdata;
-  uint32_t wcmd;
-} Exe_Csr;
-
-typedef struct {
-  uint32_t rdata;
-  uint32_t epc;
-  uint32_t trap_pc;
-} Csr_Exe;
+inline int cvt_number_to_csr(int csr_idx) {
+  int ret;
+  switch (csr_idx) {
+  case number_mtvec:
+    ret = csr_mtvec;
+    break;
+  case number_mepc:
+    ret = csr_mepc;
+    break;
+  case number_mcause:
+    ret = csr_mcause;
+    break;
+  case number_mie:
+    ret = csr_mie;
+    break;
+  case number_mip:
+    ret = csr_mip;
+    break;
+  case number_mtval:
+    ret = csr_mtval;
+    break;
+  case number_mscratch:
+    ret = csr_mscratch;
+    break;
+  case number_mstatus:
+    ret = csr_mstatus;
+    break;
+  case number_mideleg:
+    ret = csr_mideleg;
+    break;
+  case number_medeleg:
+    ret = csr_medeleg;
+    break;
+  case number_sepc:
+    ret = csr_sepc;
+    break;
+  case number_stvec:
+    ret = csr_stvec;
+    break;
+  case number_scause:
+    ret = csr_scause;
+    break;
+  case number_sscratch:
+    ret = csr_sscratch;
+    break;
+  case number_stval:
+    ret = csr_stval;
+    break;
+  case number_sstatus:
+    ret = csr_sstatus;
+    break;
+  case number_sie:
+    ret = csr_sie;
+    break;
+  case number_sip:
+    ret = csr_sip;
+    break;
+  case number_satp:
+    ret = csr_satp;
+    break;
+  case number_mhartid:
+    ret = csr_mhartid;
+    break;
+  case number_misa:
+    ret = csr_misa;
+    break;
+  case number_time:
+    ret = csr_time;
+    break;
+  case number_timeh:
+    ret = csr_timeh;
+    break;
+  default:
+    assert(0);
+  }
+  return ret;
+}
 
 typedef struct {
   Exe_Csr *exe2csr;
   Csr_Exe *csr2exe;
+  Csr_Rob *csr2rob;
+  Rob_Csr *rob2csr;
   Rob_Broadcast *rob_bcast;
 } CSR_IO;
 
@@ -84,9 +149,31 @@ class CSRU {
 public:
   CSR_IO io;
   void init();
-  void comb();
+  void comb_csr_read();
+  void comb_csr_write();
+  void comb_interrupt();
+  void comb_exception();
   void seq();
 
-  uint32_t CSR_RegFile[1 << 12];
-  uint32_t privilege = 0b11;
+  reg32_t CSR_RegFile[21];
+  reg2_t privilege = 0b11;
+
+  // 执行时存下需要写入的idx，cmd和data
+  // 提交时才写入
+  // 否则csr指令未提交，其更改就已经生效
+  reg12_t csr_idx;
+  reg32_t csr_wdata;
+  reg2_t csr_wcmd;
+  reg1_t csr_we;
+
+  wire32_t CSR_RegFile_1[21];
+  wire2_t privilege_1 = 0b11;
+
+  // 执行时存下需要写入的idx，cmd和data
+  // 提交时才写入
+  // 否则csr指令未提交，其更改就已经生效
+  wire12_t csr_idx_1;
+  wire32_t csr_wdata_1;
+  wire2_t csr_wcmd_1;
+  wire1_t csr_we_1;
 };

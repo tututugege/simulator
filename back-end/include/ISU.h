@@ -8,7 +8,8 @@ class IQ {
 public:
   IQ(int entry_num, IQ_TYPE);
   void init();
-  void wake_up(uint32_t);
+  void wake_up(uint32_t, uint32_t latency);
+  void latency_wake();
   void sta_wake_up(int);
   void std_wake_up(int);
   void br_clear(uint32_t br_mask);

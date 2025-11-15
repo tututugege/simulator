@@ -1,4 +1,5 @@
 #include "coremark.h"
+#include "xprintf.h"
 
 #if VALIDATION_RUN
 volatile ee_s32 seed1_volatile = 0x3415;

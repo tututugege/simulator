@@ -4,7 +4,6 @@
 #include "config.h"
 #include "cvt.h"
 #include "diff.h"
-#include "util.h"
 #include <cstdint>
 
 #define BITMASK(bits) ((1ull << (bits)) - 1)
@@ -55,13 +54,11 @@ void Ref_cpu::init(uint32_t reset_pc) {
 }
 
 void Ref_cpu::exec() {
+
   is_csr = is_exception = is_br = br_taken = false;
   illegal_exception = page_fault_load = page_fault_inst = page_fault_store =
       asy = false;
   state.store = false;
-  if (state.pc == 0x80000000) {
-    privilege = 0b01;
-  }
 
   bool mstatus[32], sstatus[32];
   cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
@@ -133,7 +130,6 @@ void Ref_cpu::exception(uint32_t trap_val) {
   if (MTrap) {
     state.csr[csr_mepc] = state.pc;
 
-    // next_mcause = interruptType;
     uint32_t cause =
         (M_software_interrupt || M_timer_interrupt || M_external_interrupt)
         << 31;
@@ -179,8 +175,9 @@ void Ref_cpu::exception(uint32_t trap_val) {
   } else if (STrap) {
     state.csr[csr_sepc] = state.pc;
     uint32_t cause =
-        (M_software_interrupt || M_timer_interrupt || M_external_interrupt)
-        << 31;
+        (S_software_interrupt || S_timer_interrupt || S_external_interrupt)
+            ? 1 << 31
+            : 0;
 
     cause +=
         (S_external_interrupt || (ecall && (privilege == 1) && medeleg_S_ecall))
@@ -282,6 +279,7 @@ void Ref_cpu::RISCV() {
   cvt_number_to_bit_unsigned(stvec, state.csr[csr_stvec], 32);
 
   bool mstatus_mie = mstatus[31 - 3];
+  bool mstatus_sie = mstatus[31 - 1];
   bool medeleg_U_ecall = medeleg[31 - 8];
   bool medeleg_S_ecall = medeleg[31 - 9];
   bool medeleg_M_ecall = medeleg[31 - 11];
@@ -322,18 +320,18 @@ void Ref_cpu::RISCV() {
 
   S_software_interrupt =
       (mip_msip && mie_msie && mideleg_msip && privilege < 2 &&
-       (privilege < 1 || mstatus_mie)) ||
-      (mip_ssip && mie_ssie && privilege < 2 && (privilege < 1 || mstatus_mie));
+       (privilege < 1 || mstatus_sie)) ||
+      (mip_ssip && mie_ssie && privilege < 2 && (privilege < 1 || mstatus_sie));
 
   S_timer_interrupt = (mip_mtip && mie_mtie && mideleg_mtip && privilege < 2 &&
-                       (privilege < 1 || mstatus_mie)) ||
+                       (privilege < 1 || mstatus_sie)) ||
                       (mip_stip && mie_stie && privilege < 2 &&
-                       (privilege < 1 || mstatus_mie == 1));
+                       (privilege < 1 || mstatus_sie == 1));
 
   S_external_interrupt =
-      (mip_meip && mie_mtie && mideleg_meip && privilege < 2 &&
-       (privilege < 1 || mstatus_mie)) ||
-      (mip_seip && mie_seie && privilege < 2 && (privilege < 1 || mstatus_mie));
+      (mip_meip && mie_meie && mideleg_meip && privilege < 2 &&
+       (privilege < 1 || mstatus_sie)) ||
+      (mip_seip && mie_seie && privilege < 2 && (privilege < 1 || mstatus_sie));
 
   bool MTrap = (M_software_interrupt) || (M_timer_interrupt) ||
                (M_external_interrupt) || (privilege == 0 && !medeleg_U_ecall) ||
@@ -548,14 +546,24 @@ void Ref_cpu::RV32A() {
                                sstatus, privilege, memory);
 
     if (page_fault_1 || page_fault_2) {
-      if (number_funct5_unsigned == 3 && page_fault_2) {
-        page_fault_store = true;
-      } else if (page_fault_1) {
-        page_fault_load = true;
+      if (number_funct5_unsigned == 2) {
+        if (page_fault_1) {
+          page_fault_load = true;
+        }
+      } else if (number_funct5_unsigned == 3) {
+        if (page_fault_2) {
+          page_fault_store = true;
+        }
       } else {
-        page_fault_store = true;
+        if (page_fault_1) {
+          page_fault_load = true;
+        } else {
+          page_fault_store = true;
+        }
       }
+    }
 
+    if (page_fault_load || page_fault_store) {
       exception(v_addr);
       return;
     }
@@ -788,7 +796,7 @@ void Ref_cpu::RV32IM() {
       }
 
       if (p_addr == 0x1fd0e000) {
-        data = 0;
+        data = sim_time;
       }
       if (p_addr == 0x1fd0e004) {
         data = 0;
@@ -833,9 +841,6 @@ void Ref_cpu::RV32IM() {
         state.store_strb = 0b1111;
       }
 
-      int offset = p_addr & 0x3;
-      state.store_strb = state.store_strb << offset;
-      state.store_data = state.store_data << (offset * 8);
       store_data();
     }
 
@@ -1005,94 +1010,15 @@ void Ref_cpu::RV32IM() {
   state.pc = next_pc;
 }
 
-int cvt_number_to_csr(int csr_idx) {
-  int ret;
-  switch (csr_idx) {
-  case number_mtvec:
-    ret = csr_mtvec;
-    break;
-  case number_mepc:
-    ret = csr_mepc;
-    break;
-  case number_mcause:
-    ret = csr_mcause;
-    break;
-  case number_mie:
-    ret = csr_mie;
-    break;
-  case number_mip:
-    ret = csr_mip;
-    break;
-  case number_mtval:
-    ret = csr_mtval;
-    break;
-  case number_mscratch:
-    ret = csr_mscratch;
-    break;
-  case number_mstatus:
-    ret = csr_mstatus;
-    break;
-  case number_mideleg:
-    ret = csr_mideleg;
-    break;
-  case number_medeleg:
-    ret = csr_medeleg;
-    break;
-  case number_sepc:
-    ret = csr_sepc;
-    break;
-  case number_stvec:
-    ret = csr_stvec;
-    break;
-  case number_scause:
-    ret = csr_scause;
-    break;
-  case number_sscratch:
-    ret = csr_sscratch;
-    break;
-  case number_stval:
-    ret = csr_stval;
-    break;
-  case number_sstatus:
-    ret = csr_sstatus;
-    break;
-  case number_sie:
-    ret = csr_sie;
-    break;
-  case number_sip:
-    ret = csr_sip;
-    break;
-  case number_satp:
-    ret = csr_satp;
-    break;
-  case number_mhartid:
-    ret = csr_mhartid;
-    break;
-  case number_misa:
-    ret = csr_misa;
-    break;
-  case number_time:
-    ret = csr_time;
-    break;
-  case number_timeh:
-    ret = csr_timeh;
-    break;
-  default:
-    assert(0);
-  }
-  return ret;
-}
-
 void Ref_cpu::store_data() {
-  uint32_t p_addr = state.store_addr;
-  uint32_t wstrb = state.store_strb;
-  uint32_t wdata = state.store_data;
 
+  uint32_t p_addr = state.store_addr;
+  int offset = p_addr & 0x3;
+  uint32_t wstrb = state.store_strb << offset;
+  uint32_t wdata = state.store_data << (offset * 8);
   uint32_t old_data = memory[p_addr / 4];
-  store_buffer_addr[store_buffer_ptr] = p_addr;
-  store_buffer_data[store_buffer_ptr] = old_data;
-  LOOP_INC(store_buffer_ptr, STQ_NUM);
   uint32_t mask = 0;
+
   if (wstrb & 0b1)
     mask |= 0xFF;
   if (wstrb & 0b10)
@@ -1115,19 +1041,31 @@ void Ref_cpu::store_data() {
     char temp;
     temp = wdata & 0x000000ff;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
-    /*cout << temp;*/
+#ifdef CONFIG_RUN_REF_PRINT
+    cout << temp;
+#endif
   }
 
-  if (p_addr == 0x10000001 && (wdata & 0x000000ff) == 7) {
+  if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 7) {
     memory[0xc201004 / 4] = 0xa;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xfff0ffff;
+
+    state.csr[csr_mip] = state.csr[csr_mip] | (1 << 9);
+    state.csr[csr_sip] = state.csr[csr_sip] | (1 << 9);
   }
 
-  if (p_addr == 0x10000001 && (wdata & 0x000000ff) == 5) {
+  if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 5) {
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xfff0ffff | 0x00030000;
   }
 
-  if (p_addr == 0xc201004 && (wdata & 0x000000ff) == 0xa) {
+  if (p_addr == 0xc201004 && (state.store_data & 0x000000ff) == 0xa) {
     memory[0xc201004 / 4] = 0x0;
+    state.csr[csr_mip] = state.csr[csr_mip] & ~(1 << 9);
+    state.csr[csr_sip] = state.csr[csr_sip] & ~(1 << 9);
   }
+
+#ifndef CONFIG_RUN_REF
+  state.store_data = state.store_data << offset * 8;
+  state.store_strb = state.store_strb << offset * 8;
+#endif
 }

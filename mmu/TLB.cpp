@@ -255,7 +255,9 @@ void TLB::seq() {
       for (int i = 0; i < TLB_SIZE; ++i) {
         if (entries[i].pte_valid) valid_count++;
       }
-      if (valid_count != TLB_SIZE) {
+      // if (valid_count != TLB_SIZE) {
+      if (valid_count != TLB_SIZE &&
+          !write_io.flush->flush_valid) {
         cout << "[TLB::seq] Warning: Overwriting valid TLB entry at index " 
            << wr_index << " at cycle " << sim_time
            << ", valid_count = " << valid_count

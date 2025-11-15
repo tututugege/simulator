@@ -36,6 +36,7 @@ public:
   void seq();
 
   reg7_t arch_RAT[ARF_NUM + 1];
+  wire1_t fire[FETCH_WIDTH];
 
   // register
   Inst_entry inst_r[FETCH_WIDTH];
@@ -49,8 +50,20 @@ public:
   Inst_entry inst_r_1[FETCH_WIDTH];
   wire7_t spec_RAT_1[ARF_NUM + 1];
   wire7_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];
-  reg1_t free_vec_1[PRF_NUM];
-  reg1_t alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
-  reg1_t busy_table_1[PRF_NUM];
-  reg1_t spec_alloc_1[PRF_NUM]; // 处于speculative状态分配的寄存器
+  wire1_t free_vec_1[PRF_NUM];
+  wire1_t alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
+  wire1_t busy_table_1[PRF_NUM];
+  wire1_t spec_alloc_1[PRF_NUM]; // 处于speculative状态分配的寄存器
+
+  wire1_t spec_alloc_flush[PRF_NUM];
+  wire1_t spec_alloc_mispred[PRF_NUM];
+  wire1_t spec_alloc_normal[PRF_NUM];
+
+  wire1_t free_vec_flush[PRF_NUM];
+  wire1_t free_vec_mispred[PRF_NUM];
+  wire1_t free_vec_normal[PRF_NUM];
+
+  wire7_t spec_RAT_flush[ARF_NUM + 1];
+  wire7_t spec_RAT_mispred[ARF_NUM + 1];
+  wire7_t spec_RAT_normal[ARF_NUM + 1];
 };
