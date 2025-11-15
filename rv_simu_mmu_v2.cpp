@@ -430,7 +430,7 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
-    // is_branch(back.out.commit_entry[i].uop.type);
+    is_branch(back.out.commit_entry[i].uop.type);
 
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;

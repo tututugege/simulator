@@ -6,10 +6,11 @@
 #ifndef CORE_PORTME_H
 #define CORE_PORTME_H
 
-#include <am.h>
 #include <klib-macros.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#define ITERATIONS 10000
+#define ITERATIONS 100
 #define MEM_METHOD MEM_STATIC
 
 /************************/
