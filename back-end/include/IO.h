@@ -10,7 +10,7 @@ typedef struct {
   reg32_t size;
   reg32_t data;
 
-  reg1_t complete;
+  reg1_t commit;
   reg1_t addr_valid;
   reg1_t data_valid;
   reg1_t valid;
@@ -60,6 +60,7 @@ typedef struct {
   wire1_t empty;
   wire1_t stall;
   wire7_t enq_idx;
+  wire1_t rob_flag;
 } Rob_Dis;
 
 typedef struct {
@@ -71,7 +72,6 @@ typedef struct {
 typedef struct {
   Inst_uop uop[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
-  wire1_t fire[FETCH_WIDTH];
 } Ren_Dis;
 
 typedef struct {
@@ -108,6 +108,7 @@ typedef struct {
   wire1_t page_fault_load;
   wire1_t page_fault_store;
   wire1_t illegal_inst;
+  wire1_t interrupt;
   wire32_t trap_val;
   wire32_t pc;
 } Rob_Broadcast;
@@ -157,3 +158,26 @@ typedef struct {
   // 数据写入
   Inst_entry data_entry;
 } Exe_Stq;
+
+typedef struct {
+  wire1_t we;
+  wire1_t re;
+  wire12_t idx;
+  wire32_t wdata;
+  wire32_t wcmd;
+} Exe_Csr;
+
+typedef struct {
+  wire32_t rdata;
+} Csr_Exe;
+
+typedef struct {
+  wire1_t interrupt_req;
+  wire32_t epc;
+  wire32_t trap_pc;
+} Csr_Rob;
+
+typedef struct {
+  wire1_t interrupt_resp;
+  wire1_t commit;
+} Rob_Csr;

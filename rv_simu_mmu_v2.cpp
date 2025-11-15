@@ -15,19 +15,23 @@
 #include <front_module.h>
 #include <fstream>
 #include <util.h>
+
 using namespace std;
+
+// 性能计数器
+Perf_count perf;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &,
                  bool &);
+
+// bpu 更新信息
 void back2front_comb(front_top_in &front_in, front_top_out &front_out);
 static inline void back2mmu_comb();
 
 Back_Top back;
 MMU mmu;
-
-int commit_num = 0;
 long long sim_time = 0;
 bool sim_end = false;
 
@@ -43,36 +47,27 @@ int main(int argc, char *argv[]) {
     exit(0);
   }
 
-  char **ptr = NULL;
+  inst_data.seekg(0, std::ios::end);
+  streamsize size = inst_data.tellg();
+  inst_data.seekg(0, std::ios::beg);
 
-  // init physical memory
-  int img_size;
-  for (img_size = 0; img_size < PHYSICAL_MEMORY_LENGTH; img_size++) {
-    if (inst_data.eof())
-      break;
-    char inst_data_line[20];
-    inst_data.getline(inst_data_line, 100);
-    uint32_t inst_32b = strtol(inst_data_line, ptr, 16);
-    p_memory[img_size + POS_MEMORY_SHIFT] = inst_32b;
+  // 读取数据到 vector<char>
+  if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
+                      size)) {
+    std::cerr << "读取文件失败！" << std::endl;
+    return 1;
   }
+
+  inst_data.close();
 
   p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
   p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
   p_memory[uint32_t(0xc / 4)] = 0x00028067;
-
-  p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc           t0,0
-  p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi            a2,t0,40
-  p_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero
-  p_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw              a1,32(t0)
-  p_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw              t0,24(t0)
-  p_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
-  p_memory[uint32_t(0x00001018 / 4)] = 0x80000000;
-  p_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
   p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
 
 #ifdef CONFIG_DIFFTEST
-  init_difftest(img_size);
+  init_difftest(size);
 #endif
 
 #ifdef CONFIG_RUN_REF
@@ -103,13 +98,14 @@ int main(int argc, char *argv[]) {
   cout << hex << front_out.pc[0] << endl;
   front_in.reset = false;
 
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    front_in.back2front_valid[i] = false;
-  }
 #endif
 
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
+    if (sim_time % 10000000 == 0)
+      cout << dec << sim_time << endl;
+    perf.cycle++;
+
     if (LOG)
       cout
           << "****************************************************************"
@@ -120,6 +116,7 @@ int main(int argc, char *argv[]) {
     // Backend(CSR) -> mmu
     back2mmu_comb();
     // step1: fetch instructions and fill in back.in
+
     front_cycle(stall, misprediction, exception, front_in, front_out, number_PC,
                 non_branch_mispred);
     mmu.comb_frontend(); // update mmu_ifu_resp according to new ifu_req_valid
@@ -163,10 +160,7 @@ SIM_END:
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    printf("\033[1;32minstruction num: %d\033[0m\n", commit_num);
-    printf("\033[1;32mcycle num      : %lld\033[0m\n", sim_time);
-    printf("\033[1;32mipc            : %f\033[0m\n",
-           (double)commit_num / sim_time);
+    perf.perf_print();
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << endl;
 
@@ -282,6 +276,9 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
 bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory) {
   bool ret = va2pa(p_addr, v_addr, satp, type, mstatus, sstatus, privilege, p_memory);
+#ifndef CONFIG_LOOSE_VA2PA
+  return ret;
+#endif
   extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
   Inst_entry ren_commit_entry = back.rename.io.rob_commit->commit_entry[ren_commit_idx];
   bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
@@ -297,7 +294,7 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type
       } else if (!dut_page_fault_inst && !ret) {
         cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault mismatch!" << endl;
         cout << "VA: " << hex << v_addr << endl;
-        cout << "sim_time: " << dec << sim_time << ", commit_num: " << dec << commit_num << endl;
+        cout << "sim_time: " << dec << sim_time << endl;
         exit(1);
       }
       break;
@@ -307,7 +304,7 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type
       } else if (!dut_page_fault_load && !ret) {
         cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!" << endl;
         cout << "VA: " << hex << v_addr << endl;
-        cout << "sim_time: " << dec << sim_time << ", commit_num: " << dec << commit_num << endl;
+        cout << "sim_time: " << dec << sim_time << endl;
         exit(1);
       }
       break;
@@ -317,7 +314,7 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type
       } else if (!dut_page_fault_store && !ret) {
         cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!" << endl;
         cout << "VA: " << hex << v_addr << endl;
-        cout << "sim_time: " << dec << sim_time << ", commit_num: " << dec << commit_num << endl;
+        cout << "sim_time: " << dec << sim_time << endl;
         exit(1);
       }
       break;
@@ -337,7 +334,7 @@ bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx, bool &mmu_page_faul
   ret = !mmu_page_fault;
 
   if (p_addr == 0x1fd0e000) {
-    data = commit_num;
+    data = perf.commit_num;
   } else if (p_addr == 0x1fd0e004) {
     data = 0;
   } else {
@@ -357,6 +354,15 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
     front_in.FIFO_read_enable = true;
     front_in.refetch = (misprediction || exception || non_branch_mispred);
+    // for (int i = 0; i < COMMIT_WIDTH; i++) {
+    //   if (front_in.back2front_valid[i]) {
+    //     Inst_entry *inst = &back.rob.io.rob_commit->commit_entry[i];
+    //     if (!(inst->valid && is_branch(inst->uop.type) &&
+    //           front_in.predict_base_pc[i] == inst->uop.pc)) {
+    //       cout << "error" << endl;
+    //     }
+    //   }
+    // }
     front_top(&front_in, &front_out);
 
 #else
@@ -369,17 +375,17 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
       bool mstatus[32], sstatus[32];
 
-      cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
+      cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus],
                                  32);
 
-      cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
+      cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus],
                                  32);
 
-      if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
+      if ((back.csr.CSR_RegFile[csr_satp] & 0x80000000) &&
           back.csr.privilege != 3) {
 
         front_out.page_fault_inst[j] =
-            !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[number_satp], 0,
+            !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[csr_satp], 0,
                    mstatus, sstatus, back.csr.privilege, p_memory);
         if (front_out.page_fault_inst[j]) {
           front_out.instructions[j] = INST_NOP;
@@ -400,6 +406,9 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 #endif
 
     bool no_taken = true;
+    bool is_br = false;
+    bool is_jal = false;
+    bool is_jalr = false;
     uint32_t last_valid_inst_pc = 0;
     for (int j = 0; j < FETCH_WIDTH; j++) {
       back.in.valid[j] =
@@ -423,17 +432,32 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       back.in.pcpn[j] = front_out.pcpn[j];
 
       // pre-decode, avoid non-branch instruction be predicted as taken
+      // 直接处理jal的跳转
+      // 判断条件跳转的地址是否正确
+      // 判断jalr是否被正确预测为跳转
+
       uint32_t op_branch = 0b1100011;
       uint32_t op_jal = 0b1101111;
       uint32_t op_jalr = 0b1100111;
       uint32_t number_op_code_unsigned = front_out.instructions[j] & 0x7f;
-      bool is_branch_inst = (number_op_code_unsigned == op_branch) ||
-                            (number_op_code_unsigned == op_jal) ||
-                            (number_op_code_unsigned == op_jalr);
-      // if (front_out.predict_dir[j])
-      //   no_taken = false;
+      is_jal = (number_op_code_unsigned == op_jal);
+      is_jalr = (number_op_code_unsigned == op_jalr);
+      is_br = (number_op_code_unsigned == op_branch);
+      bool is_branch_inst = is_br || is_jal || is_jalr;
       if (front_out.predict_dir[j] && is_branch_inst)
         no_taken = false;
+
+      // 预解码处理
+      if (back.in.valid[j]) {
+
+        if (is_jalr) {
+          // 判断jalr是否被正确预测为跳转
+        } else if (is_br) {
+          // 检查预测跳转的地址是否正确
+        } else if (is_jal) {
+          // 直接处理jal的跳转
+        }
+      }
     }
 
     non_branch_mispred = false;
@@ -445,15 +469,24 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       front_in.refetch = true;
       front_in.refetch_address = last_valid_inst_pc + 4;
     }
-
   } else {
 #ifdef CONFIG_BPU
     /*
      * stall && !misprediction && !exception
      */
     front_in.FIFO_read_enable = false;
-    // front_in.refetch = false;
+    front_in.refetch = false;
     front_in.refetch = non_branch_mispred;
+    // for (int i = 0; i < COMMIT_WIDTH; i++) {
+    //   if (front_in.back2front_valid[i]) {
+    //     Inst_entry *inst = &back.rob.io.rob_commit->commit_entry[i];
+    //     if (!(inst->valid && is_branch(inst->uop.type) &&
+    //           front_in.predict_base_pc[i] == inst->uop.pc)) {
+    //       cout << "error" << endl;
+    //     }
+    //   }
+    // }
+
     front_top(&front_in, &front_out);
     non_branch_mispred = false;
 #endif
@@ -464,19 +497,21 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
   front_in.FIFO_read_enable = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
-    front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
-                                   is_branch(back.out.commit_entry[i].uop.type);
+    front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
+    // is_branch(back.out.commit_entry[i].uop.type);
+
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
-      front_in.actual_dir[i] = inst->br_taken;
+      front_in.actual_dir[i] = (is_branch(inst->type)) ? inst->br_taken : false;
+      // front_in.actual_dir[i] = inst->br_taken;
       front_in.actual_target[i] = inst->pc_next;
       int br_type = BR_DIRECT;
 
       if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
         br_type = BR_CALL;
       } else if (inst->type == JALR) {
-        if (inst->src1_areg == 1)
+        if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
           br_type = BR_RET;
         else
           br_type = BR_IDIRECT;
@@ -487,15 +522,15 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.altpcpn[i] = inst->altpcpn;
       front_in.pcpn[i] = inst->pcpn;
     }
-    if (LOG) {
-      /*cout << " valid: " << front_in.back2front_valid[i]*/
-      /*     << " 反馈给前端的分支指令PC: " << hex << inst->pc*/
-      /*     << " 预测结果: " << inst->pred_br_taken*/
-      /*     << " 实际结果: " << inst->br_taken*/
-      /*     << " 预测目标地址: " << inst->pred_br_pc*/
-      /*     << " 实际目标地址: " << inst->pc_next*/
-      /*     << " 指令: " << inst->instruction << endl;*/
-    }
+    // if (LOG) {
+    /*cout << " valid: " << front_in.back2front_valid[i]*/
+    /*     << " 反馈给前端的分支指令PC: " << hex << inst->pc*/
+    /*     << " 预测结果: " << inst->pred_br_taken*/
+    /*     << " 实际结果: " << inst->br_taken*/
+    /*     << " 预测目标地址: " << inst->pred_br_pc*/
+    /*     << " 实际目标地址: " << inst->pc_next*/
+    /*     << " 指令: " << inst->instruction << endl;*/
+    // }
   }
 
   // if (back.out.mispred) {
@@ -506,9 +541,9 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
 }
 
 static inline void back2mmu_comb() {
-  mmu.io.in.state.satp = reinterpret_cast<satp_t&>(back.csr.CSR_RegFile[number_satp]);
-  mmu.io.in.state.mstatus = back.csr.CSR_RegFile[number_mstatus];
-  mmu.io.in.state.sstatus = back.csr.CSR_RegFile[number_sstatus];
+  mmu.io.in.state.satp = reinterpret_cast<satp_t&>(back.csr.CSR_RegFile[csr_satp]);
+  mmu.io.in.state.mstatus = back.csr.CSR_RegFile[csr_mstatus];
+  mmu.io.in.state.sstatus = back.csr.CSR_RegFile[csr_sstatus];
   mmu.io.in.state.privilege = mmu_n::Privilege(back.csr.privilege);
   // for flush tlb:
   // - if request flush, set flush_valid = true in back-end later

@@ -27,6 +27,14 @@ inline bool is_CSR_uop(Inst_op op) {
           op == UOP_EBREAK);
 }
 
+inline bool cmp_inst_age(Inst_uop inst1, Inst_uop inst2) {
+  if (inst1.rob_flag == inst2.rob_flag) {
+    return inst1.rob_idx > inst2.rob_idx;
+  } else {
+    return inst1.rob_idx < inst2.rob_idx;
+  }
+}
+
 inline bool is_sta_uop(Inst_op op) { return op == UOP_STA; }
 
 inline bool is_std_uop(Inst_op op) { return op == UOP_STD; }

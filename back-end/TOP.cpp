@@ -18,8 +18,84 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
 
 void Back_Top::difftest(Inst_uop *inst) {
 
-  if (inst->dest_en && !inst->page_fault_load)
+  if (inst->type == JALR) {
+    if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+      perf.ret_br_num++;
+    } else {
+      perf.jalr_br_num++;
+    }
+  } else if (inst->type == BR) {
+    perf.cond_br_num++;
+  } else if (inst->type == JAL) {
+    if (inst->dest_areg == 1) {
+      perf.call_br_num++;
+    } else {
+      perf.jal_br_num++;
+    }
+  }
+
+  if (inst->mispred) {
+    if (inst->type == JALR) {
+      if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+        perf.ret_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.ret_dir_mispred++;
+        } else {
+          perf.ret_addr_mispred++;
+        }
+      } else {
+        perf.jalr_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.jalr_dir_mispred++;
+        } else {
+          perf.jalr_addr_mispred++;
+        }
+      }
+    } else if (inst->type == BR) {
+      if (inst->pred_br_taken != inst->br_taken) {
+        perf.cond_dir_mispred++;
+      } else {
+        perf.cond_addr_mispred++;
+      }
+      perf.cond_mispred_num++;
+    } else if (inst->type == JAL) {
+
+      if (inst->dest_areg == 1) {
+        perf.call_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.call_dir_mispred++;
+        } else {
+          perf.call_addr_mispred++;
+        }
+      } else {
+        perf.jal_mispred_num++;
+        if (!inst->pred_br_taken) {
+          perf.jal_dir_mispred++;
+        } else {
+          perf.jal_addr_mispred++;
+        }
+      }
+    }
+  }
+
+  if (inst->dest_en && !inst->page_fault_load &&
+      !rob.io.rob2csr->interrupt_resp) {
     rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
+  }
+
+  if (is_store(*inst)) {
+    if (stq.entry[inst->stq_idx].addr == 0x10000001 &&
+        (stq.entry[inst->stq_idx].data & 0x000000ff) == 7) {
+      csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] | (1 << 9);
+      csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] | (1 << 9);
+    }
+
+    if (stq.entry[inst->stq_idx].addr == 0xc201004 &&
+        (stq.entry[inst->stq_idx].data & 0x000000ff) == 0xa) {
+      csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] & ~(1 << 9);
+      csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] & ~(1 << 9);
+    }
+  }
 
 #ifdef CONFIG_DIFFTEST
   if (LOG) {
@@ -36,10 +112,6 @@ void Back_Top::difftest(Inst_uop *inst) {
     dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
   }
 
-  for (int i = 0; i < CSR_NUM; i++) {
-    dut_cpu.csr[i] = csr.CSR_RegFile[csr_idx[i]];
-  }
-
   if (is_store(*inst)) {
     dut_cpu.store = true;
     dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
@@ -51,18 +123,12 @@ void Back_Top::difftest(Inst_uop *inst) {
       dut_cpu.store_data = stq.entry[inst->stq_idx].data;
 
     dut_cpu.store_data = dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
-
-  } else if (inst->amoop == SC) {
-    dut_cpu.store = true;
-    int rob_idx = inst->rob_idx;
-    LOOP_DEC(rob_idx, ROB_NUM);
-    int stq_idx = rob.entry[rob_idx & 0b11][rob_idx >> 2].uop.stq_idx;
-    dut_cpu.store_addr = stq.entry[stq_idx].addr;
-    dut_cpu.store_data = stq.entry[stq_idx].data;
-
   } else
     dut_cpu.store = false;
 
+  for (int i = 0; i < CSR_NUM; i++) {
+    dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
+  }
   dut_cpu.pc = inst->pc_next;
 
   if (inst->difftest_skip) {
@@ -101,12 +167,14 @@ Exe_Stq exe2stq;
 Exe_Iss exe2iss;
 
 Rob_Dis rob2dis;
+Rob_Csr rob2csr;
 Rob_Broadcast rob_bcast;
 Rob_Commit rob_commit;
 
 Stq_Dis stq2dis;
 
 Csr_Exe csr2exe;
+Csr_Rob csr2rob;
 Exe_Csr exe2csr;
 
 void Back_Top::init() {
@@ -177,6 +245,8 @@ void Back_Top::init() {
   rob.io.dec_bcast = &dec_bcast;
   rob.io.rob_commit = &rob_commit;
   rob.io.rob2dis = &rob2dis;
+  rob.io.csr2rob = &csr2rob;
+  rob.io.rob2csr = &rob2csr;
 
   stq.io.exe2stq = &exe2stq;
   stq.io.rob_commit = &rob_commit;
@@ -187,6 +257,8 @@ void Back_Top::init() {
 
   csr.io.exe2csr = &exe2csr;
   csr.io.csr2exe = &csr2exe;
+  csr.io.csr2rob = &csr2rob;
+  csr.io.rob2csr = &rob2csr;
   csr.io.rob_bcast = &rob_bcast;
 
   idu.init();
@@ -213,87 +285,88 @@ void Back_Top::Back_comb() {
     idu.io.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
   }
 
-  // exu -> iss -> prf
-  // exu -> csr
-
-  // rename -> idu.comb_fire
-  // prf->idu.comb_branch
-  // isu/stq/rob -> rename.fire -> idu.fire
+  // 每个空行表示分层  下层会依赖上层产生的某个信号
   idu.comb_decode();
   prf.comb_br_check();
-  idu.comb_branch();
-  rob.comb_commit();
+  csr.comb_interrupt();
   rename.comb_alloc();
-  dis.comb_alloc();
   prf.comb_complete();
   prf.comb_awake();
+  prf.comb_write();
+  isu.comb_ready();
+
+  idu.comb_branch();
+  rob.comb_complete();
+
+  rob.comb_ready();
+  rob.comb_commit();
+
+  idu.comb_release_tag();
+  dis.comb_alloc();
   exu.comb_exec();
   exu.comb_to_csr();
   exu.comb_ready();
   isu.comb_deq();
+
+  csr.comb_exception();
+  csr.comb_csr_read();
+  csr.comb_csr_write();
+  exu.comb_from_csr();
+  stq.comb();
   prf.comb_read();
   rename.comb_wake();
   dis.comb_wake();
   rename.comb_rename();
-  isu.comb_ready();
+
   dis.comb_dispatch();
-  stq.comb();
-  rob.comb_ready();
-  rob.comb_complete();
-  idu.comb_release_tag();
+
   dis.comb_fire();
   rename.comb_fire();
   rob.comb_fire();
   idu.comb_fire();
-  rob.comb_flush();
-  idu.comb_flush();
-  csr.comb();
-  exu.comb_from_csr();
-  rob.comb_branch();
-  rename.comb_branch();
-  rename.comb_pipeline();
-  exu.comb_branch();
-  exu.comb_pipeline();
-  exu.comb_flush();
-  prf.comb_write();
-  prf.comb_branch();
-  prf.comb_pipeline();
-  prf.comb_flush();
-  dis.comb_pipeline();
 
+  // 为了debug
+  // 修正pc_next 以及difftest对应的pc_next
   back.out.flush = rob.io.rob_bcast->flush;
-
   if (!rob.io.rob_bcast->flush) {
     back.out.mispred = prf.io.prf2dec->mispred;
     back.out.stall = !idu.io.dec2front->ready;
     back.out.redirect_pc = prf.io.prf2dec->redirect_pc;
   } else {
-
     if (LOG)
       cout << "flush" << endl;
     back.out.mispred = true;
     if (rob.io.rob_bcast->mret || rob.io.rob_bcast->sret) {
-      back.out.redirect_pc = csr.io.csr2exe->epc;
+      back.out.redirect_pc = csr.io.csr2rob->epc;
     } else if (rob.io.rob_bcast->exception) {
-      back.out.redirect_pc = csr.io.csr2exe->trap_pc;
+      back.out.redirect_pc = csr.io.csr2rob->trap_pc;
     } else {
-      back.out.redirect_pc = rob.io.rob_bcast->pc;
+      back.out.redirect_pc = rob.io.rob_bcast->pc + 4;
     }
   }
 
-  // 修正pc_next 以及difftest对应的pc_next
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
     Inst_type type = back.out.commit_entry[i].uop.type;
-    if (back.out.commit_entry[i].valid && type == ECALL || type == MRET ||
-        type == SRET || is_page_fault(back.out.commit_entry[i].uop) ||
-        back.out.commit_entry[i].uop.illegal_inst) {
+    if (back.out.commit_entry[i].valid && back.out.flush) {
       back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
       rob.io.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
     }
   }
-  rename.comb_commit();
+  rename.comb_commit(); // difftest在这里
+  rob.comb_flush();
+  prf.comb_flush();
+  exu.comb_flush();
   rename.comb_flush();
+  idu.comb_flush();
+  rob.comb_branch();
+  prf.comb_branch();
+  exu.comb_branch();
+  rename.comb_branch();
+  prf.comb_pipeline();
+  exu.comb_pipeline();
+  dis.comb_pipeline();
+  rename.comb_pipeline();
 }
 
 void Back_Top::Back_seq() {

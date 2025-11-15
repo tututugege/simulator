@@ -1,4 +1,5 @@
 #include "TOP.h"
+#include <Cache.h>
 #include <STQ.h>
 #include <config.h>
 #include <cstdint>
@@ -6,6 +7,7 @@
 #include <util.h>
 
 extern Back_Top back;
+extern Cache cache;
 
 void STQ::comb() {
   int num = count;
@@ -24,7 +26,7 @@ void STQ::comb() {
   }
 
   // 写端口 同时给ld_IQ发送唤醒信息
-  if (entry[deq_ptr].valid && entry[deq_ptr].complete) {
+  if (entry[deq_ptr].valid && entry[deq_ptr].commit) {
     extern uint32_t *p_memory;
     uint32_t wdata = entry[deq_ptr].data;
     uint32_t waddr = entry[deq_ptr].addr;
@@ -51,6 +53,8 @@ void STQ::comb() {
     if (wstrb & 0b1000)
       mask |= 0xFF000000;
 
+    cache.cache_access(waddr);
+
     p_memory[waddr / 4] = (mask & wdata) | (~mask & old_data);
 
     if (waddr == UART_BASE) {
@@ -58,39 +62,51 @@ void STQ::comb() {
       temp = wdata & 0x000000ff;
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
       cout << temp;
+
+      if (temp == '?') {
+        if (perf.perf_start) {
+          perf.perf_print();
+        } else {
+          cout << " perf counter start" << endl;
+          perf.perf_start = true;
+          perf.perf_reset();
+        }
+      }
     }
 
-    if (waddr == 0x10000001 && (wdata & 0x000000ff) == 7) {
-      // cerr << "UART enabled!" << endl;
-      /*output_data_from_RISCV[1152 + 31 - 9] = 1; // mip*/
-      /*output_data_from_RISCV[1568 + 31 - 9] = 1; // sip*/
+    if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 7) {
       p_memory[0xc201004 / 4] = 0xa;
-      // log = true;
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xfff0ffff;
     }
-    if (waddr == 0x10000001 && (wdata & 0x000000ff) == 5) {
-      // cerr << "UART disabled2!" << endl;
-      //  ref_memory[0xc201004/4] = 0x0;
+    if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 5) {
       p_memory[0x10000000 / 4] =
           p_memory[0x10000000 / 4] & 0xfff0ffff | 0x00030000;
     }
-    if (waddr == 0xc201004 && (wdata & 0x000000ff) == 0xa) {
-      // cerr << "UART disabled1!" << endl;
+    if (waddr == 0xc201004 && (entry[deq_ptr].data & 0x000000ff) == 0xa) {
       p_memory[0xc201004 / 4] = 0x0;
-      /*output_data_from_RISCV[1152 + 31 - 9] = 0; // mip*/
-      /*output_data_from_RISCV[1568 + 31 - 9] = 0; // sip*/
     }
 
-    /*extern int sim_time;*/
     if (MEM_LOG) {
       cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
            << " in " << (waddr & 0xFFFFFFFC) << endl;
     }
 
     entry[deq_ptr].valid = false;
-    entry[deq_ptr].complete = false;
+    entry[deq_ptr].commit = false;
     LOOP_INC(deq_ptr, STQ_NUM);
     count--;
+    commit_count--;
+  }
+
+  // commit标记为可执行
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
+    if (io.rob_commit->commit_entry[i].valid &&
+        (is_store(io.rob_commit->commit_entry[i].uop)) &&
+        !io.rob_commit->commit_entry[i].uop.page_fault_store) {
+      entry[commit_ptr].commit = true;
+      commit_count++;
+      LOOP_INC(commit_ptr, STQ_NUM);
+    }
   }
 }
 
@@ -125,23 +141,13 @@ void STQ::seq() {
     entry[idx].data_valid = true;
   }
 
-  // commit标记为可执行
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (io.rob_commit->commit_entry[i].valid &&
-        (is_store(io.rob_commit->commit_entry[i].uop)) &&
-        !io.rob_commit->commit_entry[i].uop.page_fault_store) {
-      entry[commit_ptr].complete = true;
-      LOOP_INC(commit_ptr, STQ_NUM);
-    }
-  }
-
   // 分支清空
   if (io.dec_bcast->mispred) {
     for (int i = 0; i < STQ_NUM; i++) {
-      if (entry[i].valid && !entry[i].complete &&
+      if (entry[i].valid && !entry[i].commit &&
           (io.dec_bcast->br_mask & (1 << entry[i].tag))) {
         entry[i].valid = false;
-        entry[i].complete = false;
+        entry[i].commit = false;
         count--;
         LOOP_DEC(enq_ptr, STQ_NUM);
       }
@@ -150,9 +156,9 @@ void STQ::seq() {
 
   if (io.rob_bcast->flush) {
     for (int i = 0; i < STQ_NUM; i++) {
-      if (entry[i].valid && !entry[i].complete) {
+      if (entry[i].valid && !entry[i].commit) {
         entry[i].valid = false;
-        entry[i].complete = false;
+        entry[i].commit = false;
         count--;
         LOOP_DEC(enq_ptr, STQ_NUM);
       }
@@ -166,12 +172,8 @@ extern uint32_t *p_memory;
 void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx, bool &stall_load) {
 
   int i = deq_ptr;
-  while (i != commit_ptr) {
-    if (entry[i].valid && (!entry[i].data_valid || !entry[i].addr_valid)) {
-      // 有未准备好的store，阻塞 load
-      stall_load = true;
-      return;
-    }
+  int count = commit_count;
+  while (count != 0) {
     if ((entry[i].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC)) {
       uint32_t wdata = entry[i].data;
       uint32_t waddr = entry[i].addr;
@@ -200,6 +202,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx, bool &stall_load
       data = (mask & wdata) | (~mask & data);
     }
     LOOP_INC(i, STQ_NUM);
+    count--;
   }
 
   int idx = back.rob.deq_ptr << 2;

@@ -32,9 +32,9 @@ struct tlb_write_port_t {
   } wr;
 };
 
-// 定义替换算法：TLB_RANDOM, TLB_PLRU (必须定义其中一个)
-// #define TLB_RANDOM
-#define TLB_PLRU
+// 定义替换算法：TLB_RANDOM/TLB_PLRU (其中之一必须被定义)
+// #define TLB_RANDOM // 使用随机替换算法
+#define TLB_PLRU  // 使用 PLRU 替换算法
 
 class TLB {
 public:

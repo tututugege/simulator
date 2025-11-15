@@ -31,6 +31,12 @@ enum STATE { IDLE, RECV };
 #define BGEU 0b111
 
 void mul(Inst_uop &inst) {
+  static bool use_mul = false;
+
+  if (!use_mul) {
+    printf("MUL INST\n");
+    use_mul = true;
+  }
   switch (inst.func3) {
   case 0: { // mul
     inst.result = (int32_t)inst.src1_rdata * (int32_t)inst.src2_rdata;
@@ -55,6 +61,11 @@ void mul(Inst_uop &inst) {
 }
 
 void div(Inst_uop &inst) {
+
+  if (inst.src2_rdata == 0) {
+    return;
+  }
+
   switch (inst.func3) {
 
   case 4: { // div
@@ -87,7 +98,6 @@ void bru(Inst_uop &inst) {
   uint32_t pc_br = inst.pc + inst.imm;
   bool br_taken = true;
 
-  assert(is_branch_uop(inst.op));
   if (inst.op == UOP_BR) {
     switch (inst.func3) {
     case BEQ:

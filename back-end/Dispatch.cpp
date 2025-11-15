@@ -15,6 +15,7 @@ void Dispatch::comb_alloc() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     inst_alloc[i] = inst_r[i];
     inst_alloc[i].uop.rob_idx = (io.rob2dis->enq_idx << 2) + i;
+    inst_alloc[i].uop.rob_flag = io.rob2dis->rob_flag;
 
     if (is_load(inst_r[i].uop)) {
       inst_alloc[i].uop.pre_sta_mask = pre_store_mask;
@@ -43,10 +44,12 @@ void Dispatch::comb_wake() {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       if (inst_alloc[i].uop.src1_preg == io.prf_awake->wake.preg) {
         inst_alloc[i].uop.src1_busy = false;
+        // inst_alloc[i].uop.src1_latency = 0;
         inst_r_1[i].uop.src1_busy = false;
       }
       if (inst_alloc[i].uop.src2_preg == io.prf_awake->wake.preg) {
         inst_alloc[i].uop.src2_busy = false;
+        // inst_alloc[i].uop.src2_latency = 0;
         inst_r_1[i].uop.src2_busy = false;
       }
     }
@@ -57,10 +60,15 @@ void Dispatch::comb_wake() {
       for (int j = 0; j < FETCH_WIDTH; j++) {
         if (inst_alloc[j].uop.src1_preg == io.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src1_busy = false;
+          // inst_alloc[j].uop.src1_latency = io.iss_awake->wake[i].latency;
+          // 假如Dispatch卡住，需要修改inrt_r_1
+          // 暂时只考虑2周期延迟的乘法指令
+          // 如果dispatch卡了一个周期，则无需修改src_latency
           inst_r_1[j].uop.src1_busy = false;
         }
         if (inst_alloc[j].uop.src2_preg == io.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src2_busy = false;
+          // inst_alloc[j].uop.src2_latency = io.iss_awake->wake[i].latency;
           inst_r_1[j].uop.src2_busy = false;
         }
       }
@@ -162,7 +170,6 @@ void Dispatch::comb_dispatch() {
 
         break;
 
-      // 特殊处理，保证只有一个amo
       case AMO:
         if (inst_r[i].uop.amoop == LR) {
           to_iq[IQ_LD][i] = true;
@@ -321,21 +328,20 @@ void Dispatch::comb_fire() {
   int store_num = 0;
   wire1_t pre_stall = false;
   wire1_t csr_stall = false;
-  wire1_t amo_stall = false;
   wire1_t pre_fire = false;
   wire1_t pre_is_flush = false;
+
   for (int i = 0; i < FETCH_WIDTH; i++) {
     io.dis2rob->dis_fire[i] =
         (io.dis2rob->valid[i] && io.rob2dis->ready) &&
         (inst_r[i].valid && iss_ready[i]) && !pre_stall && !io.rob2dis->stall &&
         (!is_CSR(inst_r[i].uop.type) || io.rob2dis->empty && !pre_fire) &&
-        !pre_is_flush;
+        !pre_is_flush && !io.dec_bcast->mispred && !io.rob_bcast->flush;
 
     if (is_store(inst_r[i].uop)) {
       io.dis2rob->dis_fire[i] = io.dis2rob->dis_fire[i] &&
                                 io.dis2stq->valid[store_num] &&
-                                io.stq2dis->ready[store_num] &&
-                                !io.dec_bcast->mispred && !io.rob_bcast->flush;
+                                io.stq2dis->ready[store_num];
 
       if (inst_r[i].valid && store_num < 2) {
         io.dis2stq->dis_fire[store_num] = io.dis2rob->dis_fire[i];
