@@ -22,42 +22,42 @@ void ROB::init() {
 }
 
 void ROB::comb_ready() {
-  io.rob2dis->stall = false;
-  io.rob2csr->commit = false;
-  io.rob2csr->interrupt_resp = false;
+  out.rob2dis->stall = false;
+  out.rob2csr->commit = false;
+  out.rob2csr->interrupt_resp = false;
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop)) {
-      io.rob2dis->stall = true;
+      out.rob2dis->stall = true;
       break;
     }
   }
 
-  if (count != 0 && io.csr2rob->interrupt_req && !io.dec_bcast->mispred) {
+  if (count != 0 && in.csr2rob->interrupt_req && !in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
-        io.rob2csr->interrupt_resp = true;
+        out.rob2csr->interrupt_resp = true;
         break;
       }
     }
   }
-  io.rob2dis->empty = (count == 0);
-  io.rob2dis->ready = !(enq_ptr == deq_ptr && count != 0);
+  out.rob2dis->empty = (count == 0);
+  out.rob2dis->ready = !(enq_ptr == deq_ptr && count != 0);
 }
 
 void ROB::comb_commit() {
 
   static int stall_cycle = 0; // 检查是否卡死
-  io.rob_bcast->flush = io.rob_bcast->exception = io.rob_bcast->mret =
-      io.rob_bcast->sret = io.rob_bcast->ecall = false;
+  out.rob_bcast->flush = out.rob_bcast->exception = out.rob_bcast->mret =
+      out.rob_bcast->sret = out.rob_bcast->ecall = false;
 
-  io.rob_bcast->interrupt = io.rob2csr->interrupt_resp;
+  out.rob_bcast->interrupt = out.rob2csr->interrupt_resp;
 
-  io.rob_bcast->page_fault_inst = io.rob_bcast->page_fault_load =
-      io.rob_bcast->page_fault_store = io.rob_bcast->illegal_inst = false;
+  out.rob_bcast->page_fault_inst = out.rob_bcast->page_fault_load =
+      out.rob_bcast->page_fault_store = out.rob_bcast->illegal_inst = false;
 
   wire1_t commit =
-      (!(enq_ptr == deq_ptr && count == 0) && !io.dec_bcast->mispred);
+      (!(enq_ptr == deq_ptr && count == 0) && !in.dec_bcast->mispred);
 
   // bank的同一行是否都完成
   for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -70,10 +70,10 @@ void ROB::comb_commit() {
   wire1_t single_commit = false;
   wire2_t single_idx;
 
-  if (!io.dec_bcast->mispred) {
+  if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop) ||
-          io.rob2csr->interrupt_resp) {
+          out.rob2csr->interrupt_resp) {
         single_commit = true;
         break;
       }
@@ -83,7 +83,7 @@ void ROB::comb_commit() {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
         single_idx = i;
-        if (!io.rob_bcast->interrupt &&
+        if (!out.rob_bcast->interrupt &&
             entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
           single_commit = false;
         }
@@ -93,13 +93,13 @@ void ROB::comb_commit() {
   }
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    io.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop;
+    out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop;
   }
 
   // 一组提交
   if (commit && !single_commit) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
-      io.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
+      out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
     }
 
     stall_cycle = 0;
@@ -110,45 +110,45 @@ void ROB::comb_commit() {
     stall_cycle = 0;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (i == single_idx)
-        io.rob_commit->commit_entry[i].valid = true;
+        out.rob_commit->commit_entry[i].valid = true;
       else
-        io.rob_commit->commit_entry[i].valid = false;
+        out.rob_commit->commit_entry[i].valid = false;
     }
 
     entry_1[single_idx][deq_ptr].valid = false;
     if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
-        io.rob2csr->interrupt_resp) {
-      io.rob_bcast->flush = true;
-      io.rob_bcast->exception = is_exception(entry[single_idx][deq_ptr].uop) ||
-                                io.rob2csr->interrupt_resp;
-      io.rob_bcast->pc = io.rob_commit->commit_entry[single_idx].uop.pc;
+        out.rob2csr->interrupt_resp) {
+      out.rob_bcast->flush = true;
+      out.rob_bcast->exception = is_exception(entry[single_idx][deq_ptr].uop) ||
+                                 out.rob2csr->interrupt_resp;
+      out.rob_bcast->pc = out.rob_commit->commit_entry[single_idx].uop.pc;
 
-      if (io.rob2csr->interrupt_resp) {
+      if (out.rob2csr->interrupt_resp) {
         // interrupt拥有最高优先级
       } else if (entry[single_idx][deq_ptr].uop.type == ECALL) {
-        io.rob_bcast->ecall = true;
-        io.rob_bcast->pc = io.rob_commit->commit_entry[single_idx].uop.pc;
+        out.rob_bcast->ecall = true;
+        out.rob_bcast->pc = out.rob_commit->commit_entry[single_idx].uop.pc;
       } else if (entry[single_idx][deq_ptr].uop.type == MRET) {
-        io.rob_bcast->mret = true;
+        out.rob_bcast->mret = true;
       } else if (entry[single_idx][deq_ptr].uop.type == SRET) {
-        io.rob_bcast->sret = true;
+        out.rob_bcast->sret = true;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_store) {
-        io.rob_bcast->page_fault_store = true;
-        io.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.result;
+        out.rob_bcast->page_fault_store = true;
+        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.result;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_load) {
-        io.rob_bcast->page_fault_load = true;
-        io.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.result;
+        out.rob_bcast->page_fault_load = true;
+        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.result;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_inst) {
-        io.rob_bcast->page_fault_inst = true;
-        io.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.pc;
+        out.rob_bcast->page_fault_inst = true;
+        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.pc;
       } else if (entry[single_idx][deq_ptr].uop.illegal_inst) {
-        io.rob_bcast->illegal_inst = true;
-        io.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
+        out.rob_bcast->illegal_inst = true;
+        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
       } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
         extern bool sim_end;
         sim_end = true;
       } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
-        io.rob2csr->commit = true;
+        out.rob2csr->commit = true;
       } else {
         if (entry[single_idx][deq_ptr].uop.type != CSR &&
             entry[single_idx][deq_ptr].uop.type != SFENCE_VMA) {
@@ -159,17 +159,19 @@ void ROB::comb_commit() {
     }
   } else {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
-      io.rob_commit->commit_entry[i].valid = false;
+      out.rob_commit->commit_entry[i].valid = false;
     }
   }
 
-  io.rob2dis->enq_idx = enq_ptr;
-  io.rob2dis->rob_flag = flag;
+  out.rob2dis->enq_idx = enq_ptr;
+  out.rob2dis->rob_flag = flag;
 
   stall_cycle++;
   if (stall_cycle > 1000) {
     cout << dec << sim_time << endl;
     cout << "卡死了" << endl;
+
+    // 打印ROB出队行指令 看是哪条指令卡死
     cout << "ROB deq inst:" << endl;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
@@ -179,6 +181,34 @@ void ROB::comb_commit() {
              << endl;
       }
     }
+
+    int free_preg_num = 0;
+    for (int i = 0; i < PRF_NUM; i++) {
+      if (back.rename.free_vec[i]) {
+        free_preg_num++;
+      }
+    }
+    cout << "free preg num: " << dec << free_preg_num << endl;
+
+    int free_tag_num = 0;
+    for (int i = 0; i < MAX_BR_NUM; i++) {
+      if (back.idu.tag_vec[i]) {
+        free_tag_num++;
+      }
+    }
+    cout << "free tag num: " << dec << free_tag_num << endl;
+
+    int free_stq_num = 0;
+    for (int i = 0; i < STQ_NUM; i++) {
+      if (!back.stq.entry[i].valid) {
+        free_stq_num++;
+      }
+    }
+    cout << "free stq num: " << dec << free_stq_num << endl;
+    cout << "dis2ren ready: " << dec << back.rename.in.dis2ren->ready << endl;
+    cout << "ren2dec ready: " << dec << back.rename.out.ren2dec->ready << endl;
+    cout << "dec2front ready: " << dec << back.idu.out.dec2front->ready << endl;
+
     exit(1);
   }
 }
@@ -186,37 +216,37 @@ void ROB::comb_commit() {
 void ROB::comb_complete() {
   //  执行完毕的标记
   for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.prf2rob->entry[i].valid) {
-      int bank_idx = io.prf2rob->entry[i].uop.rob_idx & 0b11;
-      int line_idx = io.prf2rob->entry[i].uop.rob_idx >> 2;
+    if (in.prf2rob->entry[i].valid) {
+      int bank_idx = in.prf2rob->entry[i].uop.rob_idx & 0b11;
+      int line_idx = in.prf2rob->entry[i].uop.rob_idx >> 2;
       entry_1[bank_idx][line_idx].uop.cplt_num++;
 
       if (i == IQ_LD) {
-        if (is_page_fault(io.prf2rob->entry[i].uop)) {
+        if (is_page_fault(in.prf2rob->entry[i].uop)) {
           entry_1[bank_idx][line_idx].uop.result =
-              io.prf2rob->entry[i].uop.result;
+              in.prf2rob->entry[i].uop.result;
           entry_1[bank_idx][line_idx].uop.page_fault_load = true;
         }
       }
 
       if (i == IQ_STA) {
-        if (is_page_fault(io.prf2rob->entry[i].uop)) {
+        if (is_page_fault(in.prf2rob->entry[i].uop)) {
           entry_1[bank_idx][line_idx].uop.result =
-              io.prf2rob->entry[i].uop.result;
+              in.prf2rob->entry[i].uop.result;
           entry_1[bank_idx][line_idx].uop.page_fault_store = true;
         }
       }
 
       // for debug
       entry_1[bank_idx][line_idx].uop.difftest_skip =
-          io.prf2rob->entry[i].uop.difftest_skip;
+          in.prf2rob->entry[i].uop.difftest_skip;
       if (i == IQ_BR0 || i == IQ_BR1) {
         entry_1[bank_idx][line_idx].uop.pc_next =
-            io.prf2rob->entry[i].uop.pc_next;
+            in.prf2rob->entry[i].uop.pc_next;
         entry_1[bank_idx][line_idx].uop.mispred =
-            io.prf2rob->entry[i].uop.mispred;
+            in.prf2rob->entry[i].uop.mispred;
         entry_1[bank_idx][line_idx].uop.br_taken =
-            io.prf2rob->entry[i].uop.br_taken;
+            in.prf2rob->entry[i].uop.br_taken;
       }
     }
   }
@@ -224,17 +254,17 @@ void ROB::comb_complete() {
 
 void ROB::comb_branch() {
   // 分支预测失败
-  if (io.dec_bcast->mispred && !io.rob_bcast->flush) {
-    enq_ptr_1 = ((io.dec_bcast->redirect_rob_idx >> 2) + 1) % (ROB_LINE_NUM);
+  if (in.dec_bcast->mispred && !out.rob_bcast->flush) {
+    enq_ptr_1 = ((in.dec_bcast->redirect_rob_idx >> 2) + 1) % (ROB_LINE_NUM);
     count_1 = count - (enq_ptr + ROB_LINE_NUM - enq_ptr_1) % ROB_LINE_NUM;
 
     if (enq_ptr_1 > enq_ptr) {
       flag_1 = !flag;
     }
 
-    for (int i = (io.dec_bcast->redirect_rob_idx & 0b11) + 1; i < ROB_BANK_NUM;
+    for (int i = (in.dec_bcast->redirect_rob_idx & 0b11) + 1; i < ROB_BANK_NUM;
          i++) {
-      entry_1[i][io.dec_bcast->redirect_rob_idx >> 2].valid = false;
+      entry_1[i][in.dec_bcast->redirect_rob_idx >> 2].valid = false;
     }
   }
 }
@@ -242,11 +272,11 @@ void ROB::comb_branch() {
 void ROB::comb_fire() {
   // 入队
   wire1_t enq = false;
-  if (io.rob2dis->ready) {
+  if (out.rob2dis->ready) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
-      if (io.dis2rob->dis_fire[i]) {
+      if (in.dis2rob->dis_fire[i]) {
         entry_1[i][enq_ptr].valid = true;
-        entry_1[i][enq_ptr].uop = io.dis2rob->uop[i];
+        entry_1[i][enq_ptr].uop = in.dis2rob->uop[i];
         entry_1[i][enq_ptr].uop.cplt_num = 0;
         enq = true;
       } else {
@@ -265,7 +295,7 @@ void ROB::comb_fire() {
 }
 
 void ROB::comb_flush() {
-  if (io.rob_bcast->flush) {
+  if (out.rob_bcast->flush) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       for (int j = 0; j < ROB_LINE_NUM; j++) {
         entry_1[i][j].valid = false;

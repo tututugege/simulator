@@ -3,21 +3,26 @@
 #include <EXU.h>
 #include <IO.h>
 
-class PRF_IO {
+class PRF_OUT {
 public:
-  Iss_Prf *iss2prf;
   Prf_Exe *prf2exe;
-  Exe_Prf *exe2prf;
   Prf_Rob *prf2rob;
   Prf_Dec *prf2dec;
   Prf_Awake *prf_awake;
+};
+
+class PRF_IN {
+public:
+  Iss_Prf *iss2prf;
+  Exe_Prf *exe2prf;
   Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bcast;
 };
 
 class PRF {
 public:
-  PRF_IO io;
+  PRF_IN in;
+  PRF_OUT out;
 
   void comb_br_check();
   void comb_branch();
@@ -32,8 +37,8 @@ public:
 
   // 状态
   reg32_t reg_file[PRF_NUM];
-  Inst_entry inst_r[ISSUE_WAY];
+  Inst_entry_reg inst_r[ISSUE_WAY];
 
   wire32_t reg_file_1[PRF_NUM];
-  Inst_entry inst_r_1[ISSUE_WAY];
+  Inst_entry_wire inst_r_1[ISSUE_WAY];
 };

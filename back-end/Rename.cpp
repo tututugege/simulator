@@ -6,8 +6,20 @@
 #include <cvt.h>
 #include <util.h>
 
-extern Back_Top back;
+// 多个comb复用的中间信号
+static wire1_t fire[FETCH_WIDTH];
+static wire1_t spec_alloc_flush[PRF_NUM];
+static wire1_t spec_alloc_mispred[PRF_NUM];
+static wire1_t spec_alloc_normal[PRF_NUM];
+static wire1_t free_vec_flush[PRF_NUM];
+static wire1_t free_vec_mispred[PRF_NUM];
+static wire1_t free_vec_normal[PRF_NUM];
+static wire7_t spec_RAT_flush[ARF_NUM + 1];
+static wire7_t spec_RAT_mispred[ARF_NUM + 1];
+static wire7_t spec_RAT_normal[ARF_NUM + 1];
 
+// difftest
+extern Back_Top back;
 const int ALLOC_NUM =
     PRF_NUM / FETCH_WIDTH; // 分配寄存器时将preg分成FETCH_WIDTH个部分
 
@@ -32,6 +44,7 @@ Rename::Rename() {
     inst_r[i].valid = false;
   }
 
+  memcpy(arch_RAT_1, arch_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
   memcpy(spec_RAT_1, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
   memcpy(spec_RAT_normal, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
   memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
@@ -67,29 +80,29 @@ void Rename::comb_alloc() {
   // 一条指令stall，后面的也stall
   wire1_t stall = false;
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2dis->uop[i] = inst_r[i].uop;
-    io.ren2dis->uop[i].dest_preg = alloc_reg[i];
+    out.ren2dis->uop[i] = inst_r[i].uop;
+    out.ren2dis->uop[i].dest_preg = alloc_reg[i];
     // 分配寄存器
     if (inst_r[i].valid && inst_r[i].uop.dest_en && !stall) {
-      io.ren2dis->valid[i] = alloc_valid[i];
+      out.ren2dis->valid[i] = alloc_valid[i];
       stall = !alloc_valid[i];
     } else if (inst_r[i].valid && !inst_r[i].uop.dest_en) {
-      io.ren2dis->valid[i] = !stall;
+      out.ren2dis->valid[i] = !stall;
     } else {
-      io.ren2dis->valid[i] = false;
+      out.ren2dis->valid[i] = false;
     }
   }
 }
 
 void Rename::comb_wake() {
   // busy_table wake up
-  if (io.prf_awake->wake.valid) {
-    busy_table_1[io.prf_awake->wake.preg] = false;
+  if (in.prf_awake->wake.valid) {
+    busy_table_1[in.prf_awake->wake.preg] = false;
   }
 
   for (int i = 0; i < ALU_NUM; i++) {
-    if (io.iss_awake->wake[i].valid) {
-      busy_table_1[io.iss_awake->wake[i].preg] = false;
+    if (in.iss_awake->wake[i].valid) {
+      busy_table_1[in.iss_awake->wake[i].preg] = false;
     }
   }
 }
@@ -136,17 +149,17 @@ void Rename::comb_rename() {
 
       if (inst_r[i].uop.src1_areg == inst_r[j].uop.dest_areg) {
         src1_bypass_hit[i] = true;
-        src1_preg_bypass[i] = io.ren2dis->uop[j].dest_preg;
+        src1_preg_bypass[i] = out.ren2dis->uop[j].dest_preg;
       }
 
       if (inst_r[i].uop.src2_areg == inst_r[j].uop.dest_areg) {
         src2_bypass_hit[i] = true;
-        src2_preg_bypass[i] = io.ren2dis->uop[j].dest_preg;
+        src2_preg_bypass[i] = out.ren2dis->uop[j].dest_preg;
       }
 
       if (inst_r[i].uop.dest_areg == inst_r[j].uop.dest_areg) {
         old_dest_bypass_hit[i] = true;
-        old_dest_preg_bypass[i] = io.ren2dis->uop[j].dest_preg;
+        old_dest_preg_bypass[i] = out.ren2dis->uop[j].dest_preg;
       }
     }
   }
@@ -154,44 +167,44 @@ void Rename::comb_rename() {
   // 根据是否bypass选择normal or bypass
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (src1_bypass_hit[i]) {
-      io.ren2dis->uop[i].src1_preg = src1_preg_bypass[i];
-      io.ren2dis->uop[i].src1_busy = true;
+      out.ren2dis->uop[i].src1_preg = src1_preg_bypass[i];
+      out.ren2dis->uop[i].src1_busy = true;
     } else {
-      io.ren2dis->uop[i].src1_preg = src1_preg_normal[i];
-      io.ren2dis->uop[i].src1_busy = src1_busy_normal[i];
+      out.ren2dis->uop[i].src1_preg = src1_preg_normal[i];
+      out.ren2dis->uop[i].src1_busy = src1_busy_normal[i];
     }
 
     if (src2_bypass_hit[i]) {
-      io.ren2dis->uop[i].src2_preg = src2_preg_bypass[i];
-      io.ren2dis->uop[i].src2_busy = true;
+      out.ren2dis->uop[i].src2_preg = src2_preg_bypass[i];
+      out.ren2dis->uop[i].src2_busy = true;
     } else {
-      io.ren2dis->uop[i].src2_preg = src2_preg_normal[i];
-      io.ren2dis->uop[i].src2_busy = src2_busy_normal[i];
+      out.ren2dis->uop[i].src2_preg = src2_preg_normal[i];
+      out.ren2dis->uop[i].src2_busy = src2_busy_normal[i];
     }
 
     if (old_dest_bypass_hit[i]) {
-      io.ren2dis->uop[i].old_dest_preg = old_dest_preg_bypass[i];
+      out.ren2dis->uop[i].old_dest_preg = old_dest_preg_bypass[i];
     } else {
-      io.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
+      out.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
     }
   }
 
   // 特殊处理 临时使用的32号寄存器提交时可以直接回收物理寄存器
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (io.ren2dis->uop[i].dest_areg == 32) {
-      io.ren2dis->uop[i].old_dest_preg = io.ren2dis->uop[i].dest_preg;
+    if (out.ren2dis->uop[i].dest_areg == 32) {
+      out.ren2dis->uop[i].old_dest_preg = out.ren2dis->uop[i].dest_preg;
     }
   }
 }
 
 void Rename::comb_fire() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    fire[i] = io.ren2dis->valid[i] && io.dis2ren->ready;
+    fire[i] = out.ren2dis->valid[i] && in.dis2ren->ready;
   }
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (fire[i] && io.ren2dis->uop[i].dest_en) {
-      int dest_preg = io.ren2dis->uop[i].dest_preg;
+    if (fire[i] && out.ren2dis->uop[i].dest_en) {
+      int dest_preg = out.ren2dis->uop[i].dest_preg;
       spec_alloc_normal[dest_preg] = true;
       free_vec_normal[dest_preg] = false;
       spec_RAT_normal[inst_r[i].uop.dest_areg] = dest_preg;
@@ -214,37 +227,37 @@ void Rename::comb_fire() {
     }
   }
 
-  io.ren2dec->ready = true;
+  out.ren2dec->ready = true;
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.ren2dec->ready &= fire[i] || !inst_r[i].valid;
+    out.ren2dec->ready &= fire[i] || !inst_r[i].valid;
   }
 }
 
 // mispred和flush不会同时发生
 void Rename::comb_branch() {
   // 分支处理
-  if (io.dec_bcast->mispred) { // 硬件永远都会生成xx_mispred和xx_flush，然后选择
+  if (in.dec_bcast->mispred) { // 硬件永远都会生成xx_mispred和xx_flush，然后选择
                                // 模拟器判断一下为了不做无用功跑快点
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM + 1; i++) {
-      spec_RAT_mispred[i] = RAT_checkpoint[io.dec_bcast->br_tag][i];
+      spec_RAT_mispred[i] = RAT_checkpoint[in.dec_bcast->br_tag][i];
     }
 
     // 恢复free_list
     for (int j = 0; j < PRF_NUM; j++) {
       free_vec_mispred[j] =
-          free_vec[j] || alloc_checkpoint[io.dec_bcast->br_tag][j];
+          free_vec[j] || alloc_checkpoint[in.dec_bcast->br_tag][j];
       spec_alloc_mispred[j] =
-          spec_alloc[j] && !alloc_checkpoint[io.dec_bcast->br_tag][j];
+          spec_alloc[j] && !alloc_checkpoint[in.dec_bcast->br_tag][j];
     }
   }
 }
 
 void Rename ::comb_flush() {
-  if (io.rob_bcast->flush) {
+  if (in.rob_bcast->flush) {
     // 恢复重命名表
     for (int i = 0; i < ARF_NUM + 1; i++) {
-      spec_RAT_flush[i] = arch_RAT[i];
+      spec_RAT_flush[i] = arch_RAT_1[i];
     }
 
     // 恢复free_list
@@ -259,50 +272,51 @@ void Rename ::comb_flush() {
 void Rename ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (io.rob_commit->commit_entry[i].valid) {
+    if (in.rob_commit->commit_entry[i].valid) {
       perf.commit_num++;
-      if (io.rob_commit->commit_entry[i].uop.dest_en) {
+      Inst_uop *inst = &in.rob_commit->commit_entry[i].uop;
+      if (inst->dest_en) {
 
         // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
         // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
         // 异常指令要看上去没有执行一样
-        if (!io.rob_commit->commit_entry[i].uop.page_fault_load &&
-            !io.rob_bcast->interrupt && !io.rob_bcast->illegal_inst) {
-          free_vec_normal[io.rob_commit->commit_entry[i].uop.old_dest_preg] =
-              true;
-          spec_alloc_normal[io.rob_commit->commit_entry[i].uop.dest_preg] =
-              false;
+        if (!inst->page_fault_load && !in.rob_bcast->interrupt &&
+            !in.rob_bcast->illegal_inst) {
+          free_vec_normal[inst->old_dest_preg] = true;
+          spec_alloc_normal[inst->dest_preg] = false;
         }
       }
 
       if (LOG) {
-        cout << "ROB commit PC 0x" << hex
-             << io.rob_commit->commit_entry[i].uop.pc << " idx "
-             << io.rob_commit->commit_entry[i].uop.inst_idx << endl;
+        cout << "ROB commit PC 0x" << hex << inst->pc << " idx "
+             << inst->inst_idx << endl;
       }
       ren_commit_idx = i;
-      back.difftest(&(io.rob_commit->commit_entry[i].uop));
+      if (inst->dest_en && !inst->page_fault_load && !in.rob_bcast->interrupt) {
+        arch_RAT_1[inst->dest_areg] = inst->dest_preg;
+      }
+      back.difftest(inst);
     }
   }
 }
 
 void Rename ::comb_pipeline() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (io.rob_bcast->flush || io.dec_bcast->mispred) {
+    if (in.rob_bcast->flush || in.dec_bcast->mispred) {
       inst_r_1[i].valid = false;
-    } else if (io.ren2dec->ready) {
-      inst_r_1[i].uop = io.dec2ren->uop[i];
-      inst_r_1[i].valid = io.dec2ren->valid[i];
+    } else if (out.ren2dec->ready) {
+      inst_r_1[i].uop = in.dec2ren->uop[i];
+      inst_r_1[i].valid = in.dec2ren->valid[i];
     } else {
       inst_r_1[i].valid = inst_r[i].valid && !fire[i];
     }
   }
 
-  if (io.rob_bcast->flush) {
+  if (in.rob_bcast->flush) {
     memcpy(spec_alloc_1, spec_alloc_flush, PRF_NUM);
     memcpy(free_vec_1, free_vec_flush, PRF_NUM);
     memcpy(spec_RAT_1, spec_RAT_flush, (ARF_NUM + 1) * sizeof(reg7_t));
-  } else if (io.dec_bcast->mispred) {
+  } else if (in.dec_bcast->mispred) {
     memcpy(spec_alloc_1, spec_alloc_mispred, PRF_NUM);
     memcpy(free_vec_1, free_vec_mispred, PRF_NUM);
     memcpy(spec_RAT_1, spec_RAT_mispred, (ARF_NUM + 1) * sizeof(reg7_t));
@@ -317,6 +331,7 @@ void Rename ::seq() {
 
   memcpy(inst_r, inst_r_1, FETCH_WIDTH * sizeof(Inst_entry));
   memcpy(spec_RAT, spec_RAT_1, (ARF_NUM + 1) * sizeof(reg7_t));
+  memcpy(arch_RAT, arch_RAT_1, (ARF_NUM + 1) * sizeof(reg7_t));
 
   memcpy(free_vec, free_vec_1, PRF_NUM);
   memcpy(busy_table, busy_table_1, PRF_NUM);
@@ -340,14 +355,19 @@ void Rename ::seq() {
   // memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
 
   // 监控是否产生寄存器泄露
-  // if (sim_time % 10000000 == 0) {
-  //   int free_vec_num = 0;
-  //   for (int i = 0; i < PRF_NUM; i++) {
-  //     if (free_vec[i])
-  //       free_vec_num++;
-  //   }
+  // 每次flush时 free_vec_num应该等于 PRF_NUM - ARF_NUM
+  // static int count = 0;
+  // if (in.rob_bcast->flush) {
+  //   count++;
+  //   if (count % 100 == 0) {
+  //     int free_vec_num = 0;
+  //     for (int i = 0; i < PRF_NUM; i++) {
+  //       if (free_vec[i])
+  //         free_vec_num++;
+  //     }
   //
-  //   // assert(free_vec_num > 32);
-  //   cout << "free_vec num: " << hex << free_vec_num << endl;
+  //     assert(free_vec_num == PRF_NUM - ARF_NUM);
+  // cout << "free_vec num: " << hex << free_vec_num << endl;
+  // }
   // }
 }

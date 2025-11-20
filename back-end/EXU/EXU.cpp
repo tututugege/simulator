@@ -1,12 +1,11 @@
-#include <Cache.h>
 #include "TOP.h"
-#include <MMU.h>
+#include <Cache.h>
 #include <EXU.h>
+#include <MMU.h>
 #include <cmath>
 #include <config.h>
 #include <cstdint>
 #include <cvt.h>
-#include <iostream>
 #include <util.h>
 extern Back_Top back;
 extern MMU mmu;
@@ -51,8 +50,8 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_DIV) { // div
       latency = 1;
     } else if (inst.op == UOP_LOAD) {
-      latency = cache.cache_access(inst.src1_rdata + inst.imm);
-      // latency = 1;
+      // latency = cache.cache_access(inst.src1_rdata + inst.imm);
+      latency = 1;
     } else if (inst.op == UOP_STA) {
       latency = 1;
     } else {
@@ -64,7 +63,7 @@ void FU::exec(Inst_uop &inst) {
 
   // deal with mmu: if miss, return and wait for next cycle
   if (is_load_uop(inst.op) || is_sta_uop(inst.op)) {
-    // step0: reset wire mmu_lsu_slot_r_1, which is 
+    // step0: reset wire mmu_lsu_slot_r_1, which is
     // only useful for load/sta uop
     uint32_t vaddr = inst.src1_rdata + inst.imm;
     // step1: try to find a free slot if not allocated yet
@@ -72,24 +71,20 @@ void FU::exec(Inst_uop &inst) {
       // slot not allocated yet
       bool granted = comb_apply_slot(mmu_lsu_slot_r_1);
       if (granted) {
-        // free slot found, send mmu request and 
+        // free slot found, send mmu request and
         // waiting for next cycle
         mmu_req_master_t req = {
-          .valid = true,
-          .vtag = (vaddr >> 12), // vaddr[31:12]
-          .op_type = is_load_uop(inst.op) ?  
-                    mmu_n::OP_LOAD :
-                    mmu_n::OP_STORE
-        };
+            .valid = true,
+            .vtag = (vaddr >> 12), // vaddr[31:12]
+            .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
         int idx = mmu_lsu_slot_r_1.idx;
         mmu.io.in.mmu_lsu_req[idx] = req;
       }
-      return ;
+      return;
     }
 
     // step2: slot aleardy allocated, check mmu resp to see if hit
-    mmu_resp_master_t resp = 
-      mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+    mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
     bool hit = resp.valid && !resp.miss;
     // if (!hit) {
     if (!hit || cycle < latency) {
@@ -97,43 +92,36 @@ void FU::exec(Inst_uop &inst) {
       bool granted = comb_apply_slot(mmu_lsu_slot_r_1);
       if (granted) {
         mmu_req_master_t req = {
-          .valid = true,
-          .vtag = (vaddr >> 12), // vaddr[31:12]
-          .op_type = is_load_uop(inst.op) ?
-                    mmu_n::OP_LOAD : 
-                    mmu_n::OP_STORE
-        };
+            .valid = true,
+            .vtag = (vaddr >> 12), // vaddr[31:12]
+            .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
         mmu.io.in.mmu_lsu_req[mmu_lsu_slot_r_1.idx] = req;
       }
-      return ;
+      return;
     }
   }
 
   if (cycle >= latency) {
     if (is_load_uop(inst.op)) {
-      mmu_resp_master_t resp = 
-        mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       // ldu(inst);
       bool stall_load = ldu(inst, page_fault, mmu_ppn);
       if (stall_load) {
-        // load failed due to waiting forward data from 
+        // load failed due to waiting forward data from
         // store queue reallocate and replay the request
         bool granted = comb_apply_slot(mmu_lsu_slot_r_1);
         if (granted) {
           uint32_t vaddr = inst.src1_rdata + inst.imm;
-          mmu_req_master_t req = {
-            .valid = true,
-            .vtag = (vaddr >> 12), // vaddr[31:12]
-            .op_type = mmu_n::OP_LOAD
-          };
+          mmu_req_master_t req = {.valid = true,
+                                  .vtag = (vaddr >> 12), // vaddr[31:12]
+                                  .op_type = mmu_n::OP_LOAD};
         }
-        return ; // not complete yet
+        return; // not complete yet
       }
     } else if (is_sta_uop(inst.op)) {
-      mmu_resp_master_t resp = 
-        mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       stu_addr(inst, page_fault, mmu_ppn);

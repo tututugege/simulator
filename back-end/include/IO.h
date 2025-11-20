@@ -1,7 +1,6 @@
 #pragma once
 
 #include "config.h"
-#include <cstdint>
 #include <sys/types.h>
 #include <util.h>
 
@@ -14,11 +13,11 @@ typedef struct {
   reg1_t addr_valid;
   reg1_t data_valid;
   reg1_t valid;
-  uint32_t tag;
+  reg4_t tag;
 } STQ_entry;
 
 typedef struct {
-  Inst_uop uop[FETCH_WIDTH]; // 3 2 2 2
+  Inst_uop_wire uop[FETCH_WIDTH]; // 3 2 2 2
   wire1_t valid[FETCH_WIDTH];
 } Dec_Ren;
 
@@ -52,7 +51,7 @@ typedef struct {
 } Dec_Broadcast;
 
 typedef struct {
-  Inst_entry commit_entry[COMMIT_WIDTH];
+  Inst_entry_wire commit_entry[COMMIT_WIDTH];
 } Rob_Commit;
 
 typedef struct {
@@ -64,13 +63,13 @@ typedef struct {
 } Rob_Dis;
 
 typedef struct {
-  Inst_uop uop[FETCH_WIDTH];
+  Inst_uop_wire uop[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
   wire1_t dis_fire[FETCH_WIDTH];
 } Dis_Rob;
 
 typedef struct {
-  Inst_uop uop[FETCH_WIDTH];
+  Inst_uop_wire uop[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
 } Ren_Dis;
 
@@ -83,7 +82,7 @@ typedef struct {
 } Prf_Awake;
 
 typedef struct {
-  Inst_uop uop[IQ_NUM][2];
+  Inst_uop_wire uop[IQ_NUM][2];
   wire1_t valid[IQ_NUM][2];
   wire1_t dis_fire[IQ_NUM][2];
 } Dis_Iss;

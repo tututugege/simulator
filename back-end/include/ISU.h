@@ -6,7 +6,7 @@
 
 class IQ {
 public:
-  IQ(int entry_num, IQ_TYPE);
+  IQ(int, int);
   void init();
   void wake_up(uint32_t, uint32_t latency);
   void latency_wake();
@@ -16,39 +16,44 @@ public:
   Inst_entry scheduler();
   Inst_entry deq();
   void enq(Inst_uop &inst);
-
-  int num;
-
-  // config
   int entry_num;
-  IQ_TYPE type;
 
-  vector<Inst_entry> entry;
+  vector<Inst_entry_reg> entry;
+  int num; // 电路中不一定要有这个东西
+
+  vector<Inst_entry_wire> entry_1;
+  int num_1;
 };
 
-class ISU_IO {
+class ISU_OUT {
 public:
+  Iss_Prf *iss2prf;
+  Iss_Dis *iss2dis;
+  Iss_Awake *iss_awake;
+};
+
+class ISU_IN {
+public:
+  Dis_Iss *dis2iss;
+  Prf_Awake *prf_awake;
+  Exe_Iss *exe2iss;
   Rob_Broadcast *rob_bcast;
   Dec_Broadcast *dec_bcast;
-
-  Dis_Iss *dis2iss;
-  Iss_Dis *iss2dis;     // ready
-                        //
-  Iss_Awake *iss_awake; // ready
-  Prf_Awake *prf_awake;
-
-  Iss_Prf *iss2prf;
-  Exe_Iss *exe2iss;
 };
 
 class ISU {
 public:
-  ISU_IO io;
+  ISU_IN in;
+  ISU_OUT out;
   void init();
-  void add_iq(int entry_num, IQ_TYPE);
+  void add_iq(int entry_num, int);
   void comb_ready();
   void comb_deq();
-  void seq(); // 写入IQ
+  void comb_enq();
+  void comb_flush();
+  void comb_branch();
+  void comb_awake();
+  void seq();
 
-  vector<IQ> iq;
+  vector<IQ> iq; // xxx_1在这里面
 };

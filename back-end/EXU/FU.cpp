@@ -1,14 +1,13 @@
 #include "TOP.h"
 #include "config.h"
-#include "diff.h"
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
 
 extern Back_Top back;
 
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx, 
-           bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load);
+bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
+               bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load);
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -31,12 +30,12 @@ enum STATE { IDLE, RECV };
 #define BGEU 0b111
 
 void mul(Inst_uop &inst) {
-  static bool use_mul = false;
-
-  if (!use_mul) {
-    printf("MUL INST\n");
-    use_mul = true;
-  }
+  // static bool use_mul = false;
+  //
+  // if (!use_mul) {
+  //   printf("MUL INST\n");
+  //   use_mul = true;
+  // }
   switch (inst.func3) {
   case 0: { // mul
     inst.result = (int32_t)inst.src1_rdata * (int32_t)inst.src2_rdata;
@@ -229,7 +228,8 @@ bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn) {
 
   uint32_t data;
   // bool page_fault = !load_data(data, addr, inst.rob_idx);
-  bool page_fault = !load_data(data, addr, inst.rob_idx, mmu_page_fault, mmu_ppn, stall_load);
+  bool page_fault =
+      !load_data(data, addr, inst.rob_idx, mmu_page_fault, mmu_ppn, stall_load);
 
   if (!page_fault) {
     data = data >> (offset * 8);

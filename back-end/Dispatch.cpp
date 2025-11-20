@@ -3,19 +3,26 @@
 #include <cvt.h>
 #include <util.h>
 
+// 对每个IQ选择最多2个
+static wire1_t uop_sel[IQ_NUM][FETCH_WIDTH] = {0};
+static wire1_t to_iq[IQ_NUM][FETCH_WIDTH] = {0};
+// 实际硬件可以写成4bit独热码用于选择，这里为了方便使用idx
+static wire4_t port_idx[IQ_NUM][2];
+static Inst_entry inst_alloc[FETCH_WIDTH];
+
 // 分配rob_idx stq_idx
 void Dispatch::comb_alloc() {
   int store_num = 0;
 
   for (int i = 0; i < 2; i++) {
-    io.dis2stq->valid[i] = false;
+    out.dis2stq->valid[i] = false;
   }
 
   wire16_t pre_store_mask = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     inst_alloc[i] = inst_r[i];
-    inst_alloc[i].uop.rob_idx = (io.rob2dis->enq_idx << 2) + i;
-    inst_alloc[i].uop.rob_flag = io.rob2dis->rob_flag;
+    inst_alloc[i].uop.rob_idx = (in.rob2dis->enq_idx << 2) + i;
+    inst_alloc[i].uop.rob_flag = in.rob2dis->rob_flag;
 
     if (is_load(inst_r[i].uop)) {
       inst_alloc[i].uop.pre_sta_mask = pre_store_mask;
@@ -25,29 +32,29 @@ void Dispatch::comb_alloc() {
     // 每周期只能dispatch 2个store
     if (inst_r[i].valid && is_store(inst_r[i].uop)) {
       if (store_num < 2) {
-        inst_alloc[i].uop.stq_idx = (io.stq2dis->stq_idx + store_num) % STQ_NUM;
-        io.dis2stq->valid[store_num] = true;
-        io.dis2stq->tag[store_num] = inst_r[i].uop.tag;
+        inst_alloc[i].uop.stq_idx = (in.stq2dis->stq_idx + store_num) % STQ_NUM;
+        out.dis2stq->valid[store_num] = true;
+        out.dis2stq->tag[store_num] = inst_r[i].uop.tag;
         pre_store_mask = pre_store_mask | (1 << inst_alloc[i].uop.stq_idx);
         store_num++;
       }
     }
 
-    io.dis2rob->valid[i] = inst_r[i].valid;
-    io.dis2rob->uop[i] = inst_alloc[i].uop;
+    out.dis2rob->valid[i] = inst_r[i].valid;
+    out.dis2rob->uop[i] = inst_alloc[i].uop;
   }
 }
 
 // busytable bypass
 void Dispatch::comb_wake() {
-  if (io.prf_awake->wake.valid) {
+  if (in.prf_awake->wake.valid) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
-      if (inst_alloc[i].uop.src1_preg == io.prf_awake->wake.preg) {
+      if (inst_alloc[i].uop.src1_preg == in.prf_awake->wake.preg) {
         inst_alloc[i].uop.src1_busy = false;
         // inst_alloc[i].uop.src1_latency = 0;
         inst_r_1[i].uop.src1_busy = false;
       }
-      if (inst_alloc[i].uop.src2_preg == io.prf_awake->wake.preg) {
+      if (inst_alloc[i].uop.src2_preg == in.prf_awake->wake.preg) {
         inst_alloc[i].uop.src2_busy = false;
         // inst_alloc[i].uop.src2_latency = 0;
         inst_r_1[i].uop.src2_busy = false;
@@ -56,19 +63,19 @@ void Dispatch::comb_wake() {
   }
 
   for (int i = 0; i < ALU_NUM; i++) {
-    if (io.iss_awake->wake[i].valid) {
+    if (in.iss_awake->wake[i].valid) {
       for (int j = 0; j < FETCH_WIDTH; j++) {
-        if (inst_alloc[j].uop.src1_preg == io.iss_awake->wake[i].preg) {
+        if (inst_alloc[j].uop.src1_preg == in.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src1_busy = false;
-          // inst_alloc[j].uop.src1_latency = io.iss_awake->wake[i].latency;
+          // inst_alloc[j].uop.src1_latency = in.iss_awake->wake[i].latency;
           // 假如Dispatch卡住，需要修改inrt_r_1
           // 暂时只考虑2周期延迟的乘法指令
           // 如果dispatch卡了一个周期，则无需修改src_latency
           inst_r_1[j].uop.src1_busy = false;
         }
-        if (inst_alloc[j].uop.src2_preg == io.iss_awake->wake[i].preg) {
+        if (inst_alloc[j].uop.src2_preg == in.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src2_busy = false;
-          // inst_alloc[j].uop.src2_latency = io.iss_awake->wake[i].latency;
+          // inst_alloc[j].uop.src2_latency = in.iss_awake->wake[i].latency;
           inst_r_1[j].uop.src2_busy = false;
         }
       }
@@ -250,9 +257,9 @@ void Dispatch::comb_dispatch() {
 
   wire2_t ready_num[IQ_NUM];
   for (int i = 0; i < IQ_NUM; i++) {
-    if (io.iss2dis->ready[i][1]) {
+    if (in.iss2dis->ready[i][1]) {
       ready_num[i] = 2;
-    } else if (io.iss2dis->ready[i][0]) {
+    } else if (in.iss2dis->ready[i][0]) {
       ready_num[i] = 1;
     } else {
       ready_num[i] = 0;
@@ -289,22 +296,22 @@ void Dispatch::comb_dispatch() {
   // 根据port_idx选择指令
   for (int i = 0; i < IQ_NUM; i++) {
     for (int j = 0; j < 2; j++) {
-      io.dis2iss->valid[i][j] = port_idx[i][j] != FETCH_WIDTH;
+      out.dis2iss->valid[i][j] = port_idx[i][j] != FETCH_WIDTH;
       if (port_idx[i][j] != FETCH_WIDTH) {
 
         // 根据指令type区分选第一个uop还是第二个uop
         if ((inst_r[port_idx[i][j]].uop.type == JALR ||
              inst_r[port_idx[i][j]].uop.type == JAL) &&
             i >= IQ_BR0) {
-          io.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
         } else if (inst_r[port_idx[i][j]].uop.type == STORE && i == IQ_STD) {
-          io.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
         } else if (inst_r[port_idx[i][j]].uop.type == AMO && i == IQ_STA) {
-          io.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
         } else if (inst_r[port_idx[i][j]].uop.type == AMO && i == IQ_STD) {
-          io.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 2].uop;
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 2].uop;
         } else {
-          io.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j]].uop;
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j]].uop;
         }
       } else {
         // 无关项 可任意
@@ -332,53 +339,53 @@ void Dispatch::comb_fire() {
   wire1_t pre_is_flush = false;
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dis2rob->dis_fire[i] =
-        (io.dis2rob->valid[i] && io.rob2dis->ready) &&
-        (inst_r[i].valid && iss_ready[i]) && !pre_stall && !io.rob2dis->stall &&
-        (!is_CSR(inst_r[i].uop.type) || io.rob2dis->empty && !pre_fire) &&
-        !pre_is_flush && !io.dec_bcast->mispred && !io.rob_bcast->flush;
+    out.dis2rob->dis_fire[i] =
+        (out.dis2rob->valid[i] && in.rob2dis->ready) &&
+        (inst_r[i].valid && iss_ready[i]) && !pre_stall && !in.rob2dis->stall &&
+        (!is_CSR(inst_r[i].uop.type) || in.rob2dis->empty && !pre_fire) &&
+        !pre_is_flush && !in.dec_bcast->mispred && !in.rob_bcast->flush;
 
     if (is_store(inst_r[i].uop)) {
-      io.dis2rob->dis_fire[i] = io.dis2rob->dis_fire[i] &&
-                                io.dis2stq->valid[store_num] &&
-                                io.stq2dis->ready[store_num];
+      out.dis2rob->dis_fire[i] = out.dis2rob->dis_fire[i] &&
+                                 out.dis2stq->valid[store_num] &&
+                                 in.stq2dis->ready[store_num];
 
       if (inst_r[i].valid && store_num < 2) {
-        io.dis2stq->dis_fire[store_num] = io.dis2rob->dis_fire[i];
+        out.dis2stq->dis_fire[store_num] = out.dis2rob->dis_fire[i];
         store_num++;
       }
     }
 
-    pre_stall = inst_r[i].valid && !io.dis2rob->dis_fire[i];
-    pre_fire = io.dis2rob->dis_fire[i];
+    pre_stall = inst_r[i].valid && !out.dis2rob->dis_fire[i];
+    pre_fire = out.dis2rob->dis_fire[i];
     pre_is_flush = inst_r[i].valid && is_flush_inst(inst_r[i].uop);
   }
 
   for (int i = 0; i < IQ_NUM; i++) {
     for (int j = 0; j < 2; j++) {
       if (port_idx[i][j] != FETCH_WIDTH) {
-        io.dis2iss->dis_fire[i][j] = io.dis2rob->dis_fire[port_idx[i][j]];
+        out.dis2iss->dis_fire[i][j] = out.dis2rob->dis_fire[port_idx[i][j]];
       } else {
-        io.dis2iss->dis_fire[i][j] = false;
+        out.dis2iss->dis_fire[i][j] = false;
       }
     }
   }
 
-  io.dis2ren->ready = true;
+  out.dis2ren->ready = true;
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dis2ren->ready &= io.dis2rob->dis_fire[i] || !inst_r[i].valid;
+    out.dis2ren->ready &= out.dis2rob->dis_fire[i] || !inst_r[i].valid;
   }
 }
 
 void Dispatch::comb_pipeline() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (io.rob_bcast->flush || io.dec_bcast->mispred) {
+    if (in.rob_bcast->flush || in.dec_bcast->mispred) {
       inst_r_1[i].valid = false;
-    } else if (io.dis2ren->ready) {
-      inst_r_1[i].uop = io.ren2dis->uop[i];
-      inst_r_1[i].valid = io.ren2dis->valid[i];
+    } else if (out.dis2ren->ready) {
+      inst_r_1[i].uop = in.ren2dis->uop[i];
+      inst_r_1[i].valid = in.ren2dis->valid[i];
     } else {
-      inst_r_1[i].valid = inst_r[i].valid && !io.dis2rob->dis_fire[i];
+      inst_r_1[i].valid = inst_r[i].valid && !out.dis2rob->dis_fire[i];
     }
   }
 }
