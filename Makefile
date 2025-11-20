@@ -16,7 +16,7 @@ MEM_DIR=./baremetal
 IMG=./baremetal/memory
 
 default: $(CXXSRC) 
-	g++ $(CXXINCLUDE) $(CXXSRC) -O3
+	g++ $(CXXINCLUDE) $(CXXSRC) -O3 -march=native -flto -funroll-loops -mtune=native
 
 cov: $(CXXSRC) 
 	g++ $(CXXINCLUDE) $(CXXSRC) -O0 --coverage 

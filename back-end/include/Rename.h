@@ -2,26 +2,27 @@
 #include "IO.h"
 #include "config.h"
 
-class REN_IO {
+class REN_IN {
 public:
   Dec_Ren *dec2ren;
-  Ren_Dec *ren2dec;
-
-  Iss_Awake *iss_awake;
-
   Dec_Broadcast *dec_bcast;
+  Iss_Awake *iss_awake;
   Prf_Awake *prf_awake;
-
-  Ren_Dis *ren2dis;
   Dis_Ren *dis2ren;
-
   Rob_Broadcast *rob_bcast;
   Rob_Commit *rob_commit;
 };
 
+class REN_OUT {
+public:
+  Ren_Dec *ren2dec;
+  Ren_Dis *ren2dis;
+};
+
 class Rename {
 public:
-  REN_IO io;
+  REN_IN in;
+  REN_OUT out;
 
   Rename();
   void comb_select();
@@ -35,11 +36,9 @@ public:
   void comb_flush();
   void seq();
 
-  reg7_t arch_RAT[ARF_NUM + 1];
-  wire1_t fire[FETCH_WIDTH];
-
   // register
-  Inst_entry inst_r[FETCH_WIDTH];
+  Inst_entry_reg inst_r[FETCH_WIDTH];
+  reg7_t arch_RAT[ARF_NUM + 1];
   reg7_t spec_RAT[ARF_NUM + 1];
   reg7_t RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
   reg1_t free_vec[PRF_NUM];
@@ -47,23 +46,12 @@ public:
   reg1_t busy_table[PRF_NUM];
   reg1_t spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
-  Inst_entry inst_r_1[FETCH_WIDTH];
+  Inst_entry_wire inst_r_1[FETCH_WIDTH];
+  wire7_t arch_RAT_1[ARF_NUM + 1];
   wire7_t spec_RAT_1[ARF_NUM + 1];
   wire7_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];
   wire1_t free_vec_1[PRF_NUM];
   wire1_t alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
   wire1_t busy_table_1[PRF_NUM];
   wire1_t spec_alloc_1[PRF_NUM]; // 处于speculative状态分配的寄存器
-
-  wire1_t spec_alloc_flush[PRF_NUM];
-  wire1_t spec_alloc_mispred[PRF_NUM];
-  wire1_t spec_alloc_normal[PRF_NUM];
-
-  wire1_t free_vec_flush[PRF_NUM];
-  wire1_t free_vec_mispred[PRF_NUM];
-  wire1_t free_vec_normal[PRF_NUM];
-
-  wire7_t spec_RAT_flush[ARF_NUM + 1];
-  wire7_t spec_RAT_mispred[ARF_NUM + 1];
-  wire7_t spec_RAT_normal[ARF_NUM + 1];
 };

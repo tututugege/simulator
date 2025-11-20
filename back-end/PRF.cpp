@@ -7,7 +7,7 @@
 
 void PRF::init() {
   for (int i = 0; i < ISSUE_WAY; i++)
-    io.prf2exe->ready[i] = true;
+    out.prf2exe->ready[i] = true;
 }
 
 void PRF::comb_br_check() {
@@ -33,14 +33,14 @@ void PRF::comb_br_check() {
     }
   }
 
-  io.prf2dec->mispred = mispred;
+  out.prf2dec->mispred = mispred;
   if (mispred) {
-    io.prf2dec->redirect_pc = mispred_uop->pc_next;
-    io.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;
-    io.prf2dec->br_tag = mispred_uop->tag;
+    out.prf2dec->redirect_pc = mispred_uop->pc_next;
+    out.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;
+    out.prf2dec->br_tag = mispred_uop->tag;
     if (LOG)
-      cout << "PC " << hex << mispred_uop->pc << " misprediction redirect_pc 0x"
-           << hex << io.prf2dec->redirect_pc << endl;
+      cout << "PC " << hex << mispred_uop->pc << " mispredictinn redirect_pc 0x"
+           << hex << out.prf2dec->redirect_pc << endl;
   } else {
     // 任意，以代码简单为准
   }
@@ -49,8 +49,8 @@ void PRF::comb_br_check() {
 void PRF::comb_read() {
   // bypass
   for (int i = 0; i < ISSUE_WAY; i++) {
-    io.prf2exe->iss_entry[i] = io.iss2prf->iss_entry[i];
-    Inst_entry *entry = &io.prf2exe->iss_entry[i];
+    out.prf2exe->iss_entry[i] = in.iss2prf->iss_entry[i];
+    Inst_entry *entry = &out.prf2exe->iss_entry[i];
 
     if (entry->valid) {
       if (entry->uop.src1_en) {
@@ -62,9 +62,9 @@ void PRF::comb_read() {
         }
 
         for (int j = 0; j < ALU_NUM + 1; j++) {
-          if (io.exe2prf->entry[j].valid && io.exe2prf->entry[j].uop.dest_en &&
-              io.exe2prf->entry[j].uop.dest_preg == entry->uop.src1_preg)
-            entry->uop.src1_rdata = io.exe2prf->entry[j].uop.result;
+          if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
+              in.exe2prf->entry[j].uop.dest_preg == entry->uop.src1_preg)
+            entry->uop.src1_rdata = in.exe2prf->entry[j].uop.result;
         }
       }
 
@@ -77,9 +77,9 @@ void PRF::comb_read() {
         }
 
         for (int j = 0; j < ALU_NUM + 1; j++) {
-          if (io.exe2prf->entry[j].valid && io.exe2prf->entry[j].uop.dest_en &&
-              io.exe2prf->entry[j].uop.dest_preg == entry->uop.src2_preg)
-            entry->uop.src2_rdata = io.exe2prf->entry[j].uop.result;
+          if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
+              in.exe2prf->entry[j].uop.dest_preg == entry->uop.src2_preg)
+            entry->uop.src2_rdata = in.exe2prf->entry[j].uop.result;
         }
       }
     }
@@ -89,27 +89,27 @@ void PRF::comb_read() {
 void PRF::comb_complete() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (inst_r[i].valid)
-      io.prf2rob->entry[i] = inst_r[i];
+      out.prf2rob->entry[i] = inst_r[i];
     else
-      io.prf2rob->entry[i].valid = false;
+      out.prf2rob->entry[i].valid = false;
   }
 }
 
 void PRF::comb_awake() {
   if (inst_r[IQ_LD].valid && inst_r[IQ_LD].uop.dest_en &&
       !inst_r[IQ_LD].uop.page_fault_load) {
-    io.prf_awake->wake.valid = true;
-    io.prf_awake->wake.preg = inst_r[IQ_LD].uop.dest_preg;
+    out.prf_awake->wake.valid = true;
+    out.prf_awake->wake.preg = inst_r[IQ_LD].uop.dest_preg;
   } else {
-    io.prf_awake->wake.valid = false;
+    out.prf_awake->wake.valid = false;
   }
 }
 
 void PRF::comb_branch() {
-  if (io.dec_bcast->mispred) {
+  if (in.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       if (inst_r[i].valid &&
-          (io.dec_bcast->br_mask & (1 << inst_r[i].uop.tag))) {
+          (in.dec_bcast->br_mask & (1 << inst_r[i].uop.tag))) {
         inst_r_1[i].valid = false;
       }
     }
@@ -117,7 +117,7 @@ void PRF::comb_branch() {
 }
 
 void PRF::comb_flush() {
-  if (io.rob_bcast->flush) {
+  if (in.rob_bcast->flush) {
     for (int i = 0; i < ISSUE_WAY; i++) {
       inst_r_1[i].valid = false;
     }
@@ -135,8 +135,8 @@ void PRF::comb_write() {
 
 void PRF::comb_pipeline() {
   for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.exe2prf->entry[i].valid && io.prf2exe->ready[i]) {
-      inst_r_1[i] = io.exe2prf->entry[i];
+    if (in.exe2prf->entry[i].valid && out.prf2exe->ready[i]) {
+      inst_r_1[i] = in.exe2prf->entry[i];
     } else {
       inst_r_1[i].valid = false;
     }

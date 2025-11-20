@@ -139,15 +139,20 @@ inline int cvt_number_to_csr(int csr_idx) {
 
 typedef struct {
   Exe_Csr *exe2csr;
-  Csr_Exe *csr2exe;
-  Csr_Rob *csr2rob;
   Rob_Csr *rob2csr;
   Rob_Broadcast *rob_bcast;
-} CSR_IO;
+} CSR_IN;
+
+typedef struct {
+  Csr_Exe *csr2exe;
+  Csr_Rob *csr2rob;
+} CSR_OUT;
 
 class CSRU {
 public:
-  CSR_IO io;
+  CSR_IN in;
+  CSR_OUT out;
+
   void init();
   void comb_csr_read();
   void comb_csr_write();
@@ -169,9 +174,6 @@ public:
   wire32_t CSR_RegFile_1[21];
   wire2_t privilege_1 = 0b11;
 
-  // 执行时存下需要写入的idx，cmd和data
-  // 提交时才写入
-  // 否则csr指令未提交，其更改就已经生效
   wire12_t csr_idx_1;
   wire32_t csr_wdata_1;
   wire2_t csr_wcmd_1;

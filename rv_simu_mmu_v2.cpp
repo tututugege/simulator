@@ -2,9 +2,9 @@
 #include "CSR.h"
 #include "frontend.h"
 #include "ref.h"
+#include <MMU.h>
 #include <RISCV.h>
 #include <TOP.h>
-#include <MMU.h>
 #include <config.h>
 #include <cstdint>
 #include <cstdlib>
@@ -162,7 +162,6 @@ SIM_END:
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
     perf.perf_print();
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
-    cout << endl;
 
   } else {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
@@ -273,14 +272,17 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
  * 目的：当 SFENCE.VMA 还没有执行、存在两种合法的页表映射时，保证
  * DUT 与参考模型的页表映射一致，避免 difftest 失败。
  */
-bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory) {
-  bool ret = va2pa(p_addr, v_addr, satp, type, mstatus, sstatus, privilege, p_memory);
+bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
+                 uint32_t type, bool *mstatus, bool *sstatus, int privilege,
+                 uint32_t *p_memory) {
+  bool ret =
+      va2pa(p_addr, v_addr, satp, type, mstatus, sstatus, privilege, p_memory);
 #ifndef CONFIG_LOOSE_VA2PA
   return ret;
 #endif
   extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
-  Inst_entry ren_commit_entry = back.rename.io.rob_commit->commit_entry[ren_commit_idx];
+  Inst_entry ren_commit_entry =
+      back.rename.in.rob_commit->commit_entry[ren_commit_idx];
   bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
   bool dut_page_fault_load = ren_commit_entry.uop.page_fault_load;
   bool dut_page_fault_store = ren_commit_entry.uop.page_fault_store;
@@ -288,45 +290,50 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type
   // 1. dut page_fault, ref no page_fault -> allow, ret = false
   // 2. dut no page_fault, ref page_fault -> ERROR
   switch (type) {
-    case 0: // instruction fetch
-      if (dut_page_fault_inst) {
-        ret = false; // 以 DUT MMU 为准
-      } else if (!dut_page_fault_inst && !ret) {
-        cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault mismatch!" << endl;
-        cout << "VA: " << hex << v_addr << endl;
-        cout << "sim_time: " << dec << sim_time << endl;
-        exit(1);
-      }
-      break;
-    case 1: // load
-      if (dut_page_fault_load) {
-        ret = false;
-      } else if (!dut_page_fault_load && !ret) {
-        cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!" << endl;
-        cout << "VA: " << hex << v_addr << endl;
-        cout << "sim_time: " << dec << sim_time << endl;
-        exit(1);
-      }
-      break;
-    case 2: // store
-      if (dut_page_fault_store) {
-        ret = false;
-      } else if (!dut_page_fault_store && !ret) {
-        cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!" << endl;
-        cout << "VA: " << hex << v_addr << endl;
-        cout << "sim_time: " << dec << sim_time << endl;
-        exit(1);
-      }
-      break;
-    default:
-      cout << "[va2pa_fixed] Error: unknown access type!" << endl;
+  case 0: // instruction fetch
+    if (dut_page_fault_inst) {
+      ret = false; // 以 DUT MMU 为准
+    } else if (!dut_page_fault_inst && !ret) {
+      cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault "
+              "mismatch!"
+           << endl;
+      cout << "VA: " << hex << v_addr << endl;
+      cout << "sim_time: " << dec << sim_time << endl;
       exit(1);
+    }
+    break;
+  case 1: // load
+    if (dut_page_fault_load) {
+      ret = false;
+    } else if (!dut_page_fault_load && !ret) {
+      cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!"
+           << endl;
+      cout << "VA: " << hex << v_addr << endl;
+      cout << "sim_time: " << dec << sim_time << endl;
+      exit(1);
+    }
+    break;
+  case 2: // store
+    if (dut_page_fault_store) {
+      ret = false;
+    } else if (!dut_page_fault_store && !ret) {
+      cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!"
+           << endl;
+      cout << "VA: " << hex << v_addr << endl;
+      cout << "sim_time: " << dec << sim_time << endl;
+      exit(1);
+    }
+    break;
+  default:
+    cout << "[va2pa_fixed] Error: unknown access type!" << endl;
+    exit(1);
   }
   return ret;
 }
 
 // bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx, bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load) {
+bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
+               bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load) {
   uint32_t p_addr = v_addr;
   bool ret = true;
 
@@ -541,7 +548,8 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
 }
 
 static inline void back2mmu_comb() {
-  mmu.io.in.state.satp = reinterpret_cast<satp_t&>(back.csr.CSR_RegFile[csr_satp]);
+  mmu.io.in.state.satp =
+      reinterpret_cast<satp_t &>(back.csr.CSR_RegFile[csr_satp]);
   mmu.io.in.state.mstatus = back.csr.CSR_RegFile[csr_mstatus];
   mmu.io.in.state.sstatus = back.csr.CSR_RegFile[csr_sstatus];
   mmu.io.in.state.privilege = mmu_n::Privilege(back.csr.privilege);

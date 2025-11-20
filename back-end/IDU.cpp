@@ -7,7 +7,10 @@
 #include <cvt.h>
 #include <util.h>
 
-void decode(Inst_uop &uop, uint32_t instruction);
+// 中间信号
+static wire4_t alloc_tag; // 新tag
+
+void decode(Inst_uop &uop, uint32_t instructinn);
 
 void IDU::init() {
   for (int i = 1; i < MAX_BR_NUM; i++) {
@@ -42,37 +45,38 @@ void IDU::comb_decode() {
 
   int i;
   for (i = 0; i < FETCH_WIDTH; i++) {
-    if (io.front2dec->valid[i]) {
-      io.dec2ren->valid[i] = true;
-      if (io.front2dec->page_fault_inst[i]) {
-        io.dec2ren->uop[i].uop_num = 1;
-        io.dec2ren->uop[i].page_fault_inst = true;
-        io.dec2ren->uop[i].page_fault_load = false;
-        io.dec2ren->uop[i].page_fault_store = false;
-        io.dec2ren->uop[i].type = NONE;
-        io.dec2ren->uop[i].src1_en = io.dec2ren->uop[i].src2_en =
-            io.dec2ren->uop[i].dest_en = false;
+    if (in.front2dec->valid[i]) {
+      out.dec2ren->valid[i] = true;
+      if (in.front2dec->page_fault_inst[i]) {
+        out.dec2ren->uop[i].uop_num = 1;
+        out.dec2ren->uop[i].page_fault_inst = true;
+        out.dec2ren->uop[i].page_fault_load = false;
+        out.dec2ren->uop[i].page_fault_store = false;
+        out.dec2ren->uop[i].type = NONE;
+        out.dec2ren->uop[i].src1_en = out.dec2ren->uop[i].src2_en =
+            out.dec2ren->uop[i].dest_en = false;
       } else {
         // 实际电路中4个译码电路每周期无论是否valid都会运行
-        decode(io.dec2ren->uop[i], io.front2dec->inst[i]);
+        decode(out.dec2ren->uop[i], in.front2dec->inst[i]);
       }
     } else {
-      io.dec2ren->valid[i] = false;
+      out.dec2ren->valid[i] = false;
       continue;
     }
 
-    io.dec2ren->uop[i].tag = (has_br) ? alloc_tag : now_tag;
-    io.dec2ren->uop[i].pc = io.front2dec->pc[i];
-    io.dec2ren->uop[i].pred_br_taken = io.front2dec->predict_dir[i];
-    io.dec2ren->uop[i].alt_pred = io.front2dec->alt_pred[i];
-    io.dec2ren->uop[i].altpcpn = io.front2dec->altpcpn[i];
-    io.dec2ren->uop[i].pcpn = io.front2dec->pcpn[i];
-    io.dec2ren->uop[i].pred_br_pc = io.front2dec->predict_next_fetch_address[i];
+    out.dec2ren->uop[i].tag = (has_br) ? alloc_tag : now_tag;
+    out.dec2ren->uop[i].pc = in.front2dec->pc[i];
+    out.dec2ren->uop[i].pred_br_taken = in.front2dec->predict_dir[i];
+    out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
+    out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
+    out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
+    out.dec2ren->uop[i].pred_br_pc =
+        in.front2dec->predict_next_fetch_address[i];
 
     // for debug
-    io.dec2ren->uop[i].pc_next = io.dec2ren->uop[i].pc + 4;
+    out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
 
-    if (io.front2dec->valid[i] && is_branch(io.dec2ren->uop[i].type)) {
+    if (in.front2dec->valid[i] && is_branch(out.dec2ren->uop[i].type)) {
       if (!no_tag && !has_br) {
         has_br = true;
       } else {
@@ -84,38 +88,38 @@ void IDU::comb_decode() {
 
   if (stall) {
     for (; i < FETCH_WIDTH; i++) {
-      io.dec2ren->valid[i] = false;
+      out.dec2ren->valid[i] = false;
     }
   }
 }
 
 void IDU::comb_branch() {
   // 如果一周期实现不方便，可以用状态机多周期实现
-  if (io.prf2dec->mispred) {
-    io.dec_bcast->mispred = true;
-    io.dec_bcast->br_tag = io.prf2dec->br_tag;
-    io.dec_bcast->redirect_rob_idx = io.prf2dec->redirect_rob_idx;
+  if (in.prf2dec->mispred) {
+    out.dec_bcast->mispred = true;
+    out.dec_bcast->br_tag = in.prf2dec->br_tag;
+    out.dec_bcast->redirect_rob_idx = in.prf2dec->redirect_rob_idx;
 
     LOOP_DEC(enq_ptr_1, MAX_BR_NUM);
     int enq_pre = (enq_ptr_1 + MAX_BR_NUM - 1) % MAX_BR_NUM;
-    io.dec_bcast->br_mask = 0;
-    while (tag_list[enq_pre] != io.prf2dec->br_tag) {
-      io.dec_bcast->br_mask |= 1 << tag_list[enq_ptr_1];
+    out.dec_bcast->br_mask = 0;
+    while (tag_list[enq_pre] != in.prf2dec->br_tag) {
+      out.dec_bcast->br_mask |= 1 << tag_list[enq_ptr_1];
       tag_vec_1[tag_list[enq_ptr_1]] = true;
       LOOP_DEC(enq_ptr_1, MAX_BR_NUM);
       LOOP_DEC(enq_pre, MAX_BR_NUM);
     }
-    io.dec_bcast->br_mask |= 1 << tag_list[enq_ptr_1];
+    out.dec_bcast->br_mask |= 1 << tag_list[enq_ptr_1];
     now_tag_1 = tag_list[enq_ptr_1];
     LOOP_INC(enq_ptr_1, MAX_BR_NUM);
   } else {
-    io.dec_bcast->br_mask = 0;
-    io.dec_bcast->mispred = false;
+    out.dec_bcast->br_mask = 0;
+    out.dec_bcast->mispred = false;
   }
 }
 
 void IDU::comb_flush() {
-  if (io.rob_bcast->flush) {
+  if (in.rob_bcast->flush) {
     for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
     }
@@ -127,20 +131,20 @@ void IDU::comb_flush() {
 }
 
 void IDU::comb_fire() {
-  io.dec2front->ready = io.ren2dec->ready && !io.prf2dec->mispred;
+  out.dec2front->ready = in.ren2dec->ready && !in.prf2dec->mispred;
 
-  if (io.prf2dec->mispred || io.rob_bcast->flush) {
+  if (in.prf2dec->mispred || in.rob_bcast->flush) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
-      io.dec2ren->valid[i] = false;
+      out.dec2ren->valid[i] = false;
     }
   }
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    io.dec2front->fire[i] = io.dec2ren->valid[i] && io.ren2dec->ready;
-    io.dec2front->ready = io.dec2front->ready &&
-                          (!io.front2dec->valid[i] || io.dec2ren->valid[i]);
+    out.dec2front->fire[i] = out.dec2ren->valid[i] && in.ren2dec->ready;
+    out.dec2front->ready = out.dec2front->ready &&
+                           (!in.front2dec->valid[i] || out.dec2ren->valid[i]);
 
-    if (io.dec2front->fire[i] && is_branch(io.dec2ren->uop[i].type)) {
+    if (out.dec2front->fire[i] && is_branch(out.dec2ren->uop[i].type)) {
       now_tag_1 = alloc_tag;
       tag_vec_1[alloc_tag] = false;
       tag_list_1[enq_ptr] = alloc_tag;
@@ -151,9 +155,9 @@ void IDU::comb_fire() {
 
 void IDU::comb_release_tag() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (io.commit->commit_entry[i].valid &&
-        is_branch(io.commit->commit_entry[i].uop.type)) {
-      tag_vec_1[io.commit->commit_entry[i].uop.tag] = true;
+    if (in.commit->commit_entry[i].valid &&
+        is_branch(in.commit->commit_entry[i].uop.type)) {
+      tag_vec_1[in.commit->commit_entry[i].uop.tag] = true;
     }
   }
 }
@@ -176,7 +180,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
   bool inst_bit[32];
   cvt_number_to_bit_unsigned(inst_bit, inst, 32);
 
-  // split instruction
+  // split instructinn
   bool *bit_op_code = inst_bit + 25; // 25-31
   bool *rd_code = inst_bit + 20;     // 20-24
   bool *rs_a_code = inst_bit + 12;   // 12-16

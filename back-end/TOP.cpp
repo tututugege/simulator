@@ -78,11 +78,6 @@ void Back_Top::difftest(Inst_uop *inst) {
     }
   }
 
-  if (inst->dest_en && !inst->page_fault_load &&
-      !rob.io.rob2csr->interrupt_resp) {
-    rename.arch_RAT[inst->dest_areg] = inst->dest_preg;
-  }
-
   if (is_store(*inst)) {
     if (stq.entry[inst->stq_idx].addr == 0x10000001 &&
         (stq.entry[inst->stq_idx].data & 0x000000ff) == 7) {
@@ -109,7 +104,7 @@ void Back_Top::difftest(Inst_uop *inst) {
   }
 
   for (int i = 0; i < ARF_NUM; i++) {
-    dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT[i]];
+    dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT_1[i]];
   }
 
   if (is_store(*inst)) {
@@ -178,56 +173,59 @@ Csr_Rob csr2rob;
 Exe_Csr exe2csr;
 
 void Back_Top::init() {
+  idu.out.dec2front = &dec2front;
+  idu.out.dec2ren = &dec2ren;
+  idu.out.dec_bcast = &dec_bcast;
+  idu.in.front2dec = &front2dec;
+  idu.in.ren2dec = &ren2dec;
+  idu.in.prf2dec = &prf2dec;
+  idu.in.rob_bcast = &rob_bcast;
+  idu.in.commit = &rob_commit;
 
-  idu.io.front2dec = &front2dec;
-  idu.io.dec2front = &dec2front;
-  idu.io.dec2ren = &dec2ren;
-  idu.io.ren2dec = &ren2dec;
-  idu.io.dec_bcast = &dec_bcast;
-  idu.io.prf2dec = &prf2dec;
-  idu.io.rob_bcast = &rob_bcast;
-  idu.io.commit = &rob_commit;
+  rename.in.dec2ren = &dec2ren;
+  rename.in.dis2ren = &dis2ren;
+  rename.in.iss_awake = &iss_awake;
+  rename.in.prf_awake = &prf_awake;
+  rename.in.dec_bcast = &dec_bcast;
+  rename.in.rob_bcast = &rob_bcast;
+  rename.in.rob_commit = &rob_commit;
 
-  rename.io.dec2ren = &dec2ren;
-  rename.io.ren2dec = &ren2dec;
-  rename.io.ren2dis = &ren2dis;
-  rename.io.dis2ren = &dis2ren;
-  rename.io.iss_awake = &iss_awake;
-  rename.io.dec_bcast = &dec_bcast;
-  rename.io.rob_bcast = &rob_bcast;
-  rename.io.rob_commit = &rob_commit;
-  rename.io.prf_awake = &prf_awake;
+  rename.out.ren2dec = &ren2dec;
+  rename.out.ren2dis = &ren2dis;
 
-  dis.io.dis2ren = &dis2ren;
-  dis.io.ren2dis = &ren2dis;
-  dis.io.dis2iss = &dis2iss;
-  dis.io.iss2dis = &iss2dis;
-  dis.io.dis2rob = &dis2rob;
-  dis.io.rob2dis = &rob2dis;
-  dis.io.dis2stq = &dis2stq;
-  dis.io.stq2dis = &stq2dis;
-  dis.io.prf_awake = &prf_awake;
-  dis.io.iss_awake = &iss_awake;
-  dis.io.rob_bcast = &rob_bcast;
-  dis.io.dec_bcast = &dec_bcast;
+  dis.out.dis2ren = &dis2ren;
+  dis.out.dis2iss = &dis2iss;
+  dis.out.dis2rob = &dis2rob;
+  dis.out.dis2stq = &dis2stq;
 
-  isu.io.rob_bcast = &rob_bcast;
-  isu.io.dec_bcast = &dec_bcast;
-  isu.io.dis2iss = &dis2iss;
-  isu.io.iss2dis = &iss2dis;
-  isu.io.iss2prf = &iss2prf;
-  isu.io.prf_awake = &prf_awake;
-  isu.io.iss_awake = &iss_awake;
-  isu.io.exe2iss = &exe2iss;
+  dis.in.ren2dis = &ren2dis;
+  dis.in.iss2dis = &iss2dis;
+  dis.in.rob2dis = &rob2dis;
+  dis.in.stq2dis = &stq2dis;
+  dis.in.prf_awake = &prf_awake;
+  dis.in.iss_awake = &iss_awake;
+  dis.in.rob_bcast = &rob_bcast;
+  dis.in.dec_bcast = &dec_bcast;
 
-  prf.io.iss2prf = &iss2prf;
-  prf.io.prf2rob = &prf2rob;
-  prf.io.prf2exe = &prf2exe;
-  prf.io.exe2prf = &exe2prf;
-  prf.io.prf_awake = &prf_awake;
-  prf.io.prf2dec = &prf2dec;
-  prf.io.dec_bcast = &dec_bcast;
-  prf.io.rob_bcast = &rob_bcast;
+  isu.in.rob_bcast = &rob_bcast;
+  isu.in.dec_bcast = &dec_bcast;
+  isu.in.dis2iss = &dis2iss;
+  isu.in.prf_awake = &prf_awake;
+  isu.in.exe2iss = &exe2iss;
+
+  isu.out.iss2dis = &iss2dis;
+  isu.out.iss2prf = &iss2prf;
+  isu.out.iss_awake = &iss_awake;
+
+  prf.out.prf2rob = &prf2rob;
+  prf.out.prf_awake = &prf_awake;
+  prf.out.prf2dec = &prf2dec;
+  prf.out.prf2exe = &prf2exe;
+
+  prf.in.iss2prf = &iss2prf;
+  prf.in.exe2prf = &exe2prf;
+  prf.in.dec_bcast = &dec_bcast;
+  prf.in.rob_bcast = &rob_bcast;
 
   exu.io.prf2exe = &prf2exe;
   exu.io.dec_bcast = &dec_bcast;
@@ -238,28 +236,31 @@ void Back_Top::init() {
   exu.io.exe2csr = &exe2csr;
   exu.io.csr2exe = &csr2exe;
 
-  rob.io.dis2rob = &dis2rob;
-  rob.io.dec_bcast = &dec_bcast;
-  rob.io.prf2rob = &prf2rob;
-  rob.io.rob_bcast = &rob_bcast;
-  rob.io.dec_bcast = &dec_bcast;
-  rob.io.rob_commit = &rob_commit;
-  rob.io.rob2dis = &rob2dis;
-  rob.io.csr2rob = &csr2rob;
-  rob.io.rob2csr = &rob2csr;
+  rob.in.dis2rob = &dis2rob;
+  rob.in.dec_bcast = &dec_bcast;
+  rob.in.prf2rob = &prf2rob;
+  rob.in.dec_bcast = &dec_bcast;
+  rob.in.csr2rob = &csr2rob;
 
-  stq.io.exe2stq = &exe2stq;
-  stq.io.rob_commit = &rob_commit;
-  stq.io.dis2stq = &dis2stq;
-  stq.io.stq2dis = &stq2dis;
-  stq.io.dec_bcast = &dec_bcast;
-  stq.io.rob_bcast = &rob_bcast;
+  rob.out.rob_bcast = &rob_bcast;
+  rob.out.rob_commit = &rob_commit;
+  rob.out.rob2dis = &rob2dis;
+  rob.out.rob2csr = &rob2csr;
 
-  csr.io.exe2csr = &exe2csr;
-  csr.io.csr2exe = &csr2exe;
-  csr.io.csr2rob = &csr2rob;
-  csr.io.rob2csr = &rob2csr;
-  csr.io.rob_bcast = &rob_bcast;
+  stq.out.stq2dis = &stq2dis;
+
+  stq.in.exe2stq = &exe2stq;
+  stq.in.rob_commit = &rob_commit;
+  stq.in.dis2stq = &dis2stq;
+  stq.in.dec_bcast = &dec_bcast;
+  stq.in.rob_bcast = &rob_bcast;
+
+  csr.in.exe2csr = &exe2csr;
+  csr.in.rob2csr = &rob2csr;
+  csr.in.rob_bcast = &rob_bcast;
+
+  csr.out.csr2exe = &csr2exe;
+  csr.out.csr2rob = &csr2rob;
 
   idu.init();
   isu.init();
@@ -272,17 +273,16 @@ void Back_Top::init() {
 void Back_Top::Back_comb() {
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    idu.io.front2dec->valid[i] = in.valid[i];
-    idu.io.front2dec->pc[i] = in.pc[i];
-    idu.io.front2dec->inst[i] = in.inst[i];
-    idu.io.front2dec->predict_dir[i] = in.predict_dir[i];
-    idu.io.front2dec->alt_pred[i] = in.alt_pred[i];
-    idu.io.front2dec->altpcpn[i] = in.altpcpn[i];
-    idu.io.front2dec->pcpn[i] = in.pcpn[i];
-    idu.io.front2dec->predict_next_fetch_address[i] =
+    idu.in.front2dec->valid[i] = in.valid[i];
+    idu.in.front2dec->pc[i] = in.pc[i];
+    idu.in.front2dec->inst[i] = in.inst[i];
+    idu.in.front2dec->predict_dir[i] = in.predict_dir[i];
+    idu.in.front2dec->alt_pred[i] = in.alt_pred[i];
+    idu.in.front2dec->altpcpn[i] = in.altpcpn[i];
+    idu.in.front2dec->pcpn[i] = in.pcpn[i];
+    idu.in.front2dec->predict_next_fetch_address[i] =
         in.predict_next_fetch_address[i];
-
-    idu.io.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
+    idu.in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
   }
 
   // 每个空行表示分层  下层会依赖上层产生的某个信号
@@ -308,6 +308,7 @@ void Back_Top::Back_comb() {
   exu.comb_ready();
   isu.comb_deq();
 
+  isu.comb_awake();
   csr.comb_exception();
   csr.comb_csr_read();
   csr.comb_csr_write();
@@ -327,42 +328,46 @@ void Back_Top::Back_comb() {
 
   // 为了debug
   // 修正pc_next 以及difftest对应的pc_next
-  back.out.flush = rob.io.rob_bcast->flush;
-  if (!rob.io.rob_bcast->flush) {
-    back.out.mispred = prf.io.prf2dec->mispred;
-    back.out.stall = !idu.io.dec2front->ready;
-    back.out.redirect_pc = prf.io.prf2dec->redirect_pc;
+  back.out.flush = rob.out.rob_bcast->flush;
+  if (!rob.out.rob_bcast->flush) {
+    back.out.mispred = prf.out.prf2dec->mispred;
+    back.out.stall = !idu.out.dec2front->ready;
+    back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
   } else {
     if (LOG)
       cout << "flush" << endl;
     back.out.mispred = true;
-    if (rob.io.rob_bcast->mret || rob.io.rob_bcast->sret) {
-      back.out.redirect_pc = csr.io.csr2rob->epc;
-    } else if (rob.io.rob_bcast->exception) {
-      back.out.redirect_pc = csr.io.csr2rob->trap_pc;
+    if (rob.out.rob_bcast->mret || rob.out.rob_bcast->sret) {
+      back.out.redirect_pc = csr.out.csr2rob->epc;
+    } else if (rob.out.rob_bcast->exception) {
+      back.out.redirect_pc = csr.out.csr2rob->trap_pc;
     } else {
-      back.out.redirect_pc = rob.io.rob_bcast->pc + 4;
+      back.out.redirect_pc = rob.out.rob_bcast->pc + 4;
     }
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    back.out.commit_entry[i] = rob.io.rob_commit->commit_entry[i];
+    back.out.commit_entry[i] = rob.out.rob_commit->commit_entry[i];
     Inst_type type = back.out.commit_entry[i].uop.type;
     if (back.out.commit_entry[i].valid && back.out.flush) {
       back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
-      rob.io.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
+      rob.out.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
     }
   }
+
+  isu.comb_enq();
   rename.comb_commit(); // difftest在这里
   rob.comb_flush();
   prf.comb_flush();
   exu.comb_flush();
   rename.comb_flush();
   idu.comb_flush();
+  isu.comb_flush();
   rob.comb_branch();
   prf.comb_branch();
   exu.comb_branch();
   rename.comb_branch();
+  isu.comb_branch();
   prf.comb_pipeline();
   exu.comb_pipeline();
   dis.comb_pipeline();
@@ -382,6 +387,6 @@ void Back_Top::Back_seq() {
   stq.seq();
   csr.seq();
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    out.fire[i] = idu.io.dec2front->fire[i];
+    out.fire[i] = idu.out.dec2front->fire[i];
   }
 }

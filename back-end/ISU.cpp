@@ -4,19 +4,18 @@
 #include <util.h>
 #include <vector>
 
-void ISU::add_iq(int entry_num, IQ_TYPE type) {
-  iq.push_back(IQ(entry_num, type));
-}
+void ISU::add_iq(int entry_num, int type) { iq.push_back(IQ(entry_num, type)); }
 
-IQ::IQ(int entry_num, IQ_TYPE type) {
+IQ::IQ(int entry_num, int type) {
   vector<Inst_entry> new_iq(entry_num);
   this->entry_num = entry_num;
-  this->type = type;
-  this->num = 0;
+  this->num = this->num_1 = 0;
 
   entry.resize(entry_num);
+  entry_1.resize(entry_num);
   for (int i = 0; i < entry_num; i++) {
     entry[i].valid = false;
+    entry_1[i].valid = false;
   }
 }
 
@@ -34,10 +33,10 @@ void IQ::enq(Inst_uop &inst) {
   int i;
 
   for (i = 0; i < entry_num; i++) {
-    if (entry[i].valid == false) {
-      entry[i].uop = inst;
-      entry[i].valid = true;
-      num++;
+    if (entry_1[i].valid == false) {
+      entry_1[i].uop = inst;
+      entry_1[i].valid = true;
+      num_1++;
       break;
     }
   }
@@ -47,7 +46,7 @@ Inst_entry IQ::deq() {
 
   Inst_entry ret = scheduler();
   if (ret.valid) {
-    num--;
+    num_1--;
   }
 
   return ret;
@@ -55,17 +54,16 @@ Inst_entry IQ::deq() {
 
 void ISU::comb_ready() {
   // ready
-
   for (int i = 0; i < IQ_NUM; i++) {
     if (iq[i].entry_num - iq[i].num >= 2) {
-      io.iss2dis->ready[i][0] = true;
-      io.iss2dis->ready[i][1] = true;
+      out.iss2dis->ready[i][0] = true;
+      out.iss2dis->ready[i][1] = true;
     } else if (iq[i].entry_num - iq[i].num == 1) {
-      io.iss2dis->ready[i][0] = true;
-      io.iss2dis->ready[i][1] = false;
+      out.iss2dis->ready[i][0] = true;
+      out.iss2dis->ready[i][1] = false;
     } else {
-      io.iss2dis->ready[i][0] = false;
-      io.iss2dis->ready[i][1] = false;
+      out.iss2dis->ready[i][0] = false;
+      out.iss2dis->ready[i][1] = false;
     }
   }
 }
@@ -74,115 +72,131 @@ void ISU::comb_deq() {
 
   // 出队
   for (int i = 0; i < ISSUE_WAY; i++) {
-    if (io.exe2iss->ready[i])
-      io.iss2prf->iss_entry[i] = iq[i].deq();
+    if (in.exe2iss->ready[i] && !in.rob_bcast->flush && !in.dec_bcast->mispred)
+      out.iss2prf->iss_entry[i] = iq[i].deq(); // deq相当于一个选择逻辑
     else
-      io.iss2prf->iss_entry[i].valid = false;
+      out.iss2prf->iss_entry[i].valid = false;
   }
 
   for (int i = 0; i < ALU_NUM; i++) {
-    if (io.iss2prf->iss_entry[i].valid &&
-        io.iss2prf->iss_entry[i].uop.dest_en) {
-      io.iss_awake->wake[i].valid = true;
-      io.iss_awake->wake[i].preg = io.iss2prf->iss_entry[i].uop.dest_preg;
-      // if (io.iss2prf->iss_entry[i].uop.op == UOP_MUL) {
-      //   io.iss_awake->wake[i].latency = 2;
+    if (out.iss2prf->iss_entry[i].valid &&
+        out.iss2prf->iss_entry[i].uop.dest_en) {
+      out.iss_awake->wake[i].valid = true;
+      out.iss_awake->wake[i].preg = out.iss2prf->iss_entry[i].uop.dest_preg;
+      // if (out.iss2prf->iss_entry[i].uop.op == UOP_MUL) {
+      //   out.iss_awake->wake[i].latency = 2;
       // } else {
-      // io.iss_awake->wake[i].latency = 1;
+      // out.iss_awake->wake[i].latency = 1;
       // }
     } else {
-      io.iss_awake->wake[i].valid = false;
+      out.iss_awake->wake[i].valid = false;
     }
   }
 }
 
-void ISU::seq() {
+void ISU::comb_enq() {
   // 入队
   for (int i = 0; i < IQ_NUM; i++) {
     for (int j = 0; j < 2; j++) {
-      if (io.dis2iss->dis_fire[i][j]) {
+      if (in.dis2iss->dis_fire[i][j]) {
         if (i == IQ_LD) {
           for (int k = 0; k < iq[IQ_STA].entry_num; k++) {
-            if (iq[IQ_STA].entry[k].valid) {
-              io.dis2iss->uop[i][j].pre_sta_mask |=
-                  (1 << iq[IQ_STA].entry[k].uop.stq_idx);
+            // 这里使用entry_1 有隐藏的旁路逻辑
+            // 本周期已经发射的就不在内
+            // 本周期同时入队的也被处理
+            if (iq[IQ_STA].entry_1[k].valid) {
+              in.dis2iss->uop[i][j].pre_sta_mask |=
+                  (1 << iq[IQ_STA].entry_1[k].uop.stq_idx);
             }
           }
 
           for (int k = 0; k < iq[IQ_STD].entry_num; k++) {
-            if (iq[IQ_STD].entry[k].valid) {
-              io.dis2iss->uop[i][j].pre_std_mask |=
-                  (1 << iq[IQ_STD].entry[k].uop.stq_idx);
+            if (iq[IQ_STD].entry_1[k].valid) {
+              in.dis2iss->uop[i][j].pre_std_mask |=
+                  (1 << iq[IQ_STD].entry_1[k].uop.stq_idx);
             }
           }
         }
-        iq[i].enq(io.dis2iss->uop[i][j]);
+        iq[i].enq(in.dis2iss->uop[i][j]);
       }
     }
   }
+}
 
+void ISU::comb_awake() {
   // 唤醒
   for (int i = 0; i < ALU_NUM; i++) {
-    if (io.iss_awake->wake[i].valid) {
+    if (out.iss_awake->wake[i].valid) {
       for (auto &q : iq) {
-        q.wake_up(io.iss_awake->wake[i].preg, io.iss_awake->wake[i].latency);
+        q.wake_up(out.iss_awake->wake[i].preg, out.iss_awake->wake[i].latency);
       }
     }
   }
 
   // 唤醒load
-  if (io.iss2prf->iss_entry[IQ_STA].valid) {
-    iq[IQ_LD].sta_wake_up(io.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
+  if (out.iss2prf->iss_entry[IQ_STA].valid) {
+    iq[IQ_LD].sta_wake_up(out.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
   }
 
-  if (io.iss2prf->iss_entry[IQ_STD].valid) {
-    iq[IQ_LD].std_wake_up(io.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
+  if (out.iss2prf->iss_entry[IQ_STD].valid) {
+    iq[IQ_LD].std_wake_up(out.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
   }
 
-  if (io.prf_awake->wake.valid) {
+  if (in.prf_awake->wake.valid) {
     for (auto &q : iq) {
-      q.wake_up(io.prf_awake->wake.preg, 0);
+      q.wake_up(in.prf_awake->wake.preg, 0);
     }
   }
+}
 
+void ISU::comb_branch() {
   // 分支处理
-  if (io.dec_bcast->mispred) {
+  if (in.dec_bcast->mispred) {
     for (auto &q : iq) {
-      q.br_clear(io.dec_bcast->br_mask);
+      q.br_clear(in.dec_bcast->br_mask);
     }
   }
+}
 
-  if (io.rob_bcast->flush) {
+void ISU::comb_flush() {
+  if (in.rob_bcast->flush) {
     for (auto &q : iq) {
       q.br_clear((1 << MAX_BR_NUM) - 1);
     }
   }
 }
 
+void ISU::seq() {
+  for (auto &q : iq) {
+    q.num = q.num_1;
+    q.entry = q.entry_1;
+  }
+}
+
 void IQ::br_clear(uint32_t br_mask) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid && ((1 << entry[i].uop.tag) & br_mask)) {
-      entry[i].valid = false;
-      num--;
+      entry_1[i].valid = false;
+      num_1--;
     }
   }
 }
 
-void IQ::latency_wake() {
-  for (int i = 0; i < entry_num; i++) {
-    if (entry[i].valid) {
-      if (entry[i].uop.src1_en && !entry[i].uop.src1_busy &&
-          entry[i].uop.src1_latency != 0) {
-        entry[i].uop.src1_latency--;
-      }
-
-      if (entry[i].uop.src2_en && !entry[i].uop.src2_busy &&
-          entry[i].uop.src2_latency != 0) {
-        entry[i].uop.src2_latency--;
-      }
-    }
-  }
-}
+// void IQ::latency_wake() {
+//   for (int i = 0; i < entry_num; i++) {
+//     if (entry[i].valid) {
+//       if (entry[i].uop.src1_en && !entry[i].uop.src1_busy &&
+//           entry[i].uop.src1_latency != 0) {
+//         entry[i].uop.src1_latency--;
+//       }
+//
+//       if (entry[i].uop.src2_en && !entry[i].uop.src2_busy &&
+//           entry[i].uop.src2_latency != 0) {
+//         entry[i].uop.src2_latency--;
+//       }
+//     }
+//   }
+// }
 
 // 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
 void IQ::wake_up(uint32_t dest_preg, uint32_t latency) {
@@ -190,13 +204,13 @@ void IQ::wake_up(uint32_t dest_preg, uint32_t latency) {
     if (entry[i].valid) {
 
       if (entry[i].uop.src1_en && entry[i].uop.src1_preg == dest_preg) {
-        entry[i].uop.src1_busy = false;
-        entry[i].uop.src1_latency = latency - 1;
+        entry_1[i].uop.src1_busy = false;
+        entry_1[i].uop.src1_latency = latency - 1;
       }
 
       if (entry[i].uop.src2_en && entry[i].uop.src2_preg == dest_preg) {
-        entry[i].uop.src2_busy = false;
-        entry[i].uop.src2_latency = latency - 1;
+        entry_1[i].uop.src2_busy = false;
+        entry_1[i].uop.src2_latency = latency - 1;
       }
     }
   }
@@ -205,14 +219,14 @@ void IQ::wake_up(uint32_t dest_preg, uint32_t latency) {
 void IQ::sta_wake_up(int stq_idx) {
   for (int j = 0; j < entry_num; j++) {
     if (entry[j].valid)
-      entry[j].uop.pre_sta_mask &= ~(1 << stq_idx);
+      entry_1[j].uop.pre_sta_mask &= ~(1 << stq_idx);
   }
 }
 
 void IQ::std_wake_up(int stq_idx) {
   for (int j = 0; j < entry_num; j++) {
     if (entry[j].valid)
-      entry[j].uop.pre_std_mask &= ~(1 << stq_idx);
+      entry_1[j].uop.pre_std_mask &= ~(1 << stq_idx);
   }
 }
 
@@ -239,7 +253,7 @@ Inst_entry IQ::scheduler() {
   }
 
   if (iss_entry.valid) {
-    entry[iss_idx].valid = false;
+    entry_1[iss_idx].valid = false;
   }
 
   return iss_entry;

@@ -26,6 +26,10 @@ typedef uint16_t reg12_t;
 typedef uint16_t reg16_t;
 typedef uint32_t reg32_t;
 
+typedef wire4_t Inst_op;
+typedef wire4_t Inst_type;
+typedef wire4_t Amo_op;
+
 using namespace std;
 
 #define FETCH_WIDTH 4
@@ -36,7 +40,7 @@ using namespace std;
 #define MAX_UOP_NUM 3
 
 #define ARF_NUM 32
-#define PRF_NUM 96
+#define PRF_NUM 128
 #define MAX_BR_NUM 16
 
 #define CSR_NUM 21
@@ -63,76 +67,66 @@ extern long long sim_time;
 
 /*
  * 宽松的va2pa检查：
- * 允许 DUT 判定为 page fault，但是 REF 判定不为 
+ * 允许 DUT 判定为 page fault，但是 REF 判定不为
  * page fault 时，通过 DIFFTEST 并以 DUT 为准
  */
-#define CONFIG_LOOSE_VA2PA 
+#define CONFIG_LOOSE_VA2PA
 
 #define UART_BASE 0x10000000
 
-enum IQ_TYPE {
-  IQ_INTM,
-  IQ_INTD,
-  IQ_LD,
-  IQ_STA,
-  IQ_STD,
-  IQ_BR0,
-  IQ_BR1,
-  IQ_NUM
-};
+#define IQ_INTM 0
+#define IQ_INTD 1
+#define IQ_LD 2
+#define IQ_STA 3
+#define IQ_STD 4
+#define IQ_BR0 5
+#define IQ_BR1 6
+#define IQ_NUM 7
 
-enum FU_TYPE { FU_ALU, FU_LSU, FU_BRU, FU_MUL, FU_DIV, FU_TYPE_NUM };
+#define NONE 0
+#define JAL 1
+#define JALR 2
+#define ADD 3
+#define BR 4
+#define LOAD 5
+#define STORE 6
+#define CSR 7
+#define ECALL 8
+#define EBREAK 9
+#define SFENCE_VMA 10
+#define MRET 11
+#define SRET 12
+#define MUL 13
+#define DIV 14
+#define AMO 15
 
-enum Inst_type {
-  NONE,
-  JAL,
-  JALR,
-  ADD,
-  BR,
-  LOAD,
-  STORE,
-  CSR,
-  ECALL,
-  EBREAK,
-  SFENCE_VMA,
-  MRET,
-  SRET,
-  MUL,
-  DIV,
-  AMO
-};
+#define UOP_JUMP 0
+#define UOP_ADD 1
+#define UOP_BR 2
+#define UOP_LOAD 3
+#define UOP_STA 4
+#define UOP_STD 5
+#define UOP_CSR 6
+#define UOP_ECALL 7
+#define UOP_EBREAK 8
+#define UOP_SFENCE_VMA 9
+#define UOP_MRET 10
+#define UOP_SRET 11
+#define UOP_MUL 12
+#define UOP_DIV 13
 
-enum Inst_op {
-  UOP_JUMP,
-  UOP_ADD,
-  UOP_BR,
-  UOP_LOAD,
-  UOP_STA,
-  UOP_STD,
-  UOP_CSR,
-  UOP_ECALL,
-  UOP_EBREAK,
-  UOP_SFENCE_VMA,
-  UOP_MRET,
-  UOP_SRET,
-  UOP_MUL,
-  UOP_DIV,
-};
-
-enum AMO_op {
-  AMONONE,
-  LR,
-  SC,
-  AMOSWAP,
-  AMOADD,
-  AMOXOR,
-  AMOAND,
-  AMOOR,
-  AMOMIN,
-  AMOMAX,
-  AMOMINU,
-  AMOMAXU,
-};
+#define AMONONE 0
+#define LR 1
+#define SC 2
+#define AMOSWAP 3
+#define AMOADD 4
+#define AMOXOR 5
+#define AMOAND 6
+#define AMOOR 7
+#define AMOMIN 8
+#define AMOMAX 9
+#define AMOMINU 10
+#define AMOMAXU 11
 
 typedef struct Inst_uop {
   wire32_t instruction;
@@ -182,16 +176,16 @@ typedef struct Inst_uop {
   wire1_t page_fault_store = false;
   wire1_t illegal_inst = false;
 
-  Inst_type type;
-  Inst_op op;
-  AMO_op amoop;
+  wire4_t type;
+  wire4_t op;
+  wire4_t amoop;
 
   // for debug
   bool difftest_skip;
   int64_t inst_idx;
 } Inst_uop;
 
-typedef struct Inst_entry {
+typedef struct {
   wire1_t valid;
   Inst_uop uop;
 } Inst_entry;
@@ -201,6 +195,11 @@ typedef struct {
   wire7_t preg;
   wire2_t latency;
 } Wake_info;
+
+typedef Inst_entry Inst_entry_reg;
+typedef Inst_entry Inst_entry_wire;
+typedef Inst_uop Inst_uop_reg;
+typedef Inst_uop Inst_uop_wire;
 
 class Perf_count {
 public:

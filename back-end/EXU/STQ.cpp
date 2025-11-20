@@ -13,14 +13,14 @@ void STQ::comb() {
   int num = count;
 
   for (int i = 0; i < 2; i++) {
-    if (!io.dis2stq->valid[i]) {
-      io.stq2dis->ready[i] = true;
+    if (!in.dis2stq->valid[i]) {
+      out.stq2dis->ready[i] = true;
     } else {
       if (num < STQ_NUM) {
-        io.stq2dis->ready[i] = true;
+        out.stq2dis->ready[i] = true;
         num++;
       } else {
-        io.stq2dis->ready[i] = false;
+        out.stq2dis->ready[i] = false;
       }
     }
   }
@@ -100,9 +100,9 @@ void STQ::comb() {
 
   // commit标记为可执行
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (io.rob_commit->commit_entry[i].valid &&
-        (is_store(io.rob_commit->commit_entry[i].uop)) &&
-        !io.rob_commit->commit_entry[i].uop.page_fault_store) {
+    if (in.rob_commit->commit_entry[i].valid &&
+        (is_store(in.rob_commit->commit_entry[i].uop)) &&
+        !in.rob_commit->commit_entry[i].uop.page_fault_store) {
       entry[commit_ptr].commit = true;
       commit_count++;
       LOOP_INC(commit_ptr, STQ_NUM);
@@ -114,8 +114,8 @@ void STQ::seq() {
 
   // 入队
   for (int i = 0; i < 2; i++) {
-    if (io.dis2stq->dis_fire[i] && io.dis2stq->valid[i]) {
-      entry[enq_ptr].tag = io.dis2stq->tag[i];
+    if (in.dis2stq->dis_fire[i] && in.dis2stq->valid[i]) {
+      entry[enq_ptr].tag = in.dis2stq->tag[i];
       entry[enq_ptr].valid = true;
       entry[enq_ptr].addr_valid = false;
       entry[enq_ptr].data_valid = false;
@@ -125,27 +125,27 @@ void STQ::seq() {
   }
 
   // 地址数据写入 若项无效说明被br清除
-  Inst_uop *inst = &io.exe2stq->addr_entry.uop;
+  Inst_uop *inst = &in.exe2stq->addr_entry.uop;
   int idx = inst->stq_idx;
-  if (io.exe2stq->addr_entry.valid && entry[idx].valid) {
+  if (in.exe2stq->addr_entry.valid && entry[idx].valid) {
     entry[idx].addr = inst->result;
     entry[idx].size = inst->func3;
     entry[idx].addr_valid = true;
   }
 
-  inst = &io.exe2stq->data_entry.uop;
+  inst = &in.exe2stq->data_entry.uop;
   idx = inst->stq_idx;
 
-  if (io.exe2stq->data_entry.valid && entry[idx].valid) {
+  if (in.exe2stq->data_entry.valid && entry[idx].valid) {
     entry[idx].data = inst->result;
     entry[idx].data_valid = true;
   }
 
   // 分支清空
-  if (io.dec_bcast->mispred) {
+  if (in.dec_bcast->mispred) {
     for (int i = 0; i < STQ_NUM; i++) {
       if (entry[i].valid && !entry[i].commit &&
-          (io.dec_bcast->br_mask & (1 << entry[i].tag))) {
+          (in.dec_bcast->br_mask & (1 << entry[i].tag))) {
         entry[i].valid = false;
         entry[i].commit = false;
         count--;
@@ -154,7 +154,7 @@ void STQ::seq() {
     }
   }
 
-  if (io.rob_bcast->flush) {
+  if (in.rob_bcast->flush) {
     for (int i = 0; i < STQ_NUM; i++) {
       if (entry[i].valid && !entry[i].commit) {
         entry[i].valid = false;
@@ -165,11 +165,12 @@ void STQ::seq() {
     }
   }
 
-  io.stq2dis->stq_idx = enq_ptr;
+  out.stq2dis->stq_idx = enq_ptr;
 }
 
 extern uint32_t *p_memory;
-void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx, bool &stall_load) {
+void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx,
+                    bool &stall_load) {
 
   int i = deq_ptr;
   int count = commit_count;
@@ -213,7 +214,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx, bool &stall_load
     if (back.rob.entry[bank_idx][line_idx].valid &&
         is_store(back.rob.entry[bank_idx][line_idx].uop)) {
       int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
-      if (entry[stq_idx].valid && 
+      if (entry[stq_idx].valid &&
           (!entry[stq_idx].data_valid || !entry[stq_idx].addr_valid)) {
         // 有未准备好的store，停止转发
         stall_load = true;

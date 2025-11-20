@@ -3,14 +3,19 @@
 #include <config.h>
 #include <cstdint>
 
-typedef struct {
+class STQ_IN {
+public:
   Dis_Stq *dis2stq;
-  Stq_Dis *stq2dis;
   Exe_Stq *exe2stq;
   Rob_Commit *rob_commit;
   Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bcast;
-} STQ_IO;
+};
+
+class STQ_OUT {
+public:
+  Stq_Dis *stq2dis;
+};
 
 typedef struct {
   bool ready[FETCH_WIDTH];
@@ -24,7 +29,8 @@ typedef struct {
 
 class STQ {
 public:
-  STQ_IO io;
+  STQ_IN in;
+  STQ_OUT out;
   void comb();
   void st2ld_fwd(uint32_t, uint32_t &, int rob_idx, bool &);
   void seq();

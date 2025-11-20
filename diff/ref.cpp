@@ -27,8 +27,9 @@
   ((SEXT(BITS(i, 31, 31), 1) << 12) | (BITS(i, 7, 7) << 11) |                  \
    (BITS(i, 30, 25) << 5) | (BITS(i, 11, 8) << 1))
 
-bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
+                 uint32_t type, bool *mstatus, bool *sstatus, int privilege,
+                 uint32_t *p_memory);
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -66,8 +67,8 @@ void Ref_cpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    page_fault_inst = !va2pa_fixed(p_addr, state.pc, state.csr[csr_satp], 0, mstatus,
-                             sstatus, privilege, memory);
+    page_fault_inst = !va2pa_fixed(p_addr, state.pc, state.csr[csr_satp], 0,
+                                   mstatus, sstatus, privilege, memory);
     if (page_fault_inst) {
       exception(state.pc);
       return;
@@ -85,8 +86,8 @@ void Ref_cpu::exception(uint32_t trap_val) {
   is_exception = true;
   uint32_t next_pc = state.pc + 4;
   bool ecall = (Instruction == INST_ECALL);
-  bool MRET = (Instruction == INST_MRET);
-  bool SRET = (Instruction == INST_SRET);
+  bool mret = (Instruction == INST_MRET);
+  bool sret = (Instruction == INST_SRET);
 
   bool mideleg[32];
   bool medeleg[32];
@@ -211,7 +212,7 @@ void Ref_cpu::exception(uint32_t trap_val) {
     sstatus[31 - 1] = 0;               // next_sstatus.SIE = 0;
     privilege = 1;
     state.csr[csr_stval] = trap_val;
-  } else if (MRET) {
+  } else if (mret) {
     mstatus[31 - 3] = mstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
     sstatus[31 - 3] = sstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
     privilege = mstatus[31 - 11] + 2 * mstatus[31 - 12];
@@ -223,7 +224,7 @@ void Ref_cpu::exception(uint32_t trap_val) {
     sstatus[31 - 12] = 0;
     sstatus[31 - 11] = 0; // next_mstatus.MPP = U;
     next_pc = state.csr[csr_mepc];
-  } else if (SRET) {
+  } else if (sret) {
     mstatus[31 - 1] = mstatus[31 - 5]; // next_mstatus.SIE = mstatus.SPIE;
     sstatus[31 - 1] = sstatus[31 - 5]; // next_sstatus.SIE = sstatus.SPIE;
     privilege = sstatus[31 - 8];       // next_priviledge = sstatus.SPP;
@@ -257,8 +258,8 @@ void Ref_cpu::RISCV() {
   uint32_t number_op_code_unsigned = cvt_bit_to_number_unsigned(bit_op_code, 7);
 
   bool ecall = (Instruction == INST_ECALL);
-  bool MRET = (Instruction == INST_MRET);
-  bool SRET = (Instruction == INST_SRET);
+  bool mret = (Instruction == INST_MRET);
+  bool sret = (Instruction == INST_SRET);
 
   bool mstatus[32];
   bool sstatus[32];
@@ -346,7 +347,7 @@ void Ref_cpu::RISCV() {
                (ecall && (privilege == 1) && medeleg_S_ecall) ||
                (page_fault_inst && medeleg_page_fault_inst);
 
-  asy = MTrap || STrap || MRET || SRET;
+  asy = MTrap || STrap || mret || sret;
 
   if (Instruction == 0x10500073 && !asy && !page_fault_inst &&
       !page_fault_load && !page_fault_store) {
@@ -540,10 +541,10 @@ void Ref_cpu::RV32A() {
   cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
   if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
-    bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
-                               sstatus, privilege, memory);
-    bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
-                               sstatus, privilege, memory);
+    bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
+                                     mstatus, sstatus, privilege, memory);
+    bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
+                                     mstatus, sstatus, privilege, memory);
 
     if (page_fault_1 || page_fault_2) {
       if (number_funct5_unsigned == 2) {
@@ -762,8 +763,8 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
-      page_fault_load = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
-                               sstatus, privilege, memory);
+      page_fault_load = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
+                                     mstatus, sstatus, privilege, memory);
     }
 
     if (page_fault_load) {
@@ -819,8 +820,8 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
-      page_fault_store = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
-                                sstatus, privilege, memory);
+      page_fault_store = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
+                                      mstatus, sstatus, privilege, memory);
     }
 
     if (page_fault_store) {
