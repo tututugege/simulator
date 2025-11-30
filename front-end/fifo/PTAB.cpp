@@ -1,5 +1,4 @@
-#include "../front_IO.h"
-#include "../frontend.h"
+#include "front_fifo.h"
 #include <iostream>
 #include <queue>
 
@@ -13,9 +12,6 @@ struct PTAB_entry {
   uint8_t pcpn[FETCH_WIDTH];
 };
 
-// the FIFO control of PTAB is the same as instruction FIFO !
-// the FIFO control of PTAB is the same as instruction FIFO !
-// the FIFO control of PTAB is the same as instruction FIFO !
 static std::queue<PTAB_entry> ptab;
 
 void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
@@ -23,6 +19,8 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
     while (!ptab.empty()) {
       ptab.pop();
     }
+    out->full = false;
+    out->empty = true;
     return;
   }
 
@@ -30,9 +28,13 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
     while (!ptab.empty()) {
       ptab.pop();
     }
+    // we allow one write to PTAB in refetch cycle...
   }
   // when there is new prediction, add it to PTAB
   if (in->write_enable) {
+    if (ptab.size() >= PTAB_SIZE) {
+      assert(0); // should not reach here
+    }
     PTAB_entry entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       entry.predict_dir[i] = in->predict_dir[i];
@@ -57,4 +59,6 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
     out->predict_next_fetch_address = ptab.front().predict_next_fetch_address;
     ptab.pop();
   }
+  out->full = ptab.size() == PTAB_SIZE;
+  out->empty = ptab.empty();
 }

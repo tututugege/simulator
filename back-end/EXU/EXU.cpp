@@ -261,6 +261,7 @@ void EXU::comb_flush() {
 }
 
 void EXU::seq() {
+
   for (int i = 0; i < ISSUE_WAY; i++) {
     inst_r[i] = inst_r_1[i];
     fu[i].mmu_lsu_slot_r = fu[i].mmu_lsu_slot_r_1;

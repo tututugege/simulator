@@ -95,9 +95,10 @@ void difftest_skip() {
   }
 }
 
-void difftest_step() {
+void difftest_step(bool check) {
   ref_cpu.exec();
 #ifndef CONFIG_RUN_REF
-  checkregs();
+  if (check)
+    checkregs();
 #endif // !CONFIG
 }

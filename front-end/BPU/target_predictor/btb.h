@@ -3,13 +3,15 @@
 
 #include <cstdint>
 
-#define BTB_ENTRY_NUM 2048
+#define BTB_ENTRY_NUM 512
 #define BTB_TAG_LEN 8
 #define BTB_WAY_NUM 4
+#define BTB_TYPE_ENTRY_NUM 4096
 
-#define BTB_IDX_LEN 11 // log2(BTB_ENTRY_NUM)
+#define BTB_IDX_LEN 9 // log2(BTB_ENTRY_NUM)
 #define BTB_IDX_MASK (BTB_ENTRY_NUM - 1)
 #define BTB_TAG_MASK ((1 << BTB_TAG_LEN) - 1)
+#define BTB_TYPE_IDX_MASK (BTB_TYPE_ENTRY_NUM - 1)
 
 #define BR_DIRECT 0
 #define BR_CALL 1

@@ -21,18 +21,26 @@ uint32_t pc_reg;
 int tage_cnt = 0;
 int tage_miss = 0;
 
+void BPU_change_pc_reg(uint32_t new_pc) {
+  pc_reg = new_pc;
+}
+
 void BPU_top(struct BPU_in *in, struct BPU_out *out) {
   // generate pc_reg sending to icache
   if (in->reset) {
     pc_reg = RESET_PC;
+    out->PTAB_write_enable = false;
+    out->icache_read_valid = false;
     return;
   } else if (in->refetch) {
     pc_reg = in->refetch_address;
+    // return;
   } // else pc_reg should be set by the previous cycle
   // send fetch request to icache
   out->icache_read_valid = true; // now always valid
   out->fetch_address = pc_reg;
-  out->PTAB_write_enable = true;
+  // out->PTAB_write_enable = true;
+  out->PTAB_write_enable = false; // first set to false in case of only update
 
   // update branch predictor
   for (int i = 0; i < COMMIT_WIDTH; i++) {
@@ -84,6 +92,7 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
     // do branch prediction
     // traverse instructions in fetch_group, find the first TAGE prediction
     // that is taken
+    out->PTAB_write_enable = true; // now can always give one prediction at one cycle
     bool found_taken_branch = false;
     uint32_t branch_pc = pc_reg;
 

@@ -52,5 +52,6 @@ public:
   void Back_seq();
 
   // debug
-  void difftest(Inst_uop *inst);
+  void difftest_inst(Inst_uop *inst);
+  void difftest_cycle();
 };

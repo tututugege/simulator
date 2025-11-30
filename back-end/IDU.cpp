@@ -74,7 +74,11 @@ void IDU::comb_decode() {
         in.front2dec->predict_next_fetch_address[i];
 
     // for debug
-    out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
+    if (is_branch(out.dec2ren->uop[i].type)) {
+      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
+    } else {
+      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
+    }
 
     if (in.front2dec->valid[i] && is_branch(out.dec2ren->uop[i].type)) {
       if (!no_tag && !has_br) {
@@ -266,7 +270,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     break;
   }
   case number_2_opcode_jal: { // jal
-    uop_num = 2;
+    uop_num = 1;
     uop.dest_en = true;
     uop.src1_en = false;
     uop.src2_en = false;

@@ -19,5 +19,5 @@ extern CPU_state dut_cpu;
 extern uint32_t *p_memory;
 
 void init_difftest(int);
-void difftest_step();
+void difftest_step(bool);
 void difftest_skip();

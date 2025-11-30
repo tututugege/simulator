@@ -86,6 +86,7 @@ struct icache_out {
   uint32_t fetch_group[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
   bool inst_valid[FETCH_WIDTH];
+  uint32_t fetch_pc; // PC address of the cache line (the address used to fetch instructions from icache)
 };
 
 struct instruction_FIFO_in {
@@ -98,6 +99,9 @@ struct instruction_FIFO_in {
   bool inst_valid[FETCH_WIDTH];
   // from back-end
   bool read_enable;
+  // from predecode
+  uint8_t predecode_type[FETCH_WIDTH];
+  uint32_t predecode_target_address[FETCH_WIDTH];
 };
 
 struct instruction_FIFO_out {
@@ -108,6 +112,8 @@ struct instruction_FIFO_out {
   uint32_t instructions[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
   bool inst_valid[FETCH_WIDTH];
+  uint8_t predecode_type[FETCH_WIDTH];
+  uint32_t predecode_target_address[FETCH_WIDTH];
 };
 
 struct PTAB_in {
@@ -138,4 +144,39 @@ struct PTAB_out {
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
 };
+
+struct front2back_FIFO_in {
+  bool reset;
+  bool refetch;
+  bool write_enable;
+  bool read_enable;
+  uint32_t fetch_group[FETCH_WIDTH];
+  bool page_fault_inst[FETCH_WIDTH];
+  bool inst_valid[FETCH_WIDTH];
+  // to back-end
+  bool predict_dir_corrected[FETCH_WIDTH];
+  uint32_t predict_next_fetch_address_corrected;
+  uint32_t predict_base_pc[FETCH_WIDTH];
+  // for TAGE update
+  bool alt_pred[FETCH_WIDTH];
+  uint8_t altpcpn[FETCH_WIDTH];
+  uint8_t pcpn[FETCH_WIDTH];
+};
+
+struct front2back_FIFO_out {
+  bool full;
+  bool empty;
+  // to back-end
+  bool front2back_FIFO_valid; // same as the previous FIFO_valid
+  uint32_t fetch_group[FETCH_WIDTH];
+  bool page_fault_inst[FETCH_WIDTH];
+  bool inst_valid[FETCH_WIDTH];
+  bool predict_dir_corrected[FETCH_WIDTH];
+  uint32_t predict_next_fetch_address_corrected;
+  uint32_t predict_base_pc[FETCH_WIDTH];
+  bool alt_pred[FETCH_WIDTH];
+  uint8_t altpcpn[FETCH_WIDTH];
+  uint8_t pcpn[FETCH_WIDTH];
+};
+
 #endif

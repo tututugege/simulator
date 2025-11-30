@@ -16,7 +16,64 @@ int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
                         number_sstatus,  number_sie,      number_sip,
                         number_satp,     number_mhartid,  number_misa};
 
-void Back_Top::difftest(Inst_uop *inst) {
+void Back_Top::difftest_cycle() {
+
+  int commit_num = 0;
+  Inst_uop *inst;
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
+    if (rob.out.rob_commit->commit_entry[i].valid) {
+      commit_num++;
+      inst = &rob.out.rob_commit->commit_entry[i].uop;
+    }
+  }
+
+  if (commit_num > 0) {
+    for (int i = 0; i < commit_num - 1; i++) {
+      difftest_step(false);
+    }
+
+    if (is_store(*inst)) {
+      if (stq.entry[inst->stq_idx].addr == 0x10000001 &&
+          (stq.entry[inst->stq_idx].data & 0x000000ff) == 7) {
+        csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] | (1 << 9);
+        csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] | (1 << 9);
+      }
+
+      if (stq.entry[inst->stq_idx].addr == 0xc201004 &&
+          (stq.entry[inst->stq_idx].data & 0x000000ff) == 0xa) {
+        csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] & ~(1 << 9);
+        csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] & ~(1 << 9);
+      }
+    }
+
+    for (int i = 0; i < ARF_NUM; i++) {
+      dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT_1[i]];
+    }
+
+    if (is_store(*inst)) {
+      dut_cpu.store = true;
+      dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
+      if (stq.entry[inst->stq_idx].size == 0b00)
+        dut_cpu.store_data = stq.entry[inst->stq_idx].data & 0xFF;
+      else if (stq.entry[inst->stq_idx].size == 0b01)
+        dut_cpu.store_data = stq.entry[inst->stq_idx].data & 0xFFFF;
+      else
+        dut_cpu.store_data = stq.entry[inst->stq_idx].data;
+
+      dut_cpu.store_data = dut_cpu.store_data
+                           << (dut_cpu.store_addr & 0b11) * 8;
+    } else
+      dut_cpu.store = false;
+
+    for (int i = 0; i < CSR_NUM; i++) {
+      dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
+    }
+    dut_cpu.pc = inst->pc_next;
+    difftest_step(true);
+  }
+}
+
+void Back_Top::difftest_inst(Inst_uop *inst) {
 
   if (inst->type == JALR) {
     if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
@@ -129,7 +186,7 @@ void Back_Top::difftest(Inst_uop *inst) {
   if (inst->difftest_skip) {
     difftest_skip();
   } else {
-    difftest_step();
+    difftest_step(true);
   }
 #endif
 }

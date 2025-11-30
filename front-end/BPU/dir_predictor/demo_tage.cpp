@@ -1,5 +1,4 @@
 #include "demo_tage.h"
-#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -7,7 +6,7 @@
 
 #define BASE_ENTRY_NUM 2048
 #define GHR_LENGTH 256
-#define TN_MAX 4 // 0-indexed, which means 0,1,2,3
+#define TN_MAX 4 // 0-tage_indexed, which means 0,1,2,3
 #define TN_ENTRY_NUM 4096
 #define FH_N_MAX 3              // how many different types of Folded history
 #define USEFUL_RESET_VAL 262144 // 256K
@@ -33,7 +32,7 @@ uint8_t useful_table[TN_MAX][TN_ENTRY_NUM];
 // bool alt_pred;
 // uint32_t base_idx;
 
-uint32_t index[TN_MAX];
+uint32_t tage_index[TN_MAX];
 
 // Folded history
 // TN FH0 FH1 FH2 GHR_LENGTH
@@ -65,14 +64,14 @@ void TAGE_update_FH(bool new_history) {
 
 // XiangShan : FH1 xor FH2 xor (PC >> 1)
 uint8_t cal_tag(uint32_t PC, int n) {
-  uint8_t ret = (FH[1][n] ^ FH[2][n] ^ (PC >> 5)) & (0xff);
+  uint8_t ret = (FH[1][n] ^ FH[2][n] ^ (PC >> 2)) & (0xff);
   return ret;
 }
 
 // XiangShan : FH xor (PC >> 1)
 // 4096 entries
-uint32_t cal_index(uint32_t PC, int n) {
-  uint32_t ret = (FH[0][n] ^ (PC >> 5)) & (0xfff);
+uint32_t cal_tage_index(uint32_t PC, int n) {
+  uint32_t ret = (FH[0][n] ^ (PC >> 2)) & (0xfff);
   return ret;
 }
 
@@ -93,9 +92,9 @@ pred_out TAGE_get_prediction(uint32_t PC) {
     tag[i] = cal_tag(PC, i);
   }
 
-  // get index for all Tn
+  // get tage_index for all Tn
   for (int i = 0; i < TN_MAX; i++) {
-    index[i] = cal_index(PC, i);
+    tage_index[i] = cal_tage_index(PC, i);
   }
 
   // printf("now tag: ");
@@ -103,9 +102,9 @@ pred_out TAGE_get_prediction(uint32_t PC) {
   //   printf("%d ", tag[i]);
   // }
   // printf("\n");
-  // printf("now index: ");
+  // printf("now tage_index: ");
   // for (int i = 0; i < TN_MAX; i++) {
-  //   printf("%d ", index[i]);
+  //   printf("%d ", tage_index[i]);
   // }
   // printf("\n");
 
@@ -115,15 +114,14 @@ pred_out TAGE_get_prediction(uint32_t PC) {
   bool pcpn_pred = false;
   // Take the longest history entry
   for (int i = TN_MAX - 1; i >= 0; i--) {
-    assert(index[i] < 4096);
-    if (tag_table[i][index[i]] == tag[i]) {
+    if (tag_table[i][tage_index[i]] == tag[i]) {
       pcpn = i;
       break;
     }
   }
   // get the altpcpn info for updating policies
   for (int i = pcpn - 1; i >= 0; i--) {
-    if (tag_table[i][index[i]] == tag[i]) {
+    if (tag_table[i][tage_index[i]] == tag[i]) {
       altpcpn = i;
       break;
     }
@@ -131,7 +129,7 @@ pred_out TAGE_get_prediction(uint32_t PC) {
   if (altpcpn >= TN_MAX) { // alt not found
     alt_pred = base_pred;
   } else {
-    if (cnt_table[altpcpn][index[altpcpn]] >= 4) {
+    if (cnt_table[altpcpn][tage_index[altpcpn]] >= 4) {
       alt_pred = true;
     } else {
       alt_pred = false;
@@ -142,7 +140,7 @@ pred_out TAGE_get_prediction(uint32_t PC) {
     pcpn_pred = base_pred;
     return {base_pred, alt_pred, pcpn, altpcpn};
   }
-  if (cnt_table[pcpn][index[pcpn]] >= 4) {
+  if (cnt_table[pcpn][tage_index[pcpn]] >= 4) {
     pcpn_pred = true;
     return {true, alt_pred, pcpn, altpcpn};
   }
@@ -209,9 +207,9 @@ void TAGE_do_update(uint32_t PC, bool real_dir, pred_out pred_out) {
   for (int i = 0; i < TN_MAX; i++) {
     tag[i] = cal_tag(PC, i);
   }
-  // get index for all Tn
+  // get tage_index for all Tn
   for (int i = 0; i < TN_MAX; i++) {
-    index[i] = cal_index(PC, i);
+    tage_index[i] = cal_tage_index(PC, i);
   }
 
   // printf("TAGE_do_update(%x, %d, %d, %d, %d, %d);\n", PC, real_dir, pred_dir,
@@ -224,24 +222,24 @@ void TAGE_do_update(uint32_t PC, bool real_dir, pred_out pred_out) {
   if (pcpn < TN_MAX) {
     if ((pred_dir != alt_pred)) {
       if (pred_dir == real_dir) {
-        useful_table[pcpn][index[pcpn]] =
-            bit_update_2(useful_table[pcpn][index[pcpn]], true);
-        /*printf("adding %d %d == %u\n", pcpn, index[pcpn],*/
-        /*       useful_table[pcpn][index[pcpn]]);*/
+        useful_table[pcpn][tage_index[pcpn]] =
+            bit_update_2(useful_table[pcpn][tage_index[pcpn]], true);
+        /*printf("adding %d %d == %u\n", pcpn, tage_index[pcpn],*/
+        /*       useful_table[pcpn][tage_index[pcpn]]);*/
       } else {
-        useful_table[pcpn][index[pcpn]] =
-            bit_update_2(useful_table[pcpn][index[pcpn]], false);
+        useful_table[pcpn][tage_index[pcpn]] =
+            bit_update_2(useful_table[pcpn][tage_index[pcpn]], false);
       }
     }
 
     // 2. update cnt
     if (real_dir == true) {
-      cnt_table[pcpn][index[pcpn]] =
-          bit_update_3(cnt_table[pcpn][index[pcpn]], true);
+      cnt_table[pcpn][tage_index[pcpn]] =
+          bit_update_3(cnt_table[pcpn][tage_index[pcpn]], true);
 
     } else {
-      cnt_table[pcpn][index[pcpn]] =
-          bit_update_3(cnt_table[pcpn][index[pcpn]], false);
+      cnt_table[pcpn][tage_index[pcpn]] =
+          bit_update_3(cnt_table[pcpn][tage_index[pcpn]], false);
     }
   }
   // pcpn not found, update base_counter
@@ -273,7 +271,7 @@ void TAGE_do_update(uint32_t PC, bool real_dir, pred_out pred_out) {
       for (int i = pcpn == TN_MAX ? 0 : (pcpn + 1); i < TN_MAX; i++) {
         // try to find a useful==0
         /*for (int j = 0; j < TN_ENTRY_NUM; j++) {*/
-        int j = index[i];
+        int j = tage_index[i];
         if (useful_table[i][j] == 0) {
           if (new_entry_found_j == false) {
             new_entry_found_j = true;
@@ -299,7 +297,7 @@ void TAGE_do_update(uint32_t PC, bool real_dir, pred_out pred_out) {
       if (new_entry_found_j == false) { // no new entry allocated
         for (int i = pcpn + 1; i < TN_MAX; i++) {
           /*for (int j = 0; j < TN_ENTRY_NUM; j++) {*/
-          int j = index[i];
+          int j = tage_index[i];
           useful_table[i][j] = bit_update_2(useful_table[i][j], false);
           /*}*/
         }
@@ -372,14 +370,14 @@ void show_TAGE() {
   printf("base \n");
   for (int i = 0; i < BASE_ENTRY_NUM; i++) {
     if (base_counter[i] != 0)
-      printf("index %3x base_counter %1x\n", i, base_counter[i]);
+      printf("tage_index %3x base_counter %1x\n", i, base_counter[i]);
   }
   for (int i = 0; i < TN_MAX; i++) {
     printf("T %d\n", i);
     for (int j = 0; j < TN_ENTRY_NUM; j++) {
       if (tag_table[i][j] != 0 || cnt_table[i][j] != 0 ||
           useful_table[i][j] != 0)
-        printf("index %3x tag %2x cnt %1x useful %1x\n", j, tag_table[i][j],
+        printf("tage_index %3x tag %2x cnt %1x useful %1x\n", j, tag_table[i][j],
                cnt_table[i][j], useful_table[i][j]);
     }
   }

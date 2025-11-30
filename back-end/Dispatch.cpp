@@ -150,17 +150,12 @@ void Dispatch::comb_dispatch() {
       case JAL:
         if (i < FETCH_WIDTH / 2) {
           to_iq[IQ_INTM][i] = true;
-          to_iq[IQ_BR0][i] = true;
         } else {
           to_iq[IQ_INTD][i] = true;
-          to_iq[IQ_BR1][i] = true;
         }
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_ADD;
         pre_dis_uop[3 * i].uop.imm = 4;
-        pre_dis_uop[3 * i + 1] = inst_alloc[i];
-        pre_dis_uop[3 * i + 1].uop.op = UOP_JUMP;
-        pre_dis_uop[3 * i + 1].uop.dest_en = false;
 
         break;
       case STORE:
@@ -300,9 +295,7 @@ void Dispatch::comb_dispatch() {
       if (port_idx[i][j] != FETCH_WIDTH) {
 
         // 根据指令type区分选第一个uop还是第二个uop
-        if ((inst_r[port_idx[i][j]].uop.type == JALR ||
-             inst_r[port_idx[i][j]].uop.type == JAL) &&
-            i >= IQ_BR0) {
+        if (inst_r[port_idx[i][j]].uop.type == JALR && i >= IQ_BR0) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
         } else if (inst_r[port_idx[i][j]].uop.type == STORE && i == IQ_STD) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
@@ -359,6 +352,18 @@ void Dispatch::comb_fire() {
     pre_stall = inst_r[i].valid && !out.dis2rob->dis_fire[i];
     pre_fire = out.dis2rob->dis_fire[i];
     pre_is_flush = inst_r[i].valid && is_flush_inst(inst_r[i].uop);
+
+#ifdef CONFIG_PERF_COUNTER
+    if (inst_r[i].valid && !out.dis2rob->dis_fire[i]) {
+      if (!in.rob2dis->ready) {
+        perf.rob_entry_stall++;
+      } else if (is_store(inst_r[i].uop)) {
+
+      } else if (!iss_ready[i]) {
+        perf.isu_entry_stall++;
+      }
+    }
+#endif
   }
 
   for (int i = 0; i < IQ_NUM; i++) {

@@ -10,6 +10,8 @@
 
 /*#define IO_version*/
 
+// #define RAS_ENABLE  // if not defined, return address is predicted by BTB
+
 #define DEBUG_PRINT 0
 #define DEBUG_LOG(fmt, ...)                                                    \
   do {                                                                         \
@@ -17,6 +19,26 @@
       printf(fmt, ##__VA_ARGS__);                                              \
   } while (0)
 
+#define DEBUG_PRINT_SMALL 0
+#define DEBUG_LOG_SMALL(fmt, ...)                                              \
+  do {                                                                         \
+    if (DEBUG_PRINT_SMALL)                                                     \
+      printf(fmt, ##__VA_ARGS__);                                              \
+  } while (0)
+
+#define DEBUG_PRINT_SMALL_2 0
+#define DEBUG_LOG_SMALL_2(fmt, ...)                                            \
+  do {                                                                         \
+    if (DEBUG_PRINT_SMALL_2)                                                   \
+      printf(fmt, ##__VA_ARGS__);                                              \
+  } while (0)
+
+#define DEBUG_PRINT_SMALL_3 0
+#define DEBUG_LOG_SMALL_3(fmt, ...)                                            \
+  do {                                                                         \
+    if (DEBUG_PRINT_SMALL_3)                                                   \
+      printf(fmt, ##__VA_ARGS__);                                              \
+  } while (0)
 // #define IO_GEN_MODE
 /*#define MISS_MODE*/
 extern int io_gen_cnt;

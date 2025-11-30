@@ -237,6 +237,11 @@ public:
   uint64_t ret_dir_mispred = 0;
   uint64_t ret_addr_mispred = 0;
 
+  uint64_t rob_entry_stall = 0;
+  uint64_t isu_entry_stall = 0;
+  uint64_t idu_br_stall = 0;
+  uint64_t idu_tag_stall = 0;
+
   void perf_reset() {
     cycle = 0;
     commit_num = 0;
@@ -342,6 +347,9 @@ public:
     printf("\033[1;32maddr error : %ld\033[0m\n", ret_addr_mispred);
     printf("\033[1;32mdir  error : %ld\033[0m\n", ret_dir_mispred);
     printf("\n");
+    printf("\033[1;32m*********STALL COUNTER************\033[0m\n");
+    printf("\033[1;32mrob  stall : %ld\033[0m\n", rob_entry_stall);
+    printf("\033[1;32miss  stall : %ld\033[0m\n", isu_entry_stall);
   }
 };
 
