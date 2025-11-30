@@ -37,8 +37,8 @@ public:
 
   // 状态
   reg32_t reg_file[PRF_NUM];
-  Inst_entry_reg inst_r[ISSUE_WAY];
+  Inst_entry inst_r[ISSUE_WAY];
 
   wire32_t reg_file_1[PRF_NUM];
-  Inst_entry_wire inst_r_1[ISSUE_WAY];
+  Inst_entry inst_r_1[ISSUE_WAY];
 };

@@ -35,13 +35,13 @@ using namespace std;
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
 
-#define MAX_SIM_TIME 1000000000
+#define MAX_SIM_TIME 100000000000
 #define ISSUE_WAY IQ_NUM
 #define MAX_UOP_NUM 3
 
 #define ARF_NUM 32
 #define PRF_NUM 128
-#define MAX_BR_NUM 16
+#define MAX_BR_NUM 32
 
 #define CSR_NUM 21
 
@@ -59,7 +59,9 @@ using namespace std;
 
 extern long long sim_time;
 
-#define CONFIG_DIFFTEST
+// #define HAS_MMU
+
+// #define CONFIG_DIFFTEST
 #define CONFIG_BPU
 #define CONFIG_PERF_COUNTER
 // #define CONFIG_RUN_REF
@@ -83,7 +85,7 @@ extern long long sim_time;
 #define IQ_BR1 6
 #define IQ_NUM 7
 
-#define NONE 0
+#define NOP 0
 #define JAL 1
 #define JALR 2
 #define ADD 3
@@ -158,7 +160,7 @@ typedef struct Inst_uop {
   wire1_t func7_5;
   wire32_t imm; // 好像不用32bit 先用着
   wire32_t pc;  // 未来将会优化pc的获取
-  wire4_t tag;
+  wire5_t tag;
   wire12_t csr_idx;
   wire7_t rob_idx;
   wire4_t stq_idx;
@@ -195,11 +197,6 @@ typedef struct {
   wire7_t preg;
   wire2_t latency;
 } Wake_info;
-
-typedef Inst_entry Inst_entry_reg;
-typedef Inst_entry Inst_entry_wire;
-typedef Inst_uop Inst_uop_reg;
-typedef Inst_uop Inst_uop_wire;
 
 class Perf_count {
 public:
@@ -238,9 +235,12 @@ public:
   uint64_t ret_addr_mispred = 0;
 
   uint64_t rob_entry_stall = 0;
-  uint64_t isu_entry_stall = 0;
   uint64_t idu_br_stall = 0;
   uint64_t idu_tag_stall = 0;
+
+  uint64_t isu_entry_stall[IQ_NUM];
+  uint64_t isu_raw_stall[IQ_NUM];
+  uint64_t isu_ready_num[IQ_NUM];
 
   void perf_reset() {
     cycle = 0;
@@ -348,8 +348,22 @@ public:
     printf("\033[1;32mdir  error : %ld\033[0m\n", ret_dir_mispred);
     printf("\n");
     printf("\033[1;32m*********STALL COUNTER************\033[0m\n");
-    printf("\033[1;32mrob  stall : %ld\033[0m\n", rob_entry_stall);
-    printf("\033[1;32miss  stall : %ld\033[0m\n", isu_entry_stall);
+    printf("\033[1;32mrob     stall : %ld\033[0m\n", rob_entry_stall);
+    printf("\033[1;32midu br  stall : %ld\033[0m\n", idu_br_stall);
+    printf("\033[1;32midu tag stall : %ld\033[0m\n", idu_tag_stall);
+    printf("\n");
+    printf("\033[1;32m*********ISU COUNTER************\033[0m\n");
+
+    for (int i = 0; i < IQ_NUM; i++) {
+      printf("\033[1;32miss     stall : %ld\033[0m\n", isu_entry_stall[i]);
+    }
+    for (int i = 0; i < IQ_NUM; i++) {
+      printf("\033[1;32miq%d ready  num : %f\033[0m\n", i,
+             isu_ready_num[i] / (double)cycle);
+    }
+    for (int i = 0; i < IQ_NUM; i++) {
+      printf("\033[1;32miq%d raw  num : %ld\033[0m\n", i, isu_raw_stall[i]);
+    }
   }
 };
 

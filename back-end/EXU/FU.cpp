@@ -30,12 +30,6 @@ enum STATE { IDLE, RECV };
 #define BGEU 0b111
 
 void mul(Inst_uop &inst) {
-  // static bool use_mul = false;
-  //
-  // if (!use_mul) {
-  //   printf("MUL INST\n");
-  //   use_mul = true;
-  // }
   switch (inst.func3) {
   case 0: { // mul
     inst.result = (int32_t)inst.src1_rdata * (int32_t)inst.src2_rdata;

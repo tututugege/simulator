@@ -17,11 +17,12 @@ public:
   Inst_entry deq();
   void enq(Inst_uop &inst);
   int entry_num;
+  int type;
 
-  vector<Inst_entry_reg> entry;
+  vector<Inst_entry> entry;
   int num; // 电路中不一定要有这个东西
 
-  vector<Inst_entry_wire> entry_1;
+  vector<Inst_entry> entry_1;
   int num_1;
 };
 

@@ -33,13 +33,13 @@ public:
   ROB_OUT out;
 
   // 状态
-  Inst_entry_reg entry[ROB_BANK_NUM][ROB_NUM / 4];
+  Inst_entry entry[ROB_BANK_NUM][ROB_NUM / 4];
   reg7_t enq_ptr;
   reg7_t deq_ptr;
   reg7_t count;
   reg1_t flag;
 
-  Inst_entry_wire entry_1[ROB_BANK_NUM][ROB_NUM / 4];
+  Inst_entry entry_1[ROB_BANK_NUM][ROB_NUM / 4];
   wire7_t enq_ptr_1;
   wire7_t deq_ptr_1;
   wire7_t count_1;

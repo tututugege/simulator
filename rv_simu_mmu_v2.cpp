@@ -1,6 +1,5 @@
 #include "BPU/target_predictor/btb.h"
 #include "CSR.h"
-#include "frontend.h"
 #include "ref.h"
 #include <MMU.h>
 #include <RISCV.h>
@@ -331,7 +330,6 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
   return ret;
 }
 
-// bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
 bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
                bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load) {
   uint32_t p_addr = v_addr;

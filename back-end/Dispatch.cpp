@@ -221,7 +221,7 @@ void Dispatch::comb_dispatch() {
         to_iq[IQ_INTM][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         switch (inst_r[i].uop.type) {
-        case NONE:
+        case NOP:
           pre_dis_uop[3 * i].uop.op = UOP_ADD;
           break;
         case CSR:
@@ -321,6 +321,12 @@ void Dispatch::comb_fire() {
     for (int j = 0; j < IQ_NUM; j++) {
       if (to_iq[j][i]) {
         iss_ready[i] = iss_ready[i] && uop_sel[j][i];
+
+#ifdef CONFIG_PERF_COUNTER
+        if (!uop_sel[j][i]) {
+          perf.isu_entry_stall[j]++;
+        }
+#endif
       }
     }
   }
@@ -360,7 +366,7 @@ void Dispatch::comb_fire() {
       } else if (is_store(inst_r[i].uop)) {
 
       } else if (!iss_ready[i]) {
-        perf.isu_entry_stall++;
+        // perf.isu_entry_stall++;
       }
     }
 #endif

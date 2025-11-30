@@ -9,6 +9,7 @@ void ISU::add_iq(int entry_num, int type) { iq.push_back(IQ(entry_num, type)); }
 IQ::IQ(int entry_num, int type) {
   vector<Inst_entry> new_iq(entry_num);
   this->entry_num = entry_num;
+  this->type = type;
   this->num = this->num_1 = 0;
 
   entry.resize(entry_num);
@@ -20,8 +21,8 @@ IQ::IQ(int entry_num, int type) {
 }
 
 void ISU::init() {
-  add_iq(16, IQ_INTM);
-  add_iq(16, IQ_INTD);
+  add_iq(32, IQ_INTM);
+  add_iq(32, IQ_INTD);
   add_iq(16, IQ_LD);
   add_iq(16, IQ_STA);
   add_iq(16, IQ_STD);
@@ -45,9 +46,16 @@ void IQ::enq(Inst_uop &inst) {
 Inst_entry IQ::deq() {
 
   Inst_entry ret = scheduler();
+
   if (ret.valid) {
     num_1--;
   }
+
+#ifdef CONFIG_PERF_COUNTER
+  if (num > 0 && !ret.valid) {
+    perf.isu_raw_stall[type]++;
+  }
+#endif
 
   return ret;
 }
@@ -161,7 +169,7 @@ void ISU::comb_branch() {
 void ISU::comb_flush() {
   if (in.rob_bcast->flush) {
     for (auto &q : iq) {
-      q.br_clear((1 << MAX_BR_NUM) - 1);
+      q.br_clear((1L << MAX_BR_NUM) - 1);
     }
   }
 }
@@ -171,6 +179,19 @@ void ISU::seq() {
     q.num = q.num_1;
     q.entry = q.entry_1;
   }
+
+#ifdef CONFIG_PERF_COUNTER
+  for (auto q : iq) {
+    for (auto e : q.entry) {
+      if (e.valid && (!e.uop.src1_en || !e.uop.src1_busy) &&
+          (!e.uop.src2_en || !e.uop.src2_busy) &&
+          !(is_load_uop(e.uop.op) &&
+            (e.uop.pre_sta_mask || e.uop.pre_std_mask))) {
+        perf.isu_ready_num[q.type]++;
+      }
+    }
+  }
+#endif
 }
 
 void IQ::br_clear(uint32_t br_mask) {

@@ -37,7 +37,7 @@ public:
   void seq();
 
   // register
-  Inst_entry_reg inst_r[FETCH_WIDTH];
+  Inst_entry inst_r[FETCH_WIDTH];
   reg7_t arch_RAT[ARF_NUM + 1];
   reg7_t spec_RAT[ARF_NUM + 1];
   reg7_t RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
@@ -46,7 +46,7 @@ public:
   reg1_t busy_table[PRF_NUM];
   reg1_t spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
-  Inst_entry_wire inst_r_1[FETCH_WIDTH];
+  Inst_entry inst_r_1[FETCH_WIDTH];
   wire7_t arch_RAT_1[ARF_NUM + 1];
   wire7_t spec_RAT_1[ARF_NUM + 1];
   wire7_t RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];

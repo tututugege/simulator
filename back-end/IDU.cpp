@@ -5,10 +5,17 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cvt.h>
+#include <filesystem>
 #include <util.h>
+#define ENABLE_MULTI_BR
 
 // 中间信号
-static wire4_t alloc_tag; // 新tag
+#ifdef ENABLE_MULTI_BR
+#define MAX_TAG_ALLOC_NUM 2
+static wire5_t alloc_tag[MAX_TAG_ALLOC_NUM]; // 新tag
+#else
+static wire5_t alloc_tag; // 新tag
+#endif
 
 void decode(Inst_uop &uop, uint32_t instructinn);
 
@@ -23,6 +30,90 @@ void IDU::init() {
   enq_ptr_1 = enq_ptr = 1;
 }
 
+#ifdef ENABLE_MULTI_BR
+// 译码并分配tag
+void IDU::comb_decode() {
+
+  wire1_t alloc_valid[MAX_TAG_ALLOC_NUM];
+  int alloc_num = 0;
+  int i;
+  for (i = 0; i < MAX_BR_NUM && alloc_num < MAX_TAG_ALLOC_NUM; i++) {
+    if (tag_vec[i]) {
+      alloc_tag[alloc_num] = i;
+      alloc_valid[alloc_num] = true;
+      alloc_num++;
+    }
+  }
+
+  if (i == MAX_BR_NUM) {
+    for (int i = alloc_num; i < MAX_TAG_ALLOC_NUM; i++) {
+      alloc_tag[i] = 0;
+      alloc_valid[i] = false;
+    }
+  }
+
+  for (i = 0; i < FETCH_WIDTH; i++) {
+    if (in.front2dec->valid[i]) {
+      out.dec2ren->valid[i] = true;
+      if (in.front2dec->page_fault_inst[i]) {
+        out.dec2ren->uop[i].uop_num = 1;
+        out.dec2ren->uop[i].page_fault_inst = true;
+        out.dec2ren->uop[i].page_fault_load = false;
+        out.dec2ren->uop[i].page_fault_store = false;
+        out.dec2ren->uop[i].type = NOP;
+        out.dec2ren->uop[i].src1_en = out.dec2ren->uop[i].src2_en =
+            out.dec2ren->uop[i].dest_en = false;
+      } else {
+        // 实际电路中4个译码电路每周期无论是否valid都会运行
+        decode(out.dec2ren->uop[i], in.front2dec->inst[i]);
+      }
+    } else {
+      out.dec2ren->valid[i] = false;
+      continue;
+    }
+
+    out.dec2ren->uop[i].pc = in.front2dec->pc[i];
+    out.dec2ren->uop[i].pred_br_taken = in.front2dec->predict_dir[i];
+    out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
+    out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
+    out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
+    out.dec2ren->uop[i].pred_br_pc =
+        in.front2dec->predict_next_fetch_address[i];
+
+    // for debug
+    if (is_branch(out.dec2ren->uop[i].type)) {
+      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
+    } else {
+      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
+    }
+  }
+
+  int br_num = 0;
+  bool stall = false;
+  for (i = 0; i < FETCH_WIDTH; i++) {
+    out.dec2ren->uop[i].tag = (br_num == 0) ? now_tag : alloc_tag[br_num - 1];
+    if (in.front2dec->valid[i] && is_branch(out.dec2ren->uop[i].type)) {
+      if (!alloc_valid[br_num]) {
+#ifdef CONFIG_PERF_COUNTER
+        perf.idu_tag_stall++;
+#endif
+        stall = true;
+        break;
+      } else {
+        br_num++;
+      }
+    }
+  }
+
+  if (stall) {
+    for (; i < FETCH_WIDTH; i++) {
+      out.dec2ren->valid[i] = false;
+      out.dec2ren->uop[i].tag = 0;
+    }
+  }
+}
+
+#else
 // 译码并分配tag
 void IDU::comb_decode() {
   wire1_t no_tag = false;
@@ -37,7 +128,7 @@ void IDU::comb_decode() {
       break;
   }
 
-  // 无剩余的tag 相当于 tag_vec == 16'b0
+  // 无剩余的tag 相当于 tag_vec == 0
   if (alloc_tag == MAX_BR_NUM) {
     no_tag = true;
     alloc_tag = 0;
@@ -52,7 +143,7 @@ void IDU::comb_decode() {
         out.dec2ren->uop[i].page_fault_inst = true;
         out.dec2ren->uop[i].page_fault_load = false;
         out.dec2ren->uop[i].page_fault_store = false;
-        out.dec2ren->uop[i].type = NONE;
+        out.dec2ren->uop[i].type = NOP;
         out.dec2ren->uop[i].src1_en = out.dec2ren->uop[i].src2_en =
             out.dec2ren->uop[i].dest_en = false;
       } else {
@@ -84,6 +175,13 @@ void IDU::comb_decode() {
       if (!no_tag && !has_br) {
         has_br = true;
       } else {
+#ifdef CONFIG_PERF_COUNTER
+        if (has_br)
+          perf.idu_br_stall++;
+        if (no_tag)
+          perf.idu_tag_stall++;
+#endif
+
         stall = true;
         break;
       }
@@ -96,6 +194,7 @@ void IDU::comb_decode() {
     }
   }
 }
+#endif
 
 void IDU::comb_branch() {
   // 如果一周期实现不方便，可以用状态机多周期实现
@@ -143,16 +242,18 @@ void IDU::comb_fire() {
     }
   }
 
+  int br_num = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.dec2front->fire[i] = out.dec2ren->valid[i] && in.ren2dec->ready;
     out.dec2front->ready = out.dec2front->ready &&
                            (!in.front2dec->valid[i] || out.dec2ren->valid[i]);
 
     if (out.dec2front->fire[i] && is_branch(out.dec2ren->uop[i].type)) {
-      now_tag_1 = alloc_tag;
-      tag_vec_1[alloc_tag] = false;
-      tag_list_1[enq_ptr] = alloc_tag;
+      now_tag_1 = alloc_tag[br_num];
+      tag_vec_1[alloc_tag[br_num]] = false;
+      tag_list_1[enq_ptr_1] = alloc_tag[br_num];
       LOOP_INC(enq_ptr_1, MAX_BR_NUM);
+      br_num++;
     }
   }
 }
@@ -242,7 +343,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
   uop.page_fault_load = false;
   uop.page_fault_store = false;
   uop.illegal_inst = false;
-  uop.type = NONE;
+  uop.type = NOP;
   uop.amoop = AMONONE;
   uop.inst_idx = sim_time;
 
@@ -372,11 +473,11 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = false;
     uop.src2_en = false;
-    uop.type = NONE;
+    uop.type = NOP;
     break;
   }
-  case number_10_opcode_ecall: { // ecall, ebreak, csrrw, csrrs, csrrc, csrrwi,
-                                 // csrrsi, csrrci
+  case number_10_opcode_ecall: { // ecall, ebreak, csrrw, csrrs, csrrc,
+                                 // csrrwi, csrrsi, csrrci
     uop.src2_is_imm = bit_funct3[0] && (bit_funct3[2] || bit_funct3[1]);
 
     if (bit_funct3[2] || bit_funct3[1]) {
@@ -391,7 +492,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
           csr_idx != number_sie && csr_idx != number_sip &&
           csr_idx != number_satp && csr_idx != number_mhartid &&
           csr_idx != number_misa) {
-        uop.type = NONE;
+        uop.type = NOP;
         uop.dest_en = false;
         uop.src1_en = false;
         uop.src2_en = false;
@@ -418,7 +519,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
       } else if (inst == INST_MRET) {
         uop.type = MRET;
       } else if (inst == INST_WFI) {
-        uop.type = NONE;
+        uop.type = NOP;
       } else if (inst == INST_SRET) {
         uop.type = SRET;
       } else if (number_funct7_unsigned == 0b0001001 &&
@@ -427,7 +528,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
         uop.src1_en = true;
         uop.src2_en = true;
       } else {
-        uop.type = NONE;
+        uop.type = NOP;
         /*uop[0].illegal_inst = true;*/
         /*cout << hex << inst << endl;*/
         /*assert(0);*/
@@ -500,7 +601,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = false;
     uop.src2_en = false;
-    uop.type = NONE;
+    uop.type = NOP;
     uop.illegal_inst = true;
     break;
   }

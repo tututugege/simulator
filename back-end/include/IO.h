@@ -13,11 +13,11 @@ typedef struct {
   reg1_t addr_valid;
   reg1_t data_valid;
   reg1_t valid;
-  reg4_t tag;
+  reg5_t tag;
 } STQ_entry;
 
 typedef struct {
-  Inst_uop_wire uop[FETCH_WIDTH]; // 3 2 2 2
+  Inst_uop uop[FETCH_WIDTH]; // 3 2 2 2
   wire1_t valid[FETCH_WIDTH];
 } Dec_Ren;
 
@@ -45,13 +45,13 @@ typedef struct {
 
 typedef struct {
   wire1_t mispred;
-  wire16_t br_mask;
-  wire4_t br_tag;
+  wire32_t br_mask;
+  wire5_t br_tag;
   wire7_t redirect_rob_idx;
 } Dec_Broadcast;
 
 typedef struct {
-  Inst_entry_wire commit_entry[COMMIT_WIDTH];
+  Inst_entry commit_entry[COMMIT_WIDTH];
 } Rob_Commit;
 
 typedef struct {
@@ -63,13 +63,13 @@ typedef struct {
 } Rob_Dis;
 
 typedef struct {
-  Inst_uop_wire uop[FETCH_WIDTH];
+  Inst_uop uop[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
   wire1_t dis_fire[FETCH_WIDTH];
 } Dis_Rob;
 
 typedef struct {
-  Inst_uop_wire uop[FETCH_WIDTH];
+  Inst_uop uop[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
 } Ren_Dis;
 
@@ -82,7 +82,7 @@ typedef struct {
 } Prf_Awake;
 
 typedef struct {
-  Inst_uop_wire uop[IQ_NUM][2];
+  Inst_uop uop[IQ_NUM][2];
   wire1_t valid[IQ_NUM][2];
   wire1_t dis_fire[IQ_NUM][2];
 } Dis_Iss;
@@ -137,11 +137,11 @@ typedef struct {
   wire1_t mispred;
   wire32_t redirect_pc;
   wire7_t redirect_rob_idx;
-  wire4_t br_tag;
+  wire5_t br_tag;
 } Prf_Dec;
 
 typedef struct {
-  wire4_t tag[FETCH_WIDTH];
+  wire5_t tag[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
   wire1_t dis_fire[FETCH_WIDTH];
 } Dis_Stq;
