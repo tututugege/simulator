@@ -104,6 +104,11 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
           fifo_in.predecode_target_address[i] = 0;
         }
       }
+      uint32_t mask = 0xFFFFFFE0;
+      fifo_in.seq_next_pc = icache_out.fetch_pc + (FETCH_WIDTH * 4);
+      if((fifo_in.seq_next_pc & mask) != (icache_out.fetch_pc & mask)) {
+        fifo_in.seq_next_pc &= mask;
+      }
     }
 
   } else {
@@ -171,6 +176,7 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
       predecode_checker_in.predecode_target_address[i] = fifo_out.predecode_target_address[i];
     }
     DEBUG_LOG_SMALL_3("ptab_out.predict_next_fetch_address: %x\n", ptab_out.predict_next_fetch_address);
+    predecode_checker_in.seq_next_pc = fifo_out.seq_next_pc;
     predecode_checker_in.predict_next_fetch_address = ptab_out.predict_next_fetch_address;
     predecode_checker_top(&predecode_checker_in, &predecode_checker_out);
 
@@ -232,9 +238,9 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
     out->inst_valid[i] = true; // when not using true icache model, all instructions are valid
 #endif
 
-    if(out->pc[i] == 0x80000a48) {
-      DEBUG_LOG_SMALL_2("out->pc[%d]: %x, pred_addr: %x\n", i, out->pc[i], front2back_fifo_out.predict_next_fetch_address_corrected);
-    }
+    // if(out->pc[i] == 0x80000a48) {
+    //   DEBUG_LOG_SMALL_2("out->pc[%d]: %x, pred_addr: %x\n", i, out->pc[i], front2back_fifo_out.predict_next_fetch_address_corrected);
+    // }
   }
   DEBUG_LOG_SMALL_3("front2back_fifo_out.predict_next_fetch_address_corrected: %x\n", front2back_fifo_out.predict_next_fetch_address_corrected);
   out->predict_next_fetch_address = front2back_fifo_out.predict_next_fetch_address_corrected;

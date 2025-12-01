@@ -32,14 +32,14 @@ public:
   void seq();              // 时钟跳变，状态更新
 
   // 状态
-  reg5_t tag_list[MAX_BR_NUM];
-  reg5_t enq_ptr;
+  reg4_t tag_list[MAX_BR_NUM];
+  reg4_t enq_ptr;
   reg1_t tag_vec[MAX_BR_NUM];
-  reg5_t now_tag;
+  reg4_t now_tag;
 
   // 下一周期状态
-  wire5_t tag_list_1[MAX_BR_NUM];
-  wire5_t enq_ptr_1;
+  wire4_t tag_list_1[MAX_BR_NUM];
+  wire4_t enq_ptr_1;
   wire1_t tag_vec_1[MAX_BR_NUM];
-  wire5_t now_tag_1;
+  wire4_t now_tag_1;
 };

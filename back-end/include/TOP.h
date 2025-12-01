@@ -48,8 +48,8 @@ public:
   Back_in in;
   Back_out out;
   void init();
-  void Back_comb();
-  void Back_seq();
+  void comb();
+  void seq();
 
   // debug
   void difftest_inst(Inst_uop *inst);

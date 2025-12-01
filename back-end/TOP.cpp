@@ -83,12 +83,6 @@ void Back_Top::difftest_inst(Inst_uop *inst) {
     }
   } else if (inst->type == BR) {
     perf.cond_br_num++;
-  } else if (inst->type == JAL) {
-    if (inst->dest_areg == 1) {
-      perf.call_br_num++;
-    } else {
-      perf.jal_br_num++;
-    }
   }
 
   if (inst->mispred) {
@@ -115,23 +109,6 @@ void Back_Top::difftest_inst(Inst_uop *inst) {
         perf.cond_addr_mispred++;
       }
       perf.cond_mispred_num++;
-    } else if (inst->type == JAL) {
-
-      if (inst->dest_areg == 1) {
-        perf.call_mispred_num++;
-        if (!inst->pred_br_taken) {
-          perf.call_dir_mispred++;
-        } else {
-          perf.call_addr_mispred++;
-        }
-      } else {
-        perf.jal_mispred_num++;
-        if (!inst->pred_br_taken) {
-          perf.jal_dir_mispred++;
-        } else {
-          perf.jal_addr_mispred++;
-        }
-      }
     }
   }
 
@@ -327,7 +304,7 @@ void Back_Top::init() {
   rob.init();
 }
 
-void Back_Top::Back_comb() {
+void Back_Top::comb() {
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
     idu.in.front2dec->valid[i] = in.valid[i];
@@ -431,7 +408,7 @@ void Back_Top::Back_comb() {
   rename.comb_pipeline();
 }
 
-void Back_Top::Back_seq() {
+void Back_Top::seq() {
   // rename -> isu/stq/rob
   // exu -> prf
   rename.seq();

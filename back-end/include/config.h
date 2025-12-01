@@ -32,16 +32,16 @@ typedef wire4_t Amo_op;
 
 using namespace std;
 
+#define MAX_SIM_TIME 1000000000
+
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
 
-#define MAX_SIM_TIME 100000000000
 #define ISSUE_WAY IQ_NUM
-#define MAX_UOP_NUM 3
 
 #define ARF_NUM 32
 #define PRF_NUM 128
-#define MAX_BR_NUM 32
+#define MAX_BR_NUM 16
 
 #define CSR_NUM 21
 
@@ -59,13 +59,14 @@ using namespace std;
 
 extern long long sim_time;
 
-// #define HAS_MMU
-
-// #define CONFIG_DIFFTEST
-#define CONFIG_BPU
-#define CONFIG_PERF_COUNTER
+#define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
 // #define CONFIG_RUN_REF_PRINT
+
+#define CONFIG_PERF_COUNTER
+#define CONFIG_BPU
+// #define CONFIG_MMU
+// #define ENABLE_MULTI_BR
 
 /*
  * 宽松的va2pa检查：
@@ -133,7 +134,7 @@ extern long long sim_time;
 typedef struct Inst_uop {
   wire32_t instruction;
 
-  wire5_t dest_areg, src1_areg, src2_areg;
+  wire6_t dest_areg, src1_areg, src2_areg;
   wire7_t dest_preg, src1_preg, src2_preg; // log2(ROB_NUM)
   wire7_t old_dest_preg;
   wire32_t src1_rdata, src2_rdata;
@@ -160,7 +161,7 @@ typedef struct Inst_uop {
   wire1_t func7_5;
   wire32_t imm; // 好像不用32bit 先用着
   wire32_t pc;  // 未来将会优化pc的获取
-  wire5_t tag;
+  wire4_t tag;
   wire12_t csr_idx;
   wire7_t rob_idx;
   wire4_t stq_idx;
@@ -209,18 +210,11 @@ public:
 
   uint64_t cond_br_num = 0;
   uint64_t jalr_br_num = 0;
-  uint64_t jal_br_num = 0;
-  uint64_t call_br_num = 0;
   uint64_t ret_br_num = 0;
 
   uint64_t cond_mispred_num = 0;
   uint64_t jalr_mispred_num = 0;
-  uint64_t jal_mispred_num = 0;
-  uint64_t call_mispred_num = 0;
   uint64_t ret_mispred_num = 0;
-
-  uint64_t jal_dir_mispred = 0;
-  uint64_t jal_addr_mispred = 0;
 
   uint64_t jalr_dir_mispred = 0;
   uint64_t jalr_addr_mispred = 0;
@@ -228,14 +222,12 @@ public:
   uint64_t cond_dir_mispred = 0;
   uint64_t cond_addr_mispred = 0;
 
-  uint64_t call_dir_mispred = 0;
-  uint64_t call_addr_mispred = 0;
-
   uint64_t ret_dir_mispred = 0;
   uint64_t ret_addr_mispred = 0;
 
   uint64_t rob_entry_stall = 0;
   uint64_t idu_br_stall = 0;
+  uint64_t ren_reg_stall = 0;
   uint64_t idu_tag_stall = 0;
 
   uint64_t isu_entry_stall[IQ_NUM];
@@ -252,27 +244,17 @@ public:
     // bpu
     cond_br_num = 0;
     jalr_br_num = 0;
-    jal_br_num = 0;
-    call_br_num = 0;
     ret_br_num = 0;
 
     cond_mispred_num = 0;
     jalr_mispred_num = 0;
-    jal_mispred_num = 0;
-    call_mispred_num = 0;
     ret_mispred_num = 0;
-
-    jal_dir_mispred = 0;
-    jal_addr_mispred = 0;
 
     jalr_dir_mispred = 0;
     jalr_addr_mispred = 0;
 
     cond_dir_mispred = 0;
     cond_addr_mispred = 0;
-
-    call_dir_mispred = 0;
-    call_addr_mispred = 0;
 
     ret_dir_mispred = 0;
     ret_addr_mispred = 0;
@@ -303,18 +285,8 @@ public:
   void perf_print_branch() {
     printf("\033[1;32m*********BPU COUNTER************\033[0m\n");
     printf("\033[1;32mbpu   accuracy : %f\033[0m\n\n",
-           1 - (cond_mispred_num + jalr_mispred_num + jal_mispred_num +
-                call_mispred_num + ret_mispred_num) /
-                   (double)(cond_br_num + jalr_br_num + jal_br_num +
-                            call_br_num + ret_br_num));
-
-    printf("\033[1;32mjal   accuracy : %f\033[0m\n",
-           1 - (jal_mispred_num) / (double)(jal_br_num));
-    printf("\033[1;32mnum        : %ld\033[0m\n", jal_br_num);
-    printf("\033[1;32mmispred    : %ld\033[0m\n", jal_mispred_num);
-    printf("\033[1;32maddr error : %ld\033[0m\n", jal_addr_mispred);
-    printf("\033[1;32mdir  error : %ld\033[0m\n", jal_dir_mispred);
-    printf("\n");
+           1 - (cond_mispred_num + jalr_mispred_num + ret_mispred_num) /
+                   (double)(cond_br_num + jalr_br_num + ret_br_num));
 
     printf("\033[1;32mjalr  accuracy : %f\033[0m\n",
            1 - (jalr_mispred_num) / (double)(jalr_br_num));
@@ -332,14 +304,6 @@ public:
     printf("\033[1;32mdir  error : %ld\033[0m\n", cond_dir_mispred);
     printf("\n");
 
-    printf("\033[1;32mcall  accuracy : %f\033[0m\n",
-           1 - (call_mispred_num) / (double)(call_br_num));
-    printf("\033[1;32mnum        : %ld\033[0m\n", call_br_num);
-    printf("\033[1;32mmispred    : %ld\033[0m\n", call_mispred_num);
-    printf("\033[1;32maddr error : %ld\033[0m\n", call_addr_mispred);
-    printf("\033[1;32mdir  error : %ld\033[0m\n", call_dir_mispred);
-    printf("\n");
-
     printf("\033[1;32mret    accuracy : %f\033[0m\n",
            1 - (ret_mispred_num) / (double)(ret_br_num));
     printf("\033[1;32mnum        : %ld\033[0m\n", ret_br_num);
@@ -351,6 +315,7 @@ public:
     printf("\033[1;32mrob     stall : %ld\033[0m\n", rob_entry_stall);
     printf("\033[1;32midu br  stall : %ld\033[0m\n", idu_br_stall);
     printf("\033[1;32midu tag stall : %ld\033[0m\n", idu_tag_stall);
+    printf("\033[1;32mren reg stall : %ld\033[0m\n", ren_reg_stall);
     printf("\n");
     printf("\033[1;32m*********ISU COUNTER************\033[0m\n");
 

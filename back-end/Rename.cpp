@@ -17,6 +17,7 @@ static wire1_t free_vec_normal[PRF_NUM];
 static wire7_t spec_RAT_flush[ARF_NUM + 1];
 static wire7_t spec_RAT_mispred[ARF_NUM + 1];
 static wire7_t spec_RAT_normal[ARF_NUM + 1];
+static wire1_t busy_table_awake[PRF_NUM];
 
 // difftest
 extern Back_Top back;
@@ -32,11 +33,15 @@ Rename::Rename() {
 
     // 初始化的时候平均分到free_vec的四个部分
     if (i < ARF_NUM) {
-      spec_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
-      arch_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
-      free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = false;
+      // spec_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
+      // arch_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
+      // free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = false;
+      spec_RAT[i] = i;
+      arch_RAT[i] = i;
+      free_vec[i] = false;
+
     } else {
-      free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = true;
+      free_vec[i] = true;
     }
   }
 
@@ -65,16 +70,25 @@ void Rename::comb_alloc() {
   // 可用寄存器个数 每周期最多使用FETCH_WIDTH个
   wire7_t alloc_reg[FETCH_WIDTH];
   wire1_t alloc_valid[FETCH_WIDTH] = {false};
+  int alloc_num = 0;
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    for (int j = 0; j < ALLOC_NUM; j++) {
-      if (free_vec[i * ALLOC_NUM + j]) {
-        alloc_reg[i] = i * ALLOC_NUM + j;
-        alloc_valid[i] = true;
-        break;
-      }
+  for (int i = 0; i < PRF_NUM && alloc_num < FETCH_WIDTH; i++) {
+    if (free_vec[i]) {
+      alloc_valid[alloc_num] = true;
+      alloc_reg[alloc_num] = i;
+      alloc_num++;
     }
   }
+
+  // for (int i = 0; i < FETCH_WIDTH; i++) {
+  //   for (int j = 0; j < ALLOC_NUM; j++) {
+  //     if (free_vec[i * ALLOC_NUM + j]) {
+  //       alloc_reg[i] = i * ALLOC_NUM + j;
+  //       alloc_valid[i] = true;
+  //       break;
+  //     }
+  //   }
+  // }
 
   // stall相当于需要查看前一条指令是否stall
   // 一条指令stall，后面的也stall
@@ -92,17 +106,22 @@ void Rename::comb_alloc() {
       out.ren2dis->valid[i] = false;
     }
   }
+
+#ifdef CONFIG_PERF_COUNTER
+  if (stall)
+    perf.ren_reg_stall++;
+#endif
 }
 
 void Rename::comb_wake() {
   // busy_table wake up
   if (in.prf_awake->wake.valid) {
-    busy_table_1[in.prf_awake->wake.preg] = false;
+    busy_table_awake[in.prf_awake->wake.preg] = false;
   }
 
   for (int i = 0; i < ALU_NUM; i++) {
     if (in.iss_awake->wake[i].valid) {
-      busy_table_1[in.iss_awake->wake[i].preg] = false;
+      busy_table_awake[in.iss_awake->wake[i].preg] = false;
     }
   }
 }
@@ -128,9 +147,9 @@ void Rename::comb_rename() {
     old_dest_preg_normal[i] = spec_RAT[inst_r[i].uop.dest_areg];
     src1_preg_normal[i] = spec_RAT[inst_r[i].uop.src1_areg];
     src2_preg_normal[i] = spec_RAT[inst_r[i].uop.src2_areg];
-    // 用busy_table_1  存在隐藏的唤醒的bypass
-    src1_busy_normal[i] = busy_table_1[src1_preg_normal[i]];
-    src2_busy_normal[i] = busy_table_1[src2_preg_normal[i]];
+    // 用busy_table_awake  存在隐藏的唤醒的bypass
+    src1_busy_normal[i] = busy_table_awake[src1_preg_normal[i]];
+    src2_busy_normal[i] = busy_table_awake[src2_preg_normal[i]];
   }
 
   // 针对RAT 和busy_table的raw的bypass
@@ -198,6 +217,7 @@ void Rename::comb_rename() {
 }
 
 void Rename::comb_fire() {
+  memcpy(busy_table_1, busy_table_awake, sizeof(wire1_t) * PRF_NUM);
   for (int i = 0; i < FETCH_WIDTH; i++) {
     fire[i] = out.ren2dis->valid[i] && in.dis2ren->ready;
   }
@@ -358,6 +378,7 @@ void Rename ::seq() {
   memcpy(spec_RAT_normal, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
   // memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
   // memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM + 1) * sizeof(reg7_t));
+  memcpy(busy_table_awake, busy_table, PRF_NUM * sizeof(wire1_t));
 
   // 监控是否产生寄存器泄露
   // 每次flush时 free_vec_num应该等于 PRF_NUM - ARF_NUM

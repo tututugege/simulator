@@ -25,7 +25,6 @@ void STQ::comb() {
     }
   }
 
-  // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].commit) {
     extern uint32_t *p_memory;
     uint32_t wdata = entry[deq_ptr].data;

@@ -1,5 +1,6 @@
 #include "../front_IO.h"
 #include "../frontend.h"
+#include "config.h"
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -21,9 +22,7 @@ uint32_t pc_reg;
 int tage_cnt = 0;
 int tage_miss = 0;
 
-void BPU_change_pc_reg(uint32_t new_pc) {
-  pc_reg = new_pc;
-}
+void BPU_change_pc_reg(uint32_t new_pc) { pc_reg = new_pc; }
 
 void BPU_top(struct BPU_in *in, struct BPU_out *out) {
   // generate pc_reg sending to icache
@@ -92,7 +91,8 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
     // do branch prediction
     // traverse instructions in fetch_group, find the first TAGE prediction
     // that is taken
-    out->PTAB_write_enable = true; // now can always give one prediction at one cycle
+    out->PTAB_write_enable =
+        true; // now can always give one prediction at one cycle
     bool found_taken_branch = false;
     uint32_t branch_pc = pc_reg;
 
@@ -106,24 +106,32 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
     // }
 #endif
 
+    uint32_t mask = 0xFFFFFFE0;
+
     // do TAGE for FETCH_WIDTH instructions
+    uint32_t pc_boundry = pc_reg + (FETCH_WIDTH * 4);
+    if ((pc_reg & mask) != (pc_boundry & mask)) {
+      pc_boundry = pc_boundry & mask;
+    }
     for (int i = 0; i < FETCH_WIDTH; i++) {
       uint32_t current_pc = pc_reg + (i * 4);
       out->predict_base_pc[i] = current_pc;
+      if (current_pc < pc_boundry) { // 检查是否超出cacheline边界
 #ifndef IO_version
-      pred_out pred_out = TAGE_get_prediction(current_pc);
+        pred_out pred_out = TAGE_get_prediction(current_pc);
 #else
-      pred_out pred_out = C_TAGE_do_pred_wrapper(current_pc);
+        pred_out pred_out = C_TAGE_do_pred_wrapper(current_pc);
 #endif
-      out->predict_dir[i] = pred_out.pred;
-      out->alt_pred[i] = pred_out.altpred;
-      out->pcpn[i] = pred_out.pcpn;
-      out->altpcpn[i] = pred_out.altpcpn;
-      DEBUG_LOG("[BPU_top] predict_dir[%d]: %d, pc: %x\n", i,
-                out->predict_dir[i], current_pc);
-      if (out->predict_dir[i] && !found_taken_branch) {
-        found_taken_branch = true;
-        branch_pc = current_pc;
+        out->predict_dir[i] = pred_out.pred;
+        out->alt_pred[i] = pred_out.altpred;
+        out->pcpn[i] = pred_out.pcpn;
+        out->altpcpn[i] = pred_out.altpcpn;
+        DEBUG_LOG("[BPU_top] predict_dir[%d]: %d, pc: %x\n", i,
+                  out->predict_dir[i], current_pc);
+        if (out->predict_dir[i] && !found_taken_branch) {
+          found_taken_branch = true;
+          branch_pc = current_pc;
+        }
       }
     }
 
@@ -140,12 +148,12 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
     } else {
       // no prediction for taken branches, execute sequentially
       out->predict_next_fetch_address = pc_reg + (FETCH_WIDTH * 4);
-      uint32_t mask = 0xFFFFFFE0;
       if ((out->predict_next_fetch_address & mask) !=
           (pc_reg & mask)) { // cross cacheline boundary(32 bytes)
         out->predict_next_fetch_address &= mask;
-        DEBUG_LOG("[BPU_top] cross cacheline boundary, next_fetch_address: %x\n",
-          out->predict_next_fetch_address);
+        DEBUG_LOG(
+            "[BPU_top] cross cacheline boundary, next_fetch_address: %x\n",
+            out->predict_next_fetch_address);
       }
     }
     pc_reg = out->predict_next_fetch_address;

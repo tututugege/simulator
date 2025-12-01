@@ -10,7 +10,7 @@
 
 /*#define IO_version*/
 
-#define RAS_ENABLE // if not defined, return address is predicted by BTB
+// #define RAS_ENABLE  // if not defined, return address is predicted by BTB
 
 #define DEBUG_PRINT 0
 #define DEBUG_LOG(fmt, ...)                                                    \

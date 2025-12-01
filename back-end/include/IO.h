@@ -45,7 +45,7 @@ typedef struct {
 
 typedef struct {
   wire1_t mispred;
-  wire32_t br_mask;
+  wire16_t br_mask;
   wire5_t br_tag;
   wire7_t redirect_rob_idx;
 } Dec_Broadcast;

@@ -12,6 +12,7 @@ struct predecode_checker_in {
   // from instFIFO
   uint8_t predecode_type[FETCH_WIDTH];
   uint32_t predecode_target_address[FETCH_WIDTH];
+  uint32_t seq_next_pc;
 };
 
 struct predecode_checker_out {

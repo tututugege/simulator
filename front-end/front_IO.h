@@ -102,6 +102,7 @@ struct instruction_FIFO_in {
   // from predecode
   uint8_t predecode_type[FETCH_WIDTH];
   uint32_t predecode_target_address[FETCH_WIDTH];
+  uint32_t seq_next_pc;
 };
 
 struct instruction_FIFO_out {
@@ -114,6 +115,7 @@ struct instruction_FIFO_out {
   bool inst_valid[FETCH_WIDTH];
   uint8_t predecode_type[FETCH_WIDTH];
   uint32_t predecode_target_address[FETCH_WIDTH];
+  uint32_t seq_next_pc;
 };
 
 struct PTAB_in {

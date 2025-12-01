@@ -6,8 +6,14 @@
 
 extern Back_Top back;
 
+#ifdef CONFIG_MMU
 bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
                bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load);
+#else
+bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
+extern uint32_t *p_memory;
+#endif
+
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -201,6 +207,7 @@ void alu(Inst_uop &inst) {
   }
 }
 
+#ifdef CONFIG_MMU
 // return: 1 - stall load; 0 - load ok
 bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn) {
   bool stall_load = false;
@@ -266,6 +273,80 @@ void stu_addr(Inst_uop &inst, bool page_fault, uint32_t mmu_ppn) {
     inst.result = p_addr;
   }
 }
+#else
+void ldu(Inst_uop &inst) {
+  uint32_t addr = inst.src1_rdata + inst.imm;
+
+  if (addr == 0x1fd0e000) {
+    inst.difftest_skip = true;
+  }
+
+  int size = inst.func3 & 0b11;
+  int offset = addr & 0b11;
+  uint32_t mask = 0;
+  uint32_t sign = 0;
+
+  if (inst.amoop != AMONONE) {
+    size = 0b10;
+    offset = 0b0;
+  }
+
+  uint32_t data;
+  bool page_fault = !load_data(data, addr, inst.rob_idx);
+
+  if (!page_fault) {
+    data = data >> (offset * 8);
+    if (size == 0) {
+      mask = 0xFF;
+      if (data & 0x80)
+        sign = 0xFFFFFF00;
+    } else if (size == 0b01) {
+      mask = 0xFFFF;
+      if (data & 0x8000)
+        sign = 0xFFFF0000;
+    } else {
+      mask = 0xFFFFFFFF;
+    }
+
+    data = data & mask;
+
+    // 有符号数
+    if (!(inst.func3 & 0b100)) {
+      data = data | sign;
+    }
+    inst.result = data;
+  } else {
+    inst.page_fault_load = true;
+    inst.result = addr;
+  }
+}
+
+void stu_addr(Inst_uop &inst) {
+
+  uint32_t v_addr = inst.src1_rdata + inst.imm;
+
+  uint32_t p_addr = v_addr;
+  bool page_fault = false;
+
+  if (back.csr.CSR_RegFile[csr_satp] & 0x80000000 && back.csr.privilege != 3) {
+    bool mstatus[32], sstatus[32];
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
+
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
+
+    page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 2,
+                        mstatus, sstatus, back.csr.privilege, p_memory);
+  }
+
+  if (page_fault) {
+    inst.page_fault_store = true;
+    inst.result = v_addr;
+  } else {
+    inst.result = p_addr;
+  }
+}
+
+#endif
 
 void stu_data(Inst_uop &inst) {
 
