@@ -41,7 +41,7 @@ using namespace std;
 
 #define ARF_NUM 32
 #define PRF_NUM 128
-#define MAX_BR_NUM 32
+#define MAX_BR_NUM 24
 
 #define CSR_NUM 21
 
@@ -61,7 +61,7 @@ extern long long sim_time;
 
 // #define HAS_MMU
 
-// #define CONFIG_DIFFTEST
+#define CONFIG_DIFFTEST
 #define CONFIG_BPU
 #define CONFIG_PERF_COUNTER
 // #define CONFIG_RUN_REF
@@ -237,6 +237,7 @@ public:
   uint64_t rob_entry_stall = 0;
   uint64_t idu_br_stall = 0;
   uint64_t idu_tag_stall = 0;
+  uint64_t ren_reg_stall = 0;
 
   uint64_t isu_entry_stall[IQ_NUM];
   uint64_t isu_raw_stall[IQ_NUM];
@@ -351,6 +352,7 @@ public:
     printf("\033[1;32mrob     stall : %ld\033[0m\n", rob_entry_stall);
     printf("\033[1;32midu br  stall : %ld\033[0m\n", idu_br_stall);
     printf("\033[1;32midu tag stall : %ld\033[0m\n", idu_tag_stall);
+    printf("\033[1;32mren reg stall : %ld\033[0m\n", ren_reg_stall);
     printf("\n");
     printf("\033[1;32m*********ISU COUNTER************\033[0m\n");
 

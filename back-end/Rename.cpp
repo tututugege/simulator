@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cvt.h>
+#include <iterator>
 #include <util.h>
 
 // 多个comb复用的中间信号
@@ -17,6 +18,8 @@ static wire1_t free_vec_normal[PRF_NUM];
 static wire7_t spec_RAT_flush[ARF_NUM + 1];
 static wire7_t spec_RAT_mispred[ARF_NUM + 1];
 static wire7_t spec_RAT_normal[ARF_NUM + 1];
+
+static wire1_t busy_table_awake[PRF_NUM];
 
 // difftest
 extern Back_Top back;
@@ -66,15 +69,35 @@ void Rename::comb_alloc() {
   wire7_t alloc_reg[FETCH_WIDTH];
   wire1_t alloc_valid[FETCH_WIDTH] = {false};
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    for (int j = 0; j < ALLOC_NUM; j++) {
-      if (free_vec[i * ALLOC_NUM + j]) {
-        alloc_reg[i] = i * ALLOC_NUM + j;
-        alloc_valid[i] = true;
-        break;
-      }
+  // for (int i = 0; i < FETCH_WIDTH; i++) {
+  //   for (int j = 0; j < ALLOC_NUM; j++) {
+  //     if (free_vec[i * ALLOC_NUM + j]) {
+  //       alloc_reg[i] = i * ALLOC_NUM + j;
+  //       alloc_valid[i] = true;
+  //       break;
+  //     }
+  //   }
+  // }
+
+  int alloc_num = 0;
+  for (int i = 0; i < PRF_NUM && alloc_num < FETCH_WIDTH; i++) {
+    if (free_vec[i]) {
+      alloc_valid[alloc_num] = true;
+      alloc_reg[alloc_num] = i;
+      alloc_num++;
     }
   }
+
+  for (; alloc_num < FETCH_WIDTH; alloc_num++) {
+    alloc_valid[alloc_num] = false;
+    alloc_reg[alloc_num] = 0;
+  }
+
+  // for (int i = 0; i < FETCH_WIDTH; i++) {
+  //   if (!alloc_valid[i]) {
+  //     cout << sim_time << endl;
+  //   }
+  // }
 
   // stall相当于需要查看前一条指令是否stall
   // 一条指令stall，后面的也stall
@@ -92,17 +115,23 @@ void Rename::comb_alloc() {
       out.ren2dis->valid[i] = false;
     }
   }
+
+  if (stall) {
+    perf.ren_reg_stall++;
+  }
 }
 
 void Rename::comb_wake() {
   // busy_table wake up
+  memcpy(busy_table_awake, busy_table, sizeof(wire1_t) * PRF_NUM);
+
   if (in.prf_awake->wake.valid) {
-    busy_table_1[in.prf_awake->wake.preg] = false;
+    busy_table_awake[in.prf_awake->wake.preg] = false;
   }
 
   for (int i = 0; i < ALU_NUM; i++) {
     if (in.iss_awake->wake[i].valid) {
-      busy_table_1[in.iss_awake->wake[i].preg] = false;
+      busy_table_awake[in.iss_awake->wake[i].preg] = false;
     }
   }
 }
@@ -128,9 +157,9 @@ void Rename::comb_rename() {
     old_dest_preg_normal[i] = spec_RAT[inst_r[i].uop.dest_areg];
     src1_preg_normal[i] = spec_RAT[inst_r[i].uop.src1_areg];
     src2_preg_normal[i] = spec_RAT[inst_r[i].uop.src2_areg];
-    // 用busy_table_1  存在隐藏的唤醒的bypass
-    src1_busy_normal[i] = busy_table_1[src1_preg_normal[i]];
-    src2_busy_normal[i] = busy_table_1[src2_preg_normal[i]];
+    // 用busy_table_awake  存在隐藏的唤醒的bypass
+    src1_busy_normal[i] = busy_table_awake[src1_preg_normal[i]];
+    src2_busy_normal[i] = busy_table_awake[src2_preg_normal[i]];
   }
 
   // 针对RAT 和busy_table的raw的bypass
@@ -169,6 +198,7 @@ void Rename::comb_rename() {
     if (src1_bypass_hit[i]) {
       out.ren2dis->uop[i].src1_preg = src1_preg_bypass[i];
       out.ren2dis->uop[i].src1_busy = true;
+      // 这里相当于处理了同组写busy_table的bypass
     } else {
       out.ren2dis->uop[i].src1_preg = src1_preg_normal[i];
       out.ren2dis->uop[i].src1_busy = src1_busy_normal[i];
@@ -198,6 +228,8 @@ void Rename::comb_rename() {
 }
 
 void Rename::comb_fire() {
+  memcpy(busy_table_awake, busy_table, sizeof(wire1_t) * PRF_NUM);
+
   for (int i = 0; i < FETCH_WIDTH; i++) {
     fire[i] = out.ren2dis->valid[i] && in.dis2ren->ready;
   }
@@ -362,6 +394,16 @@ void Rename ::seq() {
   // 监控是否产生寄存器泄露
   // 每次flush时 free_vec_num应该等于 PRF_NUM - ARF_NUM
   // static int count = 0;
+  // count++;
+  // int num = 0;
+  // if (count % 10000 == 0) {
+  // for (int i = 0; i < PRF_NUM; i++) {
+  //   if (free_vec[i])
+  //     num++;
+  // }
+  // cout << num << endl;
+  // }
+
   // if (in.rob_bcast->flush) {
   //   count++;
   //   if (count % 100 == 0) {
