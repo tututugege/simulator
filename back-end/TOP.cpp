@@ -8,14 +8,6 @@
 #include <diff.h>
 #include <util.h>
 
-int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
-                        number_mie,      number_mip,      number_mtval,
-                        number_mscratch, number_mstatus,  number_mideleg,
-                        number_medeleg,  number_sepc,     number_stvec,
-                        number_scause,   number_sscratch, number_stval,
-                        number_sstatus,  number_sie,      number_sip,
-                        number_satp,     number_mhartid,  number_misa};
-
 void Back_Top::difftest_cycle() {
 
   int commit_num = 0;
@@ -204,6 +196,8 @@ Stq_Dis stq2dis;
 
 Csr_Exe csr2exe;
 Csr_Rob csr2rob;
+Csr_Front csr2front;
+Csr_Status csr_status;
 Exe_Csr exe2csr;
 
 void Back_Top::init() {
@@ -295,6 +289,8 @@ void Back_Top::init() {
 
   csr.out.csr2exe = &csr2exe;
   csr.out.csr2rob = &csr2rob;
+  csr.out.csr2front = &csr2front;
+  csr.out.csr_status = &csr_status;
 
   idu.init();
   isu.init();
@@ -302,6 +298,14 @@ void Back_Top::init() {
   exu.init();
   csr.init();
   rob.init();
+}
+
+void Back_Top::comb_csr_status() {
+  csr.comb_csr_status();
+  out.sstatus = csr.out.csr_status->sstatus;
+  out.mstatus = csr.out.csr_status->mstatus;
+  out.satp = csr.out.csr_status->satp;
+  out.privilege = csr.out.csr_status->privilege;
 }
 
 void Back_Top::comb() {
@@ -372,9 +376,9 @@ void Back_Top::comb() {
       cout << "flush" << endl;
     back.out.mispred = true;
     if (rob.out.rob_bcast->mret || rob.out.rob_bcast->sret) {
-      back.out.redirect_pc = csr.out.csr2rob->epc;
+      back.out.redirect_pc = csr.out.csr2front->epc;
     } else if (rob.out.rob_bcast->exception) {
-      back.out.redirect_pc = csr.out.csr2rob->trap_pc;
+      back.out.redirect_pc = csr.out.csr2front->trap_pc;
     } else {
       back.out.redirect_pc = rob.out.rob_bcast->pc + 4;
     }
@@ -424,3 +428,53 @@ void Back_Top::seq() {
     out.fire[i] = idu.out.dec2front->fire[i];
   }
 }
+
+#ifdef CONFIG_MMU
+bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
+                         bool &mmu_page_fault, uint32_t &mmu_ppn,
+                         bool &stall_load) {
+  uint32_t p_addr = v_addr;
+  bool ret = true;
+
+  p_addr = mmu_ppn << 12 | (v_addr & 0xFFF);
+  ret = !mmu_page_fault;
+
+  if (p_addr == 0x1fd0e000) {
+    data = perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  } else {
+    data = p_memory[p_addr >> 2];
+    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall_load);
+  }
+
+  return ret;
+}
+#else
+bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
+  uint32_t p_addr = v_addr;
+  bool ret = true;
+
+  if (back.out.satp & 0x80000000 && back.out.privilege != 3) {
+    bool mstatus[32], sstatus[32];
+    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
+
+    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
+
+    ret = va2pa(p_addr, v_addr, back.out.satp, 1, mstatus, sstatus,
+                back.out.privilege, p_memory);
+  }
+
+  if (p_addr == 0x1fd0e000) {
+    data = perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  } else {
+    data = p_memory[p_addr >> 2];
+    bool stall = false;
+    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall);
+  }
+
+  return ret;
+}
+#endif

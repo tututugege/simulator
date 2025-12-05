@@ -1,4 +1,3 @@
-#include "TOP.h"
 #include <Cache.h>
 #include <EXU.h>
 #include <MMU.h>
@@ -7,11 +6,10 @@
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
-extern Back_Top back;
 extern MMU mmu;
 extern uint32_t *p_memory;
+Cache cache;
 
-Cache cache; // Cache模拟
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 void alu(Inst_uop &inst);
@@ -55,10 +53,10 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_DIV) { // div
       latency = 1;
     } else if (inst.op == UOP_LOAD) {
-      // latency = cache.cache_access(inst.src1_rdata + inst.imm);
-      latency = 1;
+      latency = cache.cache_access(inst.src1_rdata + inst.imm);
+      // latency = 2;
     } else if (inst.op == UOP_STA) {
-      latency = 1;
+      latency = 2;
     } else {
       latency = 1;
     }

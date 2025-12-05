@@ -35,7 +35,6 @@ public:
   void init();
   void seq();
 
-  // 状态
   reg32_t reg_file[PRF_NUM];
   Inst_entry inst_r[ISSUE_WAY];
 

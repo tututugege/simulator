@@ -96,15 +96,14 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     // only push when ifu_req is sent to icache
     uint32_t vaddr = in->fetch_address;
     bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
+    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
+    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
     uint32_t paddr;
     uint32_t ppn;
     bool page_fault_inst = false;
-    if ((back.csr.CSR_RegFile[csr_satp] & 0x80000000) &&
-        back.csr.privilege != 3) {
-      page_fault_inst = !va2pa(paddr, vaddr, back.csr.CSR_RegFile[csr_satp], 0,
-                               mstatus, sstatus, back.csr.privilege, p_memory);
+    if ((back.out.satp & 0x80000000) && back.out.privilege != 3) {
+      page_fault_inst = !va2pa(paddr, vaddr, back.out.satp, 0, mstatus, sstatus,
+                               back.out.privilege, p_memory);
     } else {
       paddr = vaddr;
     }
@@ -150,7 +149,8 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
       DEBUG_LOG("[icache_top] WARNING: miss is true when ifu_resp is valid\n");
       exit(1);
     }
-    // Output PC address from icache (use current_vaddr which is the actual request address)
+    // Output PC address from icache (use current_vaddr which is the actual
+    // request address)
     out->fetch_pc = current_vaddr;
     // keep index within a cacheline
     uint32_t mask = ICACHE_LINE_SIZE - 1; // work for ICACHE_LINE_SIZE==2^k
@@ -204,19 +204,18 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     // read instructions from pmem
     bool mstatus[32], sstatus[32];
 
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
+    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
 
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
+    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
 
     for (int i = 0; i < FETCH_WIDTH; i++) {
       uint32_t v_addr = in->fetch_address + (i * 4);
       uint32_t p_addr;
-      if ((back.csr.CSR_RegFile[csr_satp] & 0x80000000) &&
-          back.csr.privilege != 3) {
+      if ((back.out.satp & 0x80000000) && back.out.privilege != 3) {
 
         out->page_fault_inst[i] =
-            !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 0, mstatus,
-                   sstatus, back.csr.privilege, p_memory);
+            !va2pa(p_addr, v_addr, back.out.satp, 0, mstatus, sstatus,
+                   back.out.privilege, p_memory);
         if (out->page_fault_inst[i]) {
           out->fetch_group[i] = INST_NOP;
         } else {

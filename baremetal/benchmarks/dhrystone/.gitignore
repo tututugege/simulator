@@ -1,0 +1,5 @@
+dry
+dry.bin
+dry.dump
+dry.o
+src/*.o

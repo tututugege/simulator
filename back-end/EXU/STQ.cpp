@@ -60,8 +60,9 @@ void STQ::comb() {
       char temp;
       temp = wdata & 0x000000ff;
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
-      cout << temp;
 
+      if (temp != 27)
+        cout << temp;
       if (temp == '?') {
         if (perf.perf_start) {
           perf.perf_print();

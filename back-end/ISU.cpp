@@ -21,8 +21,8 @@ IQ::IQ(int entry_num, int type) {
 }
 
 void ISU::init() {
-  add_iq(32, IQ_INTM);
-  add_iq(32, IQ_INTD);
+  add_iq(16, IQ_INTM);
+  add_iq(16, IQ_INTD);
   add_iq(16, IQ_LD);
   add_iq(16, IQ_STA);
   add_iq(16, IQ_STD);
@@ -91,11 +91,6 @@ void ISU::comb_deq() {
         out.iss2prf->iss_entry[i].uop.dest_en) {
       out.iss_awake->wake[i].valid = true;
       out.iss_awake->wake[i].preg = out.iss2prf->iss_entry[i].uop.dest_preg;
-      // if (out.iss2prf->iss_entry[i].uop.op == UOP_MUL) {
-      //   out.iss_awake->wake[i].latency = 2;
-      // } else {
-      // out.iss_awake->wake[i].latency = 1;
-      // }
     } else {
       out.iss_awake->wake[i].valid = false;
     }
@@ -169,7 +164,7 @@ void ISU::comb_branch() {
 void ISU::comb_flush() {
   if (in.rob_bcast->flush) {
     for (auto &q : iq) {
-      q.br_clear((1L << MAX_BR_NUM) - 1);
+      q.br_clear((1 << MAX_BR_NUM) - 1);
     }
   }
 }

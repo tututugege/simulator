@@ -32,12 +32,12 @@ typedef wire4_t Amo_op;
 
 using namespace std;
 
-#define MAX_SIM_TIME 1000000000
+#define MAX_SIM_TIME 2000000000
 
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
 
-#define ISSUE_WAY IQ_NUM
+#define ISSUE_WAY 7 // 目前等于IQ_NUM
 
 #define ARF_NUM 32
 #define PRF_NUM 128
@@ -47,7 +47,7 @@ using namespace std;
 
 #define ROB_BANK_NUM 4
 #define ROB_NUM 128
-#define ROB_LINE_NUM (ROB_NUM / ROB_BANK_NUM)
+#define ROB_LINE_NUM 32 // (ROB_NUM / ROB_BANK_NUM)
 
 #define STQ_NUM 16
 #define ALU_NUM 2
@@ -57,15 +57,13 @@ using namespace std;
 #define LOG (0 && (sim_time >= LOG_START))
 #define MEM_LOG (0 && (sim_time >= LOG_START))
 
-extern long long sim_time;
-
 #define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
 // #define CONFIG_RUN_REF_PRINT
 
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
-// #define CONFIG_MMU
+#define CONFIG_MMU
 // #define ENABLE_MULTI_BR
 
 /*
@@ -154,7 +152,7 @@ typedef struct Inst_uop {
 
   wire1_t dest_en, src1_en, src2_en;
   wire1_t src1_busy, src2_busy;
-  wire4_t src1_latency, src2_latency; // 非单周期指令唤醒的latency
+  wire4_t src1_latency, src2_latency; // 非单周期指令唤醒的latency 暂时不用
   wire1_t src1_is_pc;
   wire1_t src2_is_imm;
   wire3_t func3;
@@ -174,10 +172,10 @@ typedef struct Inst_uop {
   wire1_t rob_flag; // 用于对比指令年龄
 
   // 异常信息
-  wire1_t page_fault_inst = false;
-  wire1_t page_fault_load = false;
-  wire1_t page_fault_store = false;
-  wire1_t illegal_inst = false;
+  wire1_t page_fault_inst;
+  wire1_t page_fault_load;
+  wire1_t page_fault_store;
+  wire1_t illegal_inst;
 
   wire4_t type;
   wire4_t op;
@@ -333,3 +331,4 @@ public:
 };
 
 extern Perf_count perf;
+extern long long sim_time;

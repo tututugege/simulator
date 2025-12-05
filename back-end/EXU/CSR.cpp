@@ -3,9 +3,24 @@
 #include <cstdint>
 #include <cvt.h>
 
+int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
+                        number_mie,      number_mip,      number_mtval,
+                        number_mscratch, number_mstatus,  number_mideleg,
+                        number_medeleg,  number_sepc,     number_stvec,
+                        number_scause,   number_sscratch, number_stval,
+                        number_sstatus,  number_sie,      number_sip,
+                        number_satp,     number_mhartid,  number_misa};
+
 void CSRU::init() {
   CSR_RegFile[csr_misa] = 0x40141101;   // U/S/M  RV32I/A/M
   CSR_RegFile_1[csr_misa] = 0x40141101; // U/S/M  RV32I/A/M
+}
+
+void CSRU::comb_csr_status() {
+  out.csr_status->mstatus = CSR_RegFile[csr_mstatus];
+  out.csr_status->sstatus = CSR_RegFile[csr_sstatus];
+  out.csr_status->satp = CSR_RegFile[csr_satp];
+  out.csr_status->privilege = privilege;
 }
 
 void CSRU::comb_csr_read() {
@@ -221,10 +236,10 @@ void CSRU::comb_exception() {
     CSR_RegFile_1[csr_mcause] = cause;
 
     if (mtvec[31 - 0] && !mtvec[31 - 1] && cause & (1 << 31)) {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_mtvec] & 0xfffffffc;
-      out.csr2rob->trap_pc += 4 * (cause & 0x7fffffff);
+      out.csr2front->trap_pc = CSR_RegFile[csr_mtvec] & 0xfffffffc;
+      out.csr2front->trap_pc += 4 * (cause & 0x7fffffff);
     } else {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_mtvec];
+      out.csr2front->trap_pc = CSR_RegFile[csr_mtvec];
     }
 
     mstatus[31 - 11] = privilege & 0b1;
@@ -269,10 +284,10 @@ void CSRU::comb_exception() {
     CSR_RegFile_1[csr_scause] = cause;
 
     if (stvec[31 - 0] && !stvec[31 - 1] && cause & (1 << 31)) {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_stvec] & 0xfffffffc;
-      out.csr2rob->trap_pc += 4 * (cause & 0x7fffffff);
+      out.csr2front->trap_pc = CSR_RegFile[csr_stvec] & 0xfffffffc;
+      out.csr2front->trap_pc += 4 * (cause & 0x7fffffff);
     } else {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_stvec];
+      out.csr2front->trap_pc = CSR_RegFile[csr_stvec];
     }
 
     // sstatus是mstatus的子集，sstatus改变时mstatus也要变
@@ -303,7 +318,7 @@ void CSRU::comb_exception() {
     sstatus[31 - 7] = 1; // next_mstatus.MPIE = 1;
     sstatus[31 - 12] = 0;
     sstatus[31 - 11] = 0; // next_mstatus.MPP = U;
-    out.csr2rob->epc = CSR_RegFile[csr_mepc];
+    out.csr2front->epc = CSR_RegFile[csr_mepc];
   } else if (in.rob_bcast->sret) {
     mstatus[31 - 1] = mstatus[31 - 5]; // next_mstatus.SIE = mstatus.SPIE;
     sstatus[31 - 1] = sstatus[31 - 5]; // next_sstatus.SIE = sstatus.SPIE;
@@ -312,7 +327,7 @@ void CSRU::comb_exception() {
     sstatus[31 - 5] = 1;               // next_sstatus.SPIE = 1;
     mstatus[31 - 8] = 0;               // next_mstatus.SPP = U;
     sstatus[31 - 8] = 0;               // next_sstatus.SPP = U;
-    out.csr2rob->epc = CSR_RegFile[csr_sepc];
+    out.csr2front->epc = CSR_RegFile[csr_sepc];
   }
   CSR_RegFile_1[csr_mstatus] = cvt_bit_to_number_unsigned(mstatus, 32);
   CSR_RegFile_1[csr_sstatus] = cvt_bit_to_number_unsigned(sstatus, 32);

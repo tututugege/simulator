@@ -1,5 +1,4 @@
 #include "BPU/target_predictor/btb.h"
-#include "CSR.h"
 #include "ref.h"
 #include <MMU.h>
 #include <RISCV.h>
@@ -19,7 +18,7 @@ using namespace std;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-void front_cycle(bool, bool, bool, front_top_in &, front_top_out &, uint32_t &);
+void front_cycle(bool, bool, bool, uint32_t &);
 
 // bpu 更新信息
 void back2front_comb(front_top_in &front_in, front_top_out &front_out);
@@ -36,12 +35,10 @@ long long sim_time = 0;
 bool sim_end = false;
 
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
-uint32_t POS_MEMORY_SHIFT = uint32_t(0x80000000 / 4);
 
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
   ifstream inst_data(argv[argc - 1], ios::in);
-
   if (!inst_data.is_open()) {
     cout << "Error: Image " << argv[argc - 1] << " does not exist" << endl;
     exit(0);
@@ -51,7 +48,6 @@ int main(int argc, char *argv[]) {
   streamsize size = inst_data.tellg();
   inst_data.seekg(0, std::ios::beg);
 
-  // 读取数据到 vector<char>
   if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
                       size)) {
     std::cerr << "读取文件失败！" << std::endl;
@@ -80,10 +76,8 @@ int main(int argc, char *argv[]) {
   back.init();
   mmu.reset();
 
-  uint32_t number_PC;
-  ofstream outfile;
+  uint32_t number_PC = 0;
   bool stall, misprediction, exception;
-  number_PC = 0x00000000;
   stall = misprediction = exception = false;
 
 #ifdef CONFIG_BPU
@@ -93,7 +87,6 @@ int main(int argc, char *argv[]) {
   front_top(&front_in, &front_out);
   cout << hex << front_out.pc[0] << endl;
   front_in.reset = false;
-
 #endif
 
   // main loop
@@ -102,20 +95,23 @@ int main(int argc, char *argv[]) {
       cout << dec << sim_time << endl;
     perf.cycle++;
 
-    if (LOG)
+    if (LOG) {
       cout
           << "****************************************************************"
           << dec << " cycle: " << sim_time
           << " ****************************************************************"
           << endl;
+    }
+
+    back.comb_csr_status(); // 获取mstatus sstatus satp
+
 #ifdef CONFIG_MMU
     // Backend(CSR) -> mmu
     back2mmu_comb();
     // step1: fetch instructions and fill in back.in
 #endif
 
-    front_cycle(stall, misprediction, exception, front_in, front_out,
-                number_PC);
+    front_cycle(stall, misprediction, exception, number_PC);
 
 #ifdef CONFIG_MMU
     mmu.comb_frontend(); // update mmu_ifu_resp according to new ifu_req_valid
@@ -286,8 +282,7 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
   return ret;
 #endif
   extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
-  Inst_entry ren_commit_entry =
-      back.rename.in.rob_commit->commit_entry[ren_commit_idx];
+  Inst_entry ren_commit_entry = back.out.commit_entry[ren_commit_idx];
   bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
   bool dut_page_fault_load = ren_commit_entry.uop.page_fault_load;
   bool dut_page_fault_store = ren_commit_entry.uop.page_fault_store;
@@ -336,59 +331,9 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
   return ret;
 }
 
-#ifdef CONFIG_MMU
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
-               bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load) {
-  uint32_t p_addr = v_addr;
-  bool ret = true;
-
-  p_addr = mmu_ppn << 12 | (v_addr & 0xFFF);
-  ret = !mmu_page_fault;
-
-  if (p_addr == 0x1fd0e000) {
-    data = perf.commit_num;
-  } else if (p_addr == 0x1fd0e004) {
-    data = 0;
-  } else {
-    data = p_memory[p_addr >> 2];
-    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall_load);
-  }
-
-  return ret;
-}
-#else
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
-  uint32_t p_addr = v_addr;
-  bool ret = true;
-
-  if (back.csr.CSR_RegFile[csr_satp] & 0x80000000 && back.csr.privilege != 3) {
-    bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
-
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
-
-    ret = va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 1, mstatus,
-                sstatus, back.csr.privilege, p_memory);
-  }
-
-  if (p_addr == 0x1fd0e000) {
-    data = perf.commit_num;
-  } else if (p_addr == 0x1fd0e004) {
-    data = 0;
-  } else {
-    data = p_memory[p_addr >> 2];
-    bool stall = false;
-    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall);
-  }
-
-  return ret;
-}
-#endif
-
 void front_cycle(bool stall, bool misprediction, bool exception,
-
-                 front_top_in &front_in, front_top_out &front_out,
                  uint32_t &number_PC) {
+
   if (!stall || misprediction || exception) {
 
 #if defined(CONFIG_BPU)
@@ -407,18 +352,15 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
       bool mstatus[32], sstatus[32];
 
-      cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus],
-                                 32);
+      cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
 
-      cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus],
-                                 32);
+      cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
 
-      if ((back.csr.CSR_RegFile[csr_satp] & 0x80000000) &&
-          back.csr.privilege != 3) {
+      if ((back.out.satp & 0x80000000) && back.out.privilege != 3) {
 
         front_out.page_fault_inst[j] =
-            !va2pa(p_addr, number_PC, back.csr.CSR_RegFile[csr_satp], 0,
-                   mstatus, sstatus, back.csr.privilege, p_memory);
+            !va2pa(p_addr, number_PC, back.out.satp, 0, mstatus, sstatus,
+                   back.out.privilege, p_memory);
         if (front_out.page_fault_inst[j]) {
           front_out.instructions[j] = INST_NOP;
         } else {
@@ -438,9 +380,6 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 #endif
 
     bool no_taken = true;
-    bool is_br = false;
-    bool is_jal = false;
-    bool is_jalr = false;
     for (int j = 0; j < FETCH_WIDTH; j++) {
       back.in.valid[j] =
           no_taken && front_out.FIFO_valid && front_out.inst_valid[j];
@@ -459,13 +398,11 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       back.in.alt_pred[j] = front_out.alt_pred[j];
       back.in.altpcpn[j] = front_out.altpcpn[j];
       back.in.pcpn[j] = front_out.pcpn[j];
-      no_taken = back.in.valid[j] && !front_out.predict_dir[j];
+      if (back.in.valid[j] && front_out.predict_dir[j])
+        no_taken = false;
     }
   } else {
 #ifdef CONFIG_BPU
-    /*
-     * stall && !misprediction && !exception
-     */
     front_in.FIFO_read_enable = false;
     front_in.refetch = false;
     front_top(&front_in, &front_out);
@@ -477,12 +414,15 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
   front_in.FIFO_read_enable = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
-    front_in.back2front_valid[i] =
-        back.out.commit_entry[i].valid && is_branch(inst->type);
+    front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
+    // front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
+    //                                (is_branch(inst->type) || inst->type ==
+    //                                JAL);
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
-      front_in.actual_dir[i] = inst->br_taken;
+      front_in.actual_dir[i] =
+          (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
       front_in.actual_target[i] = inst->pc_next;
       int br_type = BR_DIRECT;
       if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
@@ -499,30 +439,27 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.altpcpn[i] = inst->altpcpn;
       front_in.pcpn[i] = inst->pcpn;
     }
-    // if (LOG) {
-    /*cout << " valid: " << front_in.back2front_valid[i]*/
-    /*     << " 反馈给前端的分支指令PC: " << hex << inst->pc*/
-    /*     << " 预测结果: " << inst->pred_br_taken*/
-    /*     << " 实际结果: " << inst->br_taken*/
-    /*     << " 预测目标地址: " << inst->pred_br_pc*/
-    /*     << " 实际目标地址: " << inst->pc_next*/
-    /*     << " 指令: " << inst->instruction << endl;*/
-    // }
+    if (LOG) {
+      cout << " valid: " << front_in.back2front_valid[i]
+           << " 反馈给前端的分支指令PC: " << hex << inst->pc
+           << " 预测结果: " << inst->pred_br_taken
+           << " 实际结果: " << inst->br_taken
+           << " 预测目标地址: " << inst->pred_br_pc
+           << " 实际目标地址: " << inst->pc_next
+           << " 指令: " << inst->instruction << endl;
+    }
   }
 
-  // if (back.out.mispred) {
   if (back.out.mispred || back.out.flush) {
-    // 若 pre-decode 或后端都检测到 branch mis-prediction，则以后端为准
     front_in.refetch_address = back.out.redirect_pc;
   }
 }
 
 static inline void back2mmu_comb() {
-  mmu.io.in.state.satp =
-      reinterpret_cast<satp_t &>(back.csr.CSR_RegFile[csr_satp]);
-  mmu.io.in.state.mstatus = back.csr.CSR_RegFile[csr_mstatus];
-  mmu.io.in.state.sstatus = back.csr.CSR_RegFile[csr_sstatus];
-  mmu.io.in.state.privilege = mmu_n::Privilege(back.csr.privilege);
+  mmu.io.in.state.satp = reinterpret_cast<satp_t &>(back.out.satp);
+  mmu.io.in.state.mstatus = back.out.mstatus;
+  mmu.io.in.state.sstatus = back.out.sstatus;
+  mmu.io.in.state.privilege = mmu_n::Privilege(back.out.privilege);
   // for flush tlb:
   // - if request flush, set flush_valid = true in back-end later
   mmu.io.in.tlb_flush.flush_valid = false;

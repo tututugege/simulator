@@ -33,15 +33,11 @@ Rename::Rename() {
 
     // 初始化的时候平均分到free_vec的四个部分
     if (i < ARF_NUM) {
-      // spec_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
-      // arch_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
-      // free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = false;
-      spec_RAT[i] = i;
-      arch_RAT[i] = i;
-      free_vec[i] = false;
-
+      spec_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
+      arch_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
+      free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = false;
     } else {
-      free_vec[i] = true;
+      free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = true;
     }
   }
 
@@ -70,25 +66,16 @@ void Rename::comb_alloc() {
   // 可用寄存器个数 每周期最多使用FETCH_WIDTH个
   wire7_t alloc_reg[FETCH_WIDTH];
   wire1_t alloc_valid[FETCH_WIDTH] = {false};
-  int alloc_num = 0;
 
-  for (int i = 0; i < PRF_NUM && alloc_num < FETCH_WIDTH; i++) {
-    if (free_vec[i]) {
-      alloc_valid[alloc_num] = true;
-      alloc_reg[alloc_num] = i;
-      alloc_num++;
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    for (int j = 0; j < ALLOC_NUM; j++) {
+      if (free_vec[i * ALLOC_NUM + j]) {
+        alloc_reg[i] = i * ALLOC_NUM + j;
+        alloc_valid[i] = true;
+        break;
+      }
     }
   }
-
-  // for (int i = 0; i < FETCH_WIDTH; i++) {
-  //   for (int j = 0; j < ALLOC_NUM; j++) {
-  //     if (free_vec[i * ALLOC_NUM + j]) {
-  //       alloc_reg[i] = i * ALLOC_NUM + j;
-  //       alloc_valid[i] = true;
-  //       break;
-  //     }
-  //   }
-  // }
 
   // stall相当于需要查看前一条指令是否stall
   // 一条指令stall，后面的也stall
@@ -106,11 +93,6 @@ void Rename::comb_alloc() {
       out.ren2dis->valid[i] = false;
     }
   }
-
-#ifdef CONFIG_PERF_COUNTER
-  if (stall)
-    perf.ren_reg_stall++;
-#endif
 }
 
 void Rename::comb_wake() {

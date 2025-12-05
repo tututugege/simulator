@@ -32,6 +32,7 @@ public:
   void comb_fire();
   void comb_pipeline();
   void seq();
+
   Inst_entry inst_r[FETCH_WIDTH];
   Inst_entry inst_r_1[FETCH_WIDTH];
 };

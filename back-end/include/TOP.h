@@ -31,6 +31,12 @@ typedef struct {
   bool fire[FETCH_WIDTH];
   uint32_t redirect_pc;
   Inst_entry commit_entry[COMMIT_WIDTH];
+
+  wire32_t sstatus;
+  wire32_t mstatus;
+  wire32_t satp;
+  wire2_t privilege;
+
 } Back_out;
 
 class Back_Top {
@@ -43,15 +49,25 @@ public:
   EXU exu;
   CSRU csr;
   STQ stq;
-  ROB rob;
 
+  ROB rob;
   Back_in in;
   Back_out out;
   void init();
+  void comb_csr_status();
   void comb();
   void seq();
+
+#ifdef CONFIG_MMU
+  bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
+                 bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load);
+#else
+  bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
+#endif
 
   // debug
   void difftest_inst(Inst_uop *inst);
   void difftest_cycle();
 };
+
+extern Back_Top back;

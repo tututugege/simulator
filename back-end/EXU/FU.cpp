@@ -4,16 +4,6 @@
 #include <cvt.h>
 #include <util.h>
 
-extern Back_Top back;
-
-#ifdef CONFIG_MMU
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
-               bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load);
-#else
-bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
-extern uint32_t *p_memory;
-#endif
-
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -228,9 +218,8 @@ bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn) {
   }
 
   uint32_t data;
-  // bool page_fault = !load_data(data, addr, inst.rob_idx);
-  bool page_fault =
-      !load_data(data, addr, inst.rob_idx, mmu_page_fault, mmu_ppn, stall_load);
+  bool page_fault = !back.load_data(data, addr, inst.rob_idx, mmu_page_fault,
+                                    mmu_ppn, stall_load);
 
   if (!page_fault) {
     data = data >> (offset * 8);
@@ -292,7 +281,7 @@ void ldu(Inst_uop &inst) {
   }
 
   uint32_t data;
-  bool page_fault = !load_data(data, addr, inst.rob_idx);
+  bool page_fault = !back.load_data(data, addr, inst.rob_idx);
 
   if (!page_fault) {
     data = data >> (offset * 8);

@@ -20,7 +20,7 @@ public:
   int type;
 
   vector<Inst_entry> entry;
-  int num; // 电路中不一定要有这个东西
+  int num; // 电路中不一定要有这个东西，主要用于debug
 
   vector<Inst_entry> entry_1;
   int num_1;

@@ -13,11 +13,11 @@ typedef struct {
   reg1_t addr_valid;
   reg1_t data_valid;
   reg1_t valid;
-  reg5_t tag;
+  reg4_t tag;
 } STQ_entry;
 
 typedef struct {
-  Inst_uop uop[FETCH_WIDTH]; // 3 2 2 2
+  Inst_uop uop[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
 } Dec_Ren;
 
@@ -38,7 +38,7 @@ typedef struct {
 
   wire1_t alt_pred[FETCH_WIDTH];
   wire8_t altpcpn[FETCH_WIDTH];
-  wire8_t pcpn[FETCH_WIDTH]; // 这仨我也不知道是什么
+  wire8_t pcpn[FETCH_WIDTH];
   wire32_t predict_next_fetch_address[FETCH_WIDTH];
   wire1_t page_fault_inst[FETCH_WIDTH];
 } Front_Dec;
@@ -46,7 +46,7 @@ typedef struct {
 typedef struct {
   wire1_t mispred;
   wire16_t br_mask;
-  wire5_t br_tag;
+  wire4_t br_tag;
   wire7_t redirect_rob_idx;
 } Dec_Broadcast;
 
@@ -81,13 +81,14 @@ typedef struct {
   Wake_info wake;
 } Prf_Awake;
 
+// TODO: MAGIC NUMBER 2
 typedef struct {
   Inst_uop uop[IQ_NUM][2];
   wire1_t valid[IQ_NUM][2];
   wire1_t dis_fire[IQ_NUM][2];
 } Dis_Iss;
 
-// TODO: MAGIC NUMBER
+// TODO: MAGIC NUMBER 2
 typedef struct {
   wire1_t ready[IQ_NUM][2];
 } Iss_Dis;
@@ -137,15 +138,16 @@ typedef struct {
   wire1_t mispred;
   wire32_t redirect_pc;
   wire7_t redirect_rob_idx;
-  wire5_t br_tag;
+  wire4_t br_tag;
 } Prf_Dec;
 
 typedef struct {
-  wire5_t tag[FETCH_WIDTH];
+  wire4_t tag[FETCH_WIDTH];
   wire1_t valid[FETCH_WIDTH];
   wire1_t dis_fire[FETCH_WIDTH];
 } Dis_Stq;
 
+// TODO: MAGIC NUMBER 2
 typedef struct {
   wire1_t ready[2];
   wire4_t stq_idx;
@@ -172,9 +174,19 @@ typedef struct {
 
 typedef struct {
   wire1_t interrupt_req;
+} Csr_Rob;
+
+typedef struct {
   wire32_t epc;
   wire32_t trap_pc;
-} Csr_Rob;
+} Csr_Front;
+
+typedef struct {
+  wire32_t sstatus;
+  wire32_t mstatus;
+  wire32_t satp;
+  wire2_t privilege;
+} Csr_Status;
 
 typedef struct {
   wire1_t interrupt_resp;

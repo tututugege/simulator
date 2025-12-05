@@ -10,9 +10,9 @@
 // 中间信号
 #ifdef ENABLE_MULTI_BR
 #define MAX_TAG_ALLOC_NUM 2
-static wire5_t alloc_tag[MAX_TAG_ALLOC_NUM]; // 新tag
+static wire4_t alloc_tag[MAX_TAG_ALLOC_NUM]; // 新tag
 #else
-static wire5_t alloc_tag; // 新tag
+static wire4_t alloc_tag; // 新tag
 #endif
 
 void decode(Inst_uop &uop, uint32_t instructinn);
@@ -163,7 +163,7 @@ void IDU::comb_decode() {
         in.front2dec->predict_next_fetch_address[i];
 
     // for debug
-    if (is_branch(out.dec2ren->uop[i].type)) {
+    if (out.dec2ren->uop[i].type == JAL) {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
     } else {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;

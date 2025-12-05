@@ -182,32 +182,33 @@ void ROB::comb_commit() {
       }
     }
 
-    int free_preg_num = 0;
-    for (int i = 0; i < PRF_NUM; i++) {
-      if (back.rename.free_vec[i]) {
-        free_preg_num++;
-      }
-    }
-    cout << "free preg num: " << dec << free_preg_num << endl;
-
-    int free_tag_num = 0;
-    for (int i = 0; i < MAX_BR_NUM; i++) {
-      if (back.idu.tag_vec[i]) {
-        free_tag_num++;
-      }
-    }
-    cout << "free tag num: " << dec << free_tag_num << endl;
-
-    int free_stq_num = 0;
-    for (int i = 0; i < STQ_NUM; i++) {
-      if (!back.stq.entry[i].valid) {
-        free_stq_num++;
-      }
-    }
-    cout << "free stq num: " << dec << free_stq_num << endl;
-    cout << "dis2ren ready: " << dec << back.rename.in.dis2ren->ready << endl;
-    cout << "ren2dec ready: " << dec << back.rename.out.ren2dec->ready << endl;
-    cout << "dec2front ready: " << dec << back.idu.out.dec2front->ready << endl;
+    // int free_preg_num = 0;
+    // for (int i = 0; i < PRF_NUM; i++) {
+    //   if (back.rename.free_vec[i]) {
+    //     free_preg_num++;
+    //   }
+    // }
+    // cout << "free preg num: " << dec << free_preg_num << endl;
+    //
+    // int free_tag_num = 0;
+    // for (int i = 0; i < MAX_BR_NUM; i++) {
+    //   if (back.idu.tag_vec[i]) {
+    //     free_tag_num++;
+    //   }
+    // }
+    // cout << "free tag num: " << dec << free_tag_num << endl;
+    //
+    // int free_stq_num = 0;
+    // for (int i = 0; i < STQ_NUM; i++) {
+    //   if (!back.stq.entry[i].valid) {
+    //     free_stq_num++;
+    //   }
+    // }
+    // cout << "free stq num: " << dec << free_stq_num << endl;
+    // cout << "dis2ren ready: " << dec << back.rename.in.dis2ren->ready <<
+    // endl; cout << "ren2dec ready: " << dec << back.rename.out.ren2dec->ready
+    // << endl; cout << "dec2front ready: " << dec <<
+    // back.idu.out.dec2front->ready << endl;
 
     exit(1);
   }
@@ -320,6 +321,4 @@ void ROB::seq() {
   enq_ptr = enq_ptr_1;
   count = count_1;
   flag = flag_1;
-  assert(count == ROB_LINE_NUM ||
-         count == (enq_ptr + ROB_LINE_NUM - deq_ptr) % ROB_LINE_NUM);
 }
