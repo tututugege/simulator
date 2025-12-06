@@ -61,7 +61,11 @@ void Back_Top::difftest_cycle() {
       dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
     }
     dut_cpu.pc = inst->pc_next;
-    difftest_step(true);
+    if (inst->difftest_skip) {
+      difftest_skip();
+    } else {
+      difftest_step(true);
+    }
   }
 }
 
