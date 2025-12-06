@@ -34,16 +34,9 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
     out->full = false;
     out->empty = true;
   }
-  if (fifo.size() > INSTRUCTION_FIFO_SIZE)
-    assert(0);
-
-  // std::cout << "FIFO size:" << fifo.size() << std::endl;
 
   // if FIFO is not full and icache has new data
   if (in->write_enable) {
-    if (fifo.size() >= INSTRUCTION_FIFO_SIZE) {
-      assert(0); // should not reach here
-    }
     FIFO_entry entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       entry.instructions[i] = in->fetch_group[i];
@@ -63,7 +56,8 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
       out->page_fault_inst[i] = fifo.front().page_fault_inst[i];
       out->inst_valid[i] = fifo.front().inst_valid[i];
       out->predecode_type[i] = fifo.front().predecode_type[i];
-      out->predecode_target_address[i] = fifo.front().predecode_target_address[i];
+      out->predecode_target_address[i] =
+          fifo.front().predecode_target_address[i];
     }
     out->seq_next_pc = fifo.front().seq_next_pc;
     fifo.pop();

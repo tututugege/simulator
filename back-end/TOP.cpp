@@ -119,15 +119,6 @@ void Back_Top::difftest_inst(Inst_uop *inst) {
   }
 
 #ifdef CONFIG_DIFFTEST
-  if (LOG) {
-    cout << "Instruction: " << inst->instruction << endl;
-    if (inst->page_fault_inst)
-      cout << "page fault inst " << endl;
-    if (inst->page_fault_load)
-      cout << "page fault load " << endl;
-    if (inst->page_fault_store)
-      cout << "page fault store " << endl;
-  }
 
   for (int i = 0; i < ARF_NUM; i++) {
     dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT_1[i]];
@@ -372,8 +363,6 @@ void Back_Top::comb() {
     back.out.stall = !idu.out.dec2front->ready;
     back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
   } else {
-    if (LOG)
-      cout << "flush" << endl;
     back.out.mispred = true;
     if (rob.out.rob_bcast->mret || rob.out.rob_bcast->sret) {
       back.out.redirect_pc = csr.out.csr2front->epc;

@@ -95,14 +95,6 @@ int main(int argc, char *argv[]) {
       cout << dec << sim_time << endl;
     perf.cycle++;
 
-    if (LOG) {
-      cout
-          << "****************************************************************"
-          << dec << " cycle: " << sim_time
-          << " ****************************************************************"
-          << endl;
-    }
-
     back.comb_csr_status(); // 获取mstatus sstatus satp
 
 #ifdef CONFIG_MMU
@@ -389,11 +381,6 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       back.in.page_fault_inst[j] = front_out.page_fault_inst[j];
       back.in.inst[j] = front_out.instructions[j];
 
-      if (LOG && back.in.valid[j]) {
-        cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-             << front_out.pc[j] << " Inst: " << back.in.inst[j] << endl;
-      }
-
       back.in.predict_dir[j] = front_out.predict_dir[j];
       back.in.alt_pred[j] = front_out.alt_pred[j];
       back.in.altpcpn[j] = front_out.altpcpn[j];
@@ -415,9 +402,6 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
-    // front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
-    //                                (is_branch(inst->type) || inst->type ==
-    //                                JAL);
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
@@ -438,15 +422,6 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.alt_pred[i] = inst->alt_pred;
       front_in.altpcpn[i] = inst->altpcpn;
       front_in.pcpn[i] = inst->pcpn;
-    }
-    if (LOG) {
-      cout << " valid: " << front_in.back2front_valid[i]
-           << " 反馈给前端的分支指令PC: " << hex << inst->pc
-           << " 预测结果: " << inst->pred_br_taken
-           << " 实际结果: " << inst->br_taken
-           << " 预测目标地址: " << inst->pred_br_pc
-           << " 实际目标地址: " << inst->pc_next
-           << " 指令: " << inst->instruction << endl;
     }
   }
 

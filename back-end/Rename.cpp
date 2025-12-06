@@ -289,10 +289,6 @@ void Rename ::comb_commit() {
         }
       }
 
-      if (LOG) {
-        cout << "ROB commit PC 0x" << hex << inst->pc << " idx "
-             << inst->inst_idx << endl;
-      }
       ren_commit_idx = i;
       if (inst->dest_en && !inst->page_fault_load && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;

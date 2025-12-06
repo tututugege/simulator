@@ -27,7 +27,6 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
 
 void icache_top(struct icache_in *in, struct icache_out *out) {
   if (in->reset) {
-    DEBUG_LOG("[icache] reset\n");
     icache.reset();
     out->icache_read_ready = true;
     ppn_queue = std::queue<ppn_triple>();
@@ -145,10 +144,6 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     out->icache_read_complete = true;
     // in current design, miss is useless and always false when ifu_resp is
     // valid
-    if (miss) {
-      DEBUG_LOG("[icache_top] WARNING: miss is true when ifu_resp is valid\n");
-      exit(1);
-    }
     // Output PC address from icache (use current_vaddr which is the actual
     // request address)
     out->fetch_pc = current_vaddr;
@@ -186,12 +181,6 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     current_fault = ppn_queue.front().page_fault;
     current_valid = !ppn_used;
     ppn_queue.pop();
-  }
-
-  if (ppn_queue.size() > 2) {
-    // this case is not expected to happen
-    DEBUG_LOG("[icache_top] ERROR: ppn_queue size > 2\n");
-    exit(1);
   }
 
 #else // simple icache model: directly read from pmem

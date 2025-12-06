@@ -1028,13 +1028,6 @@ void Ref_cpu::store_data() {
     mask |= 0xFF0000;
   if (wstrb & 0b1000)
     mask |= 0xFF000000;
-  /*if ((number_funct3_unsigned == 1 && p_addr % 2 == 1) ||*/
-  /*    (number_funct3_unsigned == 2 && p_addr % 4 != 0)) {*/
-  /*  cout << "Store Memory Address Align Error!!!" << endl;*/
-  /*  cout << "funct3 code: " << dec << number_funct3_unsigned << endl;*/
-  /*  cout << "addr: " << hex << p_addr << endl;*/
-  /*  exit(-1);*/
-  /*}*/
 
   memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
 

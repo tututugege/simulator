@@ -32,7 +32,7 @@ typedef wire4_t Amo_op;
 
 using namespace std;
 
-#define MAX_SIM_TIME 2000000000
+#define MAX_SIM_TIME 400000000
 
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
@@ -52,10 +52,6 @@ using namespace std;
 #define STQ_NUM 16
 #define ALU_NUM 2
 #define BRU_NUM 2
-
-#define LOG_START 0
-#define LOG (0 && (sim_time >= LOG_START))
-#define MEM_LOG (0 && (sim_time >= LOG_START))
 
 #define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF

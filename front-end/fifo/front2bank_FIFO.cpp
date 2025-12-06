@@ -1,7 +1,7 @@
 #include "front_fifo.h"
+#include <array>
 #include <iostream>
 #include <queue>
-#include <array>
 
 struct FRONT2BACK_FIFO_entry {
   std::array<uint32_t, FETCH_WIDTH> fetch_group;
@@ -17,7 +17,8 @@ struct FRONT2BACK_FIFO_entry {
 
 static std::queue<FRONT2BACK_FIFO_entry> front2back_fifo;
 
-void front2back_FIFO_top(struct front2back_FIFO_in *in, struct front2back_FIFO_out *out) {
+void front2back_FIFO_top(struct front2back_FIFO_in *in,
+                         struct front2back_FIFO_out *out) {
   if (in->reset) {
     while (!front2back_fifo.empty()) {
       front2back_fifo.pop();
@@ -33,9 +34,6 @@ void front2back_FIFO_top(struct front2back_FIFO_in *in, struct front2back_FIFO_o
     // we allow write to happen during refetch...
   }
   if (in->write_enable) {
-    if(front2back_fifo.size() >= FRONT2BACK_FIFO_SIZE) {
-      assert(0); // should not reach here
-    }
     FRONT2BACK_FIFO_entry entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       entry.fetch_group[i] = in->fetch_group[i];
@@ -47,7 +45,8 @@ void front2back_FIFO_top(struct front2back_FIFO_in *in, struct front2back_FIFO_o
       entry.altpcpn[i] = in->altpcpn[i];
       entry.pcpn[i] = in->pcpn[i];
     }
-    entry.predict_next_fetch_address_corrected = in->predict_next_fetch_address_corrected;
+    entry.predict_next_fetch_address_corrected =
+        in->predict_next_fetch_address_corrected;
     front2back_fifo.push(entry);
   }
 
@@ -56,15 +55,18 @@ void front2back_FIFO_top(struct front2back_FIFO_in *in, struct front2back_FIFO_o
       out->fetch_group[i] = front2back_fifo.front().fetch_group[i];
       out->page_fault_inst[i] = front2back_fifo.front().page_fault_inst[i];
       out->inst_valid[i] = front2back_fifo.front().inst_valid[i];
-      out->predict_dir_corrected[i] = front2back_fifo.front().predict_dir_corrected[i];
+      out->predict_dir_corrected[i] =
+          front2back_fifo.front().predict_dir_corrected[i];
       out->predict_base_pc[i] = front2back_fifo.front().predict_base_pc[i];
       out->alt_pred[i] = front2back_fifo.front().alt_pred[i];
       out->altpcpn[i] = front2back_fifo.front().altpcpn[i];
       out->pcpn[i] = front2back_fifo.front().pcpn[i];
     }
-    out->predict_next_fetch_address_corrected = front2back_fifo.front().predict_next_fetch_address_corrected;
+    out->predict_next_fetch_address_corrected =
+        front2back_fifo.front().predict_next_fetch_address_corrected;
     front2back_fifo.pop();
-    out->front2back_FIFO_valid = true; // only valid when read is enabled and FIFO is not empty
+    out->front2back_FIFO_valid =
+        true; // only valid when read is enabled and FIFO is not empty
   } else {
     out->front2back_FIFO_valid = false;
   }

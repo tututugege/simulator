@@ -32,9 +32,6 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
   }
   // when there is new prediction, add it to PTAB
   if (in->write_enable) {
-    if (ptab.size() >= PTAB_SIZE) {
-      assert(0); // should not reach here
-    }
     PTAB_entry entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       entry.predict_dir[i] = in->predict_dir[i];

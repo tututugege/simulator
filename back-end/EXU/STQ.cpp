@@ -86,11 +86,6 @@ void STQ::comb() {
       p_memory[0xc201004 / 4] = 0x0;
     }
 
-    if (MEM_LOG) {
-      cout << "store data " << hex << ((mask & wdata) | (~mask & old_data))
-           << " in " << (waddr & 0xFFFFFFFC) << endl;
-    }
-
     entry[deq_ptr].valid = false;
     entry[deq_ptr].commit = false;
     LOOP_INC(deq_ptr, STQ_NUM);

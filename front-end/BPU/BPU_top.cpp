@@ -126,8 +126,6 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
         out->alt_pred[i] = pred_out.altpred;
         out->pcpn[i] = pred_out.pcpn;
         out->altpcpn[i] = pred_out.altpcpn;
-        DEBUG_LOG("[BPU_top] predict_dir[%d]: %d, pc: %x\n", i,
-                  out->predict_dir[i], current_pc);
         if (out->predict_dir[i] && !found_taken_branch) {
           found_taken_branch = true;
           branch_pc = current_pc;
@@ -143,25 +141,14 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
       uint32_t btb_target = C_btb_pred_wrapper(branch_pc);
 #endif
       out->predict_next_fetch_address = btb_target;
-      DEBUG_LOG("[BPU_top] base pc: %x, btb_target: %x\n", branch_pc,
-                btb_target);
     } else {
       // no prediction for taken branches, execute sequentially
       out->predict_next_fetch_address = pc_reg + (FETCH_WIDTH * 4);
       if ((out->predict_next_fetch_address & mask) !=
           (pc_reg & mask)) { // cross cacheline boundary(32 bytes)
         out->predict_next_fetch_address &= mask;
-        DEBUG_LOG(
-            "[BPU_top] cross cacheline boundary, next_fetch_address: %x\n",
-            out->predict_next_fetch_address);
       }
     }
     pc_reg = out->predict_next_fetch_address;
-    DEBUG_LOG("[BPU_top] icache_fetch_address: %x\n", out->fetch_address);
-    DEBUG_LOG("[BPU_top] predict_next_fetch_address: %x\n",
-              out->predict_next_fetch_address);
-    DEBUG_LOG("[BPU_top] predict_dir: %d\n",
-              out->predict_dir[0] || out->predict_dir[1] ||
-                  out->predict_dir[2] || out->predict_dir[3]);
   }
 }

@@ -44,7 +44,6 @@ void mul(Inst_uop &inst) {
     break;
   }
   default:
-    assert(0);
     break;
   }
 }
@@ -74,7 +73,6 @@ void div(Inst_uop &inst) {
     break;
   }
   default:
-    assert(0);
     break;
   }
 }
@@ -186,7 +184,7 @@ void alu(Inst_uop &inst) {
       inst.result = (operand1 & operand2);
       break;
     default:
-      assert(0);
+      break;
     }
     break;
   }

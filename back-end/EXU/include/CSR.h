@@ -132,7 +132,7 @@ inline int cvt_number_to_csr(int csr_idx) {
     ret = csr_timeh;
     break;
   default:
-    assert(0);
+    break;
   }
   return ret;
 }
