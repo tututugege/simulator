@@ -12,10 +12,14 @@ void Back_Top::difftest_cycle() {
 
   int commit_num = 0;
   Inst_uop *inst;
+  bool skip = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (rob.out.rob_commit->commit_entry[i].valid) {
       commit_num++;
       inst = &rob.out.rob_commit->commit_entry[i].uop;
+      if (inst->difftest_skip) {
+        skip = true;
+      }
     }
   }
 
@@ -61,7 +65,7 @@ void Back_Top::difftest_cycle() {
       dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
     }
     dut_cpu.pc = inst->pc_next;
-    if (inst->difftest_skip) {
+    if (skip) {
       difftest_skip();
     } else {
       difftest_step(true);
