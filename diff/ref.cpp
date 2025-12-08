@@ -67,8 +67,13 @@ void Ref_cpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+#ifdef CONFIG_RUN_REF
+    page_fault_inst = !va2pa(p_addr, state.pc, state.csr[csr_satp], 0, mstatus,
+                             sstatus, privilege, memory);
+#else
     page_fault_inst = !va2pa_fixed(p_addr, state.pc, state.csr[csr_satp], 0,
                                    mstatus, sstatus, privilege, memory);
+#endif
     if (page_fault_inst) {
       exception(state.pc);
       return;
@@ -541,10 +546,17 @@ void Ref_cpu::RV32A() {
   cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
   if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
+#ifdef CONFIG_RUN_REF
+    bool page_fault_1 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
+                               sstatus, privilege, memory);
+    bool page_fault_2 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
+                               sstatus, privilege, memory);
+#else
     bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
                                      mstatus, sstatus, privilege, memory);
     bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
                                      mstatus, sstatus, privilege, memory);
+#endif
 
     if (page_fault_1 || page_fault_2) {
       if (number_funct5_unsigned == 2) {
@@ -763,8 +775,14 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
+#ifdef CONFIG_RUN_REF
+      page_fault_load = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
+                               sstatus, privilege, memory);
+
+#else
       page_fault_load = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
                                      mstatus, sstatus, privilege, memory);
+#endif
     }
 
     if (page_fault_load) {
@@ -820,8 +838,14 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
+#ifdef CONFIG_RUN_REF
+      page_fault_store = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
+                                sstatus, privilege, memory);
+
+#else
       page_fault_store = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
                                       mstatus, sstatus, privilege, memory);
+#endif
     }
 
     if (page_fault_store) {
@@ -903,44 +927,73 @@ void Ref_cpu::RV32IM() {
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
                               // and
     if (number_funct7_unsigned == 1) { // mul div
+      int64_t s1 = (int64_t)(int32_t)reg_rdata1;
+      int64_t s2 = (int64_t)(int32_t)reg_rdata2;
+
+      uint64_t u1 = (uint32_t)reg_rdata1;
+      uint64_t u2 = (uint32_t)reg_rdata2;
+
+      // 获取 32 位操作数
+      int32_t dividend = (int32_t)reg_rdata1;
+      int32_t divisor = (int32_t)reg_rdata2;
+      uint32_t u_dividend = (uint32_t)reg_rdata1;
+      uint32_t u_divisor = (uint32_t)reg_rdata2;
+
       switch (number_funct3_unsigned) {
       case 0: { // mul
-        state.gpr[reg_d_index] = (int32_t)reg_rdata1 * (int32_t)reg_rdata2;
+        state.gpr[reg_d_index] = (int32_t)(u1 * u2);
         break;
       }
       case 1: { // mulh
-        state.gpr[reg_d_index] =
-            ((int64_t)reg_rdata1 * (int64_t)reg_rdata2) >> 32;
+        state.gpr[reg_d_index] = (uint32_t)((s1 * s2) >> 32);
         break;
       }
       case 2: { // mulsu
-        state.gpr[reg_d_index] = ((int32_t)reg_rdata1 * (uint32_t)reg_rdata2);
-
+        state.gpr[reg_d_index] = (uint32_t)((s1 * (int64_t)u2) >> 32);
         break;
       }
       case 3: { // mulhu
-        state.gpr[reg_d_index] =
-            ((uint64_t)reg_rdata1 * (uint64_t)reg_rdata2) >> 32;
+        state.gpr[reg_d_index] = (uint32_t)((u1 * u2) >> 32);
         break;
       }
-      case 4: { // div
-        state.gpr[reg_d_index] = ((int64_t)reg_rdata1 / (int64_t)reg_rdata2);
+      case 4: { // div (signed)
+        if (divisor == 0) {
+          state.gpr[reg_d_index] = -1; // RISC-V 规定：除以0结果为 -1
+        } else if (dividend == INT32_MIN && divisor == -1) {
+          state.gpr[reg_d_index] =
+              INT32_MIN; // RISC-V 规定：溢出时结果为被除数本身(INT_MIN)
+        } else {
+          state.gpr[reg_d_index] = dividend / divisor;
+        }
         break;
       }
-      case 5: { // divu
-        state.gpr[reg_d_index] = ((uint64_t)reg_rdata1 / (uint64_t)reg_rdata2);
+      case 5: { // divu (unsigned)
+        if (u_divisor == 0) {
+          state.gpr[reg_d_index] = 0xFFFFFFFF; // RISC-V 规定：除以0结果为最大值
+        } else {
+          state.gpr[reg_d_index] = u_dividend / u_divisor;
+        }
         break;
       }
-      case 6: { // rem
-        state.gpr[reg_d_index] = ((int64_t)reg_rdata1 % (int64_t)reg_rdata2);
+      case 6: { // rem (signed)
+        if (divisor == 0) {
+          state.gpr[reg_d_index] = dividend; // RISC-V 规定：除以0，余数为被除数
+        } else if (dividend == INT32_MIN && divisor == -1) {
+          state.gpr[reg_d_index] = 0; // RISC-V 规定：溢出时，余数为 0
+        } else {
+          state.gpr[reg_d_index] = dividend % divisor;
+        }
         break;
       }
-      case 7: { // remu
-        state.gpr[reg_d_index] = ((uint64_t)reg_rdata1 % (uint64_t)reg_rdata2);
+      case 7: { // remu (unsigned)
+        if (u_divisor == 0) {
+          state.gpr[reg_d_index] =
+              u_dividend; // RISC-V 规定：除以0，余数为被除数
+        } else {
+          state.gpr[reg_d_index] = u_dividend % u_divisor;
+        }
         break;
       }
-      default:
-        break;
       }
     } else {
       switch (number_funct3_unsigned) {

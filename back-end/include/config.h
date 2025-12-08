@@ -58,8 +58,8 @@ using namespace std;
 #define MEM_LOG (0 && (sim_time >= LOG_START))
 
 #define CONFIG_DIFFTEST
-// #define CONFIG_RUN_REF
-// #define CONFIG_RUN_REF_PRINT
+#define CONFIG_RUN_REF
+#define CONFIG_RUN_REF_PRINT
 
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
