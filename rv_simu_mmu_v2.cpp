@@ -68,9 +68,13 @@ int main(int argc, char *argv[]) {
 
 #ifdef CONFIG_RUN_REF
   while (1) {
-    difftest_step();
+    difftest_step(false);
     sim_time++;
+    if (sim_time % 100000000 == 0) {
+      cout << dec << sim_time << endl;
+    }
   }
+
 #endif
 
   back.init();

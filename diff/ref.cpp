@@ -4,6 +4,11 @@
 #include "config.h"
 #include "cvt.h"
 #include "diff.h"
+
+extern "C" {
+#include "softfloat.h"
+}
+
 #include <cstdint>
 
 #define BITMASK(bits) ((1ull << (bits)) - 1)
@@ -26,6 +31,8 @@
 #define immB(i)                                                                \
   ((SEXT(BITS(i, 31, 31), 1) << 12) | (BITS(i, 7, 7) << 11) |                  \
    (BITS(i, 30, 25) << 5) | (BITS(i, 11, 8) << 1))
+
+#define FLOAT_FUNC7 0x02
 
 bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
                  uint32_t type, bool *mstatus, bool *sstatus, int privilege,
@@ -67,8 +74,13 @@ void Ref_cpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+#ifdef CONFIG_RUN_REF
+    page_fault_inst = !va2pa(p_addr, state.pc, state.csr[csr_satp], 0, mstatus,
+                             sstatus, privilege, memory);
+#else
     page_fault_inst = !va2pa_fixed(p_addr, state.pc, state.csr[csr_satp], 0,
                                    mstatus, sstatus, privilege, memory);
+#endif
     if (page_fault_inst) {
       exception(state.pc);
       return;
@@ -541,10 +553,19 @@ void Ref_cpu::RV32A() {
   cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
   if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
+#ifdef CONFIG_RUN_REF
+    bool page_fault_1 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
+                               sstatus, privilege, memory);
+    bool page_fault_2 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
+                               sstatus, privilege, memory);
+
+#else
     bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
                                      mstatus, sstatus, privilege, memory);
     bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
                                      mstatus, sstatus, privilege, memory);
+
+#endif
 
     if (page_fault_1 || page_fault_2) {
       if (number_funct5_unsigned == 2) {
@@ -763,8 +784,14 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
+#ifdef CONFIG_RUN_REF
+      page_fault_load = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1, mstatus,
+                               sstatus, privilege, memory);
+
+#else
       page_fault_load = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
                                      mstatus, sstatus, privilege, memory);
+#endif
     }
 
     if (page_fault_load) {
@@ -820,8 +847,13 @@ void Ref_cpu::RV32IM() {
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
+#ifdef CONFIG_RUN_REF
+      page_fault_store = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
+                                sstatus, privilege, memory);
+#else
       page_fault_store = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
                                       mstatus, sstatus, privilege, memory);
+#endif
     }
 
     if (page_fault_store) {
@@ -942,6 +974,10 @@ void Ref_cpu::RV32IM() {
       default:
         break;
       }
+    } else if (number_funct7_unsigned == FLOAT_FUNC7) {
+      float32_t a = {.v = reg_rdata1};
+      float32_t b = {.v = reg_rdata2};
+      state.gpr[reg_d_index] = f32_add(a, b).v;
     } else {
       switch (number_funct3_unsigned) {
       case 0: { // add, sub
