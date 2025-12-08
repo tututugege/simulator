@@ -4,13 +4,6 @@
 #include <cstdlib>
 #include <ctime>
 
-#define BASE_ENTRY_NUM 2048
-#define GHR_LENGTH 256
-#define TN_MAX 4 // 0-tage_indexed, which means 0,1,2,3
-#define TN_ENTRY_NUM 4096
-#define FH_N_MAX 3              // how many different types of Folded history
-#define USEFUL_RESET_VAL 262144 // 256K
-
 uint32_t useful_reset_cnt = 0;
 bool useful_msb_reset = true;
 
@@ -136,16 +129,39 @@ pred_out TAGE_get_prediction(uint32_t PC) {
     }
   }
 
+  struct pred_out ret; 
+
   if (pcpn >= TN_MAX) { // pcpn not found
     pcpn_pred = base_pred;
-    return {base_pred, alt_pred, pcpn, altpcpn};
+    ret.pred = base_pred;
+    ret.altpred = alt_pred;
+    ret.pcpn = pcpn;
+    ret.altpcpn = altpcpn;
+    for(int i = 0; i < TN_MAX; i++) {
+      ret.tage_idx[i] = tage_index[i];
+    }
+    return ret;
   }
   if (cnt_table[pcpn][tage_index[pcpn]] >= 4) {
     pcpn_pred = true;
-    return {true, alt_pred, pcpn, altpcpn};
+    ret.pred = true;
+    ret.altpred = alt_pred;
+    ret.pcpn = pcpn;
+    ret.altpcpn = altpcpn;
+    for(int i = 0; i < TN_MAX; i++) {
+      ret.tage_idx[i] = tage_index[i];
+    }
+    return ret;
   }
   pcpn_pred = false;
-  return {false, alt_pred, pcpn, altpcpn};
+  ret.pred = false;
+  ret.altpred = alt_pred;
+  ret.pcpn = pcpn;
+  ret.altpcpn = altpcpn;
+  for(int i = 0; i < TN_MAX; i++) {
+    ret.tage_idx[i] = tage_index[i];
+  }
+  return ret;
 }
 
 uint8_t bit_update_2(uint8_t data, bool is_inc) {
@@ -209,7 +225,8 @@ void TAGE_do_update(uint32_t PC, bool real_dir, pred_out pred_out) {
   }
   // get tage_index for all Tn
   for (int i = 0; i < TN_MAX; i++) {
-    tage_index[i] = cal_tage_index(PC, i);
+    // tage_index[i] = cal_tage_index(PC, i);
+    tage_index[i] = pred_out.tage_idx[i];
   }
 
   // printf("TAGE_do_update(%x, %d, %d, %d, %d, %d);\n", PC, real_dir, pred_dir,

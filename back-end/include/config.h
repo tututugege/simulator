@@ -57,9 +57,9 @@ using namespace std;
 #define LOG (0 && (sim_time >= LOG_START))
 #define MEM_LOG (0 && (sim_time >= LOG_START))
 
-#define CONFIG_DIFFTEST
-#define CONFIG_RUN_REF
-#define CONFIG_RUN_REF_PRINT
+// #define CONFIG_DIFFTEST
+// #define CONFIG_RUN_REF
+// #define CONFIG_RUN_REF_PRINT
 
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
@@ -144,6 +144,7 @@ typedef struct Inst_uop {
   wire8_t altpcpn;
   wire8_t pcpn;
   wire32_t pred_br_pc;
+  wire32_t tage_idx[4]; // TN_MAX = 4
 
   // 分支预测更新信息
   wire1_t mispred;

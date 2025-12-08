@@ -13,10 +13,12 @@
 #define BTB_TAG_MASK ((1 << BTB_TAG_LEN) - 1)
 #define BTB_TYPE_IDX_MASK (BTB_TYPE_ENTRY_NUM - 1)
 
-#define BR_DIRECT 0
+#define BR_DIRECT 0 // only cond now
 #define BR_CALL 1
-#define BR_RET 2
+#define BR_RET 2    // can merge...
 #define BR_IDIRECT 3
+#define BR_NONCTL 4
+#define BR_JAL 5
 
 uint32_t btb_pred(uint32_t pc);
 void btb_update(uint32_t pc, uint32_t actualAddr, uint32_t br_type,

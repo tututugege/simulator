@@ -40,6 +40,7 @@ typedef struct {
   wire8_t altpcpn[FETCH_WIDTH];
   wire8_t pcpn[FETCH_WIDTH];
   wire32_t predict_next_fetch_address[FETCH_WIDTH];
+  wire32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
   wire1_t page_fault_inst[FETCH_WIDTH];
 } Front_Dec;
 

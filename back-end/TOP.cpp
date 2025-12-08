@@ -329,6 +329,9 @@ void Back_Top::comb() {
     idu.in.front2dec->predict_next_fetch_address[i] =
         in.predict_next_fetch_address[i];
     idu.in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
+    for (int j = 0; j < 4; j++) { // TN_MAX = 4
+      idu.in.front2dec->tage_idx[i][j] = in.tage_idx[i][j];
+    }
   }
 
   // 每个空行表示分层  下层会依赖上层产生的某个信号
