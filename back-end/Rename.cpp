@@ -93,6 +93,12 @@ void Rename::comb_alloc() {
       out.ren2dis->valid[i] = false;
     }
   }
+
+#ifdef CONFIG_PERF_COUNTER
+  if (stall) {
+    perf.ren_reg_stall++;
+  }
+#endif
 }
 
 void Rename::comb_wake() {

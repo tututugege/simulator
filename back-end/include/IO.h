@@ -104,6 +104,7 @@ typedef struct {
   wire1_t sret;
   wire1_t ecall;
   wire1_t exception;
+  wire1_t fence;
 
   wire1_t page_fault_inst;
   wire1_t page_fault_load;
@@ -153,6 +154,10 @@ typedef struct {
   wire1_t ready[2];
   wire4_t stq_idx;
 } Stq_Dis;
+
+typedef struct {
+  wire1_t fence_stall;
+} Stq_Front;
 
 typedef struct {
   // 地址写入

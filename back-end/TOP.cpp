@@ -201,6 +201,7 @@ Rob_Broadcast rob_bcast;
 Rob_Commit rob_commit;
 
 Stq_Dis stq2dis;
+Stq_Front stq2front;
 
 Csr_Exe csr2exe;
 Csr_Rob csr2rob;
@@ -284,6 +285,7 @@ void Back_Top::init() {
   rob.out.rob2csr = &rob2csr;
 
   stq.out.stq2dis = &stq2dis;
+  stq.out.stq2front = &stq2front;
 
   stq.in.exe2stq = &exe2stq;
   stq.in.rob_commit = &rob_commit;
@@ -380,7 +382,8 @@ void Back_Top::comb() {
   back.out.flush = rob.out.rob_bcast->flush;
   if (!rob.out.rob_bcast->flush) {
     back.out.mispred = prf.out.prf2dec->mispred;
-    back.out.stall = !idu.out.dec2front->ready;
+    back.out.stall =
+        !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
     back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
   } else {
     if (LOG)

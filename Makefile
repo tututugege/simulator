@@ -30,7 +30,7 @@ clean:
 	rm -rf ./baremetal/test.code
 
 gdb:
-	g++ $(CXXINCLUDE) $(CXXSRC) -g
+	g++ $(CXXINCLUDE) $(CXXSRC) -g -march=native
 	gdb --args ./a.out $(IMG)
 
 .PHONY: all clean mem run

@@ -10,7 +10,9 @@ extern Back_Top back;
 extern Cache cache;
 
 void STQ::comb() {
+  out.stq2front->fence_stall = (state == FENCE);
   int num = count;
+  static int last_ch = 0;
 
   for (int i = 0; i < 2; i++) {
     if (!in.dis2stq->valid[i]) {
@@ -63,15 +65,15 @@ void STQ::comb() {
 
       if (temp != 27)
         cout << temp;
-      if (temp == '?') {
-        if (perf.perf_start) {
-          perf.perf_print();
-        } else {
-          cout << " perf counter start" << endl;
-          perf.perf_start = true;
-          perf.perf_reset();
-        }
+      if (temp == '?' && !perf.perf_start) {
+        cout << " perf counter start" << endl;
+        perf.perf_start = true;
+        perf.perf_reset();
+      } else if (temp == '#' && perf.perf_start && last_ch == '?') {
+        perf.perf_print();
+        exit(0);
       }
+      last_ch = temp;
     }
 
     if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 7) {
@@ -106,6 +108,16 @@ void STQ::comb() {
       entry[commit_ptr].commit = true;
       commit_count++;
       LOOP_INC(commit_ptr, STQ_NUM);
+    }
+  }
+
+  if (state == NORMAL) {
+    if (in.rob_bcast->fence && count != 0) {
+      state = FENCE;
+    }
+  } else if (state == FENCE) {
+    if (count == 0) {
+      state = NORMAL;
     }
   }
 }
