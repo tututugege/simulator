@@ -144,9 +144,9 @@ typedef struct {
 } Prf_Dec;
 
 typedef struct {
-  wire4_t tag[FETCH_WIDTH];
-  wire1_t valid[FETCH_WIDTH];
-  wire1_t dis_fire[FETCH_WIDTH];
+  wire4_t tag[2];
+  wire1_t valid[2];
+  wire1_t dis_fire[2];
 } Dis_Stq;
 
 // TODO: MAGIC NUMBER 2

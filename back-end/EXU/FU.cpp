@@ -4,6 +4,7 @@
 #include <cvt.h>
 #include <util.h>
 
+extern uint32_t *p_memory;
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 

@@ -8,6 +8,9 @@
 #include <diff.h>
 #include <util.h>
 
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+
 void Back_Top::difftest_cycle() {
 
   int commit_num = 0;
