@@ -3,13 +3,14 @@
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
+#include <cstdint>
 #include <cstring>
 #include <cvt.h>
 #include <diff.h>
 #include <util.h>
+#include <zlib.h>
 
-bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory);
 
 void Back_Top::difftest_cycle() {
 
@@ -495,3 +496,113 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   return ret;
 }
 #endif
+
+// --- 辅助函数：简化 zlib 读写 POD 类型 ---
+template <typename T> void gz_write_pod(gzFile file, const T &data) {
+  if (gzwrite(file, &data, sizeof(T)) != sizeof(T)) {
+    std::cerr << "Error writing data to gzip file." << std::endl;
+    exit(1);
+  }
+}
+
+template <typename T> void gz_read_pod(gzFile file, T &data) {
+  if (gzread(file, &data, sizeof(T)) != sizeof(T)) {
+    std::cerr << "Error reading data from gzip file." << std::endl;
+    exit(1);
+  }
+}
+
+void Back_Top::restore_checkpoint(const std::string &filename,
+                                  uint32_t &number_PC) {
+
+  std::string final_name = filename;
+  gzFile file = gzopen(final_name.c_str(), "rb");
+  if (!file && final_name.find(".gz") == std::string::npos) {
+    final_name += ".gz";
+    file = gzopen(final_name.c_str(), "rb");
+  }
+
+  if (!file) {
+    std::cerr << "Error: Could not open file: " << filename << std::endl;
+    exit(1);
+  }
+
+  CPU_state state;
+  uint32_t temp_u32;
+  bool temp_bool;
+  uint32_t interval_inst_count;
+
+  // 1. 恢复状态
+  gz_read_pod(file, state);
+  gz_read_pod(file, temp_u32);
+  gz_read_pod(file, temp_u32);
+  // ... (恢复其他 bool 变量) ...
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, temp_bool);
+  gz_read_pod(file, interval_inst_count);
+
+  number_PC = state.pc;
+  csr.privilege = csr.privilege_1 = RISCV_MODE_U;
+  for (int i = 0; i < ARF_NUM; i++) {
+    prf.reg_file[rename.arch_RAT[i]] = state.gpr[i];
+    prf.reg_file_1[rename.arch_RAT[i]] = state.gpr[i];
+  }
+
+  for (int i = 0; i < CSR_NUM; i++) {
+    csr.CSR_RegFile[i] = state.csr[i];
+    csr.CSR_RegFile_1[i] = state.csr[i];
+  }
+
+  // 2. 恢复内存
+  if (p_memory == nullptr) {
+    std::cerr << "Error: Memory not allocated." << std::endl;
+    exit(1);
+  }
+
+  // [关键] 计算总字节数
+  uint64_t total_bytes = (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t);
+  uint8_t *byte_ptr = reinterpret_cast<uint8_t *>(p_memory);
+  uint64_t remain = total_bytes;
+
+  std::cout << "Restoring Memory..." << std::endl;
+
+  const uint64_t GZ_CHUNK_SIZE = 1ULL * 1024 * 1024 * 1024;
+  while (remain > 0) {
+    unsigned int chunk = (remain > GZ_CHUNK_SIZE) ? (unsigned int)GZ_CHUNK_SIZE
+                                                  : (unsigned int)remain;
+
+    int read_bytes = gzread(file, byte_ptr, chunk);
+    if (read_bytes < 0) {
+      std::cerr << "Error: gzread failed." << std::endl;
+      exit(1);
+    }
+    if (read_bytes == 0) {
+      std::cerr << "Error: Unexpected EOF." << std::endl;
+      exit(1);
+    }
+
+    byte_ptr += read_bytes;
+    remain -= read_bytes;
+  }
+
+  gzclose(file);
+  std::cout << "Checkpoint restored from " << final_name << std::endl;
+
+  init_diff_ckpt(state, p_memory);
+}

@@ -11,7 +11,7 @@
 #include <front_IO.h>
 #include <front_module.h>
 #include <fstream>
-#include <util.h>
+#include <zlib.h>
 
 using namespace std;
 
@@ -32,6 +32,7 @@ front_top_in front_in;
 
 long long sim_time = 0;
 bool sim_end = false;
+uint32_t number_PC = 0;
 
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 
@@ -80,21 +81,27 @@ int main(int argc, char *argv[]) {
   back.init();
   mmu.reset();
 
-  uint32_t number_PC = 0;
   bool stall, misprediction, exception;
   stall = misprediction = exception = false;
+
+  int max_sim_time = MAX_SIM_TIME;
+
+#ifdef CONFIG_RUN_CKPT
+  max_sim_time = SIMPOINT_INTERVAL;
+  back.restore_checkpoint("../simpoint_sim/checkpoint/ckpt_sp6_i550.bin.gz",
+                          number_PC);
+#endif
 
 #ifdef CONFIG_BPU
   // reset
   front_in.reset = true;
   front_in.FIFO_read_enable = true;
   front_top(&front_in, &front_out);
-  cout << hex << front_out.pc[0] << endl;
   front_in.reset = false;
 #endif
 
   // main loop
-  for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
+  for (sim_time = 0; sim_time < max_sim_time; sim_time++) {
     if (sim_time % 10000000 == 0)
       cout << dec << sim_time << endl;
     perf.cycle++;

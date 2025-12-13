@@ -1,3 +1,4 @@
+#include "RISCV.h"
 #include <config.h>
 #include <cstdint>
 #include <cvt.h>
@@ -19,6 +20,13 @@ void init_difftest(int img_size) {
   ref_cpu.memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   ref_cpu.memory[uint32_t(0x8 / 4)] = 0x800002b7;
   ref_cpu.memory[uint32_t(0xc / 4)] = 0x00028067;
+}
+
+void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
+  ref_cpu.init(0);
+  ref_cpu.state = ckpt_state;
+  ref_cpu.privilege = RISCV_MODE_U;
+  memcpy(ref_cpu.memory, ckpt_memory, PHYSICAL_MEMORY_LENGTH);
 }
 
 static void checkregs() {

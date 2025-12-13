@@ -10,6 +10,7 @@
 #include <STQ.h>
 #include <config.h>
 #include <cstdint>
+#include <iostream>
 
 typedef struct {
   uint32_t inst[FETCH_WIDTH];
@@ -65,6 +66,8 @@ public:
 #else
   bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
 #endif
+
+  void restore_checkpoint(const std::string &filename, uint32_t &number_PC);
 
   // debug
   void difftest_inst(Inst_uop *inst);

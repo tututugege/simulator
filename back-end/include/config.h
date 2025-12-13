@@ -57,9 +57,11 @@ using namespace std;
 #define LOG (0 && (sim_time >= LOG_START))
 #define MEM_LOG (0 && (sim_time >= LOG_START))
 
-// #define CONFIG_DIFFTEST
+#define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
 // #define CONFIG_RUN_REF_PRINT
+#define CONFIG_RUN_CKPT
+#define SIMPOINT_INTERVAL 100000000
 
 // #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU

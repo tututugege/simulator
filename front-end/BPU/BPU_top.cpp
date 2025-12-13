@@ -17,7 +17,6 @@ using namespace std;
 #include "./train_IO_gen.h"
 #endif
 
-
 #define INST_TYPE_ENTRY_NUM 4096
 #define INST_TYPE_ENTRY_MASK (INST_TYPE_ENTRY_NUM - 1)
 uint8_t inst_type[INST_TYPE_ENTRY_NUM];
@@ -29,10 +28,11 @@ int tage_miss = 0;
 
 void BPU_change_pc_reg(uint32_t new_pc) { pc_reg = new_pc; }
 
+extern uint32_t number_PC;
 void BPU_top(struct BPU_in *in, struct BPU_out *out) {
   // generate pc_reg sending to icache
   if (in->reset) {
-    pc_reg = RESET_PC;
+    pc_reg = number_PC;
     out->PTAB_write_enable = false;
     out->icache_read_valid = false;
     return;
@@ -50,7 +50,8 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (in->back2front_valid[i]) {
 
-      inst_type[(in->predict_base_pc[i] >> 2) & INST_TYPE_ENTRY_MASK] = in->actual_br_type[i];
+      inst_type[(in->predict_base_pc[i] >> 2) & INST_TYPE_ENTRY_MASK] =
+          in->actual_br_type[i];
 
       // pred_out pred_out = {in->predict_dir[i], in->alt_pred[i], in->pcpn[i],
       //                      in->altpcpn[i]};
@@ -59,11 +60,11 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
       pred_out.altpred = in->alt_pred[i];
       pred_out.pcpn = in->pcpn[i];
       pred_out.altpcpn = in->altpcpn[i];
-      for(int j = 0; j < TN_MAX; j++) {
+      for (int j = 0; j < TN_MAX; j++) {
         pred_out.tage_idx[j] = in->tage_idx[i][j];
       }
 #ifndef IO_version
-      if(in->actual_br_type[i] == BR_DIRECT)
+      if (in->actual_br_type[i] == BR_DIRECT)
         TAGE_do_update(in->predict_base_pc[i], in->actual_dir[i], pred_out);
       if (in->actual_dir[i] == in->predict_dir[i])
         tage_cnt++;
@@ -74,7 +75,7 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
                                pred_out);
 #endif
 #ifndef IO_version
-      if(in->actual_br_type[i] != BR_NONCTL)
+      if (in->actual_br_type[i] != BR_NONCTL)
         bht_update(in->predict_base_pc[i], in->actual_dir[i]);
 #else
       C_bht_update_wrapper(in->predict_base_pc[i], in->actual_dir[i]);
@@ -136,7 +137,8 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
       out->predict_base_pc[i] = current_pc;
       if (current_pc < pc_boundry) { // 检查是否超出cacheline边界
 
-        uint8_t cur_inst_type = inst_type[(current_pc >> 2) & INST_TYPE_ENTRY_MASK];
+        uint8_t cur_inst_type =
+            inst_type[(current_pc >> 2) & INST_TYPE_ENTRY_MASK];
 #ifndef IO_version
         pred_out pred_out = TAGE_get_prediction(current_pc);
 #else
@@ -146,13 +148,14 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
         out->alt_pred[i] = pred_out.altpred;
         out->pcpn[i] = pred_out.pcpn;
         out->altpcpn[i] = pred_out.altpcpn;
-        for(int k=0; k<TN_MAX; k++) {
+        for (int k = 0; k < TN_MAX; k++) {
           out->tage_idx[i][k] = pred_out.tage_idx[k];
         }
 
-        if(cur_inst_type == BR_NONCTL) {
+        if (cur_inst_type == BR_NONCTL) {
           out->predict_dir[i] = false;
-        }else if(cur_inst_type == BR_RET || cur_inst_type == BR_CALL || cur_inst_type == BR_IDIRECT || cur_inst_type == BR_JAL) {
+        } else if (cur_inst_type == BR_RET || cur_inst_type == BR_CALL ||
+                   cur_inst_type == BR_IDIRECT || cur_inst_type == BR_JAL) {
           out->predict_dir[i] = true;
         }
 
