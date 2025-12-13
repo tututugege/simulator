@@ -3,7 +3,6 @@
 #include "RISCV.h"
 #include "config.h"
 #include "cvt.h"
-#include "diff.h"
 #include <cstdint>
 
 #define BITMASK(bits) ((1ull << (bits)) - 1)
