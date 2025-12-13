@@ -19,6 +19,7 @@ typedef struct {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
 } Back_in;

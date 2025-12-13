@@ -4,11 +4,10 @@
 #include <util.h>
 
 // 对每个IQ选择最多2个
-static wire1_t uop_sel[IQ_NUM][FETCH_WIDTH] = {0};
+static wire4_t uop_sel[IQ_NUM][2] = {0};
 static wire1_t to_iq[IQ_NUM][FETCH_WIDTH] = {0};
-// 实际硬件可以写成4bit独热码用于选择，这里为了方便使用idx
-static wire4_t port_idx[IQ_NUM][2];
 static Inst_entry inst_alloc[FETCH_WIDTH];
+static wire4_t stq_mask[2] = {0};
 
 // 分配rob_idx stq_idx
 void Dispatch::comb_alloc() {
@@ -16,6 +15,7 @@ void Dispatch::comb_alloc() {
 
   for (int i = 0; i < 2; i++) {
     out.dis2stq->valid[i] = false;
+    stq_mask[i] = 0;
   }
 
   wire16_t pre_store_mask = 0;
@@ -36,6 +36,7 @@ void Dispatch::comb_alloc() {
         out.dis2stq->valid[store_num] = true;
         out.dis2stq->tag[store_num] = inst_r[i].uop.tag;
         pre_store_mask = pre_store_mask | (1 << inst_alloc[i].uop.stq_idx);
+        stq_mask[store_num] = 1 << i;
         store_num++;
       }
     }
@@ -86,9 +87,11 @@ void Dispatch::comb_wake() {
 void Dispatch::comb_dispatch() {
   Inst_entry pre_dis_uop[FETCH_WIDTH * 3];
   for (int i = 0; i < IQ_NUM; i++) {
+    for (int j = 0; j < 2; j++) {
+      uop_sel[i][j] = 0;
+    }
     for (int j = 0; j < FETCH_WIDTH; j++) {
       to_iq[i][j] = false;
-      uop_sel[i][j] = false;
     }
   }
 
@@ -284,51 +287,33 @@ void Dispatch::comb_dispatch() {
     int num = 0;
     for (int j = 0; j < FETCH_WIDTH && num < ready_num[i]; j++) {
       if (to_iq[i][j]) {
-        uop_sel[i][j] = true;
+        uop_sel[i][num] = 1 << j;
         num++;
       }
     }
   }
 
-  // 根据uop_sel 每个iq的分派指令
-  // 每个IQ的uop_sel有1100 1010 1001 0110 0101 0011 1000 0100 0010 0001 0000
-  // 几种情况 根据这几种情况生成对应的对应port_idx
-  for (int i = 0; i < IQ_NUM; i++) {
-    int port = 0;
-    for (int j = 0; j < FETCH_WIDTH; j++) {
-      if (uop_sel[i][j]) {
-        port_idx[i][port] = j;
-        port++;
-      }
-    }
-
-    for (; port < 2; port++) {
-      port_idx[i][port] = FETCH_WIDTH; // 表示该dispatch port该周期未被使用
-    }
-  }
-
-  // 根据port_idx选择指令
+  // 根据uop_sel选择指令
   for (int i = 0; i < IQ_NUM; i++) {
     for (int j = 0; j < 2; j++) {
-      out.dis2iss->valid[i][j] = port_idx[i][j] != FETCH_WIDTH;
-      if (port_idx[i][j] != FETCH_WIDTH) {
-
+      if (uop_sel[i][j] != 0) {
+        out.dis2iss->valid[i][j] = true;
+        int idx = __builtin_ctz(uop_sel[i][j]);
         // 根据指令type区分选第一个uop还是第二个uop
-        if ((inst_r[port_idx[i][j]].uop.type == JALR ||
-             inst_r[port_idx[i][j]].uop.type == JAL) &&
+        if ((inst_r[idx].uop.type == JALR || inst_r[idx].uop.type == JAL) &&
             i >= IQ_BR0) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
-        } else if (inst_r[port_idx[i][j]].uop.type == STORE && i == IQ_STD) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
-        } else if (inst_r[port_idx[i][j]].uop.type == AMO && i == IQ_STA) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 1].uop;
-        } else if (inst_r[port_idx[i][j]].uop.type == AMO && i == IQ_STD) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j] + 2].uop;
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
+        } else if (inst_r[idx].uop.type == STORE && i == IQ_STD) {
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
+        } else if (inst_r[idx].uop.type == AMO && i == IQ_STA) {
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
+        } else if (inst_r[idx].uop.type == AMO && i == IQ_STD) {
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 2].uop;
         } else {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * port_idx[i][j]].uop;
+          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx].uop;
         }
       } else {
-        // 无关项 可任意
+        out.dis2iss->valid[i][j] = false;
       }
     }
   }
@@ -341,10 +326,11 @@ void Dispatch::comb_fire() {
     iss_ready[i] = true;
     for (int j = 0; j < IQ_NUM; j++) {
       if (to_iq[j][i]) {
-        iss_ready[i] = iss_ready[i] && uop_sel[j][i];
+        iss_ready[i] =
+            iss_ready[i] && ((1 << i) & (uop_sel[j][0] | uop_sel[j][1]));
 
 #ifdef CONFIG_PERF_COUNTER
-        if (!uop_sel[j][i]) {
+        if (!((1 << i) & (uop_sel[j][0] | uop_sel[j][1]))) {
           perf.isu_entry_stall[j]++;
         }
 #endif
@@ -366,14 +352,10 @@ void Dispatch::comb_fire() {
         !pre_is_flush && !in.dec_bcast->mispred && !in.rob_bcast->flush;
 
     if (is_store(inst_r[i].uop)) {
-      out.dis2rob->dis_fire[i] = out.dis2rob->dis_fire[i] &&
-                                 out.dis2stq->valid[store_num] &&
-                                 in.stq2dis->ready[store_num];
-
-      if (inst_r[i].valid && store_num < 2) {
-        out.dis2stq->dis_fire[store_num] = out.dis2rob->dis_fire[i];
-        store_num++;
-      }
+      out.dis2rob->dis_fire[i] =
+          out.dis2rob->dis_fire[i] &&
+          (((1 << i) & stq_mask[0]) && in.stq2dis->ready[0] ||
+           ((1 << i) & stq_mask[1]) && in.stq2dis->ready[1]);
     }
 
     pre_stall = inst_r[i].valid && !out.dis2rob->dis_fire[i];
@@ -395,12 +377,18 @@ void Dispatch::comb_fire() {
 
   for (int i = 0; i < IQ_NUM; i++) {
     for (int j = 0; j < 2; j++) {
-      if (port_idx[i][j] != FETCH_WIDTH) {
-        out.dis2iss->dis_fire[i][j] = out.dis2rob->dis_fire[port_idx[i][j]];
+      if (uop_sel[i][j] != 0) {
+        out.dis2iss->dis_fire[i][j] =
+            out.dis2rob->dis_fire[__builtin_ctz(uop_sel[i][j])];
       } else {
         out.dis2iss->dis_fire[i][j] = false;
       }
     }
+  }
+
+  for (int i = 0; i < 2; i++) {
+    out.dis2stq->dis_fire[i] =
+        out.dis2rob->dis_fire[__builtin_ctz(stq_mask[i])];
   }
 
   out.dis2ren->ready = true;

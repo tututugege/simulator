@@ -70,12 +70,6 @@ int Cache::cache_select_evict(uint32_t addr) {
   return selected_way;
 }
 
-#else
-
-int Cache::cache_select_evict(uint32_t addr) { return rand() % way_num; }
-
-#endif
-
 void Cache::update_plru(uint32_t index, int accessed_way) {
   // 更新PLRU树，标记accessed_way为最近使用
   int tree_depth = 0;
@@ -105,6 +99,12 @@ void Cache::update_plru(uint32_t index, int accessed_way) {
     mask >>= 1;
   }
 }
+
+#else
+
+int Cache::cache_select_evict(uint32_t addr) { return rand() % way_num; }
+
+#endif
 
 // miss
 void Cache::cache_evict(uint32_t addr) {

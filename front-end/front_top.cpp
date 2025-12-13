@@ -32,6 +32,9 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
       bpu_in.alt_pred[i] = in->alt_pred[i];
       bpu_in.altpcpn[i] = in->altpcpn[i];
       bpu_in.pcpn[i] = in->pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        bpu_in.tage_idx[i][j] = in->tage_idx[i][j];
+      }
     }
 #ifdef USE_TRUE_ICACHE
     // get icache_read_ready signal for this cycle
@@ -84,6 +87,9 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
       ptab_in.alt_pred[i] = bpu_out.alt_pred[i];
       ptab_in.altpcpn[i] = bpu_out.altpcpn[i];
       ptab_in.pcpn[i] = bpu_out.pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        ptab_in.tage_idx[i][j] = bpu_out.tage_idx[i][j];
+      }
     }
     DEBUG_LOG_SMALL_3("bpu_out.predict_next_fetch_address: %x\n", bpu_out.predict_next_fetch_address);
     ptab_in.predict_next_fetch_address = bpu_out.predict_next_fetch_address;
@@ -126,6 +132,9 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
       bpu_in.alt_pred[i] = in->alt_pred[i];
       bpu_in.altpcpn[i] = in->altpcpn[i];
       bpu_in.pcpn[i] = in->pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        bpu_in.tage_idx[i][j] = in->tage_idx[i][j];
+      }
     }
     bpu_in.icache_read_ready = false;
 
@@ -208,6 +217,9 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
       front2back_fifo_in.alt_pred[i] = ptab_out.alt_pred[i];
       front2back_fifo_in.altpcpn[i] = ptab_out.altpcpn[i];
       front2back_fifo_in.pcpn[i] = ptab_out.pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        front2back_fifo_in.tage_idx[i][j] = ptab_out.tage_idx[i][j];
+      }
     }
     DEBUG_LOG_SMALL_3("predecode_checker_out.predict_next_fetch_address_corrected: %x\n", predecode_checker_out.predict_next_fetch_address_corrected);
     front2back_fifo_in.predict_next_fetch_address_corrected = predecode_checker_out.predict_next_fetch_address_corrected;
@@ -232,6 +244,9 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
     out->alt_pred[i] = front2back_fifo_out.alt_pred[i];
     out->altpcpn[i] = front2back_fifo_out.altpcpn[i];
     out->pcpn[i] = front2back_fifo_out.pcpn[i];
+    for(int j = 0; j < 4; j++) { // TN_MAX = 4
+      out->tage_idx[i][j] = front2back_fifo_out.tage_idx[i][j];
+    }
 #ifdef USE_TRUE_ICACHE
     out->inst_valid[i] = front2back_fifo_out.inst_valid[i];
 #else

@@ -10,7 +10,6 @@ using namespace std;
 
 #define HIT_LATENCY 2
 #define MISS_LATENCY 120
-
 #define PLRU_EVICT
 
 class Cache {

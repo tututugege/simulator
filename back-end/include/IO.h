@@ -40,6 +40,7 @@ typedef struct {
   wire8_t altpcpn[FETCH_WIDTH];
   wire8_t pcpn[FETCH_WIDTH];
   wire32_t predict_next_fetch_address[FETCH_WIDTH];
+  wire32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
   wire1_t page_fault_inst[FETCH_WIDTH];
 } Front_Dec;
 
@@ -103,6 +104,7 @@ typedef struct {
   wire1_t sret;
   wire1_t ecall;
   wire1_t exception;
+  wire1_t fence;
 
   wire1_t page_fault_inst;
   wire1_t page_fault_load;
@@ -142,9 +144,9 @@ typedef struct {
 } Prf_Dec;
 
 typedef struct {
-  wire4_t tag[FETCH_WIDTH];
-  wire1_t valid[FETCH_WIDTH];
-  wire1_t dis_fire[FETCH_WIDTH];
+  wire4_t tag[2];
+  wire1_t valid[2];
+  wire1_t dis_fire[2];
 } Dis_Stq;
 
 // TODO: MAGIC NUMBER 2
@@ -152,6 +154,10 @@ typedef struct {
   wire1_t ready[2];
   wire4_t stq_idx;
 } Stq_Dis;
+
+typedef struct {
+  wire1_t fence_stall;
+} Stq_Front;
 
 typedef struct {
   // 地址写入

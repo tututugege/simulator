@@ -75,6 +75,10 @@ void IDU::comb_decode() {
     out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
     out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
     out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
+    for (int j = 0; j < 4; j++) { // TN_MAX = 4
+      out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];
+    }
+
     out.dec2ren->uop[i].pred_br_pc =
         in.front2dec->predict_next_fetch_address[i];
 
@@ -159,6 +163,10 @@ void IDU::comb_decode() {
     out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
     out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
     out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
+    for (int j = 0; j < 4; j++) { // TN_MAX = 4
+      out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];
+    }
+
     out.dec2ren->uop[i].pred_br_pc =
         in.front2dec->predict_next_fetch_address[i];
 

@@ -3,7 +3,6 @@
 #include "RISCV.h"
 #include "config.h"
 #include "cvt.h"
-#include "diff.h"
 
 extern "C" {
 #include "softfloat.h"
@@ -558,7 +557,6 @@ void Ref_cpu::RV32A() {
                                sstatus, privilege, memory);
     bool page_fault_2 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2, mstatus,
                                sstatus, privilege, memory);
-
 #else
     bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
                                      mstatus, sstatus, privilege, memory);
@@ -577,15 +575,11 @@ void Ref_cpu::RV32A() {
           page_fault_store = true;
         }
       } else {
-        if (page_fault_1) {
-          page_fault_load = true;
-        } else {
-          page_fault_store = true;
-        }
+        page_fault_store = true;
       }
     }
 
-    if (page_fault_load || page_fault_store) {
+    if (page_fault_store) {
       exception(v_addr);
       return;
     }
@@ -935,44 +929,73 @@ void Ref_cpu::RV32IM() {
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
                               // and
     if (number_funct7_unsigned == 1) { // mul div
+      int64_t s1 = (int64_t)(int32_t)reg_rdata1;
+      int64_t s2 = (int64_t)(int32_t)reg_rdata2;
+
+      uint64_t u1 = (uint32_t)reg_rdata1;
+      uint64_t u2 = (uint32_t)reg_rdata2;
+
+      // 获取 32 位操作数
+      int32_t dividend = (int32_t)reg_rdata1;
+      int32_t divisor = (int32_t)reg_rdata2;
+      uint32_t u_dividend = (uint32_t)reg_rdata1;
+      uint32_t u_divisor = (uint32_t)reg_rdata2;
+
       switch (number_funct3_unsigned) {
       case 0: { // mul
-        state.gpr[reg_d_index] = (int32_t)reg_rdata1 * (int32_t)reg_rdata2;
+        state.gpr[reg_d_index] = (int32_t)(u1 * u2);
         break;
       }
       case 1: { // mulh
-        state.gpr[reg_d_index] =
-            ((int64_t)reg_rdata1 * (int64_t)reg_rdata2) >> 32;
+        state.gpr[reg_d_index] = (uint32_t)((s1 * s2) >> 32);
         break;
       }
       case 2: { // mulsu
-        state.gpr[reg_d_index] = ((int32_t)reg_rdata1 * (uint32_t)reg_rdata2);
-
+        state.gpr[reg_d_index] = (uint32_t)((s1 * (int64_t)u2) >> 32);
         break;
       }
       case 3: { // mulhu
-        state.gpr[reg_d_index] =
-            ((uint64_t)reg_rdata1 * (uint64_t)reg_rdata2) >> 32;
+        state.gpr[reg_d_index] = (uint32_t)((u1 * u2) >> 32);
         break;
       }
-      case 4: { // div
-        state.gpr[reg_d_index] = ((int64_t)reg_rdata1 / (int64_t)reg_rdata2);
+      case 4: { // div (signed)
+        if (divisor == 0) {
+          state.gpr[reg_d_index] = -1; // RISC-V 规定：除以0结果为 -1
+        } else if (dividend == INT32_MIN && divisor == -1) {
+          state.gpr[reg_d_index] =
+              INT32_MIN; // RISC-V 规定：溢出时结果为被除数本身(INT_MIN)
+        } else {
+          state.gpr[reg_d_index] = dividend / divisor;
+        }
         break;
       }
-      case 5: { // divu
-        state.gpr[reg_d_index] = ((uint64_t)reg_rdata1 / (uint64_t)reg_rdata2);
+      case 5: { // divu (unsigned)
+        if (u_divisor == 0) {
+          state.gpr[reg_d_index] = 0xFFFFFFFF; // RISC-V 规定：除以0结果为最大值
+        } else {
+          state.gpr[reg_d_index] = u_dividend / u_divisor;
+        }
         break;
       }
-      case 6: { // rem
-        state.gpr[reg_d_index] = ((int64_t)reg_rdata1 % (int64_t)reg_rdata2);
+      case 6: { // rem (signed)
+        if (divisor == 0) {
+          state.gpr[reg_d_index] = dividend; // RISC-V 规定：除以0，余数为被除数
+        } else if (dividend == INT32_MIN && divisor == -1) {
+          state.gpr[reg_d_index] = 0; // RISC-V 规定：溢出时，余数为 0
+        } else {
+          state.gpr[reg_d_index] = dividend % divisor;
+        }
         break;
       }
-      case 7: { // remu
-        state.gpr[reg_d_index] = ((uint64_t)reg_rdata1 % (uint64_t)reg_rdata2);
+      case 7: { // remu (unsigned)
+        if (u_divisor == 0) {
+          state.gpr[reg_d_index] =
+              u_dividend; // RISC-V 规定：除以0，余数为被除数
+        } else {
+          state.gpr[reg_d_index] = u_dividend % u_divisor;
+        }
         break;
       }
-      default:
-        break;
       }
     } else if (number_funct7_unsigned == FLOAT_FUNC7) {
       float32_t a = {.v = reg_rdata1};

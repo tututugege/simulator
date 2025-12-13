@@ -11,7 +11,7 @@ uint32_t btb_tag[BTB_WAY_NUM][BTB_ENTRY_NUM];
 uint32_t btb_bta[BTB_WAY_NUM][BTB_ENTRY_NUM];
 bool btb_valid[BTB_WAY_NUM][BTB_ENTRY_NUM];
 // uint32_t btb_br_type[BTB_WAY_NUM][BTB_ENTRY_NUM];
-uint8_t btb_br_type[BTB_TYPE_ENTRY_NUM];
+uint8_t btb_br_type[BTB_TYPE_ENTRY_NUM]; //not used
 uint32_t btb_lru[BTB_ENTRY_NUM];
 
 uint8_t btb_useful[BTB_WAY_NUM][BTB_ENTRY_NUM];
@@ -67,7 +67,7 @@ uint32_t btb_pred(uint32_t pc) {
   if(btb_br_type[type_idx] == BR_IDIRECT) {
     return tc_pred(pc);
 
-  }else if(btb_br_type[type_idx] == BR_DIRECT || btb_br_type[type_idx] == BR_CALL) {
+  }else if(btb_br_type[type_idx] == BR_DIRECT || btb_br_type[type_idx] == BR_CALL || btb_br_type[type_idx] == BR_JAL) {
     uint32_t idx = btb_get_idx(pc);
     uint32_t tag = btb_get_tag(pc);
 
@@ -111,8 +111,7 @@ uint32_t btb_pred(uint32_t pc) {
 #endif
   }
 
-  // should not reach here
-  assert(0);
+  return pc + 4; // type miss
 }
 
 // uint32_t btb_pred(uint32_t pc) {
@@ -166,7 +165,7 @@ void btb_update(uint32_t pc, uint32_t actualAddr, uint32_t br_type,
     tc_update(pc, actualAddr);
     return;
 
-  }else if(br_type == BR_DIRECT || br_type == BR_CALL) {
+  }else if(br_type == BR_DIRECT || br_type == BR_CALL || br_type == BR_JAL) {
     uint32_t idx = btb_get_idx(pc);
     uint32_t tag = btb_get_tag(pc);
 
@@ -323,6 +322,7 @@ void btb_update(uint32_t pc, uint32_t actualAddr, uint32_t br_type,
 #endif
   }
 
+  printf("pc: %x, br_type: %x\n", pc, br_type);
   // should not reach here
   assert(0);
 }

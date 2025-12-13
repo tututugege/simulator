@@ -4,6 +4,7 @@
 #include <cvt.h>
 #include <util.h>
 
+extern uint32_t *p_memory;
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -26,21 +27,38 @@ enum STATE { IDLE, RECV };
 #define BGEU 0b111
 
 void mul(Inst_uop &inst) {
+  // 提取 32 位数据并进行符号处理
+  // 必须先转 int32_t 再转 int64_t 才能正确进行符号扩展
+  int64_t s1 = (int64_t)(int32_t)inst.src1_rdata;
+  int64_t s2 = (int64_t)(int32_t)inst.src2_rdata;
+
+  // 对于无符号数，直接零扩展
+  uint64_t u1 = (uint32_t)inst.src1_rdata;
+  uint64_t u2 = (uint32_t)inst.src2_rdata;
+
   switch (inst.func3) {
   case 0: { // mul
-    inst.result = (int32_t)inst.src1_rdata * (int32_t)inst.src2_rdata;
+    // 结果取低 32 位。
+    // 使用无符号乘法避免 C 语言中有符号溢出的未定义行为。
+    // 补码表示下，有符号和无符号乘法的低 32 位结果是一样的。
+    inst.result = (int32_t)(u1 * u2);
     break;
   }
-  case 1: { // mulh
-    inst.result = ((int64_t)inst.src1_rdata * (int64_t)inst.src2_rdata) >> 32;
+  case 1: { // mulh (signed * signed, get high)
+    inst.result = (uint32_t)((s1 * s2) >> 32);
     break;
   }
-  case 2: { // mulsu
-    inst.result = ((int32_t)inst.src1_rdata * (uint32_t)inst.src2_rdata);
+  case 2: { // mulhsu (signed * unsigned, get high)
+    // 必须使用 64 位乘法，且 s1 带符号，u2 无符号
+    // 注意：C语言中 int64 * uint64 会提升为 uint64，
+    // 但这里需要保持 s1 的符号性参与运算，通常转换为 int64 计算比较安全，
+    // 或者利用 (int64_t)u2 将无符号数视为正的 int64 (因 u2
+    // 高32位为0，不会变负)。
+    inst.result = (uint32_t)((s1 * (int64_t)u2) >> 32);
     break;
   }
-  case 3: { // mulhu
-    inst.result = ((uint64_t)inst.src1_rdata * (uint64_t)inst.src2_rdata) >> 32;
+  case 3: { // mulhu (unsigned * unsigned, get high)
+    inst.result = (uint32_t)((u1 * u2) >> 32);
     break;
   }
   default:
@@ -50,27 +68,47 @@ void mul(Inst_uop &inst) {
 }
 
 void div(Inst_uop &inst) {
-
-  if (inst.src2_rdata == 0) {
-    return;
-  }
+  // 获取 32 位操作数
+  int32_t dividend = (int32_t)inst.src1_rdata;
+  int32_t divisor = (int32_t)inst.src2_rdata;
+  uint32_t u_dividend = (uint32_t)inst.src1_rdata;
+  uint32_t u_divisor = (uint32_t)inst.src2_rdata;
 
   switch (inst.func3) {
-
-  case 4: { // div
-    inst.result = ((int32_t)inst.src1_rdata / (int32_t)inst.src2_rdata);
+  case 4: { // div (signed)
+    if (divisor == 0) {
+      inst.result = -1; // RISC-V 规定：除以0结果为 -1
+    } else if (dividend == INT32_MIN && divisor == -1) {
+      inst.result = INT32_MIN; // RISC-V 规定：溢出时结果为被除数本身(INT_MIN)
+    } else {
+      inst.result = dividend / divisor;
+    }
     break;
   }
-  case 5: { // divu
-    inst.result = ((uint32_t)inst.src1_rdata / (uint32_t)inst.src2_rdata);
+  case 5: { // divu (unsigned)
+    if (u_divisor == 0) {
+      inst.result = 0xFFFFFFFF; // RISC-V 规定：除以0结果为最大值
+    } else {
+      inst.result = u_dividend / u_divisor;
+    }
     break;
   }
-  case 6: { // rem
-    inst.result = ((int32_t)inst.src1_rdata % (int32_t)inst.src2_rdata);
+  case 6: { // rem (signed)
+    if (divisor == 0) {
+      inst.result = dividend; // RISC-V 规定：除以0，余数为被除数
+    } else if (dividend == INT32_MIN && divisor == -1) {
+      inst.result = 0; // RISC-V 规定：溢出时，余数为 0
+    } else {
+      inst.result = dividend % divisor;
+    }
     break;
   }
-  case 7: { // remu
-    inst.result = ((uint32_t)inst.src1_rdata % (uint32_t)inst.src2_rdata);
+  case 7: { // remu (unsigned)
+    if (u_divisor == 0) {
+      inst.result = u_dividend; // RISC-V 规定：除以0，余数为被除数
+    } else {
+      inst.result = u_dividend % u_divisor;
+    }
     break;
   }
   default:

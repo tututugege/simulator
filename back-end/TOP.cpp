@@ -8,6 +8,9 @@
 #include <diff.h>
 #include <util.h>
 
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+
 void Back_Top::difftest_cycle() {
 
   int commit_num = 0;
@@ -201,6 +204,7 @@ Rob_Broadcast rob_bcast;
 Rob_Commit rob_commit;
 
 Stq_Dis stq2dis;
+Stq_Front stq2front;
 
 Csr_Exe csr2exe;
 Csr_Rob csr2rob;
@@ -284,6 +288,7 @@ void Back_Top::init() {
   rob.out.rob2csr = &rob2csr;
 
   stq.out.stq2dis = &stq2dis;
+  stq.out.stq2front = &stq2front;
 
   stq.in.exe2stq = &exe2stq;
   stq.in.rob_commit = &rob_commit;
@@ -329,6 +334,9 @@ void Back_Top::comb() {
     idu.in.front2dec->predict_next_fetch_address[i] =
         in.predict_next_fetch_address[i];
     idu.in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
+    for (int j = 0; j < 4; j++) { // TN_MAX = 4
+      idu.in.front2dec->tage_idx[i][j] = in.tage_idx[i][j];
+    }
   }
 
   // 每个空行表示分层  下层会依赖上层产生的某个信号
@@ -377,7 +385,8 @@ void Back_Top::comb() {
   back.out.flush = rob.out.rob_bcast->flush;
   if (!rob.out.rob_bcast->flush) {
     back.out.mispred = prf.out.prf2dec->mispred;
-    back.out.stall = !idu.out.dec2front->ready;
+    back.out.stall =
+        !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
     back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
   } else {
     if (LOG)

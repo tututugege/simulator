@@ -1,5 +1,4 @@
 #include "BPU/target_predictor/btb.h"
-#include "ref.h"
 #include <MMU.h>
 #include <RISCV.h>
 #include <TOP.h>
@@ -402,6 +401,9 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       back.in.alt_pred[j] = front_out.alt_pred[j];
       back.in.altpcpn[j] = front_out.altpcpn[j];
       back.in.pcpn[j] = front_out.pcpn[j];
+      for (int k = 0; k < 4; k++) { // TN_MAX = 4
+        back.in.tage_idx[j][k] = front_out.tage_idx[j][k];
+      }
       if (back.in.valid[j] && front_out.predict_dir[j])
         no_taken = false;
     }
@@ -428,7 +430,13 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
       front_in.actual_target[i] = inst->pc_next;
-      int br_type = BR_DIRECT;
+      int br_type = BR_NONCTL;
+      if (is_branch(inst->type)) {
+        br_type = BR_DIRECT;
+      }
+      if (inst->type == JAL) {
+        br_type = BR_JAL;
+      }
       if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
         br_type = BR_CALL;
       } else if (inst->type == JALR) {
@@ -442,6 +450,9 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.alt_pred[i] = inst->alt_pred;
       front_in.altpcpn[i] = inst->altpcpn;
       front_in.pcpn[i] = inst->pcpn;
+      for (int j = 0; j < 4; j++) { // TN_MAX = 4
+        front_in.tage_idx[i][j] = inst->tage_idx[j];
+      }
     }
     if (LOG) {
       cout << " valid: " << front_in.back2front_valid[i]

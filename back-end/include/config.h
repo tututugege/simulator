@@ -144,6 +144,7 @@ typedef struct Inst_uop {
   wire8_t altpcpn;
   wire8_t pcpn;
   wire32_t pred_br_pc;
+  wire32_t tage_idx[4]; // TN_MAX = 4
 
   // 分支预测更新信息
   wire1_t mispred;

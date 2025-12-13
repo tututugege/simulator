@@ -13,6 +13,7 @@ struct FRONT2BACK_FIFO_entry {
   std::array<bool, FETCH_WIDTH> alt_pred;
   std::array<uint8_t, FETCH_WIDTH> altpcpn;
   std::array<uint8_t, FETCH_WIDTH> pcpn;
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
 };
 
 static std::queue<FRONT2BACK_FIFO_entry> front2back_fifo;
@@ -46,6 +47,9 @@ void front2back_FIFO_top(struct front2back_FIFO_in *in, struct front2back_FIFO_o
       entry.alt_pred[i] = in->alt_pred[i];
       entry.altpcpn[i] = in->altpcpn[i];
       entry.pcpn[i] = in->pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        entry.tage_idx[i][j] = in->tage_idx[i][j];
+      }
     }
     entry.predict_next_fetch_address_corrected = in->predict_next_fetch_address_corrected;
     front2back_fifo.push(entry);
@@ -61,6 +65,9 @@ void front2back_FIFO_top(struct front2back_FIFO_in *in, struct front2back_FIFO_o
       out->alt_pred[i] = front2back_fifo.front().alt_pred[i];
       out->altpcpn[i] = front2back_fifo.front().altpcpn[i];
       out->pcpn[i] = front2back_fifo.front().pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        out->tage_idx[i][j] = front2back_fifo.front().tage_idx[i][j];
+      }
     }
     out->predict_next_fetch_address_corrected = front2back_fifo.front().predict_next_fetch_address_corrected;
     front2back_fifo.pop();

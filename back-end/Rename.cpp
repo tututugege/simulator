@@ -93,6 +93,12 @@ void Rename::comb_alloc() {
       out.ren2dis->valid[i] = false;
     }
   }
+
+#ifdef CONFIG_PERF_COUNTER
+  if (stall) {
+    perf.ren_reg_stall++;
+  }
+#endif
 }
 
 void Rename::comb_wake() {
@@ -297,12 +303,12 @@ void Rename ::comb_commit() {
       if (inst->dest_en && !inst->page_fault_load && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
-      // back.difftest_inst(inst);
+      back.difftest_inst(inst);
     }
   }
 
 #ifdef CONFIG_DIFFTEST
-  back.difftest_cycle();
+  // back.difftest_cycle();
 #endif
 }
 
