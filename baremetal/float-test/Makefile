@@ -1,5 +1,5 @@
 COMMON_DIR = ..
-TARGET = fp32add_test
-C_SRCS = fp32add_test.c
+TARGET = float_test
+C_SRCS = float_test.c
 
 include $(COMMON_DIR)/common.mk

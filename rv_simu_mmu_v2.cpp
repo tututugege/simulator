@@ -36,6 +36,7 @@ bool sim_end = false;
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 
 int main(int argc, char *argv[]) {
+
   setbuf(stdout, NULL);
   ifstream inst_data(argv[argc - 1], ios::in);
   if (!inst_data.is_open()) {
@@ -267,73 +268,6 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   return false;
 }
 
-/*
- * va2pa_fixed: a fixed version of va2pa
- *
- * 基本功能几乎与 va2pa() 相同；但当 dut.cpu 检测到 page fault 时，
- * 以 dut.cpu 的结果为准，
- *
- * 目的：当 SFENCE.VMA 还没有执行、存在两种合法的页表映射时，保证
- * DUT 与参考模型的页表映射一致，避免 difftest 失败。
- */
-bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
-                 uint32_t type, bool *mstatus, bool *sstatus, int privilege,
-                 uint32_t *p_memory) {
-  bool ret =
-      va2pa(p_addr, v_addr, satp, type, mstatus, sstatus, privilege, p_memory);
-#ifndef CONFIG_LOOSE_VA2PA
-  return ret;
-#endif
-  extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
-  Inst_entry ren_commit_entry = back.out.commit_entry[ren_commit_idx];
-  bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
-  bool dut_page_fault_load = ren_commit_entry.uop.page_fault_load;
-  bool dut_page_fault_store = ren_commit_entry.uop.page_fault_store;
-
-  // 1. dut page_fault, ref no page_fault -> allow, ret = false
-  // 2. dut no page_fault, ref page_fault -> ERROR
-  switch (type) {
-  case 0: // instruction fetch
-    if (dut_page_fault_inst) {
-      ret = false; // 以 DUT MMU 为准
-    } else if (!dut_page_fault_inst && !ret) {
-      cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault "
-              "mismatch!"
-           << endl;
-      cout << "VA: " << hex << v_addr << endl;
-      cout << "sim_time: " << dec << sim_time << endl;
-      exit(1);
-    }
-    break;
-  case 1: // load
-    if (dut_page_fault_load) {
-      ret = false;
-    } else if (!dut_page_fault_load && !ret) {
-      cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!"
-           << endl;
-      cout << "VA: " << hex << v_addr << endl;
-      cout << "sim_time: " << dec << sim_time << endl;
-      exit(1);
-    }
-    break;
-  case 2: // store
-    if (dut_page_fault_store) {
-      ret = false;
-    } else if (!dut_page_fault_store && !ret) {
-      cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!"
-           << endl;
-      cout << "VA: " << hex << v_addr << endl;
-      cout << "sim_time: " << dec << sim_time << endl;
-      exit(1);
-    }
-    break;
-  default:
-    cout << "[va2pa_fixed] Error: unknown access type!" << endl;
-    exit(1);
-  }
-  return ret;
-}
-
 void front_cycle(bool stall, bool misprediction, bool exception,
                  uint32_t &number_PC) {
 
@@ -421,9 +355,7 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
-    // front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
-    //                                (is_branch(inst->type) || inst->type ==
-    //                                JAL);
+
     if (front_in.back2front_valid[i]) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;

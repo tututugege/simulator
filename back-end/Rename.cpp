@@ -24,7 +24,6 @@ extern Back_Top back;
 const int ALLOC_NUM =
     PRF_NUM / FETCH_WIDTH; // 分配寄存器时将preg分成FETCH_WIDTH个部分
 
-// for Difftest va2pa_fixed() debug
 int ren_commit_idx;
 
 Rename::Rename() {

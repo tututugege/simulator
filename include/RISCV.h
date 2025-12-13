@@ -30,4 +30,10 @@ enum enum_number_opcode {
   number_11_opcode_lrw =
       0b0101111, // lr.w, sc.w, amoswap.w, amoadd.w, amoxor.w, amoand.w,
                  // amoor.w, amomin.w, amomax.w, amominu.w, amomaxu.w
+  number_12_opcode_float = 0b1010011,  // fadd.s, fsub.s...
+  number_13_opcode_fmadd = 0b1000011,  // fmadd.s
+  number_14_opcode_fmsub = 0b1000111,  // fmsub.s
+  number_15_opcode_fnmsub = 0b1001011, // fnmsub.s
+  number_16_opcode_fnmadd = 0b1001111, // fnmadd.s
+
 };
