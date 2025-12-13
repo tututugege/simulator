@@ -128,12 +128,19 @@ void ISU::comb_enq() {
 
 void ISU::comb_awake() {
   // 唤醒
+
+  bool awake_valid[ALU_NUM + 1];
+  uint32_t awake_preg[ALU_NUM + 1];
   for (int i = 0; i < ALU_NUM; i++) {
-    if (out.iss_awake->wake[i].valid) {
-      for (auto &q : iq) {
-        q.wake_up(out.iss_awake->wake[i].preg, out.iss_awake->wake[i].latency);
-      }
-    }
+    awake_valid[i] = out.iss_awake->wake[i].valid;
+    awake_preg[i] = out.iss_awake->wake[i].preg;
+  }
+
+  awake_valid[ALU_NUM] = in.prf_awake->wake.valid;
+  awake_preg[ALU_NUM] = in.prf_awake->wake.preg;
+
+  for (auto &q : iq) {
+    q.wake_up(awake_valid, awake_preg);
   }
 
   // 唤醒load
@@ -143,12 +150,6 @@ void ISU::comb_awake() {
 
   if (out.iss2prf->iss_entry[IQ_STD].valid) {
     iq[IQ_LD].std_wake_up(out.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
-  }
-
-  if (in.prf_awake->wake.valid) {
-    for (auto &q : iq) {
-      q.wake_up(in.prf_awake->wake.preg, 0);
-    }
   }
 }
 
@@ -215,18 +216,19 @@ void IQ::br_clear(uint32_t br_mask) {
 // }
 
 // 唤醒 发射时即可唤醒 下一周期时即可发射 此时结果已经写回寄存器堆
-void IQ::wake_up(uint32_t dest_preg, uint32_t latency) {
+void IQ::wake_up(bool *valid, uint32_t *preg) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid) {
+      for (int j = 0; j < ALU_NUM + 1; j++) {
+        if (valid[j]) {
+          if (entry[i].uop.src1_en && entry[i].uop.src1_preg == preg[j]) {
+            entry_1[i].uop.src1_busy = false;
+          }
 
-      if (entry[i].uop.src1_en && entry[i].uop.src1_preg == dest_preg) {
-        entry_1[i].uop.src1_busy = false;
-        entry_1[i].uop.src1_latency = latency - 1;
-      }
-
-      if (entry[i].uop.src2_en && entry[i].uop.src2_preg == dest_preg) {
-        entry_1[i].uop.src2_busy = false;
-        entry_1[i].uop.src2_latency = latency - 1;
+          if (entry[i].uop.src2_en && entry[i].uop.src2_preg == preg[j]) {
+            entry_1[i].uop.src2_busy = false;
+          }
+        }
       }
     }
   }
@@ -253,17 +255,25 @@ Inst_entry IQ::scheduler() {
   int iss_idx;
   iss_entry.valid = false;
 
-  for (int i = 0; i < entry_num; i++) {
-    if (entry[i].valid && (!entry[i].uop.src1_en || !entry[i].uop.src1_busy) &&
-        (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
-        !(is_load_uop(entry[i].uop.op) &&
-          (entry[i].uop.pre_sta_mask || entry[i].uop.pre_std_mask))) {
+  if (num == 0) {
+    return iss_entry;
+  }
 
-      // 根据IQ位置判断优先级 也可以随机 或者oldest-first
-      // 这里是oldest-first
-      if (!iss_entry.valid || cmp_inst_age(iss_entry.uop, entry[i].uop)) {
-        iss_entry = entry[i];
-        iss_idx = i;
+  int count = 0;
+  for (int i = 0; i < entry_num && count < num; i++) {
+    if (entry[i].valid) {
+      count++;
+      if ((!entry[i].uop.src1_en || !entry[i].uop.src1_busy) &&
+          (!entry[i].uop.src2_en || !entry[i].uop.src2_busy) &&
+          !(is_load_uop(entry[i].uop.op) &&
+            (entry[i].uop.pre_sta_mask || entry[i].uop.pre_std_mask))) {
+
+        // 根据IQ位置判断优先级 也可以随机 或者oldest-first
+        // 这里是oldest-first
+        if (!iss_entry.valid || cmp_inst_age(iss_entry.uop, entry[i].uop)) {
+          iss_entry = entry[i];
+          iss_idx = i;
+        }
       }
     }
   }

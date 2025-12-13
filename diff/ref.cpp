@@ -386,10 +386,7 @@ void Ref_cpu::exception(uint32_t trap_val) {
     sstatus &= ~MSTATUS_SPP;
 
     state.csr[csr_sstatus] = sstatus;
-    // 同步回 mstatus
-    uint32_t mask = MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP;
-    state.csr[csr_mstatus] =
-        (state.csr[csr_mstatus] & ~mask) | (sstatus & mask);
+    state.csr[csr_mstatus] = sstatus;
 
     next_pc = state.csr[csr_sepc];
   }

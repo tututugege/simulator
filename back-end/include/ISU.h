@@ -3,19 +3,20 @@
 #include <IO.h>
 #include <cstdint>
 #include <vector>
+#define FORCE_INLINE __attribute__((always_inline)) inline
 
 class IQ {
 public:
   IQ(int, int);
   void init();
-  void wake_up(uint32_t, uint32_t latency);
+  void FORCE_INLINE wake_up(bool *valid, uint32_t *preg);
+  Inst_entry FORCE_INLINE scheduler();
   void latency_wake();
   void sta_wake_up(int);
   void std_wake_up(int);
   void br_clear(uint32_t br_mask);
-  Inst_entry scheduler();
-  Inst_entry deq();
   void enq(Inst_uop &inst);
+  Inst_entry deq();
   int entry_num;
   int type;
 
