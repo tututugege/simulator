@@ -98,26 +98,26 @@ void Dispatch::comb_dispatch() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     if (inst_r[i].valid) {
       switch (inst_r[i].uop.type) {
-      case ADD:
+      case TYPE_ADD:
         if (i < FETCH_WIDTH / 2)
-          to_iq[IQ_INTM][i] = true;
+          to_iq[IQ_INTMF][i] = true;
         else
           to_iq[IQ_INTD][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_ADD;
         break;
-      case MUL:
-        to_iq[IQ_INTM][i] = true;
+      case TYPE_MUL:
+        to_iq[IQ_INTMF][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_MUL;
         break;
-      case DIV:
+      case TYPE_DIV:
         to_iq[IQ_INTD][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_DIV;
 
         break;
-      case BR:
+      case TYPE_BR:
         if (i < FETCH_WIDTH / 2)
           to_iq[IQ_BR0][i] = true;
         else
@@ -127,15 +127,15 @@ void Dispatch::comb_dispatch() {
         pre_dis_uop[3 * i].uop.op = UOP_BR;
 
         break;
-      case LOAD:
+      case TYPE_LOAD:
         to_iq[IQ_LD][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_LOAD;
 
         break;
-      case JALR:
+      case TYPE_JALR:
         if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
+          to_iq[IQ_INTMF][i] = true;
           to_iq[IQ_BR0][i] = true;
         } else {
           to_iq[IQ_INTD][i] = true;
@@ -150,10 +150,10 @@ void Dispatch::comb_dispatch() {
         pre_dis_uop[3 * i + 1].uop.src1_en = true;
         pre_dis_uop[3 * i + 1].uop.dest_en = false;
         break;
-      case JAL:
+      case TYPE_JAL:
 #ifdef CONFIG_BPU
         if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
+          to_iq[IQ_INTMF][i] = true;
         } else {
           to_iq[IQ_INTD][i] = true;
         }
@@ -163,7 +163,7 @@ void Dispatch::comb_dispatch() {
 
 #else
         if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
+          to_iq[IQ_INTMF][i] = true;
           to_iq[IQ_BR0][i] = true;
         } else {
           to_iq[IQ_INTD][i] = true;
@@ -180,7 +180,7 @@ void Dispatch::comb_dispatch() {
 #endif
 
         break;
-      case STORE:
+      case TYPE_STORE:
         to_iq[IQ_STA][i] = true;
         to_iq[IQ_STD][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
@@ -194,7 +194,7 @@ void Dispatch::comb_dispatch() {
 
         break;
 
-      case AMO:
+      case TYPE_AMO:
         if (inst_r[i].uop.amoop == LR) {
           to_iq[IQ_LD][i] = true;
           pre_dis_uop[3 * i] = inst_alloc[i];
@@ -202,7 +202,7 @@ void Dispatch::comb_dispatch() {
           pre_dis_uop[3 * i].uop.src2_en = false;
         } else if (inst_r[i].uop.amoop == SC) {
           if (i < FETCH_WIDTH / 2)
-            to_iq[IQ_INTM][i] = true;
+            to_iq[IQ_INTMF][i] = true;
           else
             to_iq[IQ_INTD][i] = true;
           to_iq[IQ_STA][i] = true;
@@ -239,29 +239,35 @@ void Dispatch::comb_dispatch() {
           pre_dis_uop[3 * i + 2].uop.src1_busy = true;
         }
         break;
+
+      case TYPE_FLOAT:
+        to_iq[IQ_INTMF][i] = true;
+        pre_dis_uop[3 * i] = inst_alloc[i];
+        pre_dis_uop[3 * i].uop.op = UOP_FLOAT;
+        break;
       default:
-        to_iq[IQ_INTM][i] = true;
+        to_iq[IQ_INTMF][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         switch (inst_r[i].uop.type) {
-        case NOP:
+        case TYPE_NOP:
           pre_dis_uop[3 * i].uop.op = UOP_ADD;
           break;
-        case CSR:
+        case TYPE_CSR:
           pre_dis_uop[3 * i].uop.op = UOP_CSR;
           break;
-        case ECALL:
+        case TYPE_ECALL:
           pre_dis_uop[3 * i].uop.op = UOP_ECALL;
           break;
-        case MRET:
+        case TYPE_MRET:
           pre_dis_uop[3 * i].uop.op = UOP_MRET;
           break;
-        case SRET:
+        case TYPE_SRET:
           pre_dis_uop[3 * i].uop.op = UOP_SRET;
           break;
-        case SFENCE_VMA:
+        case TYPE_SFENCE_VMA:
           pre_dis_uop[3 * i].uop.op = UOP_SFENCE_VMA;
           break;
-        case EBREAK:
+        case TYPE_EBREAK:
           pre_dis_uop[3 * i].uop.op = UOP_EBREAK;
           break;
         default:
@@ -300,14 +306,15 @@ void Dispatch::comb_dispatch() {
         out.dis2iss->valid[i][j] = true;
         int idx = __builtin_ctz(uop_sel[i][j]);
         // 根据指令type区分选第一个uop还是第二个uop
-        if ((inst_r[idx].uop.type == JALR || inst_r[idx].uop.type == JAL) &&
+        if ((inst_r[idx].uop.type == TYPE_JALR ||
+             inst_r[idx].uop.type == TYPE_JAL) &&
             i >= IQ_BR0) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == STORE && i == IQ_STD) {
+        } else if (inst_r[idx].uop.type == TYPE_STORE && i == IQ_STD) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == AMO && i == IQ_STA) {
+        } else if (inst_r[idx].uop.type == TYPE_AMO && i == IQ_STA) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == AMO && i == IQ_STD) {
+        } else if (inst_r[idx].uop.type == TYPE_AMO && i == IQ_STD) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 2].uop;
         } else {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx].uop;

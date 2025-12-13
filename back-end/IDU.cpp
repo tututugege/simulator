@@ -8,7 +8,7 @@
 #include <util.h>
 
 // 中间信号
-#ifdef ENABLE_MULTI_BR
+#ifdef ENABLE_MULTI_TYPE_BR
 #define MAX_TAG_ALLOC_NUM 2
 static wire4_t alloc_tag[MAX_TAG_ALLOC_NUM]; // 新tag
 #else
@@ -28,14 +28,14 @@ void IDU::init() {
   enq_ptr_1 = enq_ptr = 1;
 }
 
-#ifdef ENABLE_MULTI_BR
+#ifdef ENABLE_MULTI_TYPE_BR
 // 译码并分配tag
 void IDU::comb_decode() {
 
   wire1_t alloc_valid[MAX_TAG_ALLOC_NUM];
   int alloc_num = 0;
   int i;
-  for (i = 0; i < MAX_BR_NUM && alloc_num < MAX_TAG_ALLOC_NUM; i++) {
+  for (i = 0; i < MAX_TYPE_BR_NUM && alloc_num < MAX_TAG_ALLOC_NUM; i++) {
     if (tag_vec[i]) {
       alloc_tag[alloc_num] = i;
       alloc_valid[alloc_num] = true;
@@ -43,7 +43,7 @@ void IDU::comb_decode() {
     }
   }
 
-  if (i == MAX_BR_NUM) {
+  if (i == MAX_TYPE_BR_NUM) {
     for (int i = alloc_num; i < MAX_TAG_ALLOC_NUM; i++) {
       alloc_tag[i] = 0;
       alloc_valid[i] = false;
@@ -58,7 +58,7 @@ void IDU::comb_decode() {
         out.dec2ren->uop[i].page_fault_inst = true;
         out.dec2ren->uop[i].page_fault_load = false;
         out.dec2ren->uop[i].page_fault_store = false;
-        out.dec2ren->uop[i].type = NOP;
+        out.dec2ren->uop[i].type = TYPE_NOP;
         out.dec2ren->uop[i].src1_en = out.dec2ren->uop[i].src2_en =
             out.dec2ren->uop[i].dest_en = false;
       } else {
@@ -145,7 +145,7 @@ void IDU::comb_decode() {
         out.dec2ren->uop[i].page_fault_inst = true;
         out.dec2ren->uop[i].page_fault_load = false;
         out.dec2ren->uop[i].page_fault_store = false;
-        out.dec2ren->uop[i].type = NOP;
+        out.dec2ren->uop[i].type = TYPE_NOP;
         out.dec2ren->uop[i].src1_en = out.dec2ren->uop[i].src2_en =
             out.dec2ren->uop[i].dest_en = false;
       } else {
@@ -171,7 +171,7 @@ void IDU::comb_decode() {
         in.front2dec->predict_next_fetch_address[i];
 
     // for debug
-    if (out.dec2ren->uop[i].type == JAL) {
+    if (out.dec2ren->uop[i].type == TYPE_JAL) {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
     } else {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
@@ -248,7 +248,7 @@ void IDU::comb_fire() {
     }
   }
 
-#ifdef ENABLE_MULTI_BR
+#ifdef ENABLE_MULTI_TYPE_BR
   int br_num = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.dec2front->fire[i] = out.dec2ren->valid[i] && in.ren2dec->ready;
@@ -259,7 +259,7 @@ void IDU::comb_fire() {
       now_tag_1 = alloc_tag[br_num];
       tag_vec_1[alloc_tag[br_num]] = false;
       tag_list_1[enq_ptr_1] = alloc_tag[br_num];
-      LOOP_INC(enq_ptr_1, MAX_BR_NUM);
+      LOOP_INC(enq_ptr_1, MAX_TYPE_BR_NUM);
       br_num++;
     }
   }
@@ -359,13 +359,13 @@ void decode(Inst_uop &uop, uint32_t inst) {
   uop.src1_is_pc = false;
   uop.src2_is_imm = true;
   uop.func3 = number_funct3_unsigned;
-  uop.func7_5 = (bool)(number_funct7_unsigned >> 5);
+  uop.func7 = number_funct7_unsigned;
   uop.csr_idx = csr_idx;
   uop.page_fault_inst = false;
   uop.page_fault_load = false;
   uop.page_fault_store = false;
   uop.illegal_inst = false;
-  uop.type = NOP;
+  uop.type = TYPE_NOP;
   uop.amoop = AMONONE;
   uop.inst_idx = sim_time;
 
@@ -375,9 +375,9 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src1_areg = 0;
     uop.src2_en = false;
-    uop.type = ADD;
+    uop.type = TYPE_ADD;
     uop.func3 = 0;
-    uop.func7_5 = 0;
+    uop.func7 = 0;
     uop.imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
     break;
   }
@@ -386,9 +386,9 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_en = false;
     uop.src2_en = false;
     uop.src1_is_pc = true;
-    uop.type = ADD;
+    uop.type = TYPE_ADD;
     uop.func3 = 0;
-    uop.func7_5 = 0;
+    uop.func7 = 0;
     uop.imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
     break;
   }
@@ -404,8 +404,8 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_is_pc = true;
     uop.src2_is_imm = true;
     uop.func3 = 0;
-    uop.func7_5 = 0;
-    uop.type = JAL;
+    uop.func7 = 0;
+    uop.type = TYPE_JAL;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_j_type, 21);
@@ -420,8 +420,8 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_is_pc = true;
     uop.src2_is_imm = true;
     uop.func3 = 0;
-    uop.func7_5 = 0;
-    uop.type = JALR;
+    uop.func7 = 0;
+    uop.type = TYPE_JALR;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_i_type, 12);
@@ -434,7 +434,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = true;
     uop.src2_en = true;
-    uop.type = BR;
+    uop.type = TYPE_BR;
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_b_type, 13);
     uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
@@ -445,7 +445,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = false;
-    uop.type = LOAD;
+    uop.type = TYPE_LOAD;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_i_type, 12);
@@ -459,7 +459,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = true;
     uop.src2_en = true;
-    uop.type = STORE;
+    uop.type = TYPE_STORE;
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_s_type, 12);
     uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
@@ -471,7 +471,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = false;
-    uop.type = ADD;
+    uop.type = TYPE_ADD;
 
     bool bit_temp[32];
     sign_extend(bit_temp, 32, bit_immi_i_type, 12);
@@ -486,12 +486,12 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src2_is_imm = false;
     if (number_funct7_unsigned == 1) { // mul div
       if (number_funct3_unsigned & 0b100) {
-        uop.type = DIV;
+        uop.type = TYPE_DIV;
       } else {
-        uop.type = MUL;
+        uop.type = TYPE_MUL;
       }
     } else {
-      uop.type = ADD;
+      uop.type = TYPE_ADD;
     }
     break;
   }
@@ -499,7 +499,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = false;
     uop.src2_en = false;
-    uop.type = NOP;
+    uop.type = TYPE_NOP;
     break;
   }
   case number_10_opcode_ecall: { // ecall, ebreak, csrrw, csrrs, csrrc,
@@ -518,7 +518,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
           csr_idx != number_sie && csr_idx != number_sip &&
           csr_idx != number_satp && csr_idx != number_mhartid &&
           csr_idx != number_misa) {
-        uop.type = NOP;
+        uop.type = TYPE_NOP;
         uop.dest_en = false;
         uop.src1_en = false;
         uop.src2_en = false;
@@ -527,7 +527,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
           uop.illegal_inst = true;
 
       } else {
-        uop.type = CSR;
+        uop.type = TYPE_CSR;
         uop.dest_en = true;
         uop.src1_en = true;
         uop.src2_en = !uop.src2_is_imm;
@@ -539,22 +539,22 @@ void decode(Inst_uop &uop, uint32_t inst) {
       uop.src2_en = false;
 
       if (inst == INST_ECALL) {
-        uop.type = ECALL;
+        uop.type = TYPE_ECALL;
       } else if (inst == INST_EBREAK) {
-        uop.type = EBREAK;
+        uop.type = TYPE_EBREAK;
       } else if (inst == INST_MRET) {
-        uop.type = MRET;
+        uop.type = TYPE_MRET;
       } else if (inst == INST_WFI) {
-        uop.type = NOP;
+        uop.type = TYPE_NOP;
       } else if (inst == INST_SRET) {
-        uop.type = SRET;
+        uop.type = TYPE_SRET;
       } else if (number_funct7_unsigned == 0b0001001 &&
                  number_funct3_unsigned == 0 && reg_d_index == 0) {
-        uop.type = SFENCE_VMA;
+        uop.type = TYPE_SFENCE_VMA;
         uop.src1_en = true;
         uop.src2_en = true;
       } else {
-        uop.type = NOP;
+        uop.type = TYPE_NOP;
         /*uop[0].illegal_inst = true;*/
         /*cout << hex << inst << endl;*/
         /*assert(0);*/
@@ -569,7 +569,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src2_en = true;
     uop.imm = 0;
-    uop.type = AMO;
+    uop.type = TYPE_AMO;
 
     switch (number_funct7_unsigned >> 2) {
     case 0: { // amoadd.w
@@ -623,11 +623,20 @@ void decode(Inst_uop &uop, uint32_t inst) {
     break;
   }
 
+  case number_12_opcode_float: {
+    uop.dest_en = true;
+    uop.src1_en = true;
+    uop.src2_en = true;
+    uop.type = TYPE_FLOAT;
+    uop.illegal_inst = false;
+    break;
+  }
+
   default: {
     uop.dest_en = false;
     uop.src1_en = false;
     uop.src2_en = false;
-    uop.type = NOP;
+    uop.type = TYPE_NOP;
     uop.illegal_inst = true;
     break;
   }
@@ -636,7 +645,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
   uop.uop_num = uop_num;
 
   // amo 指令dest为0时特殊处理
-  if (uop.type == AMO && uop.dest_areg == 0 && uop.amoop != LR &&
+  if (uop.type == TYPE_AMO && uop.dest_areg == 0 && uop.amoop != LR &&
       uop.amoop != SC) {
     uop.dest_areg = 32;
   }

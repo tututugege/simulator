@@ -5,7 +5,9 @@
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
 
 #ifdef CONFIG_BPU
-inline bool is_branch(Inst_type type) { return type == BR || type == JALR; }
+inline bool is_branch(Inst_type type) {
+  return type == TYPE_BR || type == TYPE_JALR;
+}
 #else
 inline bool is_branch(Inst_type type) {
   return type == BR || type == JALR || type == JAL;
@@ -13,15 +15,16 @@ inline bool is_branch(Inst_type type) {
 #endif
 
 inline bool is_store(Inst_uop uop) {
-  return uop.type == STORE || uop.type == AMO && uop.amoop != LR;
+  return uop.type == TYPE_STORE || uop.type == TYPE_AMO && uop.amoop != LR;
 }
 
 inline bool is_load(Inst_uop uop) {
-  return uop.type == LOAD || uop.type == AMO && uop.amoop != SC;
+  return uop.type == TYPE_LOAD || uop.type == TYPE_AMO && uop.amoop != SC;
 }
 
 inline bool is_CSR(Inst_type type) {
-  return (type == CSR || type == MRET || type == ECALL || type == EBREAK);
+  return (type == TYPE_CSR || type == TYPE_MRET || type == TYPE_ECALL ||
+          type == TYPE_EBREAK);
 }
 
 inline bool is_branch_uop(Inst_op op) { return op == UOP_BR || op == UOP_JUMP; }
@@ -51,13 +54,14 @@ inline bool is_page_fault(Inst_uop uop) {
 
 inline bool is_exception(Inst_uop uop) {
   return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store ||
-         uop.illegal_inst || uop.type == ECALL;
+         uop.illegal_inst || uop.type == TYPE_ECALL;
 }
 
 inline bool is_flush_inst(Inst_uop uop) {
-  return uop.type == CSR || uop.type == ECALL || uop.type == MRET ||
-         uop.type == SRET || uop.type == SFENCE_VMA || is_exception(uop) ||
-         uop.type == EBREAK;
+  return uop.type == TYPE_CSR || uop.type == TYPE_ECALL ||
+         uop.type == TYPE_MRET || uop.type == TYPE_SRET ||
+         uop.type == TYPE_SFENCE_VMA || is_exception(uop) ||
+         uop.type == TYPE_EBREAK;
 }
 
 inline bool orR(bool *in, int num) {

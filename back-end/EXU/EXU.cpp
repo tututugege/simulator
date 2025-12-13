@@ -17,6 +17,7 @@ void bru(Inst_uop &inst);
 void stu_data(Inst_uop &inst);
 void mul(Inst_uop &inst);
 void div(Inst_uop &inst);
+void fpu(Inst_uop &inst);
 
 #ifdef CONFIG_MMU
 bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn);
@@ -57,6 +58,8 @@ void FU::exec(Inst_uop &inst) {
       latency = 1;
     } else if (inst.op == UOP_STA) {
       latency = 2;
+    } else if (inst.op == UOP_FLOAT) {
+      latency = 1;
     } else {
       latency = 1;
     }
@@ -142,8 +145,11 @@ void FU::exec(Inst_uop &inst) {
       mmu.io.in.tlb_flush.flush_asid = asid;
       mmu.io.in.tlb_flush.flush_vpn = vaddr >> 12;
       mmu.io.in.tlb_flush.flush_valid = true;
-    } else
+    } else if (inst.op == UOP_FLOAT) {
+      fpu(inst);
+    } else {
       alu(inst);
+    }
 
     complete = true;
     cycle = 0;

@@ -125,12 +125,12 @@ void ROB::comb_commit() {
 
       if (out.rob2csr->interrupt_resp) {
         // interrupt拥有最高优先级
-      } else if (entry[single_idx][deq_ptr].uop.type == ECALL) {
+      } else if (entry[single_idx][deq_ptr].uop.type == TYPE_ECALL) {
         out.rob_bcast->ecall = true;
         out.rob_bcast->pc = out.rob_commit->commit_entry[single_idx].uop.pc;
-      } else if (entry[single_idx][deq_ptr].uop.type == MRET) {
+      } else if (entry[single_idx][deq_ptr].uop.type == TYPE_MRET) {
         out.rob_bcast->mret = true;
-      } else if (entry[single_idx][deq_ptr].uop.type == SRET) {
+      } else if (entry[single_idx][deq_ptr].uop.type == TYPE_SRET) {
         out.rob_bcast->sret = true;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_store) {
         out.rob_bcast->page_fault_store = true;
@@ -144,14 +144,14 @@ void ROB::comb_commit() {
       } else if (entry[single_idx][deq_ptr].uop.illegal_inst) {
         out.rob_bcast->illegal_inst = true;
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
-      } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
+      } else if (entry[single_idx][deq_ptr].uop.type == TYPE_EBREAK) {
         extern bool sim_end;
         sim_end = true;
-      } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
+      } else if (entry[single_idx][deq_ptr].uop.type == TYPE_CSR) {
         out.rob2csr->commit = true;
       } else {
-        if (entry[single_idx][deq_ptr].uop.type != CSR &&
-            entry[single_idx][deq_ptr].uop.type != SFENCE_VMA) {
+        if (entry[single_idx][deq_ptr].uop.type != TYPE_CSR &&
+            entry[single_idx][deq_ptr].uop.type != TYPE_SFENCE_VMA) {
           cout << hex << entry[single_idx][deq_ptr].uop.instruction << endl;
           exit(1);
         }

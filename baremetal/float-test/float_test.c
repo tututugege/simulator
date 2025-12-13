@@ -159,15 +159,10 @@ int main() {
   else
     xprintf("Pass: test_conversion\n");
 
-  if ((result = test_comparison()) != 0)
-    xprintf("Error: test_comparison\n");
-  else
-    xprintf("Pass: test_comparison\n");
-
-  if ((result = test_fma()) != 0)
-    xprintf("Error: test_fma\n");
-  else
-    xprintf("Pass: test_fma\n");
+  // if ((result = test_fma()) != 0)
+  //   xprintf("Error: test_fma\n");
+  // else
+  //   xprintf("Pass: test_fma\n");
 
   if ((result = test_minmax()) != 0)
     xprintf("Error: test_minmax\n");

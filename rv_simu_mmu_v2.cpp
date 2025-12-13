@@ -360,18 +360,19 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
       front_in.actual_dir[i] =
-          (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
+          (inst->type == TYPE_JAL || inst->type == TYPE_JALR) ? true
+                                                              : inst->br_taken;
       front_in.actual_target[i] = inst->pc_next;
       int br_type = BR_NONCTL;
       if (is_branch(inst->type)) {
         br_type = BR_DIRECT;
       }
-      if (inst->type == JAL) {
+      if (inst->type == TYPE_JAL) {
         br_type = BR_JAL;
       }
-      if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
+      if (inst->type == TYPE_JAL && inst->dest_en && inst->dest_areg == 1) {
         br_type = BR_CALL;
-      } else if (inst->type == JALR) {
+      } else if (inst->type == TYPE_JALR) {
         if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
           br_type = BR_RET;
         else

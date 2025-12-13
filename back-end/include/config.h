@@ -58,8 +58,8 @@ using namespace std;
 #define MEM_LOG (0 && (sim_time >= LOG_START))
 
 #define CONFIG_DIFFTEST
-#define CONFIG_RUN_REF
-#define CONFIG_RUN_REF_PRINT
+// #define CONFIG_RUN_REF
+// #define CONFIG_RUN_REF_PRINT
 
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
@@ -75,7 +75,7 @@ using namespace std;
 
 #define UART_BASE 0x10000000
 
-#define IQ_INTM 0
+#define IQ_INTMF 0
 #define IQ_INTD 1
 #define IQ_LD 2
 #define IQ_STA 3
@@ -84,22 +84,23 @@ using namespace std;
 #define IQ_BR1 6
 #define IQ_NUM 7
 
-#define NOP 0
-#define JAL 1
-#define JALR 2
-#define ADD 3
-#define BR 4
-#define LOAD 5
-#define STORE 6
-#define CSR 7
-#define ECALL 8
-#define EBREAK 9
-#define SFENCE_VMA 10
-#define MRET 11
-#define SRET 12
-#define MUL 13
-#define DIV 14
-#define AMO 15
+#define TYPE_NOP 0
+#define TYPE_JAL 1
+#define TYPE_JALR 2
+#define TYPE_ADD 3
+#define TYPE_BR 4
+#define TYPE_LOAD 5
+#define TYPE_STORE 6
+#define TYPE_CSR 7
+#define TYPE_ECALL 8
+#define TYPE_EBREAK 9
+#define TYPE_SFENCE_VMA 10
+#define TYPE_MRET 11
+#define TYPE_SRET 12
+#define TYPE_MUL 13
+#define TYPE_DIV 14
+#define TYPE_AMO 15
+#define TYPE_FLOAT 16
 
 #define UOP_JUMP 0
 #define UOP_ADD 1
@@ -115,6 +116,7 @@ using namespace std;
 #define UOP_SRET 11
 #define UOP_MUL 12
 #define UOP_DIV 13
+#define UOP_FLOAT 14
 
 #define AMONONE 0
 #define LR 1
@@ -157,7 +159,7 @@ typedef struct Inst_uop {
   wire1_t src1_is_pc;
   wire1_t src2_is_imm;
   wire3_t func3;
-  wire1_t func7_5;
+  wire7_t func7;
   wire32_t imm; // 好像不用32bit 先用着
   wire32_t pc;  // 未来将会优化pc的获取
   wire4_t tag;

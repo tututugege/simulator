@@ -78,18 +78,18 @@ void Back_Top::difftest_cycle() {
 
 void Back_Top::difftest_inst(Inst_uop *inst) {
 
-  if (inst->type == JALR) {
+  if (inst->type == TYPE_JALR) {
     if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
       perf.ret_br_num++;
     } else {
       perf.jalr_br_num++;
     }
-  } else if (inst->type == BR) {
+  } else if (inst->type == TYPE_BR) {
     perf.cond_br_num++;
   }
 
   if (inst->mispred) {
-    if (inst->type == JALR) {
+    if (inst->type == TYPE_JALR) {
       if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
         perf.ret_mispred_num++;
         if (!inst->pred_br_taken) {
@@ -105,7 +105,7 @@ void Back_Top::difftest_inst(Inst_uop *inst) {
           perf.jalr_addr_mispred++;
         }
       }
-    } else if (inst->type == BR) {
+    } else if (inst->type == TYPE_BR) {
       if (inst->pred_br_taken != inst->br_taken) {
         perf.cond_dir_mispred++;
       } else {

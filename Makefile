@@ -5,6 +5,7 @@ CXXSRC += $(shell find ./mmu/ -name "*.cpp")
 # CXXSRC += ./rv_simu_mmu.cpp
 CXXSRC += ./rv_simu_mmu_v2.cpp # cpp file with main function
 CXXSRC += ./softfloat.a
+CXXSRC += ./softfloat_extra.cpp
 
 CXXINCLUDE = -I./include/
 CXXINCLUDE += -I./back-end/include/

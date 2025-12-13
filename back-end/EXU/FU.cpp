@@ -1,5 +1,10 @@
 #include "TOP.h"
 #include "config.h"
+extern "C" {
+#include "softfloat.h"
+}
+#include "softfloat_extra.h"
+#include "softfloat_types.h"
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
@@ -25,6 +30,102 @@ enum STATE { IDLE, RECV };
 #define BGE 0b101
 #define BLTU 0b110
 #define BGEU 0b111
+
+void fpu(Inst_uop &inst) {
+  float32_t f_res;
+  uint32_t i_res = 0;
+
+  uint32_t val_rs1 = inst.src1_rdata;
+  uint32_t val_rs2 = inst.src2_rdata;
+  float32_t f_rs1 = to_f32(val_rs1);
+  float32_t f_rs2 = to_f32(val_rs2);
+  uint32_t funct3 = inst.func3;
+
+  switch (inst.func7) {
+  case 0x00: // FADD.S
+    f_res = f32_add(f_rs1, f_rs2);
+    i_res = from_f32(f_res);
+    break;
+  case 0x04: // FSUB.S
+    f_res = f32_sub(f_rs1, f_rs2);
+    i_res = from_f32(f_res);
+    break;
+  case 0x08: // FMUL.S
+    f_res = f32_mul(f_rs1, f_rs2);
+    i_res = from_f32(f_res);
+    break;
+  case 0x0C: // FDIV.S
+    f_res = f32_div(f_rs1, f_rs2);
+    i_res = from_f32(f_res);
+    break;
+  case 0x2C: // FSQRT.S (rs2 必须为 0)
+    // if (rs2 != 0) {
+    //   illegal_exception = true;
+    //   return;
+    // }
+    f_res = f32_sqrt(f_rs1);
+    i_res = from_f32(f_res);
+    break;
+
+  // 注入符号 (FSGNJ) - 纯位操作，不触发异常
+  case 0x10:
+    if (funct3 == 0) // FSGNJ.S
+      i_res = (val_rs1 & ~0x80000000) | (val_rs2 & 0x80000000);
+    else if (inst.func3 == 1) // FSGNJN.S
+      i_res = (val_rs1 & ~0x80000000) | (~val_rs2 & 0x80000000);
+    else if (funct3 == 2) // FSGNJX.S
+      i_res = val_rs1 ^ (val_rs2 & 0x80000000);
+    break;
+
+  // 比较 (Compare) - 结果写回整数寄存器 (0 或 1)
+  case 0x50:
+    if (funct3 == 2) // FEQ.S
+      i_res = f32_eq(f_rs1, f_rs2);
+    else if (funct3 == 1) // FLT.S
+      i_res = f32_lt(f_rs1, f_rs2);
+    else if (funct3 == 0) // FLE.S
+      i_res = f32_le(f_rs1, f_rs2);
+    break;
+
+  // 最小/最大 (Min/Max)
+  case 0x14:
+    if (funct3 == 0) { // FMIN.S
+      i_res = f32_min_riscv(val_rs1, val_rs2);
+    } else if (funct3 == 1) { // FMAX.S
+      i_res = f32_max_riscv(val_rs1, val_rs2);
+    }
+    break;
+  // 转换 (Convert)
+  case 0x60: // FCVT.W.S (Float to Int32)
+    if (inst.src2_areg == 0)
+      i_res = (uint32_t)f32_to_i32(f_rs1, softfloat_roundingMode, true);
+    else if (inst.src2_areg == 1)
+      i_res = f32_to_ui32(f_rs1, softfloat_roundingMode, true);
+    break;
+
+  case 0x68: // FCVT.S.W (Int32 to Float)
+    if (inst.src2_areg == 0)
+      f_res = i32_to_f32((int32_t)val_rs1);
+    else if (inst.src2_areg == 1)
+      f_res = ui32_to_f32(val_rs1);
+    i_res = from_f32(f_res);
+    break;
+
+    // Zfinx 特殊说明：
+    // FMV.X.W (Move float bits to int) 和 FMV.W.X 在 Zfinx 中通常是 NOP
+    // 或者普通的整数 MV， 因为 float 和 int 在同一个寄存器堆里。
+    // opcode 0x70,
+    // funct3 0 (FMV.X.W) -> Class check in standard, move in others. 在Zfinx
+    // 中，opcode 0x53, funct7 0x70, rs2=0 是 FMV.X.W opcode 0x53, funct 0x78,
+    // rs2=0 是 FMV.W.X
+  case 0x70: // FCLASS.S (FMV.X.W 也是这个组，但 rs2=0)
+    float32_t f = to_f32(val_rs1);
+    i_res = f32_classify(f);
+    break;
+  }
+
+  inst.result = i_res;
+}
 
 void mul(Inst_uop &inst) {
   // 提取 32 位数据并进行符号处理
@@ -194,7 +295,7 @@ void alu(Inst_uop &inst) {
   case UOP_ADD: {
     switch (inst.func3) {
     case SUB:
-      if (inst.func7_5 && !inst.src2_is_imm)
+      if ((inst.func7 & (1 << 5)) && !inst.src2_is_imm)
         inst.result = operand1 - operand2;
       else
         inst.result = operand1 + operand2;
@@ -212,7 +313,7 @@ void alu(Inst_uop &inst) {
       inst.result = (operand1 ^ operand2);
       break;
     case SRL:
-      if (inst.func7_5)
+      if (inst.func7 & (1 << 5))
         inst.result = ((signed)operand1 >> operand2);
       else
         inst.result = ((unsigned)operand1 >> operand2);
