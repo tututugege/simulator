@@ -528,34 +528,10 @@ void Back_Top::restore_checkpoint(const std::string &filename,
   }
 
   CPU_state state;
-  uint32_t temp_u32;
-  uint8_t temp_u8;
-  bool temp_bool;
   uint64_t interval_inst_count;
 
   // 1. 恢复状态
   gz_read_pod(file, state);
-  gz_read_pod(file, temp_u32);
-  gz_read_pod(file, temp_u8);
-  // ... (恢复其他 bool 变量) ...
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
-  gz_read_pod(file, temp_bool);
   gz_read_pod(file, interval_inst_count);
 
   number_PC = state.pc;

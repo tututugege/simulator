@@ -38,33 +38,33 @@ uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 
 int main(int argc, char *argv[]) {
 
-  setbuf(stdout, NULL);
-  ifstream inst_data(argv[argc - 1], ios::in);
-  if (!inst_data.is_open()) {
-    cout << "Error: Image " << argv[argc - 1] << " does not exist" << endl;
-    exit(0);
-  }
-
-  inst_data.seekg(0, std::ios::end);
-  streamsize size = inst_data.tellg();
-  inst_data.seekg(0, std::ios::beg);
-
-  if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
-                      size)) {
-    std::cerr << "读取文件失败！" << std::endl;
-    return 1;
-  }
-
-  inst_data.close();
-
-  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
-  p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
-  p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
-  p_memory[uint32_t(0xc / 4)] = 0x00028067;
-  p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+  // setbuf(stdout, NULL);
+  // ifstream inst_data(argv[argc - 1], ios::in);
+  // if (!inst_data.is_open()) {
+  //   cout << "Error: Image " << argv[argc - 1] << " does not exist" << endl;
+  //   exit(0);
+  // }
+  //
+  // inst_data.seekg(0, std::ios::end);
+  // streamsize size = inst_data.tellg();
+  // inst_data.seekg(0, std::ios::beg);
+  //
+  // if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
+  //                     size)) {
+  //   std::cerr << "读取文件失败！" << std::endl;
+  //   return 1;
+  // }
+  //
+  // inst_data.close();
+  //
+  // p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
+  // p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
+  // p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
+  // p_memory[uint32_t(0xc / 4)] = 0x00028067;
+  // p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
 
 #ifdef CONFIG_DIFFTEST
-  init_difftest(size);
+  // init_difftest(size);
 #endif
 
 #ifdef CONFIG_RUN_REF
@@ -88,8 +88,7 @@ int main(int argc, char *argv[]) {
 
 #ifdef CONFIG_RUN_CKPT
   // max_sim_time = SIMPOINT_INTERVAL;
-  back.restore_checkpoint("../simpoint_sim/checkpoint/ckpt_sp6_i550.bin.gz",
-                          number_PC);
+  back.restore_checkpoint(argv[argc - 1], number_PC);
 #endif
 
 #ifdef CONFIG_BPU
