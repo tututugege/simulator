@@ -84,10 +84,10 @@ int main(int argc, char *argv[]) {
   bool stall, misprediction, exception;
   stall = misprediction = exception = false;
 
-  int max_sim_time = MAX_SIM_TIME;
+  // int max_sim_time = MAX_SIM_TIME;
 
 #ifdef CONFIG_RUN_CKPT
-  max_sim_time = SIMPOINT_INTERVAL;
+  // max_sim_time = SIMPOINT_INTERVAL;
   back.restore_checkpoint("../simpoint_sim/checkpoint/ckpt_sp6_i550.bin.gz",
                           number_PC);
 #endif
@@ -101,7 +101,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   // main loop
-  for (sim_time = 0; sim_time < max_sim_time; sim_time++) {
+  for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
     if (sim_time % 10000000 == 0)
       cout << dec << sim_time << endl;
     perf.cycle++;
@@ -393,15 +393,15 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
         front_in.tage_idx[i][j] = inst->tage_idx[j];
       }
     }
-    if (LOG) {
-      cout << " valid: " << front_in.back2front_valid[i]
-           << " 反馈给前端的分支指令PC: " << hex << inst->pc
-           << " 预测结果: " << inst->pred_br_taken
-           << " 实际结果: " << inst->br_taken
-           << " 预测目标地址: " << inst->pred_br_pc
-           << " 实际目标地址: " << inst->pc_next
-           << " 指令: " << inst->instruction << endl;
-    }
+    // if (LOG) {
+    //   cout << " valid: " << front_in.back2front_valid[i]
+    //        << " 反馈给前端的分支指令PC: " << hex << inst->pc
+    //        << " 预测结果: " << inst->pred_br_taken
+    //        << " 实际结果: " << inst->br_taken
+    //        << " 预测目标地址: " << inst->pred_br_pc
+    //        << " 实际目标地址: " << inst->pc_next
+    //        << " 指令: " << inst->instruction << endl;
+    // }
   }
 
   if (back.out.mispred || back.out.flush) {

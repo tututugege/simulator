@@ -26,7 +26,10 @@ void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
   ref_cpu.init(0);
   ref_cpu.state = ckpt_state;
   ref_cpu.privilege = RISCV_MODE_U;
-  memcpy(ref_cpu.memory, ckpt_memory, PHYSICAL_MEMORY_LENGTH);
+  memcpy(ref_cpu.memory, ckpt_memory, (uint64_t)PHYSICAL_MEMORY_LENGTH * 4);
+
+  uint32_t p_addr;
+  assert(ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0));
 }
 
 static void checkregs() {

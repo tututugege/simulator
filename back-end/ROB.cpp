@@ -145,7 +145,6 @@ void ROB::comb_commit() {
         out.rob_bcast->illegal_inst = true;
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
       } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
-        extern bool sim_end;
         sim_end = true;
       } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
         out.rob2csr->commit = true;

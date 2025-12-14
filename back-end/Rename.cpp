@@ -281,6 +281,11 @@ void Rename ::comb_commit() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (in.rob_commit->commit_entry[i].valid) {
       perf.commit_num++;
+#ifdef CONFIG_RUN_CKPT
+      if (perf.commit_num == SIMPOINT_INTERVAL) {
+        sim_end = true;
+      }
+#endif
       Inst_uop *inst = &in.rob_commit->commit_entry[i].uop;
       if (inst->dest_en) {
 

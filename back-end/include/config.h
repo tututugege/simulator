@@ -32,7 +32,7 @@ typedef wire4_t Amo_op;
 
 using namespace std;
 
-#define MAX_SIM_TIME 50000000
+#define MAX_SIM_TIME 1000000000
 
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4
@@ -63,7 +63,7 @@ using namespace std;
 #define CONFIG_RUN_CKPT
 #define SIMPOINT_INTERVAL 100000000
 
-// #define CONFIG_PERF_COUNTER
+#define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
 #define CONFIG_MMU
 // #define ENABLE_MULTI_BR
@@ -335,3 +335,4 @@ public:
 
 extern Perf_count perf;
 extern long long sim_time;
+extern bool sim_end;

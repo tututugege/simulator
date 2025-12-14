@@ -180,9 +180,13 @@ void Ref_cpu::exec() {
 
   if (Instruction == INST_EBREAK) {
     state.pc += 4;
+#ifdef CONFIG_RUN_REF
     cout << "sim_time: " << sim_time << endl;
     sim_end = true;
     exit(0);
+#else
+    return;
+#endif
   }
   RISCV();
 }
