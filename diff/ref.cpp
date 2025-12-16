@@ -851,22 +851,29 @@ void Ref_cpu::RV32A() {
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
 #ifdef CONFIG_RUN_REF
-    bool page_fault_1 = !va2pa(p_addr, v_addr, 1);
-    bool page_fault_2 = !va2pa(p_addr, v_addr, 2);
+    bool page_fault;
+
+    if (funct5 == 2) {
+      page_fault = !va2pa(p_addr, v_addr, 1);
+    } else {
+      page_fault = !va2pa(p_addr, v_addr, 2);
+    }
+
 #else
-    bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, 1);
-    bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, 2);
+
+    bool page_fault;
+
+    if (funct5 == 2) {
+      page_fault = !va2pa_fixed(p_addr, v_addr, 1);
+    } else {
+      page_fault = !va2pa_fixed(p_addr, v_addr, 2);
+    }
+
 #endif
 
-    if (page_fault_1 || page_fault_2) {
+    if (page_fault) {
       if (funct5 == 2) {
-        if (page_fault_1) {
-          page_fault_load = true;
-        }
-      } else if (funct5 == 3) {
-        if (page_fault_2) {
-          page_fault_store = true;
-        }
+        page_fault_load = true;
       } else {
         page_fault_store = true;
       }

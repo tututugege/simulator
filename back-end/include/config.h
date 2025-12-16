@@ -60,8 +60,9 @@ using namespace std;
 #define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
 // #define CONFIG_RUN_REF_PRINT
-#define CONFIG_RUN_CKPT
+// #define CONFIG_RUN_CKPT
 #define SIMPOINT_INTERVAL 100000000
+#define WARMUP 100000000
 
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU

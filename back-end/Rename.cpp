@@ -282,18 +282,24 @@ void Rename ::comb_commit() {
     if (in.rob_commit->commit_entry[i].valid) {
       perf.commit_num++;
 #ifdef CONFIG_RUN_CKPT
-      if (perf.commit_num == SIMPOINT_INTERVAL) {
+      if (perf.commit_num == WARMUP && !perf.perf_start) {
+        perf.perf_reset();
+        perf.perf_start = true;
+      }
+
+      if (perf.commit_num == SIMPOINT_INTERVAL && perf.perf_start) {
+        perf.perf_print();
         sim_end = true;
       }
+
 #endif
       Inst_uop *inst = &in.rob_commit->commit_entry[i].uop;
-      if (inst->dest_en) {
 
-        // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
-        // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
-        // 异常指令要看上去没有执行一样
-        if (!inst->page_fault_load && !in.rob_bcast->interrupt &&
-            !in.rob_bcast->illegal_inst) {
+      // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
+      // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
+      // 异常指令要看上去没有执行一样
+      if (inst->dest_en) {
+        if (!is_exception(*inst) && !in.rob_bcast->interrupt) {
           free_vec_normal[inst->old_dest_preg] = true;
           spec_alloc_normal[inst->dest_preg] = false;
         }
@@ -304,7 +310,7 @@ void Rename ::comb_commit() {
              << inst->inst_idx << endl;
       }
       ren_commit_idx = i;
-      if (inst->dest_en && !inst->page_fault_load && !in.rob_bcast->interrupt) {
+      if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
       back.difftest_inst(inst);
