@@ -9,7 +9,11 @@ struct mmu_slot_t {
 
 class FU {
 public:
-  void exec(Inst_uop &);
+#ifdef CONFIG_CACHE_MMU
+  void exec(Inst_uop &inst, Mem_REQ *&in, bool mispred);
+#else
+  void exec(Inst_uop &inst);
+#endif
   int latency = 0;
   int cycle = 0;
   bool complete = false;

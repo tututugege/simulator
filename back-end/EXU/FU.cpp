@@ -196,8 +196,68 @@ void alu(Inst_uop &inst) {
   }
   }
 }
+#ifdef CONFIG_CACHE_MMU
+void ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn, Mem_REQ *&out) {
+  bool stall_load = false;
+  uint32_t addr = inst.src1_rdata + inst.imm;
 
-#ifdef CONFIG_MMU
+  if (addr == 0x1fd0e000) {
+    inst.difftest_skip = true;
+  }
+
+  int size = inst.func3 & 0b11;
+  int offset = addr & 0b11;
+  uint32_t mask = 0;
+  uint32_t sign = 0;
+
+  if (inst.amoop != AMONONE) {
+    size = 0b10;
+    offset = 0b0;
+  }
+
+  uint32_t data;
+  uint32_t p_addr = addr;
+  bool ret = true;
+
+  p_addr = mmu_ppn << 12 | (addr & 0xFFF);
+  ret = !mmu_page_fault;
+
+  if (p_addr == 0x1fd0e000) {
+    data = perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  }
+
+  if (!ret)
+  {
+    inst.page_fault_load = true;
+    data = addr;
+  }
+  out->en = true;
+  out->wen = 0;
+  
+  out->wdata = data;
+  out->wstrb = 0;
+  out->addr = p_addr;
+  
+  out->uop = inst;
+  out->uop.paddr = p_addr;
+  return ;
+}
+void stu_addr(Inst_uop &inst, bool page_fault, uint32_t mmu_ppn) {
+
+  uint32_t v_addr = inst.src1_rdata + inst.imm;
+
+  uint32_t p_addr = v_addr;
+  p_addr = (mmu_ppn << 12) | (v_addr & 0xFFF);
+  if (page_fault) {
+    inst.page_fault_store = true;
+    inst.result = v_addr;
+  } else {
+    inst.result = p_addr;
+  }
+}
+#elif CONFIG_MMU
 // return: 1 - stall load; 0 - load ok
 bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn) {
   bool stall_load = false;

@@ -208,6 +208,16 @@ Csr_Front csr2front;
 Csr_Status csr_status;
 Exe_Csr exe2csr;
 
+Mem_REQ exu2cache_req;
+Mem_RESP cache2prf;
+Mem_READY cache2exe_ready;
+
+Mem_REQ stq2cache_req;
+Mem_RESP cache2stq_resp;
+Mem_READY cache2stq_ready;
+
+
+
 void Back_Top::init() {
   idu.out.dec2front = &dec2front;
   idu.out.dec2ren = &dec2ren;
@@ -263,14 +273,14 @@ void Back_Top::init() {
   prf.in.dec_bcast = &dec_bcast;
   prf.in.rob_bcast = &rob_bcast;
 
-  exu.io.prf2exe = &prf2exe;
-  exu.io.dec_bcast = &dec_bcast;
-  exu.io.rob_bcast = &rob_bcast;
-  exu.io.exe2prf = &exe2prf;
-  exu.io.exe2stq = &exe2stq;
-  exu.io.exe2iss = &exe2iss;
-  exu.io.exe2csr = &exe2csr;
-  exu.io.csr2exe = &csr2exe;
+  exu.in.prf2exe = &prf2exe;
+  exu.in.dec_bcast = &dec_bcast;
+  exu.in.rob_bcast = &rob_bcast;
+  exu.out.exe2prf = &exe2prf;
+  exu.out.exe2stq = &exe2stq;
+  exu.out.exe2iss = &exe2iss;
+  exu.out.exe2csr = &exe2csr;
+  exu.in.csr2exe = &csr2exe;
 
   rob.in.dis2rob = &dis2rob;
   rob.in.dec_bcast = &dec_bcast;
@@ -299,6 +309,23 @@ void Back_Top::init() {
   csr.out.csr2rob = &csr2rob;
   csr.out.csr2front = &csr2front;
   csr.out.csr_status = &csr_status;
+
+  #ifdef CONFIG_CACHE_MMU
+  stq.in.cache2stq = &cache2stq_resp;
+  stq.in.cache2stq_ready = &cache2stq_ready;
+  stq.out.stq2cache_req = &stq2cache_req;
+
+  exu.out.exe2cache = &exu2cache_req;
+  exu.in.cache2exe_ready = &cache2exe_ready;
+  prf.in.cache2prf = &cache2prf;
+
+  dcache.in.exu2cache = &exu2cache_req;
+  dcache.in.stq2cache = &stq2cache_req;
+  dcache.out.cache2prf = &cache2prf;
+  dcache.out.cache2exe_ready = &cache2exe_ready;
+  dcache.out.cache2stq = &cache2stq_resp;
+  dcache.out.cache2stq_ready = &cache2stq_ready;
+  #endif
 
   idu.init();
   isu.init();
@@ -349,7 +376,21 @@ void Back_Top::comb() {
 
   idu.comb_release_tag();
   dis.comb_alloc();
+  
+  
+
   exu.comb_exec();
+
+  #ifdef CONFIG_CACHE_MMU
+  stq.comb_out();
+  prf.comb_load();
+  stq.comb_in();
+  exu.comb_latency();
+  #else
+
+  stq.comb();
+  #endif
+
   exu.comb_to_csr();
   exu.comb_ready();
   isu.comb_deq();
@@ -359,7 +400,6 @@ void Back_Top::comb() {
   csr.comb_csr_read();
   csr.comb_csr_write();
   exu.comb_from_csr();
-  stq.comb();
   prf.comb_read();
   rename.comb_wake();
   dis.comb_wake();
@@ -403,7 +443,7 @@ void Back_Top::comb() {
 
   isu.comb_enq();
   rename.comb_commit(); // difftest在这里
-  rob.comb_flush();
+  rob.comb_flush();   
   prf.comb_flush();
   exu.comb_flush();
   rename.comb_flush();
@@ -437,7 +477,9 @@ void Back_Top::seq() {
   }
 }
 
-#ifdef CONFIG_MMU
+
+#ifdef CONFIG_CACHE_MMU
+#elif CONFIG_MMU
 bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
                          bool &mmu_page_fault, uint32_t &mmu_ppn,
                          bool &stall_load) {

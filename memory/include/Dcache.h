@@ -1,0 +1,66 @@
+#include "IO.h"
+#include <config.h>
+#include <cmath>
+#include "Dcache_Utils.h"
+
+class Dcache_IN {
+public:
+    Mem_REQ* ldq2dcache_req;
+    Mem_REQ* stq2dcache_req;
+
+    Dcache_CONTROL* control;
+    WB_Arbiter_Dcache* wb_arbiter2dcache;
+    WriteBuffer_Dcache* wb2dcache;
+
+};
+class Dcache_OUT {
+public:
+    Mem_RESP* dcache2ldq_resp;
+    Mem_RESP* dcache2stq_resp;
+    Mem_READY* dcache2ldq_ready;
+    Mem_READY* dcache2stq_ready;
+
+    Dcache_MSHR* dcache2mshr_ld;
+    Dcache_MSHR* dcache2mshr_st;
+};
+
+typedef struct 
+{
+    bool valid;
+    uint32_t addr;
+    uint32_t tag;
+    uint32_t index;
+    uint32_t wdata;
+    uint8_t wstrb;
+    Inst_uop uop;
+}Pipe_Reg;
+
+class Dcache {
+public:
+    Dcache_IN in;
+    Dcache_OUT out;
+
+    reg32_t hit_num;
+    reg32_t miss_num;
+
+    Pipe_Reg s1_reg_ld,s2_reg_ld;
+    Pipe_Reg s1_reg_st,s2_reg_st;
+    uint32_t tag_reg_ld[DCACHE_WAY_NUM];
+    uint32_t tag_reg_st[DCACHE_WAY_NUM];
+    uint32_t data_reg_ld[DCACHE_WAY_NUM];
+    uint32_t data_reg_st[DCACHE_WAY_NUM];
+
+    Pipe_Reg s1_next_ld,s2_next_ld;
+    Pipe_Reg s1_next_st,s2_next_st;
+    uint32_t tag_next_ld[DCACHE_WAY_NUM];
+    uint32_t tag_next_st[DCACHE_WAY_NUM];
+    uint32_t data_next_ld[DCACHE_WAY_NUM];
+    uint32_t data_next_st[DCACHE_WAY_NUM];
+
+    void comb_out();
+    void comb_s1();
+    void comb_s2();
+    void seq();
+
+    void init();
+};

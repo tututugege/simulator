@@ -49,6 +49,7 @@ public:
   EXU exu;
   CSRU csr;
   STQ stq;
+  DCACHE dcache;
 
   ROB rob;
   Back_in in;

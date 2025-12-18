@@ -8,12 +8,14 @@ typedef struct {
   reg32_t addr;
   reg32_t size;
   reg32_t data;
+  reg32_t inst;
 
   reg1_t commit;
   reg1_t addr_valid;
   reg1_t data_valid;
   reg1_t valid;
   reg4_t tag;
+  reg2_t issued;
 } STQ_entry;
 
 typedef struct {
@@ -192,3 +194,79 @@ typedef struct {
   wire1_t interrupt_resp;
   wire1_t commit;
 } Rob_Csr;
+
+typedef struct{
+  wire1_t en;
+  wire1_t wen;
+  wire32_t addr;
+  wire32_t wdata;
+  wire8_t wstrb;
+
+  Inst_uop uop;
+}Mem_REQ;
+typedef struct{
+  wire1_t ready;
+}Mem_READY;
+typedef struct{
+  wire1_t wen;
+  wire1_t valid;
+  wire32_t data;
+
+  wire32_t addr;
+  Inst_uop uop;
+}Mem_RESP;
+
+typedef struct {
+  wire1_t flush;
+  wire1_t mispred;
+  wire16_t br_mask;
+} Dcache_CONTROL;
+
+typedef struct {
+  wire1_t valid;
+  wire1_t wen;
+  wire32_t addr;
+
+  Inst_uop uop;
+} Dcache_MSHR;
+
+typedef struct{
+  wire1_t stall_ld;
+  wire1_t stall_st;
+}WB_Arbiter_Dcache;
+
+typedef struct {
+  wire1_t valid;
+  wire32_t wdata;
+
+  wire1_t flush;
+  wire1_t mispred;
+  wire16_t br_mask;
+
+  Inst_uop uop;
+} Dcache_WriteBuffer;
+
+typedef struct {
+  wire1_t stall;
+} WriteBuffer_Dcache;
+
+typedef struct{
+  bool en;
+  bool wen;
+  uint8_t sel;
+  uint8_t len;
+  bool done;
+  bool last;
+  uint8_t size;
+  uint32_t addr;
+  uint32_t wdata;
+}EXMem_CONTROL;
+typedef struct{
+  uint32_t data;
+  bool last;
+  bool done;
+}EXMem_DATA;
+typedef struct{
+  EXMem_CONTROL control;
+  EXMem_DATA data;
+}EXMem_IO;

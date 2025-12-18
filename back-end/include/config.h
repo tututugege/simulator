@@ -64,6 +64,7 @@ using namespace std;
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
 #define CONFIG_MMU
+#define CONFIG_CACHE_MMU
 // #define ENABLE_MULTI_BR
 
 /*
@@ -137,6 +138,10 @@ typedef struct Inst_uop {
   wire7_t old_dest_preg;
   wire32_t src1_rdata, src2_rdata;
   wire32_t result;
+
+  #ifdef CONFIG_CACHE_MMU
+  wire32_t paddr;
+  #endif
 
   // 分支预测信息
   wire1_t pred_br_taken;
