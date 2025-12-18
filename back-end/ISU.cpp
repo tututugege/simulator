@@ -1,6 +1,7 @@
 #include "config.h"
 #include <ISU.h>
 #include <cstdint>
+#include <cstring>
 #include <util.h>
 #include <vector>
 
@@ -253,7 +254,9 @@ Inst_entry IQ::scheduler() {
 
   Inst_entry iss_entry;
   int iss_idx;
-  iss_entry.valid = false;
+
+  // 无就绪指令时输出全0
+  memset(&iss_entry, 0, sizeof(iss_entry));
 
   if (num == 0) {
     return iss_entry;
