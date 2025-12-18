@@ -65,15 +65,15 @@ void STQ::comb() {
 
       if (temp != 27)
         cout << temp;
-      // if (temp == '?' && !perf.perf_start) {
-      //   cout << " perf counter start" << endl;
-      //   perf.perf_start = true;
-      //   perf.perf_reset();
-      // } else if (temp == '#' && perf.perf_start && last_ch == '?') {
-      //   perf.perf_print();
-      //   exit(0);
-      // }
-      // last_ch = temp;
+      if (temp == '?' && !perf.perf_start) {
+        cout << " perf counter start" << endl;
+        perf.perf_start = true;
+        perf.perf_reset();
+      } else if (temp == '#' && perf.perf_start && last_ch == '?') {
+        perf.perf_print();
+        exit(0);
+      }
+      last_ch = temp;
     }
 
     if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 7) {

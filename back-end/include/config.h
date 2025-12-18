@@ -32,7 +32,7 @@ typedef wire4_t Amo_op;
 
 using namespace std;
 
-#define MAX_SIM_TIME 1000000000
+#define MAX_SIM_TIME 100000000000
 
 #define FETCH_WIDTH 4
 #define COMMIT_WIDTH 4

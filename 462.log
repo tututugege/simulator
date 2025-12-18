@@ -1,0 +1,61 @@
+?#instruction num: 462226233
+cycle       num: 441120905
+ipc            : 1.047845
+
+*********CACHE COUNTER************
+cache accuracy : 0.982496
+cache access   : 91932358
+cache hit      : 90323215
+cache miss     : 1609143
+
+*********BPU COUNTER************
+bpu   accuracy : 0.949495
+
+jalr  accuracy : 0.520833
+num        : 66889
+mispred    : 32051
+addr error : 32051
+dir  error : 0
+
+br    accuracy : 0.967554
+num        : 80064638
+mispred    : 2597742
+addr error : 0
+dir  error : 2597742
+
+ret    accuracy : 0.384254
+num        : 2507392
+mispred    : 1543916
+addr error : 1543916
+dir  error : 0
+
+*********STALL COUNTER************
+rob     stall : 95466544
+idu br  stall : 11091944
+idu tag stall : 32008531
+ren reg stall : 24015955
+
+*********ISU COUNTER************
+iss     stall : 8721189
+iss     stall : 257380
+iss     stall : 63380227
+iss     stall : 18262307
+iss     stall : 18254643
+iss     stall : 673844
+iss     stall : 1945575
+iq0 ready  num : 0.884753
+iq1 ready  num : 0.363849
+iq2 ready  num : 2.259259
+iq3 ready  num : 0.827747
+iq4 ready  num : 0.163183
+iq5 ready  num : 0.191381
+iq6 ready  num : 0.048985
+iq0 raw  num : 154168229
+iq1 raw  num : 175629231
+iq2 raw  num : 66999776
+iq3 raw  num : 12366142
+iq4 raw  num : 185359358
+iq5 raw  num : 125037855
+iq6 raw  num : 81720745
+
+

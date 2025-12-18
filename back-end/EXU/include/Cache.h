@@ -2,14 +2,14 @@
 using namespace std;
 
 #define OFFSET_WIDTH 6
-#define INDEX_WIDTH 6
+#define INDEX_WIDTH 8
 #define WAY_NUM 4
 
 #define TAG(addr) (addr >> (offset_width + index_width))
 #define INDEX(addr) ((addr >> offset_width) & ((1 << index_width) - 1))
 
-#define HIT_LATENCY 2
-#define MISS_LATENCY 120
+#define HIT_LATENCY 1
+#define MISS_LATENCY 110
 #define PLRU_EVICT
 
 class Cache {
