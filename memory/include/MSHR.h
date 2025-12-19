@@ -8,7 +8,9 @@ const int MSHR_TABLE_SIZE = 16;
 typedef struct{
     bool valid;
     bool issued;
-    uint32_t addr;
+    uint32_t index;
+    uint32_t tag;
+    uint32_t count;
 }mshr_entry;
 
 typedef struct{
@@ -23,8 +25,9 @@ typedef struct{
 
 enum MSHR_STATE{
     MSHR_IDLE,
-    MSHR_WAIT_READ,
-    MSHR_TRAN
+    MSHR_DEAL,
+    MSHR_TRAN,
+    MSHR_WB
 };
 
 
@@ -33,11 +36,13 @@ public:
     Dcache_MSHR* dcache2mshr_ld;
     Dcache_MSHR* dcache2mshr_st;    
     Dcache_CONTROL* control;
+    EXMem_DATA* arbiter2mshr_data;
 };
 class MSHR_OUT {
 public:
     Mem_RESP* mshr2cpu_resp;
-    EXMem_IO* mshr2mem;
+    Mem_READY* mshr2dcache_ready;
+    EXMem_CONTROL* mshr2arbiter_control;
 };
 
 class MSHR {

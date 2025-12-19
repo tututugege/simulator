@@ -2,286 +2,298 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 
-#define NUM_SETS    4        // Set数量
-#define NUM_WAYS    4        // Way数量 (关联度)
-#define TREE_BITS   (NUM_WAYS - 1) // PLRU树所需的比特数 (N-1)
+// =========================================================
+// 参数配置 (Configurable Parameters)
+// =========================================================
+// 修改这里可以改变关联度 (必须是 2 的幂: 4, 8, 16, 32...)
+#define NUM_WAYS    8          
+#define NUM_SETS    4          
 
+// 自动计算 PLRU 树所需的位数 (N Ways 需要 N-1 bits)
+#define TREE_BITS   (NUM_WAYS - 1)
 
-// 模拟 Verilog 的 Input 端口
+// 选择存储类型，如果 TREE_BITS > 64，需要修改这里
+typedef uint64_t tree_storage_t; 
+
+// =========================================================
+// 数据结构定义
+// =========================================================
+
 typedef struct {
-    bool     rst_n;             // Active low reset
-    bool     req_valid;         // 请求有效
-    uint32_t set_idx;           // 目标 Set 索引
+    bool            rst_n;
+    bool            req_valid;
+    uint32_t        set_idx;
     
-    // Update/Access 信号
-    bool     update_en;         // 是否更新PLRU状态 (Hit 或 Refill时)
-    uint32_t access_way;        // 命中的 Way 或 分配的 Way
+    // Update 接口
+    bool            update_en;
+    uint32_t        access_way;
     
-    // Pending-Aware 核心信号
-    // Bitmask: 1 表示该 Way 正在处理 Miss (Pending), 0 表示可用
-    uint32_t pending_mask;      
+    // Pending Mask: 每一位对应一个 Way (1=Pending/Busy)
+    // 使用 uint64_t 以支持最多 64 Ways
+    uint64_t        pending_mask; 
 } input_signals_t;
 
-// 模拟 Verilog 的 Output 端口
 typedef struct {
-    uint32_t victim_way;        // 组合逻辑计算出的 Victim
-    bool     all_pending;       // 如果所有 Way 都 Pending，无法替换
+    uint32_t        victim_way;
+    bool            all_pending;
 } output_signals_t;
 
-// 模拟 寄存器 (Registers / Flip-Flops)
 typedef struct {
-    // 每一个 Set 都有一个 PLRU 树状态
-    // 对于 4-Way, 需要 3 bits. 我们用 uint8_t 存储
-    uint8_t plru_tree[NUM_SETS]; 
+    // 每个 Set 一个 PLRU 树
+    tree_storage_t  plru_tree[NUM_SETS]; 
 } state_t;
 
-// 全局时钟计数器
-uint64_t g_clk = 0;
-
 // =========================================================
-// 核心逻辑函数 (Core Logic)
+// 辅助函数 (Helper Logic)
 // =========================================================
 
-// [辅助函数] 打印二进制
-void print_bin(uint32_t n, int bits) {
-    for (int i = bits - 1; i >= 0; i--) {
-        printf("%d", (n >> i) & 1);
-    }
+// 检查某个范围内的 Way 是否全部被 Pending 掩盖
+// 对应硬件: 局部 AND 门聚合逻辑
+bool is_range_blocked(uint64_t mask, int start_way, int num_ways) {
+    uint64_t range_mask;
+    if (num_ways >= 64) range_mask = ~0ULL;
+    else range_mask = (1ULL << num_ways) - 1;
+    
+    range_mask <<= start_way;
+    
+    // 检查 mask 中对应的位是否全为 1
+    return (mask & range_mask) == range_mask;
 }
 
+// 获取树中某一位的状态
+int get_bit(tree_storage_t tree, int index) {
+    return (tree >> index) & 1;
+}
+
+// 设置树中某一位的状态
+void set_bit(tree_storage_t *tree, int index, int val) {
+    if (val) *tree |= (1ULL << index);
+    else     *tree &= ~(1ULL << index);
+}
+
+// =========================================================
+// 组合逻辑 (Combinational Logic)
+// =========================================================
 /**
- * 组合逻辑 (Combinational Logic)
- * 对应 Verilog: always_comb / assign
- * 功能：
- * 1. 根据当前 PLRU 状态和 Pending Mask 计算 Victim Way。
- * 2. 如果 update_en 有效，计算 PLRU 树的 Next State。
+ * eval_comb:
+ * 1. 遍历 PLRU 树寻找 Victim (Pending-Aware)
+ * 2. 计算 Update 后的新树状态
  */
 void eval_comb(const input_signals_t *in, const state_t *curr, state_t *next, output_signals_t *out) {
-    // 默认 Next State 保持 Current State (Latch prevention in simulation logic)
+    // Latch 预防：默认下一态等于当前态
     *next = *curr;
     
-    // 初始化输出
-    out->victim_way = 0;
-    out->all_pending = false;
-
+    // 复位逻辑预处理 (实际复位在 seq 块，但 comb 需反映复位值)
     if (!in->rst_n) {
-        // 复位逻辑在 seq 块处理，但组合逻辑需知道复位会清零 next
         memset(next->plru_tree, 0, sizeof(next->plru_tree));
+        out->victim_way = 0;
+        out->all_pending = false;
         return;
     }
 
+    tree_storage_t tree = curr->plru_tree[in->set_idx];
+
     // ---------------------------------------------------------
-    // 1. Pending-Aware Victim Selection Logic (读操作)
+    // 1. Victim Selection (通用 N-Way 树遍历)
     // ---------------------------------------------------------
-    // 获取当前 Set 的 PLRU 状态 bits
-    uint8_t tree = curr->plru_tree[in->set_idx];
+    // 我们从 Root (node 0) 开始，向下遍历直到叶子节点 (Way)
+    // 对应硬件：多级 Mux 级联选择器
     
-    // 解构 PLRU bits (针对 4-Way)
-    // Bit 0: Root (0->Left, 1->Right)
-    // Bit 1: Left Child (0->Way0, 1->Way1)
-    // Bit 2: Right Child (0->Way2, 1->Way3)
-    int b0 = (tree >> 0) & 1;
-    int b1 = (tree >> 1) & 1;
-    int b2 = (tree >> 2) & 1;
+    int current_node = 0;
+    int current_scope = NUM_WAYS; // 当前节点覆盖的 Way 数量
+    int base_way = 0;             // 当前节点覆盖的起始 Way
+    bool traverse_valid = true;
 
-    // Pending Mask 检查
-    // mask & 0x3 是左子树 (Way 0,1), mask & 0xC 是右子树 (Way 2,3)
-    bool left_blocked  = ((in->pending_mask & 0x3) == 0x3); 
-    bool right_blocked = ((in->pending_mask & 0xC) == 0xC);
-
-    // 决策逻辑：
-    // 标准 PLRU 逻辑是根据 b0 走。
-    // Pending-Aware 逻辑：如果 b0 指向的方向全被 blocked，必须翻转方向。
-    
-    int go_right = 0;
-
-    if (left_blocked && right_blocked) {
-        out->all_pending = true; // 无路可走
-        out->victim_way = 0;     // 默认值，外部应处理 Stall
-    } else if (left_blocked) {
-        go_right = 1; // 左边堵死，强行向右
-    } else if (right_blocked) {
-        go_right = 0; // 右边堵死，强行向左
-    } else {
-        go_right = b0; // 都没有完全堵死，遵循 PLRU 指针（b0=0指左，b0=1指右？通常0指向MRU，这里假设bit指向Victim方向）
-        // 约定：Bit=0 表示指引我们要去 Way 0/1 (Left) 找 Victim，意味着 Right 是最近刚被访问过的。
-    }
-
-    if (go_right) {
-        // 进入右子树 (Ways 2,3)
-        // 检查 Way 2 是否 pending
-        bool w2_pending = (in->pending_mask >> 2) & 1;
-        // 如果 b2 指向 Way 2，但 Way 2 pending，则选 Way 3
-        if (w2_pending) out->victim_way = 3;
-        else if (((in->pending_mask >> 3) & 1)) out->victim_way = 2; // Way 3 pending
-        else out->victim_way = (b2 == 0) ? 2 : 3; // 标准 b2 选择
-    } else {
-        // 进入左子树 (Ways 0,1)
-        bool w0_pending = (in->pending_mask >> 0) & 1;
-        if (w0_pending) out->victim_way = 1;
-        else if (((in->pending_mask >> 1) & 1)) out->victim_way = 0;
-        else out->victim_way = (b1 == 0) ? 0 : 1;
-    }
-
-    // ---------------------------------------------------------
-    // 2. PLRU State Update Logic (写操作)
-    // ---------------------------------------------------------
-    if (in->req_valid && in->update_en) {
-        // 更新规则：当访问 Way X 时，将路径上的节点 bits 指向 "背离" X 的方向。
-        // 这让 X 成为 MRU，指针指向其他地方（LRU候选）。
+    // 循环次数 = log2(NUM_WAYS). 
+    // 对于 8-way, scope 变化: 8 -> 4 -> 2 -> 1 (结束)
+    while (current_scope > 1) {
+        int half_scope = current_scope / 2;
         
-        uint32_t way = in->access_way;
-        uint8_t new_tree = tree;
+        // 左子树范围: [base_way, base_way + half_scope - 1]
+        // 右子树范围: [base_way + half_scope, base_way + current_scope - 1]
+        
+        bool left_blocked = is_range_blocked(in->pending_mask, base_way, half_scope);
+        bool right_blocked = is_range_blocked(in->pending_mask, base_way + half_scope, half_scope);
 
-        // 更新 Root (Bit 0)
-        // 如果访问 Way 0/1 (Left)，Bit 0 设为 1 (指向 Right)
-        // 如果访问 Way 2/3 (Right)，Bit 0 设为 0 (指向 Left)
-        if (way < 2) new_tree |= (1 << 0);
-        else         new_tree &= ~(1 << 0);
+        int plru_dir = get_bit(tree, current_node); // 0=Left, 1=Right (指向 Victim 候选)
+        int go_right = 0;
 
-        // 更新 Child Nodes
-        if (way < 2) { 
-            // 访问左侧，更新 Bit 1
-            // 访问 Way 0 -> Bit 1 设为 1 (指 Way 1)
-            // 访问 Way 1 -> Bit 1 设为 0 (指 Way 0)
-            if (way == 0) new_tree |= (1 << 1);
-            else          new_tree &= ~(1 << 1);
+        if (left_blocked && right_blocked) {
+            traverse_valid = false;
+            break; // 全部堵死
+        } else if (left_blocked) {
+            go_right = 1; // 左边堵死，被迫去右边
+        } else if (right_blocked) {
+            go_right = 0; // 右边堵死，被迫去左边
         } else {
-            // 访问右侧，更新 Bit 2
-            // 访问 Way 2 -> Bit 2 设为 1 (指 Way 3)
-            // 访问 Way 3 -> Bit 2 设为 0 (指 Way 2)
-            if (way == 2) new_tree |= (1 << 2);
-            else          new_tree &= ~(1 << 2);
+            go_right = plru_dir; // 均未堵死，遵循 PLRU 算法
         }
 
+        // 状态转移到下一层
+        if (go_right) {
+            current_node = 2 * current_node + 2; // Right Child Index
+            base_way += half_scope;
+        } else {
+            current_node = 2 * current_node + 1; // Left Child Index
+        }
+        current_scope = half_scope;
+    }
+
+    if (!traverse_valid) {
+        out->all_pending = true;
+        out->victim_way = 0; // Invalid
+    } else {
+        out->all_pending = false;
+        out->victim_way = base_way;
+    }
+
+    // ---------------------------------------------------------
+    // 2. PLRU Update Logic (通用 N-Way 路径更新)
+    // ---------------------------------------------------------
+    if (in->req_valid && in->update_en) {
+        tree_storage_t new_tree = tree;
+        uint32_t way = in->access_way;
+        
+        // 从 Root 开始更新直到叶子
+        // 规则：访问了某一边，就将节点指向另一边 (Point Away)
+        
+        int u_node = 0;
+        int u_scope = NUM_WAYS;
+        int u_base = 0;
+
+        while (u_scope > 1) {
+            int u_half = u_scope / 2;
+            int split_point = u_base + u_half;
+
+            if (way < split_point) {
+                // Access 落在左子树 -> 节点应指向右 (1)
+                set_bit(&new_tree, u_node, 1);
+                // 下一步进入左子节点
+                u_node = 2 * u_node + 1;
+                // u_base 不变
+            } else {
+                // Access 落在右子树 -> 节点应指向左 (0)
+                set_bit(&new_tree, u_node, 0);
+                // 下一步进入右子节点
+                u_node = 2 * u_node + 2;
+                u_base += u_half;
+            }
+            u_scope = u_half;
+        }
+        
         next->plru_tree[in->set_idx] = new_tree;
     }
 }
 
-/**
- * 时序逻辑 (Sequential Logic)
- * 对应 Verilog: always @(posedge clk or negedge rst_n)
- */
+// =========================================================
+// 时序逻辑 (Sequential Logic)
+// =========================================================
 void update_seq(const input_signals_t *in, state_t *curr, const state_t *next) {
     if (!in->rst_n) {
-        // 异步复位：所有 PLRU bits 归零
         memset(curr->plru_tree, 0, sizeof(curr->plru_tree));
     } else {
-        // 时钟沿：更新状态
         *curr = *next;
     }
 }
 
 // =========================================================
-// 测试平台 (Testbench)
+// Testbench
 // =========================================================
+uint64_t g_clk = 0;
+
+void step(input_signals_t *in, state_t *curr, state_t *next, output_signals_t *out) {
+    eval_comb(in, curr, next, out);
+    update_seq(in, curr, next);
+    g_clk++;
+}
+
 int main() {
-    // 实例化信号和寄存器
     input_signals_t inp = {0};
     output_signals_t outp = {0};
-    state_t curr_state = {0};
-    state_t next_state = {0};
+    state_t curr = {0};
+    state_t next = {0};
 
-    printf("--- Starting Pending-Aware PLRU Simulation ---\n");
-    printf("Config: %d Sets, %d Ways\n\n", NUM_SETS, NUM_WAYS);
+    // 校验配置
+    // NUM_WAYS 必须是 2 的幂
+    assert((NUM_WAYS & (NUM_WAYS - 1)) == 0);
 
-    // -----------------------------------------------------
-    // Cycle 0: Reset
-    // -----------------------------------------------------
+    printf("--- Configurable PLRU Simulator ---\n");
+    printf("Ways: %d (Bits per tree: %d)\n", NUM_WAYS, TREE_BITS);
+    printf("Sets: %d\n\n", NUM_SETS);
+
+    // 1. Reset
     inp.rst_n = 0;
-    eval_comb(&inp, &curr_state, &next_state, &outp);
-    update_seq(&inp, &curr_state, &next_state);
-    g_clk++;
-    printf("[Cycle %ld] Reset applied. PLRU State: 0x%02X\n", g_clk, curr_state.plru_tree[0]);
-
-    // 释放复位
+    step(&inp, &curr, &next, &outp);
     inp.rst_n = 1;
-    inp.set_idx = 0; // 始终测试 Set 0
+    printf("[Cycle %ld] Reset Done. Tree[0]=0x%llX\n", g_clk, (unsigned long long)curr.plru_tree[0]);
 
-    // -----------------------------------------------------
-    // Scenario 1: Fill Ways 0, 1, 2 (Make them MRU)
-    // -----------------------------------------------------
-    // 访问顺序: 0 -> 1 -> 2. 
-    // 预期 PLRU 指向 Way 3.
-    
-    int access_seq[] = {0, 1, 2};
-    for (int i = 0; i < 3; i++) {
+    // 2. 连续填充 Ways，观察 Victim 变化 (Basic PLRU functionality)
+    // 目标：连续访问 Way 0, 1, 2... 观察树如何尽量避免覆盖它们
+    printf("\n--- Test 1: Fill Sequence (MRU Update) ---\n");
+    for (int i = 0; i < NUM_WAYS; i++) {
         inp.req_valid = 1;
         inp.update_en = 1;
-        inp.access_way = access_seq[i];
-        inp.pending_mask = 0; // 无 pending
+        inp.access_way = i; 
+        inp.pending_mask = 0;
+        
+        // 为了观察组合逻辑输出的 Victim (在 Update 之前)，我们先 eval 一次不带 update
+        input_signals_t probe = inp;
+        probe.update_en = 0; 
+        output_signals_t probe_out;
+        state_t probe_next;
+        eval_comb(&probe, &curr, &probe_next, &probe_out);
 
-        eval_comb(&inp, &curr_state, &next_state, &outp);
-        update_seq(&inp, &curr_state, &next_state);
-        g_clk++;
+        // 执行真正的 Update Step
+        step(&inp, &curr, &next, &outp);
 
-        printf("[Cycle %ld] Access Way %d. Tree: ", g_clk, access_seq[i]);
-        print_bin(curr_state.plru_tree[0], 3); 
-        printf(" (Victim would be: %d)\n", outp.victim_way);
+        printf("Access Way %d | Prev Victim Recommendation: %d | New Tree: 0x%llX\n", 
+               i, probe_out.victim_way, (unsigned long long)curr.plru_tree[0]);
     }
 
-    // 此时状态分析：
-    // Way 0 访问 -> Bit0=1, Bit1=1
-    // Way 1 访问 -> Bit0=1, Bit1=0
-    // Way 2 访问 -> Bit0=0, Bit2=1
-    // 最终 Tree 应该是 0x05 (Binary 101) -> Bit0=1(R), Bit1=0(W0), Bit2=1(W3)
-    // 实际上 PLRU 逻辑：
-    // 访问 Way 2 后，Bit 0 变为 0 (指向 Left: Way 0/1) ??? 
-    // 等等，MRU update 逻辑是 point AWAY.
-    // Access 0 -> Points to 1.
-    // Access 1 -> Points to 0. (Set Left group saturated, root points Right)
-    // Access 2 -> Points to 3. (Set Right group, root points Left)
-    // 所以现在的 Victim 应该是 Way 0 或 1 (取决于上次 Left 内部的状态)。
-    // 让我们看看代码输出。
-
-    // -----------------------------------------------------
-    // Scenario 2: Pending-Aware Test
-    // -----------------------------------------------------
-    printf("\n--- Scenario 2: Pending Mask Override ---\n");
+    // 3. Pending-Aware 功能测试
+    printf("\n--- Test 2: Pending-Aware Logic (Ways=%d) ---\n", NUM_WAYS);
     
-    // 假设现在的 PLRU 逻辑指向 Way 0 作为 Victim (这是基于 LRU 的选择)
-    // 我们强制 Way 0 为 Pending (比如正在 refill)，看看是否会选 Way 1 或其他。
+    // 假设 Way 0 到 Way (NUM_WAYS/2 - 1) 全部 Pending (左半边全堵)
+    // 正常 PLRU 可能想选左边的某个 Way，但必须被强制去右边
+    
+    // 重置状态
+    inp.rst_n = 0; step(&inp, &curr, &next, &outp); inp.rst_n = 1;
+
+    // 让 PLRU 指向左边 (通过大量访问右边实现)
+    for (int i = NUM_WAYS/2; i < NUM_WAYS; i++) {
+        inp.req_valid = 1; inp.update_en = 1; inp.access_way = i;
+        step(&inp, &curr, &next, &outp);
+    }
+    printf("Tree initialized to point Left (Tree: 0x%llX)\n", (unsigned long long)curr.plru_tree[0]);
+
+    // 构造 Mask: 左半边全部为 1
+    uint64_t left_half_mask = (1ULL << (NUM_WAYS/2)) - 1;
     
     inp.req_valid = 1;
-    inp.update_en = 0; // 这是一个查找 Victim 的操作，不更新状态
-    inp.pending_mask = (1 << 0); // Way 0 is Pending!
+    inp.update_en = 0; // 仅查询 Victim
+    inp.pending_mask = left_half_mask;
 
-    eval_comb(&inp, &curr_state, &next_state, &outp);
-    // 注意：这里没有 update_seq，因为只是组合逻辑查询
-
-    printf("[Cycle %ld+Comb] PLRU points to Way %d (Standard). Pending Mask: ", g_clk, outp.victim_way); // 这里打印的是经过修正的
-    print_bin(inp.pending_mask, 4);
-    printf("\n");
+    eval_comb(&inp, &curr, &next, &outp);
     
-    // 为了验证，我们手动打印如果 Mask 为 0 的结果
-    input_signals_t debug_inp = inp;
-    debug_inp.pending_mask = 0;
-    output_signals_t debug_out;
-    state_t debug_next;
-    eval_comb(&debug_inp, &curr_state, &debug_next, &debug_out);
-    printf("    -> Without Pending Mask, Victim is: Way %d\n", debug_out.victim_way);
-    printf("    -> With Pending Mask (Way 0 busy), Victim is: Way %d\n", outp.victim_way);
-
-    // -----------------------------------------------------
-    // Scenario 3: Entire Left Subtree Pending
-    // -----------------------------------------------------
-    printf("\n--- Scenario 3: Left Subtree (0 & 1) Pending ---\n");
-    // 强制 PLRU 指向左边 (通过访问 Way 2 和 Way 3)
-    inp.pending_mask = 0;
-    inp.update_en = 1;
-    inp.access_way = 2; eval_comb(&inp, &curr_state, &next_state, &outp); update_seq(&inp, &curr_state, &next_state);
-    inp.access_way = 3; eval_comb(&inp, &curr_state, &next_state, &outp); update_seq(&inp, &curr_state, &next_state);
+    printf("Pending Mask: 0x%llX (Left half blocked)\n", (unsigned long long)inp.pending_mask);
+    printf("Selected Victim: %d\n", outp.victim_way);
     
-    // 此时 Bit 0 应该指向 Left (0)
-    printf("Current Tree: "); print_bin(curr_state.plru_tree[0], 3); printf(" (Points to Left)\n");
+    if (outp.victim_way >= NUM_WAYS/2) {
+        printf("RESULT: SUCCESS (Victim shifted to Right half)\n");
+    } else {
+        printf("RESULT: FAILURE (Victim stuck in blocked Left half)\n");
+    }
 
-    // 此时 Way 0 和 Way 1 都 Pending
-    inp.update_en = 0;
-    inp.pending_mask = (1<<0) | (1<<1); 
-    
-    eval_comb(&inp, &curr_state, &next_state, &outp);
-    printf("Pending Mask: 0011. Forced Victim: Way %d (Should be 2 or 3)\n", outp.victim_way);
+    // 4. All Pending 测试
+    printf("\n--- Test 3: All Pending ---\n");
+    inp.pending_mask = ~0ULL; // 全 1
+    if (NUM_WAYS < 64) inp.pending_mask = (1ULL << NUM_WAYS) - 1;
+
+    eval_comb(&inp, &curr, &next, &outp);
+    printf("Pending Mask: 0x%llX\n", (unsigned long long)inp.pending_mask);
+    printf("All Pending Flag: %s\n", outp.all_pending ? "TRUE" : "FALSE");
 
     return 0;
 }

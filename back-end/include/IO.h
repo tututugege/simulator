@@ -251,22 +251,35 @@ typedef struct {
 } WriteBuffer_Dcache;
 
 typedef struct{
-  bool en;
-  bool wen;
-  uint8_t sel;
-  uint8_t len;
-  bool done;
-  bool last;
-  uint8_t size;
-  uint32_t addr;
-  uint32_t wdata;
+  wire1_t en;
+  wire1_t wen;
+  wire8_t sel;
+  wire8_t len;
+  wire1_t done;
+  wire1_t last;
+  wire2_t size;
+  wire32_t addr;
+  wire32_t wdata;
 }EXMem_CONTROL;
 typedef struct{
-  uint32_t data;
-  bool last;
-  bool done;
+  wire32_t data;
+  wire1_t last;
+  wire1_t done;
 }EXMem_DATA;
 typedef struct{
   EXMem_CONTROL control;
   EXMem_DATA data;
 }EXMem_IO;
+
+typedef struct {
+  wire1_t valid;
+  wire32_t addr;
+  wire32_t data[4];
+}CACHE_WB;
+
+typedef struct {
+  wire1_t ready;
+}WB_CACHE;
+typedef struct {
+  wire1_t arbiter_priority;
+}WB_Arbiter;
