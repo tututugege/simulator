@@ -57,7 +57,7 @@ void PRF::comb_br_check()
     // 任意，以代码简单为准
   }
 }
-#ifdef CONFIG_CACHE_MMU
+#ifdef CONFIG_CACHE
 extern Back_Top back;
 void PRF::comb_read()
 {
@@ -128,7 +128,7 @@ void PRF::comb_load()
     }
     else
     {
-      back.stq.st2ld_fwd(in.cache2prf->uop.paddr, data, in.cache2prf->uop.rob_idx);
+      back.stq.st2ld_fwd(in.cache2prf->addr, data, in.cache2prf->uop.rob_idx);
       int addr = in.cache2prf->uop.src1_rdata + in.cache2prf->uop.imm;
       int size = in.cache2prf->uop.func3 & 0b11;
       int offset = addr & 0b11;
@@ -168,6 +168,10 @@ void PRF::comb_load()
       }
     }
     load_data = data;
+
+    if(DCACHE_LOG){
+      printf("PRF Load Data: addr=0x%08X rob_idx=%d inst=0x%08x data=0x%08x\n", in.cache2prf->addr, in.cache2prf->uop.rob_idx, in.cache2prf->uop.instruction, load_data);
+    }
   }
 }
 #else
@@ -288,7 +292,7 @@ void PRF::comb_pipeline()
 {
   for (int i = 0; i < ISSUE_WAY; i++)
   {
-#ifndef CONFIG_CACHE_MMU
+#ifndef CONFIG_CACHE
     if (in.exe2prf->entry[i].valid && out.prf2exe->ready[i])
     {
       inst_r_1[i] = in.exe2prf->entry[i];

@@ -208,15 +208,40 @@ Csr_Front csr2front;
 Csr_Status csr_status;
 Exe_Csr exe2csr;
 
-Mem_REQ exu2cache_req;
-Mem_RESP cache2prf;
-Mem_READY cache2exe_ready;
+#ifdef CONFIG_CACHE
+Mem_REQ exu2lsu_req;
+Mem_RESP lsu2stq_resp;
+Mem_READY lsu2stq_ready;
 
-Mem_REQ stq2cache_req;
-Mem_RESP cache2stq_resp;
-Mem_READY cache2stq_ready;
+Mem_REQ stq2lsu_req;
+Mem_RESP lsu2prf_resp;
+Mem_READY lsu2exe_ready;
 
+Dcache_CONTROL exe2cache_control;
+WB_Arbiter_Dcache wb_arbiter2dcache;
+WriteBuffer_Dcache wb2dcache;
 
+Mem_RESP dcache2stq_resp;
+Mem_RESP dcache2prf_resp;
+
+Dcache_MSHR dcache2mshr_ld;
+Dcache_MSHR dcache2mshr_st;
+
+EXMem_DATA arbiter2mshr_data;
+WB_MSHR writebuffer2mshr;
+Mem_RESP mshr2cpu_resp;
+Mem_READY mshr2dcache_ready;
+EXMem_CONTROL mshr2arbiter_control;
+
+MSHR_WB mshr2writebuffer;
+
+EXMem_DATA arbiter2writebuffer_data;
+EXMem_CONTROL writebuffer2arbiter_control;
+WB_Arbiter writebuffer2arbiter;
+
+EXMem_DATA mem_data;
+EXMem_CONTROL mem_control;
+#endif
 
 void Back_Top::init() {
   idu.out.dec2front = &dec2front;
@@ -310,21 +335,69 @@ void Back_Top::init() {
   csr.out.csr2front = &csr2front;
   csr.out.csr_status = &csr_status;
 
-  #ifdef CONFIG_CACHE_MMU
-  stq.in.cache2stq = &cache2stq_resp;
-  stq.in.cache2stq_ready = &cache2stq_ready;
-  stq.out.stq2cache_req = &stq2cache_req;
+  #ifdef CONFIG_CACHE
+  exu.out.exe2cache_control = &exe2cache_control;
 
-  exu.out.exe2cache = &exu2cache_req;
-  exu.in.cache2exe_ready = &cache2exe_ready;
-  prf.in.cache2prf = &cache2prf;
+  stq.in.cache2stq = &lsu2stq_resp;
+  stq.in.cache2stq_ready = &lsu2stq_ready;
+  stq.out.stq2cache_req = &stq2lsu_req;
 
-  dcache.in.exu2cache = &exu2cache_req;
-  dcache.in.stq2cache = &stq2cache_req;
-  dcache.out.cache2prf = &cache2prf;
-  dcache.out.cache2exe_ready = &cache2exe_ready;
-  dcache.out.cache2stq = &cache2stq_resp;
-  dcache.out.cache2stq_ready = &cache2stq_ready;
+  exu.out.exe2cache = &exu2lsu_req;
+  exu.in.cache2exe_ready = &lsu2exe_ready;
+  prf.in.cache2prf = &lsu2prf_resp;
+
+  dcache.in.ldq2dcache_req = &exu2lsu_req;
+  dcache.in.stq2dcache_req = &stq2lsu_req;
+  dcache.in.control = &exe2cache_control;
+  dcache.in.wb2dcache = &wb2dcache;
+  dcache.in.wb_arbiter2dcache = &wb_arbiter2dcache;
+  dcache.in.mshr2dcache_ready = &mshr2dcache_ready;
+
+  dcache.out.dcache2ldq_ready = &lsu2exe_ready;
+  dcache.out.dcache2ldq_resp = &dcache2prf_resp;
+  dcache.out.dcache2stq_resp = &dcache2stq_resp;
+  dcache.out.dcache2stq_ready = &lsu2stq_ready;
+  dcache.out.dcache2mshr_ld = &dcache2mshr_ld;
+  dcache.out.dcache2mshr_st = &dcache2mshr_st;
+  
+  mshr.in.dcache2mshr_ld = &dcache2mshr_ld;
+  mshr.in.dcache2mshr_st = &dcache2mshr_st;
+  mshr.in.control = &exe2cache_control;
+  mshr.in.arbiter2mshr_data = &arbiter2mshr_data;
+  mshr.in.writebuffer2mshr = &writebuffer2mshr;
+
+  mshr.out.mshr2cpu_resp = &mshr2cpu_resp;
+  mshr.out.mshr2dcache_ready = &mshr2dcache_ready;
+  mshr.out.mshr2arbiter_control = &mshr2arbiter_control;
+  mshr.out.mshr2writebuffer = &mshr2writebuffer;
+
+  writebuffer.in.mshr2writebuffer = &mshr2writebuffer;
+  writebuffer.in.arbiter2writebuffer_data = &arbiter2writebuffer_data;
+
+  writebuffer.out.writebuffer2arbiter = &writebuffer2arbiter;
+  writebuffer.out.writebuffer2arbiter_control = &writebuffer2arbiter_control;
+  writebuffer.out.writebuffer2mshr = &writebuffer2mshr;
+
+  arbiter.in.writebuffer2arbiter = &writebuffer2arbiter;
+  arbiter.in.writebuffer2arbiter_control = &writebuffer2arbiter_control;
+  arbiter.in.mshr2arbiter_control = &mshr2arbiter_control;
+  arbiter.in.mem_data = &mem_data;  
+
+  arbiter.out.arbiter2mshr_data = &arbiter2mshr_data;
+  arbiter.out.arbiter2writebuffer_data = &arbiter2writebuffer_data;
+  arbiter.out.mem_control = &mem_control;
+
+  memory.in.control = &mem_control;
+  memory.out.data = &mem_data;
+
+  wb_arbiter.in.dcache_ld_resp = &dcache2prf_resp;
+  wb_arbiter.in.dcache_st_resp = &dcache2stq_resp;
+  wb_arbiter.in.mshr_resp = &mshr2cpu_resp;
+  wb_arbiter.out.wb_arbiter2dcache = &wb_arbiter2dcache;
+  wb_arbiter.out.ld_resp = &lsu2prf_resp;
+  wb_arbiter.out.st_resp = &lsu2stq_resp;
+
+
   #endif
 
   idu.init();
@@ -333,6 +406,14 @@ void Back_Top::init() {
   exu.init();
   csr.init();
   rob.init();
+
+  #ifdef CONFIG_CACHE
+  dcache.init();
+  mshr.init();
+  writebuffer.init();
+  arbiter.init();
+  memory.init();
+  #endif
 }
 
 void Back_Top::comb_csr_status() {
@@ -381,8 +462,23 @@ void Back_Top::comb() {
 
   exu.comb_exec();
 
-  #ifdef CONFIG_CACHE_MMU
+  #ifdef CONFIG_CACHE
   stq.comb_out();
+  mshr.comb_ready();
+  writebuffer.comb_ready();
+  writebuffer.comb_writemark();
+  dcache.comb_s2();
+  writebuffer.comb();
+  arbiter.comb_in();
+  memory.comb();
+  arbiter.comb_out();
+  mshr.comb_out();
+  dcache.comb_out_ldq();
+  wb_arbiter.comb();
+  dcache.comb_s1();
+  dcache.comb_out_mshr();
+  dcache.comb_out_ready();
+  mshr.comb();
   prf.comb_load();
   stq.comb_in();
   exu.comb_latency();
@@ -468,6 +564,14 @@ void Back_Top::seq() {
   idu.seq();
   isu.seq();
   exu.seq();
+  #ifdef CONFIG_CACHE
+  dcache.seq();
+  mshr.seq();
+  writebuffer.seq();
+  arbiter.seq();
+  memory.seq();
+  wb_arbiter.seq();
+  #endif
   prf.seq();
   rob.seq();
   stq.seq();
@@ -478,7 +582,7 @@ void Back_Top::seq() {
 }
 
 
-#ifdef CONFIG_CACHE_MMU
+#ifdef CONFIG_CACHE
 #elif CONFIG_MMU
 bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
                          bool &mmu_page_fault, uint32_t &mmu_ppn,

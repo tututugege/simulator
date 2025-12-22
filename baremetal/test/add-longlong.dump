@@ -8,32 +8,19 @@ Disassembly of section .init:
 80000000 <_start>:
 _start():
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:9
-    .type _start,@function
-
-
-_start:
-
-  la gp, __global_pointer
 80000000:	00001197          	auipc	gp,0x1
 80000004:	8a018193          	addi	gp,gp,-1888 # 800008a0 <__global_pointer>
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:10
-  la sp, _sp
 80000008:	08000117          	auipc	sp,0x8000
 8000000c:	ff810113          	addi	sp,sp,-8 # 88000000 <_sp>
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:12
-
-  call main
 80000010:	00c000ef          	jal	ra,8000001c <main>
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:13
-  ebreak
 80000014:	00100073          	ebreak
 
 80000018 <loop>:
 loop():
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:16
-
-loop:
-    j loop
 80000018:	0000006f          	jal	zero,80000018 <loop>
 
 Disassembly of section .text:
@@ -41,50 +28,31 @@ Disassembly of section .text:
 8000001c <main>:
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:15 (discriminator 1)
-
-#define NR_DATA LENGTH(test_data)
-
-int main() {
-	int i, j, ans_idx = 0;
-	for(i = 0; i < NR_DATA; i ++) {
 8000001c:	800002b7          	lui	t0,0x80000
 80000020:	0a028293          	addi	t0,t0,160 # 800000a0 <test_data>
 80000024:	04028313          	addi	t1,t0,64
 80000028:	00030f93          	addi	t6,t1,0
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:17
-		for(j = 0; j < NR_DATA; j ++) {
-			check(add(test_data[i], test_data[j]) == ans[ans_idx ++]);
 8000002c:	00028e93          	addi	t4,t0,0
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:14
-	int i, j, ans_idx = 0;
 80000030:	00000f13          	addi	t5,zero,0
 check():
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:10
-typedef unsigned int size_t;
-
-inline void check(int cond) {
-  volatile int *end_flag = (int *)0x1c;
-  if (!cond) {
-    *end_flag = 1;
 80000034:	00100e13          	addi	t3,zero,1
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:15 (discriminator 1)
-	for(i = 0; i < NR_DATA; i ++) {
 80000038:	04000393          	addi	t2,zero,64
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:17
-			check(add(test_data[i], test_data[j]) == ans[ans_idx ++]);
 8000003c:	000ea503          	lw	a0,0(t4)
 80000040:	004ea883          	lw	a7,4(t4)
 80000044:	000f8613          	addi	a2,t6,0
 80000048:	00028793          	addi	a5,t0,0
 add():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:4
-	long long c = a + b;
 8000004c:	0007a703          	lw	a4,0(a5)
 80000050:	0047a683          	lw	a3,4(a5)
 check():
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:9
-  if (!cond) {
 80000054:	00062803          	lw	a6,0(a2)
 add():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:4
@@ -93,11 +61,9 @@ add():
 80000060:	00d886b3          	add	a3,a7,a3
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:16 (discriminator 1)
-		for(j = 0; j < NR_DATA; j ++) {
 80000064:	00878793          	addi	a5,a5,8
 add():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:4
-	long long c = a + b;
 80000068:	00d585b3          	add	a1,a1,a3
 check():
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:9
@@ -105,25 +71,17 @@ check():
 80000070:	00462703          	lw	a4,4(a2)
 80000074:	00b70463          	beq	a4,a1,8000007c <main+0x60>
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:10
-    *end_flag = 1;
 80000078:	01c02e23          	sw	t3,28(zero) # 1c <__stack_size-0x1ffffe4>
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:16 (discriminator 1)
-		for(j = 0; j < NR_DATA; j ++) {
 8000007c:	00860613          	addi	a2,a2,8
 80000080:	fcf316e3          	bne	t1,a5,8000004c <main+0x30>
 80000084:	008f0f13          	addi	t5,t5,8
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:15 (discriminator 1)
-	for(i = 0; i < NR_DATA; i ++) {
 80000088:	008e8e93          	addi	t4,t4,8
 8000008c:	040f8f93          	addi	t6,t6,64
 80000090:	fa7f16e3          	bne	t5,t2,8000003c <main+0x20>
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add-longlong.c:22
-		}
-	}
-
-	return 0;
-}
 80000094:	00000513          	addi	a0,zero,0
 80000098:	00008067          	jalr	zero,0(ra)
 
@@ -1343,7 +1301,7 @@ Disassembly of section .debug_loclists:
   5e:	08040493          	addi	s1,s0,128
   62:	0618                	.insn	2, 0x0618
   64:	0aa503a3          	sb	a0,167(a0)
-  68:	009f2b 	.3byte	0x009f2b
+  68:	009f2b               	.word	0x009f2b
 
 Disassembly of section .debug_rnglists:
 

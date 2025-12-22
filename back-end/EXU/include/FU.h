@@ -9,7 +9,7 @@ struct mmu_slot_t {
 
 class FU {
 public:
-#ifdef CONFIG_CACHE_MMU
+#ifdef CONFIG_CACHE
   void exec(Inst_uop &inst, Mem_REQ *&in, bool mispred);
 #else
   void exec(Inst_uop &inst);

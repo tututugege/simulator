@@ -1,3 +1,4 @@
+#pragma once
 #include "IO.h"
 #include  <config.h>
 
@@ -11,7 +12,7 @@ class WriteBack_Arbiter_OUT {
 public:
     Mem_RESP* ld_resp;
     Mem_RESP* st_resp;
-    WB_Arbiter_Dcache wb_arbiter2dcache;
+    WB_Arbiter_Dcache* wb_arbiter2dcache;
 };
 class WriteBack_Arbiter {
 public:
@@ -20,4 +21,5 @@ public:
 
     void seq();
     void comb();
+    void print();
 };

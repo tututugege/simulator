@@ -30,9 +30,13 @@
 bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
                  uint32_t type, bool *mstatus, bool *sstatus, int privilege,
                  uint32_t *p_memory);
+#ifndef CONFIG_CACHE
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-
+#else
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag = true);
+#endif
 int cvt_number_to_csr(int csr_idx);
 
 void Ref_cpu::init(uint32_t reset_pc) {
@@ -67,8 +71,13 @@ void Ref_cpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+    #ifdef CONFIG_MMU
     page_fault_inst = !va2pa_fixed(p_addr, state.pc, state.csr[csr_satp], 0,
                                    mstatus, sstatus, privilege, memory);
+    #else
+    page_fault_inst = !va2pa(p_addr, state.pc, state.csr[csr_satp], 0, mstatus,
+                             sstatus, privilege, memory,false);
+    #endif
     if (page_fault_inst) {
       exception(state.pc);
       return;
@@ -541,11 +550,17 @@ void Ref_cpu::RV32A() {
   cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
   if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
+    #ifdef CONFIG_MMU
     bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
                                      mstatus, sstatus, privilege, memory);
     bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
                                      mstatus, sstatus, privilege, memory);
-
+    #else
+    bool page_fault_1 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1,
+                                     mstatus, sstatus, privilege, memory,false);
+    bool page_fault_2 = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2,
+                                     mstatus, sstatus, privilege, memory,false);
+    #endif
     if (page_fault_1 || page_fault_2) {
       if (number_funct5_unsigned == 2) {
         if (page_fault_1) {
@@ -762,9 +777,13 @@ void Ref_cpu::RV32IM() {
       cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
-
+      #ifdef CONFIG_MMU
       page_fault_load = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
                                      mstatus, sstatus, privilege, memory);
+      #else
+      page_fault_load = !va2pa(p_addr, v_addr, state.csr[csr_satp], 1,
+                                     mstatus, sstatus, privilege, memory,false);
+      #endif
     }
 
     if (page_fault_load) {
@@ -819,9 +838,13 @@ void Ref_cpu::RV32IM() {
       cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
 
       cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
-
+      #ifdef CONFIG_MMU
       page_fault_store = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
                                       mstatus, sstatus, privilege, memory);
+      #else
+      page_fault_store = !va2pa(p_addr, v_addr, state.csr[csr_satp], 2,
+                                      mstatus, sstatus, privilege, memory,false);
+      #endif
     }
 
     if (page_fault_store) {

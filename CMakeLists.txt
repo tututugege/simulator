@@ -24,6 +24,7 @@ project(rv_simu_mmu)
 option(USE_DEFAULT_IMG "Use default memory image path" ON)
 set(EXECUTABLE_NAME "rv_simu_mmu" CACHE STRING "Name of the executable")
 set(MEMORY_IMAGE_PATH "../baremetal/memory" CACHE STRING "Path to memory image file")
+set(LINUX_IMAGE_PATH "../baremetal/linux.bin" CACHE STRING "Path to linux image file")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # generate compile_commands.json for IDE support
 
 # set(CMAKE_CXX_STANDARD 17) # Set C++ standard 
@@ -69,6 +70,11 @@ add_custom_target(run
     COMMAND ./${EXECUTABLE_NAME} ${MEMORY_IMAGE_PATH}
     DEPENDS ${EXECUTABLE_NAME}
     COMMENT "Running the simulator with memory image: ${MEMORY_IMAGE_PATH}"
+)
+add_custom_target(linux
+    COMMAND ./${EXECUTABLE_NAME} ${LINUX_IMAGE_PATH}
+    DEPENDS ${EXECUTABLE_NAME}
+    COMMENT "Running the simulator with memory image: ${LINUX_IMAGE_PATH}"
 )
 
 # Add clean target (custom target that removes build artifacts)

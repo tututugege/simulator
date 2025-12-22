@@ -12,7 +12,7 @@ public:
 
   Csr_Exe *csr2exe;
 
-  #ifdef CONFIG_CACHE_MMU
+  #ifdef CONFIG_CACHE
   Mem_READY * cache2exe_ready;
   #endif
 };
@@ -23,7 +23,7 @@ public:
   Exe_Iss *exe2iss;
 
   Exe_Csr *exe2csr;
-  #ifdef CONFIG_CACHE_MMU
+  #ifdef CONFIG_CACHE
   Mem_REQ * exe2cache;
   Dcache_CONTROL * exe2cache_control;
   #endif
@@ -39,7 +39,7 @@ public:
   void comb_pipeline();
   void comb_ready();
   void seq();
-  #ifdef CONFIG_CACHE_MMU
+  #ifdef CONFIG_CACHE
   void comb_latency();
   #endif
   EXU_IN in;

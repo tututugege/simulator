@@ -226,6 +226,8 @@ typedef struct {
   wire1_t valid;
   wire1_t wen;
   wire32_t addr;
+  wire32_t wstrb;
+  wire32_t wdata;
 
   Inst_uop uop;
 } Dcache_MSHR;
@@ -275,11 +277,11 @@ typedef struct {
   wire1_t valid;
   wire32_t addr;
   wire32_t data[4];
-}CACHE_WB;
+}MSHR_WB;
 
 typedef struct {
   wire1_t ready;
-}WB_CACHE;
+}WB_MSHR;
 typedef struct {
   wire1_t arbiter_priority;
 }WB_Arbiter;

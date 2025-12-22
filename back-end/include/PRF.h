@@ -36,7 +36,7 @@ public:
   void init();
   void seq();
 
-  #ifdef CONFIG_CACHE_MMU
+  #ifdef CONFIG_CACHE
   void comb_load();
   uint32_t load_data;
   #endif

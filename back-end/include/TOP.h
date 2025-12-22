@@ -8,6 +8,12 @@
 #include <ROB.h>
 #include <Rename.h>
 #include <STQ.h>
+#include <Dcache.h>
+#include <MSHR.h>
+#include <Memory.h>
+#include <WriteBuffer.h>
+#include <WriteBack_Arbiter.h>
+#include <Arbiter.h>
 #include <config.h>
 #include <cstdint>
 
@@ -49,7 +55,12 @@ public:
   EXU exu;
   CSRU csr;
   STQ stq;
-  DCACHE dcache;
+  Dcache dcache;
+  MSHR mshr;
+  WriteBuffer writebuffer;
+  Arbiter arbiter;
+  WriteBack_Arbiter wb_arbiter;
+  MEMORY memory;
 
   ROB rob;
   Back_in in;

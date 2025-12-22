@@ -8,32 +8,19 @@ Disassembly of section .init:
 80000000 <_start>:
 _start():
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:9
-    .type _start,@function
-
-
-_start:
-
-  la gp, __global_pointer
 80000000:	00001197          	auipc	gp,0x1
 80000004:	88818193          	addi	gp,gp,-1912 # 80000888 <__global_pointer>
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:10
-  la sp, _sp
 80000008:	08000117          	auipc	sp,0x8000
 8000000c:	ff810113          	addi	sp,sp,-8 # 88000000 <_sp>
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:12
-
-  call main
 80000010:	00c000ef          	jal	ra,8000001c <main>
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:13
-  ebreak
 80000014:	00100073          	ebreak
 
 80000018 <loop>:
 loop():
 /home/tututu/qimeng/simulator/baremetal/benchmarks/coremark/../../start.S:16
-
-loop:
-    j loop
 80000018:	0000006f          	jal	zero,80000018 <loop>
 
 Disassembly of section .text:
@@ -41,81 +28,52 @@ Disassembly of section .text:
 8000001c <main>:
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:26 (discriminator 1)
-
-#define NR_DATA LENGTH(test_data)
-
-int main() {
-  int i, j, ans_idx = 0;
-  for (i = 0; i < NR_DATA; i++) {
 8000001c:	80000337          	lui	t1,0x80000
 80000020:	08830313          	addi	t1,t1,136 # 80000088 <ans>
 80000024:	10030e93          	addi	t4,t1,256
 80000028:	80000837          	lui	a6,0x80000
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:24
-int main() {
 8000002c:	000e8513          	addi	a0,t4,0
 80000030:	1a880813          	addi	a6,a6,424 # 800001a8 <test_data+0x20>
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:25
-  int i, j, ans_idx = 0;
 80000034:	00000e13          	addi	t3,zero,0
 check():
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:10
-typedef unsigned int size_t;
-
-inline void check(int cond) {
-  volatile int *end_flag = (int *)0x1c;
-  if (!cond) {
-    *end_flag = 1;
 80000038:	00100893          	addi	a7,zero,1
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:26 (discriminator 1)
-  for (i = 0; i < NR_DATA; i++) {
 8000003c:	04000f13          	addi	t5,zero,64
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:24
-int main() {
 80000040:	00030693          	addi	a3,t1,0
 80000044:	000e8793          	addi	a5,t4,0
 add():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:4
-  int c = a + b;
 80000048:	0007a583          	lw	a1,0(a5)
 8000004c:	00052703          	lw	a4,0(a0)
 check():
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:9
-  if (!cond) {
 80000050:	0006a603          	lw	a2,0(a3)
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:27 (discriminator 1)
-    for (j = 0; j < NR_DATA; j++) {
 80000054:	00478793          	addi	a5,a5,4
 add():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:4
-  int c = a + b;
 80000058:	00b70733          	add	a4,a4,a1
 check():
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:9
 8000005c:	00e60463          	beq	a2,a4,80000064 <main+0x48>
 /home/tututu/qimeng/simulator/baremetal/test/../include/trap.h:10
-    *end_flag = 1;
 80000060:	01102e23          	sw	a7,28(zero) # 1c <__stack_size-0x1ffffe4>
 main():
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:27 (discriminator 1)
-    for (j = 0; j < NR_DATA; j++) {
 80000064:	00468693          	addi	a3,a3,4
 80000068:	fef810e3          	bne	a6,a5,80000048 <main+0x2c>
 8000006c:	008e0e13          	addi	t3,t3,8
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:26 (discriminator 1)
-  for (i = 0; i < NR_DATA; i++) {
 80000070:	02030313          	addi	t1,t1,32
 80000074:	00450513          	addi	a0,a0,4
 80000078:	fdee14e3          	bne	t3,t5,80000040 <main+0x24>
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:36
-  }
-
-  check(i == NR_DATA);
-
-  return 0;
-}
 8000007c:	00000513          	addi	a0,zero,0
 80000080:	00008067          	jalr	zero,0(ra)
 
@@ -127,7 +85,6 @@ Disassembly of section .data:
 
 80000088 <ans>:
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:10
-int ans[] = {
 80000088:	0000                	.insn	2, 0x0000
 8000008a:	0000                	.insn	2, 0x0000
 8000008c:	0001                	.insn	2, 0x0001
@@ -255,7 +212,6 @@ int ans[] = {
 
 80000188 <test_data>:
 /home/tututu/qimeng/simulator/baremetal/test/cpu-tests/add.c:8
-int test_data[] = {0,          1,          2,          0x7fffffff,
 80000188:	0000                	.insn	2, 0x0000
 8000018a:	0000                	.insn	2, 0x0000
 8000018c:	0001                	.insn	2, 0x0001

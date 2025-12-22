@@ -24,7 +24,11 @@ cov: $(CXXSRC)
 	g++ $(CXXINCLUDE) $(CXXSRC) -O0 --coverage 
 
 run: 
-	./a.out $(IMG)
+# 	./a.out $(IMG)
+	./build/rv_simu_mmu $(IMG)
+
+linux: 
+	./build/rv_simu_mmu ./baremetal/linux.bin
 
 clean:
 	rm -f a.out

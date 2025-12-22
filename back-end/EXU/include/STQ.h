@@ -11,7 +11,7 @@ public:
   Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bcast;
 
-  #ifdef CONFIG_CACHE_MMU
+  #ifdef CONFIG_CACHE
   Mem_RESP * cache2stq;
   Mem_READY * cache2stq_ready;
   #endif
@@ -20,7 +20,7 @@ public:
 class STQ_OUT {
 public:
   Stq_Dis *stq2dis;
-  #ifdef CONFIG_CACHE_MMU
+  #ifdef CONFIG_CACHE
   Mem_REQ * stq2cache_req;
   #endif
 };
@@ -39,7 +39,7 @@ class STQ {
 public:
   STQ_IN in;
   STQ_OUT out;
-  #ifndef CONFIG_CACHE_MMU
+  #ifndef CONFIG_CACHE
   void comb();
   void st2ld_fwd(uint32_t, uint32_t &, int rob_idx, bool &);
   #else

@@ -1,4 +1,5 @@
 #include "Dcache_Utils.h"
+#include "WriteBuffer.h"
 #include <cstdio>
 
 extern long long sim_time;
@@ -32,8 +33,17 @@ int getlru(int linenum)
     return way;
 }
 
-void hit_check(uint32_t index, uint32_t tag, bool &hit, uint32_t &way_idx,uint32_t &hit_data,uint32_t tag_check[DCACHE_WAY_NUM],uint32_t data_check[DCACHE_WAY_NUM]) {
+void   hit_check(uint32_t index, uint32_t tag, bool &hit, int &way_idx,uint32_t &hit_data,uint32_t tag_check[DCACHE_WAY_NUM],uint32_t data_check[DCACHE_WAY_NUM]) {
+    if(DCACHE_LOG){
+        // printf("Dcache Hit Check: index=0x%02X, tag=0x%08x\n", index, tag);
+        // for(int i=0;i<DCACHE_WAY_NUM;i++){
+        //     printf("  Way[%d]: Valid=%d Tag=0x%08X Data=0x%08X\n", i, dcache_valid[index][i], tag_check[i], data_check[i]);
+        // }
+    }
     for (int i = 0; i < DCACHE_WAY_NUM; i++) {
+        // if(DCACHE_LOG){
+        //     printf("  Way[%d]: Valid=%d Tag=0x%08X Data=0x%08X\n", i, dcache_valid[index][i], tag_check[i], data_check[i]);
+        // }
         if(dcache_valid[index][i] && tag_check[i] == tag){
             hit = true;
             way_idx = i;
@@ -54,6 +64,9 @@ uint32_t write_data_mask(uint32_t old_data, uint32_t wdata, uint32_t wstrb) {
     if (wstrb & 0b1000)
         mask |= 0xFF000000;
     uint32_t new_data = (mask & wdata) | (~mask & old_data);
+    if(DCACHE_LOG){
+        printf("Dcache Write Data Mask: old_data=0x%08x, wdata=0x%08x, wstrb=0x%X, new_data=0x%08x\n", old_data, wdata, wstrb, new_data);
+    }
     return new_data;
 }
 
@@ -63,4 +76,37 @@ void tag_and_data_read(uint32_t index,uint32_t offset,uint32_t tag[DCACHE_WAY_NU
         tag[i] = dcache_tag[index][i];
         data[i] = dcache_data[index][i][offset];
     }
+    // if(DCACHE_LOG){
+        // printf("Dcache Tag and Data Read: index=0x%02X, offset=0x%02X\n", index, offset);
+        // for(int i=0;i<DCACHE_WAY_NUM;i++){
+        //     printf("  Way[%d]: Tag=0x%08X Data=0x%08X\n", i, tag[i], data[i]);
+        // }
+    // }
 }
+bool dcache_read(uint32_t addr, uint32_t &rdata){
+    uint32_t index = GET_INDEX(addr);
+    uint32_t tag = GET_TAG(addr);
+    uint32_t offset = GET_OFFSET(addr);
+
+    uint32_t tag_check[DCACHE_WAY_NUM];
+    uint32_t data_check[DCACHE_WAY_NUM];
+    tag_and_data_read(index,offset,tag_check,data_check);
+
+    bool hit = false;
+    int way_idx = 0;
+    uint32_t hit_data = 0;
+    hit_check(index, tag, hit, way_idx, hit_data, tag_check, data_check);
+
+    if(hit){
+        rdata = hit_data;
+        updatelru(index, way_idx);
+        return true;
+    }
+    else{
+        hit = writebuffer_find(GET_ADDR(index,tag,0), offset, rdata);
+        if(hit){
+            return true;
+        } 
+        return false;
+    }
+} 

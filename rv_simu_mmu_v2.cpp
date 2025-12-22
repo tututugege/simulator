@@ -13,11 +13,16 @@
 #include <front_module.h>
 #include <fstream>
 #include <util.h>
-
+#include "Dcache_Utils.h"
 using namespace std;
 
+#ifndef CONFIG_CACHE
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+#else
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+          bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag = true);
+#endif
 void front_cycle(bool, bool, bool, uint32_t &);
 
 // bpu 更新信息
@@ -34,11 +39,14 @@ front_top_in front_in;
 long long sim_time = 0;
 bool sim_end = false;
 
+#ifndef CONFIG_CACHE
 uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
-
+#else
+extern uint32_t *p_memory;
+#endif
 int main(int argc, char *argv[]) {
   setbuf(stdout, NULL);
-  ifstream inst_data(argv[argc - 1], ios::in);
+  ifstream inst_data(argv[argc - 1], ios::in | ios::binary);
   if (!inst_data.is_open()) {
     cout << "Error: Image " << argv[argc - 1] << " does not exist" << endl;
     exit(0);
@@ -62,6 +70,9 @@ int main(int argc, char *argv[]) {
   p_memory[uint32_t(0xc / 4)] = 0x00028067;
   p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
 
+  printf("Load image size: %ld bytes\n", size);
+  printf("Program entry point: 0x%08x\n",
+         p_memory[uint32_t(0x80000000 / 4)]);
 #ifdef CONFIG_DIFFTEST
   init_difftest(size);
 #endif
@@ -173,7 +184,7 @@ SIM_END:
 
   return 0;
 }
-
+#ifndef CONFIG_CACHE
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory) {
   uint32_t d = 24;
@@ -191,7 +202,6 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
 
   uint32_t pte1_addr = (satp << 12) | ((v_addr >> 20) & 0xFFC);
   uint32_t pte1_entry = p_memory[uint32_t(pte1_addr / 4)];
-
   bool bit_pte1_entry[32];
   cvt_number_to_bit_unsigned(bit_pte1_entry, pte1_entry, 32);
   if (bit_pte1_entry[v] == false ||
@@ -263,7 +273,125 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
 
   return false;
 }
+#else
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag) {
+  uint32_t d = 24;
+  uint32_t a = 25;
+  uint32_t g = 26;
+  uint32_t u = 27;
+  uint32_t x = 28;
+  uint32_t w = 29;
+  uint32_t r = 30;
+  uint32_t v = 31;
+  bool mxr = mstatus[31 - 19];
+  bool sum = mstatus[31 - 18];
+  bool mprv = mstatus[31 - 17];
+  uint32_t mpp = cvt_bit_to_number_unsigned(mstatus + 19 * sizeof(bool), 2);
 
+  uint32_t pte1_addr = (satp << 12) | ((v_addr >> 20) & 0xFFC);
+  uint32_t pte1_entry = p_memory[uint32_t(pte1_addr / 4)];
+  #ifdef CONFIG_CACHE
+  uint32_t pte1_entry_cache;
+  // if (DCACHE_LOG)
+  // {
+  //   if (dut_flag)
+  //     printf("DUT CPU: ");
+  //   else
+  //     printf("Ref CPU: ");
+  //   printf("MMU va2pa v_addr:0x%08x satp:0x%08x pte1_addr:0x%08x\n", v_addr, satp, pte1_addr);
+  //   if (dut_flag)
+  //     printf("DUT CPU: ");
+  //   else
+  //     printf("Ref CPU: ");
+  // }
+  bool pte1_in_cache =
+      dcache_read(pte1_addr, pte1_entry_cache); 
+  if (pte1_in_cache && dut_flag)
+  {
+    pte1_entry = pte1_entry_cache;
+  }
+  #endif
+  bool bit_pte1_entry[32];
+  cvt_number_to_bit_unsigned(bit_pte1_entry, pte1_entry, 32);
+  if (bit_pte1_entry[v] == false ||
+      (bit_pte1_entry[r] == false && bit_pte1_entry[w] == true)) {
+    return false;
+  }
+
+  if (bit_pte1_entry[r] == true || bit_pte1_entry[x] == true) {
+    if (!((type == 0 && bit_pte1_entry[x] == true) ||
+          (type == 1 && bit_pte1_entry[r] == true) ||
+          (type == 2 && bit_pte1_entry[w] == true) ||
+          (type == 1 && mxr == true && bit_pte1_entry[x] == true))) {
+      return false;
+    }
+
+    if (privilege == 1 && sum == 0 && bit_pte1_entry[u] == true &&
+        sstatus[31 - 18] == false) {
+      return false;
+    }
+
+    if (privilege != 1 && mprv == 1 && mpp == 1 && sum == 0 &&
+        bit_pte1_entry[u] == true && sstatus[31 - 18] == false) {
+      return false;
+    }
+
+    if ((pte1_entry >> 10) % 1024 != 0) {
+      return false;
+    }
+
+    if (bit_pte1_entry[a] == false ||
+        (type == 2 && bit_pte1_entry[d] == false)) {
+      return false;
+    }
+
+    p_addr = ((pte1_entry << 2) & 0xFFC00000) | (v_addr & 0x3FFFFF);
+    return true;
+  }
+
+  uint32_t pte2_addr =
+      ((pte1_entry << 2) & 0xFFFFF000) | ((v_addr >> 10) & 0xFFC);
+  uint32_t pte2_entry = p_memory[uint32_t(pte2_addr / 4)];
+#ifdef CONFIG_CACHE
+  uint32_t pte2_entry_cache;
+  bool pte2_in_cache =
+      dcache_read(pte2_addr, pte2_entry_cache); 
+  if (pte2_in_cache && dut_flag)
+  {
+    pte2_entry = pte2_entry_cache;
+  }
+  #endif
+  bool bit_pte2_stored[32];
+  cvt_number_to_bit_unsigned(bit_pte2_stored, pte2_entry, 32);
+
+  if (bit_pte2_stored[v] == false ||
+      (bit_pte2_stored[r] == false && bit_pte2_stored[w] == true))
+    return false;
+  if (bit_pte2_stored[r] == true || bit_pte2_stored[x] == true) {
+    if ((type == 0 && bit_pte2_stored[x] == true) ||
+        (type == 1 && bit_pte2_stored[r] == true) ||
+        (type == 2 && bit_pte2_stored[w] == true) ||
+        (type == 1 && mxr == true && bit_pte2_stored[x] == true)) {
+      ;
+    } else
+      return false;
+    if (privilege == 1 && sum == 0 && bit_pte2_stored[u] == true &&
+        sstatus[31 - 18] == false)
+      return false;
+    if (privilege != 1 && mprv == 1 && mpp == 1 && sum == 0 &&
+        bit_pte2_stored[u] == true && sstatus[31 - 18] == false)
+      return false;
+    if (bit_pte2_stored[a] == false ||
+        (type == 2 && bit_pte2_stored[d] == false))
+      return false;
+    p_addr = (pte2_entry << 2) & 0xFFFFF000 | v_addr & 0xFFF;
+    return true;
+  }
+
+  return false;
+}
+#endif
 /*
  * va2pa_fixed: a fixed version of va2pa
  *
@@ -439,15 +567,15 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
       front_in.altpcpn[i] = inst->altpcpn;
       front_in.pcpn[i] = inst->pcpn;
     }
-    if (LOG) {
-      cout << " valid: " << front_in.back2front_valid[i]
-           << " 反馈给前端的分支指令PC: " << hex << inst->pc
-           << " 预测结果: " << inst->pred_br_taken
-           << " 实际结果: " << inst->br_taken
-           << " 预测目标地址: " << inst->pred_br_pc
-           << " 实际目标地址: " << inst->pc_next
-           << " 指令: " << inst->instruction << endl;
-    }
+    // if (LOG) {
+    //   cout << " valid: " << front_in.back2front_valid[i]
+    //        << " 反馈给前端的分支指令PC: " << hex << inst->pc
+    //        << " 预测结果: " << inst->pred_br_taken
+    //        << " 实际结果: " << inst->br_taken
+    //        << " 预测目标地址: " << inst->pred_br_pc
+    //        << " 实际目标地址: " << inst->pc_next
+    //        << " 指令: " << inst->instruction << endl;
+    // }
   }
 
   if (back.out.mispred || back.out.flush) {

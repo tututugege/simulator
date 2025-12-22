@@ -1,3 +1,4 @@
+#pragma once
 #include "IO.h"
 #include <config.h>
 #include <cmath>
@@ -11,6 +12,8 @@ public:
     Dcache_CONTROL* control;
     WB_Arbiter_Dcache* wb_arbiter2dcache;
     WriteBuffer_Dcache* wb2dcache;
+
+    Mem_READY* mshr2dcache_ready;
 
 };
 class Dcache_OUT {
@@ -57,10 +60,13 @@ public:
     uint32_t data_next_ld[DCACHE_WAY_NUM];
     uint32_t data_next_st[DCACHE_WAY_NUM];
 
-    void comb_out();
+    void comb_out_ldq();
+    void comb_out_mshr();
+    void comb_out_ready();
     void comb_s1();
     void comb_s2();
     void seq();
 
     void init();
+    void print();
 };
