@@ -55,7 +55,7 @@ void Dcache::comb_out_mshr()
     if(DCACHE_LOG){
         printf("Dcache comb_out_mshr: hit_ld=%d hit_st=%d stall_ld=%d stall_st=%d global_mispred2=%d global_flush=%d\n",hit_ld,hit_st,stall_ld,stall_st,global_mispred2,global_flush);
     }
-    out.dcache2mshr_ld->valid = !hit_ld && s2_reg_ld.valid && !stall_ld & !global_mispred2 & !global_flush;
+    out.dcache2mshr_ld->valid = !hit_ld && s2_reg_ld.valid && !stall_ld && !global_mispred2 && !global_flush;
     out.dcache2mshr_ld->wen = false;
     out.dcache2mshr_ld->addr = s2_reg_ld.addr;
     out.dcache2mshr_ld->uop = s2_reg_ld.uop;
@@ -102,6 +102,12 @@ void Dcache::comb_s2()
             hit_ld = false;
             hit_data_ld = 0;
             hit_check(s2_reg_ld.index, s2_reg_ld.tag, hit_ld, hit_way_ld, hit_data_ld, tag_next_ld, data_next_ld);
+            if(hit_ld && in.mshr2dcache_fwd->valid && in.mshr2dcache_fwd->addr == s2_reg_ld.addr){
+                hit_data_ld = in.mshr2dcache_fwd->rdata;
+                if(DCACHE_LOG){
+                    printf("Dcache Forward Data from MSHR: addr=0x%08X rdata=0x%08X sim_time:%lld\n",in.mshr2dcache_fwd->addr,in.mshr2dcache_fwd->rdata,sim_time);
+                }
+            }
         }
     }
     // if (DCACHE_LOG)
@@ -132,8 +138,8 @@ void Dcache::comb_s2()
 void Dcache::comb_s1()
 {
 
-    stall_ld = in.wb_arbiter2dcache->stall_ld|(in.mshr2dcache_ready->ready==false);
-    stall_st = in.wb_arbiter2dcache->stall_st|(in.mshr2dcache_ready->ready==false);
+    stall_ld = in.wb_arbiter2dcache->stall_ld|(in.mshr2dcache_ready->ready==false && !hit_ld && s2_reg_ld.valid && !global_mispred2 && !global_flush);
+    stall_st = in.wb_arbiter2dcache->stall_st|(in.mshr2dcache_ready->ready==false && !hit_st && s2_reg_st.valid);
     tag_and_data_read(s1_reg_ld.index, GET_OFFSET(s1_reg_ld.addr), tag_reg_ld, data_reg_ld);
     tag_and_data_read(s1_reg_st.index, GET_OFFSET(s1_reg_st.addr), tag_reg_st, data_reg_st);
 

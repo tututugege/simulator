@@ -9,6 +9,7 @@ public:
     EXMem_CONTROL* mshr2arbiter_control;
 
     WB_Arbiter* writebuffer2arbiter;
+    MSHR_Arbiter* mshr2arbiter;
 
     EXMem_DATA* mem_data;
 };

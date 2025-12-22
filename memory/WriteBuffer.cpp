@@ -95,6 +95,10 @@ void WriteBuffer::seq()
         }
         tail = (tail + 1) % WRITE_BUFFER_SIZE;
         count++;
+        if(count>WRITE_BUFFER_SIZE){
+            printf("WriteBuffer Warning: WriteBuffer overflow! %lld\n",sim_time);
+            exit(1);
+        }
     }
 }
 void WriteBuffer::print()
@@ -112,7 +116,7 @@ void WriteBuffer::print()
         printf("]\n");
     }
 }
-void WriteBuffer::fwd(uint32_t addr, uint32_t data[DCACHE_OFFSET_NUM])
+bool fwd(uint32_t addr, uint32_t data[DCACHE_OFFSET_NUM])
 {
     for (int i = 0; i < WRITE_BUFFER_SIZE; i++)
     {
@@ -122,8 +126,10 @@ void WriteBuffer::fwd(uint32_t addr, uint32_t data[DCACHE_OFFSET_NUM])
             {
                 data[j] = write_buffer[i].data[j];
             }
+            return true;
         }
     }
+    return false;
 }
 bool writebuffer_find(uint32_t addr,uint32_t offset, uint32_t& data)
 {

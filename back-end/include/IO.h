@@ -285,3 +285,14 @@ typedef struct {
 typedef struct {
   wire1_t arbiter_priority;
 }WB_Arbiter;
+
+typedef struct {
+  wire1_t valid;
+  wire32_t addr;
+  wire32_t rdata;
+
+}MSHR_FWD;
+
+typedef struct{
+  bool prority;
+}MSHR_Arbiter;

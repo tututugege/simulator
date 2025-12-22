@@ -1,4 +1,5 @@
 #include "MSHR.h"
+#include "WriteBuffer.h"
 #include <cstdio>
 
 mshr_entry mshr_entries[MSHR_ENTRY_SIZE];
@@ -16,6 +17,7 @@ bool merge_flag_ld = false;
 bool merge_flag_st = false;
 void MSHR::comb_out()
 {
+    out.mshr2arbiter->prority = count_mshr > 0 ? true : false;
     if (dirty_writeback && mshr_state == MSHR_WRITEBACK)
     {
         out.mshr2writebuffer->valid = true;
@@ -53,6 +55,16 @@ void MSHR::comb_out()
         out.mshr2arbiter_control->sel = 0;
         out.mshr2arbiter_control->done = false;
         out.mshr2arbiter_control->last = false;
+    }
+
+    if(mshr_state == MSHR_DEAL){
+        out.mshr2dcache_fwd->valid = in.arbiter2mshr_data->last;
+        out.mshr2dcache_fwd->addr = GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, count_data-1);
+        out.mshr2dcache_fwd->rdata = in.arbiter2mshr_data->data;
+    }else{
+        out.mshr2dcache_fwd->valid = false;
+        out.mshr2dcache_fwd->addr = 0;
+        out.mshr2dcache_fwd->rdata = 0;
     }
 
     if (mshr_state == MSHR_TRAN)
@@ -146,13 +158,19 @@ void MSHR::seq()
                     dcache_tag[mshr_entries[mshr_head].index][mshr_way] = mshr_entries[mshr_head].tag;
                     dcache_valid[mshr_entries[mshr_head].index][mshr_way] = false;
                     dirty_writeback = dcache_dirty[mshr_entries[mshr_head].index][mshr_way];
+                    dcache_dirty[mshr_entries[mshr_head].index][mshr_way] = false;
+                    bool fwded = fwd(GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, 0), dcache_data[mshr_entries[mshr_head].index][mshr_way]);
                     if (dirty_writeback)
                     {
                         mshr_state = MSHR_WRITEBACK;
                     }
-                    else
+                    else if(!fwded)
                     {
+                        
                         mshr_state = MSHR_DEAL;
+                    }
+                    else if(fwded){
+                        mshr_state = MSHR_TRAN;
                     }
                 }
                 else
@@ -271,7 +289,15 @@ void MSHR::seq()
     {
         if (in.writebuffer2mshr->ready)
         {
-            mshr_state = MSHR_DEAL;
+            bool fwded = fwd(GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, 0), dcache_data[mshr_entries[mshr_head].index][mshr_way]);
+            
+            if(fwded){
+                mshr_state = MSHR_TRAN;
+            }
+            else{
+                dirty_writeback = false;
+                mshr_state = MSHR_DEAL;
+            }
         }
     }
     if (mshr_table[table_head].valid == false && count_table > 0)

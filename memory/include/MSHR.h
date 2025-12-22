@@ -54,6 +54,10 @@ public:
 
     MSHR_WB* mshr2writebuffer;
 
+    MSHR_Arbiter* mshr2arbiter;
+
+    MSHR_FWD* mshr2dcache_fwd;
+
 };
 
 class MSHR {

@@ -234,6 +234,8 @@ Mem_READY mshr2dcache_ready;
 EXMem_CONTROL mshr2arbiter_control;
 
 MSHR_WB mshr2writebuffer;
+MSHR_FWD mshr2dcache_fwd;
+MSHR_Arbiter mshr2arbiter;
 
 EXMem_DATA arbiter2writebuffer_data;
 EXMem_CONTROL writebuffer2arbiter_control;
@@ -352,6 +354,7 @@ void Back_Top::init() {
   dcache.in.wb2dcache = &wb2dcache;
   dcache.in.wb_arbiter2dcache = &wb_arbiter2dcache;
   dcache.in.mshr2dcache_ready = &mshr2dcache_ready;
+  dcache.in.mshr2dcache_fwd = &mshr2dcache_fwd;
 
   dcache.out.dcache2ldq_ready = &lsu2exe_ready;
   dcache.out.dcache2ldq_resp = &dcache2prf_resp;
@@ -370,6 +373,8 @@ void Back_Top::init() {
   mshr.out.mshr2dcache_ready = &mshr2dcache_ready;
   mshr.out.mshr2arbiter_control = &mshr2arbiter_control;
   mshr.out.mshr2writebuffer = &mshr2writebuffer;
+  mshr.out.mshr2dcache_fwd = &mshr2dcache_fwd;
+  mshr.out.mshr2arbiter = &mshr2arbiter;
 
   writebuffer.in.mshr2writebuffer = &mshr2writebuffer;
   writebuffer.in.arbiter2writebuffer_data = &arbiter2writebuffer_data;
@@ -381,6 +386,7 @@ void Back_Top::init() {
   arbiter.in.writebuffer2arbiter = &writebuffer2arbiter;
   arbiter.in.writebuffer2arbiter_control = &writebuffer2arbiter_control;
   arbiter.in.mshr2arbiter_control = &mshr2arbiter_control;
+  arbiter.in.mshr2arbiter = &mshr2arbiter;
   arbiter.in.mem_data = &mem_data;  
 
   arbiter.out.arbiter2mshr_data = &arbiter2mshr_data;

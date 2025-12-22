@@ -15,6 +15,7 @@ public:
 
     Mem_READY* mshr2dcache_ready;
 
+    MSHR_FWD* mshr2dcache_fwd;
 };
 class Dcache_OUT {
 public:

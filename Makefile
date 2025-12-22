@@ -39,5 +39,8 @@ gdb:
 	g++ $(CXXINCLUDE) $(CXXSRC) -g
 	gdb --args ./a.out $(IMG)
 
-.PHONY: all clean mem run
+gdb_linux:
+	g++ $(CXXINCLUDE) $(CXXSRC) -g
+	gdb --args ./a.out ./baremetal/linux.bin
+.PHONY: all clean mem run linux gdb gdb_linux
 

@@ -41,7 +41,7 @@ public:
     uint32_t wdone;
     uint32_t wdone_count;
 
-    void fwd(uint32_t addr, uint32_t data[DCACHE_OFFSET_NUM]);
     void print();
 };
 bool writebuffer_find(uint32_t addr,uint32_t offset, uint32_t& data);
+bool fwd(uint32_t addr, uint32_t data[DCACHE_OFFSET_NUM]);

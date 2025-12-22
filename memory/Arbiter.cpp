@@ -76,6 +76,9 @@ void Arbiter::seq()
         if(in.writebuffer2arbiter->arbiter_priority==true){
             state=ARBITER_STATE_STORE_PRIORITIZED;
         }
+        else if(in.mshr2arbiter->prority==true){
+            state=ARBITER_STATE_LOAD_PRIORITIZED;
+        }
         else if(in.mshr2arbiter_control->en==true){
             state=ARBITER_STATE_LOAD_PRIORITIZED;
         }
@@ -83,11 +86,11 @@ void Arbiter::seq()
             state=ARBITER_STATE_STORE_PRIORITIZED;
         }
     }else if(state==ARBITER_STATE_STORE_PRIORITIZED){
-        if(in.mem_data->last==true||in.writebuffer2arbiter_control->en==false ){
+        if(in.mem_data->last==true){
             state=ARBITER_STATE_IDLE;
         }
     }else if(state==ARBITER_STATE_LOAD_PRIORITIZED){
-        if(in.mem_data->last==true||in.mshr2arbiter_control->en==false){
+        if(in.mem_data->last==true||in.mshr2arbiter->prority==false){
             state=ARBITER_STATE_IDLE;
         }
     }
@@ -97,6 +100,10 @@ void Arbiter::seq()
 }
 void Arbiter::print(){
     printf("\nArbiter State: %u\n", state);
+    printf("Arbiter Input WriteBuffer Arbiter: arbiter_priority=%d\n",
+           in.writebuffer2arbiter->arbiter_priority);
+    printf("Arbiter Input MSHR Arbiter: prority=%d\n",
+           in.mshr2arbiter->prority);
     printf("Arbiter Input WriteBuffer Control: en=%d, wen=%d, sel=0x%02X, len=%u, done=%d, last=%d, size=%d, addr=0x%08x, wdata=0x%08x\n",
            in.writebuffer2arbiter_control->en, in.writebuffer2arbiter_control->wen, in.writebuffer2arbiter_control->sel,
            in.writebuffer2arbiter_control->len, in.writebuffer2arbiter_control->done, in.writebuffer2arbiter_control->last,
