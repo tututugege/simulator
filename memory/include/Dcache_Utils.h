@@ -12,6 +12,8 @@ const int DCACHE_OFFSET_BITS = log2(DCACHE_OFFSET_NUM);                      // 
 const int DCACHE_INDEX_BITS = 32 -2 - DCACHE_TAG_BITS - DCACHE_OFFSET_BITS;  // 6
 const int DCACHE_LINE_NUM = DCACHE_SIZE / DCACHE_LINE_SIZE / DCACHE_WAY_NUM; // 64 lines
 
+
+
 // const int TREE_BITS = DCACHE_WAY_NUM - 1;
 // const int TREE_BYTES = 1<<TREE_BITS;
 

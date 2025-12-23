@@ -293,18 +293,18 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   uint32_t pte1_entry = p_memory[uint32_t(pte1_addr / 4)];
   #ifdef CONFIG_CACHE
   uint32_t pte1_entry_cache;
-  // if (DCACHE_LOG)
-  // {
-  //   if (dut_flag)
-  //     printf("DUT CPU: ");
-  //   else
-  //     printf("Ref CPU: ");
-  //   printf("MMU va2pa v_addr:0x%08x satp:0x%08x pte1_addr:0x%08x\n", v_addr, satp, pte1_addr);
-  //   if (dut_flag)
-  //     printf("DUT CPU: ");
-  //   else
-  //     printf("Ref CPU: ");
-  // }
+  if (DCACHE_LOG)
+  {
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+    printf("MMU va2pa v_addr:0x%08x satp:0x%08x pte1_addr:0x%08x\n", v_addr, satp, pte1_addr);
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+  }
   bool pte1_in_cache =
       dcache_read(pte1_addr, pte1_entry_cache); 
   if (pte1_in_cache && dut_flag)
@@ -354,6 +354,18 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
       ((pte1_entry << 2) & 0xFFFFF000) | ((v_addr >> 10) & 0xFFC);
   uint32_t pte2_entry = p_memory[uint32_t(pte2_addr / 4)];
 #ifdef CONFIG_CACHE
+if (DCACHE_LOG)
+  {
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+    printf("MMU va2pa v_addr:0x%08x satp:0x%08x pte2_addr:0x%08x\n", v_addr, satp, pte2_addr);
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+  }
   uint32_t pte2_entry_cache;
   bool pte2_in_cache =
       dcache_read(pte2_addr, pte2_entry_cache); 
@@ -386,6 +398,13 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
         (type == 2 && bit_pte2_stored[d] == false))
       return false;
     p_addr = (pte2_entry << 2) & 0xFFFFF000 | v_addr & 0xFFF;
+    if(DCACHE_LOG){
+        if (dut_flag)
+          printf("DUT CPU: ");
+        else
+          printf("Ref CPU: ");
+        printf("MMU va2pa success v_addr:0x%08x p_addr:0x%08x\n", v_addr, p_addr);
+    }
     return true;
   }
 

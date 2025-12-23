@@ -73,7 +73,7 @@ void ROB::comb_commit() {
         printf("ROB Comb Commit: entry[%d][%d] valid=%d uop_inst=0x%08x cplt_num=%d uop_num=%d\n", i, deq_ptr, entry[i][deq_ptr].valid, entry[i][deq_ptr].uop.instruction, entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num);
       }
     }
-    printf("commit=%d\n", commit);
+    // printf("commit=%d\n", commit);
   }
   
 

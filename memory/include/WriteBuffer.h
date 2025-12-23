@@ -44,4 +44,5 @@ public:
     void print();
 };
 bool writebuffer_find(uint32_t addr,uint32_t offset, uint32_t& data);
-bool fwd(uint32_t addr, uint32_t data[DCACHE_OFFSET_NUM]);
+int find_in_writebuffer(uint32_t addr);
+void fwd(uint32_t idx, uint32_t data[DCACHE_OFFSET_NUM]);

@@ -15,6 +15,12 @@ uint32_t trans_offset = 0;
 Inst_uop trans_uop;
 bool merge_flag_ld = false;
 bool merge_flag_st = false;
+
+
+extern long long total_num;
+extern long long miss_num;
+
+int fwd_index;
 void MSHR::comb_out()
 {
     out.mshr2arbiter->prority = count_mshr > 0 ? true : false;
@@ -159,18 +165,18 @@ void MSHR::seq()
                     dcache_valid[mshr_entries[mshr_head].index][mshr_way] = false;
                     dirty_writeback = dcache_dirty[mshr_entries[mshr_head].index][mshr_way];
                     dcache_dirty[mshr_entries[mshr_head].index][mshr_way] = false;
-                    bool fwded = fwd(GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, 0), dcache_data[mshr_entries[mshr_head].index][mshr_way]);
+                    fwd_index = find_in_writebuffer(GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, 0));
                     if (dirty_writeback)
                     {
                         mshr_state = MSHR_WRITEBACK;
                     }
-                    else if(!fwded)
+                    else if(fwd_index!=-1)
                     {
                         
-                        mshr_state = MSHR_DEAL;
+                        mshr_state = MSHR_FORWARD;
                     }
-                    else if(fwded){
-                        mshr_state = MSHR_TRAN;
+                    else{
+                        mshr_state = MSHR_DEAL;
                     }
                 }
                 else
@@ -254,6 +260,7 @@ void MSHR::seq()
                 mshr_entries[mshr_head].valid = false;
                 mshr_head = (mshr_head + 1) % MSHR_ENTRY_SIZE;
                 mshr_state = MSHR_IDLE;
+                miss_num++;
                 if (DCACHE_LOG)
                 {
                     printf("MSHR Entry Finished: move to next MSHR entry %d\n", done_type);
@@ -289,16 +296,21 @@ void MSHR::seq()
     {
         if (in.writebuffer2mshr->ready)
         {
-            bool fwded = fwd(GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, 0), dcache_data[mshr_entries[mshr_head].index][mshr_way]);
+            fwd_index = find_in_writebuffer(GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, 0));
             
-            if(fwded){
-                mshr_state = MSHR_TRAN;
+            if(fwd_index!=-1){
+                mshr_state = MSHR_FORWARD;
             }
             else{
                 dirty_writeback = false;
                 mshr_state = MSHR_DEAL;
             }
         }
+    }
+    else if (mshr_state == MSHR_FORWARD)
+    {
+        fwd(fwd_index, dcache_data[mshr_entries[mshr_head].index][mshr_way]);
+        mshr_state = MSHR_TRAN;
     }
     if (mshr_table[table_head].valid == false && count_table > 0)
     {

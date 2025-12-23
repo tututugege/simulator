@@ -22,9 +22,12 @@ bool uncache_access = false;
 
 uint32_t old_debug_data = 0;
 int debug_way=-1;
+
+extern long long total_num;
+extern long long miss_num;
 void Dcache::init()
 {
-    hit_num = 0;
+    total_num = 0;
     miss_num = 0;
 
     memset(&s1_reg_ld, 0, sizeof(Pipe_Reg));
@@ -110,17 +113,17 @@ void Dcache::comb_s2()
             }
         }
     }
-    // if (DCACHE_LOG)
-    // {
-    //     printf("data_next_ld[0]=0x%08X data_next_ld[1]=0x%08X data_next_ld[2]=0x%08X data_next_ld[3]=0x%08X\n",
-    //            data_next_ld[0], data_next_ld[1], data_next_ld[2], data_next_ld[3]);
-    //     printf("data_next_st[0]=0x%08X data_next_st[1]=0x%08X data_next_st[2]=0x%08X data_next_st[3]=0x%08X\n",
-    //            data_next_st[0], data_next_st[1], data_next_st[2], data_next_st[3]);
-    //     printf("tag_next_ld[0]=0x%08X tag_next_ld[1]=0x%08X tag_next_ld[2]=0x%08X tag_next_ld[3]=0x%08X\n",
-    //            tag_next_ld[0], tag_next_ld[1], tag_next_ld[2], tag_next_ld[3]);
-    //     printf("tag_next_st[0]=0x%08X tag_next_st[1]=0x%08X tag_next_st[2]=0x%08X tag_next_st[3]=0x%08X\n",
-    //            tag_next_st[0], tag_next_st[1], tag_next_st[2], tag_next_st[3]);
-    // }
+    if (DCACHE_LOG)
+    {
+        printf("data_next_ld[0]=0x%08X data_next_ld[1]=0x%08X data_next_ld[2]=0x%08X data_next_ld[3]=0x%08X\n",
+               data_next_ld[0], data_next_ld[1], data_next_ld[2], data_next_ld[3]);
+        printf("data_next_st[0]=0x%08X data_next_st[1]=0x%08X data_next_st[2]=0x%08X data_next_st[3]=0x%08X\n",
+               data_next_st[0], data_next_st[1], data_next_st[2], data_next_st[3]);
+        printf("tag_next_ld[0]=0x%08X tag_next_ld[1]=0x%08X tag_next_ld[2]=0x%08X tag_next_ld[3]=0x%08X\n",
+               tag_next_ld[0], tag_next_ld[1], tag_next_ld[2], tag_next_ld[3]);
+        printf("tag_next_st[0]=0x%08X tag_next_st[1]=0x%08X tag_next_st[2]=0x%08X tag_next_st[3]=0x%08X\n",
+               tag_next_st[0], tag_next_st[1], tag_next_st[2], tag_next_st[3]);
+    }
     if (DEBUG)
     {
         if (in.stq2dcache_req->en && ((in.stq2dcache_req->addr & 0xfffffffc) == DEBUG_ADDR))
@@ -140,13 +143,21 @@ void Dcache::comb_s1()
 
     stall_ld = in.wb_arbiter2dcache->stall_ld|(in.mshr2dcache_ready->ready==false && !hit_ld && s2_reg_ld.valid && !global_mispred2 && !global_flush);
     stall_st = in.wb_arbiter2dcache->stall_st|(in.mshr2dcache_ready->ready==false && !hit_st && s2_reg_st.valid);
-    tag_and_data_read(s1_reg_ld.index, GET_OFFSET(s1_reg_ld.addr), tag_reg_ld, data_reg_ld);
-    tag_and_data_read(s1_reg_st.index, GET_OFFSET(s1_reg_st.addr), tag_reg_st, data_reg_st);
+    if(!stall_ld)tag_and_data_read(s1_reg_ld.index, GET_OFFSET(s1_reg_ld.addr), tag_reg_ld, data_reg_ld);
+    else tag_and_data_read(s2_reg_ld.index, GET_OFFSET(s2_reg_ld.addr), tag_reg_ld, data_reg_ld);
+    if(!stall_st)tag_and_data_read(s1_reg_st.index, GET_OFFSET(s1_reg_st.addr), tag_reg_st, data_reg_st);
+    else tag_and_data_read(s2_reg_st.index, GET_OFFSET(s2_reg_st.addr), tag_reg_st, data_reg_st);
 
     if (stall_ld)
     {
         s2_next_ld = s2_reg_ld;
         s1_next_ld = s1_reg_ld;
+        if(global_mispred1){
+            s1_next_ld.valid = false;      
+        }
+        if(global_mispred2){
+            s2_next_ld.valid = false;      
+        }
         if (DCACHE_LOG)
         {
             printf("Dcache Stall Load in S1 Stage\n");
@@ -161,6 +172,20 @@ void Dcache::comb_s1()
             printf("Dcache Global Flush in S1 Stage\n");
         }
     }
+    else if(global_mispred1){
+        s2_next_ld.valid = false;
+        s1_next_ld.valid = in.ldq2dcache_req->en;
+        s1_next_ld.addr = in.ldq2dcache_req->addr;
+        s1_next_ld.index = GET_INDEX(s1_next_ld.addr);
+        s1_next_ld.tag = GET_TAG(s1_next_ld.addr);
+        s1_next_ld.wdata = in.ldq2dcache_req->wdata;
+        s1_next_ld.wstrb = in.ldq2dcache_req->wstrb;
+        s1_next_ld.uop = in.ldq2dcache_req->uop;
+        if (DCACHE_LOG)
+        {
+            printf("Dcache Global Mispred1 in S1 Stage\n");
+        }
+    }
     else
     {
         s2_next_ld = s1_reg_ld;
@@ -171,24 +196,15 @@ void Dcache::comb_s1()
         s1_next_ld.wdata = in.ldq2dcache_req->wdata;
         s1_next_ld.wstrb = in.ldq2dcache_req->wstrb;
         s1_next_ld.uop = in.ldq2dcache_req->uop;
-
-        if (global_mispred1)
-        {
-            s2_next_ld.valid = false;
-            if (DCACHE_LOG)
-            {
-                printf("Dcache Global Mispred1 in S1 Stage\n");
-            }
-        }
-        if (DCACHE_LOG)
-        {
-            printf("Dcache Load New Request in S1 Stage: valid=%d, uop_inst=0x%08x, rob_idx=%d addr=0x%08x, tag=0x%08x, index=0x%02X, wdata=0x%08x, wstrb=0x%X \n",
-                   s1_next_ld.valid, s1_next_ld.uop.instruction, s1_next_ld.uop.rob_idx, s1_next_ld.addr, s1_next_ld.tag, s1_next_ld.index, s1_next_ld.wdata, s1_next_ld.wstrb);
-            printf("tag_reg_ld[0]=0x%08X tag_reg_ld[1]=0x%08X tag_reg_ld[2]=0x%08X tag_reg_ld[3]=0x%08X\n",
-                   tag_reg_ld[0], tag_reg_ld[1], tag_reg_ld[2], tag_reg_ld[3]);
-            printf("data_reg_ld[0]=0x%08X data_reg_ld[1]=0x%08X data_reg_ld[2]=0x%08X data_reg_ld[3]=0x%08X\n",
-                   data_reg_ld[0], data_reg_ld[1], data_reg_ld[2], data_reg_ld[3]);
-        }
+        // if (DCACHE_LOG)
+        // {
+        //     printf("Dcache Load New Request in S1 Stage: valid=%d, uop_inst=0x%08x, rob_idx=%d addr=0x%08x, tag=0x%08x, index=0x%02X, wdata=0x%08x, wstrb=0x%X \n",
+        //            s1_next_ld.valid, s1_next_ld.uop.instruction, s1_next_ld.uop.rob_idx, s1_next_ld.addr, s1_next_ld.tag, s1_next_ld.index, s1_next_ld.wdata, s1_next_ld.wstrb);
+        //     printf("tag_reg_ld[0]=0x%08X tag_reg_ld[1]=0x%08X tag_reg_ld[2]=0x%08X tag_reg_ld[3]=0x%08X\n",
+        //            tag_reg_ld[0], tag_reg_ld[1], tag_reg_ld[2], tag_reg_ld[3]);
+        //     printf("data_reg_ld[0]=0x%08X data_reg_ld[1]=0x%08X data_reg_ld[2]=0x%08X data_reg_ld[3]=0x%08X\n",
+        //            data_reg_ld[0], data_reg_ld[1], data_reg_ld[2], data_reg_ld[3]);
+        // }
     }
 
     if (stall_st)
@@ -261,37 +277,37 @@ void Dcache::seq()
     if (hit_ld && s2_reg_ld.valid && !stall_ld)
     {
         updatelru(s2_reg_ld.index, hit_way_ld);
-        hit_num++;
+        total_num++;
     }
     if (!hit_ld && s2_reg_ld.valid && !stall_ld)
     {
-        miss_num++;
+        total_num++;
     }
 
     if (hit_st && s2_reg_st.valid && !stall_st)
     {
         updatelru(s2_reg_st.index, hit_way_st);
-        hit_num++;
+        total_num++;
     }
     if (!hit_st && s2_reg_st.valid && !stall_st)
     {
-        miss_num++;
+        total_num++;
     }
     s2_reg_ld = s2_next_ld;
     s1_reg_ld = s1_next_ld;
 
     s2_reg_st = s2_next_st;
     s1_reg_st = s1_next_st;
-    if (!stall_ld)
-    {
+    // if (!stall_ld)
+    // {
         memcpy(tag_next_ld, tag_reg_ld, sizeof(uint32_t) * DCACHE_WAY_NUM);
         memcpy(data_next_ld, data_reg_ld, sizeof(uint32_t) * DCACHE_WAY_NUM);
-    }
-    if (!stall_st)
-    {
+    // }
+    // if (!stall_st)
+    // {
         memcpy(tag_next_st, tag_reg_st, sizeof(uint32_t) * DCACHE_WAY_NUM);
         memcpy(data_next_st, data_reg_st, sizeof(uint32_t) * DCACHE_WAY_NUM);
-    }
+    // }
 }
 void Dcache::print()
 {
@@ -307,7 +323,7 @@ void Dcache::print()
     }
 
     printf("\n");
-    printf("Dcache State: hit_num=%u, miss_num=%u hit_ld:%d hit_st:%d stall_ld:%d stall_st:%d global_flush:%d global_mispred1:%d global_mispred2:%d\n", hit_num, miss_num, hit_ld, hit_st, stall_ld, stall_st, global_flush, global_mispred1, global_mispred2);
+    printf("Dcache State: hit_num=%lld, miss_num=%lld hit_ld:%d hit_st:%d stall_ld:%d stall_st:%d global_flush:%d global_mispred1:%d global_mispred2:%d\n", total_num-miss_num, miss_num, hit_ld, hit_st, stall_ld, stall_st, global_flush, global_mispred1, global_mispred2);
     printf("Dcache Load S1: valid=%d, uop_inst=0x%08x, rob_idx=%d addr=0x%08x, tag=0x%08x, index=0x%02X, wdata=0x%08x, wstrb=0x%X \n",
            s1_reg_ld.valid, s1_reg_ld.uop.instruction, s1_reg_ld.uop.rob_idx, s1_reg_ld.addr, s1_reg_ld.tag, s1_reg_ld.index, s1_reg_ld.wdata, s1_reg_ld.wstrb);
     printf("Dcache Load S2: valid=%d, uop_inst=0x%08x, rob_idx=%d addr=0x%08x, tag=0x%08x, index=0x%02X, wdata=0x%08x, wstrb=0x%X \n",

@@ -44,8 +44,6 @@ public:
     Dcache_IN in;
     Dcache_OUT out;
 
-    reg32_t hit_num;
-    reg32_t miss_num;
 
     Pipe_Reg s1_reg_ld,s2_reg_ld;
     Pipe_Reg s1_reg_st,s2_reg_st;

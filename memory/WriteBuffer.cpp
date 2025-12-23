@@ -116,23 +116,29 @@ void WriteBuffer::print()
         printf("]\n");
     }
 }
-bool fwd(uint32_t addr, uint32_t data[DCACHE_OFFSET_NUM])
-{
-    for (int i = 0; i < WRITE_BUFFER_SIZE; i++)
-    {
-        if (write_buffer[i].valid && write_buffer[i].addr == addr)
-        {
-            for (int j = 0; j < DCACHE_OFFSET_NUM; j++)
-            {
-                data[j] = write_buffer[i].data[j];
-            }
-            return true;
+int find_in_writebuffer(uint32_t addr){
+    for(int i=0;i<WRITE_BUFFER_SIZE;i++){
+        if(write_buffer[i].valid&&write_buffer[i].addr==addr){
+            return i;
         }
     }
-    return false;
+    return -1;
+}
+void fwd(uint32_t idx, uint32_t data[DCACHE_OFFSET_NUM]){
+    for(int j=0;j<DCACHE_OFFSET_NUM;j++){
+        data[j] = write_buffer[idx].data[j];
+    }
 }
 bool writebuffer_find(uint32_t addr,uint32_t offset, uint32_t& data)
 {
+    // if(DCACHE_LOG){
+    //     printf("WriteBuffer Find Request: addr=0x%08X offset=0x%02X\n", addr, offset);
+    //     for(int i=0;i<WRITE_BUFFER_SIZE;i++){
+    //         printf("  Entry[%d]: valid=%d addr=0x%08X data=[0x%08X, 0x%08X, 0x%08X, 0x%08X]\n", i, write_buffer[i].valid, write_buffer[i].addr,
+    //                write_buffer[i].data[0], write_buffer[i].data[1],
+    //                write_buffer[i].data[2], write_buffer[i].data[3]);
+    //     }
+    // }
     for (int i = 0; i < WRITE_BUFFER_SIZE; i++)
     {
         if (write_buffer[i].valid && write_buffer[i].addr == addr)

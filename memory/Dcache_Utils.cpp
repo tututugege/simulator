@@ -3,6 +3,9 @@
 #include <cstdio>
 
 extern long long sim_time;
+
+long long total_num;
+long long miss_num;
 uint32_t dcache_data[DCACHE_LINE_NUM][DCACHE_WAY_NUM][DCACHE_OFFSET_NUM] = {0};
 uint32_t dcache_lru[DCACHE_LINE_NUM][DCACHE_WAY_NUM] = {0};
 uint32_t dcache_tag[DCACHE_LINE_NUM][DCACHE_WAY_NUM] = {0};
@@ -92,6 +95,13 @@ bool dcache_read(uint32_t addr, uint32_t &rdata){
     uint32_t data_check[DCACHE_WAY_NUM];
     tag_and_data_read(index,offset,tag_check,data_check);
 
+    if(DCACHE_LOG){
+        // printf("Dcache Read Request: addr=0x%08X index=0x%02X tag=0x%08X offset=0x%02X\n", addr, index, tag, offset);
+        // for(int i=0;i<DCACHE_WAY_NUM;i++){
+        //     printf("  Way[%d]: Valid=%d Tag=0x%08X Data=0x%08X\n", i, dcache_valid[index][i], tag_check[i], data_check[i]);
+        // }
+    }
+
     bool hit = false;
     int way_idx = 0;
     uint32_t hit_data = 0;
@@ -100,13 +110,22 @@ bool dcache_read(uint32_t addr, uint32_t &rdata){
     if(hit){
         rdata = hit_data;
         updatelru(index, way_idx);
+        if(DCACHE_LOG){
+            printf("Dcache Read Hit: addr=0x%08X rdata=0x%08X way=%d sim_time:%lld\n", addr, rdata, way_idx, sim_time);
+        }
         return true;
     }
     else{
-        hit = writebuffer_find(GET_ADDR(index,tag,0), offset, rdata);
+        hit = writebuffer_find(GET_ADDR(tag,index,0), offset, rdata);
         if(hit){
+            if(DCACHE_LOG){
+                printf("Dcache Read Hit in WriteBuffer: addr=0x%08X rdata=0x%08X sim_time:%lld\n", addr, rdata, sim_time);
+            }
             return true;
         } 
+        if(DCACHE_LOG){
+            printf("Dcache Read Miss: addr=0x%08X sim_time:%lld\n", addr, sim_time);
+        }
         return false;
     }
 } 
