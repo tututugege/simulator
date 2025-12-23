@@ -31,6 +31,8 @@ typedef wire4_t Inst_type;
 typedef wire4_t Amo_op;
 
 using namespace std;
+#define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
+#define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B
 
 #define MAX_SIM_TIME 100000000000
 
@@ -54,12 +56,11 @@ using namespace std;
 #define BRU_NUM 2
 
 #define LOG_START 0
-#define LOG (0 && (sim_time >= LOG_START))
-#define MEM_LOG (0 && (sim_time >= LOG_START))
+#define LOG 0
+#define MEM_LOG 0
 
 #define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
-// #define CONFIG_RUN_REF_PRINT
 // #define CONFIG_RUN_CKPT
 #define SIMPOINT_INTERVAL 100000000
 #define WARMUP 100000000
@@ -334,6 +335,14 @@ public:
   }
 };
 
-extern Perf_count perf;
 extern long long sim_time;
-extern bool sim_end;
+
+class SimContext {
+public:
+  Perf_count perf;
+  bool sim_end = false;
+  bool stall = false;
+  bool misprediction = false;
+  bool exception = false;
+  uint32_t *p_memory;
+};

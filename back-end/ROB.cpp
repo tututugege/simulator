@@ -145,7 +145,7 @@ void ROB::comb_commit() {
         out.rob_bcast->illegal_inst = true;
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
       } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
-        sim_end = true;
+        ctx->sim_end = true;
       } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
         out.rob2csr->commit = true;
       } else {
@@ -167,7 +167,7 @@ void ROB::comb_commit() {
 
   stall_cycle++;
   if (stall_cycle > 1000) {
-    cout << dec << sim_time << endl;
+    cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
     // 打印ROB出队行指令 看是哪条指令卡死

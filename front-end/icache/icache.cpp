@@ -2,7 +2,7 @@
 #include "../front_module.h"
 #include "../frontend.h"
 #include "RISCV.h"
-#include "TOP.h"
+#include "SimCpu.h"
 #include "cvt.h"
 #include <cstdint>
 #include <cstdio>
@@ -21,7 +21,6 @@ struct ppn_triple {
 std::queue<ppn_triple> ppn_queue;
 
 extern uint32_t *p_memory;
-extern Back_Top back;
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 
@@ -96,14 +95,14 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     // only push when ifu_req is sent to icache
     uint32_t vaddr = in->fetch_address;
     bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
-    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
+    cvt_number_to_bit_unsigned(mstatus, cpu.back.out.mstatus, 32);
+    cvt_number_to_bit_unsigned(sstatus, cpu.back.out.sstatus, 32);
     uint32_t paddr;
     uint32_t ppn;
     bool page_fault_inst = false;
-    if ((back.out.satp & 0x80000000) && back.out.privilege != 3) {
-      page_fault_inst = !va2pa(paddr, vaddr, back.out.satp, 0, mstatus, sstatus,
-                               back.out.privilege, p_memory);
+    if ((cpu.back.out.satp & 0x80000000) && cpu.back.out.privilege != 3) {
+      page_fault_inst = !va2pa(paddr, vaddr, cpu.back.out.satp, 0, mstatus,
+                               sstatus, cpu.back.out.privilege, p_memory);
     } else {
       paddr = vaddr;
     }

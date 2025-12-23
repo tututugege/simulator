@@ -1,6 +1,7 @@
 #pragma once
 #include "IO.h"
 #include "config.h"
+class SimContext;
 
 class IDU_IN {
 public:
@@ -20,8 +21,11 @@ public:
 
 class IDU {
 public:
+  IDU(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   IDU_IN in;
   IDU_OUT out;
+  void decode(Inst_uop &uop, uint32_t inst);
 
   void init();
   void comb_decode();      // 译码并分配tag

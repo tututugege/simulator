@@ -1,12 +1,12 @@
 #include "TOP.h"
 #include <Cache.h>
 #include <STQ.h>
+#include <SimCpu.h>
 #include <config.h>
 #include <cstdint>
 #include <iostream>
 #include <util.h>
 
-extern Back_Top back;
 extern Cache cache;
 
 void STQ::comb() {
@@ -65,12 +65,12 @@ void STQ::comb() {
 
       if (temp != 27)
         cout << temp;
-      if (temp == '?' && !perf.perf_start) {
+      if (temp == '?' && !ctx->perf.perf_start) {
         cout << " perf counter start" << endl;
-        perf.perf_start = true;
-        perf.perf_reset();
-      } else if (temp == '#' && perf.perf_start && last_ch == '?') {
-        perf.perf_print();
+        ctx->perf.perf_start = true;
+        ctx->perf.perf_reset();
+      } else if (temp == '#' && ctx->perf.perf_start && last_ch == '?') {
+        ctx->perf.perf_print();
         exit(0);
       }
       last_ch = temp;
@@ -218,14 +218,14 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx,
     count--;
   }
 
-  int idx = back.rob.deq_ptr << 2;
+  int idx = cpu.back.rob.deq_ptr << 2;
 
   while (idx != rob_idx) {
     int line_idx = idx >> 2;
     int bank_idx = idx & 0b11;
-    if (back.rob.entry[bank_idx][line_idx].valid &&
-        is_store(back.rob.entry[bank_idx][line_idx].uop)) {
-      int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
+    if (cpu.back.rob.entry[bank_idx][line_idx].valid &&
+        is_store(cpu.back.rob.entry[bank_idx][line_idx].uop)) {
+      int stq_idx = cpu.back.rob.entry[bank_idx][line_idx].uop.stq_idx;
       if (entry[stq_idx].valid &&
           (!entry[stq_idx].data_valid || !entry[stq_idx].addr_valid)) {
         // 有未准备好的store，停止转发

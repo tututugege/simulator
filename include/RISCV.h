@@ -1,9 +1,6 @@
 #pragma once
 #include <TOP.h>
 
-#define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
-#define PHYSICAL_MEMORY_LENGTH (1024 * 1024 * 1024) // 4B
-
 #define INST_EBREAK 0x00100073
 #define INST_ECALL 0x00000073
 #define INST_MRET 0x30200073
@@ -11,7 +8,6 @@
 #define INST_WFI 0x10500073
 #define INST_NOP 0x00000013
 
-extern Back_Top back;
 enum enum_number_opcode {
   number_0_opcode_lui = 0b0110111,   // lui
   number_1_opcode_auipc = 0b0010111, // auipc

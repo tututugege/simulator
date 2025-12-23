@@ -1,5 +1,5 @@
-#include "TOP.h"
 #include "config.h"
+#include <SimCpu.h>
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
@@ -256,8 +256,8 @@ bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn) {
   }
 
   uint32_t data;
-  bool page_fault = !back.load_data(data, addr, inst.rob_idx, mmu_page_fault,
-                                    mmu_ppn, stall_load);
+  bool page_fault = !cpu.back.load_data(data, addr, inst.rob_idx,
+                                        mmu_page_fault, mmu_ppn, stall_load);
 
   if (!page_fault) {
     data = data >> (offset * 8);

@@ -1,5 +1,6 @@
 #include "TOP.h"
 #include <Rename.h>
+#include <SimCpu.h>
 #include <config.h>
 #include <cstdlib>
 #include <cstring>
@@ -19,24 +20,19 @@ static wire7_t spec_RAT_mispred[ARF_NUM + 1];
 static wire7_t spec_RAT_normal[ARF_NUM + 1];
 static wire1_t busy_table_awake[PRF_NUM];
 
-// difftest
-extern Back_Top back;
-const int ALLOC_NUM =
-    PRF_NUM / FETCH_WIDTH; // 分配寄存器时将preg分成FETCH_WIDTH个部分
-
 int ren_commit_idx;
 
-Rename::Rename() {
+void Rename::init() {
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
 
     // 初始化的时候平均分到free_vec的四个部分
     if (i < ARF_NUM) {
-      spec_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
-      arch_RAT[i] = (i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH;
-      free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = false;
+      spec_RAT[i] = i;
+      arch_RAT[i] = i;
+      free_vec[i] = false;
     } else {
-      free_vec[(i % FETCH_WIDTH) * ALLOC_NUM + i / FETCH_WIDTH] = true;
+      free_vec[i] = true;
     }
   }
 
@@ -65,14 +61,13 @@ void Rename::comb_alloc() {
   // 可用寄存器个数 每周期最多使用FETCH_WIDTH个
   wire7_t alloc_reg[FETCH_WIDTH];
   wire1_t alloc_valid[FETCH_WIDTH] = {false};
+  int alloc_num = 0;
 
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    for (int j = 0; j < ALLOC_NUM; j++) {
-      if (free_vec[i * ALLOC_NUM + j]) {
-        alloc_reg[i] = i * ALLOC_NUM + j;
-        alloc_valid[i] = true;
-        break;
-      }
+  for (int i = 0; i < PRF_NUM && alloc_num < FETCH_WIDTH; i++) {
+    if (free_vec[i]) {
+      alloc_reg[alloc_num] = i;
+      alloc_valid[alloc_num] = true;
+      alloc_num++;
     }
   }
 
@@ -95,7 +90,7 @@ void Rename::comb_alloc() {
 
 #ifdef CONFIG_PERF_COUNTER
   if (stall) {
-    perf.ren_reg_stall++;
+    ctx->perf.ren_reg_stall++;
   }
 #endif
 }
@@ -280,19 +275,17 @@ void Rename ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (in.rob_commit->commit_entry[i].valid) {
-      perf.commit_num++;
-#ifdef CONFIG_RUN_CKPT
-      if (perf.commit_num == WARMUP && !perf.perf_start) {
-        perf.perf_reset();
-        perf.perf_start = true;
+      ctx->perf.commit_num++;
+      if (ctx->perf.commit_num == WARMUP && !ctx->perf.perf_start) {
+        ctx->perf.perf_reset();
+        ctx->perf.perf_start = true;
       }
 
-      if (perf.commit_num == SIMPOINT_INTERVAL && perf.perf_start) {
-        perf.perf_print();
-        sim_end = true;
+      if (ctx->perf.commit_num == SIMPOINT_INTERVAL && ctx->perf.perf_start) {
+        ctx->perf.perf_print();
+        ctx->sim_end = true;
       }
 
-#endif
       Inst_uop *inst = &in.rob_commit->commit_entry[i].uop;
 
       // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
@@ -313,7 +306,7 @@ void Rename ::comb_commit() {
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
-      back.difftest_inst(inst);
+      cpu.back.difftest_inst(inst);
     }
   }
 

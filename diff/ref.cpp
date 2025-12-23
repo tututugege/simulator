@@ -1,6 +1,6 @@
 #include "ref.h"
-#include "CSR.h"
 #include "RISCV.h"
+#include "SimCpu.h"
 #include "config.h"
 #include <cstdint>
 #include <iostream>
@@ -154,7 +154,6 @@ void Ref_cpu::init(uint32_t reset_pc) {
 }
 
 void Ref_cpu::exec() {
-  is_csr = is_exception = is_br = br_taken = false;
   illegal_exception = page_fault_load = page_fault_inst = page_fault_store =
       asy = false;
   state.store = false;
@@ -162,11 +161,11 @@ void Ref_cpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-#ifdef CONFIG_RUN_REF
-    page_fault_inst = !va2pa(p_addr, state.pc, 0);
-#else
-    page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
-#endif
+    if (fast_run) {
+      page_fault_inst = !va2pa(p_addr, state.pc, 0);
+    } else {
+      page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
+    }
 
     if (page_fault_inst) {
       exception(state.pc);
@@ -192,7 +191,6 @@ void Ref_cpu::exec() {
 }
 
 void Ref_cpu::exception(uint32_t trap_val) {
-  is_exception = true;
   uint32_t next_pc = state.pc + 4;
 
   // 重新获取当前状态（因为exec可能没传进来最新的）
@@ -495,11 +493,6 @@ void Ref_cpu::RISCV() {
     exception(0);
   } else if (opcode == number_10_opcode_ecall) {
     // SYSTEM 指令 (CSR, WFI, MRET等)
-    if (Instruction == INST_WFI) {
-      is_csr = false;
-    } else {
-      is_csr = true;
-    }
     RV32CSR();
   } else if (opcode == number_11_opcode_lrw) {
     RV32A();
@@ -850,26 +843,21 @@ void Ref_cpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-#ifdef CONFIG_RUN_REF
     bool page_fault;
 
-    if (funct5 == 2) {
-      page_fault = !va2pa(p_addr, v_addr, 1);
+    if (fast_run) {
+      if (funct5 == 2) {
+        page_fault = !va2pa(p_addr, v_addr, 1);
+      } else {
+        page_fault = !va2pa(p_addr, v_addr, 2);
+      }
     } else {
-      page_fault = !va2pa(p_addr, v_addr, 2);
+      if (funct5 == 2) {
+        page_fault = !va2pa_fixed(p_addr, v_addr, 1);
+      } else {
+        page_fault = !va2pa_fixed(p_addr, v_addr, 2);
+      }
     }
-
-#else
-
-    bool page_fault;
-
-    if (funct5 == 2) {
-      page_fault = !va2pa_fixed(p_addr, v_addr, 1);
-    } else {
-      page_fault = !va2pa_fixed(p_addr, v_addr, 2);
-    }
-
-#endif
 
     if (page_fault) {
       if (funct5 == 2) {
@@ -987,61 +975,50 @@ void Ref_cpu::RV32IM() {
     break;
   }
   case number_2_opcode_jal: { // jal
-    is_br = true;
-    br_taken = true;
     next_pc = state.pc + immJ(Instruction);
     state.gpr[reg_d_index] = state.pc + 4;
     break;
   }
   case number_3_opcode_jalr: { // jalr
-    is_br = true;
-    br_taken = true;
     bool bit_temp[32];
     next_pc = (reg_rdata1 + immI(Instruction)) & 0xFFFFFFFC;
     state.gpr[reg_d_index] = state.pc + 4;
     break;
   }
   case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
-    is_br = true;
     switch (funct3) {
     case 0: { // beq
       if (reg_rdata1 == reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 1: { // bne
       if (reg_rdata1 != reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 4: { // blt
       if ((int32_t)reg_rdata1 < (int32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 5: { // bge
       if ((int32_t)reg_rdata1 >= (int32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 6: { // bltu
       if ((uint32_t)reg_rdata1 < (uint32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 7: { // bgeu
       if ((uint32_t)reg_rdata1 >= (uint32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
@@ -1053,11 +1030,11 @@ void Ref_cpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-#ifdef CONFIG_RUN_REF
-      page_fault_load = !va2pa(p_addr, v_addr, 1);
-#else
-      page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
-#endif
+      if (fast_run) {
+        page_fault_load = !va2pa(p_addr, v_addr, 1);
+      } else {
+        page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
+      }
     }
 
     if (page_fault_load) {
@@ -1105,11 +1082,11 @@ void Ref_cpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-#ifdef CONFIG_RUN_REF
-      page_fault_store = !va2pa(p_addr, v_addr, 2);
-#else
-      page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
-#endif
+      if (fast_run) {
+        page_fault_store = !va2pa(p_addr, v_addr, 2);
+      } else {
+        page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
+      }
     }
 
     if (page_fault_store) {
@@ -1355,9 +1332,8 @@ void Ref_cpu::store_data() {
     char temp;
     temp = wdata & 0x000000ff;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
-#ifdef CONFIG_RUN_REF_PRINT
-    cout << temp;
-#endif
+    if (fast_run)
+      cout << temp;
   }
 
   if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 7) {
@@ -1378,10 +1354,8 @@ void Ref_cpu::store_data() {
     state.csr[csr_sip] = state.csr[csr_sip] & ~(1 << 9);
   }
 
-#ifndef CONFIG_RUN_REF
   state.store_data = state.store_data << offset * 8;
   state.store_strb = state.store_strb << offset * 8;
-#endif
 }
 
 bool Ref_cpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
@@ -1525,7 +1499,7 @@ bool Ref_cpu::va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   return ret;
 #endif
   extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
-  Inst_entry ren_commit_entry = back.out.commit_entry[ren_commit_idx];
+  Inst_entry ren_commit_entry = cpu.back.out.commit_entry[ren_commit_idx];
   bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
   bool dut_page_fault_load = ren_commit_entry.uop.page_fault_load;
   bool dut_page_fault_store = ren_commit_entry.uop.page_fault_store;

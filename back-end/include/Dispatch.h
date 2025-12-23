@@ -1,5 +1,9 @@
+#pragma once
 #include "IO.h"
 #include "config.h"
+
+class Back_Top;
+
 class DIS_OUT {
 public:
   Dis_Ren *dis2ren;
@@ -21,8 +25,9 @@ public:
 };
 
 class Dispatch {
-
 public:
+  Dispatch(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   DIS_IN in;
   DIS_OUT out;
 

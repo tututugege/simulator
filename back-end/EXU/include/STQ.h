@@ -3,6 +3,8 @@
 #include <config.h>
 #include <cstdint>
 
+class Back_Top;
+
 class STQ_IN {
 public:
   Dis_Stq *dis2stq;
@@ -33,6 +35,8 @@ typedef struct {
 
 class STQ {
 public:
+  STQ(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   STQ_IN in;
   STQ_OUT out;
   void comb();

@@ -20,6 +20,8 @@ public:
 
 class ROB {
 public:
+  ROB(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   void init();
   void seq();
   void comb_ready();

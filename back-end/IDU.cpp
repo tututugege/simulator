@@ -183,9 +183,9 @@ void IDU::comb_decode() {
       } else {
 #ifdef CONFIG_PERF_COUNTER
         if (has_br)
-          perf.idu_br_stall++;
+          ctx->perf.idu_br_stall++;
         if (no_tag)
-          perf.idu_tag_stall++;
+          ctx->perf.idu_tag_stall++;
 #endif
 
         stall = true;
@@ -298,7 +298,7 @@ void IDU::seq() {
   enq_ptr = enq_ptr_1;
 }
 
-void decode(Inst_uop &uop, uint32_t inst) {
+void IDU::decode(Inst_uop &uop, uint32_t inst) {
   // 操作数来源以及type
   uint32_t imm;
   int uop_num = 1;
@@ -327,7 +327,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
   uop.illegal_inst = false;
   uop.type = NOP;
   uop.amoop = AMONONE;
-  uop.inst_idx = sim_time;
+  uop.inst_idx = ctx->perf.cycle;
 
   switch (opcode) {
   case number_0_opcode_lui: { // lui

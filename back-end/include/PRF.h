@@ -21,6 +21,8 @@ public:
 
 class PRF {
 public:
+  PRF(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   PRF_IN in;
   PRF_OUT out;
 

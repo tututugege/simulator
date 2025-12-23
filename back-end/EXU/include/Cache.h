@@ -1,3 +1,4 @@
+#include "config.h"
 #include <cstdint>
 using namespace std;
 
@@ -22,6 +23,7 @@ class Cache {
   int way_num = WAY_NUM;
 
 public:
+  SimContext *ctx;
   int cache_select_evict(uint32_t addr);
   void cache_evict(uint32_t addr);
   int cache_access(uint32_t addr);

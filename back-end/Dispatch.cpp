@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Dispatch.h>
+#include <SimCpu.h>
 #include <cvt.h>
 #include <util.h>
 
@@ -331,7 +332,7 @@ void Dispatch::comb_fire() {
 
 #ifdef CONFIG_PERF_COUNTER
         if (!((1 << i) & (uop_sel[j][0] | uop_sel[j][1]))) {
-          perf.isu_entry_stall[j]++;
+          ctx->perf.isu_entry_stall[j]++;
         }
 #endif
       }
@@ -365,7 +366,7 @@ void Dispatch::comb_fire() {
 #ifdef CONFIG_PERF_COUNTER
     if (inst_r[i].valid && !out.dis2rob->dis_fire[i]) {
       if (!in.rob2dis->ready) {
-        perf.rob_entry_stall++;
+        ctx->perf.rob_entry_stall++;
       } else if (is_store(inst_r[i].uop)) {
 
       } else if (!iss_ready[i]) {

@@ -92,13 +92,9 @@ public:
   bool S_timer_interrupt;
   bool S_external_interrupt;
 
-  bool is_br;
-  bool br_taken;
-
-  bool is_exception;
-  bool is_csr;
-
   bool sim_end;
+
+  bool fast_run = false;
 
   void init(uint32_t reset_pc);
   void exec();

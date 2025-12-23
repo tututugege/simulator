@@ -5,9 +5,12 @@
 #include <vector>
 #define FORCE_INLINE __attribute__((always_inline)) inline
 
+class Back_Top;
+
 class IQ {
 public:
-  IQ(int, int);
+  IQ(int, int, SimContext *);
+  SimContext *ctx;
   void init();
   void FORCE_INLINE wake_up(bool *valid, uint32_t *preg);
   Inst_entry FORCE_INLINE scheduler();
@@ -45,10 +48,12 @@ public:
 
 class ISU {
 public:
+  ISU(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   ISU_IN in;
   ISU_OUT out;
   void init();
-  void add_iq(int entry_num, int);
+  void add_iq(int entry_num, int, SimContext *);
   void comb_ready();
   void comb_deq();
   void comb_enq();

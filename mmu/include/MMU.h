@@ -1,3 +1,4 @@
+#pragma once
 /*
  * MMU: Implements virtual to physical address translation
  * - Supports Sv32 paging mode
@@ -5,12 +6,10 @@
  * - Interfaces with IFU and LSU for address translation requests
  */
 
-#include "mmu_io.h"
-#include "TLB.h"
 #include "PTW.h"
+#include "TLB.h"
+#include "mmu_io.h"
 #include <cstdint>
-
-extern uint32_t* p_memory;
 
 class MMU {
 public:
@@ -43,8 +42,8 @@ private:
   /*
    * MMU Top-Level Registers
    */
-  mmu_resp_master_t *resp_ifu_r;  // hold IFU resp for next cycle
-  mmu_resp_master_t *resp_lsu_r;  // hold LSU resp for next cycle
+  mmu_resp_master_t *resp_ifu_r; // hold IFU resp for next cycle
+  mmu_resp_master_t *resp_lsu_r; // hold LSU resp for next cycle
 
   /*
    * MMU Top-Level Wires
@@ -53,8 +52,8 @@ private:
   mmu_resp_master_t resp_lsu_r_1[MAX_LSU_REQ_NUM];
 
   /* Helper function to set mmu response fields */
-  static inline void comb_set_resp(mmu_resp_master_t &resp,
-          bool valid, bool miss, bool excp, uint32_t ptag) {
+  static inline void comb_set_resp(mmu_resp_master_t &resp, bool valid,
+                                   bool miss, bool excp, uint32_t ptag) {
     resp.valid = valid;
     resp.excp = excp;
     resp.miss = miss;

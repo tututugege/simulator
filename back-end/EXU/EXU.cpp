@@ -1,13 +1,12 @@
 #include <Cache.h>
 #include <EXU.h>
 #include <MMU.h>
+#include <SimCpu.h>
 #include <cmath>
 #include <config.h>
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
-extern MMU mmu;
-extern uint32_t *p_memory;
 Cache cache;
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
@@ -53,7 +52,7 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_DIV) { // div
       latency = 1;
     } else if (inst.op == UOP_LOAD) {
-      latency = cache.cache_access(inst.src1_rdata + inst.imm) - 1;
+      latency = cache.cache_access(inst.src1_rdata + inst.imm);
       // latency = 1;
     } else if (inst.op == UOP_STA) {
       latency = 2;
@@ -81,13 +80,13 @@ void FU::exec(Inst_uop &inst) {
             .vtag = (vaddr >> 12), // vaddr[31:12]
             .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
         int idx = mmu_lsu_slot_r_1.idx;
-        mmu.io.in.mmu_lsu_req[idx] = req;
+        cpu.mmu.io.in.mmu_lsu_req[idx] = req;
       }
       return;
     }
 
     // step2: slot aleardy allocated, check mmu resp to see if hit
-    mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+    mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
     bool hit = resp.valid && !resp.miss;
     // if (!hit) {
     if (!hit || cycle < latency) {
@@ -98,7 +97,7 @@ void FU::exec(Inst_uop &inst) {
             .valid = true,
             .vtag = (vaddr >> 12), // vaddr[31:12]
             .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
-        mmu.io.in.mmu_lsu_req[mmu_lsu_slot_r_1.idx] = req;
+        cpu.mmu.io.in.mmu_lsu_req[mmu_lsu_slot_r_1.idx] = req;
       }
       return;
     }
@@ -106,7 +105,7 @@ void FU::exec(Inst_uop &inst) {
 
   if (cycle >= latency) {
     if (is_load_uop(inst.op)) {
-      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+      mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       // ldu(inst);
@@ -124,7 +123,7 @@ void FU::exec(Inst_uop &inst) {
         return; // not complete yet
       }
     } else if (is_sta_uop(inst.op)) {
-      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+      mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       stu_addr(inst, page_fault, mmu_ppn);
@@ -139,9 +138,9 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_SFENCE_VMA) {
       uint32_t vaddr = inst.src1_rdata;
       uint32_t asid = inst.src2_rdata;
-      mmu.io.in.tlb_flush.flush_asid = asid;
-      mmu.io.in.tlb_flush.flush_vpn = vaddr >> 12;
-      mmu.io.in.tlb_flush.flush_valid = true;
+      cpu.mmu.io.in.tlb_flush.flush_asid = asid;
+      cpu.mmu.io.in.tlb_flush.flush_vpn = vaddr >> 12;
+      cpu.mmu.io.in.tlb_flush.flush_valid = true;
     } else
       alu(inst);
 
@@ -199,6 +198,7 @@ void EXU::init() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     inst_r[i].valid = false;
   }
+  cache.ctx = this->ctx;
 }
 
 void EXU::comb_ready() {
@@ -214,7 +214,7 @@ void EXU::comb_exec() {
 #ifdef CONFIG_MMU
   for (int i = 0; i < MAX_LSU_REQ_NUM; i++) {
     alloc_mmu_req_slot[i] = 0;
-    mmu.io.in.mmu_lsu_req[i] = {}; // clear lsu req by default
+    cpu.mmu.io.in.mmu_lsu_req[i] = {}; // clear lsu req by default
   }
 #endif
 

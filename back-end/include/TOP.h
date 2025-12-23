@@ -10,7 +10,9 @@
 #include <STQ.h>
 #include <config.h>
 #include <cstdint>
-#include <iostream>
+#include <fstream>
+
+class SimContext;
 
 typedef struct {
   uint32_t inst[FETCH_WIDTH];
@@ -43,6 +45,7 @@ typedef struct {
 
 class Back_Top {
 public:
+  SimContext *ctx;
   IDU idu;
   Rename rename;
   Dispatch dis;
@@ -60,6 +63,14 @@ public:
   void comb();
   void seq();
 
+  Back_Top(SimContext *ctx)
+      : idu(ctx), rename(ctx), dis(ctx), isu(ctx), prf(ctx), stq(ctx), rob(ctx),
+        exu(ctx) {
+    this->ctx = ctx;
+  };
+
+  uint32_t number_PC = 0;
+
 #ifdef CONFIG_MMU
   bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
                  bool &mmu_page_fault, uint32_t &mmu_ppn, bool &stall_load);
@@ -67,11 +78,11 @@ public:
   bool load_data(uint32_t &data, uint32_t v_addr, int rob_idx);
 #endif
 
-  void restore_checkpoint(const std::string &filename, uint32_t &number_PC);
+  void load_image(const std::string &filename);
+  void restore_checkpoint(const std::string &filename);
+  void restore_from_ref();
 
   // debug
   void difftest_inst(Inst_uop *inst);
   void difftest_cycle();
 };
-
-extern Back_Top back;

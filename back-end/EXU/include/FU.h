@@ -2,6 +2,8 @@
 
 #include "config.h"
 
+class Back_Top;
+
 struct mmu_slot_t {
   wire2_t idx = 0;
   wire1_t valid = false;

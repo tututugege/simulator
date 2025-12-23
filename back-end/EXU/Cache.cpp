@@ -1,5 +1,4 @@
 #include "Cache.h"
-#include "config.h"
 #include <cstdint>
 #include <cstdlib>
 
@@ -114,7 +113,7 @@ void Cache::cache_evict(uint32_t addr) {
 }
 
 int Cache::cache_access(uint32_t addr) {
-  perf.cache_access_num++;
+  ctx->perf.cache_access_num++;
   uint32_t tag;
   int i;
 
@@ -127,7 +126,7 @@ int Cache::cache_access(uint32_t addr) {
 
   if (i == way_num) {
     cache_evict(addr);
-    perf.cache_miss_num++;
+    ctx->perf.cache_miss_num++;
     return MISS_LATENCY;
   } else {
 #ifdef PLRU_EVICT

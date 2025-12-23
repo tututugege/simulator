@@ -1,5 +1,6 @@
 #include "CSR.h"
 #include "IO.h"
+#include "ref.h"
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
@@ -78,41 +79,40 @@ void Back_Top::difftest_cycle() {
 }
 
 void Back_Top::difftest_inst(Inst_uop *inst) {
-
   if (inst->type == JALR) {
     if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
-      perf.ret_br_num++;
+      ctx->perf.ret_br_num++;
     } else {
-      perf.jalr_br_num++;
+      ctx->perf.jalr_br_num++;
     }
   } else if (inst->type == BR) {
-    perf.cond_br_num++;
+    ctx->perf.cond_br_num++;
   }
 
   if (inst->mispred) {
     if (inst->type == JALR) {
       if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
-        perf.ret_mispred_num++;
+        ctx->perf.ret_mispred_num++;
         if (!inst->pred_br_taken) {
-          perf.ret_dir_mispred++;
+          ctx->perf.ret_dir_mispred++;
         } else {
-          perf.ret_addr_mispred++;
+          ctx->perf.ret_addr_mispred++;
         }
       } else {
-        perf.jalr_mispred_num++;
+        ctx->perf.jalr_mispred_num++;
         if (!inst->pred_br_taken) {
-          perf.jalr_dir_mispred++;
+          ctx->perf.jalr_dir_mispred++;
         } else {
-          perf.jalr_addr_mispred++;
+          ctx->perf.jalr_addr_mispred++;
         }
       }
     } else if (inst->type == BR) {
       if (inst->pred_br_taken != inst->br_taken) {
-        perf.cond_dir_mispred++;
+        ctx->perf.cond_dir_mispred++;
       } else {
-        perf.cond_addr_mispred++;
+        ctx->perf.cond_addr_mispred++;
       }
-      perf.cond_mispred_num++;
+      ctx->perf.cond_mispred_num++;
     }
   }
 
@@ -307,6 +307,7 @@ void Back_Top::init() {
   csr.out.csr_status = &csr_status;
 
   idu.init();
+  rename.init();
   isu.init();
   prf.init();
   exu.init();
@@ -383,31 +384,30 @@ void Back_Top::comb() {
 
   // 为了debug
   // 修正pc_next 以及difftest对应的pc_next
-  back.out.flush = rob.out.rob_bcast->flush;
+  out.flush = rob.out.rob_bcast->flush;
   if (!rob.out.rob_bcast->flush) {
-    back.out.mispred = prf.out.prf2dec->mispred;
-    back.out.stall =
-        !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
-    back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
+    out.mispred = prf.out.prf2dec->mispred;
+    out.stall = !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
+    out.redirect_pc = prf.out.prf2dec->redirect_pc;
   } else {
     if (LOG)
       cout << "flush" << endl;
-    back.out.mispred = true;
+    out.mispred = true;
     if (rob.out.rob_bcast->mret || rob.out.rob_bcast->sret) {
-      back.out.redirect_pc = csr.out.csr2front->epc;
+      out.redirect_pc = csr.out.csr2front->epc;
     } else if (rob.out.rob_bcast->exception) {
-      back.out.redirect_pc = csr.out.csr2front->trap_pc;
+      out.redirect_pc = csr.out.csr2front->trap_pc;
     } else {
-      back.out.redirect_pc = rob.out.rob_bcast->pc + 4;
+      out.redirect_pc = rob.out.rob_bcast->pc + 4;
     }
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    back.out.commit_entry[i] = rob.out.rob_commit->commit_entry[i];
-    Inst_type type = back.out.commit_entry[i].uop.type;
-    if (back.out.commit_entry[i].valid && back.out.flush) {
-      back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
-      rob.out.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
+    out.commit_entry[i] = rob.out.rob_commit->commit_entry[i];
+    Inst_type type = out.commit_entry[i].uop.type;
+    if (out.commit_entry[i].valid && out.flush) {
+      out.commit_entry[i].uop.pc_next = out.redirect_pc;
+      rob.out.rob_commit->commit_entry[i].uop.pc_next = out.redirect_pc;
     }
   }
 
@@ -458,12 +458,12 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
   ret = !mmu_page_fault;
 
   if (p_addr == 0x1fd0e000) {
-    data = perf.commit_num;
+    data = ctx->perf.commit_num;
   } else if (p_addr == 0x1fd0e004) {
     data = 0;
   } else {
     data = p_memory[p_addr >> 2];
-    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall_load);
+    stq.st2ld_fwd(p_addr, data, rob_idx, stall_load);
   }
 
   return ret;
@@ -484,7 +484,7 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   }
 
   if (p_addr == 0x1fd0e000) {
-    data = perf.commit_num;
+    data = ctx->perf.commit_num;
   } else if (p_addr == 0x1fd0e004) {
     data = 0;
   } else {
@@ -512,8 +512,54 @@ template <typename T> void gz_read_pod(gzFile file, T &data) {
   }
 }
 
-void Back_Top::restore_checkpoint(const std::string &filename,
-                                  uint32_t &number_PC) {
+void Back_Top::load_image(const std::string &filename) {
+  ifstream inst_data(filename, ios::in);
+  if (!inst_data.is_open()) {
+    cout << "Error: Image " << filename << " does not exist" << endl;
+    exit(1);
+  }
+
+  inst_data.seekg(0, std::ios::end);
+  streamsize size = inst_data.tellg();
+  inst_data.seekg(0, std::ios::beg);
+
+  if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
+                      size)) {
+    std::cerr << "读取文件失败！" << std::endl;
+    exit(1);
+  }
+
+  inst_data.close();
+
+  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
+  p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
+  p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
+  p_memory[uint32_t(0xc / 4)] = 0x00028067;
+  p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+
+#ifdef CONFIG_DIFFTEST
+  init_difftest(size);
+#endif
+}
+
+void Back_Top::restore_from_ref() {
+  CPU_state state;
+  uint8_t privilege;
+  get_state(state, privilege, p_memory);
+  number_PC = state.pc;
+  csr.privilege = csr.privilege_1 = privilege;
+  for (int i = 0; i < ARF_NUM; i++) {
+    prf.reg_file[i] = state.gpr[i];
+    prf.reg_file_1[i] = state.gpr[i];
+  }
+
+  for (int i = 0; i < CSR_NUM; i++) {
+    csr.CSR_RegFile[i] = state.csr[i];
+    csr.CSR_RegFile_1[i] = state.csr[i];
+  }
+}
+
+void Back_Top::restore_checkpoint(const std::string &filename) {
 
   std::string final_name = filename;
   gzFile file = gzopen(final_name.c_str(), "rb");
@@ -537,8 +583,8 @@ void Back_Top::restore_checkpoint(const std::string &filename,
   number_PC = state.pc;
   csr.privilege = csr.privilege_1 = RISCV_MODE_U;
   for (int i = 0; i < ARF_NUM; i++) {
-    prf.reg_file[rename.arch_RAT[i]] = state.gpr[i];
-    prf.reg_file_1[rename.arch_RAT[i]] = state.gpr[i];
+    prf.reg_file[i] = state.gpr[i];
+    prf.reg_file_1[i] = state.gpr[i];
   }
 
   for (int i = 0; i < CSR_NUM; i++) {

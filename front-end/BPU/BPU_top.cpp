@@ -1,6 +1,7 @@
 #include "../front_IO.h"
 #include "../frontend.h"
 #include "config.h"
+#include <SimCpu.h>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -28,11 +29,10 @@ int tage_miss = 0;
 
 void BPU_change_pc_reg(uint32_t new_pc) { pc_reg = new_pc; }
 
-extern uint32_t number_PC;
 void BPU_top(struct BPU_in *in, struct BPU_out *out) {
   // generate pc_reg sending to icache
   if (in->reset) {
-    pc_reg = number_PC;
+    pc_reg = cpu.back.number_PC;
     out->PTAB_write_enable = false;
     out->icache_read_valid = false;
     return;

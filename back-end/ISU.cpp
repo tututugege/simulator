@@ -5,13 +5,16 @@
 #include <util.h>
 #include <vector>
 
-void ISU::add_iq(int entry_num, int type) { iq.push_back(IQ(entry_num, type)); }
+void ISU::add_iq(int entry_num, int type, SimContext *ctx) {
+  iq.push_back(IQ(entry_num, type, ctx));
+}
 
-IQ::IQ(int entry_num, int type) {
+IQ::IQ(int entry_num, int type, SimContext *ctx) {
   vector<Inst_entry> new_iq(entry_num);
   this->entry_num = entry_num;
   this->type = type;
   this->num = this->num_1 = 0;
+  this->ctx = ctx;
 
   entry.resize(entry_num);
   entry_1.resize(entry_num);
@@ -22,13 +25,13 @@ IQ::IQ(int entry_num, int type) {
 }
 
 void ISU::init() {
-  add_iq(16, IQ_INTM);
-  add_iq(16, IQ_INTD);
-  add_iq(16, IQ_LD);
-  add_iq(16, IQ_STA);
-  add_iq(16, IQ_STD);
-  add_iq(MAX_BR_NUM / 2, IQ_BR0);
-  add_iq(MAX_BR_NUM / 2, IQ_BR1);
+  add_iq(16, IQ_INTM, ctx);
+  add_iq(16, IQ_INTD, ctx);
+  add_iq(16, IQ_LD, ctx);
+  add_iq(16, IQ_STA, ctx);
+  add_iq(16, IQ_STD, ctx);
+  add_iq(MAX_BR_NUM / 2, IQ_BR0, ctx);
+  add_iq(MAX_BR_NUM / 2, IQ_BR1, ctx);
 }
 
 void IQ::enq(Inst_uop &inst) {
@@ -54,7 +57,7 @@ Inst_entry IQ::deq() {
 
 #ifdef CONFIG_PERF_COUNTER
   if (num > 0 && !ret.valid) {
-    perf.isu_raw_stall[type]++;
+    ctx->perf.isu_raw_stall[type]++;
   }
 #endif
 
@@ -81,10 +84,13 @@ void ISU::comb_deq() {
 
   // 出队
   for (int i = 0; i < ISSUE_WAY; i++) {
-    if (in.exe2iss->ready[i] && !in.rob_bcast->flush && !in.dec_bcast->mispred)
+    if (in.exe2iss->ready[i] && !in.rob_bcast->flush &&
+        !in.dec_bcast->mispred) {
       out.iss2prf->iss_entry[i] = iq[i].deq(); // deq相当于一个选择逻辑
-    else
+
+    } else {
       out.iss2prf->iss_entry[i].valid = false;
+    }
   }
 
   for (int i = 0; i < ALU_NUM; i++) {
@@ -184,7 +190,7 @@ void ISU::seq() {
           (!e.uop.src2_en || !e.uop.src2_busy) &&
           !(is_load_uop(e.uop.op) &&
             (e.uop.pre_sta_mask || e.uop.pre_std_mask))) {
-        perf.isu_ready_num[q.type]++;
+        ctx->perf.isu_ready_num[q.type]++;
       }
     }
   }
