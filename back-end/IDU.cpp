@@ -1,20 +1,18 @@
 #include "CSR.h"
 #include "config.h"
+#include "ref.h"
 #include <IDU.h>
 #include <RISCV.h>
 #include <cstdint>
 #include <cstdlib>
-#include <cvt.h>
-#include <filesystem>
 #include <util.h>
-#define ENABLE_MULTI_BR
 
 // 中间信号
 #ifdef ENABLE_MULTI_BR
 #define MAX_TAG_ALLOC_NUM 2
-static wire5_t alloc_tag[MAX_TAG_ALLOC_NUM]; // 新tag
+static wire4_t alloc_tag[MAX_TAG_ALLOC_NUM]; // 新tag
 #else
-static wire5_t alloc_tag; // 新tag
+static wire4_t alloc_tag; // 新tag
 #endif
 
 void decode(Inst_uop &uop, uint32_t instructinn);
@@ -45,7 +43,7 @@ void IDU::comb_decode() {
     }
   }
 
-  if (i == MAX_BR_NUM) {
+  if (alloc_num != MAX_TAG_ALLOC_NUM) {
     for (int i = alloc_num; i < MAX_TAG_ALLOC_NUM; i++) {
       alloc_tag[i] = 0;
       alloc_valid[i] = false;
@@ -77,11 +75,15 @@ void IDU::comb_decode() {
     out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
     out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
     out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
+    for (int j = 0; j < 4; j++) { // TN_MAX = 4
+      out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];
+    }
+
     out.dec2ren->uop[i].pred_br_pc =
         in.front2dec->predict_next_fetch_address[i];
 
     // for debug
-    if (is_branch(out.dec2ren->uop[i].type)) {
+    if (out.dec2ren->uop[i].type == JAL) {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
     } else {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
@@ -95,7 +97,7 @@ void IDU::comb_decode() {
     if (in.front2dec->valid[i] && is_branch(out.dec2ren->uop[i].type)) {
       if (!alloc_valid[br_num]) {
 #ifdef CONFIG_PERF_COUNTER
-        perf.idu_tag_stall++;
+        ctx->perf.idu_tag_stall++;
 #endif
         stall = true;
         break;
@@ -161,11 +163,15 @@ void IDU::comb_decode() {
     out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
     out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
     out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
+    for (int j = 0; j < 4; j++) { // TN_MAX = 4
+      out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];
+    }
+
     out.dec2ren->uop[i].pred_br_pc =
         in.front2dec->predict_next_fetch_address[i];
 
     // for debug
-    if (is_branch(out.dec2ren->uop[i].type)) {
+    if (out.dec2ren->uop[i].type == JAL) {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
     } else {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
@@ -177,9 +183,9 @@ void IDU::comb_decode() {
       } else {
 #ifdef CONFIG_PERF_COUNTER
         if (has_br)
-          perf.idu_br_stall++;
+          ctx->perf.idu_br_stall++;
         if (no_tag)
-          perf.idu_tag_stall++;
+          ctx->perf.idu_tag_stall++;
 #endif
 
         stall = true;
@@ -242,6 +248,7 @@ void IDU::comb_fire() {
     }
   }
 
+#ifdef ENABLE_MULTI_BR
   int br_num = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.dec2front->fire[i] = out.dec2ren->valid[i] && in.ren2dec->ready;
@@ -256,6 +263,21 @@ void IDU::comb_fire() {
       br_num++;
     }
   }
+#else
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    out.dec2front->fire[i] = out.dec2ren->valid[i] && in.ren2dec->ready;
+    out.dec2front->ready = out.dec2front->ready &&
+                           (!in.front2dec->valid[i] || out.dec2ren->valid[i]);
+
+    if (out.dec2front->fire[i] && is_branch(out.dec2ren->uop[i].type)) {
+      now_tag_1 = alloc_tag;
+      tag_vec_1[alloc_tag] = false;
+      tag_list_1[enq_ptr] = alloc_tag;
+      LOOP_INC(enq_ptr_1, MAX_BR_NUM);
+    }
+  }
+
+#endif
 }
 
 void IDU::comb_release_tag() {
@@ -276,60 +298,20 @@ void IDU::seq() {
   enq_ptr = enq_ptr_1;
 }
 
-void decode(Inst_uop &uop, uint32_t inst) {
+void IDU::decode(Inst_uop &uop, uint32_t inst) {
   // 操作数来源以及type
   uint32_t imm;
-  uint32_t csr_idx;
   int uop_num = 1;
 
-  bool inst_bit[32];
-  cvt_number_to_bit_unsigned(inst_bit, inst, 32);
-
-  // split instructinn
-  bool *bit_op_code = inst_bit + 25; // 25-31
-  bool *rd_code = inst_bit + 20;     // 20-24
-  bool *rs_a_code = inst_bit + 12;   // 12-16
-  bool *rs_b_code = inst_bit + 7;    // 7-11
-  bool *bit_csr_code = inst_bit + 0; // 0-11
-
-  // 准备opcode、funct3、funct7
-  uint32_t number_op_code_unsigned = cvt_bit_to_number_unsigned(bit_op_code, 7);
-  bool *bit_funct3 = inst_bit + 17; // 3
-  uint32_t number_funct3_unsigned = cvt_bit_to_number_unsigned(bit_funct3, 3);
-  bool *bit_funct7 = inst_bit + 0; // 7
-  uint32_t number_funct7_unsigned = cvt_bit_to_number_unsigned(bit_funct7, 7);
+  uint32_t opcode = BITS(inst, 6, 0);
+  uint32_t number_funct3_unsigned = BITS(inst, 14, 12);
+  uint32_t number_funct7_unsigned = BITS(inst, 31, 25);
+  uint32_t reg_d_index = BITS(inst, 11, 7);
+  uint32_t reg_a_index = BITS(inst, 19, 15);
+  uint32_t reg_b_index = BITS(inst, 24, 20);
+  uint32_t csr_idx = inst >> 20;
 
   // 准备立即数
-  bool bit_immi_u_type[32]; // U-type
-  bool bit_immi_j_type[21]; // J-type
-  bool bit_immi_i_type[12]; // I-type
-  bool bit_immi_b_type[13]; // B-type
-  bool bit_immi_s_type[12]; // S-type
-  init_indice(bit_immi_u_type, 0, 32);
-  copy_indice(bit_immi_u_type, 0, inst_bit, 0, 20);
-  init_indice(bit_immi_j_type, 0, 21);
-  bit_immi_j_type[0] = (*(inst_bit + 0));
-  copy_indice(bit_immi_j_type, 1, inst_bit, 12, 8);
-  bit_immi_j_type[9] = (*(inst_bit + 11));
-  copy_indice(bit_immi_j_type, 10, inst_bit, 1, 10);
-  copy_indice(bit_immi_i_type, 0, inst_bit, 0, 12);
-  init_indice(bit_immi_b_type, 0, 13);
-  bit_immi_b_type[0] = (*(inst_bit + 0));
-  bit_immi_b_type[1] = (*(inst_bit + 24));
-  copy_indice(bit_immi_b_type, 2, inst_bit, 1, 6);
-  copy_indice(bit_immi_b_type, 8, inst_bit, 20, 4);
-  copy_indice(bit_immi_s_type, 0, inst_bit, 0, 7);
-  copy_indice(bit_immi_s_type, 7, inst_bit, 20, 5);
-
-  // 准备寄存器
-  int reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
-  int reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
-  int reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
-
-  csr_idx = inst >> 20;
-
-  extern long long sim_time;
-
   uop.instruction = inst;
   uop.dest_areg = reg_d_index;
   uop.src1_areg = reg_a_index;
@@ -345,9 +327,9 @@ void decode(Inst_uop &uop, uint32_t inst) {
   uop.illegal_inst = false;
   uop.type = NOP;
   uop.amoop = AMONONE;
-  uop.inst_idx = sim_time;
+  uop.inst_idx = ctx->perf.cycle;
 
-  switch (number_op_code_unsigned) {
+  switch (opcode) {
   case number_0_opcode_lui: { // lui
     uop.dest_en = true;
     uop.src1_en = true;
@@ -356,7 +338,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.type = ADD;
     uop.func3 = 0;
     uop.func7_5 = 0;
-    uop.imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
+    uop.imm = immU(inst);
     break;
   }
   case number_1_opcode_auipc: { // auipc
@@ -367,11 +349,15 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.type = ADD;
     uop.func3 = 0;
     uop.func7_5 = 0;
-    uop.imm = cvt_bit_to_number_unsigned(bit_immi_u_type, 32);
+    uop.imm = immU(inst);
     break;
   }
   case number_2_opcode_jal: { // jal
-    uop_num = 1;
+#ifdef CONFIG_BPU
+    uop_num = 1; // 前端pre-decode预先解决jal
+#else
+    uop_num = 2;
+#endif
     uop.dest_en = true;
     uop.src1_en = false;
     uop.src2_en = false;
@@ -380,10 +366,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.func3 = 0;
     uop.func7_5 = 0;
     uop.type = JAL;
-
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_j_type, 21);
-    uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop.imm = immJ(inst);
     break;
   }
   case number_3_opcode_jalr: { // jalr
@@ -396,11 +379,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.func3 = 0;
     uop.func7_5 = 0;
     uop.type = JALR;
-
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-    imm = cvt_bit_to_number_unsigned(bit_temp, 32);
-    uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
+    uop.imm = immI(inst);
 
     break;
   }
@@ -409,10 +388,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src2_en = true;
     uop.type = BR;
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_b_type, 13);
-    uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
-
+    uop.imm = immB(inst);
     break;
   }
   case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
@@ -420,24 +396,16 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src2_en = false;
     uop.type = LOAD;
-
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-    uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
-
+    uop.imm = immI(inst);
     break;
   }
   case number_6_opcode_sb: { // sb, sh, sw
     uop_num = 2;
-
     uop.dest_en = false;
     uop.src1_en = true;
     uop.src2_en = true;
     uop.type = STORE;
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_s_type, 12);
-    uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
-
+    uop.imm = immS(inst);
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
@@ -446,11 +414,7 @@ void decode(Inst_uop &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src2_en = false;
     uop.type = ADD;
-
-    bool bit_temp[32];
-    sign_extend(bit_temp, 32, bit_immi_i_type, 12);
-    uop.imm = cvt_bit_to_number_unsigned(bit_temp, 32);
-
+    uop.imm = immI(inst);
     break;
   }
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
@@ -478,9 +442,11 @@ void decode(Inst_uop &uop, uint32_t inst) {
   }
   case number_10_opcode_ecall: { // ecall, ebreak, csrrw, csrrs, csrrc,
                                  // csrrwi, csrrsi, csrrci
-    uop.src2_is_imm = bit_funct3[0] && (bit_funct3[2] || bit_funct3[1]);
+    uop.src2_is_imm =
+        number_funct3_unsigned & 0b100 &&
+        (number_funct3_unsigned & 0b001 || number_funct3_unsigned & 0b010);
 
-    if (bit_funct3[2] || bit_funct3[1]) {
+    if (number_funct3_unsigned & 0b001 || number_funct3_unsigned & 0b010) {
       if (csr_idx != number_mtvec && csr_idx != number_mepc &&
           csr_idx != number_mcause && csr_idx != number_mie &&
           csr_idx != number_mip && csr_idx != number_mtval &&

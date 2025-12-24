@@ -1,29 +1,30 @@
 #include "CSR.h"
 #include "IO.h"
+#include "ref.h"
 #include <RISCV.h>
 #include <TOP.h>
 #include <config.h>
+#include <cstdint>
 #include <cstring>
 #include <cvt.h>
 #include <diff.h>
 #include <util.h>
+#include <zlib.h>
 
-int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
-                        number_mie,      number_mip,      number_mtval,
-                        number_mscratch, number_mstatus,  number_mideleg,
-                        number_medeleg,  number_sepc,     number_stvec,
-                        number_scause,   number_sscratch, number_stval,
-                        number_sstatus,  number_sie,      number_sip,
-                        number_satp,     number_mhartid,  number_misa};
+void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory);
 
 void Back_Top::difftest_cycle() {
 
   int commit_num = 0;
   Inst_uop *inst;
+  bool skip = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (rob.out.rob_commit->commit_entry[i].valid) {
       commit_num++;
       inst = &rob.out.rob_commit->commit_entry[i].uop;
+      if (inst->difftest_skip) {
+        skip = true;
+      }
     }
   }
 
@@ -69,69 +70,49 @@ void Back_Top::difftest_cycle() {
       dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
     }
     dut_cpu.pc = inst->pc_next;
-    difftest_step(true);
+    if (skip) {
+      difftest_skip();
+    } else {
+      difftest_step(true);
+    }
   }
 }
 
 void Back_Top::difftest_inst(Inst_uop *inst) {
-
   if (inst->type == JALR) {
     if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
-      perf.ret_br_num++;
+      ctx->perf.ret_br_num++;
     } else {
-      perf.jalr_br_num++;
+      ctx->perf.jalr_br_num++;
     }
   } else if (inst->type == BR) {
-    perf.cond_br_num++;
-  } else if (inst->type == JAL) {
-    if (inst->dest_areg == 1) {
-      perf.call_br_num++;
-    } else {
-      perf.jal_br_num++;
-    }
+    ctx->perf.cond_br_num++;
   }
 
   if (inst->mispred) {
     if (inst->type == JALR) {
       if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
-        perf.ret_mispred_num++;
+        ctx->perf.ret_mispred_num++;
         if (!inst->pred_br_taken) {
-          perf.ret_dir_mispred++;
+          ctx->perf.ret_dir_mispred++;
         } else {
-          perf.ret_addr_mispred++;
+          ctx->perf.ret_addr_mispred++;
         }
       } else {
-        perf.jalr_mispred_num++;
+        ctx->perf.jalr_mispred_num++;
         if (!inst->pred_br_taken) {
-          perf.jalr_dir_mispred++;
+          ctx->perf.jalr_dir_mispred++;
         } else {
-          perf.jalr_addr_mispred++;
+          ctx->perf.jalr_addr_mispred++;
         }
       }
     } else if (inst->type == BR) {
       if (inst->pred_br_taken != inst->br_taken) {
-        perf.cond_dir_mispred++;
+        ctx->perf.cond_dir_mispred++;
       } else {
-        perf.cond_addr_mispred++;
+        ctx->perf.cond_addr_mispred++;
       }
-      perf.cond_mispred_num++;
-    } else if (inst->type == JAL) {
-
-      if (inst->dest_areg == 1) {
-        perf.call_mispred_num++;
-        if (!inst->pred_br_taken) {
-          perf.call_dir_mispred++;
-        } else {
-          perf.call_addr_mispred++;
-        }
-      } else {
-        perf.jal_mispred_num++;
-        if (!inst->pred_br_taken) {
-          perf.jal_dir_mispred++;
-        } else {
-          perf.jal_addr_mispred++;
-        }
-      }
+      ctx->perf.cond_mispred_num++;
     }
   }
 
@@ -224,9 +205,12 @@ Rob_Broadcast rob_bcast;
 Rob_Commit rob_commit;
 
 Stq_Dis stq2dis;
+Stq_Front stq2front;
 
 Csr_Exe csr2exe;
 Csr_Rob csr2rob;
+Csr_Front csr2front;
+Csr_Status csr_status;
 Exe_Csr exe2csr;
 
 void Back_Top::init() {
@@ -305,6 +289,7 @@ void Back_Top::init() {
   rob.out.rob2csr = &rob2csr;
 
   stq.out.stq2dis = &stq2dis;
+  stq.out.stq2front = &stq2front;
 
   stq.in.exe2stq = &exe2stq;
   stq.in.rob_commit = &rob_commit;
@@ -318,8 +303,11 @@ void Back_Top::init() {
 
   csr.out.csr2exe = &csr2exe;
   csr.out.csr2rob = &csr2rob;
+  csr.out.csr2front = &csr2front;
+  csr.out.csr_status = &csr_status;
 
   idu.init();
+  rename.init();
   isu.init();
   prf.init();
   exu.init();
@@ -327,7 +315,15 @@ void Back_Top::init() {
   rob.init();
 }
 
-void Back_Top::Back_comb() {
+void Back_Top::comb_csr_status() {
+  csr.comb_csr_status();
+  out.sstatus = csr.out.csr_status->sstatus;
+  out.mstatus = csr.out.csr_status->mstatus;
+  out.satp = csr.out.csr_status->satp;
+  out.privilege = csr.out.csr_status->privilege;
+}
+
+void Back_Top::comb() {
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
     idu.in.front2dec->valid[i] = in.valid[i];
@@ -340,6 +336,9 @@ void Back_Top::Back_comb() {
     idu.in.front2dec->predict_next_fetch_address[i] =
         in.predict_next_fetch_address[i];
     idu.in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
+    for (int j = 0; j < 4; j++) { // TN_MAX = 4
+      idu.in.front2dec->tage_idx[i][j] = in.tage_idx[i][j];
+    }
   }
 
   // 每个空行表示分层  下层会依赖上层产生的某个信号
@@ -385,30 +384,30 @@ void Back_Top::Back_comb() {
 
   // 为了debug
   // 修正pc_next 以及difftest对应的pc_next
-  back.out.flush = rob.out.rob_bcast->flush;
+  out.flush = rob.out.rob_bcast->flush;
   if (!rob.out.rob_bcast->flush) {
-    back.out.mispred = prf.out.prf2dec->mispred;
-    back.out.stall = !idu.out.dec2front->ready;
-    back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
+    out.mispred = prf.out.prf2dec->mispred;
+    out.stall = !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
+    out.redirect_pc = prf.out.prf2dec->redirect_pc;
   } else {
     if (LOG)
       cout << "flush" << endl;
-    back.out.mispred = true;
+    out.mispred = true;
     if (rob.out.rob_bcast->mret || rob.out.rob_bcast->sret) {
-      back.out.redirect_pc = csr.out.csr2rob->epc;
+      out.redirect_pc = csr.out.csr2front->epc;
     } else if (rob.out.rob_bcast->exception) {
-      back.out.redirect_pc = csr.out.csr2rob->trap_pc;
+      out.redirect_pc = csr.out.csr2front->trap_pc;
     } else {
-      back.out.redirect_pc = rob.out.rob_bcast->pc + 4;
+      out.redirect_pc = rob.out.rob_bcast->pc + 4;
     }
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    back.out.commit_entry[i] = rob.out.rob_commit->commit_entry[i];
-    Inst_type type = back.out.commit_entry[i].uop.type;
-    if (back.out.commit_entry[i].valid && back.out.flush) {
-      back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
-      rob.out.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
+    out.commit_entry[i] = rob.out.rob_commit->commit_entry[i];
+    Inst_type type = out.commit_entry[i].uop.type;
+    if (out.commit_entry[i].valid && out.flush) {
+      out.commit_entry[i].uop.pc_next = out.redirect_pc;
+      rob.out.rob_commit->commit_entry[i].uop.pc_next = out.redirect_pc;
     }
   }
 
@@ -431,7 +430,7 @@ void Back_Top::Back_comb() {
   rename.comb_pipeline();
 }
 
-void Back_Top::Back_seq() {
+void Back_Top::seq() {
   // rename -> isu/stq/rob
   // exu -> prf
   rename.seq();
@@ -446,4 +445,187 @@ void Back_Top::Back_seq() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.fire[i] = idu.out.dec2front->fire[i];
   }
+}
+
+#ifdef CONFIG_MMU
+bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
+                         bool &mmu_page_fault, uint32_t &mmu_ppn,
+                         bool &stall_load) {
+  uint32_t p_addr = v_addr;
+  bool ret = true;
+
+  p_addr = mmu_ppn << 12 | (v_addr & 0xFFF);
+  ret = !mmu_page_fault;
+
+  if (p_addr == 0x1fd0e000) {
+    data = ctx->perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  } else {
+    data = p_memory[p_addr >> 2];
+    stq.st2ld_fwd(p_addr, data, rob_idx, stall_load);
+  }
+
+  return ret;
+}
+#else
+bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
+  uint32_t p_addr = v_addr;
+  bool ret = true;
+
+  if (back.out.satp & 0x80000000 && back.out.privilege != 3) {
+    bool mstatus[32], sstatus[32];
+    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
+
+    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
+
+    ret = va2pa(p_addr, v_addr, back.out.satp, 1, mstatus, sstatus,
+                back.out.privilege, p_memory);
+  }
+
+  if (p_addr == 0x1fd0e000) {
+    data = ctx->perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  } else {
+    data = p_memory[p_addr >> 2];
+    bool stall = false;
+    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall);
+  }
+
+  return ret;
+}
+#endif
+
+// --- 辅助函数：简化 zlib 读写 POD 类型 ---
+template <typename T> void gz_write_pod(gzFile file, const T &data) {
+  if (gzwrite(file, &data, sizeof(T)) != sizeof(T)) {
+    std::cerr << "Error writing data to gzip file." << std::endl;
+    exit(1);
+  }
+}
+
+template <typename T> void gz_read_pod(gzFile file, T &data) {
+  if (gzread(file, &data, sizeof(T)) != sizeof(T)) {
+    std::cerr << "Error reading data from gzip file." << std::endl;
+    exit(1);
+  }
+}
+
+void Back_Top::load_image(const std::string &filename) {
+  ifstream inst_data(filename, ios::in);
+  if (!inst_data.is_open()) {
+    cout << "Error: Image " << filename << " does not exist" << endl;
+    exit(1);
+  }
+
+  inst_data.seekg(0, std::ios::end);
+  streamsize size = inst_data.tellg();
+  inst_data.seekg(0, std::ios::beg);
+
+  if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
+                      size)) {
+    std::cerr << "读取文件失败！" << std::endl;
+    exit(1);
+  }
+
+  inst_data.close();
+
+  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
+  p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
+  p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
+  p_memory[uint32_t(0xc / 4)] = 0x00028067;
+  p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
+
+#ifdef CONFIG_DIFFTEST
+  init_difftest(size);
+#endif
+}
+
+void Back_Top::restore_from_ref() {
+  CPU_state state;
+  uint8_t privilege;
+  get_state(state, privilege, p_memory);
+  number_PC = state.pc;
+  csr.privilege = csr.privilege_1 = privilege;
+  for (int i = 0; i < ARF_NUM; i++) {
+    prf.reg_file[i] = state.gpr[i];
+    prf.reg_file_1[i] = state.gpr[i];
+  }
+
+  for (int i = 0; i < CSR_NUM; i++) {
+    csr.CSR_RegFile[i] = state.csr[i];
+    csr.CSR_RegFile_1[i] = state.csr[i];
+  }
+}
+
+void Back_Top::restore_checkpoint(const std::string &filename) {
+
+  std::string final_name = filename;
+  gzFile file = gzopen(final_name.c_str(), "rb");
+  if (!file && final_name.find(".gz") == std::string::npos) {
+    final_name += ".gz";
+    file = gzopen(final_name.c_str(), "rb");
+  }
+
+  if (!file) {
+    std::cerr << "Error: Could not open file: " << filename << std::endl;
+    exit(1);
+  }
+
+  CPU_state state;
+  uint64_t interval_inst_count;
+
+  // 1. 恢复状态
+  gz_read_pod(file, state);
+  gz_read_pod(file, interval_inst_count);
+
+  number_PC = state.pc;
+  csr.privilege = csr.privilege_1 = RISCV_MODE_U;
+  for (int i = 0; i < ARF_NUM; i++) {
+    prf.reg_file[i] = state.gpr[i];
+    prf.reg_file_1[i] = state.gpr[i];
+  }
+
+  for (int i = 0; i < CSR_NUM; i++) {
+    csr.CSR_RegFile[i] = state.csr[i];
+    csr.CSR_RegFile_1[i] = state.csr[i];
+  }
+
+  // 2. 恢复内存
+  if (p_memory == nullptr) {
+    std::cerr << "Error: Memory not allocated." << std::endl;
+    exit(1);
+  }
+
+  // [关键] 计算总字节数
+  uint64_t total_bytes = (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t);
+  uint8_t *byte_ptr = reinterpret_cast<uint8_t *>(p_memory);
+  uint64_t remain = total_bytes;
+
+  std::cout << "Restoring Memory..." << std::endl;
+
+  const uint64_t GZ_CHUNK_SIZE = 1ULL * 1024 * 1024 * 1024;
+  while (remain > 0) {
+    unsigned int chunk = (remain > GZ_CHUNK_SIZE) ? (unsigned int)GZ_CHUNK_SIZE
+                                                  : (unsigned int)remain;
+
+    int read_bytes = gzread(file, byte_ptr, chunk);
+    if (read_bytes < 0) {
+      std::cerr << "Error: gzread failed." << std::endl;
+      exit(1);
+    }
+    if (read_bytes == 0) {
+      std::cerr << "Error: Unexpected EOF." << std::endl;
+      exit(1);
+    }
+
+    byte_ptr += read_bytes;
+    remain -= read_bytes;
+  }
+
+  gzclose(file);
+  std::cout << "Checkpoint restored from " << final_name << std::endl;
+
+  init_diff_ckpt(state, p_memory);
 }

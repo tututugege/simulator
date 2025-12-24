@@ -37,6 +37,9 @@ void predecode_checker_top(struct predecode_checker_in *in, struct predecode_che
         if(in->predecode_type[ft_index] == PREDECODE_DIRECT_JUMP_NO_JAL || in->predecode_type[ft_index] == PREDECODE_JAL) {
             out->predict_next_fetch_address_corrected = in->predecode_target_address[ft_index];
         }    
+    }else{
+        // no taken branch
+        out->predict_next_fetch_address_corrected = in->seq_next_pc;
     }
 
     out->predecode_flush_enable = in->predict_next_fetch_address != out->predict_next_fetch_address_corrected;

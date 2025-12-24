@@ -1,16 +1,18 @@
 #include "TOP.h"
 #include <Cache.h>
 #include <STQ.h>
+#include <SimCpu.h>
 #include <config.h>
 #include <cstdint>
 #include <iostream>
 #include <util.h>
 
-extern Back_Top back;
 extern Cache cache;
 
 void STQ::comb() {
+  out.stq2front->fence_stall = (state == FENCE);
   int num = count;
+  static int last_ch = 0;
 
   for (int i = 0; i < 2; i++) {
     if (!in.dis2stq->valid[i]) {
@@ -25,7 +27,6 @@ void STQ::comb() {
     }
   }
 
-  // 写端口 同时给ld_IQ发送唤醒信息
   if (entry[deq_ptr].valid && entry[deq_ptr].commit) {
     extern uint32_t *p_memory;
     uint32_t wdata = entry[deq_ptr].data;
@@ -61,17 +62,18 @@ void STQ::comb() {
       char temp;
       temp = wdata & 0x000000ff;
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
-      cout << temp;
 
-      if (temp == '?') {
-        if (perf.perf_start) {
-          perf.perf_print();
-        } else {
-          cout << " perf counter start" << endl;
-          perf.perf_start = true;
-          perf.perf_reset();
-        }
+      if (temp != 27)
+        cout << temp;
+      if (temp == '?' && !ctx->perf.perf_start) {
+        cout << " perf counter start" << endl;
+        ctx->perf.perf_start = true;
+        ctx->perf.perf_reset();
+      } else if (temp == '#' && ctx->perf.perf_start && last_ch == '?') {
+        ctx->perf.perf_print();
+        exit(0);
       }
+      last_ch = temp;
     }
 
     if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 7) {
@@ -106,6 +108,16 @@ void STQ::comb() {
       entry[commit_ptr].commit = true;
       commit_count++;
       LOOP_INC(commit_ptr, STQ_NUM);
+    }
+  }
+
+  if (state == NORMAL) {
+    if (in.rob_bcast->fence && count != 0) {
+      state = FENCE;
+    }
+  } else if (state == FENCE) {
+    if (count == 0) {
+      state = NORMAL;
     }
   }
 }
@@ -206,14 +218,14 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx,
     count--;
   }
 
-  int idx = back.rob.deq_ptr << 2;
+  int idx = cpu.back.rob.deq_ptr << 2;
 
   while (idx != rob_idx) {
     int line_idx = idx >> 2;
     int bank_idx = idx & 0b11;
-    if (back.rob.entry[bank_idx][line_idx].valid &&
-        is_store(back.rob.entry[bank_idx][line_idx].uop)) {
-      int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
+    if (cpu.back.rob.entry[bank_idx][line_idx].valid &&
+        is_store(cpu.back.rob.entry[bank_idx][line_idx].uop)) {
+      int stq_idx = cpu.back.rob.entry[bank_idx][line_idx].uop.stq_idx;
       if (entry[stq_idx].valid &&
           (!entry[stq_idx].data_valid || !entry[stq_idx].addr_valid)) {
         // 有未准备好的store，停止转发

@@ -1,5 +1,6 @@
 #include <config.h>
 #include <cstdint>
+#include <cstring>
 #include <cvt.h>
 #include <diff.h>
 #include <front_IO.h>
@@ -7,7 +8,7 @@
 #include <ref.h>
 
 CPU_state dut_cpu;
-static Ref_cpu ref_cpu;
+Ref_cpu ref_cpu;
 
 // relocate the init_difftest function to avoid multiple definition error
 void init_difftest(int img_size) {
@@ -19,6 +20,26 @@ void init_difftest(int img_size) {
   ref_cpu.memory[uint32_t(0x4 / 4)] = 0x83e005b7;
   ref_cpu.memory[uint32_t(0x8 / 4)] = 0x800002b7;
   ref_cpu.memory[uint32_t(0xc / 4)] = 0x00028067;
+}
+
+void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
+  std::cout << "Restore for ref cpu " << std::endl;
+  ref_cpu.init(0);
+  ref_cpu.state = ckpt_state;
+  ref_cpu.privilege = RISCV_MODE_U;
+
+  memcpy(ref_cpu.memory, ckpt_memory,
+         (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
+
+  uint32_t p_addr;
+  assert(ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0));
+}
+
+void get_state(CPU_state &dut_state, uint8_t &privilege, uint32_t *dut_memory) {
+  dut_state = ref_cpu.state;
+  privilege = ref_cpu.privilege;
+  memcpy(dut_memory, ref_cpu.memory,
+         (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
 }
 
 static void checkregs() {
@@ -97,8 +118,6 @@ void difftest_skip() {
 
 void difftest_step(bool check) {
   ref_cpu.exec();
-#ifndef CONFIG_RUN_REF
   if (check)
     checkregs();
-#endif // !CONFIG
 }

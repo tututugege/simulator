@@ -2,22 +2,15 @@
 /*#include <top_config.h>*/
 #include <config.h>
 #include <cstdint>
+#include <ref.h>
 
 enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
-typedef struct CPU_state {
-  uint32_t gpr[32];
-  uint32_t csr[21];
-  uint32_t pc;
-
-  uint32_t store_addr;
-  uint32_t store_data;
-  uint32_t store_strb;
-  bool store;
-} CPU_state;
 
 extern CPU_state dut_cpu;
 extern uint32_t *p_memory;
 
 void init_difftest(int);
+void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory);
+void get_state(CPU_state &dut_state, uint8_t &privilege, uint32_t *dut_memory);
 void difftest_step(bool);
 void difftest_skip();

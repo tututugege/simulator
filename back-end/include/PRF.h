@@ -21,6 +21,8 @@ public:
 
 class PRF {
 public:
+  PRF(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   PRF_IN in;
   PRF_OUT out;
 
@@ -35,7 +37,6 @@ public:
   void init();
   void seq();
 
-  // 状态
   reg32_t reg_file[PRF_NUM];
   Inst_entry inst_r[ISSUE_WAY];
 

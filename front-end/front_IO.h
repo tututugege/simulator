@@ -18,6 +18,7 @@ struct front_top_in {
   bool alt_pred[COMMIT_WIDTH];
   uint8_t altpcpn[COMMIT_WIDTH];
   uint8_t pcpn[COMMIT_WIDTH];
+  uint32_t tage_idx[COMMIT_WIDTH][4]; // TN_MAX = 4
   bool FIFO_read_enable;
 };
 
@@ -33,6 +34,7 @@ struct front_top_out {
   uint8_t pcpn[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
   bool inst_valid[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
 };
 
 struct BPU_in {
@@ -50,6 +52,7 @@ struct BPU_in {
   bool alt_pred[COMMIT_WIDTH];
   uint8_t altpcpn[COMMIT_WIDTH];
   uint8_t pcpn[COMMIT_WIDTH];
+  uint32_t tage_idx[COMMIT_WIDTH][4]; // TN_MAX = 4
   // from icache
   bool icache_read_ready;
 };
@@ -67,6 +70,7 @@ struct BPU_out {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
 };
 
 struct icache_in {
@@ -102,6 +106,7 @@ struct instruction_FIFO_in {
   // from predecode
   uint8_t predecode_type[FETCH_WIDTH];
   uint32_t predecode_target_address[FETCH_WIDTH];
+  uint32_t seq_next_pc;
 };
 
 struct instruction_FIFO_out {
@@ -114,6 +119,7 @@ struct instruction_FIFO_out {
   bool inst_valid[FETCH_WIDTH];
   uint8_t predecode_type[FETCH_WIDTH];
   uint32_t predecode_target_address[FETCH_WIDTH];
+  uint32_t seq_next_pc;
 };
 
 struct PTAB_in {
@@ -128,6 +134,7 @@ struct PTAB_in {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
   // from back-end
   bool read_enable;
 };
@@ -143,6 +150,7 @@ struct PTAB_out {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
 };
 
 struct front2back_FIFO_in {
@@ -161,6 +169,7 @@ struct front2back_FIFO_in {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
 };
 
 struct front2back_FIFO_out {
@@ -177,6 +186,7 @@ struct front2back_FIFO_out {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
 };
 
 #endif

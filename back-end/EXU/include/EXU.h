@@ -1,8 +1,9 @@
 #pragma once
-#include "CSR.h"
 #include "IO.h"
 #include <FU.h>
 #include <config.h>
+
+class Back_Top;
 
 class EXU_IO {
 public:
@@ -20,6 +21,8 @@ public:
 
 class EXU {
 public:
+  EXU(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   void init();
   void comb_exec();
   void comb_to_csr();

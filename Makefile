@@ -2,8 +2,10 @@ CXXSRC = $(shell find ./back-end/ -name "*.cpp")
 CXXSRC += $(shell find ./front-end/ -name "*.cpp")
 CXXSRC += $(shell find ./diff/ -name "*.cpp")
 CXXSRC += $(shell find ./mmu/ -name "*.cpp")
-# CXXSRC += ./rv_simu_mmu.cpp
+CXXSRC += ./main.cpp
 CXXSRC += ./rv_simu_mmu_v2.cpp # cpp file with main function
+CXXSRC += ./softfloat.a
+
 CXXINCLUDE = -I./include/
 CXXINCLUDE += -I./back-end/include/
 CXXINCLUDE += -I./back-end/EXU/include/
@@ -16,7 +18,7 @@ MEM_DIR=./baremetal
 IMG=./baremetal/memory
 
 default: $(CXXSRC) 
-	g++ $(CXXINCLUDE) $(CXXSRC) -O3 -march=native -flto -funroll-loops -mtune=native
+	g++ $(CXXINCLUDE) $(CXXSRC) -O3 -march=native -funroll-loops -mtune=native -lz
 
 cov: $(CXXSRC) 
 	g++ $(CXXINCLUDE) $(CXXSRC) -O0 --coverage 
@@ -30,7 +32,7 @@ clean:
 	rm -rf ./baremetal/test.code
 
 gdb:
-	g++ $(CXXINCLUDE) $(CXXSRC) -g
+	g++ $(CXXINCLUDE) $(CXXSRC) -g -march=native -lz
 	gdb --args ./a.out $(IMG)
 
 .PHONY: all clean mem run

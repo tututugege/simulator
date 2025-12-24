@@ -1,6 +1,7 @@
 #pragma once
 #include "IO.h"
 #include "config.h"
+class SimContext;
 
 class IDU_IN {
 public:
@@ -20,8 +21,11 @@ public:
 
 class IDU {
 public:
+  IDU(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   IDU_IN in;
   IDU_OUT out;
+  void decode(Inst_uop &uop, uint32_t inst);
 
   void init();
   void comb_decode();      // 译码并分配tag
@@ -32,14 +36,14 @@ public:
   void seq();              // 时钟跳变，状态更新
 
   // 状态
-  reg5_t tag_list[MAX_BR_NUM];
-  reg5_t enq_ptr;
+  reg4_t tag_list[MAX_BR_NUM];
+  reg4_t enq_ptr;
   reg1_t tag_vec[MAX_BR_NUM];
-  reg5_t now_tag;
+  reg4_t now_tag;
 
   // 下一周期状态
-  wire5_t tag_list_1[MAX_BR_NUM];
-  wire5_t enq_ptr_1;
+  wire4_t tag_list_1[MAX_BR_NUM];
+  wire4_t enq_ptr_1;
   wire1_t tag_vec_1[MAX_BR_NUM];
-  wire5_t now_tag_1;
+  wire4_t now_tag_1;
 };

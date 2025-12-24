@@ -1,39 +1,138 @@
 #include "ref.h"
-#include "CSR.h"
 #include "RISCV.h"
+#include "SimCpu.h"
 #include "config.h"
-#include "cvt.h"
-#include "diff.h"
 #include <cstdint>
+#include <iostream>
+extern "C" {
+#include "softfloat.h"
+}
 
-#define BITMASK(bits) ((1ull << (bits)) - 1)
-#define BITS(x, hi, lo)                                                        \
-  (((x) >> (lo)) & BITMASK((hi) - (lo) + 1)) // similar to x[hi:lo] in verilog
-#define SEXT(x, len)                                                           \
-  ({                                                                           \
-    struct {                                                                   \
-      int64_t n : len;                                                         \
-    } __x = {.n = (int64_t)x};                                                 \
-    (uint64_t) __x.n;                                                          \
-  })
+// ---------------- 辅助工具 ----------------
+static inline float32_t to_f32(uint32_t v) {
+  float32_t f;
+  f.v = v;
+  return f;
+}
 
-#define immI(i) SEXT(BITS(i, 31, 20), 12)
-#define immU(i) (SEXT(BITS(i, 31, 12), 20) << 12)
-#define immS(i) ((SEXT(BITS(i, 31, 25), 7) << 5) | BITS(i, 11, 7))
-#define immJ(i)                                                                \
-  ((SEXT(BITS(i, 31, 31), 1) << 20) | (BITS(i, 19, 12) << 12) |                \
-   (BITS(i, 20, 20) << 11) | (BITS(i, 30, 21) << 1))
-#define immB(i)                                                                \
-  ((SEXT(BITS(i, 31, 31), 1) << 12) | (BITS(i, 7, 7) << 11) |                  \
-   (BITS(i, 30, 25) << 5) | (BITS(i, 11, 8) << 1))
+static inline uint32_t from_f32(float32_t f) { return f.v; }
 
-bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
-                 uint32_t type, bool *mstatus, bool *sstatus, int privilege,
-                 uint32_t *p_memory);
-bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+static inline bool is_nan(uint32_t v) {
+  // 指数全1 (0xFF)，尾数不为0
+  return ((v & 0x7F800000) == 0x7F800000) && ((v & 0x007FFFFF) != 0);
+}
 
-int cvt_number_to_csr(int csr_idx);
+static inline bool is_snan(uint32_t v) {
+  // 是NaN，且尾数最高位(bit 22)为0
+  return is_nan(v) && !((v >> 22) & 1);
+}
+
+// RISC-V 规范的 FMIN 实现
+uint32_t f32_min_riscv(uint32_t a, uint32_t b) {
+  // 1. 处理 sNaN 异常 (Invalid Operation)
+  if (is_snan(a) || is_snan(b)) {
+    softfloat_exceptionFlags |= softfloat_flag_invalid;
+  }
+
+  bool a_nan = is_nan(a);
+  bool b_nan = is_nan(b);
+
+  // 2. NaN 处理规则
+  if (a_nan && b_nan)
+    return 0x7fc00000; // Canonical NaN
+  if (a_nan)
+    return b; // 如果 A 是 NaN，返回 B (即使 B 也是 NaN 的情况上面已处理)
+  if (b_nan)
+    return a; // 如果 B 是 NaN，返回 A
+
+  // 3. 数值比较
+  float32_t fa = to_f32(a);
+  float32_t fb = to_f32(b);
+
+  // 注意：f32_lt 对 -0.0 和 +0.0 返回 false (视为相等)
+  if (f32_lt(fa, fb))
+    return a;
+  if (f32_lt(fb, fa))
+    return b;
+
+  // 4. 处理相等的情况 (主要是 -0.0 和 +0.0)
+  // FMIN(-0.0, +0.0) -> -0.0
+  // 原理：(10..0) | (00..0) = (10..0)
+  return a | b;
+}
+
+// RISC-V 规范的 FMAX 实现
+uint32_t f32_max_riscv(uint32_t a, uint32_t b) {
+  // 1. 处理 sNaN 异常
+  if (is_snan(a) || is_snan(b)) {
+    softfloat_exceptionFlags |= softfloat_flag_invalid;
+  }
+
+  bool a_nan = is_nan(a);
+  bool b_nan = is_nan(b);
+
+  // 2. NaN 处理规则
+  if (a_nan && b_nan)
+    return 0x7fc00000;
+  if (a_nan)
+    return b;
+  if (b_nan)
+    return a;
+
+  // 3. 数值比较
+  float32_t fa = to_f32(a);
+  float32_t fb = to_f32(b);
+
+  if (f32_lt(fa, fb))
+    return b; // A < B, 所以 Max 是 B
+  if (f32_lt(fb, fa))
+    return a;
+
+  // 4. 处理相等的情况
+  // FMAX(-0.0, +0.0) -> +0.0
+  // 原理：(10..0) & (00..0) = (00..0)
+  return a & b;
+}
+
+uint32_t f32_classify(float32_t f) {
+  uint32_t bits = from_f32(f);
+  uint32_t sign = (bits >> 31) & 1;
+  uint32_t exp = (bits >> 23) & 0xFF;
+  uint32_t mant = bits & 0x7FFFFF;
+
+  bool is_subnormal = (exp == 0) && (mant != 0);
+  bool is_zero = (exp == 0) && (mant == 0);
+  bool is_inf = (exp == 0xFF) && (mant == 0);
+  bool is_nan = (exp == 0xFF) && (mant != 0);
+  bool is_snan = is_nan && !((mant >> 22) & 1); // MSB of mantissa is 0
+  bool is_qnan = is_nan && ((mant >> 22) & 1);  // MSB of mantissa is 1
+
+  uint32_t res = 0;
+
+  if (is_inf && sign)
+    res |= (1 << 0); // -inf
+  else if (!is_inf && !is_zero && !is_nan && !is_subnormal && sign)
+    res |= (1 << 1); // -normal
+  else if (is_subnormal && sign)
+    res |= (1 << 2); // -subnormal
+  else if (is_zero && sign)
+    res |= (1 << 3); // -0
+  else if (is_zero && !sign)
+    res |= (1 << 4); // +0
+  else if (is_subnormal && !sign)
+    res |= (1 << 5); // +subnormal
+  else if (!is_inf && !is_zero && !is_nan && !is_subnormal && !sign)
+    res |= (1 << 6); // +normal
+  else if (is_inf && !sign)
+    res |= (1 << 7); // +inf
+
+  if (is_snan)
+    res |= (1 << 8);
+  if (is_qnan)
+    res |= (1 << 9);
+
+  return res;
+}
 
 void Ref_cpu::init(uint32_t reset_pc) {
   state.pc = reset_pc;
@@ -55,20 +154,19 @@ void Ref_cpu::init(uint32_t reset_pc) {
 }
 
 void Ref_cpu::exec() {
-
-  is_csr = is_exception = is_br = br_taken = false;
   illegal_exception = page_fault_load = page_fault_inst = page_fault_store =
       asy = false;
   state.store = false;
 
-  bool mstatus[32], sstatus[32];
-  cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-  cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    page_fault_inst = !va2pa_fixed(p_addr, state.pc, state.csr[csr_satp], 0,
-                                   mstatus, sstatus, privilege, memory);
+    if (fast_run) {
+      page_fault_inst = !va2pa(p_addr, state.pc, 0);
+    } else {
+      page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
+    }
+
     if (page_fault_inst) {
       exception(state.pc);
       return;
@@ -78,45 +176,53 @@ void Ref_cpu::exec() {
   } else {
     Instruction = memory[p_addr >> 2];
   }
+
+  if (Instruction == INST_EBREAK) {
+    state.pc += 4;
+#ifdef CONFIG_RUN_REF
+    cout << "sim_time: " << sim_time << endl;
+    sim_end = true;
+    exit(0);
+#else
+    return;
+#endif
+  }
   RISCV();
 }
 
 void Ref_cpu::exception(uint32_t trap_val) {
-
-  is_exception = true;
   uint32_t next_pc = state.pc + 4;
+
+  // 重新获取当前状态（因为exec可能没传进来最新的）
   bool ecall = (Instruction == INST_ECALL);
   bool mret = (Instruction == INST_MRET);
   bool sret = (Instruction == INST_SRET);
 
-  bool mideleg[32];
-  bool medeleg[32];
-  bool mstatus[32];
-  bool sstatus[32];
-  bool mtvec[32];
-  bool stvec[32];
+  uint32_t mstatus = state.csr[csr_mstatus];
+  uint32_t sstatus = state.csr[csr_sstatus];
+  uint32_t medeleg = state.csr[csr_medeleg];
+  uint32_t mtvec = state.csr[csr_mtvec];
+  uint32_t stvec = state.csr[csr_stvec];
 
-  cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-  cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
-  cvt_number_to_bit_unsigned(mideleg, state.csr[csr_mideleg], 32);
-  cvt_number_to_bit_unsigned(medeleg, state.csr[csr_medeleg], 32);
-  cvt_number_to_bit_unsigned(mtvec, state.csr[csr_mtvec], 32);
-  cvt_number_to_bit_unsigned(stvec, state.csr[csr_stvec], 32);
+  // 再次计算 Trap 原因 (与 RISCV() 中逻辑一致，但这里是为了确定是用 MTrap 还是
+  // STrap 处理)
+  // 注意：为了代码复用，这里其实可以简化，但为了保持你原有逻辑结构：
 
-  bool medeleg_U_ecall = medeleg[31 - 8];
-  bool medeleg_S_ecall = medeleg[31 - 9];
-  bool medeleg_M_ecall = medeleg[31 - 11];
+  bool medeleg_U_ecall = (medeleg >> 8) & 1;
+  bool medeleg_S_ecall = (medeleg >> 9) & 1;
+  bool medeleg_page_fault_inst = (medeleg >> 12) & 1;
+  bool medeleg_page_fault_load = (medeleg >> 13) & 1;
+  bool medeleg_page_fault_store = (medeleg >> 15) & 1;
 
-  bool medeleg_page_fault_inst = medeleg[31 - 12];
-  bool medeleg_page_fault_store = medeleg[31 - 15];
-  bool medeleg_page_fault_load = medeleg[31 - 13];
+  // 这里直接复用成员变量里的中断状态 (假设RISCV函数刚跑完，状态是新的)
+  // 如果不是，需要重新计算 M_software_interrupt 等
 
   bool MTrap =
       (M_software_interrupt) || (M_timer_interrupt) || (M_external_interrupt) ||
-      ((privilege == 0) && !medeleg_U_ecall) ||
+      ((privilege == 0) && !medeleg_U_ecall && ecall) ||
       (ecall && (privilege == 1) && !medeleg_S_ecall) ||
-      (ecall && (privilege == 3)) // MTrap下的ecall一定在MTrap处理
-      || (page_fault_inst && !medeleg_page_fault_inst) ||
+      (ecall && (privilege == 3)) ||
+      (page_fault_inst && !medeleg_page_fault_inst) ||
       (page_fault_load && !medeleg_page_fault_load) ||
       (page_fault_store && !medeleg_page_fault_store) || illegal_exception;
 
@@ -130,229 +236,253 @@ void Ref_cpu::exception(uint32_t trap_val) {
 
   if (MTrap) {
     state.csr[csr_mepc] = state.pc;
+    uint32_t cause = 0;
 
-    uint32_t cause =
-        (M_software_interrupt || M_timer_interrupt || M_external_interrupt)
-        << 31;
+    // 计算 MCause
+    bool is_interrupt =
+        M_software_interrupt || M_timer_interrupt || M_external_interrupt;
+    if (is_interrupt)
+      cause |= (1u << 31);
 
-    cause += M_software_interrupt ? 3
-             : M_timer_interrupt  ? 7
-             : (M_external_interrupt ||
-                (ecall && (privilege == 3) && !medeleg_U_ecall))
-                 ? 11
-             /*: illegal_exception                                  ? 2*/
-             : (ecall && (privilege == 0) && !medeleg_U_ecall) ? 8
-             : (ecall && (privilege == 1) && !medeleg_S_ecall) ? 9
-             : (page_fault_inst && !medeleg_page_fault_inst)   ? 12
-             : (page_fault_load && !medeleg_page_fault_load)   ? 13
-             : (page_fault_store && !medeleg_page_fault_store) ? 15
-             : (illegal_exception)                             ? 2
-                                   : 0; // 给后31位赋值
+    uint32_t exception_code = 0;
+    if (M_software_interrupt)
+      exception_code = 3;
+    else if (M_timer_interrupt)
+      exception_code = 7;
+    else if (M_external_interrupt ||
+             (ecall && privilege == 3 && !medeleg_U_ecall))
+      exception_code = 11;
+    else if (ecall && privilege == 0 && !medeleg_U_ecall)
+      exception_code = 8;
+    else if (ecall && privilege == 1 && !medeleg_S_ecall)
+      exception_code = 9;
+    else if (page_fault_inst && !medeleg_page_fault_inst)
+      exception_code = 12;
+    else if (page_fault_load && !medeleg_page_fault_load)
+      exception_code = 13;
+    else if (page_fault_store && !medeleg_page_fault_store)
+      exception_code = 15;
+    else if (illegal_exception)
+      exception_code = 2;
 
+    cause |= exception_code;
     state.csr[csr_mcause] = cause;
 
-    if (mtvec[31 - 0] && !mtvec[31 - 1] && cause & (1 << 31)) {
-      next_pc = state.csr[csr_mtvec] & 0xfffffffc;
-      next_pc += 4 * (cause & 0x7fffffff);
+    // 向量中断跳转
+    if ((mtvec & 1) && (cause & (1u << 31))) {
+      next_pc = (mtvec & 0xfffffffc) + 4 * (cause & 0x7fffffff);
     } else {
-      next_pc = state.csr[csr_mtvec];
+      next_pc =
+          mtvec & 0xfffffffc; // 这里的MASK可能需要根据Spec确认，通常是清除低2位
     }
 
-    mstatus[31 - 11] = privilege & 0b1;
-    mstatus[31 - 12] =
-        (privilege >> 1) & 0b1;        // next_mstatus.MPP = this_priviledge*/
-    mstatus[31 - 7] = mstatus[31 - 3]; // next_mstatus.MPIE = mstatus.MIE;
-    mstatus[31 - 3] = 0;               // next_mstatus.MIE = 0;
+    // 更新 mstatus
+    // MPP = privilege
+    mstatus = (mstatus & ~MSTATUS_MPP) | ((privilege & 0x3) << 11);
+    // MPIE = MIE
+    if (mstatus & MSTATUS_MIE)
+      mstatus |= MSTATUS_MPIE;
+    else
+      mstatus &= ~MSTATUS_MPIE;
+    // MIE = 0
+    mstatus &= ~MSTATUS_MIE;
 
-    sstatus[31 - 11] = privilege & 0b1;
-    sstatus[31 - 12] =
-        (privilege >> 1) & 0b1;        // next_sstatus.MPP = this_priviledge*/
-    sstatus[31 - 7] = sstatus[31 - 3]; // next_sstatus.MPIE = sstatus.MIE;
-    sstatus[31 - 3] = 0;               // next_sstatus.MIE = 0;
-    privilege = 0b11;
+    // 同步 sstatus (sstatus 是 mstatus 的影子)
+    state.csr[csr_mstatus] = mstatus;
+    state.csr[csr_sstatus] = mstatus;
 
+    privilege = 3; // Machine Mode
     state.csr[csr_mtval] = trap_val;
 
   } else if (STrap) {
     state.csr[csr_sepc] = state.pc;
-    uint32_t cause =
-        (S_software_interrupt || S_timer_interrupt || S_external_interrupt)
-            ? 1 << 31
-            : 0;
+    uint32_t cause = 0;
 
-    cause +=
-        (S_external_interrupt || (ecall && (privilege == 1) && medeleg_S_ecall))
-            ? 9
-        : S_timer_interrupt                              ? 5
-        : (ecall && (privilege == 0) && medeleg_U_ecall) ? 8
-        : S_software_interrupt                           ? 1
-        : (page_fault_inst && medeleg_page_fault_inst)   ? 12
-        : (page_fault_load && medeleg_page_fault_load)   ? 13
-        : (page_fault_store && medeleg_page_fault_store) ? 15
-                                                         : 0; // 给后31位赋值
+    bool is_interrupt =
+        S_software_interrupt || S_timer_interrupt || S_external_interrupt;
+    if (is_interrupt)
+      cause |= (1u << 31);
 
+    uint32_t exception_code = 0;
+    if (S_external_interrupt || (ecall && privilege == 1 && medeleg_S_ecall))
+      exception_code = 9;
+    else if (S_timer_interrupt)
+      exception_code = 5;
+    else if (ecall && privilege == 0 && medeleg_U_ecall)
+      exception_code = 8;
+    else if (S_software_interrupt)
+      exception_code = 1;
+    else if (page_fault_inst && medeleg_page_fault_inst)
+      exception_code = 12;
+    else if (page_fault_load && medeleg_page_fault_load)
+      exception_code = 13;
+    else if (page_fault_store && medeleg_page_fault_store)
+      exception_code = 15;
+
+    cause |= exception_code;
     state.csr[csr_scause] = cause;
 
-    if (stvec[31 - 0] && !stvec[31 - 1] && cause & (1 << 31)) {
-      next_pc = state.csr[csr_stvec] & 0xfffffffc;
-      next_pc += 4 * (cause & 0x7fffffff);
+    if ((stvec & 1) && (cause & (1u << 31))) {
+      next_pc = (stvec & 0xfffffffc) + 4 * (cause & 0x7fffffff);
     } else {
-      next_pc = state.csr[csr_stvec];
+      next_pc = stvec & 0xfffffffc;
     }
 
-    // sstatus是mstatus的子集，sstatus改变时mstatus也要变
-    sstatus[31 - 8] =
-        (privilege == 0) ? 0 : 1; // next_sstatus.SPP = this_priviledge;
-    mstatus[31 - 8] =
-        (privilege == 0) ? 0 : 1; // next_mstatus.SPP = this_priviledge;
+    // 更新 sstatus
+    // SPP = privilege
+    if (privilege == 1)
+      sstatus |= MSTATUS_SPP;
+    else
+      sstatus &= ~MSTATUS_SPP;
 
-    mstatus[31 - 5] = mstatus[31 - 1]; // next_mstatus.SPIE = mstatus.SIE;
-    sstatus[31 - 5] = sstatus[31 - 1]; // next_sstatus.SPIE = sstatus.SIE;
-    mstatus[31 - 1] = 0;               // next_mstatus.SIE = 0;
-    sstatus[31 - 1] = 0;               // next_sstatus.SIE = 0;
-    privilege = 1;
+    // SPIE = SIE
+    if (sstatus & MSTATUS_SIE)
+      sstatus |= MSTATUS_SPIE;
+    else
+      sstatus &= ~MSTATUS_SPIE;
+
+    // SIE = 0
+    sstatus &= ~MSTATUS_SIE;
+
+    // 写回
+    state.csr[csr_sstatus] = sstatus;
+    state.csr[csr_mstatus] = sstatus;
+
+    privilege = 1; // Supervisor Mode
     state.csr[csr_stval] = trap_val;
-  } else if (mret) {
-    mstatus[31 - 3] = mstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
-    sstatus[31 - 3] = sstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
-    privilege = mstatus[31 - 11] + 2 * mstatus[31 - 12];
-    mstatus[31 - 7] = 1; // next_mstatus.MPIE = 1;
-    mstatus[31 - 12] = 0;
-    mstatus[31 - 11] = 0; // next_mstatus.MPP = U;
 
-    sstatus[31 - 7] = 1; // next_mstatus.MPIE = 1;
-    sstatus[31 - 12] = 0;
-    sstatus[31 - 11] = 0; // next_mstatus.MPP = U;
+  } else if (mret) {
+    // MIE = MPIE
+    if (mstatus & MSTATUS_MPIE)
+      mstatus |= MSTATUS_MIE;
+    else
+      mstatus &= ~MSTATUS_MIE;
+
+    // Privilege = MPP
+    privilege = GET_MPP(mstatus);
+
+    // MPIE = 1
+    mstatus |= MSTATUS_MPIE;
+    // MPP = U (0)
+    mstatus &= ~MSTATUS_MPP;
+
+    // 同步 sstatus
+    state.csr[csr_mstatus] = mstatus;
+    state.csr[csr_sstatus] = mstatus;
+
     next_pc = state.csr[csr_mepc];
+
   } else if (sret) {
-    mstatus[31 - 1] = mstatus[31 - 5]; // next_mstatus.SIE = mstatus.SPIE;
-    sstatus[31 - 1] = sstatus[31 - 5]; // next_sstatus.SIE = sstatus.SPIE;
-    privilege = sstatus[31 - 8];       // next_priviledge = sstatus.SPP;
-    mstatus[31 - 5] = 1;               // next_mstatus.SPIE = 1;
-    sstatus[31 - 5] = 1;               // next_sstatus.SPIE = 1;
-    mstatus[31 - 8] = 0;               // next_mstatus.SPP = U;
-    sstatus[31 - 8] = 0;               // next_sstatus.SPP = U;
+    // SIE = SPIE
+    if (sstatus & MSTATUS_SPIE)
+      sstatus |= MSTATUS_SIE;
+    else
+      sstatus &= ~MSTATUS_SIE;
+
+    // Privilege = SPP
+    privilege = GET_SPP(sstatus);
+
+    // SPIE = 1
+    sstatus |= MSTATUS_SPIE;
+    // SPP = U (0)
+    sstatus &= ~MSTATUS_SPP;
+
+    state.csr[csr_sstatus] = sstatus;
+    state.csr[csr_mstatus] = sstatus;
+
     next_pc = state.csr[csr_sepc];
   }
-  state.csr[csr_mstatus] = cvt_bit_to_number_unsigned(mstatus, 32);
-  state.csr[csr_sstatus] = cvt_bit_to_number_unsigned(sstatus, 32);
+
   state.pc = next_pc;
 }
 
 void Ref_cpu::RISCV() {
-
-  if (Instruction == INST_EBREAK) {
-    state.pc += 4;
-#ifdef CONFIG_RUN_REF
-    cout << "sim_time: " << sim_time << endl;
-    exit(0);
-#endif
-    return;
-  }
-
-  bool inst_bit[32];
-  cvt_number_to_bit_unsigned(inst_bit, Instruction, 32);
-  // split instruction
-  bool bit_op_code[7]; // 25-31
-  copy_indice(bit_op_code, 0, inst_bit, 25, 7);
-  uint32_t number_op_code_unsigned = cvt_bit_to_number_unsigned(bit_op_code, 7);
+  // === 优化 1: 极速解码 ===
+  // 使用 BITS 宏直接提取字段，完全替代 bool 数组操作
+  uint32_t opcode = BITS(Instruction, 6, 0);
 
   bool ecall = (Instruction == INST_ECALL);
   bool mret = (Instruction == INST_MRET);
   bool sret = (Instruction == INST_SRET);
 
-  bool mstatus[32];
-  bool sstatus[32];
-  bool mie[32];
-  bool mip[32];
-  bool mideleg[32];
-  bool medeleg[32];
-  bool mtvec[32];
-  bool stvec[32];
+  // === 优化 2: 快速读取 CSR 状态 ===
+  uint32_t mstatus = state.csr[csr_mstatus];
+  uint32_t mie_reg = state.csr[csr_mie];
+  uint32_t mip_reg = state.csr[csr_mip];
+  uint32_t mideleg = state.csr[csr_mideleg];
+  uint32_t medeleg = state.csr[csr_medeleg];
 
-  cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-  cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
-  cvt_number_to_bit_unsigned(mie, state.csr[csr_mie], 32);
-  cvt_number_to_bit_unsigned(mip, state.csr[csr_mip], 32);
-  cvt_number_to_bit_unsigned(mideleg, state.csr[csr_mideleg], 32);
-  cvt_number_to_bit_unsigned(medeleg, state.csr[csr_medeleg], 32);
-  cvt_number_to_bit_unsigned(mtvec, state.csr[csr_mtvec], 32);
-  cvt_number_to_bit_unsigned(stvec, state.csr[csr_stvec], 32);
+  // 提取关键位
+  bool mstatus_mie = (mstatus & MSTATUS_MIE) != 0;
+  bool mstatus_sie = (mstatus & MSTATUS_SIE) != 0;
 
-  bool mstatus_mie = mstatus[31 - 3];
-  bool mstatus_sie = mstatus[31 - 1];
-  bool medeleg_U_ecall = medeleg[31 - 8];
-  bool medeleg_S_ecall = medeleg[31 - 9];
-  bool medeleg_M_ecall = medeleg[31 - 11];
+  // 异常委托位 (Exceptions)
+  bool medeleg_U_ecall = (medeleg >> 8) & 1;
+  bool medeleg_S_ecall = (medeleg >> 9) & 1;
+  // bool medeleg_M_ecall = (medeleg >> 11) & 1; // 通常M-ecall不委托
 
-  bool medeleg_page_fault_inst = medeleg[31 - 12];
-  bool medeleg_page_fault_store = medeleg[31 - 15];
-  bool medeleg_page_fault_load = medeleg[31 - 13];
+  bool medeleg_page_fault_inst = (medeleg >> 12) & 1;
+  bool medeleg_page_fault_load = (medeleg >> 13) & 1;
+  bool medeleg_page_fault_store = (medeleg >> 15) & 1;
 
-  bool mip_ssip = mip[31 - 1];
-  bool mie_ssie = mie[31 - 1];
+  // === 优化 3: 中断判断逻辑 (位运算) ===
+  // M-mode 中断条件:Pending & Enabled & NotDelegated & (CurrentPriv < M ||
+  // MIE=1)
 
-  bool mip_stip = mip[31 - 5];
-  bool mie_stie = mie[31 - 5];
+  // Software Interrupts
+  M_software_interrupt = (mip_reg & MIP_MSIP) && (mie_reg & MIP_MSIP) &&
+                         !(mideleg & MIP_MSIP) &&
+                         (privilege < 3 || mstatus_mie);
 
-  bool mip_seip = mip[31 - 9];
-  bool mie_seie = mie[31 - 9];
+  // Timer Interrupts
+  M_timer_interrupt = (mip_reg & MIP_MTIP) && (mie_reg & MIP_MTIP) &&
+                      !(mideleg & MIP_MTIP) && (privilege < 3 || mstatus_mie);
 
-  bool mip_msip = mip[31 - 3];
-  bool mie_msie = mie[31 - 3];
-  bool mideleg_msip = mideleg[31 - 3];
+  // External Interrupts
+  M_external_interrupt = (mip_reg & MIP_MEIP) && (mie_reg & MIP_MEIP) &&
+                         !(mideleg & MIP_MEIP) &&
+                         (privilege < 3 || mstatus_mie);
 
-  bool mip_mtip = mip[31 - 7];
-  bool mie_mtie = mie[31 - 7];
-  bool mideleg_mtip = mideleg[31 - 7];
-
-  bool mip_meip = mip[31 - 11];
-  bool mie_meie = mie[31 - 11];
-  bool mideleg_meip = mideleg[31 - 11];
-
-  M_software_interrupt = mip_msip && mie_msie && !mideleg_msip &&
-                         (privilege < 3 || mstatus_mie); // M_software_interrupt
-
-  M_timer_interrupt = mip_mtip && mie_mtie && !mideleg_mtip &&
-                      (privilege < 3 || mstatus_mie); // M_timer_interrupt
-
-  M_external_interrupt =
-      mip_meip && mie_meie && !mideleg_meip && (privilege < 3 || mstatus_mie);
+  // S-mode 中断条件: Pending & Enabled & Delegated & (CurrentPriv < S || SIE=1)
+  // 注意：privilege < 2 (S-mode=1, U-mode=0) 意味着当前是 U 或 S
+  bool s_irq_enable = (privilege < 1 || (privilege == 1 && mstatus_sie));
 
   S_software_interrupt =
-      (mip_msip && mie_msie && mideleg_msip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_ssip && mie_ssie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MSIP) && (mie_reg & MIP_MSIP) && (mideleg & MIP_MSIP)) ||
+       ((mip_reg & MIP_SSIP) && (mie_reg & MIP_SSIP))) &&
+      (privilege < 2 && s_irq_enable);
 
-  S_timer_interrupt = (mip_mtip && mie_mtie && mideleg_mtip && privilege < 2 &&
-                       (privilege < 1 || mstatus_sie)) ||
-                      (mip_stip && mie_stie && privilege < 2 &&
-                       (privilege < 1 || mstatus_sie == 1));
+  S_timer_interrupt =
+      (((mip_reg & MIP_MTIP) && (mie_reg & MIP_MTIP) && (mideleg & MIP_MTIP)) ||
+       ((mip_reg & MIP_STIP) && (mie_reg & MIP_STIP))) &&
+      (privilege < 2 && s_irq_enable);
 
   S_external_interrupt =
-      (mip_meip && mie_meie && mideleg_meip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_seip && mie_seie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MEIP) && (mie_reg & MIP_MEIP) && (mideleg & MIP_MEIP)) ||
+       ((mip_reg & MIP_SEIP) && (mie_reg & MIP_SEIP))) &&
+      (privilege < 2 && s_irq_enable);
 
-  bool MTrap = (M_software_interrupt) || (M_timer_interrupt) ||
-               (M_external_interrupt) || (privilege == 0 && !medeleg_U_ecall) ||
-               (ecall && (privilege == 1) && !medeleg_S_ecall) ||
-               (ecall && (privilege == 3)) ||
-               (page_fault_inst && !medeleg_page_fault_inst) ||
-               illegal_exception;
+  // Trap 判断
+  bool MTrap =
+      M_software_interrupt || M_timer_interrupt || M_external_interrupt ||
+      ((privilege == 0) && !medeleg_U_ecall && ecall) || // ecall from U
+      ((privilege == 1) && !medeleg_S_ecall && ecall) || // ecall from S
+      ((privilege == 3) && ecall) ||                     // ecall from M
+      (page_fault_inst && !medeleg_page_fault_inst) || illegal_exception;
 
   bool STrap = S_software_interrupt || S_timer_interrupt ||
                S_external_interrupt ||
-               (ecall && (privilege == 0) && medeleg_U_ecall) ||
-               (ecall && (privilege == 1) && medeleg_S_ecall) ||
+               ((privilege == 0) && medeleg_U_ecall && ecall) ||
+               ((privilege == 1) && medeleg_S_ecall && ecall) ||
                (page_fault_inst && medeleg_page_fault_inst);
 
   asy = MTrap || STrap || mret || sret;
 
-  if (Instruction == 0x10500073 && !asy && !page_fault_inst &&
-      !page_fault_load && !page_fault_store) {
-    /*cerr << "wfi" << endl;*/
-    /*exit(-1);*/
+  // WFI 检查 (简单处理)
+  if (Instruction == INST_WFI && !asy && !page_fault_inst && !page_fault_load &&
+      !page_fault_store) {
+    std::cout << " WFI " << std::endl;
+    exit(1);
   }
 
   if (page_fault_inst) {
@@ -361,97 +491,288 @@ void Ref_cpu::RISCV() {
     exception(Instruction);
   } else if (asy || Instruction == INST_ECALL) {
     exception(0);
-  } else if (number_op_code_unsigned == number_10_opcode_ecall) {
-
-    if (Instruction == INST_WFI) {
-      is_csr = false;
-    } else {
-      is_csr = true;
-    }
-
+  } else if (opcode == number_10_opcode_ecall) {
+    // SYSTEM 指令 (CSR, WFI, MRET等)
     RV32CSR();
-  } else if (number_op_code_unsigned == number_11_opcode_lrw) {
+  } else if (opcode == number_11_opcode_lrw) {
     RV32A();
+  } else if (opcode == number_12_opcode_float ||
+             opcode == number_13_opcode_fmadd ||
+             opcode == number_15_opcode_fnmsub ||
+             opcode == number_16_opcode_fnmadd ||
+             opcode == number_14_opcode_fmsub) {
+    RV32Zfinx();
   } else {
     RV32IM();
   }
   state.gpr[0] = 0;
 }
 
+void Ref_cpu::RV32Zfinx() {
+
+  uint32_t next_pc = state.pc + 4;
+  // 1. 解码基础字段
+  uint32_t opcode = Instruction & 0x7F;
+  uint32_t rd = (Instruction >> 7) & 0x1F;
+  uint32_t funct3 = (Instruction >> 12) & 0x07;
+  uint32_t rs1 = (Instruction >> 15) & 0x1F;
+  uint32_t rs2 = (Instruction >> 20) & 0x1F;
+  uint32_t funct7 = (Instruction >> 25) & 0x7F;
+  uint32_t rs3 = (Instruction >> 27) & 0x1F; // 用于 Fused Multiply-Add
+
+  uint32_t val_rs1 = state.gpr[rs1];
+  uint32_t val_rs2 = state.gpr[rs2];
+  uint32_t val_rs3 = state.gpr[rs3]; // 仅用于 FMADD 等指令
+
+  // 2. 处理舍入模式 (RM)
+  // RISC-V RM 编码: 0=RNE, 1=RTZ, 2=RDN, 3=RUP, 4=RMM, 7=DYN
+  uint8_t rm = funct3;
+  if (rm == 7) {
+    // 这里暂时硬编码
+    rm = 0;
+  }
+
+  switch (rm) {
+  case 0:
+    softfloat_roundingMode = softfloat_round_near_even;
+    break;
+  case 1:
+    softfloat_roundingMode = softfloat_round_minMag;
+    break; // RTZ
+  case 2:
+    softfloat_roundingMode = softfloat_round_min;
+    break; // RDN
+  case 3:
+    softfloat_roundingMode = softfloat_round_max;
+    break; // RUP
+  case 4:
+    softfloat_roundingMode = softfloat_round_near_maxMag;
+    break; // RMM
+  default:
+    illegal_exception = true;
+    return;
+  }
+
+  // 清除 SoftFloat 异常标志，以便捕获本次指令的异常
+  softfloat_exceptionFlags = 0;
+
+  float32_t f_rs1 = to_f32(val_rs1);
+  float32_t f_rs2 = to_f32(val_rs2);
+  float32_t f_rs3 = to_f32(val_rs3);
+  float32_t f_res;
+  uint32_t i_res = 0;
+  bool write_rd = true; // 大多数指令写回 rd
+
+  // 3. 执行指令
+  // Zfinx 复用了浮点操作码，但也包括 Fused-MA 指令
+  switch (opcode) {
+  case 0x53: // OP-FP (计算类)
+    switch (funct7) {
+    case 0x00: // FADD.S
+      f_res = f32_add(f_rs1, f_rs2);
+      i_res = from_f32(f_res);
+      break;
+    case 0x04: // FSUB.S
+      f_res = f32_sub(f_rs1, f_rs2);
+      i_res = from_f32(f_res);
+      break;
+    case 0x08: // FMUL.S
+      f_res = f32_mul(f_rs1, f_rs2);
+      i_res = from_f32(f_res);
+      break;
+    case 0x0C: // FDIV.S
+      f_res = f32_div(f_rs1, f_rs2);
+      i_res = from_f32(f_res);
+      break;
+    case 0x2C: // FSQRT.S (rs2 必须为 0)
+      if (rs2 != 0) {
+        illegal_exception = true;
+        return;
+      }
+      f_res = f32_sqrt(f_rs1);
+      i_res = from_f32(f_res);
+      break;
+
+    // 注入符号 (FSGNJ) - 纯位操作，不触发异常
+    case 0x10:
+      if (funct3 == 0) // FSGNJ.S
+        i_res = (val_rs1 & ~0x80000000) | (val_rs2 & 0x80000000);
+      else if (funct3 == 1) // FSGNJN.S
+        i_res = (val_rs1 & ~0x80000000) | (~val_rs2 & 0x80000000);
+      else if (funct3 == 2) // FSGNJX.S
+        i_res = val_rs1 ^ (val_rs2 & 0x80000000);
+      else
+        illegal_exception = true;
+      // FSGNJ 系列不更新 fflags，也不受 rm 影响
+      goto skip_flags_update;
+
+    // 比较 (Compare) - 结果写回整数寄存器 (0 或 1)
+    case 0x50:
+      if (funct3 == 2) // FEQ.S
+        i_res = f32_eq(f_rs1, f_rs2);
+      else if (funct3 == 1) // FLT.S
+        i_res = f32_lt(f_rs1, f_rs2);
+      else if (funct3 == 0) // FLE.S
+        i_res = f32_le(f_rs1, f_rs2);
+      else
+        illegal_exception = true;
+      break;
+
+    // 最小/最大 (Min/Max)
+    case 0x14:
+      if (funct3 == 0) { // FMIN.S
+        i_res = f32_min_riscv(val_rs1, val_rs2);
+      } else if (funct3 == 1) { // FMAX.S
+        i_res = f32_max_riscv(val_rs1, val_rs2);
+      } else {
+        illegal_exception = true;
+      }
+      break;
+    // 转换 (Convert)
+    case 0x60: // FCVT.W.S (Float to Int32)
+      if (rs2 == 0)
+        i_res = (uint32_t)f32_to_i32(f_rs1, softfloat_roundingMode, true);
+      else if (rs2 == 1)
+        i_res = f32_to_ui32(f_rs1, softfloat_roundingMode, true);
+      else
+        illegal_exception = true;
+      break;
+
+    case 0x68: // FCVT.S.W (Int32 to Float)
+      if (rs2 == 0)
+        f_res = i32_to_f32((int32_t)val_rs1);
+      else if (rs2 == 1)
+        f_res = ui32_to_f32(val_rs1);
+      else {
+        illegal_exception = true;
+        return;
+      }
+      i_res = from_f32(f_res);
+      break;
+
+      // Zfinx 特殊说明：
+      // FMV.X.W (Move float bits to int) 和 FMV.W.X 在 Zfinx 中通常是 NOP
+      // 或者普通的整数 MV， 因为 float 和 int 在同一个寄存器堆里。
+      // opcode 0x70,
+      // funct3 0 (FMV.X.W) -> Class check in standard, move in others. 在Zfinx
+      // 中，opcode 0x53, funct7 0x70, rs2=0 是 FMV.X.W opcode 0x53, funct 0x78,
+      // rs2=0 是 FMV.W.X
+    case 0x70: // FCLASS.S (FMV.X.W 也是这个组，但 rs2=0)
+      if (funct3 == 0) {
+        // FMV.X.W: 在 Zfinx 中被移除 (Use standard MV instead)
+        // 收到此编码应报异常
+        illegal_exception = true;
+      } else if (funct3 == 1) {
+        // FCLASS.S: 必须保留！
+        // 这是一个位操作指令，不产生异常，不更新 fflags
+        float32_t f = to_f32(val_rs1);
+        i_res = f32_classify(f);
+      } else {
+        illegal_exception = true;
+      }
+      break;
+    default:
+      illegal_exception = true;
+      return;
+    }
+    break;
+
+  // Fused Multiply-Add (FMA) 指令集
+  // 结果 = (rs1 * rs2) + rs3
+  case 0x43: // FMADD.S
+    f_res = f32_mulAdd(f_rs1, f_rs2, f_rs3);
+    i_res = from_f32(f_res);
+    break;
+  case 0x47: // FMSUB.S: (rs1 * rs2) - rs3
+    // SoftFloat 的 mulAdd 定义通常是 a*b + c。
+    // 需将 rs3 的符号位取反来实现减法，或者使用 softfloat 具体 API 变体
+    // 标准做法：f32_mulAdd(a, b, c ^ 0x80000000) (如果 softfloat没提供专门的
+    // sub) 或者是 f32_mulAdd(f_rs1, f_rs2, to_f32(val_rs3 ^ 0x80000000));
+    {
+      float32_t f_neg_rs3 = to_f32(val_rs3 ^ 0x80000000);
+      f_res = f32_mulAdd(f_rs1, f_rs2, f_neg_rs3);
+      i_res = from_f32(f_res);
+    }
+    break;
+  case 0x4B: // FNMSUB.S: -(rs1 * rs2) + rs3
+  {
+    // 注意 RISC-V 定义：-(rs1*rs2) + rs3
+    // SoftFloat 可能并没有直接对应指令，可能需要操作 rs1 或 rs2 符号
+    float32_t f_neg_rs1 = to_f32(val_rs1 ^ 0x80000000);
+    f_res = f32_mulAdd(f_neg_rs1, f_rs2, f_rs3);
+    i_res = from_f32(f_res);
+  } break;
+  case 0x4F: // FNMADD.S: -(rs1 * rs2) - rs3
+  {
+    float32_t f_neg_rs1 = to_f32(val_rs1 ^ 0x80000000);
+    float32_t f_neg_rs3 = to_f32(val_rs3 ^ 0x80000000);
+    f_res = f32_mulAdd(f_neg_rs1, f_rs2, f_neg_rs3);
+    i_res = from_f32(f_res);
+  } break;
+
+  default:
+    illegal_exception = true;
+    return;
+  }
+
+  // 4. 更新 CSR 状态 (Accumulate Exception Flags)
+  // state.csr[CSR_FCSR] |= softfloat_exceptionFlags;
+
+skip_flags_update:
+  // 5. 写回结果
+  if (write_rd && rd != 0) {
+    state.gpr[rd] = i_res;
+  }
+
+  state.pc = next_pc;
+}
+
 void Ref_cpu::RV32CSR() {
   // pc + 4
   uint32_t next_pc = state.pc + 4;
 
-  // split instruction
-  bool inst_bit[32];
-  cvt_number_to_bit_unsigned(inst_bit, Instruction, 32);
+  // 使用宏直接提取，无需 copy_indice
+  uint32_t rd = BITS(Instruction, 11, 7);
+  uint32_t rs1 = BITS(Instruction, 19, 15);
+  uint32_t uimm = rs1; // 对于立即数CSR指令，rs1字段就是立即数
+  uint32_t csr_addr = BITS(Instruction, 31, 20);
+  uint32_t funct3 = BITS(Instruction, 14, 12);
 
-  bool rd_code[5];       // 20-24
-  bool rs_a_code[5];     // 12-16
-  bool rs_b_code[5];     // 7-11
-  bool bit_csr_code[12]; // 0-11
-  copy_indice(rd_code, 0, inst_bit, 20, 5);
-  copy_indice(rs_a_code, 0, inst_bit, 12, 5);
-  copy_indice(rs_b_code, 0, inst_bit, 7, 5);
-  copy_indice(bit_csr_code, 0, inst_bit, 0, 12);
-  uint32_t number_csr_code_unsigned =
-      cvt_bit_to_number_unsigned(bit_csr_code, 12);
-  bool bit_funct3[3];
-  copy_indice(bit_funct3, 0, inst_bit, 17, 3);
-  uint32_t number_funct3_unsigned = cvt_bit_to_number_unsigned(bit_funct3, 3);
+  uint32_t reg_rdata1 = state.gpr[rs1];
 
-  // 准备寄存器
-  uint32_t reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
-  uint32_t reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
-  uint32_t reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
-
-  uint32_t reg_rdata1 = state.gpr[reg_a_index];
-
-  bool we = number_funct3_unsigned == 1 || reg_a_index != 0;
-  bool re = number_funct3_unsigned != 1 || reg_d_index != 0;
-  uint32_t wcmd = number_funct3_unsigned & 0b11;
+  bool we = funct3 == 1 || rs1 != 0;
+  bool re = funct3 != 1 || rd != 0;
+  uint32_t wcmd = funct3 & 0b11;
   uint32_t csr_wdata, wdata;
 
-  if (bit_funct3[0] && (bit_funct3[2] || bit_funct3[1])) {
-    wdata = reg_a_index;
+  if (funct3 & 0b100) {
+    wdata = rs1;
   } else {
     wdata = reg_rdata1;
   }
 
-  if (number_csr_code_unsigned != number_mtvec &&
-      number_csr_code_unsigned != number_mepc &&
-      number_csr_code_unsigned != number_mcause &&
-      number_csr_code_unsigned != number_mie &&
-      number_csr_code_unsigned != number_mip &&
-      number_csr_code_unsigned != number_mtval &&
-      number_csr_code_unsigned != number_mscratch &&
-      number_csr_code_unsigned != number_mstatus &&
-      number_csr_code_unsigned != number_mideleg &&
-      number_csr_code_unsigned != number_medeleg &&
-      number_csr_code_unsigned != number_sepc &&
-      number_csr_code_unsigned != number_stvec &&
-      number_csr_code_unsigned != number_scause &&
-      number_csr_code_unsigned != number_sscratch &&
-      number_csr_code_unsigned != number_stval &&
-      number_csr_code_unsigned != number_sstatus &&
-      number_csr_code_unsigned != number_sie &&
-      number_csr_code_unsigned != number_sip &&
-      number_csr_code_unsigned != number_satp &&
-      number_csr_code_unsigned != number_mhartid &&
-      number_csr_code_unsigned != number_misa &&
-      number_csr_code_unsigned != number_time &&
-      number_csr_code_unsigned != number_timeh) {
+  if (csr_addr != number_mtvec && csr_addr != number_mepc &&
+      csr_addr != number_mcause && csr_addr != number_mie &&
+      csr_addr != number_mip && csr_addr != number_mtval &&
+      csr_addr != number_mscratch && csr_addr != number_mstatus &&
+      csr_addr != number_mideleg && csr_addr != number_medeleg &&
+      csr_addr != number_sepc && csr_addr != number_stvec &&
+      csr_addr != number_scause && csr_addr != number_sscratch &&
+      csr_addr != number_stval && csr_addr != number_sstatus &&
+      csr_addr != number_sie && csr_addr != number_sip &&
+      csr_addr != number_satp && csr_addr != number_mhartid &&
+      csr_addr != number_misa && csr_addr != number_time &&
+      csr_addr != number_timeh) {
     ;
-  } else if (number_csr_code_unsigned == number_time ||
-             number_csr_code_unsigned == number_timeh) {
+  } else if (csr_addr == number_time || csr_addr == number_timeh) {
     illegal_exception = true;
     exception(Instruction);
     return;
   } else {
 
-    int csr_idx = cvt_number_to_csr(number_csr_code_unsigned);
+    int csr_idx = cvt_number_to_csr(csr_addr);
     if (re) {
-      state.gpr[reg_d_index] = state.csr[csr_idx];
+      state.gpr[rd] = state.csr[csr_idx];
     }
 
     if (we) {
@@ -510,57 +831,39 @@ void Ref_cpu::RV32CSR() {
 void Ref_cpu::RV32A() {
   // pc + 4
   uint32_t next_pc = state.pc + 4;
-
-  // split instruction
-  bool inst_bit[32];
-  cvt_number_to_bit_unsigned(inst_bit, Instruction, 32);
-  bool bit_op_code[7]; // 25-31
-  bool rd_code[5];     // 20-24
-  bool rs_a_code[5];   // 12-16
-  bool rs_b_code[5];   // 7-11
-  copy_indice(bit_op_code, 0, inst_bit, 25, 7);
-  copy_indice(rd_code, 0, inst_bit, 20, 5);
-  copy_indice(rs_a_code, 0, inst_bit, 12, 5);
-  copy_indice(rs_b_code, 0, inst_bit, 7, 5);
-
-  // 准备寄存器
-  uint32_t reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
-  uint32_t reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
-  uint32_t reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
+  uint32_t funct5 = BITS(Instruction, 31, 27);
+  uint32_t reg_d_index = BITS(Instruction, 11, 7);
+  uint32_t reg_a_index = BITS(Instruction, 19, 15);
+  uint32_t reg_b_index = BITS(Instruction, 24, 20);
 
   uint32_t reg_rdata1 = state.gpr[reg_a_index];
   uint32_t reg_rdata2 = state.gpr[reg_b_index];
 
-  bool bit_funct5[5];
-  copy_indice(bit_funct5, 0, inst_bit, 0, 5);
-  uint32_t number_funct5_unsigned = cvt_bit_to_number_unsigned(bit_funct5, 5);
   uint32_t v_addr = reg_rdata1;
   uint32_t p_addr = v_addr;
-  bool mstatus[32], sstatus[32];
-  cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-  cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
-  if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
-    bool page_fault_1 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
-                                     mstatus, sstatus, privilege, memory);
-    bool page_fault_2 = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
-                                     mstatus, sstatus, privilege, memory);
+  if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+    bool page_fault;
 
-    if (page_fault_1 || page_fault_2) {
-      if (number_funct5_unsigned == 2) {
-        if (page_fault_1) {
-          page_fault_load = true;
-        }
-      } else if (number_funct5_unsigned == 3) {
-        if (page_fault_2) {
-          page_fault_store = true;
-        }
+    if (fast_run) {
+      if (funct5 == 2) {
+        page_fault = !va2pa(p_addr, v_addr, 1);
       } else {
-        if (page_fault_1) {
-          page_fault_load = true;
-        } else {
-          page_fault_store = true;
-        }
+        page_fault = !va2pa(p_addr, v_addr, 2);
+      }
+    } else {
+      if (funct5 == 2) {
+        page_fault = !va2pa_fixed(p_addr, v_addr, 1);
+      } else {
+        page_fault = !va2pa_fixed(p_addr, v_addr, 2);
+      }
+    }
+
+    if (page_fault) {
+      if (funct5 == 2) {
+        page_fault_load = true;
+      } else {
+        page_fault_store = true;
       }
     }
 
@@ -570,13 +873,13 @@ void Ref_cpu::RV32A() {
     }
   }
 
-  if (number_funct5_unsigned != 2) {
+  if (funct5 != 2) {
     state.store = true;
     state.store_addr = p_addr;
     state.store_strb = 0b1111;
   }
 
-  switch (number_funct5_unsigned) {
+  switch (funct5) {
   case 0: { // amoadd.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
     state.store_data = memory[p_addr >> 2] + reg_rdata2;
@@ -651,33 +954,17 @@ void Ref_cpu::RV32A() {
 void Ref_cpu::RV32IM() {
   // pc + 4
   uint32_t next_pc = state.pc + 4;
-
-  // split instruction
-  bool inst_bit[32];
-  cvt_number_to_bit_unsigned(inst_bit, Instruction, 32);
-
-  bool *bit_op_code = inst_bit + 25; // 25-31
-  bool *rd_code = inst_bit + 20;     // 20-24
-  bool *rs_a_code = inst_bit + 12;   // 12-16
-  bool *rs_b_code = inst_bit + 7;    // 7-11
-  bool *bit_csr_code = inst_bit + 0; // 0-11
-
-  // 准备opcode、funct3、funct7
-  uint32_t number_op_code_unsigned = cvt_bit_to_number_unsigned(bit_op_code, 7);
-  bool *bit_funct3 = inst_bit + 17; // 3
-  uint32_t number_funct3_unsigned = cvt_bit_to_number_unsigned(bit_funct3, 3);
-  bool *bit_funct7 = inst_bit + 0; // 7
-  uint32_t number_funct7_unsigned = cvt_bit_to_number_unsigned(bit_funct7, 7);
-
-  // 准备寄存器
-  uint32_t reg_d_index = cvt_bit_to_number_unsigned(rd_code, 5);
-  uint32_t reg_a_index = cvt_bit_to_number_unsigned(rs_a_code, 5);
-  uint32_t reg_b_index = cvt_bit_to_number_unsigned(rs_b_code, 5);
+  uint32_t opcode = BITS(Instruction, 6, 0);
+  uint32_t funct3 = BITS(Instruction, 14, 12);
+  uint32_t funct7 = BITS(Instruction, 31, 25);
+  uint32_t reg_d_index = BITS(Instruction, 11, 7);
+  uint32_t reg_a_index = BITS(Instruction, 19, 15);
+  uint32_t reg_b_index = BITS(Instruction, 24, 20);
 
   uint32_t reg_rdata1 = state.gpr[reg_a_index];
   uint32_t reg_rdata2 = state.gpr[reg_b_index];
 
-  switch (number_op_code_unsigned) {
+  switch (opcode) {
   case number_0_opcode_lui: { // lui
     state.gpr[reg_d_index] = immU(Instruction);
     break;
@@ -688,61 +975,50 @@ void Ref_cpu::RV32IM() {
     break;
   }
   case number_2_opcode_jal: { // jal
-    is_br = true;
-    br_taken = true;
     next_pc = state.pc + immJ(Instruction);
     state.gpr[reg_d_index] = state.pc + 4;
     break;
   }
   case number_3_opcode_jalr: { // jalr
-    is_br = true;
-    br_taken = true;
     bool bit_temp[32];
     next_pc = (reg_rdata1 + immI(Instruction)) & 0xFFFFFFFC;
     state.gpr[reg_d_index] = state.pc + 4;
     break;
   }
   case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
-    is_br = true;
-    switch (number_funct3_unsigned) {
+    switch (funct3) {
     case 0: { // beq
       if (reg_rdata1 == reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 1: { // bne
       if (reg_rdata1 != reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 4: { // blt
       if ((int32_t)reg_rdata1 < (int32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 5: { // bge
       if ((int32_t)reg_rdata1 >= (int32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 6: { // bltu
       if ((uint32_t)reg_rdata1 < (uint32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 7: { // bgeu
       if ((uint32_t)reg_rdata1 >= (uint32_t)reg_rdata2) {
-        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
@@ -751,20 +1027,14 @@ void Ref_cpu::RV32IM() {
     break;
   }
   case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
-    bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-    cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
-
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
-    if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
-      bool mstatus[32], sstatus[32];
-      cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-
-      cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
-
-      page_fault_load = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 1,
-                                     mstatus, sstatus, privilege, memory);
+    if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+      if (fast_run) {
+        page_fault_load = !va2pa(p_addr, v_addr, 1);
+      } else {
+        page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
+      }
     }
 
     if (page_fault_load) {
@@ -774,7 +1044,7 @@ void Ref_cpu::RV32IM() {
     } else {
       uint32_t data = memory[p_addr >> 2];
       uint32_t offset = p_addr & 0b11;
-      uint32_t size = number_funct3_unsigned & 0b11;
+      uint32_t size = funct3 & 0b11;
       uint32_t sign = 0, mask;
       data = data >> (offset * 8);
       if (size == 0) {
@@ -792,7 +1062,7 @@ void Ref_cpu::RV32IM() {
       data = data & mask;
 
       // 有符号数
-      if (!(number_funct3_unsigned & 0b100)) {
+      if (!(funct3 & 0b100)) {
         data = data | sign;
       }
 
@@ -808,20 +1078,15 @@ void Ref_cpu::RV32IM() {
     break;
   }
   case number_6_opcode_sb: { // sb, sh, sw
-    bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-    cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
 
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
-    if (state.csr[csr_satp] & 0x80000000 && privilege != 3) {
-      bool mstatus[32], sstatus[32];
-      cvt_number_to_bit_unsigned(mstatus, state.csr[csr_mstatus], 32);
-
-      cvt_number_to_bit_unsigned(sstatus, state.csr[csr_sstatus], 32);
-
-      page_fault_store = !va2pa_fixed(p_addr, v_addr, state.csr[csr_satp], 2,
-                                      mstatus, sstatus, privilege, memory);
+    if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+      if (fast_run) {
+        page_fault_store = !va2pa(p_addr, v_addr, 2);
+      } else {
+        page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
+      }
     }
 
     if (page_fault_store) {
@@ -832,10 +1097,10 @@ void Ref_cpu::RV32IM() {
       state.store = true;
       state.store_addr = p_addr;
       state.store_data = reg_rdata2;
-      if (number_funct3_unsigned == 0b00) {
+      if (funct3 == 0b00) {
         state.store_strb = 0b1;
         state.store_data &= 0xFF;
-      } else if (number_funct3_unsigned == 0b01) {
+      } else if (funct3 == 0b01) {
         state.store_strb = 0b11;
         state.store_data &= 0xFFFF;
       } else {
@@ -849,7 +1114,7 @@ void Ref_cpu::RV32IM() {
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
                                // srli, srai
-    switch (number_funct3_unsigned) {
+    switch (funct3) {
     case 0: { // addi
       state.gpr[reg_d_index] = reg_rdata1 + immI(Instruction);
       break;
@@ -881,17 +1146,13 @@ void Ref_cpu::RV32IM() {
       break;
     }
     case 5: { // srli, srai
-      switch (number_funct7_unsigned) {
+      switch (funct7) {
       case 0: { // srli
-        if ((*(inst_bit + 6)) == 0) {
-          state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> immI(Instruction);
-        }
+        state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> immI(Instruction);
         break;
       }
       case 32: { // srai
-        if ((*(inst_bit + 6)) == 0) {
-          state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> immI(Instruction);
-        }
+        state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> immI(Instruction);
         break;
       }
       }
@@ -902,50 +1163,79 @@ void Ref_cpu::RV32IM() {
   }
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
                               // and
-    if (number_funct7_unsigned == 1) { // mul div
-      switch (number_funct3_unsigned) {
+    if (funct7 == 1) {        // mul div
+      int64_t s1 = (int64_t)(int32_t)reg_rdata1;
+      int64_t s2 = (int64_t)(int32_t)reg_rdata2;
+
+      uint64_t u1 = (uint32_t)reg_rdata1;
+      uint64_t u2 = (uint32_t)reg_rdata2;
+
+      // 获取 32 位操作数
+      int32_t dividend = (int32_t)reg_rdata1;
+      int32_t divisor = (int32_t)reg_rdata2;
+      uint32_t u_dividend = (uint32_t)reg_rdata1;
+      uint32_t u_divisor = (uint32_t)reg_rdata2;
+
+      switch (funct3) {
       case 0: { // mul
-        state.gpr[reg_d_index] = (int32_t)reg_rdata1 * (int32_t)reg_rdata2;
+        state.gpr[reg_d_index] = (int32_t)(u1 * u2);
         break;
       }
       case 1: { // mulh
-        state.gpr[reg_d_index] =
-            ((int64_t)reg_rdata1 * (int64_t)reg_rdata2) >> 32;
+        state.gpr[reg_d_index] = (uint32_t)((s1 * s2) >> 32);
         break;
       }
       case 2: { // mulsu
-        state.gpr[reg_d_index] = ((int32_t)reg_rdata1 * (uint32_t)reg_rdata2);
-
+        state.gpr[reg_d_index] = (uint32_t)((s1 * (int64_t)u2) >> 32);
         break;
       }
       case 3: { // mulhu
-        state.gpr[reg_d_index] =
-            ((uint64_t)reg_rdata1 * (uint64_t)reg_rdata2) >> 32;
+        state.gpr[reg_d_index] = (uint32_t)((u1 * u2) >> 32);
         break;
       }
-      case 4: { // div
-        state.gpr[reg_d_index] = ((int64_t)reg_rdata1 / (int64_t)reg_rdata2);
+      case 4: { // div (signed)
+        if (divisor == 0) {
+          state.gpr[reg_d_index] = -1; // RISC-V 规定：除以0结果为 -1
+        } else if (dividend == INT32_MIN && divisor == -1) {
+          state.gpr[reg_d_index] =
+              INT32_MIN; // RISC-V 规定：溢出时结果为被除数本身(INT_MIN)
+        } else {
+          state.gpr[reg_d_index] = dividend / divisor;
+        }
         break;
       }
-      case 5: { // divu
-        state.gpr[reg_d_index] = ((uint64_t)reg_rdata1 / (uint64_t)reg_rdata2);
+      case 5: { // divu (unsigned)
+        if (u_divisor == 0) {
+          state.gpr[reg_d_index] = 0xFFFFFFFF; // RISC-V 规定：除以0结果为最大值
+        } else {
+          state.gpr[reg_d_index] = u_dividend / u_divisor;
+        }
         break;
       }
-      case 6: { // rem
-        state.gpr[reg_d_index] = ((int64_t)reg_rdata1 % (int64_t)reg_rdata2);
+      case 6: { // rem (signed)
+        if (divisor == 0) {
+          state.gpr[reg_d_index] = dividend; // RISC-V 规定：除以0，余数为被除数
+        } else if (dividend == INT32_MIN && divisor == -1) {
+          state.gpr[reg_d_index] = 0; // RISC-V 规定：溢出时，余数为 0
+        } else {
+          state.gpr[reg_d_index] = dividend % divisor;
+        }
         break;
       }
-      case 7: { // remu
-        state.gpr[reg_d_index] = ((uint64_t)reg_rdata1 % (uint64_t)reg_rdata2);
+      case 7: { // remu (unsigned)
+        if (u_divisor == 0) {
+          state.gpr[reg_d_index] =
+              u_dividend; // RISC-V 规定：除以0，余数为被除数
+        } else {
+          state.gpr[reg_d_index] = u_dividend % u_divisor;
+        }
         break;
       }
-      default:
-        break;
       }
     } else {
-      switch (number_funct3_unsigned) {
+      switch (funct3) {
       case 0: { // add, sub
-        switch (number_funct7_unsigned) {
+        switch (funct7) {
         case 0: { // add
           state.gpr[reg_d_index] = reg_rdata1 + reg_rdata2;
           break;
@@ -976,7 +1266,7 @@ void Ref_cpu::RV32IM() {
         break;
       }
       case 5: { // srl, sra
-        switch (number_funct7_unsigned) {
+        switch (funct7) {
         case 0: { // srl
           state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> reg_rdata2;
           break;
@@ -1042,9 +1332,8 @@ void Ref_cpu::store_data() {
     char temp;
     temp = wdata & 0x000000ff;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
-#ifdef CONFIG_RUN_REF_PRINT
-    cout << temp;
-#endif
+    if (fast_run)
+      cout << temp;
   }
 
   if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 7) {
@@ -1065,8 +1354,196 @@ void Ref_cpu::store_data() {
     state.csr[csr_sip] = state.csr[csr_sip] & ~(1 << 9);
   }
 
-#ifndef CONFIG_RUN_REF
   state.store_data = state.store_data << offset * 8;
   state.store_strb = state.store_strb << offset * 8;
+}
+
+bool Ref_cpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
+  uint32_t mstatus = state.csr[csr_mstatus];
+  uint32_t sstatus = state.csr[csr_sstatus];
+  uint32_t satp = state.csr[csr_satp];
+
+  // 1. 提取状态位 (直接位运算，极快)
+  bool mxr = (mstatus & MSTATUS_MXR) != 0;
+  bool sum = (mstatus & MSTATUS_SUM) != 0;
+  bool mprv = (mstatus & MSTATUS_MPRV) != 0;
+
+  // 确定有效特权级 (Effective Privilege Mode)
+  // 如果 MPRV=1 且不是取指(type!=0)，则使用 MPP 作为特权级进行检查
+  int eff_priv = privilege;
+  if (type != 0 && mprv) {
+    eff_priv = (mstatus >> MSTATUS_MPP_SHIFT) & 0x3;
+  }
+
+  // 2. Level 1 Page Table Walk
+  // satp 的 PPN 字段在 SV32 中是低 22 位 (0-21)
+  // VPN[1] 是 v_addr 的 [31:22] 位
+  // pte1_addr = (satp.ppn << 12) + (vpn1 * 4)
+  // 你的原代码逻辑：(satp << 12) | ((v_addr >> 20) & 0xFFC)
+  // 等价于下面的位操作：
+  uint32_t ppn_root = satp & 0x3FFFFF; // 提取 SATP 中的 PPN
+  uint32_t vpn1 = (v_addr >> 22) & 0x3FF;
+  uint32_t pte1_addr = (ppn_root << 12) | (vpn1 << 2);
+
+  // 直接读取，注意这里需要确保 memory 是按字寻址还是字节寻址
+  uint32_t pte1 = memory[pte1_addr >> 2];
+
+  // 3. 检查 PTE 有效性
+  // !V 或者 (!R && W) 都是无效的
+  if (!(pte1 & PTE_V) || (!(pte1 & PTE_R) && (pte1 & PTE_W))) {
+    return false;
+  }
+
+  // 4. 判断是否是叶子节点 (R=1 或 X=1)
+  if ((pte1 & PTE_R) || (pte1 & PTE_X)) {
+    // --- Superpage (4MB) ---
+
+    // 权限检查 (Permission Check)
+    // Fetch (0): 需要 X
+    if (type == 0 && !(pte1 & PTE_X))
+      return false;
+    // Load (1): 需要 R，或者 (MXR=1 且 X=1)
+    if (type == 1 && !(pte1 & PTE_R) && !(mxr && (pte1 & PTE_X)))
+      return false;
+    // Store (2): 需要 W
+    if (type == 2 && !(pte1 & PTE_W))
+      return false;
+
+    // 用户权限检查 (User/Supervisor Check)
+    bool is_user_page = (pte1 & PTE_U) != 0;
+    if (eff_priv == 0 && !is_user_page)
+      return false; // U-mode 访问 S-page -> Fault
+    if (eff_priv == 1 && is_user_page && !sum)
+      return false; // S-mode 访问 U-page 且 SUM=0 -> Fault
+
+    // 对齐检查 (Superpage 要求 PPN[0] 为 0)
+    // PPN[0] 对应 PTE 的 [19:10] 位
+    if ((pte1 >> 10) & 0x3FF)
+      return false;
+
+    // A/D 位检查
+    if (!(pte1 & PTE_A))
+      return false; // Accessed 必须为 1 (硬件不自动设置时需报错)
+    if (type == 2 && !(pte1 & PTE_D))
+      return false; // 写操作 Dirty 必须为 1
+
+    // 计算物理地址 (Superpage)
+    // PA = PPN[1] | VPN[0] | Offset
+    // PPN[1] 是 PTE[31:20]，对应 PA[31:22]
+    // v_addr & 0x3FFFFF 保留低 22 位 (VPN[0] + Offset)
+    p_addr = ((pte1 << 2) & 0xFFC00000) | (v_addr & 0x3FFFFF);
+    return true;
+  }
+
+  // 5. Level 2 Page Table Walk (非叶子节点，指向下一级页表)
+  // PPN 是 PTE 的 [31:10] 位
+  uint32_t ppn1 = (pte1 >> 10) & 0x3FFFFF;
+  uint32_t vpn0 = (v_addr >> 12) & 0x3FF;
+  uint32_t pte2_addr = (ppn1 << 12) | (vpn0 << 2);
+
+  uint32_t pte2 = memory[pte2_addr >> 2];
+
+  // 重复有效性检查
+  if (!(pte2 & PTE_V) || (!(pte2 & PTE_R) && (pte2 & PTE_W))) {
+    return false;
+  }
+
+  // Level 2 必须是叶子节点 (SV32 只有两级)
+  if ((pte2 & PTE_R) || (pte2 & PTE_X)) {
+    // --- 4KB Page ---
+
+    // 权限检查 (逻辑同上)
+    if (type == 0 && !(pte2 & PTE_X))
+      return false;
+    if (type == 1 && !(pte2 & PTE_R) && !(mxr && (pte2 & PTE_X)))
+      return false;
+    if (type == 2 && !(pte2 & PTE_W))
+      return false;
+
+    // 用户权限检查
+    bool is_user_page = (pte2 & PTE_U) != 0;
+    if (eff_priv == 0 && !is_user_page)
+      return false;
+    if (eff_priv == 1 && is_user_page && !sum)
+      return false;
+
+    // A/D 位检查
+    if (!(pte2 & PTE_A))
+      return false;
+    if (type == 2 && !(pte2 & PTE_D))
+      return false;
+
+    // 计算物理地址 (4KB Page)
+    // PA = PPN | Offset
+    // PPN 是 PTE[31:10]，对应 PA[31:12]
+    // Offset 是 v_addr[11:0]
+    p_addr = ((pte2 >> 10) << 12) | (v_addr & 0xFFF);
+    return true;
+  }
+
+  return false; // 如果 Level 2 还不是叶子节点，则是非法页表
+}
+
+/*
+ * va2pa_fixed: a fixed version of va2pa
+ *
+ * 基本功能几乎与 va2pa() 相同；但当 dut.cpu 检测到 page fault 时，
+ * 以 dut.cpu 的结果为准，
+ *
+ * 目的：当 SFENCE.VMA 还没有执行、存在两种合法的页表映射时，保证
+ * DUT 与参考模型的页表映射一致，避免 difftest 失败。
+ */
+bool Ref_cpu::va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
+  bool ret = va2pa(p_addr, v_addr, type);
+#ifndef CONFIG_LOOSE_VA2PA
+  return ret;
 #endif
+  extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
+  Inst_entry ren_commit_entry = cpu.back.out.commit_entry[ren_commit_idx];
+  bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
+  bool dut_page_fault_load = ren_commit_entry.uop.page_fault_load;
+  bool dut_page_fault_store = ren_commit_entry.uop.page_fault_store;
+
+  // 1. dut page_fault, ref no page_fault -> allow, ret = false
+  // 2. dut no page_fault, ref page_fault -> ERROR
+  switch (type) {
+  case 0: // instruction fetch
+    if (dut_page_fault_inst) {
+      ret = false; // 以 DUT MMU 为准
+    } else if (!dut_page_fault_inst && !ret) {
+      cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault "
+              "mismatch!"
+           << endl;
+      cout << "VA: " << hex << v_addr << endl;
+      cout << "sim_time: " << dec << sim_time << endl;
+      exit(1);
+    }
+    break;
+  case 1: // load
+    if (dut_page_fault_load) {
+      ret = false;
+    } else if (!dut_page_fault_load && !ret) {
+      cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!"
+           << endl;
+      cout << "VA: " << hex << v_addr << endl;
+      cout << "sim_time: " << dec << sim_time << endl;
+      exit(1);
+    }
+    break;
+  case 2: // store
+    if (dut_page_fault_store) {
+      ret = false;
+    } else if (!dut_page_fault_store && !ret) {
+      cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!"
+           << endl;
+      cout << "VA: " << hex << v_addr << endl;
+      cout << "sim_time: " << dec << sim_time << endl;
+      exit(1);
+    }
+    break;
+  default:
+    cout << "[va2pa_fixed] Error: unknown access type!" << endl;
+    exit(1);
+  }
+  return ret;
 }

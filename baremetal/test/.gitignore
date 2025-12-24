@@ -1,0 +1,5 @@
+.cache/*
+*.dump
+*.bin
+!cpu-test/*
+!Makefile

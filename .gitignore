@@ -1,4 +1,6 @@
+a.out
 baremetal/memory
+.cache/*
 
 # Ignore build files
 /build

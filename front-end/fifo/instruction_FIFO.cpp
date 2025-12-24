@@ -10,6 +10,7 @@ struct FIFO_entry {
   std::array<bool, FETCH_WIDTH> inst_valid;
   std::array<uint8_t, FETCH_WIDTH> predecode_type; // for predecode result
   std::array<uint32_t, FETCH_WIDTH> predecode_target_address;
+  uint32_t seq_next_pc;
 };
 
 static std::queue<FIFO_entry> fifo;
@@ -51,6 +52,7 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
       entry.predecode_type[i] = in->predecode_type[i];
       entry.predecode_target_address[i] = in->predecode_target_address[i];
     }
+    entry.seq_next_pc = in->seq_next_pc;
     fifo.push(entry);
   }
 
@@ -63,6 +65,7 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
       out->predecode_type[i] = fifo.front().predecode_type[i];
       out->predecode_target_address[i] = fifo.front().predecode_target_address[i];
     }
+    out->seq_next_pc = fifo.front().seq_next_pc;
     fifo.pop();
     out->FIFO_valid = true;
   } else {

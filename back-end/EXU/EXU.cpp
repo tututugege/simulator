@@ -1,28 +1,29 @@
-#include "TOP.h"
 #include <Cache.h>
 #include <EXU.h>
 #include <MMU.h>
+#include <SimCpu.h>
 #include <cmath>
 #include <config.h>
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
-extern Back_Top back;
-extern MMU mmu;
-extern uint32_t *p_memory;
+Cache cache;
 
-Cache cache; // Cache模拟
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 void alu(Inst_uop &inst);
 void bru(Inst_uop &inst);
-// void ldu(Inst_uop &inst);
-bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn);
-// void stu_addr(Inst_uop &inst);
-void stu_addr(Inst_uop &inst, bool page_fault_mmu, uint32_t mmu_ppn);
 void stu_data(Inst_uop &inst);
 void mul(Inst_uop &inst);
 void div(Inst_uop &inst);
+
+#ifdef CONFIG_MMU
+bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn);
+void stu_addr(Inst_uop &inst, bool page_fault_mmu, uint32_t mmu_ppn);
+#else
+bool ldu(Inst_uop &inst);
+void stu_addr(Inst_uop &inst);
+#endif
 
 // Calculate the state of mmu_lsu_req[M] channel
 wire1_t alloc_mmu_req_slot[MAX_LSU_REQ_NUM];
@@ -42,6 +43,7 @@ static inline bool comb_apply_slot(mmu_slot_t &slot) {
   return false;
 }
 
+#ifdef CONFIG_MMU
 void FU::exec(Inst_uop &inst) {
 
   if (cycle == 0) {
@@ -78,13 +80,13 @@ void FU::exec(Inst_uop &inst) {
             .vtag = (vaddr >> 12), // vaddr[31:12]
             .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
         int idx = mmu_lsu_slot_r_1.idx;
-        mmu.io.in.mmu_lsu_req[idx] = req;
+        cpu.mmu.io.in.mmu_lsu_req[idx] = req;
       }
       return;
     }
 
     // step2: slot aleardy allocated, check mmu resp to see if hit
-    mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+    mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
     bool hit = resp.valid && !resp.miss;
     // if (!hit) {
     if (!hit || cycle < latency) {
@@ -95,7 +97,7 @@ void FU::exec(Inst_uop &inst) {
             .valid = true,
             .vtag = (vaddr >> 12), // vaddr[31:12]
             .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
-        mmu.io.in.mmu_lsu_req[mmu_lsu_slot_r_1.idx] = req;
+        cpu.mmu.io.in.mmu_lsu_req[mmu_lsu_slot_r_1.idx] = req;
       }
       return;
     }
@@ -103,7 +105,7 @@ void FU::exec(Inst_uop &inst) {
 
   if (cycle >= latency) {
     if (is_load_uop(inst.op)) {
-      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+      mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       // ldu(inst);
@@ -121,7 +123,7 @@ void FU::exec(Inst_uop &inst) {
         return; // not complete yet
       }
     } else if (is_sta_uop(inst.op)) {
-      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+      mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       stu_addr(inst, page_fault, mmu_ppn);
@@ -136,9 +138,9 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_SFENCE_VMA) {
       uint32_t vaddr = inst.src1_rdata;
       uint32_t asid = inst.src2_rdata;
-      mmu.io.in.tlb_flush.flush_asid = asid;
-      mmu.io.in.tlb_flush.flush_vpn = vaddr >> 12;
-      mmu.io.in.tlb_flush.flush_valid = true;
+      cpu.mmu.io.in.tlb_flush.flush_asid = asid;
+      cpu.mmu.io.in.tlb_flush.flush_vpn = vaddr >> 12;
+      cpu.mmu.io.in.tlb_flush.flush_valid = true;
     } else
       alu(inst);
 
@@ -146,11 +148,57 @@ void FU::exec(Inst_uop &inst) {
     cycle = 0;
   }
 }
+#else
+void FU::exec(Inst_uop &inst) {
+
+  if (cycle == 0) {
+    if (inst.op == UOP_MUL) { // mul
+      latency = 1;
+    } else if (inst.op == UOP_DIV) { // div
+      latency = 1;
+    } else if (inst.op == UOP_LOAD) {
+      // latency = cache.cache_access(inst.src1_rdata + inst.imm);
+      latency = 1;
+    } else if (inst.op == UOP_STA) {
+      latency = 1;
+    } else {
+      latency = 1;
+    }
+  }
+
+  cycle++;
+
+  if (cycle == latency) {
+    if (is_load_uop(inst.op)) {
+      ldu(inst);
+    } else if (is_sta_uop(inst.op)) {
+      stu_addr(inst);
+    } else if (is_std_uop(inst.op)) {
+      stu_data(inst);
+    } else if (is_branch_uop(inst.op)) {
+      bru(inst);
+    } else if (inst.op == UOP_MUL) {
+      mul(inst);
+    } else if (inst.op == UOP_DIV) {
+      div(inst);
+    } else if (inst.op == UOP_SFENCE_VMA) {
+      uint32_t vaddr = 0;
+      uint32_t asid = 0;
+      // TODO: sfence.vma
+    } else
+      alu(inst);
+
+    complete = true;
+    cycle = 0;
+  }
+}
+#endif
 
 void EXU::init() {
   for (int i = 0; i < ISSUE_WAY; i++) {
     inst_r[i].valid = false;
   }
+  cache.ctx = this->ctx;
 }
 
 void EXU::comb_ready() {
@@ -162,10 +210,14 @@ void EXU::comb_ready() {
 
 void EXU::comb_exec() {
   // reset alloc_mmu_req_slot
+
+#ifdef CONFIG_MMU
   for (int i = 0; i < MAX_LSU_REQ_NUM; i++) {
     alloc_mmu_req_slot[i] = 0;
-    mmu.io.in.mmu_lsu_req[i] = {}; // clear lsu req by default
+    cpu.mmu.io.in.mmu_lsu_req[i] = {}; // clear lsu req by default
   }
+#endif
+
   // comb_exec
   for (int i = 0; i < ISSUE_WAY; i++) {
     fu[i].mmu_lsu_slot_r_1 = {};
@@ -264,6 +316,8 @@ void EXU::seq() {
 
   for (int i = 0; i < ISSUE_WAY; i++) {
     inst_r[i] = inst_r_1[i];
+#ifdef CONFIG_MMU
     fu[i].mmu_lsu_slot_r = fu[i].mmu_lsu_slot_r_1;
+#endif
   }
 }

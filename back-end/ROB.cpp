@@ -145,8 +145,7 @@ void ROB::comb_commit() {
         out.rob_bcast->illegal_inst = true;
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
       } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
-        extern bool sim_end;
-        sim_end = true;
+        ctx->sim_end = true;
       } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
         out.rob2csr->commit = true;
       } else {
@@ -168,7 +167,7 @@ void ROB::comb_commit() {
 
   stall_cycle++;
   if (stall_cycle > 1000) {
-    cout << dec << sim_time << endl;
+    cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
     // 打印ROB出队行指令 看是哪条指令卡死
@@ -182,32 +181,33 @@ void ROB::comb_commit() {
       }
     }
 
-    int free_preg_num = 0;
-    for (int i = 0; i < PRF_NUM; i++) {
-      if (back.rename.free_vec[i]) {
-        free_preg_num++;
-      }
-    }
-    cout << "free preg num: " << dec << free_preg_num << endl;
-
-    int free_tag_num = 0;
-    for (int i = 0; i < MAX_BR_NUM; i++) {
-      if (back.idu.tag_vec[i]) {
-        free_tag_num++;
-      }
-    }
-    cout << "free tag num: " << dec << free_tag_num << endl;
-
-    int free_stq_num = 0;
-    for (int i = 0; i < STQ_NUM; i++) {
-      if (!back.stq.entry[i].valid) {
-        free_stq_num++;
-      }
-    }
-    cout << "free stq num: " << dec << free_stq_num << endl;
-    cout << "dis2ren ready: " << dec << back.rename.in.dis2ren->ready << endl;
-    cout << "ren2dec ready: " << dec << back.rename.out.ren2dec->ready << endl;
-    cout << "dec2front ready: " << dec << back.idu.out.dec2front->ready << endl;
+    // int free_preg_num = 0;
+    // for (int i = 0; i < PRF_NUM; i++) {
+    //   if (back.rename.free_vec[i]) {
+    //     free_preg_num++;
+    //   }
+    // }
+    // cout << "free preg num: " << dec << free_preg_num << endl;
+    //
+    // int free_tag_num = 0;
+    // for (int i = 0; i < MAX_BR_NUM; i++) {
+    //   if (back.idu.tag_vec[i]) {
+    //     free_tag_num++;
+    //   }
+    // }
+    // cout << "free tag num: " << dec << free_tag_num << endl;
+    //
+    // int free_stq_num = 0;
+    // for (int i = 0; i < STQ_NUM; i++) {
+    //   if (!back.stq.entry[i].valid) {
+    //     free_stq_num++;
+    //   }
+    // }
+    // cout << "free stq num: " << dec << free_stq_num << endl;
+    // cout << "dis2ren ready: " << dec << back.rename.in.dis2ren->ready <<
+    // endl; cout << "ren2dec ready: " << dec << back.rename.out.ren2dec->ready
+    // << endl; cout << "dec2front ready: " << dec <<
+    // back.idu.out.dec2front->ready << endl;
 
     exit(1);
   }
@@ -320,6 +320,4 @@ void ROB::seq() {
   enq_ptr = enq_ptr_1;
   count = count_1;
   flag = flag_1;
-  assert(count == ROB_LINE_NUM ||
-         count == (enq_ptr + ROB_LINE_NUM - deq_ptr) % ROB_LINE_NUM);
 }

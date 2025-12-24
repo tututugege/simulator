@@ -20,6 +20,8 @@ public:
 
 class ROB {
 public:
+  ROB(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   void init();
   void seq();
   void comb_ready();
@@ -34,14 +36,14 @@ public:
 
   // 状态
   Inst_entry entry[ROB_BANK_NUM][ROB_NUM / 4];
-  reg7_t enq_ptr;
-  reg7_t deq_ptr;
-  reg7_t count;
+  reg5_t enq_ptr;
+  reg5_t deq_ptr;
+  reg5_t count;
   reg1_t flag;
 
   Inst_entry entry_1[ROB_BANK_NUM][ROB_NUM / 4];
-  wire7_t enq_ptr_1;
-  wire7_t deq_ptr_1;
-  wire7_t count_1;
+  wire5_t enq_ptr_1;
+  wire5_t deq_ptr_1;
+  wire5_t count_1;
   wire1_t flag_1;
 };

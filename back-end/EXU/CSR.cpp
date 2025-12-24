@@ -2,10 +2,26 @@
 #include <CSR.h>
 #include <cstdint>
 #include <cvt.h>
+#include <ref.h>
+
+int csr_idx[CSR_NUM] = {number_mtvec,    number_mepc,     number_mcause,
+                        number_mie,      number_mip,      number_mtval,
+                        number_mscratch, number_mstatus,  number_mideleg,
+                        number_medeleg,  number_sepc,     number_stvec,
+                        number_scause,   number_sscratch, number_stval,
+                        number_sstatus,  number_sie,      number_sip,
+                        number_satp,     number_mhartid,  number_misa};
 
 void CSRU::init() {
   CSR_RegFile[csr_misa] = 0x40141101;   // U/S/M  RV32I/A/M
   CSR_RegFile_1[csr_misa] = 0x40141101; // U/S/M  RV32I/A/M
+}
+
+void CSRU::comb_csr_status() {
+  out.csr_status->mstatus = CSR_RegFile[csr_mstatus];
+  out.csr_status->sstatus = CSR_RegFile[csr_sstatus];
+  out.csr_status->satp = CSR_RegFile[csr_satp];
+  out.csr_status->privilege = privilege;
 }
 
 void CSRU::comb_csr_read() {
@@ -15,72 +31,62 @@ void CSRU::comb_csr_read() {
 }
 
 void CSRU::comb_interrupt() {
-  bool mstatus[32];
-  bool sstatus[32];
-  bool mie[32];
-  bool mip[32];
-  bool mideleg[32];
-  bool medeleg[32];
-  bool mtvec[32];
-  bool stvec[32];
+  uint32_t mstatus = CSR_RegFile[csr_mstatus];
+  uint32_t mie_reg = CSR_RegFile[csr_mie];
+  uint32_t mip_reg = CSR_RegFile[csr_mip];
+  uint32_t mideleg = CSR_RegFile[csr_mideleg];
+  uint32_t medeleg = CSR_RegFile[csr_medeleg];
 
-  cvt_number_to_bit_unsigned(mstatus, CSR_RegFile[csr_mstatus], 32);
-  cvt_number_to_bit_unsigned(sstatus, CSR_RegFile[csr_sstatus], 32);
-  cvt_number_to_bit_unsigned(mie, CSR_RegFile[csr_mie], 32);
-  cvt_number_to_bit_unsigned(mip, CSR_RegFile[csr_mip], 32);
-  cvt_number_to_bit_unsigned(mideleg, CSR_RegFile[csr_mideleg], 32);
-  cvt_number_to_bit_unsigned(medeleg, CSR_RegFile[csr_medeleg], 32);
-  cvt_number_to_bit_unsigned(mtvec, CSR_RegFile[csr_mtvec], 32);
-  cvt_number_to_bit_unsigned(stvec, CSR_RegFile[csr_stvec], 32);
+  // 提取关键位
+  bool mstatus_mie = (mstatus & MSTATUS_MIE) != 0;
+  bool mstatus_sie = (mstatus & MSTATUS_SIE) != 0;
 
-  bool mstatus_mie = mstatus[31 - 3];
-  bool mstatus_sie = mstatus[31 - 1];
+  // 异常委托位 (Exceptions)
+  bool medeleg_U_ecall = (medeleg >> 8) & 1;
+  bool medeleg_S_ecall = (medeleg >> 9) & 1;
+  // bool medeleg_M_ecall = (medeleg >> 11) & 1; // 通常M-ecall不委托
 
-  bool mip_ssip = mip[31 - 1];
-  bool mie_ssie = mie[31 - 1];
+  bool medeleg_page_fault_inst = (medeleg >> 12) & 1;
+  bool medeleg_page_fault_load = (medeleg >> 13) & 1;
+  bool medeleg_page_fault_store = (medeleg >> 15) & 1;
 
-  bool mip_stip = mip[31 - 5];
-  bool mie_stie = mie[31 - 5];
+  // === 优化 3: 中断判断逻辑 (位运算) ===
+  // M-mode 中断条件:Pending & Enabled & NotDelegated & (CurrentPriv < M ||
+  // MIE=1)
 
-  bool mip_seip = mip[31 - 9];
-  bool mie_seie = mie[31 - 9];
+  // Software Interrupts
+  bool M_software_interrupt = (mip_reg & MIP_MSIP) && (mie_reg & MIP_MSIP) &&
+                              !(mideleg & MIP_MSIP) &&
+                              (privilege < 3 || mstatus_mie);
 
-  bool mip_msip = mip[31 - 3];
-  bool mie_msie = mie[31 - 3];
-  bool mideleg_msip = mideleg[31 - 3];
+  // Timer Interrupts
+  bool M_timer_interrupt = (mip_reg & MIP_MTIP) && (mie_reg & MIP_MTIP) &&
+                           !(mideleg & MIP_MTIP) &&
+                           (privilege < 3 || mstatus_mie);
 
-  bool mip_mtip = mip[31 - 7];
-  bool mie_mtie = mie[31 - 7];
-  bool mideleg_mtip = mideleg[31 - 7];
+  // External Interrupts
+  bool M_external_interrupt = (mip_reg & MIP_MEIP) && (mie_reg & MIP_MEIP) &&
+                              !(mideleg & MIP_MEIP) &&
+                              (privilege < 3 || mstatus_mie);
 
-  bool mip_meip = mip[31 - 11];
-  bool mie_meie = mie[31 - 11];
-  bool mideleg_meip = mideleg[31 - 11];
-
-  bool M_software_interrupt =
-      mip_msip && mie_msie && !mideleg_msip &&
-      (privilege < 3 || mstatus_mie); // M_software_interrupt
-
-  bool M_timer_interrupt = mip_mtip && mie_mtie && !mideleg_mtip &&
-                           (privilege < 3 || mstatus_mie); // M_timer_interrupt
-
-  bool M_external_interrupt =
-      mip_meip && mie_meie && !mideleg_meip && (privilege < 3 || mstatus_mie);
+  // S-mode 中断条件: Pending & Enabled & Delegated & (CurrentPriv < S || SIE=1)
+  // 注意：privilege < 2 (S-mode=1, U-mode=0) 意味着当前是 U 或 S
+  bool s_irq_enable = (privilege < 1 || (privilege == 1 && mstatus_sie));
 
   bool S_software_interrupt =
-      (mip_msip && mie_msie && mideleg_msip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_ssip && mie_ssie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MSIP) && (mie_reg & MIP_MSIP) && (mideleg & MIP_MSIP)) ||
+       ((mip_reg & MIP_SSIP) && (mie_reg & MIP_SSIP))) &&
+      (privilege < 2 && s_irq_enable);
 
   bool S_timer_interrupt =
-      (mip_mtip && mie_mtie && mideleg_mtip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_stip && mie_stie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MTIP) && (mie_reg & MIP_MTIP) && (mideleg & MIP_MTIP)) ||
+       ((mip_reg & MIP_STIP) && (mie_reg & MIP_STIP))) &&
+      (privilege < 2 && s_irq_enable);
 
   bool S_external_interrupt =
-      (mip_meip && mie_meie && mideleg_meip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_seip && mie_seie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MEIP) && (mie_reg & MIP_MEIP) && (mideleg & MIP_MEIP)) ||
+       ((mip_reg & MIP_SEIP) && (mie_reg & MIP_SEIP))) &&
+      (privilege < 2 && s_irq_enable);
 
   if (M_software_interrupt || M_timer_interrupt || M_external_interrupt ||
       S_software_interrupt || S_timer_interrupt || S_external_interrupt) {
@@ -91,24 +97,14 @@ void CSRU::comb_interrupt() {
 }
 
 void CSRU::comb_exception() {
-
-  bool mstatus[32];
-  bool sstatus[32];
-  bool mie[32];
-  bool mip[32];
-  bool mideleg[32];
-  bool medeleg[32];
-  bool mtvec[32];
-  bool stvec[32];
-
-  cvt_number_to_bit_unsigned(mstatus, CSR_RegFile[csr_mstatus], 32);
-  cvt_number_to_bit_unsigned(sstatus, CSR_RegFile[csr_sstatus], 32);
-  cvt_number_to_bit_unsigned(mie, CSR_RegFile[csr_mie], 32);
-  cvt_number_to_bit_unsigned(mip, CSR_RegFile[csr_mip], 32);
-  cvt_number_to_bit_unsigned(mideleg, CSR_RegFile[csr_mideleg], 32);
-  cvt_number_to_bit_unsigned(medeleg, CSR_RegFile[csr_medeleg], 32);
-  cvt_number_to_bit_unsigned(mtvec, CSR_RegFile[csr_mtvec], 32);
-  cvt_number_to_bit_unsigned(stvec, CSR_RegFile[csr_stvec], 32);
+  uint32_t mstatus = CSR_RegFile[csr_mstatus];
+  uint32_t sstatus = CSR_RegFile[csr_sstatus];
+  uint32_t mie_reg = CSR_RegFile[csr_mie];
+  uint32_t mip_reg = CSR_RegFile[csr_mip];
+  uint32_t mideleg = CSR_RegFile[csr_mideleg];
+  uint32_t medeleg = CSR_RegFile[csr_medeleg];
+  uint32_t mtvec = CSR_RegFile[csr_mtvec];
+  uint32_t stvec = CSR_RegFile[csr_stvec];
 
   bool ecall = in.rob_bcast->ecall;
   bool page_fault_inst = in.rob_bcast->page_fault_inst;
@@ -116,61 +112,56 @@ void CSRU::comb_exception() {
   bool page_fault_store = in.rob_bcast->page_fault_store;
   bool illegal_exceptinn = in.rob_bcast->illegal_inst;
 
-  bool mstatus_mie = mstatus[31 - 3];
-  bool mstatus_sie = mstatus[31 - 1];
-  bool medeleg_U_ecall = medeleg[31 - 8];
-  bool medeleg_S_ecall = medeleg[31 - 9];
-  bool medeleg_M_ecall = medeleg[31 - 11];
+  // 提取关键位
+  bool mstatus_mie = (mstatus & MSTATUS_MIE) != 0;
+  bool mstatus_sie = (mstatus & MSTATUS_SIE) != 0;
 
-  bool medeleg_page_fault_inst = medeleg[31 - 12];
-  bool medeleg_page_fault_store = medeleg[31 - 15];
-  bool medeleg_page_fault_load = medeleg[31 - 13];
+  // 异常委托位 (Exceptions)
+  bool medeleg_U_ecall = (medeleg >> 8) & 1;
+  bool medeleg_S_ecall = (medeleg >> 9) & 1;
+  // bool medeleg_M_ecall = (medeleg >> 11) & 1; // 通常M-ecall不委托
 
-  bool mip_ssip = mip[31 - 1];
-  bool mie_ssie = mie[31 - 1];
+  bool medeleg_page_fault_inst = (medeleg >> 12) & 1;
+  bool medeleg_page_fault_load = (medeleg >> 13) & 1;
+  bool medeleg_page_fault_store = (medeleg >> 15) & 1;
 
-  bool mip_stip = mip[31 - 5];
-  bool mie_stie = mie[31 - 5];
+  // === 优化 3: 中断判断逻辑 (位运算) ===
+  // M-mode 中断条件:Pending & Enabled & NotDelegated & (CurrentPriv < M ||
+  // MIE=1)
 
-  bool mip_seip = mip[31 - 9];
-  bool mie_seie = mie[31 - 9];
+  // Software Interrupts
+  bool M_software_interrupt = (mip_reg & MIP_MSIP) && (mie_reg & MIP_MSIP) &&
+                              !(mideleg & MIP_MSIP) &&
+                              (privilege < 3 || mstatus_mie);
 
-  bool mip_msip = mip[31 - 3];
-  bool mie_msie = mie[31 - 3];
-  bool mideleg_msip = mideleg[31 - 3];
+  // Timer Interrupts
+  bool M_timer_interrupt = (mip_reg & MIP_MTIP) && (mie_reg & MIP_MTIP) &&
+                           !(mideleg & MIP_MTIP) &&
+                           (privilege < 3 || mstatus_mie);
 
-  bool mip_mtip = mip[31 - 7];
-  bool mie_mtie = mie[31 - 7];
-  bool mideleg_mtip = mideleg[31 - 7];
+  // External Interrupts
+  bool M_external_interrupt = (mip_reg & MIP_MEIP) && (mie_reg & MIP_MEIP) &&
+                              !(mideleg & MIP_MEIP) &&
+                              (privilege < 3 || mstatus_mie);
 
-  bool mip_meip = mip[31 - 11];
-  bool mie_meie = mie[31 - 11];
-  bool mideleg_meip = mideleg[31 - 11];
-
-  bool M_software_interrupt =
-      mip_msip && mie_msie && !mideleg_msip &&
-      (privilege < 3 || mstatus_mie); // M_software_interrupt
-
-  bool M_timer_interrupt = mip_mtip && mie_mtie && !mideleg_mtip &&
-                           (privilege < 3 || mstatus_mie); // M_timer_interrupt
-
-  bool M_external_interrupt =
-      mip_meip && mie_meie && !mideleg_meip && (privilege < 3 || mstatus_mie);
+  // S-mode 中断条件: Pending & Enabled & Delegated & (CurrentPriv < S || SIE=1)
+  // 注意：privilege < 2 (S-mode=1, U-mode=0) 意味着当前是 U 或 S
+  bool s_irq_enable = (privilege < 1 || (privilege == 1 && mstatus_sie));
 
   bool S_software_interrupt =
-      (mip_msip && mie_msie && mideleg_msip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_ssip && mie_ssie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MSIP) && (mie_reg & MIP_MSIP) && (mideleg & MIP_MSIP)) ||
+       ((mip_reg & MIP_SSIP) && (mie_reg & MIP_SSIP))) &&
+      (privilege < 2 && s_irq_enable);
 
   bool S_timer_interrupt =
-      (mip_mtip && mie_mtie && mideleg_mtip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_stip && mie_stie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MTIP) && (mie_reg & MIP_MTIP) && (mideleg & MIP_MTIP)) ||
+       ((mip_reg & MIP_STIP) && (mie_reg & MIP_STIP))) &&
+      (privilege < 2 && s_irq_enable);
 
   bool S_external_interrupt =
-      (mip_meip && mie_meie && mideleg_meip && privilege < 2 &&
-       (privilege < 1 || mstatus_sie)) ||
-      (mip_seip && mie_seie && privilege < 2 && (privilege < 1 || mstatus_sie));
+      (((mip_reg & MIP_MEIP) && (mie_reg & MIP_MEIP) && (mideleg & MIP_MEIP)) ||
+       ((mip_reg & MIP_SEIP) && (mie_reg & MIP_SEIP))) &&
+      (privilege < 2 && s_irq_enable);
 
   bool S_interrupt_resp =
       (S_software_interrupt || S_timer_interrupt || S_external_interrupt) &&
@@ -220,25 +211,27 @@ void CSRU::comb_exception() {
 
     CSR_RegFile_1[csr_mcause] = cause;
 
-    if (mtvec[31 - 0] && !mtvec[31 - 1] && cause & (1 << 31)) {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_mtvec] & 0xfffffffc;
-      out.csr2rob->trap_pc += 4 * (cause & 0x7fffffff);
+    if ((mtvec & 1) && (cause & (1u << 31))) {
+      out.csr2front->trap_pc = CSR_RegFile[csr_mtvec] & 0xfffffffc;
+      out.csr2front->trap_pc += 4 * (cause & 0x7fffffff);
     } else {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_mtvec];
+      out.csr2front->trap_pc = CSR_RegFile[csr_mtvec];
     }
 
-    mstatus[31 - 11] = privilege & 0b1;
-    mstatus[31 - 12] =
-        (privilege >> 1) & 0b1;        // next_mstatus.MPP = this_priviledge*/
-    mstatus[31 - 7] = mstatus[31 - 3]; // next_mstatus.MPIE = mstatus.MIE;
-    mstatus[31 - 3] = 0;               // next_mstatus.MIE = 0;
+    mstatus = (mstatus & ~MSTATUS_MPP) | ((privilege & 0x3) << 11);
+    // MPIE = MIE
+    if (mstatus & MSTATUS_MIE)
+      mstatus |= MSTATUS_MPIE;
+    else
+      mstatus &= ~MSTATUS_MPIE;
+    // MIE = 0
+    mstatus &= ~MSTATUS_MIE;
 
-    sstatus[31 - 11] = privilege & 0b1;
-    sstatus[31 - 12] =
-        (privilege >> 1) & 0b1;        // next_sstatus.MPP = this_priviledge*/
-    sstatus[31 - 7] = sstatus[31 - 3]; // next_sstatus.MPIE = sstatus.MIE;
-    sstatus[31 - 3] = 0;               // next_sstatus.MIE = 0;
-    privilege_1 = 0b11;
+    // 同步 sstatus (sstatus 是 mstatus 的影子)
+    CSR_RegFile_1[csr_mstatus] = mstatus;
+    CSR_RegFile_1[csr_sstatus] = mstatus;
+
+    privilege_1 = RISCV_MODE_M; // Machine Mode
 
     if (page_fault_store || page_fault_load || page_fault_inst) {
       CSR_RegFile_1[csr_mtval] = in.rob_bcast->trap_val;
@@ -268,24 +261,35 @@ void CSRU::comb_exception() {
 
     CSR_RegFile_1[csr_scause] = cause;
 
-    if (stvec[31 - 0] && !stvec[31 - 1] && cause & (1 << 31)) {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_stvec] & 0xfffffffc;
-      out.csr2rob->trap_pc += 4 * (cause & 0x7fffffff);
+    if ((stvec & 1) && (cause & (1u << 31))) {
+      out.csr2front->trap_pc = CSR_RegFile[csr_stvec] & 0xfffffffc;
+      out.csr2front->trap_pc += 4 * (cause & 0x7fffffff);
     } else {
-      out.csr2rob->trap_pc = CSR_RegFile[csr_stvec];
+      out.csr2front->trap_pc = CSR_RegFile[csr_stvec];
     }
 
-    // sstatus是mstatus的子集，sstatus改变时mstatus也要变
-    sstatus[31 - 8] =
-        (privilege == 0) ? 0 : 1; // next_sstatus.SPP = this_priviledge;
-    mstatus[31 - 8] =
-        (privilege == 0) ? 0 : 1; // next_mstatus.SPP = this_priviledge;
+    // 更新 sstatus
+    // SPP = privilege
+    if (privilege == 1)
+      sstatus |= MSTATUS_SPP;
+    else
+      sstatus &= ~MSTATUS_SPP;
 
-    mstatus[31 - 5] = mstatus[31 - 1]; // next_mstatus.SPIE = mstatus.SIE;
-    sstatus[31 - 5] = sstatus[31 - 1]; // next_sstatus.SPIE = sstatus.SIE;
-    mstatus[31 - 1] = 0;               // next_mstatus.SIE = 0;
-    sstatus[31 - 1] = 0;               // next_sstatus.SIE = 0;
-    privilege_1 = 1;
+    // SPIE = SIE
+    if (sstatus & MSTATUS_SIE)
+      sstatus |= MSTATUS_SPIE;
+    else
+      sstatus &= ~MSTATUS_SPIE;
+
+    // SIE = 0
+    sstatus &= ~MSTATUS_SIE;
+
+    // 写回
+    CSR_RegFile_1[csr_sstatus] = sstatus;
+    CSR_RegFile_1[csr_mstatus] = sstatus;
+
+    privilege_1 = 1; // Supervisor Mode
+
     if (page_fault_store || page_fault_load || page_fault_inst) {
       CSR_RegFile_1[csr_stval] = in.rob_bcast->trap_val;
     } else {
@@ -293,29 +297,46 @@ void CSRU::comb_exception() {
     }
 
   } else if (in.rob_bcast->mret) {
-    mstatus[31 - 3] = mstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
-    sstatus[31 - 3] = sstatus[31 - 7]; // next_mstatus.MIE = mstatus.MPIE;
-    privilege_1 = mstatus[31 - 11] + 2 * mstatus[31 - 12];
-    mstatus[31 - 7] = 1; // next_mstatus.MPIE = 1;
-    mstatus[31 - 12] = 0;
-    mstatus[31 - 11] = 0; // next_mstatus.MPP = U;
+    // MIE = MPIE
+    if (mstatus & MSTATUS_MPIE)
+      mstatus |= MSTATUS_MIE;
+    else
+      mstatus &= ~MSTATUS_MIE;
 
-    sstatus[31 - 7] = 1; // next_mstatus.MPIE = 1;
-    sstatus[31 - 12] = 0;
-    sstatus[31 - 11] = 0; // next_mstatus.MPP = U;
-    out.csr2rob->epc = CSR_RegFile[csr_mepc];
+    // Privilege = MPP
+    privilege_1 = GET_MPP(mstatus);
+
+    // MPIE = 1
+    mstatus |= MSTATUS_MPIE;
+    // MPP = U (0)
+    mstatus &= ~MSTATUS_MPP;
+
+    // 同步 sstatus
+    CSR_RegFile_1[csr_mstatus] = mstatus;
+    CSR_RegFile_1[csr_sstatus] = mstatus;
+    out.csr2front->epc = CSR_RegFile[csr_mepc];
   } else if (in.rob_bcast->sret) {
-    mstatus[31 - 1] = mstatus[31 - 5]; // next_mstatus.SIE = mstatus.SPIE;
-    sstatus[31 - 1] = sstatus[31 - 5]; // next_sstatus.SIE = sstatus.SPIE;
-    privilege_1 = sstatus[31 - 8];     // next_priviledge = sstatus.SPP;
-    mstatus[31 - 5] = 1;               // next_mstatus.SPIE = 1;
-    sstatus[31 - 5] = 1;               // next_sstatus.SPIE = 1;
-    mstatus[31 - 8] = 0;               // next_mstatus.SPP = U;
-    sstatus[31 - 8] = 0;               // next_sstatus.SPP = U;
-    out.csr2rob->epc = CSR_RegFile[csr_sepc];
+    // SIE = SPIE
+    if (sstatus & MSTATUS_SPIE)
+      sstatus |= MSTATUS_SIE;
+    else
+      sstatus &= ~MSTATUS_SIE;
+
+    // Privilege = SPP
+    privilege_1 = GET_SPP(sstatus);
+
+    // SPIE = 1
+    sstatus |= MSTATUS_SPIE;
+    // SPP = U (0)
+    sstatus &= ~MSTATUS_SPP;
+
+    CSR_RegFile_1[csr_sstatus] = sstatus;
+    CSR_RegFile_1[csr_mstatus] = sstatus;
+
+    out.csr2front->epc = CSR_RegFile[csr_sepc];
   }
-  CSR_RegFile_1[csr_mstatus] = cvt_bit_to_number_unsigned(mstatus, 32);
-  CSR_RegFile_1[csr_sstatus] = cvt_bit_to_number_unsigned(sstatus, 32);
+  // CSR_RegFile_1[csr_mstatus] = cvt_bit_to_number_unsigned(mstatus, 32);
+  // CSR_RegFile_1[csr_sstatus] = cvt_bit_to_number_unsigned(sstatus, 32);
 }
 
 void CSRU::comb_csr_write() {

@@ -10,6 +10,7 @@ struct PTAB_entry {
   bool alt_pred[FETCH_WIDTH];
   uint8_t altpcpn[FETCH_WIDTH];
   uint8_t pcpn[FETCH_WIDTH];
+  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
 };
 
 static std::queue<PTAB_entry> ptab;
@@ -42,6 +43,9 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
       entry.alt_pred[i] = in->alt_pred[i];
       entry.altpcpn[i] = in->altpcpn[i];
       entry.pcpn[i] = in->pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        entry.tage_idx[i][j] = in->tage_idx[i][j];
+      }
     }
     entry.predict_next_fetch_address = in->predict_next_fetch_address;
     ptab.push(entry);
@@ -55,6 +59,9 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
       out->alt_pred[i] = ptab.front().alt_pred[i];
       out->altpcpn[i] = ptab.front().altpcpn[i];
       out->pcpn[i] = ptab.front().pcpn[i];
+      for(int j = 0; j < 4; j++) { // TN_MAX = 4
+        out->tage_idx[i][j] = ptab.front().tage_idx[i][j];
+      }
     }
     out->predict_next_fetch_address = ptab.front().predict_next_fetch_address;
     ptab.pop();

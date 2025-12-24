@@ -21,7 +21,6 @@ Makefile.%: cpu-tests/%.c
 	else \
 		printf "[%14s] $(COLOR_RED)***FAIL***$(COLOR_NONE)\n" $* >> $(RESULT); \
 	fi
-	# rm -f $* $*.bin
 	rm -f Makefile.$*
 
 run: all

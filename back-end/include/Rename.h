@@ -2,6 +2,8 @@
 #include "IO.h"
 #include "config.h"
 
+class Back_Top;
+
 class REN_IN {
 public:
   Dec_Ren *dec2ren;
@@ -21,10 +23,12 @@ public:
 
 class Rename {
 public:
+  Rename(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   REN_IN in;
   REN_OUT out;
 
-  Rename();
+  void init();
   void comb_select();
   void comb_rename(); // 重命名
   void comb_fire();

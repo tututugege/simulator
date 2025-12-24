@@ -146,6 +146,8 @@ typedef struct {
 typedef struct {
   Csr_Exe *csr2exe;
   Csr_Rob *csr2rob;
+  Csr_Front *csr2front;
+  Csr_Status *csr_status;
 } CSR_OUT;
 
 class CSRU {
@@ -154,6 +156,8 @@ public:
   CSR_OUT out;
 
   void init();
+
+  void comb_csr_status();
   void comb_csr_read();
   void comb_csr_write();
   void comb_interrupt();

@@ -3,24 +3,28 @@
 #include <IO.h>
 #include <cstdint>
 #include <vector>
+#define FORCE_INLINE __attribute__((always_inline)) inline
+
+class Back_Top;
 
 class IQ {
 public:
-  IQ(int, int);
+  IQ(int, int, SimContext *);
+  SimContext *ctx;
   void init();
-  void wake_up(uint32_t, uint32_t latency);
+  void FORCE_INLINE wake_up(bool *valid, uint32_t *preg);
+  Inst_entry FORCE_INLINE scheduler();
   void latency_wake();
   void sta_wake_up(int);
   void std_wake_up(int);
   void br_clear(uint32_t br_mask);
-  Inst_entry scheduler();
-  Inst_entry deq();
   void enq(Inst_uop &inst);
+  Inst_entry deq();
   int entry_num;
   int type;
 
   vector<Inst_entry> entry;
-  int num; // 电路中不一定要有这个东西
+  int num; // 电路中不一定要有这个东西，主要用于debug
 
   vector<Inst_entry> entry_1;
   int num_1;
@@ -44,10 +48,12 @@ public:
 
 class ISU {
 public:
+  ISU(SimContext *ctx) { this->ctx = ctx; }
+  SimContext *ctx;
   ISU_IN in;
   ISU_OUT out;
   void init();
-  void add_iq(int entry_num, int);
+  void add_iq(int entry_num, int, SimContext *);
   void comb_ready();
   void comb_deq();
   void comb_enq();

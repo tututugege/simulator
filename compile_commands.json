@@ -1,7 +1,7 @@
 [
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -11,6 +11,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/EXU/Cache.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -18,7 +21,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -28,6 +31,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/EXU/STQ.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -35,7 +41,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -45,6 +51,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/EXU/CSR.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -52,7 +61,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -62,6 +71,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/EXU/EXU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -69,7 +81,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -79,6 +91,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/EXU/FU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -86,7 +101,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -96,6 +111,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/ROB.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -103,7 +121,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -113,6 +131,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/IDU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -120,7 +141,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -130,6 +151,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/Rename.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -137,7 +161,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -147,6 +171,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/ISU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -154,7 +181,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -164,6 +191,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/PRF.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -171,7 +201,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -181,6 +211,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/TOP.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -188,7 +221,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -198,6 +231,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./back-end/Dispatch.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -205,7 +241,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -215,6 +251,29 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./front-end/predecode_checker.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/predecode_checker.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++-12",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/BPU/target_predictor/ras.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -222,7 +281,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -232,6 +291,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/BPU/target_predictor/target_cache.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -239,7 +301,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -249,6 +311,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/BPU/target_predictor/btb.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -256,7 +321,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -266,6 +331,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/BPU/dir_predictor/demo_tage.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -273,7 +341,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -283,6 +351,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/BPU/BPU_top.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -290,7 +361,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -300,6 +371,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/icache/icache_module.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -307,7 +381,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -317,6 +391,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/icache/icache.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -324,7 +401,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -334,6 +411,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/front_top.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -341,7 +421,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -351,6 +431,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/fifo/instruction_FIFO.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -358,7 +441,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -368,6 +451,29 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./front-end/fifo/front2bank_FIFO.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/fifo/front2bank_FIFO.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++-12",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./front-end/fifo/PTAB.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -375,7 +481,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -385,6 +491,29 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./front-end/predecode.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/front-end/predecode.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++-12",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./diff/diff.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -392,7 +521,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -402,6 +531,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./diff/ref.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -409,7 +541,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -419,6 +551,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./mmu/PTW.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -426,7 +561,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -436,6 +571,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./mmu/MMU.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -443,7 +581,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -453,6 +591,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./mmu/TLB.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -460,7 +601,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -470,6 +611,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./mmu/TLBEntry.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
@@ -477,7 +621,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++",
+      "/usr/bin/g++-12",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -487,6 +631,9 @@
       "-I./front-end/",
       "-I./mmu/include/",
       "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
       "./rv_simu_mmu_v2.cpp"
     ],
     "directory": "/home/tututu/qimeng/simulator",
