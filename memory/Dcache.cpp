@@ -1,4 +1,5 @@
 #include "Dcache.h"
+#include "WriteBuffer.h"
 #include <cstdio>
 #include <cstring>
 bool hit_ld = false;
@@ -147,6 +148,9 @@ void Dcache::comb_s1()
     else tag_and_data_read(s2_reg_ld.index, GET_OFFSET(s2_reg_ld.addr), tag_reg_ld, data_reg_ld);
     if(!stall_st)tag_and_data_read(s1_reg_st.index, GET_OFFSET(s1_reg_st.addr), tag_reg_st, data_reg_st);
     else tag_and_data_read(s2_reg_st.index, GET_OFFSET(s2_reg_st.addr), tag_reg_st, data_reg_st);
+#ifdef CONFIG_MMU
+    tag_and_data_read(in.ptw2dcache_req->paddr, GET_OFFSET(in.ptw2dcache_req->paddr), mmu_reg_tag, mmu_reg_data);
+#endif
 
     if (stall_ld)
     {
@@ -258,14 +262,14 @@ void Dcache::seq()
     {
         dcache_data[s2_reg_st.index][hit_way_st][GET_OFFSET(s2_reg_st.addr)] = new_data;
         dcache_dirty[s2_reg_st.index][hit_way_st] = true;
-        if (s2_reg_st.tag == s1_reg_ld.tag && s2_reg_st.index == s1_reg_ld.index&&GET_OFFSET(s2_reg_st.addr)==GET_OFFSET(s1_reg_ld.addr))
+        if (s2_reg_st.tag == s1_reg_ld.tag && s2_reg_st.index == s1_reg_ld.index&&GET_OFFSET(s2_reg_st.addr)==GET_OFFSET(s1_reg_ld.addr)&&!stall_ld)
         {
             data_reg_ld[hit_way_st] = new_data;
             if(DCACHE_LOG){
                 printf("Dcache Store Forwarding in S1 Stage LD: way=%d new_data=0x%08X\n", hit_way_st, new_data);
             }
         }
-        if (s2_reg_st.tag == s1_reg_st.tag && s2_reg_st.index == s1_reg_st.index&&GET_OFFSET(s2_reg_st.addr)==GET_OFFSET(s1_reg_st.addr))
+        if (s2_reg_st.tag == s1_reg_st.tag && s2_reg_st.index == s1_reg_st.index&&GET_OFFSET(s2_reg_st.addr)==GET_OFFSET(s1_reg_st.addr)&&!stall_st)
         {
             data_reg_st[hit_way_st] = new_data;
             if(DCACHE_LOG){
@@ -298,17 +302,56 @@ void Dcache::seq()
 
     s2_reg_st = s2_next_st;
     s1_reg_st = s1_next_st;
-    // if (!stall_ld)
-    // {
-        memcpy(tag_next_ld, tag_reg_ld, sizeof(uint32_t) * DCACHE_WAY_NUM);
-        memcpy(data_next_ld, data_reg_ld, sizeof(uint32_t) * DCACHE_WAY_NUM);
-    // }
-    // if (!stall_st)
-    // {
-        memcpy(tag_next_st, tag_reg_st, sizeof(uint32_t) * DCACHE_WAY_NUM);
-        memcpy(data_next_st, data_reg_st, sizeof(uint32_t) * DCACHE_WAY_NUM);
-    // }
+    memcpy(tag_next_ld, tag_reg_ld, sizeof(uint32_t) * DCACHE_WAY_NUM);
+    memcpy(data_next_ld, data_reg_ld, sizeof(uint32_t) * DCACHE_WAY_NUM);
+    memcpy(tag_next_st, tag_reg_st, sizeof(uint32_t) * DCACHE_WAY_NUM);
+    memcpy(data_next_st, data_reg_st, sizeof(uint32_t) * DCACHE_WAY_NUM);
+
+    #ifdef CONFIG_MMU
+    memcpy(mmu_next_tag, mmu_reg_tag, sizeof(uint32_t) * DCACHE_WAY_NUM);
+    memcpy(mmu_next_data, mmu_reg_data, sizeof(uint32_t) * DCACHE_WAY_NUM);
+    #endif
 }
+#ifdef CONFIG_MMU
+void Dcache::comb_mmu(){
+    if(in.ptw2dcache_req->valid){
+        bool hit = false;
+        int way_idx = 0;
+        uint32_t addr = in.ptw2dcache_req->paddr;
+        uint32_t index = GET_INDEX(addr);
+        uint32_t tag = GET_TAG(addr);
+        uint32_t hit_data = 0;
+        uint32_t rdata=0;
+        hit_check(index, tag, hit, way_idx, hit_data, mmu_next_tag, mmu_next_data);
+
+        if(hit){
+            rdata = hit_data;
+            updatelru(index, way_idx);
+            if(DCACHE_LOG){
+                printf("Dcache Read Hit: addr=0x%08X rdata=0x%08X way=%d sim_time:%lld\n", addr, rdata, way_idx, sim_time);
+            }
+        }
+        else{
+            hit = writebuffer_find(GET_ADDR(tag,index,0), GET_OFFSET(addr), rdata);
+            if(hit){
+                if(DCACHE_LOG){
+                    printf("Dcache Read Hit in WriteBuffer: addr=0x%08X rdata=0x%08X sim_time:%lld\n", addr, rdata, sim_time);
+                }
+            } 
+            if(DCACHE_LOG){
+                printf("Dcache Read Miss: addr=0x%08X sim_time:%lld\n", addr, sim_time);
+            }
+        }
+        out.dcache2ptw_resp->valid = true;
+        out.dcache2ptw_resp->miss = !hit;
+        out.dcache2ptw_resp->data = rdata;
+    }
+    else{
+        out.dcache2ptw_resp->valid = false;
+    }
+    out.dcache2ptw_req->ready = true;
+}
+#endif
 void Dcache::print()
 {
     printf("\n");

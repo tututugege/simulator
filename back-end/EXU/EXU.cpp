@@ -54,7 +54,7 @@ static inline bool comb_apply_slot(mmu_slot_t &slot)
   slot.idx = 0;
   return false;
 }
-#ifdef CONFIG_CACHE
+#if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
 void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
 {
 
@@ -132,8 +132,45 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
       cycle = 0;
     }
   }
+}
 
-#ifdef CONFIG_MMU
+#elif defined(CONFIG_CACHE) && defined(CONFIG_MMU)
+void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
+{
+
+  if (cycle == 0)
+  {
+    if (inst.op == UOP_MUL)
+    { // mul
+      latency = 1;
+    }
+    else if (inst.op == UOP_DIV)
+    { // div
+      latency = 1;
+    }
+    else if (inst.op == UOP_LOAD)
+    {
+      cache.cache_access(inst.src1_rdata + inst.imm);
+      latency = 1;
+    }
+    else if (inst.op == UOP_STA)
+    {
+      latency = 2;
+    }
+    else
+    {
+      latency = 1;
+    }
+  }
+
+  cycle++;
+  if(DCACHE_LOG){
+    printf("  FU exec: inst=0x%08x cycle=%d latency=%d mispred=%d uop=%d\n",
+           inst.instruction, cycle, latency, mispred, inst.op);
+    for(int i = 0; i < MAX_LSU_REQ_NUM; i++){
+      printf("    alloc_mmu_req_slot[%d]=%d\n", i, alloc_mmu_req_slot[i]);
+    }
+  }
   // deal with mmu: if miss, return and wait for next cycle
   if (is_load_uop(inst.op) || is_sta_uop(inst.op))
   {
@@ -155,6 +192,9 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
             .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
         int idx = mmu_lsu_slot_r_1.idx;
         mmu.io.in.mmu_lsu_req[idx] = req;
+      }
+      if(DCACHE_LOG){
+        printf("   FU exec: mmu slot not allocated, granted=%d\n", granted);
       }
       return;
     }
@@ -179,6 +219,12 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
     }
   }
 
+  if (mispred)
+  {
+    complete = true;
+    cycle = 0;
+    return;
+  }
   if (cycle >= latency)
   {
     if (is_load_uop(inst.op))
@@ -187,7 +233,7 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       // ldu(inst);
-      ldu(inst, page_fault, mmu_ppn, in);
+      ldu(inst, page_fault, mmu_ppn,in);
     }
     else if (is_sta_uop(inst.op))
     {
@@ -229,82 +275,21 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
       cycle = 0;
     }
   }
-#else
-
-#endif
 }
-void EXU::comb_latency()
-{
-  // if(DCACHE_LOG){
-  //   printf("\nEXU Latency Comb:in.cache2exe_ready->ready=%d\n", in.cache2exe_ready->ready);
-  //   for(int i = 0; i < ISSUE_WAY; i++){
-  //     printf("  FU[%d]: cycle=%d, latency=%d, complete=%d\n", i, fu[i].cycle, fu[i].latency, fu[i].complete);
-  //   }
-  //   printf("\n");
-  //   for(int i = 0; i < ISSUE_WAY; i++)
-  //   printf("  inst_r[%d]: valid=%d uop_inst=0x%08x\n", i, inst_r[i].valid, inst_r[i].uop.instruction);
-  //   printf("\nmispred: %d flush: %d\n", in.dec_bcast->mispred, in.rob_bcast->flush);
-  // }
-  if (inst_r[IQ_LD].valid)
-  {
-    if (in.rob_bcast->flush)
-    {
-      fu[IQ_LD].complete = true;
-      fu[IQ_LD].cycle = 0;
-      out.exe2prf->entry[IQ_LD].valid = false;
-      return;
-    }
-    if (in.dec_bcast->mispred && ((1 << inst_r[IQ_LD].uop.tag) & in.dec_bcast->br_mask))
-    {
-      fu[IQ_LD].complete = true;
-      fu[IQ_LD].cycle = 0;
-      out.exe2prf->entry[IQ_LD].valid = false;
-      return;
-    }
-    if (in.cache2exe_ready->ready)
-    {
-      fu[IQ_LD].complete = true;
-      fu[IQ_LD].cycle = 0;
-      out.exe2prf->entry[IQ_LD].valid = true;
-    }
-    else
-    {
-      fu[IQ_LD].complete = false;
-      fu[IQ_LD].latency++;
-      out.exe2prf->entry[IQ_LD].valid = false;
-    }
-    // if (DCACHE_LOG)
-    // {
-    //   printf("\nEXU Latency Comb:\n");
-    //   printf("in.cache2exe_ready->ready: %d fu[%d].complete: %d\n", in.cache2exe_ready->ready, IQ_LD, fu[IQ_LD].complete);
-    // }
-  }
-}
-#elif CONFIG_MMU
-void FU::exec(Inst_uop &inst)
-{
+#elif !defined(CONFIG_CACHE) && defined(CONFIG_MMU)
+void FU::exec(Inst_uop &inst) {
 
-  if (cycle == 0)
-  {
-    if (inst.op == UOP_MUL)
-    { // mul
+  if (cycle == 0) {
+    if (inst.op == UOP_MUL) { // mul
       latency = 1;
-    }
-    else if (inst.op == UOP_DIV)
-    { // div
+    } else if (inst.op == UOP_DIV) { // div
       latency = 1;
-    }
-    else if (inst.op == UOP_LOAD)
-    {
+    } else if (inst.op == UOP_LOAD) {
       latency = cache.cache_access(inst.src1_rdata + inst.imm);
-      // latency = 2;
-    }
-    else if (inst.op == UOP_STA)
-    {
+      // latency = 1;
+    } else if (inst.op == UOP_STA) {
       latency = 2;
-    }
-    else
-    {
+    } else {
       latency = 1;
     }
   }
@@ -312,18 +297,15 @@ void FU::exec(Inst_uop &inst)
   cycle++;
 
   // deal with mmu: if miss, return and wait for next cycle
-  if (is_load_uop(inst.op) || is_sta_uop(inst.op))
-  {
+  if (is_load_uop(inst.op) || is_sta_uop(inst.op)) {
     // step0: reset wire mmu_lsu_slot_r_1, which is
     // only useful for load/sta uop
     uint32_t vaddr = inst.src1_rdata + inst.imm;
     // step1: try to find a free slot if not allocated yet
-    if (!mmu_lsu_slot_r.valid)
-    {
+    if (!mmu_lsu_slot_r.valid) {
       // slot not allocated yet
       bool granted = comb_apply_slot(mmu_lsu_slot_r_1);
-      if (granted)
-      {
+      if (granted) {
         // free slot found, send mmu request and
         // waiting for next cycle
         mmu_req_master_t req = {
@@ -331,47 +313,41 @@ void FU::exec(Inst_uop &inst)
             .vtag = (vaddr >> 12), // vaddr[31:12]
             .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
         int idx = mmu_lsu_slot_r_1.idx;
-        mmu.io.in.mmu_lsu_req[idx] = req;
+        cpu.mmu.io.in.mmu_lsu_req[idx] = req;
       }
       return;
     }
 
     // step2: slot aleardy allocated, check mmu resp to see if hit
-    mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+    mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
     bool hit = resp.valid && !resp.miss;
     // if (!hit) {
-    if (!hit || cycle < latency)
-    {
+    if (!hit || cycle < latency) {
       // miss, reallocate and replay the request
       bool granted = comb_apply_slot(mmu_lsu_slot_r_1);
-      if (granted)
-      {
+      if (granted) {
         mmu_req_master_t req = {
             .valid = true,
             .vtag = (vaddr >> 12), // vaddr[31:12]
             .op_type = is_load_uop(inst.op) ? mmu_n::OP_LOAD : mmu_n::OP_STORE};
-        mmu.io.in.mmu_lsu_req[mmu_lsu_slot_r_1.idx] = req;
+        cpu.mmu.io.in.mmu_lsu_req[mmu_lsu_slot_r_1.idx] = req;
       }
       return;
     }
   }
 
-  if (cycle >= latency)
-  {
-    if (is_load_uop(inst.op))
-    {
-      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+  if (cycle >= latency) {
+    if (is_load_uop(inst.op)) {
+      mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       // ldu(inst);
       bool stall_load = ldu(inst, page_fault, mmu_ppn);
-      if (stall_load)
-      {
+      if (stall_load) {
         // load failed due to waiting forward data from
         // store queue reallocate and replay the request
         bool granted = comb_apply_slot(mmu_lsu_slot_r_1);
-        if (granted)
-        {
+        if (granted) {
           uint32_t vaddr = inst.src1_rdata + inst.imm;
           mmu_req_master_t req = {.valid = true,
                                   .vtag = (vaddr >> 12), // vaddr[31:12]
@@ -379,45 +355,33 @@ void FU::exec(Inst_uop &inst)
         }
         return; // not complete yet
       }
-    }
-    else if (is_sta_uop(inst.op))
-    {
-      mmu_resp_master_t resp = mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
+    } else if (is_sta_uop(inst.op)) {
+      mmu_resp_master_t resp = cpu.mmu.io.out.mmu_lsu_resp[mmu_lsu_slot_r.idx];
       bool page_fault = resp.valid && resp.excp;
       uint32_t mmu_ppn = resp.ptag;
       stu_addr(inst, page_fault, mmu_ppn);
-    }
-    else if (is_std_uop(inst.op))
-    {
+    } else if (is_std_uop(inst.op)) {
       stu_data(inst);
-    }
-    else if (is_branch_uop(inst.op))
-    {
+    } else if (is_branch_uop(inst.op)) {
       bru(inst);
-    }
-    else if (inst.op == UOP_MUL)
-    {
+    } else if (inst.op == UOP_MUL) {
       mul(inst);
-    }
-    else if (inst.op == UOP_DIV)
-    {
+    } else if (inst.op == UOP_DIV) {
       div(inst);
-    }
-    else if (inst.op == UOP_SFENCE_VMA)
-    {
+    } else if (inst.op == UOP_SFENCE_VMA) {
       uint32_t vaddr = inst.src1_rdata;
       uint32_t asid = inst.src2_rdata;
-      mmu.io.in.tlb_flush.flush_asid = asid;
-      mmu.io.in.tlb_flush.flush_vpn = vaddr >> 12;
-      mmu.io.in.tlb_flush.flush_valid = true;
-    }
-    else
+      cpu.mmu.io.in.tlb_flush.flush_asid = asid;
+      cpu.mmu.io.in.tlb_flush.flush_vpn = vaddr >> 12;
+      cpu.mmu.io.in.tlb_flush.flush_valid = true;
+    } else
       alu(inst);
 
     complete = true;
     cycle = 0;
   }
 }
+
 #else
 void FU::exec(Inst_uop &inst)
 {
@@ -536,6 +500,9 @@ void EXU::comb_exec()
     {
 #ifdef CONFIG_CACHE
       fu[i].exec(out.exe2prf->entry[i].uop, out.exe2cache, (in.dec_bcast->mispred && ((1 << inst_r[i].uop.tag) & in.dec_bcast->br_mask)) || in.rob_bcast->flush);
+      if(DCACHE_LOG){
+        printf("EXU FU[%d] Exec Inst: 0x%08x rob_idx=%d valid:%d op:%d\n", i, inst_r[i].uop.instruction,inst_r[i].uop.rob_idx, inst_r[i].valid, inst_r[i].uop.op);
+      }
       if(i==IQ_LD)continue;
 #else
       fu[i].exec(out.exe2prf->entry[i].uop);
@@ -669,5 +636,52 @@ void EXU::seq()
 #ifdef CONFIG_MMU
     fu[i].mmu_lsu_slot_r = fu[i].mmu_lsu_slot_r_1;
 #endif
+  }
+}
+void EXU::comb_latency()
+{
+  // if(DCACHE_LOG){
+  //   printf("\nEXU Latency Comb:in.cache2exe_ready->ready=%d\n", in.cache2exe_ready->ready);
+  //   for(int i = 0; i < ISSUE_WAY; i++){
+  //     printf("  FU[%d]: cycle=%d, latency=%d, complete=%d\n", i, fu[i].cycle, fu[i].latency, fu[i].complete);
+  //   }
+  //   printf("\n");
+  //   for(int i = 0; i < ISSUE_WAY; i++)
+  //   printf("  inst_r[%d]: valid=%d uop_inst=0x%08x\n", i, inst_r[i].valid, inst_r[i].uop.instruction);
+  //   printf("\nmispred: %d flush: %d\n", in.dec_bcast->mispred, in.rob_bcast->flush);
+  // }
+  if (inst_r[IQ_LD].valid)
+  {
+    if (in.rob_bcast->flush)
+    {
+      fu[IQ_LD].complete = true;
+      fu[IQ_LD].cycle = 0;
+      out.exe2prf->entry[IQ_LD].valid = false;
+      return;
+    }
+    if (in.dec_bcast->mispred && ((1 << inst_r[IQ_LD].uop.tag) & in.dec_bcast->br_mask))
+    {
+      fu[IQ_LD].complete = true;
+      fu[IQ_LD].cycle = 0;
+      out.exe2prf->entry[IQ_LD].valid = false;
+      return;
+    }
+    if (in.cache2exe_ready->ready)
+    {
+      fu[IQ_LD].complete = true;
+      fu[IQ_LD].cycle = 0;
+      out.exe2prf->entry[IQ_LD].valid = true;
+    }
+    else
+    {
+      fu[IQ_LD].complete = false;
+      fu[IQ_LD].latency++;
+      out.exe2prf->entry[IQ_LD].valid = false;
+    }
+    // if (DCACHE_LOG)
+    // {
+    //   printf("\nEXU Latency Comb:\n");
+    //   printf("in.cache2exe_ready->ready: %d fu[%d].complete: %d\n", in.cache2exe_ready->ready, IQ_LD, fu[IQ_LD].complete);
+    // }
   }
 }

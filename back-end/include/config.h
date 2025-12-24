@@ -53,8 +53,8 @@ using namespace std;
 #define ALU_NUM 2
 #define BRU_NUM 2
 
-#define LOG_START 699970368
-#define LOG_ENABLE
+#define LOG_START 0
+#define LOG_ENABLE 
 
 #ifndef LOG_ENABLE
   #define DEBUG (0)
@@ -63,7 +63,7 @@ using namespace std;
   #define DCACHE_LOG (0 && (sim_time >= LOG_START))
   #define MMU_LOG (0 && (sim_time >= LOG_START))
 #else
-  #define DEBUG (0 && (sim_time >= 0))
+  #define DEBUG (0 && (sim_time >= 509740152))
   #define LOG (1 && (sim_time >= LOG_START))
   #define MEM_LOG (1 && (sim_time >= LOG_START))
   #define DCACHE_LOG (1 && (sim_time >= LOG_START))
@@ -77,7 +77,7 @@ using namespace std;
 // #define DCACHE_LOG (1 && LOG_START)
 // #define MMU_LOG (0 && LOG_START)
 
-#define DEBUG_ADDR 0x870EA7E8
+#define DEBUG_ADDR 0x807a16f8
 
 
 #define CONFIG_DIFFTEST
@@ -86,7 +86,7 @@ using namespace std;
 
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
-// #define CONFIG_MMU
+#define CONFIG_MMU
 #define CONFIG_CACHE
 // #define ENABLE_MULTI_BR
 

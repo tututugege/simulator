@@ -610,4 +610,12 @@ static inline void back2mmu_comb() {
   // for flush tlb:
   // - if request flush, set flush_valid = true in back-end later
   mmu.io.in.tlb_flush.flush_valid = false;
+
+  mmu.io.in.mmu_dcache_req = *back.out.dcache2ptw_req;
+  mmu.io.in.mmu_dcache_resp = *back.out.dcache2ptw_resp;
+
+  back.in.ptw2dcache_req = &mmu.io.out.mmu_dcache_req;
+  back.in.ptw2dcache_resp = &mmu.io.out.mmu_dcache_resp;
+
+
 }

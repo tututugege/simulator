@@ -1,5 +1,6 @@
 #pragma once
 #include "IO.h"
+#include "mmu_io.h"
 #include <config.h>
 #include <cmath>
 #include "Dcache_Utils.h"
@@ -16,6 +17,10 @@ public:
     Mem_READY* mshr2dcache_ready;
 
     MSHR_FWD* mshr2dcache_fwd;
+#if defined(CONFIG_MMU)&& defined(CONFIG_CACHE)
+    dcache_resp_slave_t *ptw2dcache_resp;
+    dcache_req_master_t *ptw2dcache_req;
+#endif
 };
 class Dcache_OUT {
 public:
@@ -26,6 +31,10 @@ public:
 
     Dcache_MSHR* dcache2mshr_ld;
     Dcache_MSHR* dcache2mshr_st;
+#if defined(CONFIG_MMU)&& defined(CONFIG_CACHE)
+    dcache_req_slave_t *dcache2ptw_req;
+    dcache_resp_master_t *dcache2ptw_resp;
+#endif
 };
 
 typedef struct 
@@ -59,11 +68,18 @@ public:
     uint32_t data_next_ld[DCACHE_WAY_NUM];
     uint32_t data_next_st[DCACHE_WAY_NUM];
 
+    uint32_t mmu_reg_tag[DCACHE_WAY_NUM];
+    uint32_t mmu_reg_data[DCACHE_WAY_NUM];
+
+    uint32_t mmu_next_tag[DCACHE_WAY_NUM];
+    uint32_t mmu_next_data[DCACHE_WAY_NUM];
+
     void comb_out_ldq();
     void comb_out_mshr();
     void comb_out_ready();
     void comb_s1();
     void comb_s2();
+    void comb_mmu();
     void seq();
 
     void init();

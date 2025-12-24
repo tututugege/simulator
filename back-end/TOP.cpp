@@ -8,45 +8,56 @@
 #include <diff.h>
 #include <util.h>
 
-void Back_Top::difftest_cycle() {
+void Back_Top::difftest_cycle()
+{
 
   int commit_num = 0;
   Inst_uop *inst;
   bool skip = false;
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (rob.out.rob_commit->commit_entry[i].valid) {
+  for (int i = 0; i < COMMIT_WIDTH; i++)
+  {
+    if (rob.out.rob_commit->commit_entry[i].valid)
+    {
       commit_num++;
       inst = &rob.out.rob_commit->commit_entry[i].uop;
-      if (inst->difftest_skip) {
+      if (inst->difftest_skip)
+      {
         skip = true;
       }
     }
   }
 
-  if (commit_num > 0) {
-    for (int i = 0; i < commit_num - 1; i++) {
+  if (commit_num > 0)
+  {
+    for (int i = 0; i < commit_num - 1; i++)
+    {
       difftest_step(false);
     }
 
-    if (is_store(*inst)) {
+    if (is_store(*inst))
+    {
       if (stq.entry[inst->stq_idx].addr == 0x10000001 &&
-          (stq.entry[inst->stq_idx].data & 0x000000ff) == 7) {
+          (stq.entry[inst->stq_idx].data & 0x000000ff) == 7)
+      {
         csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] | (1 << 9);
         csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] | (1 << 9);
       }
 
       if (stq.entry[inst->stq_idx].addr == 0xc201004 &&
-          (stq.entry[inst->stq_idx].data & 0x000000ff) == 0xa) {
+          (stq.entry[inst->stq_idx].data & 0x000000ff) == 0xa)
+      {
         csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] & ~(1 << 9);
         csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] & ~(1 << 9);
       }
     }
 
-    for (int i = 0; i < ARF_NUM; i++) {
+    for (int i = 0; i < ARF_NUM; i++)
+    {
       dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT_1[i]];
     }
 
-    if (is_store(*inst)) {
+    if (is_store(*inst))
+    {
       dut_cpu.store = true;
       dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
       if (stq.entry[inst->stq_idx].size == 0b00)
@@ -58,76 +69,108 @@ void Back_Top::difftest_cycle() {
 
       dut_cpu.store_data = dut_cpu.store_data
                            << (dut_cpu.store_addr & 0b11) * 8;
-    } else
+    }
+    else
       dut_cpu.store = false;
 
-    for (int i = 0; i < CSR_NUM; i++) {
+    for (int i = 0; i < CSR_NUM; i++)
+    {
       dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
     }
     dut_cpu.pc = inst->pc_next;
-    if (skip) {
+    if (skip)
+    {
       difftest_skip();
-    } else {
+    }
+    else
+    {
       difftest_step(true);
     }
   }
 }
 
-void Back_Top::difftest_inst(Inst_uop *inst) {
+void Back_Top::difftest_inst(Inst_uop *inst)
+{
 
-  if (inst->type == JALR) {
-    if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+  if (inst->type == JALR)
+  {
+    if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
+    {
       perf.ret_br_num++;
-    } else {
+    }
+    else
+    {
       perf.jalr_br_num++;
     }
-  } else if (inst->type == BR) {
+  }
+  else if (inst->type == BR)
+  {
     perf.cond_br_num++;
   }
 
-  if (inst->mispred) {
-    if (inst->type == JALR) {
-      if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+  if (inst->mispred)
+  {
+    if (inst->type == JALR)
+    {
+      if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
+      {
         perf.ret_mispred_num++;
-        if (!inst->pred_br_taken) {
+        if (!inst->pred_br_taken)
+        {
           perf.ret_dir_mispred++;
-        } else {
+        }
+        else
+        {
           perf.ret_addr_mispred++;
         }
-      } else {
+      }
+      else
+      {
         perf.jalr_mispred_num++;
-        if (!inst->pred_br_taken) {
+        if (!inst->pred_br_taken)
+        {
           perf.jalr_dir_mispred++;
-        } else {
+        }
+        else
+        {
           perf.jalr_addr_mispred++;
         }
       }
-    } else if (inst->type == BR) {
-      if (inst->pred_br_taken != inst->br_taken) {
+    }
+    else if (inst->type == BR)
+    {
+      if (inst->pred_br_taken != inst->br_taken)
+      {
         perf.cond_dir_mispred++;
-      } else {
+      }
+      else
+      {
         perf.cond_addr_mispred++;
       }
       perf.cond_mispred_num++;
     }
   }
 
-  if (is_store(*inst)) {
+  if (is_store(*inst))
+  {
     if (stq.entry[inst->stq_idx].addr == 0x10000001 &&
-        (stq.entry[inst->stq_idx].data & 0x000000ff) == 7) {
+        (stq.entry[inst->stq_idx].data & 0x000000ff) == 7)
+    {
       csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] | (1 << 9);
       csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] | (1 << 9);
     }
 
     if (stq.entry[inst->stq_idx].addr == 0xc201004 &&
-        (stq.entry[inst->stq_idx].data & 0x000000ff) == 0xa) {
+        (stq.entry[inst->stq_idx].data & 0x000000ff) == 0xa)
+    {
       csr.CSR_RegFile_1[csr_mip] = csr.CSR_RegFile[csr_mip] & ~(1 << 9);
       csr.CSR_RegFile_1[csr_sip] = csr.CSR_RegFile[csr_sip] & ~(1 << 9);
     }
   }
 
 #ifdef CONFIG_DIFFTEST
-  if (LOG) {
+  if (LOG)
+  {
     cout << "Instruction: " << inst->instruction << endl;
     if (inst->page_fault_inst)
       cout << "page fault inst " << endl;
@@ -137,11 +180,13 @@ void Back_Top::difftest_inst(Inst_uop *inst) {
       cout << "page fault store " << endl;
   }
 
-  for (int i = 0; i < ARF_NUM; i++) {
+  for (int i = 0; i < ARF_NUM; i++)
+  {
     dut_cpu.gpr[i] = prf.reg_file[rename.arch_RAT_1[i]];
   }
 
-  if (is_store(*inst)) {
+  if (is_store(*inst))
+  {
     dut_cpu.store = true;
     dut_cpu.store_addr = stq.entry[inst->stq_idx].addr;
     if (stq.entry[inst->stq_idx].size == 0b00)
@@ -152,17 +197,22 @@ void Back_Top::difftest_inst(Inst_uop *inst) {
       dut_cpu.store_data = stq.entry[inst->stq_idx].data;
 
     dut_cpu.store_data = dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
-  } else
+  }
+  else
     dut_cpu.store = false;
 
-  for (int i = 0; i < CSR_NUM; i++) {
+  for (int i = 0; i < CSR_NUM; i++)
+  {
     dut_cpu.csr[i] = csr.CSR_RegFile_1[i];
   }
   dut_cpu.pc = inst->pc_next;
 
-  if (inst->difftest_skip) {
+  if (inst->difftest_skip)
+  {
     difftest_skip();
-  } else {
+  }
+  else
+  {
     difftest_step(true);
   }
 #endif
@@ -245,7 +295,15 @@ EXMem_DATA mem_data;
 EXMem_CONTROL mem_control;
 #endif
 
-void Back_Top::init() {
+#if defined(CONFIG_MMU) && defined(CONFIG_CACHE)
+dcache_resp_slave_t ptw2dcache_resp;
+dcache_req_master_t ptw2dcache_req;
+dcache_req_slave_t dcache2ptw_req;
+dcache_resp_master_t dcache2ptw_resp;
+#endif
+
+void Back_Top::init()
+{
   idu.out.dec2front = &dec2front;
   idu.out.dec2ren = &dec2ren;
   idu.out.dec_bcast = &dec_bcast;
@@ -337,7 +395,7 @@ void Back_Top::init() {
   csr.out.csr2front = &csr2front;
   csr.out.csr_status = &csr_status;
 
-  #ifdef CONFIG_CACHE
+#ifdef CONFIG_CACHE
   exu.out.exe2cache_control = &exe2cache_control;
 
   stq.in.cache2stq = &lsu2stq_resp;
@@ -362,7 +420,7 @@ void Back_Top::init() {
   dcache.out.dcache2stq_ready = &lsu2stq_ready;
   dcache.out.dcache2mshr_ld = &dcache2mshr_ld;
   dcache.out.dcache2mshr_st = &dcache2mshr_st;
-  
+
   mshr.in.dcache2mshr_ld = &dcache2mshr_ld;
   mshr.in.dcache2mshr_st = &dcache2mshr_st;
   mshr.in.control = &exe2cache_control;
@@ -387,7 +445,7 @@ void Back_Top::init() {
   arbiter.in.writebuffer2arbiter_control = &writebuffer2arbiter_control;
   arbiter.in.mshr2arbiter_control = &mshr2arbiter_control;
   arbiter.in.mshr2arbiter = &mshr2arbiter;
-  arbiter.in.mem_data = &mem_data;  
+  arbiter.in.mem_data = &mem_data;
 
   arbiter.out.arbiter2mshr_data = &arbiter2mshr_data;
   arbiter.out.arbiter2writebuffer_data = &arbiter2writebuffer_data;
@@ -403,8 +461,17 @@ void Back_Top::init() {
   wb_arbiter.out.ld_resp = &lsu2prf_resp;
   wb_arbiter.out.st_resp = &lsu2stq_resp;
 
-
-  #endif
+#if defined(CONFIG_MMU)
+  dcache.out.dcache2ptw_resp = &dcache2ptw_resp;
+  dcache.out.dcache2ptw_req = &dcache2ptw_req;
+  dcache.in.ptw2dcache_req = &ptw2dcache_req;
+  dcache.in.ptw2dcache_resp = &ptw2dcache_resp;
+  in.ptw2dcache_req = &ptw2dcache_req;
+  in.ptw2dcache_resp = &ptw2dcache_resp;
+  out.dcache2ptw_req = &dcache2ptw_req;
+  out.dcache2ptw_resp = &dcache2ptw_resp;
+#endif
+#endif
 
   idu.init();
   isu.init();
@@ -413,16 +480,17 @@ void Back_Top::init() {
   csr.init();
   rob.init();
 
-  #ifdef CONFIG_CACHE
+#ifdef CONFIG_CACHE
   dcache.init();
   mshr.init();
   writebuffer.init();
   arbiter.init();
   memory.init();
-  #endif
+#endif
 }
 
-void Back_Top::comb_csr_status() {
+void Back_Top::comb_csr_status()
+{
   csr.comb_csr_status();
   out.sstatus = csr.out.csr_status->sstatus;
   out.mstatus = csr.out.csr_status->mstatus;
@@ -430,9 +498,11 @@ void Back_Top::comb_csr_status() {
   out.privilege = csr.out.csr_status->privilege;
 }
 
-void Back_Top::comb() {
+void Back_Top::comb()
+{
   // 输出提交的指令
-  for (int i = 0; i < FETCH_WIDTH; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++)
+  {
     idu.in.front2dec->valid[i] = in.valid[i];
     idu.in.front2dec->pc[i] = in.pc[i];
     idu.in.front2dec->inst[i] = in.inst[i];
@@ -463,12 +533,10 @@ void Back_Top::comb() {
 
   idu.comb_release_tag();
   dis.comb_alloc();
-  
-  
 
   exu.comb_exec();
 
-  #ifdef CONFIG_CACHE
+#ifdef CONFIG_CACHE
   stq.comb_out();
   mshr.comb_ready();
   writebuffer.comb_ready();
@@ -488,10 +556,13 @@ void Back_Top::comb() {
   prf.comb_load();
   stq.comb_in();
   exu.comb_latency();
-  #else
+#ifdef CONFIG_MMU
+  dcache.comb_mmu();
+#endif
+#else
 
   stq.comb();
-  #endif
+#endif
 
   exu.comb_to_csr();
   exu.comb_ready();
@@ -517,27 +588,37 @@ void Back_Top::comb() {
   // 为了debug
   // 修正pc_next 以及difftest对应的pc_next
   back.out.flush = rob.out.rob_bcast->flush;
-  if (!rob.out.rob_bcast->flush) {
+  if (!rob.out.rob_bcast->flush)
+  {
     back.out.mispred = prf.out.prf2dec->mispred;
     back.out.stall = !idu.out.dec2front->ready;
     back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
-  } else {
+  }
+  else
+  {
     if (LOG)
       cout << "flush" << endl;
     back.out.mispred = true;
-    if (rob.out.rob_bcast->mret || rob.out.rob_bcast->sret) {
+    if (rob.out.rob_bcast->mret || rob.out.rob_bcast->sret)
+    {
       back.out.redirect_pc = csr.out.csr2front->epc;
-    } else if (rob.out.rob_bcast->exception) {
+    }
+    else if (rob.out.rob_bcast->exception)
+    {
       back.out.redirect_pc = csr.out.csr2front->trap_pc;
-    } else {
+    }
+    else
+    {
       back.out.redirect_pc = rob.out.rob_bcast->pc + 4;
     }
   }
 
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
+  for (int i = 0; i < COMMIT_WIDTH; i++)
+  {
     back.out.commit_entry[i] = rob.out.rob_commit->commit_entry[i];
     Inst_type type = back.out.commit_entry[i].uop.type;
-    if (back.out.commit_entry[i].valid && back.out.flush) {
+    if (back.out.commit_entry[i].valid && back.out.flush)
+    {
       back.out.commit_entry[i].uop.pc_next = back.out.redirect_pc;
       rob.out.rob_commit->commit_entry[i].uop.pc_next = back.out.redirect_pc;
     }
@@ -545,7 +626,7 @@ void Back_Top::comb() {
 
   isu.comb_enq();
   rename.comb_commit(); // difftest在这里
-  rob.comb_flush();   
+  rob.comb_flush();
   prf.comb_flush();
   exu.comb_flush();
   rename.comb_flush();
@@ -562,7 +643,8 @@ void Back_Top::comb() {
   rename.comb_pipeline();
 }
 
-void Back_Top::seq() {
+void Back_Top::seq()
+{
   // rename -> isu/stq/rob
   // exu -> prf
   rename.seq();
@@ -570,40 +652,46 @@ void Back_Top::seq() {
   idu.seq();
   isu.seq();
   exu.seq();
-  #ifdef CONFIG_CACHE
+#ifdef CONFIG_CACHE
   dcache.seq();
   mshr.seq();
   writebuffer.seq();
   arbiter.seq();
   memory.seq();
   wb_arbiter.seq();
-  #endif
+#endif
   prf.seq();
   rob.seq();
   stq.seq();
   csr.seq();
-  for (int i = 0; i < FETCH_WIDTH; i++) {
+  for (int i = 0; i < FETCH_WIDTH; i++)
+  {
     out.fire[i] = idu.out.dec2front->fire[i];
   }
 }
-
 
 #ifdef CONFIG_CACHE
 #elif CONFIG_MMU
 bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
                          bool &mmu_page_fault, uint32_t &mmu_ppn,
-                         bool &stall_load) {
+                         bool &stall_load)
+{
   uint32_t p_addr = v_addr;
   bool ret = true;
 
   p_addr = mmu_ppn << 12 | (v_addr & 0xFFF);
   ret = !mmu_page_fault;
 
-  if (p_addr == 0x1fd0e000) {
+  if (p_addr == 0x1fd0e000)
+  {
     data = perf.commit_num;
-  } else if (p_addr == 0x1fd0e004) {
+  }
+  else if (p_addr == 0x1fd0e004)
+  {
     data = 0;
-  } else {
+  }
+  else
+  {
     data = p_memory[p_addr >> 2];
     back.stq.st2ld_fwd(p_addr, data, rob_idx, stall_load);
   }
@@ -611,11 +699,13 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
   return ret;
 }
 #else
-bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
+bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx)
+{
   uint32_t p_addr = v_addr;
   bool ret = true;
 
-  if (back.out.satp & 0x80000000 && back.out.privilege != 3) {
+  if (back.out.satp & 0x80000000 && back.out.privilege != 3)
+  {
     bool mstatus[32], sstatus[32];
     cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
 
@@ -625,11 +715,16 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
                 back.out.privilege, p_memory);
   }
 
-  if (p_addr == 0x1fd0e000) {
+  if (p_addr == 0x1fd0e000)
+  {
     data = perf.commit_num;
-  } else if (p_addr == 0x1fd0e004) {
+  }
+  else if (p_addr == 0x1fd0e004)
+  {
     data = 0;
-  } else {
+  }
+  else
+  {
     data = p_memory[p_addr >> 2];
     bool stall = false;
     back.stq.st2ld_fwd(p_addr, data, rob_idx, stall);
