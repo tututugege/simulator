@@ -149,7 +149,7 @@ void Dcache::comb_s1()
     if(!stall_st)tag_and_data_read(s1_reg_st.index, GET_OFFSET(s1_reg_st.addr), tag_reg_st, data_reg_st);
     else tag_and_data_read(s2_reg_st.index, GET_OFFSET(s2_reg_st.addr), tag_reg_st, data_reg_st);
 #ifdef CONFIG_MMU
-    tag_and_data_read(in.ptw2dcache_req->paddr, GET_OFFSET(in.ptw2dcache_req->paddr), mmu_reg_tag, mmu_reg_data);
+    tag_and_data_read(GET_INDEX(in.ptw2dcache_req->paddr), GET_OFFSET(in.ptw2dcache_req->paddr), mmu_reg_tag, mmu_reg_data);
 #endif
 
     if (stall_ld)
@@ -314,6 +314,7 @@ void Dcache::seq()
 }
 #ifdef CONFIG_MMU
 void Dcache::comb_mmu(){
+    
     if(in.ptw2dcache_req->valid){
         bool hit = false;
         int way_idx = 0;
@@ -350,6 +351,15 @@ void Dcache::comb_mmu(){
         out.dcache2ptw_resp->valid = false;
     }
     out.dcache2ptw_req->ready = true;
+    if(DCACHE_LOG){
+        printf("\nDcache comb_mmu: ptw2dcache_req->valid=%d ptw2dcache_req->paddr=0x%08X sim_time:%lld\n",in.ptw2dcache_req->valid, in.ptw2dcache_req->paddr, sim_time);
+        printf("mmu_next_tag[0]=0x%08X mmu_next_tag[1]=0x%08X mmu_next_tag[2]=0x%08X mmu_next_tag[3]=0x%08X\n",
+               mmu_next_tag[0], mmu_next_tag[1], mmu_next_tag[2], mmu_next_tag[3]);
+        printf("mmu_next_data[0]=0x%08X mmu_next_data[1]=0x%08X mmu_next_data[2]=0x%08X mmu_next_data[3]=0x%08X\n",
+               mmu_next_data[0], mmu_next_data[1], mmu_next_data[2], mmu_next_data[3]);
+        printf("out.dcache2ptw_resp->valid=%d out.dcache2ptw_resp->miss=%d out.dcache2ptw_resp->data=0x%08X sim_time:%lld\n",
+               out.dcache2ptw_resp->valid, out.dcache2ptw_resp->miss, out.dcache2ptw_resp->data, sim_time);
+    }
 }
 #endif
 void Dcache::print()

@@ -84,6 +84,7 @@ void bru(Inst_uop &inst) {
   operand1 = inst.src1_rdata;
   operand2 = inst.src2_rdata;
 
+
   uint32_t pc_br = inst.pc + inst.imm;
   bool br_taken = true;
 
@@ -198,7 +199,7 @@ void alu(Inst_uop &inst) {
 }
 #ifdef CONFIG_CACHE
 #ifdef CONFIG_MMU
-void ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn, Mem_REQ *&out) {
+void  ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn, Mem_REQ *&out) {
   bool stall_load = false;
   uint32_t addr = inst.src1_rdata + inst.imm;
 

@@ -28,8 +28,8 @@ typedef struct {
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
 #if defined(CONFIG_MMU)&& defined(CONFIG_CACHE)
-    dcache_resp_slave_t *ptw2dcache_resp;
-    dcache_req_master_t *ptw2dcache_req;
+    dcache_resp_slave_t ptw2dcache_resp;
+    dcache_req_master_t ptw2dcache_req;
 #endif
 } Back_in;
 
@@ -47,8 +47,8 @@ typedef struct {
   wire32_t satp;
   wire2_t privilege;
 #if defined(CONFIG_MMU)&& defined(CONFIG_CACHE)
-    dcache_req_slave_t *dcache2ptw_req;
-    dcache_resp_master_t *dcache2ptw_resp;
+    dcache_req_slave_t dcache2ptw_req;
+    dcache_resp_master_t dcache2ptw_resp;
 #endif
 } Back_out;
 

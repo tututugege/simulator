@@ -9,9 +9,12 @@
 extern Back_Top back;
 extern Cache cache;
 
+uint32_t old_count = 99999;
 #ifndef CONFIG_CACHE
 void STQ::comb()
 {
+  out.stq2front->fence_stall = (state == FENCE);
+
   int num = count;
 
   for (int i = 0; i < 2; i++)
@@ -127,6 +130,21 @@ void STQ::comb()
       entry[commit_ptr].commit = true;
       commit_count++;
       LOOP_INC(commit_ptr, STQ_NUM);
+    }
+  }
+
+  if (state == NORMAL)
+  {
+    if (in.rob_bcast->fence && count != 0)
+    {
+      state = FENCE;
+    }
+  }
+  else if (state == FENCE)
+  {
+    if (count == 0)
+    {
+      state = NORMAL;
     }
   }
 }
@@ -293,6 +311,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx,
 #else
 void STQ::comb_out()
 {
+  out.stq2front->fence_stall = (state == FENCE);
   int num = count;
 
   for (int i = 0; i < 2; i++)
@@ -337,20 +356,34 @@ void STQ::comb_out()
       char temp;
       temp = wdata & 0x000000ff;
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
-      cout << temp;
-    }
 
-    else if (waddr == 0x10000001 && (wdata & 0x000000ff) == 7)
+      if (temp != 27)
+        // cout << temp;
+        if (temp == '?')
+        {
+          if (perf.perf_start)
+          {
+            perf.perf_print();
+          }
+          else
+          {
+            cout << " perf counter start" << endl;
+            perf.perf_start = true;
+            perf.perf_reset();
+          }
+        }
+    }
+    else if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 7)
     {
       p_memory[0xc201004 / 4] = 0xa;
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xfff0ffff;
     }
-    else if (waddr == 0x10000001 && (wdata & 0x000000ff) == 5)
+    else if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 5)
     {
       p_memory[0x10000000 / 4] =
           p_memory[0x10000000 / 4] & 0xfff0ffff | 0x00030000;
     }
-    else if (waddr == 0xc201004 && (wdata & 0x000000ff) == 0xa)
+    else if (waddr == 0xc201004 && (entry[deq_ptr].data & 0x000000ff) == 0xa)
     {
       p_memory[0xc201004 / 4] = 0x0;
     }
@@ -392,31 +425,52 @@ void STQ::comb_out()
       LOOP_INC(commit_ptr, STQ_NUM);
     }
   }
+
+  if (state == NORMAL)
+  {
+    if (in.rob_bcast->fence)
+    {
+      if (old_count != count)
+      {
+        printf("STQ enter FENCE state count=%d\n", count);
+        old_count = count;
+      }
+      if (count != 0)
+        state = FENCE;
+    }
+  }
+  else if (state == FENCE)
+  {
+    if (count == 0)
+    {
+      state = NORMAL;
+    }
+  }
 }
 void STQ::comb_in()
 {
-  // if (DCACHE_LOG)
-  // {
-  //   printf("\nSTQ Comb In:\n");
-  //   printf("in.cache2stq_ready->ready=%d out.stq2cache_req->en=%d dest_preg:%d write_flag=%d\n", in.cache2stq_ready->ready, out.stq2cache_req->en, out.stq2cache_req->uop.dest_preg, write_flag);
-  //   printf("in.cache2stq->valid=%d uop_inst=0x%08x dest_preg=%d\n", in.cache2stq->valid, in.cache2stq->uop.instruction, in.cache2stq->uop.dest_preg);
-  //   for (int i = 0; i < STQ_NUM; i++)
-  //   {
-  //     printf("  STQ[%d]: valid=%d commit=%d issued=%d inst=0x%08x addr=0x%08x data=0x%08x size=0b%02x data_valid=%d addr_valid=%d\n", i, entry[i].valid, entry[i].commit, entry[i].issued, entry[i].inst, entry[i].addr, entry[i].data, entry[i].size, entry[i].data_valid, entry[i].addr_valid);
-  //   }
-  //   for (int i = 0; i < ROB_NUM; i++)
-  //   {
-  //     int line_idx = i >> 2;
-  //     int bank_idx = i & 0b11;
-  //     if (back.rob.entry[bank_idx][line_idx].valid && is_store(back.rob.entry[bank_idx][line_idx].uop))
-  //     {
-  //       int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
-  //       printf("ROB entry %d maps to STQ entry %d data:%08x addr:%08x\n", i, stq_idx, entry[stq_idx].data, entry[stq_idx].addr);
-  //     }
-  //   }
-  //   printf("enq_ptr=%d deq_ptr=%d fwd_ptr=%d count=%d commit_count=%d deq_num=%d\n", enq_ptr, deq_ptr, fwd_ptr, count, commit_count, deq_num);
-  //   printf("\n");
-  // }
+  if (DCACHE_LOG)
+  {
+    printf("\nSTQ Comb In:\n");
+    printf("in.cache2stq_ready->ready=%d out.stq2cache_req->en=%d dest_preg:%d write_flag=%d\n", in.cache2stq_ready->ready, out.stq2cache_req->en, out.stq2cache_req->uop.dest_preg, write_flag);
+    printf("in.cache2stq->valid=%d uop_inst=0x%08x dest_preg=%d\n", in.cache2stq->valid, in.cache2stq->uop.instruction, in.cache2stq->uop.dest_preg);
+    for (int i = 0; i < STQ_NUM; i++)
+    {
+      printf("  STQ[%d]: valid=%d commit=%d issued=%d inst=0x%08x addr=0x%08x data=0x%08x size=0b%02x data_valid=%d addr_valid=%d\n", i, entry[i].valid, entry[i].commit, entry[i].issued, entry[i].inst, entry[i].addr, entry[i].data, entry[i].size, entry[i].data_valid, entry[i].addr_valid);
+    }
+    for (int i = 0; i < ROB_NUM; i++)
+    {
+      int line_idx = i >> 2;
+      int bank_idx = i & 0b11;
+      if (back.rob.entry[bank_idx][line_idx].valid && is_store(back.rob.entry[bank_idx][line_idx].uop))
+      {
+        int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
+        printf("ROB entry %d maps to STQ entry %d data:%08x addr:%08x\n", i, stq_idx, entry[stq_idx].data, entry[stq_idx].addr);
+      }
+    }
+    printf("enq_ptr=%d deq_ptr=%d fwd_ptr=%d count=%d commit_count=%d deq_num=%d\n", enq_ptr, deq_ptr, fwd_ptr, count, commit_count, deq_num);
+    printf("\n");
+  }
   if ((in.cache2stq_ready->ready && out.stq2cache_req->en) || write_flag == 0)
   {
     LOOP_INC(deq_ptr, STQ_NUM);
@@ -506,6 +560,10 @@ void STQ::seq()
   }
 
   out.stq2dis->stq_idx = enq_ptr;
+  if (state == FENCE)
+  {
+    printf("STQ in FENCE state count=%d\n", count);
+  }
 }
 
 extern uint32_t *p_memory;
@@ -548,7 +606,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx)
     LOOP_INC(i, STQ_NUM);
     fwd_count--;
   }
-  
+
   int idx = back.rob.deq_ptr << 2;
 
   while (idx != rob_idx)
@@ -559,7 +617,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx)
         is_store(back.rob.entry[bank_idx][line_idx].uop))
     {
       int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
-      
+
       if ((entry[stq_idx].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC) && entry[stq_idx].valid)
       {
         uint32_t wdata = entry[stq_idx].data;

@@ -251,6 +251,7 @@ Rob_Broadcast rob_bcast;
 Rob_Commit rob_commit;
 
 Stq_Dis stq2dis;
+Stq_Front stq2front;
 
 Csr_Exe csr2exe;
 Csr_Rob csr2rob;
@@ -295,12 +296,6 @@ EXMem_DATA mem_data;
 EXMem_CONTROL mem_control;
 #endif
 
-#if defined(CONFIG_MMU) && defined(CONFIG_CACHE)
-dcache_resp_slave_t ptw2dcache_resp;
-dcache_req_master_t ptw2dcache_req;
-dcache_req_slave_t dcache2ptw_req;
-dcache_resp_master_t dcache2ptw_resp;
-#endif
 
 void Back_Top::init()
 {
@@ -379,6 +374,7 @@ void Back_Top::init()
   rob.out.rob2csr = &rob2csr;
 
   stq.out.stq2dis = &stq2dis;
+  stq.out.stq2front = &stq2front;
 
   stq.in.exe2stq = &exe2stq;
   stq.in.rob_commit = &rob_commit;
@@ -462,14 +458,10 @@ void Back_Top::init()
   wb_arbiter.out.st_resp = &lsu2stq_resp;
 
 #if defined(CONFIG_MMU)
-  dcache.out.dcache2ptw_resp = &dcache2ptw_resp;
-  dcache.out.dcache2ptw_req = &dcache2ptw_req;
-  dcache.in.ptw2dcache_req = &ptw2dcache_req;
-  dcache.in.ptw2dcache_resp = &ptw2dcache_resp;
-  in.ptw2dcache_req = &ptw2dcache_req;
-  in.ptw2dcache_resp = &ptw2dcache_resp;
-  out.dcache2ptw_req = &dcache2ptw_req;
-  out.dcache2ptw_resp = &dcache2ptw_resp;
+  dcache.out.dcache2ptw_resp = &out.dcache2ptw_resp;
+  dcache.out.dcache2ptw_req = &out.dcache2ptw_req;
+  dcache.in.ptw2dcache_req = &in.ptw2dcache_req;
+  dcache.in.ptw2dcache_resp = &in.ptw2dcache_resp;
 #endif
 #endif
 
@@ -591,7 +583,7 @@ void Back_Top::comb()
   if (!rob.out.rob_bcast->flush)
   {
     back.out.mispred = prf.out.prf2dec->mispred;
-    back.out.stall = !idu.out.dec2front->ready;
+    back.out.stall = !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
     back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
   }
   else

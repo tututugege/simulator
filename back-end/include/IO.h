@@ -105,6 +105,7 @@ typedef struct {
   wire1_t sret;
   wire1_t ecall;
   wire1_t exception;
+  wire1_t fence;
 
   wire1_t page_fault_inst;
   wire1_t page_fault_load;
@@ -296,3 +297,7 @@ typedef struct {
 typedef struct{
   bool prority;
 }MSHR_Arbiter;
+
+typedef struct {
+  wire1_t fence_stall;
+} Stq_Front;

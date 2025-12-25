@@ -20,6 +20,7 @@ public:
 class STQ_OUT {
 public:
   Stq_Dis *stq2dis;
+  Stq_Front *stq2front;
   #ifdef CONFIG_CACHE
   Mem_REQ * stq2cache_req;
   #endif
@@ -35,6 +36,10 @@ typedef struct {
   uint32_t wstrb;
 } STQ_out;
 
+#define NORMAL false
+#define FENCE true
+
+
 class STQ {
 public:
   STQ_IN in;
@@ -46,6 +51,7 @@ public:
   void comb_out();
   void comb_in();
   void st2ld_fwd(uint32_t, uint32_t &, int rob_idx);
+  bool mmu_fwd(uint32_t p_addr, uint32_t &data, int rob_idx);
   int deq_num;
   int fwd_ptr = 0;
   int write_flag = 0;
@@ -60,4 +66,5 @@ public:
   int commit_ptr = 0;
   int count = 0;
   int commit_count = 0;
+  bool state = NORMAL;
 };

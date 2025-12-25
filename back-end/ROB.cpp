@@ -8,6 +8,8 @@
 #include <iostream>
 #include <util.h>
 
+long long commit_inst_count = 0; // 提交指令计数
+long long commit_inst_count_last = 0;
 void ROB::init() {
   deq_ptr = deq_ptr_1 = 0;
   enq_ptr = enq_ptr_1 = 0;
@@ -114,11 +116,13 @@ void ROB::comb_commit() {
     }
 
     stall_cycle = 0;
+    commit_inst_count += ROB_BANK_NUM; // 提交指令计数
     LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
     count_1--;
 
   } else if (single_commit) {
     stall_cycle = 0;
+    commit_inst_count += 1; // 提交指令计数
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (i == single_idx)
         out.rob_commit->commit_entry[i].valid = true;
@@ -160,7 +164,10 @@ void ROB::comb_commit() {
         sim_end = true;
       } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
         out.rob2csr->commit = true;
-      } else {
+      } else if(entry[single_idx][deq_ptr].uop.type == SFENCE_VMA) {
+        out.rob_bcast->fence = true;
+      }
+      else {
         if (entry[single_idx][deq_ptr].uop.type != CSR &&
             entry[single_idx][deq_ptr].uop.type != SFENCE_VMA) {
           cout << hex << entry[single_idx][deq_ptr].uop.instruction << endl;
@@ -176,6 +183,11 @@ void ROB::comb_commit() {
 
   out.rob2dis->enq_idx = enq_ptr;
   out.rob2dis->rob_flag = flag;
+
+  if(commit_inst_count_last != commit_inst_count && commit_inst_count % 100000 == 0) {
+    commit_inst_count_last = commit_inst_count;
+    printf("Commit Inst Count: %lld sim_time: %lld\n", commit_inst_count, sim_time);
+  } 
 
   stall_cycle++;
   if (stall_cycle > 1000) {

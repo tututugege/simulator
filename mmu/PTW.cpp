@@ -109,9 +109,9 @@ void PTW::comb() {
             } else {
               ptw_state_next = CACHE_2;
             }
-            cout << "[PTW::comb] CACHE_1 completed, ";
-            cout << "since dcache not implemented, exit now." << endl;
-            exit(1);
+            // cout << "[PTW::comb] CACHE_1 completed, ";
+            // cout << "since dcache not implemented, exit now." << endl;
+            // exit(1);
           }
         }
       }
@@ -196,10 +196,10 @@ void PTW::comb() {
             } else {
               ptw_state_next = CACHE_2;
             }
-            cout << "[PTW::comb] CACHE_2 completed, ";
-            cout << "Since dcache has not been implemented yet, ";
-            cout << "exit now." << endl;
-            exit(1);
+            // cout << "[PTW::comb] CACHE_2 completed, ";
+            // cout << "Since dcache has not been implemented yet, ";
+            // cout << "exit now." << endl;
+            // exit(1);
           }
         }
       }
@@ -255,6 +255,9 @@ void PTW::seq() {
   // state update
   ptw_state = ptw_state_next;
   dcache_state = dcache_state_next;
+
+  // printf("ptw2dcache_req->valid=%d ptw2dcache_req->paddr=0x%08X sim_time:%lld\n",out.dcache_req->valid, out.dcache_req->paddr, sim_time);
+  // printf("dcache2ptw_resp->valid=%d dcache2ptw_resp->miss=%d dcache2ptw_resp->data=0x%08X sim_time:%lld\n",in.dcache_resp->valid, in.dcache_resp->miss, in.dcache_resp->data, sim_time);
 }
 
 bool PTW::is_page_fault(pte_t pte, uint8_t op_type, bool stage_1, bool *is_megapage) {
