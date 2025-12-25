@@ -10,8 +10,13 @@ extern MMU mmu;
 extern uint32_t *p_memory;
 Cache cache;
 
+#if !defined(CONFIG_MMU) && defined(CONFIG_CACHE)
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag = true);
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory,bool dut_flag = true);
+#else
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+#endif
 void alu(Inst_uop &inst);
 void bru(Inst_uop &inst);
 void stu_data(Inst_uop &inst);
@@ -99,6 +104,7 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
   {
     if (is_load_uop(inst.op))
     {
+      ldu_work = true;
       ldu(inst, in);
     }
     else if (is_sta_uop(inst.op))
@@ -297,7 +303,7 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
       static int sfence_count = 0;
       sfence_count++;
       // if(DCACHE_LOG){
-        printf("  FU exec: sfence.vma #%d vaddr=0x%08x asid=0x%08x sim_time=%lld\n", sfence_count, vaddr, asid,sim_time);
+        // printf("  FU exec: sfence.vma #%d vaddr=0x%08x asid=0x%08x sim_time=%lld\n", sfence_count, vaddr, asid,sim_time);
       // }
     }
     else
@@ -710,16 +716,16 @@ void EXU::seq()
 }
 void EXU::comb_latency()
 {
-  // if(DCACHE_LOG){
-  //   printf("\nEXU Latency Comb:in.cache2exe_ready->ready=%d\n", in.cache2exe_ready->ready);
-  //   for(int i = 0; i < ISSUE_WAY; i++){
-  //     printf("  FU[%d]: cycle=%d, latency=%d, complete=%d\n", i, fu[i].cycle, fu[i].latency, fu[i].complete);
-  //   }
-  //   printf("\n");
-  //   for(int i = 0; i < ISSUE_WAY; i++)
-  //   printf("  inst_r[%d]: valid=%d uop_inst=0x%08x\n", i, inst_r[i].valid, inst_r[i].uop.instruction);
-  //   printf("\nmispred: %d flush: %d\n", in.dec_bcast->mispred, in.rob_bcast->flush);
-  // }
+  if(DCACHE_LOG){
+    printf("\nEXU Latency Comb:in.cache2exe_ready->ready=%d\n", in.cache2exe_ready->ready);
+    for(int i = 0; i < ISSUE_WAY; i++){
+      printf("  FU[%d]: cycle=%d, latency=%d, complete=%d\n", i, fu[i].cycle, fu[i].latency, fu[i].complete);
+    }
+    printf("\n");
+    for(int i = 0; i < ISSUE_WAY; i++)
+    printf("  inst_r[%d]: valid=%d uop_inst=0x%08x\n", i, inst_r[i].valid, inst_r[i].uop.instruction);
+    printf("\nmispred: %d flush: %d\n", in.dec_bcast->mispred, in.rob_bcast->flush);
+  }
   if (DCACHE_LOG)
   {
     printf("\nEXU Latency Comb:\n");

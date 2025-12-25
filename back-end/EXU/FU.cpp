@@ -4,9 +4,13 @@
 #include <cvt.h>
 #include <util.h>
 
+#if !defined(CONFIG_MMU) && defined(CONFIG_CACHE)
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory,bool dut_flag = true);
-
+#else
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+#endif
 enum STATE { IDLE, RECV };
 
 #define SUB 0b000
@@ -257,6 +261,9 @@ void stu_addr(Inst_uop &inst, bool page_fault, uint32_t mmu_ppn) {
     inst.result = v_addr;
   } else {
     inst.result = p_addr;
+  }
+  if(DCACHE_LOG){
+    printf("stu v_addr: 0x%08x, p_addr: 0x%08x, page_fault: %d\n", v_addr, p_addr, page_fault);
   }
 }
 #else

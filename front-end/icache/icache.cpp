@@ -22,13 +22,13 @@ std::queue<ppn_triple> ppn_queue;
 
 extern uint32_t *p_memory;
 extern Back_Top back;
-#if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
+// #if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag = true);
-#else
-bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-#endif
+// #else
+// bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+//            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+// #endif
 void icache_top(struct icache_in *in, struct icache_out *out) {
   if (in->reset) {
     DEBUG_LOG("[icache] reset\n");

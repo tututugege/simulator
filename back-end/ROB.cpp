@@ -186,7 +186,7 @@ void ROB::comb_commit() {
 
   if(commit_inst_count_last != commit_inst_count && commit_inst_count % 100000 == 0) {
     commit_inst_count_last = commit_inst_count;
-    printf("Commit Inst Count: %lld sim_time: %lld\n", commit_inst_count, sim_time);
+    // printf("Commit Inst Count: %lld sim_time: %lld\n", commit_inst_count, sim_time);
   } 
 
   stall_cycle++;

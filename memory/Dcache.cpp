@@ -21,6 +21,8 @@ bool global_mispred1 = false;
 bool global_mispred2 = false;
 bool uncache_access = false;
 
+bool mmu_read=false;
+
 uint32_t old_debug_data = 0;
 int debug_way=-1;
 
@@ -150,6 +152,12 @@ void Dcache::comb_s1()
     else tag_and_data_read(s2_reg_st.index, GET_OFFSET(s2_reg_st.addr), tag_reg_st, data_reg_st);
 #ifdef CONFIG_MMU
     tag_and_data_read(GET_INDEX(in.ptw2dcache_req->paddr), GET_OFFSET(in.ptw2dcache_req->paddr), mmu_reg_tag, mmu_reg_data);
+    if(DCACHE_LOG){
+        printf("Dcache MMU Read in S1 Stage: paddr=0x%08X\n", in.ptw2dcache_req->paddr);
+        for(int i=0;i<DCACHE_WAY_NUM;i++){
+            printf("  Way[%d]: Tag=0x%08X Data=0x%08X\n", i, mmu_reg_tag[i], mmu_reg_data[i]);
+        }
+    }
 #endif
 
     if (stall_ld)
@@ -310,12 +318,15 @@ void Dcache::seq()
     #ifdef CONFIG_MMU
     memcpy(mmu_next_tag, mmu_reg_tag, sizeof(uint32_t) * DCACHE_WAY_NUM);
     memcpy(mmu_next_data, mmu_reg_data, sizeof(uint32_t) * DCACHE_WAY_NUM);
+    if(!global_flush)
+    mmu_read=in.ptw2dcache_req->valid;
+    else mmu_read=false;
     #endif
 }
 #ifdef CONFIG_MMU
-void Dcache::comb_mmu(){
+void Dcache::comb_mmu(){    
     
-    if(in.ptw2dcache_req->valid){
+    if(mmu_read&&in.ptw2dcache_req->valid){ 
         bool hit = false;
         int way_idx = 0;
         uint32_t addr = in.ptw2dcache_req->paddr;
@@ -346,11 +357,12 @@ void Dcache::comb_mmu(){
         out.dcache2ptw_resp->valid = true;
         out.dcache2ptw_resp->miss = !hit;
         out.dcache2ptw_resp->data = rdata;
+        out.dcache2ptw_req->ready = true;
     }
     else{
         out.dcache2ptw_resp->valid = false;
+        out.dcache2ptw_req->ready = false;
     }
-    out.dcache2ptw_req->ready = true;
     if(DCACHE_LOG){
         printf("\nDcache comb_mmu: ptw2dcache_req->valid=%d ptw2dcache_req->paddr=0x%08X sim_time:%lld\n",in.ptw2dcache_req->valid, in.ptw2dcache_req->paddr, sim_time);
         printf("mmu_next_tag[0]=0x%08X mmu_next_tag[1]=0x%08X mmu_next_tag[2]=0x%08X mmu_next_tag[3]=0x%08X\n",

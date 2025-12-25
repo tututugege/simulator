@@ -64,6 +64,7 @@ void PTW::comb() {
 
     case CACHE_1:
       // deal with first level page table entry
+      printf("[PTW::comb] CACHE_1 start vpn1=0x%03x sim_time=%lld\n", in.tlb2ptw->vpn1, sim_time);
       ptw_state_next = CACHE_1; // cache not responded yet
       out.dcache_req->valid = false;
       out.dcache_resp->ready = false;
@@ -150,6 +151,7 @@ void PTW::comb() {
       break;
     
     case CACHE_2:
+      printf("[PTW::comb] CACHE_2 start vpn0=0x%03x sim_time=%lld\n", vpn0, sim_time);
       // deal with second level page table entry
       ptw_state_next = CACHE_2; // cache not responded yet
       out.dcache_req->valid = false;

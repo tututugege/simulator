@@ -80,10 +80,10 @@ void tag_and_data_read(uint32_t index,uint32_t offset,uint32_t tag[DCACHE_WAY_NU
         data[i] = dcache_data[index][i][offset];
     }
     // if(DCACHE_LOG){
-        // printf("Dcache Tag and Data Read: index=0x%02X, offset=0x%02X\n", index, offset);
-        // for(int i=0;i<DCACHE_WAY_NUM;i++){
-        //     printf("  Way[%d]: Tag=0x%08X Data=0x%08X\n", i, tag[i], data[i]);
-        // }
+    //     printf("Dcache Tag and Data Read: index=0x%02X, offset=0x%02X\n", index, offset);
+    //     for(int i=0;i<DCACHE_WAY_NUM;i++){
+    //         printf("  Way[%d]: Tag=0x%08X Data=0x%08X\n", i, tag[i], data[i]);
+    //     }
     // }
 }
 bool dcache_read(uint32_t addr, uint32_t &rdata){

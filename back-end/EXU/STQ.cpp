@@ -311,7 +311,7 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx,
 #else
 void STQ::comb_out()
 {
-  out.stq2front->fence_stall = (state == FENCE);
+  // out.stq2front->fence_stall = (state == FENCE);
   int num = count;
 
   for (int i = 0; i < 2; i++)
@@ -358,7 +358,7 @@ void STQ::comb_out()
       p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
 
       if (temp != 27)
-        // cout << temp;
+        cout << temp;
         if (temp == '?')
         {
           if (perf.perf_start)
@@ -432,7 +432,7 @@ void STQ::comb_out()
     {
       if (old_count != count)
       {
-        printf("STQ enter FENCE state count=%d\n", count);
+        // printf("STQ enter FENCE state count=%d\n", count);
         old_count = count;
       }
       if (count != 0)
@@ -560,10 +560,10 @@ void STQ::seq()
   }
 
   out.stq2dis->stq_idx = enq_ptr;
-  if (state == FENCE)
-  {
-    printf("STQ in FENCE state count=%d\n", count);
-  }
+  // if (state == FENCE)
+  // {
+  //   printf("STQ in FENCE state count=%d\n", count);
+  // }
 }
 
 extern uint32_t *p_memory;

@@ -529,6 +529,9 @@ void Back_Top::comb()
   exu.comb_exec();
 
 #ifdef CONFIG_CACHE
+#ifdef CONFIG_MMU
+  dcache.comb_mmu();
+#endif
   stq.comb_out();
   mshr.comb_ready();
   writebuffer.comb_ready();
@@ -548,9 +551,6 @@ void Back_Top::comb()
   prf.comb_load();
   stq.comb_in();
   exu.comb_latency();
-#ifdef CONFIG_MMU
-  dcache.comb_mmu();
-#endif
 #else
 
   stq.comb();
@@ -583,7 +583,7 @@ void Back_Top::comb()
   if (!rob.out.rob_bcast->flush)
   {
     back.out.mispred = prf.out.prf2dec->mispred;
-    back.out.stall = !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
+    back.out.stall = !idu.out.dec2front->ready;
     back.out.redirect_pc = prf.out.prf2dec->redirect_pc;
   }
   else

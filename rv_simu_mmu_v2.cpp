@@ -18,7 +18,7 @@ using namespace std;
 
 #if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-          bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag = true);
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag = true);
 #else
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
@@ -44,10 +44,12 @@ uint32_t *p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
 #else
 extern uint32_t *p_memory;
 #endif
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
   setbuf(stdout, NULL);
   ifstream inst_data(argv[argc - 1], ios::in | ios::binary);
-  if (!inst_data.is_open()) {
+  if (!inst_data.is_open())
+  {
     cout << "Error: Image " << argv[argc - 1] << " does not exist" << endl;
     exit(0);
   }
@@ -57,7 +59,8 @@ int main(int argc, char *argv[]) {
   inst_data.seekg(0, std::ios::beg);
 
   if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
-                      size)) {
+                      size))
+  {
     std::cerr << "读取文件失败！" << std::endl;
     return 1;
   }
@@ -78,8 +81,9 @@ int main(int argc, char *argv[]) {
 #endif
 
 #ifdef CONFIG_RUN_REF
-  while (1) {
-    difftest_step();
+  while (1)
+  {
+    difftest_step(false);
     sim_time++;
   }
 #endif
@@ -101,12 +105,14 @@ int main(int argc, char *argv[]) {
 #endif
 
   // main loop
-  for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
+  for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++)
+  {
     if (sim_time % 10000000 == 0)
       cout << dec << sim_time << endl;
     perf.cycle++;
 
-    if (LOG) {
+    if (LOG)
+    {
       cout
           << "****************************************************************"
           << dec << " cycle: " << sim_time
@@ -155,10 +161,14 @@ int main(int argc, char *argv[]) {
     misprediction = back.out.mispred;
     exception = back.out.flush;
 
-    if (misprediction || exception) {
+    if (misprediction || exception)
+    {
       number_PC = back.out.redirect_pc;
-    } else if (stall) {
-      for (int j = 0; j < FETCH_WIDTH; j++) {
+    }
+    else if (stall)
+    {
+      for (int j = 0; j < FETCH_WIDTH; j++)
+      {
         if (back.out.fire[j])
           back.in.valid[j] = false;
       }
@@ -169,13 +179,15 @@ SIM_END:
 
   delete[] p_memory;
 
-  if (sim_time != MAX_SIM_TIME) {
+  if (sim_time != MAX_SIM_TIME)
+  {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
     perf.perf_print();
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
-
-  } else {
+  }
+  else
+  {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
     cout << "\033[1;31m------------------------------\033[0m" << endl;
@@ -185,9 +197,10 @@ SIM_END:
   return 0;
 }
 
-#if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
+// #if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag) {
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory, bool dut_flag)
+{
   uint32_t d = 24;
   uint32_t a = 25;
   uint32_t g = 26;
@@ -203,7 +216,7 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
 
   uint32_t pte1_addr = (satp << 12) | ((v_addr >> 20) & 0xFFC);
   uint32_t pte1_entry = p_memory[uint32_t(pte1_addr / 4)];
-  #ifdef CONFIG_CACHE
+#ifdef CONFIG_CACHE
   uint32_t pte1_entry_cache;
   if (DCACHE_LOG)
   {
@@ -218,43 +231,50 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
       printf("Ref CPU: ");
   }
   bool pte1_in_cache =
-      dcache_read(pte1_addr, pte1_entry_cache); 
+      dcache_read(pte1_addr, pte1_entry_cache);
   if (pte1_in_cache && dut_flag)
   {
     pte1_entry = pte1_entry_cache;
   }
-  #endif
+#endif
   bool bit_pte1_entry[32];
   cvt_number_to_bit_unsigned(bit_pte1_entry, pte1_entry, 32);
   if (bit_pte1_entry[v] == false ||
-      (bit_pte1_entry[r] == false && bit_pte1_entry[w] == true)) {
+      (bit_pte1_entry[r] == false && bit_pte1_entry[w] == true))
+  {
     return false;
   }
 
-  if (bit_pte1_entry[r] == true || bit_pte1_entry[x] == true) {
+  if (bit_pte1_entry[r] == true || bit_pte1_entry[x] == true)
+  {
     if (!((type == 0 && bit_pte1_entry[x] == true) ||
           (type == 1 && bit_pte1_entry[r] == true) ||
           (type == 2 && bit_pte1_entry[w] == true) ||
-          (type == 1 && mxr == true && bit_pte1_entry[x] == true))) {
+          (type == 1 && mxr == true && bit_pte1_entry[x] == true)))
+    {
       return false;
     }
 
     if (privilege == 1 && sum == 0 && bit_pte1_entry[u] == true &&
-        sstatus[31 - 18] == false) {
+        sstatus[31 - 18] == false)
+    {
       return false;
     }
 
     if (privilege != 1 && mprv == 1 && mpp == 1 && sum == 0 &&
-        bit_pte1_entry[u] == true && sstatus[31 - 18] == false) {
+        bit_pte1_entry[u] == true && sstatus[31 - 18] == false)
+    {
       return false;
     }
 
-    if ((pte1_entry >> 10) % 1024 != 0) {
+    if ((pte1_entry >> 10) % 1024 != 0)
+    {
       return false;
     }
 
     if (bit_pte1_entry[a] == false ||
-        (type == 2 && bit_pte1_entry[d] == false)) {
+        (type == 2 && bit_pte1_entry[d] == false))
+    {
       return false;
     }
 
@@ -266,7 +286,7 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
       ((pte1_entry << 2) & 0xFFFFF000) | ((v_addr >> 10) & 0xFFC);
   uint32_t pte2_entry = p_memory[uint32_t(pte2_addr / 4)];
 #ifdef CONFIG_CACHE
-if (DCACHE_LOG)
+  if (DCACHE_LOG)
   {
     if (dut_flag)
       printf("DUT CPU: ");
@@ -280,25 +300,28 @@ if (DCACHE_LOG)
   }
   uint32_t pte2_entry_cache;
   bool pte2_in_cache =
-      dcache_read(pte2_addr, pte2_entry_cache); 
+      dcache_read(pte2_addr, pte2_entry_cache);
   if (pte2_in_cache && dut_flag)
   {
     pte2_entry = pte2_entry_cache;
   }
-  #endif
+#endif
   bool bit_pte2_stored[32];
   cvt_number_to_bit_unsigned(bit_pte2_stored, pte2_entry, 32);
 
   if (bit_pte2_stored[v] == false ||
       (bit_pte2_stored[r] == false && bit_pte2_stored[w] == true))
     return false;
-  if (bit_pte2_stored[r] == true || bit_pte2_stored[x] == true) {
+  if (bit_pte2_stored[r] == true || bit_pte2_stored[x] == true)
+  {
     if ((type == 0 && bit_pte2_stored[x] == true) ||
         (type == 1 && bit_pte2_stored[r] == true) ||
         (type == 2 && bit_pte2_stored[w] == true) ||
-        (type == 1 && mxr == true && bit_pte2_stored[x] == true)) {
+        (type == 1 && mxr == true && bit_pte2_stored[x] == true))
+    {
       ;
-    } else
+    }
+    else
       return false;
     if (privilege == 1 && sum == 0 && bit_pte2_stored[u] == true &&
         sstatus[31 - 18] == false)
@@ -310,12 +333,13 @@ if (DCACHE_LOG)
         (type == 2 && bit_pte2_stored[d] == false))
       return false;
     p_addr = (pte2_entry << 2) & 0xFFFFF000 | v_addr & 0xFFF;
-    if(DCACHE_LOG){
-        if (dut_flag)
-          printf("DUT CPU: ");
-        else
-          printf("Ref CPU: ");
-        printf("MMU va2pa success v_addr:0x%08x p_addr:0x%08x\n", v_addr, p_addr);
+    if (DCACHE_LOG)
+    {
+      if (dut_flag)
+        printf("DUT CPU: ");
+      else
+        printf("Ref CPU: ");
+      printf("MMU va2pa success v_addr:0x%08x p_addr:0x%08x\n", v_addr, p_addr);
     }
     return true;
   }
@@ -323,9 +347,10 @@ if (DCACHE_LOG)
   return false;
 }
 
-#else
+// #else
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory) {
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory)
+{
   uint32_t d = 24;
   uint32_t a = 25;
   uint32_t g = 26;
@@ -344,34 +369,41 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   bool bit_pte1_entry[32];
   cvt_number_to_bit_unsigned(bit_pte1_entry, pte1_entry, 32);
   if (bit_pte1_entry[v] == false ||
-      (bit_pte1_entry[r] == false && bit_pte1_entry[w] == true)) {
+      (bit_pte1_entry[r] == false && bit_pte1_entry[w] == true))
+  {
     return false;
   }
 
-  if (bit_pte1_entry[r] == true || bit_pte1_entry[x] == true) {
+  if (bit_pte1_entry[r] == true || bit_pte1_entry[x] == true)
+  {
     if (!((type == 0 && bit_pte1_entry[x] == true) ||
           (type == 1 && bit_pte1_entry[r] == true) ||
           (type == 2 && bit_pte1_entry[w] == true) ||
-          (type == 1 && mxr == true && bit_pte1_entry[x] == true))) {
+          (type == 1 && mxr == true && bit_pte1_entry[x] == true)))
+    {
       return false;
     }
 
     if (privilege == 1 && sum == 0 && bit_pte1_entry[u] == true &&
-        sstatus[31 - 18] == false) {
+        sstatus[31 - 18] == false)
+    {
       return false;
     }
 
     if (privilege != 1 && mprv == 1 && mpp == 1 && sum == 0 &&
-        bit_pte1_entry[u] == true && sstatus[31 - 18] == false) {
+        bit_pte1_entry[u] == true && sstatus[31 - 18] == false)
+    {
       return false;
     }
 
-    if ((pte1_entry >> 10) % 1024 != 0) {
+    if ((pte1_entry >> 10) % 1024 != 0)
+    {
       return false;
     }
 
     if (bit_pte1_entry[a] == false ||
-        (type == 2 && bit_pte1_entry[d] == false)) {
+        (type == 2 && bit_pte1_entry[d] == false))
+    {
       return false;
     }
 
@@ -389,13 +421,16 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   if (bit_pte2_stored[v] == false ||
       (bit_pte2_stored[r] == false && bit_pte2_stored[w] == true))
     return false;
-  if (bit_pte2_stored[r] == true || bit_pte2_stored[x] == true) {
+  if (bit_pte2_stored[r] == true || bit_pte2_stored[x] == true)
+  {
     if ((type == 0 && bit_pte2_stored[x] == true) ||
         (type == 1 && bit_pte2_stored[r] == true) ||
         (type == 2 && bit_pte2_stored[w] == true) ||
-        (type == 1 && mxr == true && bit_pte2_stored[x] == true)) {
+        (type == 1 && mxr == true && bit_pte2_stored[x] == true))
+    {
       ;
-    } else
+    }
+    else
       return false;
     if (privilege == 1 && sum == 0 && bit_pte2_stored[u] == true &&
         sstatus[31 - 18] == false)
@@ -413,7 +448,7 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   return false;
 }
 
-#endif
+// #endif
 /*
  * va2pa_fixed: a fixed version of va2pa
  *
@@ -425,7 +460,8 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
  */
 bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
                  uint32_t type, bool *mstatus, bool *sstatus, int privilege,
-                 uint32_t *p_memory) {
+                 uint32_t *p_memory)
+{
   bool ret =
       va2pa(p_addr, v_addr, satp, type, mstatus, sstatus, privilege, p_memory);
 #ifndef CONFIG_LOOSE_VA2PA
@@ -439,11 +475,15 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
 
   // 1. dut page_fault, ref no page_fault -> allow, ret = false
   // 2. dut no page_fault, ref page_fault -> ERROR
-  switch (type) {
+  switch (type)
+  {
   case 0: // instruction fetch
-    if (dut_page_fault_inst) {
+    if (dut_page_fault_inst)
+    {
       ret = false; // 以 DUT MMU 为准
-    } else if (!dut_page_fault_inst && !ret) {
+    }
+    else if (!dut_page_fault_inst && !ret)
+    {
       cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault "
               "mismatch!"
            << endl;
@@ -453,9 +493,12 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
     }
     break;
   case 1: // load
-    if (dut_page_fault_load) {
+    if (dut_page_fault_load)
+    {
       ret = false;
-    } else if (!dut_page_fault_load && !ret) {
+    }
+    else if (!dut_page_fault_load && !ret)
+    {
       cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!"
            << endl;
       cout << "VA: " << hex << v_addr << endl;
@@ -464,9 +507,12 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
     }
     break;
   case 2: // store
-    if (dut_page_fault_store) {
+    if (dut_page_fault_store)
+    {
       ret = false;
-    } else if (!dut_page_fault_store && !ret) {
+    }
+    else if (!dut_page_fault_store && !ret)
+    {
       cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!"
            << endl;
       cout << "VA: " << hex << v_addr << endl;
@@ -482,9 +528,11 @@ bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
 }
 
 void front_cycle(bool stall, bool misprediction, bool exception,
-                 uint32_t &number_PC) {
+                 uint32_t &number_PC)
+{
 
-  if (!stall || misprediction || exception) {
+  if (!stall || misprediction || exception)
+  {
 
 #if defined(CONFIG_BPU)
 
@@ -493,7 +541,8 @@ void front_cycle(bool stall, bool misprediction, bool exception,
     front_top(&front_in, &front_out);
 
 #else
-    for (int j = 0; j < FETCH_WIDTH; j++) {
+    for (int j = 0; j < FETCH_WIDTH; j++)
+    {
       front_out.pc[j] = number_PC;
       front_out.FIFO_valid = true;
       front_out.inst_valid[j] = true;
@@ -506,17 +555,23 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 
       cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
 
-      if ((back.out.satp & 0x80000000) && back.out.privilege != 3) {
+      if ((back.out.satp & 0x80000000) && back.out.privilege != 3)
+      {
 
         front_out.page_fault_inst[j] =
             !va2pa(p_addr, number_PC, back.out.satp, 0, mstatus, sstatus,
                    back.out.privilege, p_memory);
-        if (front_out.page_fault_inst[j]) {
+        if (front_out.page_fault_inst[j])
+        {
           front_out.instructions[j] = INST_NOP;
-        } else {
+        }
+        else
+        {
           front_out.instructions[j] = p_memory[p_addr / 4];
         }
-      } else {
+      }
+      else
+      {
         front_out.page_fault_inst[j] = false;
         front_out.instructions[j] = p_memory[number_PC / 4];
       }
@@ -530,7 +585,8 @@ void front_cycle(bool stall, bool misprediction, bool exception,
 #endif
 
     bool no_taken = true;
-    for (int j = 0; j < FETCH_WIDTH; j++) {
+    for (int j = 0; j < FETCH_WIDTH; j++)
+    {
       back.in.valid[j] =
           no_taken && front_out.FIFO_valid && front_out.inst_valid[j];
       back.in.pc[j] = front_out.pc[j];
@@ -539,7 +595,8 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       back.in.page_fault_inst[j] = front_out.page_fault_inst[j];
       back.in.inst[j] = front_out.instructions[j];
 
-      if (LOG && back.in.valid[j]) {
+      if (LOG && back.in.valid[j])
+      {
         cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
              << front_out.pc[j] << " Inst: " << back.in.inst[j] << endl;
       }
@@ -551,7 +608,9 @@ void front_cycle(bool stall, bool misprediction, bool exception,
       if (back.in.valid[j] && front_out.predict_dir[j])
         no_taken = false;
     }
-  } else {
+  }
+  else
+  {
 #ifdef CONFIG_BPU
     front_in.FIFO_read_enable = false;
     front_in.refetch = false;
@@ -560,24 +619,30 @@ void front_cycle(bool stall, bool misprediction, bool exception,
   }
 }
 
-void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
+void back2front_comb(front_top_in &front_in, front_top_out &front_out)
+{
   front_in.FIFO_read_enable = false;
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
+  for (int i = 0; i < COMMIT_WIDTH; i++)
+  {
     Inst_uop *inst = &back.out.commit_entry[i].uop;
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
     // front_in.back2front_valid[i] = back.out.commit_entry[i].valid &&
     //                                (is_branch(inst->type) || inst->type ==
     //                                JAL);
-    if (front_in.back2front_valid[i]) {
+    if (front_in.back2front_valid[i])
+    {
       front_in.predict_dir[i] = inst->pred_br_taken;
       front_in.predict_base_pc[i] = inst->pc;
       front_in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
       front_in.actual_target[i] = inst->pc_next;
       int br_type = BR_DIRECT;
-      if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
+      if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1)
+      {
         br_type = BR_CALL;
-      } else if (inst->type == JALR) {
+      }
+      else if (inst->type == JALR)
+      {
         if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
           br_type = BR_RET;
         else
@@ -600,12 +665,14 @@ void back2front_comb(front_top_in &front_in, front_top_out &front_out) {
     // }
   }
 
-  if (back.out.mispred || back.out.flush) {
+  if (back.out.mispred || back.out.flush)
+  {
     front_in.refetch_address = back.out.redirect_pc;
   }
 }
 
-static inline void back2mmu_comb() {
+static inline void back2mmu_comb()
+{
   mmu.io.in.state.satp = reinterpret_cast<satp_t &>(back.out.satp);
   mmu.io.in.state.mstatus = back.out.mstatus;
   mmu.io.in.state.sstatus = back.out.sstatus;
@@ -617,16 +684,15 @@ static inline void back2mmu_comb() {
   // mmu.io.in.mmu_dcache_req = *back.out.dcache2ptw_req;
   // mmu.io.in.mmu_dcache_resp = *back.out.dcache2ptw_resp;
 
+#if defined(CONFIG_CACHE) && defined(CONFIG_MMU)
   mmu.io.in.mmu_dcache_req = back.out.dcache2ptw_req;
   mmu.io.in.mmu_dcache_resp = back.out.dcache2ptw_resp;
 
   back.in.ptw2dcache_req = mmu.io.out.mmu_dcache_req;
   back.in.ptw2dcache_resp = mmu.io.out.mmu_dcache_resp;
-
+#endif
   // printf("\nmmu.io.in.mmu_dcache_req.ready=%d sim_time:%lld\n",mmu.io.in.mmu_dcache_req.ready, sim_time);
   // printf("mmu.io.in.mmu_dcache_resp.valid=%d mmu.io.in.mmu_dcache_resp.miss=%d mmu.io.in.mmu_dcache_resp.data=0x%08X sim_time:%lld\n",mmu.io.in.mmu_dcache_resp.valid, mmu.io.in.mmu_dcache_resp.miss, mmu.io.in.mmu_dcache_resp.data, sim_time);
   // printf("back.in.ptw2dcache_req.valid=%d back.in.ptw2dcache_req.paddr=0x%08X sim_time:%lld\n",back.in.ptw2dcache_req.valid, back.in.ptw2dcache_req.paddr, sim_time);
   // printf("back.in.ptw2dcache_resp.ready=%d sim_time:%lld\n",back.in.ptw2dcache_resp.ready, sim_time);
-
-
 }
