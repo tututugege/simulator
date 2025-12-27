@@ -53,8 +53,8 @@ using namespace std;
 #define ALU_NUM 2
 #define BRU_NUM 2
 
-#define LOG_START 382045163
-#define LOG_ENABLE 
+#define LOG_START 396092327
+// #define LOG_ENABLE 
 
 #ifndef LOG_ENABLE
   #define DEBUG (0)
@@ -77,7 +77,7 @@ using namespace std;
 // #define DCACHE_LOG (1 && LOG_START)
 // #define MMU_LOG (0 && LOG_START)
 
-#define DEBUG_ADDR 0x807A4C00//0x807a4000
+#define DEBUG_ADDR 0x807a1848//0x807a4000
 
 
 #define CONFIG_DIFFTEST

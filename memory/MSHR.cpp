@@ -16,7 +16,6 @@ Inst_uop trans_uop;
 bool merge_flag_ld = false;
 bool merge_flag_st = false;
 
-
 extern long long total_num;
 extern long long miss_num;
 
@@ -63,11 +62,14 @@ void MSHR::comb_out()
         out.mshr2arbiter_control->last = false;
     }
 
-    if(mshr_state == MSHR_DEAL){
+    if (mshr_state == MSHR_DEAL)
+    {
         out.mshr2dcache_fwd->valid = in.arbiter2mshr_data->last;
-        out.mshr2dcache_fwd->addr = GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, count_data-1);
+        out.mshr2dcache_fwd->addr = GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, count_data - 1);
         out.mshr2dcache_fwd->rdata = in.arbiter2mshr_data->data;
-    }else{
+    }
+    else
+    {
         out.mshr2dcache_fwd->valid = false;
         out.mshr2dcache_fwd->addr = 0;
         out.mshr2dcache_fwd->rdata = 0;
@@ -170,12 +172,13 @@ void MSHR::seq()
                     {
                         mshr_state = MSHR_WRITEBACK;
                     }
-                    else if(fwd_index!=-1)
+                    else if (fwd_index != -1)
                     {
-                        
+
                         mshr_state = MSHR_FORWARD;
                     }
-                    else{
+                    else
+                    {
                         mshr_state = MSHR_DEAL;
                     }
                 }
@@ -252,7 +255,7 @@ void MSHR::seq()
             {
                 if (mshr_entries[mshr_head].count)
                 {
-                    printf("MSHR Warning: Next MSHR entry not free when finishing current MSHR entry! %lld\n",sim_time);
+                    printf("MSHR Warning: Next MSHR entry not free when finishing current MSHR entry! %lld\n", sim_time);
                     exit(1);
                 }
                 count_mshr--;
@@ -278,6 +281,7 @@ void MSHR::seq()
                 {
                     printf("\nMSHR Load Done: uop_inst=0x%08x rob_idx=%d Addr=0x%08x Data=0x%08x \n", trans_uop.instruction, trans_uop.rob_idx, GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, trans_offset), dcache_data[mshr_entries[mshr_head].index][mshr_way][trans_offset]);
                 }
+                table_free(deal_index);
             }
             else
             {
@@ -288,8 +292,8 @@ void MSHR::seq()
                 {
                     printf("\nMSHR Store Done: uop_inst=0x%08x rob_idx=%d Addr=0x%08x Wdata=0x%08x Wstrb=0x%08X \n", trans_uop.instruction, trans_uop.rob_idx, GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, trans_offset), in.arbiter2mshr_data->data, mshr_table[deal_index].wstrb);
                 }
+                table_free(deal_index);
             }
-            table_free(deal_index);
         }
     }
     else if (mshr_state == MSHR_WRITEBACK)
@@ -297,11 +301,13 @@ void MSHR::seq()
         if (in.writebuffer2mshr->ready)
         {
             fwd_index = find_in_writebuffer(GET_ADDR(mshr_entries[mshr_head].tag, mshr_entries[mshr_head].index, 0));
-            
-            if(fwd_index!=-1){
+
+            if (fwd_index != -1)
+            {
                 mshr_state = MSHR_FORWARD;
             }
-            else{
+            else
+            {
                 dirty_writeback = false;
                 mshr_state = MSHR_DEAL;
             }
@@ -319,7 +325,7 @@ void MSHR::seq()
     }
 
     bool mispred = in.control->mispred && (in.control->br_mask & (1 << in.dcache2mshr_ld->uop.tag));
-    if (in.dcache2mshr_ld->valid & !mispred && !merge_flag_ld)
+    if (in.dcache2mshr_ld->valid && !mispred && !merge_flag_ld)
     {
         uint32_t entry_idx = find_entry(in.dcache2mshr_ld->addr);
         if (entry_idx == MSHR_ENTRY_SIZE)
@@ -331,7 +337,7 @@ void MSHR::seq()
         {
             mshr_entries[entry_idx].count++;
         }
-        table_add(entry_idx, false, GET_OFFSET(in.dcache2mshr_ld->addr), 0, 0 ,0 , in.dcache2mshr_ld->uop);
+        table_add(entry_idx, false, GET_OFFSET(in.dcache2mshr_ld->addr), 0, 0, 0, in.dcache2mshr_ld->uop);
     }
     if (in.dcache2mshr_st->valid && !merge_flag_st)
     {
@@ -382,8 +388,9 @@ void MSHR::table_add(uint32_t idx, bool type, uint32_t offset, uint32_t reg, uin
     }
     table_tail = (table_tail + 1) % MSHR_TABLE_SIZE;
     count_table++;
-    if(count_table>MSHR_TABLE_SIZE){
-        printf("MSHR Warning: MSHR table overflow! %lld\n",sim_time);
+    if (count_table > MSHR_TABLE_SIZE)
+    {
+        printf("MSHR Warning: MSHR table overflow! %lld\n", sim_time);
         exit(1);
     }
 }
@@ -400,8 +407,9 @@ void MSHR::entry_add(uint32_t idx, uint32_t index, uint32_t tag)
     }
     mshr_tail = (mshr_tail + 1) % MSHR_ENTRY_SIZE;
     count_mshr++;
-    if(count_mshr>MSHR_ENTRY_SIZE){
-        printf("MSHR Warning: MSHR entry overflow! %lld\n",sim_time);
+    if (count_mshr > MSHR_ENTRY_SIZE)
+    {
+        printf("MSHR Warning: MSHR entry overflow! %lld\n", sim_time);
         exit(1);
     }
 }

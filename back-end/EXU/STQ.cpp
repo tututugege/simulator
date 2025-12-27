@@ -217,7 +217,6 @@ void STQ::seq()
 
   out.stq2dis->stq_idx = enq_ptr;
 }
-
 extern uint32_t *p_memory;
 void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx,
                     bool &stall_load)
@@ -359,19 +358,19 @@ void STQ::comb_out()
 
       if (temp != 27)
         cout << temp;
-        if (temp == '?')
+      if (temp == '?')
+      {
+        if (perf.perf_start)
         {
-          if (perf.perf_start)
-          {
-            perf.perf_print();
-          }
-          else
-          {
-            cout << " perf counter start" << endl;
-            perf.perf_start = true;
-            perf.perf_reset();
-          }
+          perf.perf_print();
         }
+        else
+        {
+          cout << " perf counter start" << endl;
+          perf.perf_start = true;
+          perf.perf_reset();
+        }
+      }
     }
     else if (waddr == 0x10000001 && (entry[deq_ptr].data & 0x000000ff) == 7)
     {
@@ -566,6 +565,7 @@ void STQ::seq()
   // }
 }
 
+#endif
 extern uint32_t *p_memory;
 void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx)
 {
@@ -617,7 +617,6 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx)
         is_store(back.rob.entry[bank_idx][line_idx].uop))
     {
       int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
-
       if ((entry[stq_idx].addr & 0xFFFFFFFC) == (addr & 0xFFFFFFFC) && entry[stq_idx].valid)
       {
         uint32_t wdata = entry[stq_idx].data;
@@ -650,4 +649,27 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx)
     LOOP_INC(idx, ROB_NUM);
   }
 }
-#endif
+
+bool STQ::st2ld_stall( int rob_idx){
+  int idx = back.rob.deq_ptr << 2;
+
+  while (idx != rob_idx)
+  {
+    int line_idx = idx >> 2;
+    int bank_idx = idx & 0b11;
+    if (back.rob.entry[bank_idx][line_idx].valid &&
+        is_store(back.rob.entry[bank_idx][line_idx].uop))
+    {
+      int stq_idx = back.rob.entry[bank_idx][line_idx].uop.stq_idx;
+      if (entry[stq_idx].valid &&
+          (!entry[stq_idx].data_valid || !entry[stq_idx].addr_valid))
+      {
+        // 有未准备好的store，停止转发
+        return true;
+      }
+      
+    }
+    LOOP_INC(idx, ROB_NUM);
+  }
+  return false;
+}

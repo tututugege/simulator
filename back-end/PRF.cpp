@@ -6,6 +6,7 @@
 #include <util.h>
 #include "TOP.h"
 
+bool stall_dcache = false;
 void PRF::init()
 {
   for (int i = 0; i < ISSUE_WAY; i++)
@@ -290,6 +291,9 @@ void PRF::comb_write()
 
 void PRF::comb_pipeline()
 {
+  if(DCACHE_LOG){
+    printf("PRF Pipeline Start stall_dcache=%d\n", stall_dcache);
+  }
   for (int i = 0; i < ISSUE_WAY; i++)
   {
 #ifndef CONFIG_CACHE
@@ -306,7 +310,7 @@ void PRF::comb_pipeline()
     {
       inst_r_1[i] = in.exe2prf->entry[i];
     }
-    else if (i == IQ_LD && out.prf2exe->ready[i] && in.cache2prf->valid)
+    else if (i == IQ_LD && out.prf2exe->ready[i] && in.cache2prf->valid && !stall_dcache)
     {
       uint32_t addr = in.cache2prf->uop.src1_rdata + in.cache2prf->uop.imm;
       inst_r_1[i].uop = in.cache2prf->uop;

@@ -50,13 +50,15 @@ public:
   #else
   void comb_out();
   void comb_in();
-  void st2ld_fwd(uint32_t, uint32_t &, int rob_idx);
   bool mmu_fwd(uint32_t p_addr, uint32_t &data, int rob_idx);
+  
+  void st2ld_fwd(uint32_t, uint32_t &, int rob_idx);
   int deq_num;
   int fwd_ptr = 0;
   int write_flag = 0;
   #endif
   void seq();
+  bool st2ld_stall( int rob_idx);
 
   void init();
   int enq_ptr;

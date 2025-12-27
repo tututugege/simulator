@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cvt.h>
 #include <util.h>
+
+#include "TOP.h"
 extern MMU mmu;
 extern uint32_t *p_memory;
 Cache cache;
@@ -145,6 +147,7 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
 }
 
 #elif defined(CONFIG_CACHE) && defined(CONFIG_MMU)
+extern Back_Top back;
 void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
 {
 
@@ -234,6 +237,9 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred)
           printf("   FU exec: mmu miss, reallocate slot, granted=%d hit=%d\n", granted, hit);
         }
         return;
+      }
+      if(is_load_uop(inst.op)&&back.stq.st2ld_stall(inst.rob_idx)){
+        return ;
       }
     }
   }
@@ -574,10 +580,10 @@ void EXU::comb_exec()
 #ifdef CONFIG_CACHE
       fu[i].exec(out.exe2prf->entry[i].uop, out.exe2cache, (in.dec_bcast->mispred && ((1 << inst_r[i].uop.tag) & in.dec_bcast->br_mask)) || in.rob_bcast->flush);
 
-      if (DCACHE_LOG)
-      {
-        printf("EXU FU[%d] Exec Inst: 0x%08x rob_idx=%d valid:%d op:%d ldu_work=%d\n", i, inst_r[i].uop.instruction, inst_r[i].uop.rob_idx, inst_r[i].valid, inst_r[i].uop.op, ldu_work);
-      }
+      // if (DCACHE_LOG)
+      // {
+      //   printf("EXU FU[%d] Exec Inst: 0x%08x rob_idx=%d valid:%d op:%d ldu_work=%d\n", i, inst_r[i].uop.instruction, inst_r[i].uop.rob_idx, inst_r[i].valid, inst_r[i].uop.op, ldu_work);
+      // }
       if (i == IQ_LD)
         continue;
 #else
@@ -716,22 +722,22 @@ void EXU::seq()
 }
 void EXU::comb_latency()
 {
-  if(DCACHE_LOG){
-    printf("\nEXU Latency Comb:in.cache2exe_ready->ready=%d\n", in.cache2exe_ready->ready);
-    for(int i = 0; i < ISSUE_WAY; i++){
-      printf("  FU[%d]: cycle=%d, latency=%d, complete=%d\n", i, fu[i].cycle, fu[i].latency, fu[i].complete);
-    }
-    printf("\n");
-    for(int i = 0; i < ISSUE_WAY; i++)
-    printf("  inst_r[%d]: valid=%d uop_inst=0x%08x\n", i, inst_r[i].valid, inst_r[i].uop.instruction);
-    printf("\nmispred: %d flush: %d\n", in.dec_bcast->mispred, in.rob_bcast->flush);
-  }
-  if (DCACHE_LOG)
-  {
-    printf("\nEXU Latency Comb:\n");
-    printf("in.cache2exe_ready->ready: %d\n", in.cache2exe_ready->ready);
-    printf("ldu_work: %d\n", ldu_work);
-  }
+  // if(DCACHE_LOG){
+  //   printf("\nEXU Latency Comb:in.cache2exe_ready->ready=%d\n", in.cache2exe_ready->ready);
+  //   for(int i = 0; i < ISSUE_WAY; i++){
+  //     printf("  FU[%d]: cycle=%d, latency=%d, complete=%d\n", i, fu[i].cycle, fu[i].latency, fu[i].complete);
+  //   }
+  //   printf("\n");
+  //   for(int i = 0; i < ISSUE_WAY; i++)
+  //   printf("  inst_r[%d]: valid=%d uop_inst=0x%08x\n", i, inst_r[i].valid, inst_r[i].uop.instruction);
+  //   printf("\nmispred: %d flush: %d\n", in.dec_bcast->mispred, in.rob_bcast->flush);
+  // }
+  // if (DCACHE_LOG)
+  // {
+  //   printf("\nEXU Latency Comb:\n");
+  //   printf("in.cache2exe_ready->ready: %d\n", in.cache2exe_ready->ready);
+  //   printf("ldu_work: %d\n", ldu_work);
+  // }
   if (inst_r[IQ_LD].valid && ldu_work)
   {
     if (in.rob_bcast->flush)
@@ -740,10 +746,10 @@ void EXU::comb_latency()
       fu[IQ_LD].cycle = 0;
       out.exe2prf->entry[IQ_LD].valid = false;
       ldu_work = false;
-      if (DCACHE_LOG)
-      {
-        printf("EXU Latency Comb: LD flush!\n");
-      }
+      // if (DCACHE_LOG)
+      // {
+      //   printf("EXU Latency Comb: LD flush!\n");
+      // }
       return;
     }
     if (in.dec_bcast->mispred && ((1 << inst_r[IQ_LD].uop.tag) & in.dec_bcast->br_mask))
@@ -752,10 +758,10 @@ void EXU::comb_latency()
       fu[IQ_LD].cycle = 0;
       out.exe2prf->entry[IQ_LD].valid = false;
       ldu_work = false;
-      if (DCACHE_LOG)
-      {
-        printf("EXU Latency Comb: LD mispred!\n");
-      }
+      // if (DCACHE_LOG)
+      // {
+      //   printf("EXU Latency Comb: LD mispred!\n");
+      // }
       return;
     }
     if (in.cache2exe_ready->ready)
@@ -764,10 +770,10 @@ void EXU::comb_latency()
       fu[IQ_LD].cycle = 0;
       out.exe2prf->entry[IQ_LD].valid = true;
       ldu_work = false;
-      if (DCACHE_LOG)
-      {
-        printf("EXU Latency Comb: LD complete!\n");
-      }
+      // if (DCACHE_LOG)
+      // {
+      //   printf("EXU Latency Comb: LD complete!\n");
+      // }
     }
     else
     {
@@ -775,10 +781,10 @@ void EXU::comb_latency()
       fu[IQ_LD].latency++;
       out.exe2prf->entry[IQ_LD].valid = false;
 
-      if (DCACHE_LOG)
-      {
-        printf("EXU Latency Comb: LD waiting...\n");
-      }
+      // if (DCACHE_LOG)
+      // {
+      //   printf("EXU Latency Comb: LD waiting...\n");
+      // }
     }
     // if (DCACHE_LOG)
     // {

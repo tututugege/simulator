@@ -529,8 +529,6 @@ void Back_Top::comb()
   exu.comb_exec();
 
 #ifdef CONFIG_CACHE
-#ifdef CONFIG_MMU
-  dcache.comb_mmu();
 #endif
   stq.comb_out();
   mshr.comb_ready();
@@ -544,13 +542,15 @@ void Back_Top::comb()
   mshr.comb_out();
   dcache.comb_out_ldq();
   wb_arbiter.comb();
+  prf.comb_load();
   dcache.comb_s1();
   dcache.comb_out_mshr();
   dcache.comb_out_ready();
   mshr.comb();
-  prf.comb_load();
   stq.comb_in();
   exu.comb_latency();
+#ifdef CONFIG_MMU
+  dcache.comb_mmu();
 #else
 
   stq.comb();

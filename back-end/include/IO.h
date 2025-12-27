@@ -301,3 +301,7 @@ typedef struct{
 typedef struct {
   wire1_t fence_stall;
 } Stq_Front;
+
+typedef struct {
+  bool stall;
+} Prf_Dcache;

@@ -22,6 +22,7 @@ bool global_mispred2 = false;
 bool uncache_access = false;
 
 bool mmu_read=false;
+uint32_t mmu_addr=0;
 
 uint32_t old_debug_data = 0;
 int debug_way=-1;
@@ -318,20 +319,18 @@ void Dcache::seq()
     #ifdef CONFIG_MMU
     memcpy(mmu_next_tag, mmu_reg_tag, sizeof(uint32_t) * DCACHE_WAY_NUM);
     memcpy(mmu_next_data, mmu_reg_data, sizeof(uint32_t) * DCACHE_WAY_NUM);
-    if(!global_flush)
     mmu_read=in.ptw2dcache_req->valid;
-    else mmu_read=false;
+    mmu_addr=in.ptw2dcache_req->paddr;
     #endif
 }
 #ifdef CONFIG_MMU
 void Dcache::comb_mmu(){    
     
-    if(mmu_read&&in.ptw2dcache_req->valid){ 
+    if(mmu_read&&in.ptw2dcache_resp->ready){ 
         bool hit = false;
         int way_idx = 0;
-        uint32_t addr = in.ptw2dcache_req->paddr;
-        uint32_t index = GET_INDEX(addr);
-        uint32_t tag = GET_TAG(addr);
+        uint32_t index = GET_INDEX(mmu_addr);
+        uint32_t tag = GET_TAG(mmu_addr);
         uint32_t hit_data = 0;
         uint32_t rdata=0;
         hit_check(index, tag, hit, way_idx, hit_data, mmu_next_tag, mmu_next_data);
@@ -340,31 +339,33 @@ void Dcache::comb_mmu(){
             rdata = hit_data;
             updatelru(index, way_idx);
             if(DCACHE_LOG){
-                printf("Dcache Read Hit: addr=0x%08X rdata=0x%08X way=%d sim_time:%lld\n", addr, rdata, way_idx, sim_time);
+                printf("Dcache Read Hit: addr=0x%08X rdata=0x%08X way=%d sim_time:%lld\n", mmu_addr, rdata, way_idx, sim_time);
             }
         }
         else{
-            hit = writebuffer_find(GET_ADDR(tag,index,0), GET_OFFSET(addr), rdata);
+            hit = writebuffer_find(GET_ADDR(tag,index,0), GET_OFFSET(mmu_addr), rdata);
             if(hit){
                 if(DCACHE_LOG){
-                    printf("Dcache Read Hit in WriteBuffer: addr=0x%08X rdata=0x%08X sim_time:%lld\n", addr, rdata, sim_time);
+                    printf("Dcache Read Hit in WriteBuffer: addr=0x%08X rdata=0x%08X sim_time:%lld\n", mmu_addr, rdata, sim_time);
                 }
             } 
             if(DCACHE_LOG){
-                printf("Dcache Read Miss: addr=0x%08X sim_time:%lld\n", addr, sim_time);
+                printf("Dcache Read Miss: addr=0x%08X sim_time:%lld\n", mmu_addr, sim_time);
             }
         }
         out.dcache2ptw_resp->valid = true;
         out.dcache2ptw_resp->miss = !hit;
         out.dcache2ptw_resp->data = rdata;
-        out.dcache2ptw_req->ready = true;
-    }
-    else{
+    }else{
         out.dcache2ptw_resp->valid = false;
-        out.dcache2ptw_req->ready = false;
     }
+    out.dcache2ptw_req->ready = true;
     if(DCACHE_LOG){
-        printf("\nDcache comb_mmu: ptw2dcache_req->valid=%d ptw2dcache_req->paddr=0x%08X sim_time:%lld\n",in.ptw2dcache_req->valid, in.ptw2dcache_req->paddr, sim_time);
+        printf("Dcache comb_mmu: mmu_read=%d in.ptw2dcache_resp->ready=%d\n",mmu_read, in.ptw2dcache_resp->ready);
+        printf("in.ptw2dcache_req->paddr=0x%08X in.ptw2dcache_req->valid=%d\n", in.ptw2dcache_req->paddr, in.ptw2dcache_req->valid);
+        printf("out.dcache2ptw_req->ready=%d\n", out.dcache2ptw_req->ready);
+        printf("out.dcache2ptw_resp->valid=%d out.dcache2ptw_resp->miss=%d out.dcache2ptw_resp->data=0x%08X\n",
+               out.dcache2ptw_resp->valid, out.dcache2ptw_resp->miss, out.dcache2ptw_resp->data);
         printf("mmu_next_tag[0]=0x%08X mmu_next_tag[1]=0x%08X mmu_next_tag[2]=0x%08X mmu_next_tag[3]=0x%08X\n",
                mmu_next_tag[0], mmu_next_tag[1], mmu_next_tag[2], mmu_next_tag[3]);
         printf("mmu_next_data[0]=0x%08X mmu_next_data[1]=0x%08X mmu_next_data[2]=0x%08X mmu_next_data[3]=0x%08X\n",
