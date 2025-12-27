@@ -14,7 +14,7 @@ Ref_cpu ref_cpu;
 void init_difftest(int img_size) {
   ref_cpu.init(0);
   memcpy(ref_cpu.memory + 0x80000000 / 4, p_memory + 0x80000000 / 4,
-         img_size * sizeof(uint32_t));
+         img_size);
   ref_cpu.memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
   ref_cpu.memory[uint32_t(0x0 / 4)] = 0xf1402573;
   ref_cpu.memory[uint32_t(0x4 / 4)] = 0x83e005b7;

@@ -134,6 +134,19 @@ uint32_t f32_classify(float32_t f) {
   return res;
 }
 
+bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t satp,
+                 uint32_t type, bool *mstatus, bool *sstatus, int privilege,
+                 uint32_t *p_memory);
+#if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory,
+           bool dut_flag = true);
+#else
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+#endif
+int cvt_number_to_csr(int csr_idx);
+
 void Ref_cpu::init(uint32_t reset_pc) {
   state.pc = reset_pc;
   memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];

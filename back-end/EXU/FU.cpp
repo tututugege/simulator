@@ -5,9 +5,14 @@
 #include <util.h>
 
 extern uint32_t *p_memory;
+#if !defined(CONFIG_MMU) && defined(CONFIG_CACHE)
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory,
+           bool dut_flag = true);
+#else
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-
+#endif
 enum STATE { IDLE, RECV };
 
 #define SUB 0b000
@@ -234,8 +239,151 @@ void alu(Inst_uop &inst) {
   }
   }
 }
-
+#ifdef CONFIG_CACHE
 #ifdef CONFIG_MMU
+void ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn, Mem_REQ *&out) {
+  bool stall_load = false;
+  uint32_t addr = inst.src1_rdata + inst.imm;
+
+  if (addr == 0x1fd0e000) {
+    inst.difftest_skip = true;
+  }
+
+  int size = inst.func3 & 0b11;
+  int offset = addr & 0b11;
+  uint32_t mask = 0;
+  uint32_t sign = 0;
+
+  if (inst.amoop != AMONONE) {
+    size = 0b10;
+    offset = 0b0;
+  }
+
+  uint32_t data;
+  uint32_t p_addr = addr;
+  bool ret = true;
+
+  p_addr = mmu_ppn << 12 | (addr & 0xFFF);
+  ret = !mmu_page_fault;
+
+  if (p_addr == 0x1fd0e000) {
+    data = cpu.ctx.perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  }
+
+  if (!ret) {
+    inst.page_fault_load = true;
+    data = addr;
+  }
+  out->en = true;
+  out->wen = 0;
+
+  out->wdata = data;
+  out->wstrb = 0;
+  out->addr = p_addr;
+
+  out->uop = inst;
+  out->uop.paddr = p_addr;
+  return;
+}
+void stu_addr(Inst_uop &inst, bool page_fault, uint32_t mmu_ppn) {
+
+  uint32_t v_addr = inst.src1_rdata + inst.imm;
+
+  uint32_t p_addr = v_addr;
+  p_addr = (mmu_ppn << 12) | (v_addr & 0xFFF);
+  if (page_fault) {
+    inst.page_fault_store = true;
+    inst.result = v_addr;
+  } else {
+    inst.result = p_addr;
+  }
+  if (DCACHE_LOG) {
+    printf("stu v_addr: 0x%08x, p_addr: 0x%08x, page_fault: %d\n", v_addr,
+           p_addr, page_fault);
+  }
+}
+#else
+void ldu(Inst_uop &inst, Mem_REQ *&out) {
+  uint32_t addr = inst.src1_rdata + inst.imm;
+  bool stall_load = false;
+
+  if (addr == 0x1fd0e000) {
+    inst.difftest_skip = true;
+  }
+
+  int size = inst.func3 & 0b11;
+  int offset = addr & 0b11;
+  uint32_t mask = 0;
+  uint32_t sign = 0;
+
+  if (inst.amoop != AMONONE) {
+    size = 0b10;
+    offset = 0b0;
+  }
+
+  uint32_t data;
+  uint32_t p_addr = addr;
+  bool ret = true;
+
+  if (back.out.satp & 0x80000000 && back.out.privilege != 3) {
+    bool mstatus[32], sstatus[32];
+    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
+
+    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
+
+    ret = va2pa(p_addr, addr, back.out.satp, 1, mstatus, sstatus,
+                back.out.privilege, p_memory);
+  }
+  data = 0;
+  if (!ret) {
+    inst.page_fault_load = true;
+    data = addr;
+  }
+  if (p_addr == 0x1fd0e000) {
+    data = perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+    data = 0;
+  }
+
+  out->en = true;
+  out->wen = 0;
+
+  out->wdata = data;
+  out->wstrb = 0;
+  out->addr = p_addr;
+
+  out->uop = inst;
+  out->uop.paddr = p_addr;
+  return;
+}
+void stu_addr(Inst_uop &inst) {
+
+  uint32_t v_addr = inst.src1_rdata + inst.imm;
+
+  uint32_t p_addr = v_addr;
+  bool page_fault = false;
+
+  if (back.csr.CSR_RegFile[csr_satp] & 0x80000000 && back.csr.privilege != 3) {
+    bool mstatus[32], sstatus[32];
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
+
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
+
+    page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 2,
+                        mstatus, sstatus, back.csr.privilege, p_memory);
+  }
+
+  if (page_fault) {
+    inst.page_fault_store = true;
+    inst.result = v_addr;
+  } else {
+    inst.result = p_addr;
+  }
+}
+#endif
+#elif CONFIG_MMU
 // return: 1 - stall load; 0 - load ok
 bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn) {
   bool stall_load = false;

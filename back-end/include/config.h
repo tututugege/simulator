@@ -55,10 +55,31 @@ using namespace std;
 #define ALU_NUM 2
 #define BRU_NUM 2
 
-#define LOG_START 0
-#define LOG 0
-#define MEM_LOG 0
+#define LOG_START 396092327
+// #define LOG_ENABLE
 
+#ifndef LOG_ENABLE
+#define DEBUG (0)
+#define LOG (0 && (sim_time >= LOG_START))
+#define MEM_LOG (0 && (sim_time >= LOG_START))
+#define DCACHE_LOG (0 && (sim_time >= LOG_START))
+#define MMU_LOG (0 && (sim_time >= LOG_START))
+#else
+#define DEBUG (1 && (sim_time >= 0))
+#define LOG (1 && (sim_time >= LOG_START))
+#define MEM_LOG (1 && (sim_time >= LOG_START))
+#define DCACHE_LOG (1 && (sim_time >= LOG_START))
+#define MMU_LOG (0 && (sim_time >= LOG_START))
+#endif
+
+// #define LOG_START (sim_time >= 512966 && sim_time <= 514966)
+// #define DEBUG (1 && sim_time >= 0)
+// #define LOG (0 && LOG_START)
+// #define MEM_LOG (1 && LOG_START)
+// #define DCACHE_LOG (1 && LOG_START)
+// #define MMU_LOG (0 && LOG_START)
+
+#define DEBUG_ADDR 0x807a1848 // 0x807a4000
 #define CONFIG_DIFFTEST
 // #define CONFIG_RUN_REF
 // #define CONFIG_RUN_CKPT
@@ -68,6 +89,7 @@ using namespace std;
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
 #define CONFIG_MMU
+#define CONFIG_CACHE
 // #define ENABLE_MULTI_BR
 
 /*
@@ -141,6 +163,10 @@ typedef struct Inst_uop {
   wire7_t old_dest_preg;
   wire32_t src1_rdata, src2_rdata;
   wire32_t result;
+
+#ifdef CONFIG_CACHE
+  wire32_t paddr;
+#endif
 
   // 分支预测信息
   wire1_t pred_br_taken;

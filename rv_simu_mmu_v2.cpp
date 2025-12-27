@@ -1,4 +1,5 @@
 #include "BPU/target_predictor/btb.h"
+#include "Dcache_Utils.h"
 #include <RISCV.h>
 #include <SimCpu.h>
 #include <TOP.h>
@@ -9,11 +10,14 @@
 #include <diff.h>
 #include <front_IO.h>
 #include <front_module.h>
+#include <iostream>
+#include <util.h>
 
 using namespace std;
 uint32_t *p_memory;
 
 void SimCpu::init() {
+
   back.init();
   mmu.reset();
 
@@ -220,6 +224,142 @@ void SimCpu::back2mmu_comb() {
   mmu.io.in.tlb_flush.flush_valid = false;
 }
 
+// #if defined(CONFIG_CACHE) && !defined(CONFIG_MMU)
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory,
+           bool dut_flag) {
+  uint32_t d = 24;
+  uint32_t a = 25;
+  uint32_t g = 26;
+  uint32_t u = 27;
+  uint32_t x = 28;
+  uint32_t w = 29;
+  uint32_t r = 30;
+  uint32_t v = 31;
+  bool mxr = mstatus[31 - 19];
+  bool sum = mstatus[31 - 18];
+  bool mprv = mstatus[31 - 17];
+  uint32_t mpp = cvt_bit_to_number_unsigned(mstatus + 19 * sizeof(bool), 2);
+
+  uint32_t pte1_addr = (satp << 12) | ((v_addr >> 20) & 0xFFC);
+  uint32_t pte1_entry = p_memory[uint32_t(pte1_addr / 4)];
+#ifdef CONFIG_CACHE
+  uint32_t pte1_entry_cache;
+  if (DCACHE_LOG) {
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+    printf("MMU va2pa v_addr:0x%08x satp:0x%08x pte1_addr:0x%08x\n", v_addr,
+           satp, pte1_addr);
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+  }
+  bool pte1_in_cache = dcache_read(pte1_addr, pte1_entry_cache);
+  if (pte1_in_cache && dut_flag) {
+    pte1_entry = pte1_entry_cache;
+  }
+#endif
+  bool bit_pte1_entry[32];
+  cvt_number_to_bit_unsigned(bit_pte1_entry, pte1_entry, 32);
+  if (bit_pte1_entry[v] == false ||
+      (bit_pte1_entry[r] == false && bit_pte1_entry[w] == true)) {
+    return false;
+  }
+
+  if (bit_pte1_entry[r] == true || bit_pte1_entry[x] == true) {
+    if (!((type == 0 && bit_pte1_entry[x] == true) ||
+          (type == 1 && bit_pte1_entry[r] == true) ||
+          (type == 2 && bit_pte1_entry[w] == true) ||
+          (type == 1 && mxr == true && bit_pte1_entry[x] == true))) {
+      return false;
+    }
+
+    if (privilege == 1 && sum == 0 && bit_pte1_entry[u] == true &&
+        sstatus[31 - 18] == false) {
+      return false;
+    }
+
+    if (privilege != 1 && mprv == 1 && mpp == 1 && sum == 0 &&
+        bit_pte1_entry[u] == true && sstatus[31 - 18] == false) {
+      return false;
+    }
+
+    if ((pte1_entry >> 10) % 1024 != 0) {
+      return false;
+    }
+
+    if (bit_pte1_entry[a] == false ||
+        (type == 2 && bit_pte1_entry[d] == false)) {
+      return false;
+    }
+
+    p_addr = ((pte1_entry << 2) & 0xFFC00000) | (v_addr & 0x3FFFFF);
+    return true;
+  }
+
+  uint32_t pte2_addr =
+      ((pte1_entry << 2) & 0xFFFFF000) | ((v_addr >> 10) & 0xFFC);
+  uint32_t pte2_entry = p_memory[uint32_t(pte2_addr / 4)];
+#ifdef CONFIG_CACHE
+  if (DCACHE_LOG) {
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+    printf("MMU va2pa v_addr:0x%08x satp:0x%08x pte2_addr:0x%08x\n", v_addr,
+           satp, pte2_addr);
+    if (dut_flag)
+      printf("DUT CPU: ");
+    else
+      printf("Ref CPU: ");
+  }
+  uint32_t pte2_entry_cache;
+  bool pte2_in_cache = dcache_read(pte2_addr, pte2_entry_cache);
+  if (pte2_in_cache && dut_flag) {
+    pte2_entry = pte2_entry_cache;
+  }
+#endif
+  bool bit_pte2_stored[32];
+  cvt_number_to_bit_unsigned(bit_pte2_stored, pte2_entry, 32);
+
+  if (bit_pte2_stored[v] == false ||
+      (bit_pte2_stored[r] == false && bit_pte2_stored[w] == true))
+    return false;
+  if (bit_pte2_stored[r] == true || bit_pte2_stored[x] == true) {
+    if ((type == 0 && bit_pte2_stored[x] == true) ||
+        (type == 1 && bit_pte2_stored[r] == true) ||
+        (type == 2 && bit_pte2_stored[w] == true) ||
+        (type == 1 && mxr == true && bit_pte2_stored[x] == true)) {
+      ;
+    } else
+      return false;
+    if (privilege == 1 && sum == 0 && bit_pte2_stored[u] == true &&
+        sstatus[31 - 18] == false)
+      return false;
+    if (privilege != 1 && mprv == 1 && mpp == 1 && sum == 0 &&
+        bit_pte2_stored[u] == true && sstatus[31 - 18] == false)
+      return false;
+    if (bit_pte2_stored[a] == false ||
+        (type == 2 && bit_pte2_stored[d] == false))
+      return false;
+    p_addr = (pte2_entry << 2) & 0xFFFFF000 | v_addr & 0xFFF;
+    if (DCACHE_LOG) {
+      if (dut_flag)
+        printf("DUT CPU: ");
+      else
+        printf("Ref CPU: ");
+      printf("MMU va2pa success v_addr:0x%08x p_addr:0x%08x\n", v_addr, p_addr);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+// #else
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory) {
   uint32_t d = 24;
@@ -237,7 +377,6 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
 
   uint32_t pte1_addr = (satp << 12) | ((v_addr >> 20) & 0xFFC);
   uint32_t pte1_entry = p_memory[uint32_t(pte1_addr / 4)];
-
   bool bit_pte1_entry[32];
   cvt_number_to_bit_unsigned(bit_pte1_entry, pte1_entry, 32);
   if (bit_pte1_entry[v] == false ||

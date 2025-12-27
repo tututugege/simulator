@@ -299,8 +299,7 @@ void Rename ::comb_commit() {
       }
 
       if (LOG) {
-        cout << "ROB commit PC 0x" << hex << inst->pc << " idx "
-             << inst->inst_idx << endl;
+        printf("ROB commit PC 0x%08x Inst:0x%08x rob_idx:%d idx %ld\n", inst->pc, inst->instruction, inst->rob_idx, inst->inst_idx);
       }
       ren_commit_idx = i;
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {

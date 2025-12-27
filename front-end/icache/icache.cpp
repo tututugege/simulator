@@ -3,22 +3,14 @@
 #include "../frontend.h"
 #include "RISCV.h"
 #include "SimCpu.h"
-#include "cvt.h"
 #include <cstdint>
 #include <cstdio>
 // no actual icache, just a simple simulation
 #include "./include/icache_module.h"
-#include <queue>
+#include "mmu_io.h"
+#include <MMU.h>
 
 ICache icache;
-// before MMU is implemented, we use a simple ppn_queue to store the ppn for
-// icache
-struct ppn_triple {
-  uint32_t ppn;
-  uint32_t vaddr;
-  bool page_fault;
-};
-std::queue<ppn_triple> ppn_queue;
 
 extern uint32_t *p_memory;
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
@@ -29,24 +21,20 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     DEBUG_LOG("[icache] reset\n");
     icache.reset();
     out->icache_read_ready = true;
-    ppn_queue = std::queue<ppn_triple>();
     return;
   }
 #ifdef USE_TRUE_ICACHE
-  // TODO: implement true icache with real MMU interface
+  // register to keep track of whether memory is busy
   static bool mem_busy = false;
-  static bool current_valid =
-      false; // whether current_vaddr and current_fault are valid
+  // register to keep track of the vaddr being handled by icache
+  static uint32_t current_vaddr_reg; // the vaddr being processed by icache
+  static bool valid_reg;             // whether current_vaddr_reg is valid
 
   // deal with "refetch" signal
   if (in->refetch) {
-    // clear the ppn_queue
-    while (!ppn_queue.empty()) {
-      ppn_queue.pop();
-    }
     // clear the icache state
     icache.set_refetch();
-    current_valid = false;
+    valid_reg = false;
   }
 
   // set input for 1st pipeline stage (IFU)
@@ -56,9 +44,13 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
   // set input for 2nd pipeline stage (IFU)
   icache.io.in.ifu_resp_ready = true; // ifu ready to receive data from icache
 
+  // get ifu_resp from mmu (calculate last cycle)
+  mmu_resp_master_t mmu_resp = cpu.mmu.io.out.mmu_ifu_resp;
+
   // set input for 2nd pipeline stage (MMU)
-  icache.io.in.ppn = ppn_queue.empty() ? 0 : ppn_queue.front().ppn;
-  icache.io.in.ppn_valid = ppn_queue.empty() ? false : true;
+  icache.io.in.ppn = mmu_resp.ptag;
+  icache.io.in.ppn_valid = mmu_resp.valid && !in->refetch && !mmu_resp.miss;
+  icache.io.in.page_fault = mmu_resp.excp;
 
   // set input for 2nd pipeline stage (Memory)
   if (mem_busy) {
@@ -82,33 +74,45 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
   }
 
   icache.comb();
+
+  // set input for request to mmu
+  cpu.mmu.io.in.mmu_ifu_req.op_type = mmu_n::OP_FETCH;
+  cpu.mmu.io.in.mmu_ifu_resp.ready = true; // ready to receive resp
+  if (icache.io.out.ifu_req_ready && icache.io.in.ifu_req_valid) {
+    // case1: ICache 支持新的请求，故而可以将新的 IFU 请求发送给 MMU
+    cpu.mmu.io.in.mmu_ifu_req.valid =
+        icache.io.out.ifu_req_ready && in->icache_read_valid;
+    cpu.mmu.io.in.mmu_ifu_req.vtag = in->fetch_address >> 12;
+  } else if (!icache.io.out.ifu_req_ready) {
+    // case 2: ICache 不支持新的请求，需要重发（replay），具体有两种可能：
+    //  - icache miss，正在等待 memory 的数据返回
+    //  - 上一个 mmu_ifu_req 请求返回了 miss
+    cpu.mmu.io.in.mmu_ifu_req.valid = true; // replay request
+    if (!valid_reg) {
+      cout
+          << "[icache_top] ERROR: valid_reg is false when replaying mmu_ifu_req"
+          << endl;
+      cout << "[icache_top] sim_time: " << dec << sim_time << endl;
+      exit(1);
+    }
+    cpu.mmu.io.in.mmu_ifu_req.vtag = current_vaddr_reg >> 12;
+  } else {
+    // case3: ICache 支持新的请求，但是 IFU 没有发送新的请求
+    cpu.mmu.io.in.mmu_ifu_req.valid = false;
+  }
+
   if (in->run_comb_only) {
     // Only run combinational logic, do not update registers. This is
     // used for BPU module, which needs to know if icache is ready
     out->icache_read_ready = icache.io.out.ifu_req_ready;
     return;
   }
-  icache.seq();
 
-  // sequential logic for ppn_queue (push)
-  if (icache.io.in.ifu_req_valid && icache.io.out.ifu_req_ready) {
-    // only push when ifu_req is sent to icache
-    uint32_t vaddr = in->fetch_address;
-    bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, cpu.back.out.mstatus, 32);
-    cvt_number_to_bit_unsigned(sstatus, cpu.back.out.sstatus, 32);
-    uint32_t paddr;
-    uint32_t ppn;
-    bool page_fault_inst = false;
-    if ((cpu.back.out.satp & 0x80000000) && cpu.back.out.privilege != 3) {
-      page_fault_inst = !va2pa(paddr, vaddr, cpu.back.out.satp, 0, mstatus,
-                               sstatus, cpu.back.out.privilege, p_memory);
-    } else {
-      paddr = vaddr;
-    }
-    ppn = paddr >> 12;
-    ppn_queue.push({ppn, vaddr, page_fault_inst});
-  }
+  //
+  // == sequential logic ==
+  //
+
+  icache.seq();
 
   // sequential logic for memory (mem_busy)
   bool mem_req_ready = !mem_busy;
@@ -128,47 +132,36 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
   // sequential logic for output (to IFU)
   bool ifu_resp_valid = icache.io.out.ifu_resp_valid;
   bool ifu_resp_ready = icache.io.in.ifu_resp_ready;
-  bool ppn_ready = icache.io.out.ppn_ready;
-  bool ppn_valid = icache.io.in.ppn_valid;
   bool miss = icache.io.out.miss;
-  static uint32_t current_vaddr;
-  static bool current_fault;
-  bool ppn_used = false; // whether a waiting ppn is used in this cycle
   if (ifu_resp_valid && ifu_resp_ready) {
-    if (!current_valid) {
-      // a valid ppn is used by icache
-      current_vaddr = ppn_queue.front().vaddr;
-      current_fault = ppn_queue.front().page_fault;
-      ppn_used = true;
-    }
     out->icache_read_complete = true;
     // in current design, miss is useless and always false when ifu_resp is
     // valid
     if (miss) {
-      DEBUG_LOG("[icache_top] WARNING: miss is true when ifu_resp is valid\n");
+      cout << "[icache_top] WARNING: miss is true when ifu_resp is valid"
+           << endl;
+      cout << "[icache_top] sim_time: " << dec << sim_time << endl;
       exit(1);
     }
-    // Output PC address from icache (use current_vaddr which is the actual
-    // request address)
-    out->fetch_pc = current_vaddr;
     // keep index within a cacheline
+    out->fetch_pc = current_vaddr_reg;
     uint32_t mask = ICACHE_LINE_SIZE - 1; // work for ICACHE_LINE_SIZE==2^k
-    int base_idx =
-        (current_vaddr & mask) / 4; // index of the instruction in the cacheline
+    int base_idx = (current_vaddr_reg & mask) /
+                   4; // index of the instruction in the cacheline
     for (int i = 0; i < FETCH_WIDTH; i++) {
       if (base_idx + i >= ICACHE_LINE_SIZE / 4) {
         // throw the instruction that exceeds the cacheline
         out->fetch_group[i] = INST_NOP;
-        out->page_fault_inst[i] = current_fault;
+        out->page_fault_inst[i] = false;
         out->inst_valid[i] = false;
         continue;
       }
-      out->fetch_group[i] =
-          current_fault ? INST_NOP : icache.io.out.rd_data[i + base_idx];
-      out->page_fault_inst[i] = current_fault;
+      out->fetch_group[i] = icache.io.out.ifu_page_fault
+                                ? INST_NOP
+                                : icache.io.out.rd_data[i + base_idx];
+      out->page_fault_inst[i] = icache.io.out.ifu_page_fault;
       out->inst_valid[i] = true;
     }
-    current_valid = false;
   } else {
     out->icache_read_complete = false;
     for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -178,43 +171,39 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
     }
   }
 
-  // sequential logic for ppn_queue (pop)
-  if (ppn_valid && ppn_ready) {
-    // a valid ppn is used by icache
-    current_vaddr = ppn_queue.front().vaddr;
-    current_fault = ppn_queue.front().page_fault;
-    current_valid = !ppn_used;
-    ppn_queue.pop();
-  }
-
-  if (ppn_queue.size() > 2) {
-    // this case is not expected to happen
-    DEBUG_LOG("[icache_top] ERROR: ppn_queue size > 2\n");
-    exit(1);
+  // sequential logic for current_vaddr_reg and valid_reg
+  if (icache.io.in.ifu_req_valid && icache.io.out.ifu_req_ready) {
+    // only push when ifu_req is sent to icache
+    current_vaddr_reg = in->fetch_address;
+    valid_reg = true;
+  } else if (ifu_resp_valid && ifu_resp_ready) {
+    valid_reg = false; // clear the valid_reg when ifu_resp is sent to ifu
   }
 
 #else // simple icache model: directly read from pmem
   // able to fetch instructions within 1 cycle
   out->icache_read_complete = true;
   out->icache_read_ready = true;
-  out->fetch_pc = in->fetch_address;
   // when BPU sends a valid read request
   if (in->icache_read_valid) {
     // read instructions from pmem
     bool mstatus[32], sstatus[32];
 
-    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
+    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[number_mstatus],
+                               32);
 
-    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
+    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[number_sstatus],
+                               32);
 
     for (int i = 0; i < FETCH_WIDTH; i++) {
       uint32_t v_addr = in->fetch_address + (i * 4);
       uint32_t p_addr;
-      if ((back.out.satp & 0x80000000) && back.out.privilege != 3) {
+      if ((back.csr.CSR_RegFile[number_satp] & 0x80000000) &&
+          back.csr.privilege != 3) {
 
         out->page_fault_inst[i] =
-            !va2pa(p_addr, v_addr, back.out.satp, 0, mstatus, sstatus,
-                   back.out.privilege, p_memory);
+            !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[number_satp], 0,
+                   mstatus, sstatus, back.csr.privilege, p_memory);
         if (out->page_fault_inst[i]) {
           out->fetch_group[i] = INST_NOP;
         } else {
@@ -230,8 +219,6 @@ void icache_top(struct icache_in *in, struct icache_out *out) {
         printf("[icache] instruction : %x\n", out->fetch_group[i]);
       }
     }
-  } else {
-    out->fetch_pc = 0; // Set default value when not valid
   }
 #endif
 }

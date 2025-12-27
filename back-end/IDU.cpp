@@ -170,6 +170,17 @@ void IDU::comb_decode() {
     out.dec2ren->uop[i].pred_br_pc =
         in.front2dec->predict_next_fetch_address[i];
 
+    if(DCACHE_LOG){
+      printf("IDU Decode: inst=0x%08x pc=0x%08x pred_br_pc=0x%08x pred_br_taken=%d alt_pred=%d pcpn=%d altpcpn=%d tag=%d\n",
+             in.front2dec->inst[i],
+             out.dec2ren->uop[i].pc,
+             out.dec2ren->uop[i].pred_br_pc,
+             out.dec2ren->uop[i].pred_br_taken,
+             out.dec2ren->uop[i].alt_pred,
+             out.dec2ren->uop[i].pcpn,
+             out.dec2ren->uop[i].altpcpn,
+             out.dec2ren->uop[i].tag);
+    }
     // for debug
     if (out.dec2ren->uop[i].type == JAL) {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;

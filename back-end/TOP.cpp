@@ -213,6 +213,43 @@ Csr_Front csr2front;
 Csr_Status csr_status;
 Exe_Csr exe2csr;
 
+#ifdef CONFIG_CACHE
+Mem_REQ exu2lsu_req;
+Mem_RESP lsu2stq_resp;
+Mem_READY lsu2stq_ready;
+
+Mem_REQ stq2lsu_req;
+Mem_RESP lsu2prf_resp;
+Mem_READY lsu2exe_ready;
+
+Dcache_CONTROL exe2cache_control;
+WB_Arbiter_Dcache wb_arbiter2dcache;
+WriteBuffer_Dcache wb2dcache;
+
+Mem_RESP dcache2stq_resp;
+Mem_RESP dcache2prf_resp;
+
+Dcache_MSHR dcache2mshr_ld;
+Dcache_MSHR dcache2mshr_st;
+
+EXMem_DATA arbiter2mshr_data;
+WB_MSHR writebuffer2mshr;
+Mem_RESP mshr2cpu_resp;
+Mem_READY mshr2dcache_ready;
+EXMem_CONTROL mshr2arbiter_control;
+
+MSHR_WB mshr2writebuffer;
+MSHR_FWD mshr2dcache_fwd;
+MSHR_Arbiter mshr2arbiter;
+
+EXMem_DATA arbiter2writebuffer_data;
+EXMem_CONTROL writebuffer2arbiter_control;
+WB_Arbiter writebuffer2arbiter;
+
+EXMem_DATA mem_data;
+EXMem_CONTROL mem_control;
+#endif
+
 void Back_Top::init() {
   idu.out.dec2front = &dec2front;
   idu.out.dec2ren = &dec2ren;
@@ -268,14 +305,14 @@ void Back_Top::init() {
   prf.in.dec_bcast = &dec_bcast;
   prf.in.rob_bcast = &rob_bcast;
 
-  exu.io.prf2exe = &prf2exe;
-  exu.io.dec_bcast = &dec_bcast;
-  exu.io.rob_bcast = &rob_bcast;
-  exu.io.exe2prf = &exe2prf;
-  exu.io.exe2stq = &exe2stq;
-  exu.io.exe2iss = &exe2iss;
-  exu.io.exe2csr = &exe2csr;
-  exu.io.csr2exe = &csr2exe;
+  exu.in.prf2exe = &prf2exe;
+  exu.in.dec_bcast = &dec_bcast;
+  exu.in.rob_bcast = &rob_bcast;
+  exu.out.exe2prf = &exe2prf;
+  exu.out.exe2stq = &exe2stq;
+  exu.out.exe2iss = &exe2iss;
+  exu.out.exe2csr = &exe2csr;
+  exu.in.csr2exe = &csr2exe;
 
   rob.in.dis2rob = &dis2rob;
   rob.in.dec_bcast = &dec_bcast;
@@ -306,6 +343,80 @@ void Back_Top::init() {
   csr.out.csr2front = &csr2front;
   csr.out.csr_status = &csr_status;
 
+#ifdef CONFIG_CACHE
+  exu.out.exe2cache_control = &exe2cache_control;
+
+  stq.in.cache2stq = &lsu2stq_resp;
+  stq.in.cache2stq_ready = &lsu2stq_ready;
+  stq.out.stq2cache_req = &stq2lsu_req;
+
+  exu.out.exe2cache = &exu2lsu_req;
+  exu.in.cache2exe_ready = &lsu2exe_ready;
+  prf.in.cache2prf = &lsu2prf_resp;
+
+  dcache.in.ldq2dcache_req = &exu2lsu_req;
+  dcache.in.stq2dcache_req = &stq2lsu_req;
+  dcache.in.control = &exe2cache_control;
+  dcache.in.wb2dcache = &wb2dcache;
+  dcache.in.wb_arbiter2dcache = &wb_arbiter2dcache;
+  dcache.in.mshr2dcache_ready = &mshr2dcache_ready;
+  dcache.in.mshr2dcache_fwd = &mshr2dcache_fwd;
+
+  dcache.out.dcache2ldq_ready = &lsu2exe_ready;
+  dcache.out.dcache2ldq_resp = &dcache2prf_resp;
+  dcache.out.dcache2stq_resp = &dcache2stq_resp;
+  dcache.out.dcache2stq_ready = &lsu2stq_ready;
+  dcache.out.dcache2mshr_ld = &dcache2mshr_ld;
+  dcache.out.dcache2mshr_st = &dcache2mshr_st;
+
+  mshr.in.dcache2mshr_ld = &dcache2mshr_ld;
+  mshr.in.dcache2mshr_st = &dcache2mshr_st;
+  mshr.in.control = &exe2cache_control;
+  mshr.in.arbiter2mshr_data = &arbiter2mshr_data;
+  mshr.in.writebuffer2mshr = &writebuffer2mshr;
+
+  mshr.out.mshr2cpu_resp = &mshr2cpu_resp;
+  mshr.out.mshr2dcache_ready = &mshr2dcache_ready;
+  mshr.out.mshr2arbiter_control = &mshr2arbiter_control;
+  mshr.out.mshr2writebuffer = &mshr2writebuffer;
+  mshr.out.mshr2dcache_fwd = &mshr2dcache_fwd;
+  mshr.out.mshr2arbiter = &mshr2arbiter;
+
+  writebuffer.in.mshr2writebuffer = &mshr2writebuffer;
+  writebuffer.in.arbiter2writebuffer_data = &arbiter2writebuffer_data;
+
+  writebuffer.out.writebuffer2arbiter = &writebuffer2arbiter;
+  writebuffer.out.writebuffer2arbiter_control = &writebuffer2arbiter_control;
+  writebuffer.out.writebuffer2mshr = &writebuffer2mshr;
+
+  arbiter.in.writebuffer2arbiter = &writebuffer2arbiter;
+  arbiter.in.writebuffer2arbiter_control = &writebuffer2arbiter_control;
+  arbiter.in.mshr2arbiter_control = &mshr2arbiter_control;
+  arbiter.in.mshr2arbiter = &mshr2arbiter;
+  arbiter.in.mem_data = &mem_data;
+
+  arbiter.out.arbiter2mshr_data = &arbiter2mshr_data;
+  arbiter.out.arbiter2writebuffer_data = &arbiter2writebuffer_data;
+  arbiter.out.mem_control = &mem_control;
+
+  memory.in.control = &mem_control;
+  memory.out.data = &mem_data;
+
+  wb_arbiter.in.dcache_ld_resp = &dcache2prf_resp;
+  wb_arbiter.in.dcache_st_resp = &dcache2stq_resp;
+  wb_arbiter.in.mshr_resp = &mshr2cpu_resp;
+  wb_arbiter.out.wb_arbiter2dcache = &wb_arbiter2dcache;
+  wb_arbiter.out.ld_resp = &lsu2prf_resp;
+  wb_arbiter.out.st_resp = &lsu2stq_resp;
+
+#if defined(CONFIG_MMU)
+  dcache.out.dcache2ptw_resp = &out.dcache2ptw_resp;
+  dcache.out.dcache2ptw_req = &out.dcache2ptw_req;
+  dcache.in.ptw2dcache_req = &in.ptw2dcache_req;
+  dcache.in.ptw2dcache_resp = &in.ptw2dcache_resp;
+#endif
+#endif
+
   idu.init();
   rename.init();
   isu.init();
@@ -313,6 +424,14 @@ void Back_Top::init() {
   exu.init();
   csr.init();
   rob.init();
+
+#ifdef CONFIG_CACHE
+  dcache.init();
+  mshr.init();
+  writebuffer.init();
+  arbiter.init();
+  memory.init();
+#endif
 }
 
 void Back_Top::comb_csr_status() {
@@ -359,7 +478,37 @@ void Back_Top::comb() {
 
   idu.comb_release_tag();
   dis.comb_alloc();
+
   exu.comb_exec();
+
+#ifdef CONFIG_CACHE
+#endif
+  stq.comb_out();
+  mshr.comb_ready();
+  writebuffer.comb_ready();
+  writebuffer.comb_writemark();
+  dcache.comb_s2();
+  writebuffer.comb();
+  arbiter.comb_in();
+  memory.comb();
+  arbiter.comb_out();
+  mshr.comb_out();
+  dcache.comb_out_ldq();
+  wb_arbiter.comb();
+  prf.comb_load();
+  dcache.comb_s1();
+  dcache.comb_out_mshr();
+  dcache.comb_out_ready();
+  mshr.comb();
+  stq.comb_in();
+  exu.comb_latency();
+#ifdef CONFIG_MMU
+  dcache.comb_mmu();
+#else
+
+  stq.comb();
+#endif
+
   exu.comb_to_csr();
   exu.comb_ready();
   isu.comb_deq();
@@ -369,7 +518,6 @@ void Back_Top::comb() {
   csr.comb_csr_read();
   csr.comb_csr_write();
   exu.comb_from_csr();
-  stq.comb();
   prf.comb_read();
   rename.comb_wake();
   dis.comb_wake();
@@ -384,10 +532,11 @@ void Back_Top::comb() {
 
   // 为了debug
   // 修正pc_next 以及difftest对应的pc_next
+
   out.flush = rob.out.rob_bcast->flush;
   if (!rob.out.rob_bcast->flush) {
     out.mispred = prf.out.prf2dec->mispred;
-    out.stall = !idu.out.dec2front->ready && !stq.out.stq2front->fence_stall;
+    out.stall = !idu.out.dec2front->ready;
     out.redirect_pc = prf.out.prf2dec->redirect_pc;
   } else {
     if (LOG)
@@ -438,6 +587,14 @@ void Back_Top::seq() {
   idu.seq();
   isu.seq();
   exu.seq();
+#ifdef CONFIG_CACHE
+  dcache.seq();
+  mshr.seq();
+  writebuffer.seq();
+  arbiter.seq();
+  memory.seq();
+  wb_arbiter.seq();
+#endif
   prf.seq();
   rob.seq();
   stq.seq();
@@ -447,7 +604,8 @@ void Back_Top::seq() {
   }
 }
 
-#ifdef CONFIG_MMU
+#ifdef CONFIG_CACHE
+#elif CONFIG_MMU
 bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
                          bool &mmu_page_fault, uint32_t &mmu_ppn,
                          bool &stall_load) {
@@ -457,9 +615,15 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
   p_addr = mmu_ppn << 12 | (v_addr & 0xFFF);
   ret = !mmu_page_fault;
 
+<<<<<<< HEAD
   if (p_addr == 0x1fd0e000) {
     data = ctx->perf.commit_num;
   } else if (p_addr == 0x1fd0e004) {
+=======
+  if (p_addr == 0x1fd0e000) {
+    data = perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+>>>>>>> Dcache
     data = 0;
   } else {
     data = p_memory[p_addr >> 2];
@@ -483,9 +647,15 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
                 back.out.privilege, p_memory);
   }
 
+<<<<<<< HEAD
   if (p_addr == 0x1fd0e000) {
     data = ctx->perf.commit_num;
   } else if (p_addr == 0x1fd0e004) {
+=======
+  if (p_addr == 0x1fd0e000) {
+    data = perf.commit_num;
+  } else if (p_addr == 0x1fd0e004) {
+>>>>>>> Dcache
     data = 0;
   } else {
     data = p_memory[p_addr >> 2];

@@ -1,5 +1,6 @@
 a.out
 baremetal/memory
+baremetal/linux.bin
 .cache/*
 
 # Ignore build files

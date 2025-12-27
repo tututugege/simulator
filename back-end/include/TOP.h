@@ -1,16 +1,21 @@
 #pragma once
+#include <Arbiter.h>
 #include <CSR.h>
+#include <Dcache.h>
 #include <Dispatch.h>
 #include <EXU.h>
 #include <IDU.h>
 #include <ISU.h>
+#include <MSHR.h>
+#include <Memory.h>
 #include <PRF.h>
 #include <ROB.h>
 #include <Rename.h>
 #include <STQ.h>
+#include <WriteBack_Arbiter.h>
+#include <WriteBuffer.h>
 #include <config.h>
 #include <cstdint>
-#include <fstream>
 
 class SimContext;
 
@@ -25,6 +30,10 @@ typedef struct {
   uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
+#if defined(CONFIG_MMU) && defined(CONFIG_CACHE)
+  dcache_resp_slave_t ptw2dcache_resp;
+  dcache_req_master_t ptw2dcache_req;
+#endif
 } Back_in;
 
 typedef struct {
@@ -40,7 +49,10 @@ typedef struct {
   wire32_t mstatus;
   wire32_t satp;
   wire2_t privilege;
-
+#if defined(CONFIG_MMU) && defined(CONFIG_CACHE)
+  dcache_req_slave_t dcache2ptw_req;
+  dcache_resp_master_t dcache2ptw_resp;
+#endif
 } Back_out;
 
 class Back_Top {
@@ -54,6 +66,12 @@ public:
   EXU exu;
   CSRU csr;
   STQ stq;
+  Dcache dcache;
+  MSHR mshr;
+  WriteBuffer writebuffer;
+  Arbiter arbiter;
+  WriteBack_Arbiter wb_arbiter;
+  MEMORY memory;
 
   ROB rob;
   Back_in in;

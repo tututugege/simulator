@@ -8,6 +8,8 @@
 #include <iostream>
 #include <util.h>
 
+long long commit_inst_count = 0; // 提交指令计数
+long long commit_inst_count_last = 0;
 void ROB::init() {
   deq_ptr = deq_ptr_1 = 0;
   enq_ptr = enq_ptr_1 = 0;
@@ -66,6 +68,17 @@ void ROB::comb_commit() {
                                            entry[i][deq_ptr].uop.uop_num));
   }
 
+  if (DCACHE_LOG)
+  {
+    for(int i = 0; i < ROB_BANK_NUM; i++){
+      if(entry[i][deq_ptr].valid){
+        printf("ROB Comb Commit: entry[%d][%d] valid=%d uop_inst=0x%08x cplt_num=%d uop_num=%d\n", i, deq_ptr, entry[i][deq_ptr].valid, entry[i][deq_ptr].uop.instruction, entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num);
+      }
+    }
+    // printf("commit=%d\n", commit);
+  }
+  
+
   // 出队一行存在特殊指令则single commit
   wire1_t single_commit = false;
   wire2_t single_idx;
@@ -103,11 +116,13 @@ void ROB::comb_commit() {
     }
 
     stall_cycle = 0;
+    commit_inst_count += ROB_BANK_NUM; // 提交指令计数
     LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
     count_1--;
 
   } else if (single_commit) {
     stall_cycle = 0;
+    commit_inst_count += 1; // 提交指令计数
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (i == single_idx)
         out.rob_commit->commit_entry[i].valid = true;
@@ -148,7 +163,10 @@ void ROB::comb_commit() {
         ctx->sim_end = true;
       } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
         out.rob2csr->commit = true;
-      } else {
+      } else if(entry[single_idx][deq_ptr].uop.type == SFENCE_VMA) {
+        out.rob_bcast->fence = true;
+      }
+      else {
         if (entry[single_idx][deq_ptr].uop.type != CSR &&
             entry[single_idx][deq_ptr].uop.type != SFENCE_VMA) {
           cout << hex << entry[single_idx][deq_ptr].uop.instruction << endl;
@@ -165,6 +183,11 @@ void ROB::comb_commit() {
   out.rob2dis->enq_idx = enq_ptr;
   out.rob2dis->rob_flag = flag;
 
+  if(commit_inst_count_last != commit_inst_count && commit_inst_count % 100000 == 0) {
+    commit_inst_count_last = commit_inst_count;
+    // printf("Commit Inst Count: %lld sim_time: %lld\n", commit_inst_count, sim_time);
+  } 
+
   stall_cycle++;
   if (stall_cycle > 1000) {
     cout << dec << ctx->perf.cycle << endl;
@@ -174,10 +197,16 @@ void ROB::comb_commit() {
     cout << "ROB deq inst:" << endl;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
-        cout << hex << entry[i][deq_ptr].uop.instruction
-             << " cplt_num: " << entry[i][deq_ptr].uop.cplt_num
-             << "is_page_fault: " << is_page_fault(entry[i][deq_ptr].uop)
-             << endl;
+        printf("0x%08x cplt_num: %d  uop_num: %d rob_idx:%d is_page_fault: %d\n",
+               entry[i][deq_ptr].uop.instruction,
+               entry[i][deq_ptr].uop.cplt_num,
+               entry[i][deq_ptr].uop.uop_num,
+               (i + (deq_ptr << 2)),
+               is_page_fault(entry[i][deq_ptr].uop));
+        // cout << hex << entry[i][deq_ptr].uop.instruction
+        //      << " cplt_num: " << entry[i][deq_ptr].uop.cplt_num
+        //      << "is_page_fault: " << is_page_fault(entry[i][deq_ptr].uop)
+        //      << endl;
       }
     }
 

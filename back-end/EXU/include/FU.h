@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Dcache.h"
 #include "config.h"
 
 class Back_Top;
@@ -11,7 +12,11 @@ struct mmu_slot_t {
 
 class FU {
 public:
-  void exec(Inst_uop &);
+#if defined(CONFIG_CACHE)
+  void exec(Inst_uop &inst, Mem_REQ *&in, bool mispred);
+#else
+  void exec(Inst_uop &inst);
+#endif
   int latency = 0;
   int cycle = 0;
   bool complete = false;

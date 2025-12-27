@@ -1,3 +1,4 @@
+#include "SimCpu.h"
 #include "config.h"
 #include <IO.h>
 #include <PRF.h>
@@ -5,6 +6,7 @@
 #include <iostream>
 #include <util.h>
 
+bool stall_dcache = false;
 void PRF::init() {
   for (int i = 0; i < ISSUE_WAY; i++)
     out.prf2exe->ready[i] = true;
@@ -48,7 +50,7 @@ void PRF::comb_br_check() {
     out.prf2dec->br_tag = inst_r[IQ_BR0].uop.tag;
   }
 }
-
+#ifdef CONFIG_CACHE
 void PRF::comb_read() {
   // bypass
   for (int i = 0; i < ISSUE_WAY; i++) {
@@ -63,10 +65,15 @@ void PRF::comb_read() {
           entry->uop.src1_rdata = inst_r[j].uop.result;
       }
 
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM; j++) {
         if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
             in.exe2prf->entry[j].uop.dest_preg == entry->uop.src1_preg)
           entry->uop.src1_rdata = in.exe2prf->entry[j].uop.result;
+      }
+
+      if (in.cache2prf->valid &&
+          in.cache2prf->uop.dest_preg == entry->uop.src1_preg) {
+        entry->uop.src1_rdata = load_data;
       }
     } else {
       entry->uop.src1_rdata = 0;
@@ -80,16 +87,132 @@ void PRF::comb_read() {
           entry->uop.src2_rdata = inst_r[j].uop.result;
       }
 
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM; j++) {
         if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
             in.exe2prf->entry[j].uop.dest_preg == entry->uop.src2_preg)
           entry->uop.src2_rdata = in.exe2prf->entry[j].uop.result;
+      }
+
+      if (in.cache2prf->valid &&
+          in.cache2prf->uop.dest_preg == entry->uop.src2_preg) {
+        entry->uop.src2_rdata = load_data;
       }
     } else {
       entry->uop.src2_rdata = 0;
     }
   }
 }
+void PRF::comb_load() {
+  if (in.cache2prf->valid) {
+    // uint32_t load_data=0;
+    uint32_t data = in.cache2prf->data;
+    if (in.cache2prf->uop.page_fault_load) {
+      data = in.cache2prf->uop.src1_rdata + in.cache2prf->uop.imm;
+    } else {
+      cpu.back.stq.st2ld_fwd(in.cache2prf->addr, data,
+                             in.cache2prf->uop.rob_idx);
+      int addr = in.cache2prf->uop.src1_rdata + in.cache2prf->uop.imm;
+      int size = in.cache2prf->uop.func3 & 0b11;
+      int offset = addr & 0b11;
+
+      uint32_t mask = 0;
+      uint32_t sign = 0;
+
+      if (in.cache2prf->uop.amoop != AMONONE) {
+        size = 0b10;
+        offset = 0b0;
+      }
+      data = data >> (offset * 8);
+      if (size == 0) {
+        mask = 0xFF;
+        if (data & 0x80)
+          sign = 0xFFFFFF00;
+      } else if (size == 0b01) {
+        mask = 0xFFFF;
+        if (data & 0x8000)
+          sign = 0xFFFF0000;
+      } else {
+        mask = 0xFFFFFFFF;
+      }
+
+      data = data & mask;
+
+      // 有符号数
+      if (!(in.cache2prf->uop.func3 & 0b100)) {
+        data = data | sign;
+      }
+    }
+    load_data = data;
+
+    if (DCACHE_LOG) {
+      printf("PRF Load Data: addr=0x%08X rob_idx=%d inst=0x%08x data=0x%08x\n",
+             in.cache2prf->addr, in.cache2prf->uop.rob_idx,
+             in.cache2prf->uop.instruction, load_data);
+    }
+  }
+}
+#else
+void PRF::comb_read() {
+  // bypass
+  for (int i = 0; i < ISSUE_WAY; i++) {
+    out.prf2exe->iss_entry[i] = in.iss2prf->iss_entry[i];
+    Inst_entry *entry = &out.prf2exe->iss_entry[i];
+
+    if (entry->valid) {
+      if (entry->uop.src1_en) {
+        entry->uop.src1_rdata = reg_file[entry->uop.src1_preg];
+        for (int j = 0; j < ALU_NUM + 1; j++) {
+          if (inst_r[j].valid && inst_r[j].uop.dest_en &&
+              inst_r[j].uop.dest_preg == entry->uop.src1_preg)
+            entry->uop.src1_rdata = inst_r[j].uop.result;
+        }
+
+        for (int j = 0; j < ALU_NUM + 1; j++) {
+          if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
+              in.exe2prf->entry[j].uop.dest_preg == entry->uop.src1_preg)
+            entry->uop.src1_rdata = in.exe2prf->entry[j].uop.result;
+        }
+      }
+
+      if (entry->uop.src2_en) {
+        entry->uop.src2_rdata = reg_file[entry->uop.src2_preg];
+        for (int j = 0; j < ALU_NUM + 1; j++) {
+          if (inst_r[j].valid && inst_r[j].uop.dest_en &&
+              inst_r[j].uop.dest_preg == entry->uop.src2_preg)
+            entry->uop.src2_rdata = inst_r[j].uop.result;
+        }
+
+        for (int j = 0; j < ALU_NUM + 1; j++) {
+          if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
+              in.exe2prf->entry[j].uop.dest_preg == entry->uop.src2_preg)
+            entry->uop.src2_rdata = in.exe2prf->entry[j].uop.result;
+        }
+>>>>>>> Dcache
+}
+}
+else {
+  entry->uop.src1_rdata = 0;
+}
+
+if (entry->uop.src2_en) {
+  entry->uop.src2_rdata = reg_file[entry->uop.src2_preg];
+  for (int j = 0; j < ALU_NUM + 1; j++) {
+    if (inst_r[j].valid && inst_r[j].uop.dest_en &&
+        inst_r[j].uop.dest_preg == entry->uop.src2_preg)
+      entry->uop.src2_rdata = inst_r[j].uop.result;
+  }
+
+  for (int j = 0; j < ALU_NUM + 1; j++) {
+    if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
+        in.exe2prf->entry[j].uop.dest_preg == entry->uop.src2_preg)
+      entry->uop.src2_rdata = in.exe2prf->entry[j].uop.result;
+  }
+} else {
+  entry->uop.src2_rdata = 0;
+}
+}
+}
+#endif
 
 void PRF::comb_complete() {
   for (int i = 0; i < ISSUE_WAY; i++) {
@@ -139,12 +262,29 @@ void PRF::comb_write() {
 }
 
 void PRF::comb_pipeline() {
+  if (DCACHE_LOG) {
+    printf("PRF Pipeline Start stall_dcache=%d\n", stall_dcache);
+  }
   for (int i = 0; i < ISSUE_WAY; i++) {
+#ifndef CONFIG_CACHE
     if (in.exe2prf->entry[i].valid && out.prf2exe->ready[i]) {
       inst_r_1[i] = in.exe2prf->entry[i];
     } else {
       inst_r_1[i].valid = false;
     }
+#else
+    if (i != IQ_LD && in.exe2prf->entry[i].valid && out.prf2exe->ready[i]) {
+      inst_r_1[i] = in.exe2prf->entry[i];
+    } else if (i == IQ_LD && out.prf2exe->ready[i] && in.cache2prf->valid &&
+               !stall_dcache) {
+      uint32_t addr = in.cache2prf->uop.src1_rdata + in.cache2prf->uop.imm;
+      inst_r_1[i].uop = in.cache2prf->uop;
+      inst_r_1[i].valid = true;
+      inst_r_1[i].uop.result = load_data;
+    } else {
+      inst_r_1[i].valid = false;
+    }
+#endif
   }
 }
 

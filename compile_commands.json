@@ -1,7 +1,7 @@
 [
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -10,6 +10,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -21,7 +23,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -30,6 +32,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -41,7 +45,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -50,6 +54,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -61,7 +67,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -70,6 +76,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -81,7 +89,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -90,6 +98,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -101,7 +111,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -110,6 +120,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -121,7 +133,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -130,6 +142,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -141,7 +155,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -150,6 +164,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -161,7 +177,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -170,6 +186,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -181,7 +199,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -190,6 +208,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -201,7 +221,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -210,6 +230,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -221,7 +243,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -230,6 +252,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -241,7 +265,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -250,6 +274,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -261,7 +287,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -270,6 +296,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -281,7 +309,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -290,6 +318,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -301,7 +331,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -310,6 +340,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -321,7 +353,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -330,6 +362,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -341,7 +375,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -350,6 +384,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -361,7 +397,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -370,6 +406,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -381,7 +419,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -390,6 +428,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -401,7 +441,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -410,6 +450,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -421,7 +463,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -430,6 +472,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -441,7 +485,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -450,6 +494,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -461,7 +507,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -470,6 +516,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -481,7 +529,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -490,6 +538,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -501,7 +551,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -510,6 +560,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -521,7 +573,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -530,6 +582,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -541,7 +595,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -550,6 +604,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -561,7 +617,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -570,6 +626,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -581,7 +639,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -590,6 +648,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -601,7 +661,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -610,6 +670,8 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",
@@ -621,7 +683,7 @@
   },
   {
     "arguments": [
-      "/usr/bin/g++-12",
+      "/usr/bin/g++",
       "-c",
       "-I./include/",
       "-I./back-end/include/",
@@ -630,6 +692,184 @@
       "-I./diff/include/",
       "-I./front-end/",
       "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./memory/Dcache_Utils.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/memory/Dcache_Utils.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./memory/WriteBuffer.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/memory/WriteBuffer.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./memory/Arbiter.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/memory/Arbiter.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./memory/MSHR.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/memory/MSHR.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./memory/Memory.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/memory/Memory.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./memory/Dcache.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/memory/Dcache.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./memory/WriteBack_Arbiter.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/memory/WriteBack_Arbiter.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
+      "-O3",
+      "-march=native",
+      "-funroll-loops",
+      "-mtune=native",
+      "./main.cpp"
+    ],
+    "directory": "/home/tututu/qimeng/simulator",
+    "file": "/home/tututu/qimeng/simulator/main.cpp"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-I./include/",
+      "-I./back-end/include/",
+      "-I./back-end/EXU/include/",
+      "-I./back-end/tools/include/",
+      "-I./diff/include/",
+      "-I./front-end/",
+      "-I./mmu/include/",
+      "-I./memory/include/",
+      "./softfloat.a",
       "-O3",
       "-march=native",
       "-funroll-loops",

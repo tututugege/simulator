@@ -17,6 +17,7 @@ public:
   Exe_Prf *exe2prf;
   Dec_Broadcast *dec_bcast;
   Rob_Broadcast *rob_bcast;
+  Mem_RESP * cache2prf;
 };
 
 class PRF {
@@ -36,6 +37,11 @@ public:
   void comb_pipeline();
   void init();
   void seq();
+
+  #ifdef CONFIG_CACHE
+  void comb_load();
+  uint32_t load_data;
+  #endif
 
   reg32_t reg_file[PRF_NUM];
   Inst_entry inst_r[ISSUE_WAY];
