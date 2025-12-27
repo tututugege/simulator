@@ -1,3 +1,4 @@
+#include "FU.h"
 #include "config.h"
 #include <ISU.h>
 #include <cstdint>
@@ -81,7 +82,6 @@ void ISU::comb_ready() {
 }
 
 void ISU::comb_deq() {
-
   // 出队
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (in.exe2iss->ready[i] && !in.rob_bcast->flush &&
@@ -96,10 +96,42 @@ void ISU::comb_deq() {
   for (int i = 0; i < ALU_NUM; i++) {
     if (out.iss2prf->iss_entry[i].valid &&
         out.iss2prf->iss_entry[i].uop.dest_en) {
-      out.iss_awake->wake[i].valid = true;
-      out.iss_awake->wake[i].preg = out.iss2prf->iss_entry[i].uop.dest_preg;
+      if (out.iss2prf->iss_entry[i].uop.op != UOP_MUL &&
+          out.iss2prf->iss_entry[i].uop.op != UOP_DIV) {
+        out.iss_awake->wake[i].valid = true;
+        out.iss_awake->wake[i].preg = out.iss2prf->iss_entry[i].uop.dest_preg;
+      } else {
+        out.iss_awake->wake[i].valid = false;
+        if (out.iss2prf->iss_entry[i].uop.op == UOP_MUL) {
+          ltc_awake_1[0].valid = true;
+          ltc_awake_1[0].latency = 0; // MUL两周期就够了 即下一周期就可以唤醒
+          ltc_awake_1[0].preg = out.iss2prf->iss_entry[i].uop.dest_preg;
+          ltc_awake_1[0].tag = out.iss2prf->iss_entry[i].uop.tag;
+        } else if (out.iss2prf->iss_entry[i].uop.op == UOP_DIV) {
+          ltc_awake_1[1].valid = true;
+          ltc_awake_1[1].latency = 16 + 2 - 2; // 最坏情况
+          ltc_awake_1[1].preg = out.iss2prf->iss_entry[i].uop.dest_preg;
+          ltc_awake_1[1].tag = out.iss2prf->iss_entry[i].uop.tag;
+        }
+      }
     } else {
       out.iss_awake->wake[i].valid = false;
+    }
+  }
+
+  // div 和 mul的唤醒
+  //  Magic Number
+  for (int i = 0; i < 2; i++) {
+    if (ltc_awake[i].valid && ltc_awake[i].latency == 0) {
+      out.iss_awake->wake[ALU_NUM + i].valid = true;
+      out.iss_awake->wake[ALU_NUM + i].preg = ltc_awake[i].preg;
+      ltc_awake_1[i].valid = false;
+    } else {
+      out.iss_awake->wake[ALU_NUM + i].valid = false;
+
+      if (ltc_awake[i].valid) {
+        ltc_awake_1[i].latency--;
+      }
     }
   }
 }
@@ -136,15 +168,15 @@ void ISU::comb_enq() {
 void ISU::comb_awake() {
   // 唤醒
 
-  bool awake_valid[ALU_NUM + 1];
-  uint32_t awake_preg[ALU_NUM + 1];
-  for (int i = 0; i < ALU_NUM; i++) {
+  bool awake_valid[ALU_NUM + 3];
+  uint32_t awake_preg[ALU_NUM + 3];
+  for (int i = 0; i < ALU_NUM + 2; i++) {
     awake_valid[i] = out.iss_awake->wake[i].valid;
     awake_preg[i] = out.iss_awake->wake[i].preg;
   }
 
-  awake_valid[ALU_NUM] = in.prf_awake->wake.valid;
-  awake_preg[ALU_NUM] = in.prf_awake->wake.preg;
+  awake_valid[ALU_NUM + 2] = in.prf_awake->wake.valid;
+  awake_preg[ALU_NUM + 2] = in.prf_awake->wake.preg;
 
   for (auto &q : iq) {
     q.wake_up(awake_valid, awake_preg);
@@ -166,6 +198,14 @@ void ISU::comb_branch() {
     for (auto &q : iq) {
       q.br_clear(in.dec_bcast->br_mask);
     }
+
+    // magic
+    for (int i = 0; i < 2; i++) {
+      if (ltc_awake[i].valid &&
+          ((1 << ltc_awake[i].tag) & in.dec_bcast->br_mask)) {
+        ltc_awake_1[i].valid = false;
+      }
+    }
   }
 }
 
@@ -174,6 +214,10 @@ void ISU::comb_flush() {
     for (auto &q : iq) {
       q.br_clear((1 << MAX_BR_NUM) - 1);
     }
+
+    for (int i = 0; i < 2; i++) {
+      ltc_awake_1[i].valid = false;
+    }
   }
 }
 
@@ -181,6 +225,10 @@ void ISU::seq() {
   for (auto &q : iq) {
     q.num = q.num_1;
     q.entry = q.entry_1;
+  }
+
+  for (int i = 0; i < 2; i++) {
+    ltc_awake[i] = ltc_awake_1[i];
   }
 
 #ifdef CONFIG_PERF_COUNTER
@@ -226,7 +274,7 @@ void IQ::br_clear(uint32_t br_mask) {
 void IQ::wake_up(bool *valid, uint32_t *preg) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid) {
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM + 3; j++) {
         if (valid[j]) {
           if (entry[i].uop.src1_en && entry[i].uop.src1_preg == preg[j]) {
             entry_1[i].uop.src1_busy = false;

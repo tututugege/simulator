@@ -41,7 +41,7 @@ void PRF::comb_br_check() {
     out.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;
     out.prf2dec->br_tag = mispred_uop->tag;
     if (LOG)
-      cout << "PC " << hex << mispred_uop->pc << " mispredictinn redirect_pc 0x"
+      cout << "PC " << hex << mispred_uop->pc << " misprediction redirect_pc 0x"
            << hex << out.prf2dec->redirect_pc << endl;
   } else {
     // 默认输出iq_br0的信息

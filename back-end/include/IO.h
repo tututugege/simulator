@@ -81,7 +81,7 @@ typedef struct {
 } Dis_Ren;
 
 typedef struct {
-  Wake_info wake;
+  WakeInfo wake;
 } Prf_Awake;
 
 // TODO: MAGIC NUMBER 2
@@ -97,7 +97,7 @@ typedef struct {
 } Iss_Dis;
 
 typedef struct {
-  Wake_info wake[ALU_NUM];
+  WakeInfo wake[ALU_NUM + 2]; // 2 alu + mul + div
 } Iss_Awake;
 
 typedef struct {

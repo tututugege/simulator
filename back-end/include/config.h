@@ -29,6 +29,8 @@ typedef uint32_t reg32_t;
 typedef wire4_t Inst_op;
 typedef wire4_t Inst_type;
 typedef wire4_t Amo_op;
+typedef wire7_t preg_t;
+typedef wire4_t tag_t;
 
 using namespace std;
 #define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
@@ -55,7 +57,7 @@ using namespace std;
 #define ALU_NUM 2
 #define BRU_NUM 2
 
-#define LOG_START 396092327
+#define LOG_START 0
 // #define LOG_ENABLE
 
 #ifndef LOG_ENABLE
@@ -225,8 +227,7 @@ typedef struct {
 typedef struct {
   wire1_t valid;
   wire7_t preg;
-  wire2_t latency;
-} Wake_info;
+} WakeInfo;
 
 class Perf_count {
 public:

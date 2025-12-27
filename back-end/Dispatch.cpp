@@ -64,20 +64,15 @@ void Dispatch::comb_wake() {
     }
   }
 
-  for (int i = 0; i < ALU_NUM; i++) {
+  for (int i = 0; i < ALU_NUM + 2; i++) {
     if (in.iss_awake->wake[i].valid) {
       for (int j = 0; j < FETCH_WIDTH; j++) {
         if (inst_alloc[j].uop.src1_preg == in.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src1_busy = false;
-          // inst_alloc[j].uop.src1_latency = in.iss_awake->wake[i].latency;
-          // 假如Dispatch卡住，需要修改inrt_r_1
-          // 暂时只考虑2周期延迟的乘法指令
-          // 如果dispatch卡了一个周期，则无需修改src_latency
           inst_r_1[j].uop.src1_busy = false;
         }
         if (inst_alloc[j].uop.src2_preg == in.iss_awake->wake[i].preg) {
           inst_alloc[j].uop.src2_busy = false;
-          // inst_alloc[j].uop.src2_latency = in.iss_awake->wake[i].latency;
           inst_r_1[j].uop.src2_busy = false;
         }
       }

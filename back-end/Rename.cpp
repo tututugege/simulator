@@ -101,7 +101,7 @@ void Rename::comb_wake() {
     busy_table_awake[in.prf_awake->wake.preg] = false;
   }
 
-  for (int i = 0; i < ALU_NUM; i++) {
+  for (int i = 0; i < ALU_NUM + 2; i++) {
     if (in.iss_awake->wake[i].valid) {
       busy_table_awake[in.iss_awake->wake[i].preg] = false;
     }
@@ -299,7 +299,8 @@ void Rename ::comb_commit() {
       }
 
       if (LOG) {
-        printf("ROB commit PC 0x%08x Inst:0x%08x rob_idx:%d idx %ld\n", inst->pc, inst->instruction, inst->rob_idx, inst->inst_idx);
+        printf("ROB commit PC 0x%08x Inst:0x%08x rob_idx:%d idx %ld\n",
+               inst->pc, inst->instruction, inst->rob_idx, inst->inst_idx);
       }
       ren_commit_idx = i;
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {

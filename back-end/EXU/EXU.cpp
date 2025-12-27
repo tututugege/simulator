@@ -9,14 +9,8 @@
 #include <util.h>
 Cache cache;
 
-#if !defined(CONFIG_MMU) && defined(CONFIG_CACHE)
-bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory,
-           bool dut_flag = true);
-#else
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-#endif
 void alu(Inst_uop &inst);
 void bru(Inst_uop &inst);
 void stu_data(Inst_uop &inst);
@@ -24,6 +18,7 @@ void mul(Inst_uop &inst);
 void div(Inst_uop &inst);
 
 #ifdef CONFIG_CACHE
+
 #ifdef CONFIG_MMU
 void ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn, Mem_REQ *&in);
 void stu_addr(Inst_uop &inst, bool page_fault_mmu, uint32_t mmu_ppn);
@@ -31,6 +26,7 @@ void stu_addr(Inst_uop &inst, bool page_fault_mmu, uint32_t mmu_ppn);
 void ldu(Inst_uop &inst, Mem_REQ *&in);
 void stu_addr(Inst_uop &inst);
 #endif
+
 #elif CONFIG_MMU
 bool ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn);
 void stu_addr(Inst_uop &inst, bool page_fault_mmu, uint32_t mmu_ppn);
@@ -65,9 +61,9 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred) {
 
   if (cycle == 0) {
     if (inst.op == UOP_MUL) { // mul
-      latency = 1;
+      latency = 2;
     } else if (inst.op == UOP_DIV) { // div
-      latency = 1;
+      latency = 18;
     } else if (inst.op == UOP_LOAD) {
       latency = 1;
       cache.cache_access(inst.src1_rdata + inst.imm);
@@ -117,12 +113,11 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred) {
 
   if (cycle == 0) {
     if (inst.op == UOP_MUL) { // mul
-      latency = 1;
+      latency = 2;
     } else if (inst.op == UOP_DIV) { // div
-      latency = 1;
+      latency = 18;
     } else if (inst.op == UOP_LOAD) {
-      cache.cache_access(inst.src1_rdata + inst.imm);
-      latency = 1;
+      latency = 2;
     } else if (inst.op == UOP_STA) {
       latency = 2;
     } else {
@@ -138,6 +133,7 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred) {
       printf("    alloc_mmu_req_slot[%d]=%d\n", i, alloc_mmu_req_slot[i]);
     }
   }
+
   if (ldu_work == false || is_sta_uop(inst.op)) {
     // deal with mmu: if miss, return and wait for next cycle
     if (is_load_uop(inst.op) || is_sta_uop(inst.op)) {
@@ -253,14 +249,15 @@ void FU::exec(Inst_uop &inst, Mem_REQ *&in, bool mispred) {
     }
   }
 }
+
 #elif !defined(CONFIG_CACHE) && defined(CONFIG_MMU)
 void FU::exec(Inst_uop &inst) {
 
   if (cycle == 0) {
     if (inst.op == UOP_MUL) { // mul
-      latency = 1;
+      latency = 2;
     } else if (inst.op == UOP_DIV) { // div
-      latency = 1;
+      latency = 18;
     } else if (inst.op == UOP_LOAD) {
       latency = cache.cache_access(inst.src1_rdata + inst.imm);
       // latency = 1;
@@ -364,9 +361,9 @@ void FU::exec(Inst_uop &inst) {
 
   if (cycle == 0) {
     if (inst.op == UOP_MUL) { // mul
-      latency = 1;
+      latency = 2;
     } else if (inst.op == UOP_DIV) { // div
-      latency = 1;
+      latency = 18;
     } else if (inst.op == UOP_LOAD) {
       latency = cache.cache_access(inst.src1_rdata + inst.imm);
       // latency = 1;

@@ -1,4 +1,5 @@
 #pragma once
+#include "Memory.h"
 #include "config.h"
 #include <IO.h>
 #include <cstdint>
@@ -46,6 +47,13 @@ public:
   Dec_Broadcast *dec_bcast;
 };
 
+typedef struct {
+  bool valid;
+  preg_t preg;
+  tag_t tag;
+  wire5_t latency;
+} LatencyWake;
+
 class ISU {
 public:
   ISU(SimContext *ctx) { this->ctx = ctx; }
@@ -62,5 +70,7 @@ public:
   void comb_awake();
   void seq();
 
+  LatencyWake ltc_awake[2];
+  LatencyWake ltc_awake_1[2];
   vector<IQ> iq; // xxx_1在这里面
 };

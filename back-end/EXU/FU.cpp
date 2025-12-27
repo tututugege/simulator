@@ -5,14 +5,8 @@
 #include <util.h>
 
 extern uint32_t *p_memory;
-#if !defined(CONFIG_MMU) && defined(CONFIG_CACHE)
-bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory,
-           bool dut_flag = true);
-#else
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
-#endif
 enum STATE { IDLE, RECV };
 
 #define SUB 0b000
