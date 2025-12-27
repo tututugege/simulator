@@ -76,12 +76,6 @@ void Rename::comb_alloc() {
     alloc_reg[alloc_num] = 0;
   }
 
-  // for (int i = 0; i < FETCH_WIDTH; i++) {
-  //   if (!alloc_valid[i]) {
-  //     cout << sim_time << endl;
-  //   }
-  // }
-
   // stall相当于需要查看前一条指令是否stall
   // 一条指令stall，后面的也stall
   wire1_t stall = false;
@@ -110,8 +104,10 @@ void Rename::comb_wake() {
   // busy_table wake up
   memcpy(busy_table_awake, busy_table, sizeof(wire1_t) * PRF_NUM);
 
-  if (in.prf_awake->wake.valid) {
-    busy_table_awake[in.prf_awake->wake.preg] = false;
+  for (int i = 0; i < LDU_NUM; i++) {
+    if (in.prf_awake->wake[i].valid) {
+      busy_table_awake[in.prf_awake->wake[i].preg] = false;
+    }
   }
 
   for (int i = 0; i < ALU_NUM; i++) {

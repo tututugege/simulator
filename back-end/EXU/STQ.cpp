@@ -137,20 +137,26 @@ void STQ::seq() {
   }
 
   // 地址数据写入 若项无效说明被br清除
-  Inst_uop *inst = &in.exe2stq->addr_entry.uop;
-  int idx = inst->stq_idx;
-  if (in.exe2stq->addr_entry.valid && entry[idx].valid) {
-    entry[idx].addr = inst->result;
-    entry[idx].size = inst->func3;
-    entry[idx].addr_valid = true;
+  Inst_uop *inst;
+  int idx;
+  for (int i = 0; i < STA_NUM; i++) {
+    inst = &in.exe2stq->addr_entry[i].uop;
+    idx = inst->stq_idx;
+    if (in.exe2stq->addr_entry[i].valid && entry[idx].valid) {
+      entry[idx].addr = inst->result;
+      entry[idx].size = inst->func3;
+      entry[idx].addr_valid = true;
+    }
   }
 
-  inst = &in.exe2stq->data_entry.uop;
-  idx = inst->stq_idx;
+  for (int i = 0; i < STA_NUM; i++) {
+    inst = &in.exe2stq->data_entry[i].uop;
+    idx = inst->stq_idx;
 
-  if (in.exe2stq->data_entry.valid && entry[idx].valid) {
-    entry[idx].data = inst->result;
-    entry[idx].data_valid = true;
+    if (in.exe2stq->data_entry[i].valid && entry[idx].valid) {
+      entry[idx].data = inst->result;
+      entry[idx].data_valid = true;
+    }
   }
 
   // 分支清空
@@ -218,11 +224,12 @@ void STQ::st2ld_fwd(uint32_t addr, uint32_t &data, int rob_idx,
     count--;
   }
 
-  int idx = cpu.back.rob.deq_ptr << 2;
+  int idx = cpu.back.rob.deq_ptr << __builtin_ctz(ROB_BANK_NUM);
 
   while (idx != rob_idx) {
-    int line_idx = idx >> 2;
-    int bank_idx = idx & 0b11;
+    int bank_idx = idx & ((1 << __builtin_ctz(ROB_BANK_NUM)) - 1);
+    int line_idx = idx >> __builtin_ctz(ROB_BANK_NUM);
+
     if (cpu.back.rob.entry[bank_idx][line_idx].valid &&
         is_store(cpu.back.rob.entry[bank_idx][line_idx].uop)) {
       int stq_idx = cpu.back.rob.entry[bank_idx][line_idx].uop.stq_idx;

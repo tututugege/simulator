@@ -118,7 +118,7 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
           fifo_in.predecode_target_address[i] = 0;
         }
       }
-      uint32_t mask = 0xFFFFFFE0;
+      uint32_t mask = ~(ICACHE_LINE_SIZE - 1);
       fifo_in.seq_next_pc = icache_out.fetch_pc + (FETCH_WIDTH * 4);
       if ((fifo_in.seq_next_pc & mask) != (icache_out.fetch_pc & mask)) {
         fifo_in.seq_next_pc &= mask;

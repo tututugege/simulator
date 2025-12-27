@@ -26,9 +26,14 @@ typedef uint16_t reg12_t;
 typedef uint16_t reg16_t;
 typedef uint32_t reg32_t;
 
-typedef wire4_t Inst_op;
-typedef wire4_t Inst_type;
-typedef wire4_t Amo_op;
+// typedef wire4_t Inst_op;
+// typedef wire4_t Inst_type;
+// typedef wire4_t Amo_op;
+
+typedef wire5_t tag_t;
+typedef wire5_t stq_t;
+typedef wire8_t rob_t;
+typedef wire32_t brmask_t;
 
 using namespace std;
 #define VIRTUAL_MEMORY_LENGTH (1024 * 1024 * 1024)  // 4B
@@ -36,27 +41,30 @@ using namespace std;
 
 #define MAX_SIM_TIME 100000000000
 
-#define FETCH_WIDTH 4
-#define COMMIT_WIDTH 4
+#define FETCH_WIDTH 8
+#define COMMIT_WIDTH 8
 
-#define ISSUE_WAY 7 // 目前等于IQ_NUM
+#define ISSUE_WAY IQ_NUM
 
 #define ARF_NUM 32
 #define PRF_NUM 128
-#define MAX_BR_NUM 16
+#define MAX_BR_NUM 32
 
 #define CSR_NUM 21
 
-#define ROB_BANK_NUM 4
-#define ROB_NUM 128
+#define ROB_NUM (ROB_BANK_NUM * ROB_LINE_NUM)
+#define ROB_BANK_NUM 8
 #define ROB_LINE_NUM 32 // (ROB_NUM / ROB_BANK_NUM)
 
-#define STQ_NUM 16
-#define ALU_NUM 2
+#define STQ_NUM 32
+#define ALU_NUM 4
+#define LDU_NUM 2
+#define STA_NUM 2
+#define STD_NUM 2
 #define BRU_NUM 2
 
 #define LOG_START 0
-#define LOG 0
+#define LOG 1
 #define MEM_LOG 0
 
 extern long long sim_time;
@@ -74,7 +82,7 @@ extern long long sim_time;
 
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
-#define CONFIG_MMU
+// #define CONFIG_MMU
 #define ENABLE_MULTI_BR
 
 /*
@@ -86,46 +94,57 @@ extern long long sim_time;
 
 #define UART_BASE 0x10000000
 
-#define IQ_INTM 0
-#define IQ_INTD 1
-#define IQ_LD 2
-#define IQ_STA 3
-#define IQ_STD 4
-#define IQ_BR0 5
-#define IQ_BR1 6
-#define IQ_NUM 7
+enum IQType {
+  IQ_INTM,
+  IQ_INTD,
+  IQ_INT0,
+  IQ_INT1,
+  IQ_LD0,
+  IQ_LD1,
+  IQ_STA0,
+  IQ_STA1,
+  IQ_STD0,
+  IQ_STD1,
+  IQ_BR0,
+  IQ_BR1,
+  IQ_NUM
+};
 
-#define NOP 0
-#define JAL 1
-#define JALR 2
-#define ADD 3
-#define BR 4
-#define LOAD 5
-#define STORE 6
-#define CSR 7
-#define ECALL 8
-#define EBREAK 9
-#define SFENCE_VMA 10
-#define MRET 11
-#define SRET 12
-#define MUL 13
-#define DIV 14
-#define AMO 15
+enum InstType {
+  NOP,
+  JAL,
+  JALR,
+  ADD,
+  BR,
+  LOAD,
+  STORE,
+  CSR,
+  ECALL,
+  EBREAK,
+  SFENCE_VMA,
+  MRET,
+  SRET,
+  MUL,
+  DIV,
+  AMO,
+};
 
-#define UOP_JUMP 0
-#define UOP_ADD 1
-#define UOP_BR 2
-#define UOP_LOAD 3
-#define UOP_STA 4
-#define UOP_STD 5
-#define UOP_CSR 6
-#define UOP_ECALL 7
-#define UOP_EBREAK 8
-#define UOP_SFENCE_VMA 9
-#define UOP_MRET 10
-#define UOP_SRET 11
-#define UOP_MUL 12
-#define UOP_DIV 13
+enum UopType {
+  UOP_JUMP,
+  UOP_ADD,
+  UOP_BR,
+  UOP_LOAD,
+  UOP_STA,
+  UOP_STD,
+  UOP_CSR,
+  UOP_ECALL,
+  UOP_EBREAK,
+  UOP_SFENCE_VMA,
+  UOP_MRET,
+  UOP_SRET,
+  UOP_MUL,
+  UOP_DIV,
+};
 
 #define AMONONE 0
 #define LR 1
@@ -171,12 +190,12 @@ typedef struct Inst_uop {
   wire1_t func7_5;
   wire32_t imm; // 好像不用32bit 先用着
   wire32_t pc;  // 未来将会优化pc的获取
-  wire4_t tag;
+  tag_t tag;
   wire12_t csr_idx;
-  wire7_t rob_idx;
-  wire4_t stq_idx;
-  wire16_t pre_sta_mask;
-  wire16_t pre_std_mask;
+  rob_t rob_idx;
+  stq_t stq_idx;
+  wire32_t pre_sta_mask;
+  wire32_t pre_std_mask;
 
   // ROB 信息
   wire2_t uop_num;
@@ -189,8 +208,8 @@ typedef struct Inst_uop {
   wire1_t page_fault_store;
   wire1_t illegal_inst;
 
-  wire4_t type;
-  wire4_t op;
+  InstType type;
+  UopType op;
   wire4_t amoop;
 
   // for debug

@@ -13,7 +13,7 @@ typedef struct {
   reg1_t addr_valid;
   reg1_t data_valid;
   reg1_t valid;
-  reg4_t tag;
+  tag_t tag;
 } STQ_entry;
 
 typedef struct {
@@ -46,9 +46,9 @@ typedef struct {
 
 typedef struct {
   wire1_t mispred;
-  wire16_t br_mask;
-  wire4_t br_tag;
-  wire7_t redirect_rob_idx;
+  brmask_t br_mask;
+  tag_t br_tag;
+  rob_t redirect_rob_idx;
 } Dec_Broadcast;
 
 typedef struct {
@@ -59,7 +59,7 @@ typedef struct {
   wire1_t ready;
   wire1_t empty;
   wire1_t stall;
-  wire7_t enq_idx;
+  rob_t enq_idx;
   wire1_t rob_flag;
 } Rob_Dis;
 
@@ -79,7 +79,7 @@ typedef struct {
 } Dis_Ren;
 
 typedef struct {
-  Wake_info wake;
+  Wake_info wake[LDU_NUM];
 } Prf_Awake;
 
 // TODO: MAGIC NUMBER 2
@@ -139,12 +139,12 @@ typedef struct {
 typedef struct {
   wire1_t mispred;
   wire32_t redirect_pc;
-  wire7_t redirect_rob_idx;
-  wire4_t br_tag;
+  rob_t redirect_rob_idx;
+  tag_t br_tag;
 } Prf_Dec;
 
 typedef struct {
-  wire4_t tag[2];
+  tag_t tag[2];
   wire1_t valid[2];
   wire1_t dis_fire[2];
 } Dis_Stq;
@@ -152,7 +152,7 @@ typedef struct {
 // TODO: MAGIC NUMBER 2
 typedef struct {
   wire1_t ready[2];
-  wire4_t stq_idx;
+  stq_t stq_idx;
 } Stq_Dis;
 
 typedef struct {
@@ -161,9 +161,9 @@ typedef struct {
 
 typedef struct {
   // 地址写入
-  Inst_entry addr_entry;
+  Inst_entry addr_entry[STA_NUM];
   // 数据写入
-  Inst_entry data_entry;
+  Inst_entry data_entry[STD_NUM];
 } Exe_Stq;
 
 typedef struct {

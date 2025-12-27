@@ -319,7 +319,7 @@ void ldu(Inst_uop &inst) {
   }
 
   uint32_t data;
-  bool page_fault = !back.load_data(data, addr, inst.rob_idx);
+  bool page_fault = !cpu.back.load_data(data, addr, inst.rob_idx);
 
   if (!page_fault) {
     data = data >> (offset * 8);
@@ -355,14 +355,17 @@ void stu_addr(Inst_uop &inst) {
   uint32_t p_addr = v_addr;
   bool page_fault = false;
 
-  if (back.csr.CSR_RegFile[csr_satp] & 0x80000000 && back.csr.privilege != 3) {
+  if (cpu.back.csr.CSR_RegFile[csr_satp] & 0x80000000 &&
+      cpu.back.csr.privilege != 3) {
     bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.csr.CSR_RegFile[csr_mstatus], 32);
+    cvt_number_to_bit_unsigned(mstatus, cpu.back.csr.CSR_RegFile[csr_mstatus],
+                               32);
 
-    cvt_number_to_bit_unsigned(sstatus, back.csr.CSR_RegFile[csr_sstatus], 32);
+    cvt_number_to_bit_unsigned(sstatus, cpu.back.csr.CSR_RegFile[csr_sstatus],
+                               32);
 
-    page_fault = !va2pa(p_addr, v_addr, back.csr.CSR_RegFile[csr_satp], 2,
-                        mstatus, sstatus, back.csr.privilege, p_memory);
+    page_fault = !va2pa(p_addr, v_addr, cpu.back.csr.CSR_RegFile[csr_satp], 2,
+                        mstatus, sstatus, cpu.back.csr.privilege, p_memory);
   }
 
   if (page_fault) {

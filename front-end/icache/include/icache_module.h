@@ -21,54 +21,52 @@
 #ifndef ICACHE_MODULE_H
 #define ICACHE_MODULE_H
 
-#include <iostream>
 #include <cstdint>
 #include <frontend.h>
-
-#define ICACHE_LINE_SIZE 32 // Size of a cache line in bytes
+#include <iostream>
 
 namespace icache_module_n {
-  // i-Cache State
-  enum ICacheState {
-    IDLE,         // Idle state
-    SWAP_IN,      // Swapping in state
-    SWAP_IN_OKEY, // Swapping in successful
-  };
-  // AXI Memory Channel State
-  enum AXIState {
-    AXI_IDLE,     // Idle state
-    AXI_BUSY,     // Busy state
-  };
+// i-Cache State
+enum ICacheState {
+  IDLE,         // Idle state
+  SWAP_IN,      // Swapping in state
+  SWAP_IN_OKEY, // Swapping in successful
 };
+// AXI Memory Channel State
+enum AXIState {
+  AXI_IDLE, // Idle state
+  AXI_BUSY, // Busy state
+};
+}; // namespace icache_module_n
 
 typedef struct {
   // Input from the IFU (Instruction Fetch Unit)
-  uint32_t pc;          // Program Counter
-  bool ifu_req_valid;   // Fetch enable signal
-  bool ifu_resp_ready;  // actually always true in current design
+  uint32_t pc;         // Program Counter
+  bool ifu_req_valid;  // Fetch enable signal
+  bool ifu_resp_ready; // actually always true in current design
 
   // Input from MMU (Memory Management Unit)
-  uint32_t ppn;     // Physical Page Number
-  bool ppn_valid;   // PPN valid signal
+  uint32_t ppn;   // Physical Page Number
+  bool ppn_valid; // PPN valid signal
 
   // Input from memory
   bool mem_req_ready;
   bool mem_resp_valid;
-  uint32_t mem_resp_data [ICACHE_LINE_SIZE / 4]; // Data from memory (32 bytes)
+  uint32_t mem_resp_data[ICACHE_LINE_SIZE / 4]; // Data from memory (32 bytes)
 } ICache_in_t;
 
 typedef struct {
   // Output to the IFU (Instruction Fetch Unit)
-  bool miss; // Cache miss signal
+  bool miss;           // Cache miss signal
   bool ifu_resp_valid; // Indicates if output data is valid
-  bool ifu_req_ready; // Indicates if i-cache is allow to accept next PC
-  uint32_t rd_data [ICACHE_LINE_SIZE / 4]; // Data read from cache
+  bool ifu_req_ready;  // Indicates if i-cache is allow to accept next PC
+  uint32_t rd_data[ICACHE_LINE_SIZE / 4]; // Data read from cache
 
   // Output to MMU (Memory Management Unit)
   bool ppn_ready; // ready to accept PPN
 
   // Output to memory
-  bool mem_req_valid; // Memory request signal
+  bool mem_req_valid;    // Memory request signal
   uint32_t mem_req_addr; // Address for memory access
   bool mem_resp_ready;
 } ICache_out_t;
@@ -116,14 +114,17 @@ private:
   /*
    * Cache parameters
    */
-  static uint32_t const offset_bits = 5; // 32 bytes per cache line
-  static uint32_t const index_bits = 7; // 128 sets in the cache
-  static uint32_t const set_num = 1 << index_bits; // Total number of cache sets 
-  static uint32_t const word_num = 1 << (offset_bits - 2); // Number of words per cache line (8 words, since each word is 4 bytes)
+  static uint32_t const offset_bits =
+      __builtin_ctz(ICACHE_LINE_SIZE);             // 32 bytes per cache line
+  static uint32_t const index_bits = 7;            // 128 sets in the cache
+  static uint32_t const set_num = 1 << index_bits; // Total number of cache sets
+  static uint32_t const word_num =
+      1 << (offset_bits - 2); // Number of words per cache line (8 words, since
+                              // each word is 4 bytes)
   static uint32_t const line_size = 1 << offset_bits;
   static uint32_t const way_cnt = 8; // 8-way set associative cache
   uint32_t cache_data[set_num][way_cnt][word_num]; // Cache data storage
-  uint32_t cache_tag[set_num][way_cnt]; // Cache tags
+  uint32_t cache_tag[set_num][way_cnt];            // Cache tags
   bool cache_valid[set_num][way_cnt]; // Valid bits for each cache line
 
   /*
@@ -133,13 +134,13 @@ private:
     // From pipe1 to pipe2 (combination logic/wire)
     bool valid; // Indicates if the data is valid
     uint32_t cache_set_data_w[way_cnt][word_num]; // Data from the cache set
-    uint32_t cache_set_tag_w[way_cnt]; // Tag bits from the cache set
+    uint32_t cache_set_tag_w[way_cnt];            // Tag bits from the cache set
     bool cache_set_valid_w[way_cnt]; // Valid bits from the cache set
-    uint32_t index_w; // Index extracted from PC, index_bits bit
+    uint32_t index_w;                // Index extracted from PC, index_bits bit
     // Registered data (between two pipeline stages)
     bool valid_r;
-    uint32_t cache_set_data_r[way_cnt][word_num]; 
-    uint32_t cache_set_tag_r[way_cnt]; 
+    uint32_t cache_set_data_r[way_cnt][word_num];
+    uint32_t cache_set_tag_r[way_cnt];
     bool cache_set_valid_r[way_cnt];
     uint32_t index_r;
   } pipe1_to_pipe2_t;
@@ -153,15 +154,19 @@ private:
   pipe1_to_pipe2_t pipe1_to_pipe2;
   pipe2_to_pipe1_t pipe2_to_pipe1;
 
-  icache_module_n::ICacheState state = icache_module_n::IDLE; // Current state of the i-cache
-  icache_module_n::ICacheState state_next = icache_module_n::IDLE; // Next state of the i-cache
+  icache_module_n::ICacheState state =
+      icache_module_n::IDLE; // Current state of the i-cache
+  icache_module_n::ICacheState state_next =
+      icache_module_n::IDLE; // Next state of the i-cache
 
   /*
    * Memory Channels
    */
   // state machine
-  icache_module_n::AXIState mem_axi_state = icache_module_n::AXI_IDLE; // Current state of the memory channel
-  icache_module_n::AXIState mem_axi_state_next = icache_module_n::AXI_IDLE; // Current state of the memory channel
+  icache_module_n::AXIState mem_axi_state =
+      icache_module_n::AXI_IDLE; // Current state of the memory channel
+  icache_module_n::AXIState mem_axi_state_next =
+      icache_module_n::AXI_IDLE; // Current state of the memory channel
 
   // received data from memory
   uint32_t mem_resp_data_w[ICACHE_LINE_SIZE / 4]; // Data received wire

@@ -17,7 +17,7 @@ public:
   void latency_wake();
   void sta_wake_up(int);
   void std_wake_up(int);
-  void br_clear(uint32_t br_mask);
+  void br_clear(uint64_t br_mask);
   void enq(Inst_uop &inst);
   Inst_entry deq();
   int entry_num;

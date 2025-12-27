@@ -4,6 +4,7 @@
 
 #define RESET_PC 0x00000000
 #define PMEM_OFFSET RESET_PC
+#define ICACHE_LINE_SIZE 64 // Size of a cache line in bytes
 
 /* Whether to use true icache model */
 #define USE_TRUE_ICACHE

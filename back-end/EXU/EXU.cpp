@@ -157,10 +157,10 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_DIV) { // div
       latency = 1;
     } else if (inst.op == UOP_LOAD) {
-      // latency = cache.cache_access(inst.src1_rdata + inst.imm);
-      latency = 1;
+      latency = cache.cache_access(inst.src1_rdata + inst.imm);
+      // latency = 1;
     } else if (inst.op == UOP_STA) {
-      latency = 1;
+      latency = 2;
     } else {
       latency = 1;
     }
@@ -237,16 +237,20 @@ void EXU::comb_exec() {
   }
 
   // store
-  if (inst_r[IQ_STA].valid) {
-    io.exe2stq->addr_entry = io.exe2prf->entry[IQ_STA];
-  } else {
-    io.exe2stq->addr_entry.valid = false;
+  for (int i = 0; i < STA_NUM; i++) {
+    if (inst_r[IQ_STA0 + i].valid) {
+      io.exe2stq->addr_entry[i] = io.exe2prf->entry[IQ_STA0 + i];
+    } else {
+      io.exe2stq->addr_entry[i].valid = false;
+    }
   }
 
-  if (inst_r[IQ_STD].valid) {
-    io.exe2stq->data_entry = io.exe2prf->entry[IQ_STD];
-  } else {
-    io.exe2stq->data_entry.valid = false;
+  for (int i = 0; i < STD_NUM; i++) {
+    if (inst_r[IQ_STD0 + i].valid) {
+      io.exe2stq->data_entry[i] = io.exe2prf->entry[IQ_STD0 + i];
+    } else {
+      io.exe2stq->data_entry[i].valid = false;
+    }
   }
 }
 

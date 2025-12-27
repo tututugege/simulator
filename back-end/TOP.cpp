@@ -404,7 +404,7 @@ void Back_Top::comb() {
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     out.commit_entry[i] = rob.out.rob_commit->commit_entry[i];
-    Inst_type type = out.commit_entry[i].uop.type;
+    InstType type = out.commit_entry[i].uop.type;
     if (out.commit_entry[i].valid && out.flush) {
       out.commit_entry[i].uop.pc_next = out.redirect_pc;
       rob.out.rob_commit->commit_entry[i].uop.pc_next = out.redirect_pc;
@@ -469,18 +469,22 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx,
   return ret;
 }
 #else
+
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
+           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+
 bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   uint32_t p_addr = v_addr;
   bool ret = true;
 
-  if (back.out.satp & 0x80000000 && back.out.privilege != 3) {
+  if (out.satp & 0x80000000 && out.privilege != 3) {
     bool mstatus[32], sstatus[32];
-    cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
+    cvt_number_to_bit_unsigned(mstatus, out.mstatus, 32);
 
-    cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
+    cvt_number_to_bit_unsigned(sstatus, out.sstatus, 32);
 
-    ret = va2pa(p_addr, v_addr, back.out.satp, 1, mstatus, sstatus,
-                back.out.privilege, p_memory);
+    ret = va2pa(p_addr, v_addr, out.satp, 1, mstatus, sstatus, out.privilege,
+                p_memory);
   }
 
   if (p_addr == 0x1fd0e000) {
@@ -490,7 +494,7 @@ bool Back_Top::load_data(uint32_t &data, uint32_t v_addr, int rob_idx) {
   } else {
     data = p_memory[p_addr >> 2];
     bool stall = false;
-    back.stq.st2ld_fwd(p_addr, data, rob_idx, stall);
+    stq.st2ld_fwd(p_addr, data, rob_idx, stall);
   }
 
   return ret;

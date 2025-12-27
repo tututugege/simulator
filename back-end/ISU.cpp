@@ -27,9 +27,14 @@ IQ::IQ(int entry_num, int type, SimContext *ctx) {
 void ISU::init() {
   add_iq(16, IQ_INTM, ctx);
   add_iq(16, IQ_INTD, ctx);
-  add_iq(16, IQ_LD, ctx);
-  add_iq(16, IQ_STA, ctx);
-  add_iq(16, IQ_STD, ctx);
+  add_iq(16, IQ_INT0, ctx);
+  add_iq(16, IQ_INT1, ctx);
+  add_iq(16, IQ_LD0, ctx);
+  add_iq(16, IQ_LD1, ctx);
+  add_iq(16, IQ_STA0, ctx);
+  add_iq(16, IQ_STA1, ctx);
+  add_iq(16, IQ_STD0, ctx);
+  add_iq(16, IQ_STD1, ctx);
   add_iq(MAX_BR_NUM / 2, IQ_BR0, ctx);
   add_iq(MAX_BR_NUM / 2, IQ_BR1, ctx);
 }
@@ -109,21 +114,32 @@ void ISU::comb_enq() {
   for (int i = 0; i < IQ_NUM; i++) {
     for (int j = 0; j < 2; j++) {
       if (in.dis2iss->dis_fire[i][j]) {
-        if (i == IQ_LD) {
-          for (int k = 0; k < iq[IQ_STA].entry_num; k++) {
-            // 这里使用entry_1 有隐藏的旁路逻辑
-            // 本周期已经发射的就不在内
-            // 本周期同时入队的也被处理
-            if (iq[IQ_STA].entry_1[k].valid) {
+        if (i == IQ_LD0 || i == IQ_LD1) {
+          for (int k = 0; k < iq[IQ_STA0].entry_num; k++) {
+            if (iq[IQ_STA0].entry_1[k].valid) {
               in.dis2iss->uop[i][j].pre_sta_mask |=
-                  (1 << iq[IQ_STA].entry_1[k].uop.stq_idx);
+                  (1 << iq[IQ_STA0].entry_1[k].uop.stq_idx);
             }
           }
 
-          for (int k = 0; k < iq[IQ_STD].entry_num; k++) {
-            if (iq[IQ_STD].entry_1[k].valid) {
+          for (int k = 0; k < iq[IQ_STA1].entry_num; k++) {
+            if (iq[IQ_STA1].entry_1[k].valid) {
+              in.dis2iss->uop[i][j].pre_sta_mask |=
+                  (1 << iq[IQ_STA1].entry_1[k].uop.stq_idx);
+            }
+          }
+
+          for (int k = 0; k < iq[IQ_STD0].entry_num; k++) {
+            if (iq[IQ_STD0].entry_1[k].valid) {
               in.dis2iss->uop[i][j].pre_std_mask |=
-                  (1 << iq[IQ_STD].entry_1[k].uop.stq_idx);
+                  (1 << iq[IQ_STD0].entry_1[k].uop.stq_idx);
+            }
+          }
+
+          for (int k = 0; k < iq[IQ_STD1].entry_num; k++) {
+            if (iq[IQ_STD1].entry_1[k].valid) {
+              in.dis2iss->uop[i][j].pre_std_mask |=
+                  (1 << iq[IQ_STD1].entry_1[k].uop.stq_idx);
             }
           }
         }
@@ -136,27 +152,41 @@ void ISU::comb_enq() {
 void ISU::comb_awake() {
   // 唤醒
 
-  bool awake_valid[ALU_NUM + 1];
-  uint32_t awake_preg[ALU_NUM + 1];
+  bool awake_valid[ALU_NUM + LDU_NUM];
+  uint32_t awake_preg[ALU_NUM + LDU_NUM];
   for (int i = 0; i < ALU_NUM; i++) {
     awake_valid[i] = out.iss_awake->wake[i].valid;
     awake_preg[i] = out.iss_awake->wake[i].preg;
   }
 
-  awake_valid[ALU_NUM] = in.prf_awake->wake.valid;
-  awake_preg[ALU_NUM] = in.prf_awake->wake.preg;
+  for (int i = 0; i < LDU_NUM; i++) {
+    awake_valid[ALU_NUM + i] = in.prf_awake->wake[i].valid;
+    awake_preg[ALU_NUM + i] = in.prf_awake->wake[i].preg;
+  }
 
   for (auto &q : iq) {
     q.wake_up(awake_valid, awake_preg);
   }
 
   // 唤醒load
-  if (out.iss2prf->iss_entry[IQ_STA].valid) {
-    iq[IQ_LD].sta_wake_up(out.iss2prf->iss_entry[IQ_STA].uop.stq_idx);
+  if (out.iss2prf->iss_entry[IQ_STA0].valid) {
+    iq[IQ_LD0].sta_wake_up(out.iss2prf->iss_entry[IQ_STA0].uop.stq_idx);
+    iq[IQ_LD1].sta_wake_up(out.iss2prf->iss_entry[IQ_STA0].uop.stq_idx);
   }
 
-  if (out.iss2prf->iss_entry[IQ_STD].valid) {
-    iq[IQ_LD].std_wake_up(out.iss2prf->iss_entry[IQ_STD].uop.stq_idx);
+  if (out.iss2prf->iss_entry[IQ_STA1].valid) {
+    iq[IQ_LD0].sta_wake_up(out.iss2prf->iss_entry[IQ_STA1].uop.stq_idx);
+    iq[IQ_LD1].sta_wake_up(out.iss2prf->iss_entry[IQ_STA1].uop.stq_idx);
+  }
+
+  if (out.iss2prf->iss_entry[IQ_STD0].valid) {
+    iq[IQ_LD0].std_wake_up(out.iss2prf->iss_entry[IQ_STD0].uop.stq_idx);
+    iq[IQ_LD1].std_wake_up(out.iss2prf->iss_entry[IQ_STD0].uop.stq_idx);
+  }
+
+  if (out.iss2prf->iss_entry[IQ_STD1].valid) {
+    iq[IQ_LD0].std_wake_up(out.iss2prf->iss_entry[IQ_STD1].uop.stq_idx);
+    iq[IQ_LD1].std_wake_up(out.iss2prf->iss_entry[IQ_STD1].uop.stq_idx);
   }
 }
 
@@ -172,7 +202,7 @@ void ISU::comb_branch() {
 void ISU::comb_flush() {
   if (in.rob_bcast->flush) {
     for (auto &q : iq) {
-      q.br_clear((1 << MAX_BR_NUM) - 1);
+      q.br_clear((1L << MAX_BR_NUM) - 1);
     }
   }
 }
@@ -197,7 +227,7 @@ void ISU::seq() {
 #endif
 }
 
-void IQ::br_clear(uint32_t br_mask) {
+void IQ::br_clear(uint64_t br_mask) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid && ((1 << entry[i].uop.tag) & br_mask)) {
       entry_1[i].valid = false;
@@ -226,7 +256,7 @@ void IQ::br_clear(uint32_t br_mask) {
 void IQ::wake_up(bool *valid, uint32_t *preg) {
   for (int i = 0; i < entry_num; i++) {
     if (entry[i].valid) {
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM + LDU_NUM; j++) {
         if (valid[j]) {
           if (entry[i].uop.src1_en && entry[i].uop.src1_preg == preg[j]) {
             entry_1[i].uop.src1_busy = false;

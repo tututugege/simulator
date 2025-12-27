@@ -57,13 +57,13 @@ void PRF::comb_read() {
 
     if (entry->uop.src1_en) {
       entry->uop.src1_rdata = reg_file[entry->uop.src1_preg];
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM + LDU_NUM; j++) {
         if (inst_r[j].valid && inst_r[j].uop.dest_en &&
             inst_r[j].uop.dest_preg == entry->uop.src1_preg)
           entry->uop.src1_rdata = inst_r[j].uop.result;
       }
 
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM + LDU_NUM; j++) {
         if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
             in.exe2prf->entry[j].uop.dest_preg == entry->uop.src1_preg)
           entry->uop.src1_rdata = in.exe2prf->entry[j].uop.result;
@@ -74,13 +74,13 @@ void PRF::comb_read() {
 
     if (entry->uop.src2_en) {
       entry->uop.src2_rdata = reg_file[entry->uop.src2_preg];
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM + LDU_NUM; j++) {
         if (inst_r[j].valid && inst_r[j].uop.dest_en &&
             inst_r[j].uop.dest_preg == entry->uop.src2_preg)
           entry->uop.src2_rdata = inst_r[j].uop.result;
       }
 
-      for (int j = 0; j < ALU_NUM + 1; j++) {
+      for (int j = 0; j < ALU_NUM + LDU_NUM; j++) {
         if (in.exe2prf->entry[j].valid && in.exe2prf->entry[j].uop.dest_en &&
             in.exe2prf->entry[j].uop.dest_preg == entry->uop.src2_preg)
           entry->uop.src2_rdata = in.exe2prf->entry[j].uop.result;
@@ -102,12 +102,14 @@ void PRF::comb_complete() {
 
 void PRF::comb_awake() {
   // 默认必须输出，适配硬件实现
-  out.prf_awake->wake.preg = inst_r[IQ_LD].uop.dest_preg;
-  if (inst_r[IQ_LD].valid && inst_r[IQ_LD].uop.dest_en &&
-      !inst_r[IQ_LD].uop.page_fault_load) {
-    out.prf_awake->wake.valid = true;
-  } else {
-    out.prf_awake->wake.valid = false;
+  for (int i = 0; i < LDU_NUM; i++) {
+    out.prf_awake->wake[i].preg = inst_r[IQ_LD0 + i].uop.dest_preg;
+    if (inst_r[IQ_LD0 + i].valid && inst_r[IQ_LD0 + i].uop.dest_en &&
+        !inst_r[IQ_LD0 + i].uop.page_fault_load) {
+      out.prf_awake->wake[i].valid = true;
+    } else {
+      out.prf_awake->wake[i].valid = false;
+    }
   }
 }
 
@@ -131,7 +133,7 @@ void PRF::comb_flush() {
 }
 
 void PRF::comb_write() {
-  for (int i = 0; i < ALU_NUM + 1; i++) {
+  for (int i = 0; i < ALU_NUM + LDU_NUM; i++) {
     if (inst_r[i].valid && inst_r[i].uop.dest_en) {
       reg_file_1[inst_r[i].uop.dest_preg] = inst_r[i].uop.result;
     }

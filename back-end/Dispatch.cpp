@@ -19,10 +19,11 @@ void Dispatch::comb_alloc() {
     stq_mask[i] = 0;
   }
 
-  wire16_t pre_store_mask = 0;
+  wire32_t pre_store_mask = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     inst_alloc[i] = inst_r[i];
-    inst_alloc[i].uop.rob_idx = (in.rob2dis->enq_idx << 2) + i;
+    inst_alloc[i].uop.rob_idx =
+        (in.rob2dis->enq_idx << __builtin_ctz(ROB_BANK_NUM)) + i;
     inst_alloc[i].uop.rob_flag = in.rob2dis->rob_flag;
 
     if (is_load(inst_r[i].uop)) {
@@ -49,17 +50,22 @@ void Dispatch::comb_alloc() {
 
 // busytable bypass
 void Dispatch::comb_wake() {
-  if (in.prf_awake->wake.valid) {
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      if (inst_alloc[i].uop.src1_preg == in.prf_awake->wake.preg) {
-        inst_alloc[i].uop.src1_busy = false;
-        // inst_alloc[i].uop.src1_latency = 0;
-        inst_r_1[i].uop.src1_busy = false;
-      }
-      if (inst_alloc[i].uop.src2_preg == in.prf_awake->wake.preg) {
-        inst_alloc[i].uop.src2_busy = false;
-        // inst_alloc[i].uop.src2_latency = 0;
-        inst_r_1[i].uop.src2_busy = false;
+  for (int i = 0; i < ALU_NUM; i++) {
+    if (in.prf_awake->wake[i].valid) {
+      for (int j = 0; j < FETCH_WIDTH; j++) {
+        if (inst_alloc[j].uop.src1_preg == in.prf_awake->wake[i].preg) {
+          inst_alloc[j].uop.src1_busy = false;
+          // inst_alloc[j].uop.src1_latency = in.prf_awake->wake[i].latency;
+          // 假如Dispatch卡住，需要修改inrt_r_1
+          // 暂时只考虑2周期延迟的乘法指令
+          // 如果dispatch卡了一个周期，则无需修改src_latency
+          inst_r_1[j].uop.src1_busy = false;
+        }
+        if (inst_alloc[j].uop.src2_preg == in.prf_awake->wake[i].preg) {
+          inst_alloc[j].uop.src2_busy = false;
+          // inst_alloc[j].uop.src2_latency = in.prf_awake->wake[i].latency;
+          inst_r_1[j].uop.src2_busy = false;
+        }
       }
     }
   }
@@ -100,10 +106,7 @@ void Dispatch::comb_dispatch() {
     if (inst_r[i].valid) {
       switch (inst_r[i].uop.type) {
       case ADD:
-        if (i < FETCH_WIDTH / 2)
-          to_iq[IQ_INTM][i] = true;
-        else
-          to_iq[IQ_INTD][i] = true;
+        to_iq[i % 4][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_ADD;
         break;
@@ -119,7 +122,7 @@ void Dispatch::comb_dispatch() {
 
         break;
       case BR:
-        if (i < FETCH_WIDTH / 2)
+        if (i % 2)
           to_iq[IQ_BR0][i] = true;
         else
           to_iq[IQ_BR1][i] = true;
@@ -129,19 +132,23 @@ void Dispatch::comb_dispatch() {
 
         break;
       case LOAD:
-        to_iq[IQ_LD][i] = true;
+        if (i % 2)
+          to_iq[IQ_LD0][i] = true;
+        else
+          to_iq[IQ_LD1][i] = true;
+
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_LOAD;
 
         break;
       case JALR:
-        if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
+        to_iq[i % 4][i] = true;
+        if (i % 2) {
           to_iq[IQ_BR0][i] = true;
         } else {
-          to_iq[IQ_INTD][i] = true;
           to_iq[IQ_BR1][i] = true;
         }
+
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_ADD;
         pre_dis_uop[3 * i].uop.imm = 4;
@@ -153,17 +160,13 @@ void Dispatch::comb_dispatch() {
         break;
       case JAL:
 #ifdef CONFIG_BPU
-        if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
-        } else {
-          to_iq[IQ_INTD][i] = true;
-        }
+        to_iq[i / 2][i] = true;
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_ADD;
         pre_dis_uop[3 * i].uop.imm = 4;
 
 #else
-        if (i < FETCH_WIDTH / 2) {
+        if (i % 2) {
           to_iq[IQ_INTM][i] = true;
           to_iq[IQ_BR0][i] = true;
         } else {
@@ -182,8 +185,14 @@ void Dispatch::comb_dispatch() {
 
         break;
       case STORE:
-        to_iq[IQ_STA][i] = true;
-        to_iq[IQ_STD][i] = true;
+        if (i % 2) {
+          to_iq[IQ_STA0][i] = true;
+          to_iq[IQ_STD0][i] = true;
+        } else {
+          to_iq[IQ_STA1][i] = true;
+          to_iq[IQ_STD1][i] = true;
+        }
+
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_STA;
         pre_dis_uop[3 * i].uop.src1_en = true;
@@ -197,17 +206,22 @@ void Dispatch::comb_dispatch() {
 
       case AMO:
         if (inst_r[i].uop.amoop == LR) {
-          to_iq[IQ_LD][i] = true;
+          if (i % 2)
+            to_iq[IQ_LD0][i] = true;
+          else
+            to_iq[IQ_LD1][i] = true;
           pre_dis_uop[3 * i] = inst_alloc[i];
           pre_dis_uop[3 * i].uop.op = UOP_LOAD;
           pre_dis_uop[3 * i].uop.src2_en = false;
         } else if (inst_r[i].uop.amoop == SC) {
-          if (i < FETCH_WIDTH / 2)
-            to_iq[IQ_INTM][i] = true;
-          else
-            to_iq[IQ_INTD][i] = true;
-          to_iq[IQ_STA][i] = true;
-          to_iq[IQ_STD][i] = true;
+          to_iq[i % 4][i] = true;
+          if (i % 2) {
+            to_iq[IQ_STA0][i] = true;
+            to_iq[IQ_STD0][i] = true;
+          } else {
+            to_iq[IQ_STA1][i] = true;
+            to_iq[IQ_STD1][i] = true;
+          }
 
           pre_dis_uop[3 * i] = inst_alloc[i];
           pre_dis_uop[3 * i].uop.op = UOP_ADD;
@@ -223,9 +237,16 @@ void Dispatch::comb_dispatch() {
           pre_dis_uop[3 * i + 2].uop.op = UOP_STD;
           pre_dis_uop[3 * i + 2].uop.src1_en = false;
         } else {
-          to_iq[IQ_LD][i] = true;
-          to_iq[IQ_STA][i] = true;
-          to_iq[IQ_STD][i] = true;
+
+          if (i % 2) {
+            to_iq[IQ_LD0][i] = true;
+            to_iq[IQ_STA0][i] = true;
+            to_iq[IQ_STD0][i] = true;
+          } else {
+            to_iq[IQ_LD1][i] = true;
+            to_iq[IQ_STA1][i] = true;
+            to_iq[IQ_STD1][i] = true;
+          }
           pre_dis_uop[3 * i] = inst_alloc[i];
           pre_dis_uop[3 * i].uop.op = UOP_LOAD;
           pre_dis_uop[3 * i].uop.src2_en = false;
@@ -304,11 +325,14 @@ void Dispatch::comb_dispatch() {
         if ((inst_r[idx].uop.type == JALR || inst_r[idx].uop.type == JAL) &&
             i >= IQ_BR0) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == STORE && i == IQ_STD) {
+        } else if (inst_r[idx].uop.type == STORE &&
+                   (i == IQ_STD0 || i == IQ_STD1)) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == AMO && i == IQ_STA) {
+        } else if (inst_r[idx].uop.type == AMO &&
+                   (i == IQ_STA0 || i == IQ_STA1)) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == AMO && i == IQ_STD) {
+        } else if (inst_r[idx].uop.type == AMO &&
+                   (i == IQ_STD0 || i == IQ_STD1)) {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 2].uop;
         } else {
           out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx].uop;

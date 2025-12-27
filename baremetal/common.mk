@@ -49,7 +49,7 @@ CFLAGS += -mcmodel=$(RISCV_MCMODEL)  -O2 --specs=nosys.specs  -gdwarf
 $(TARGET): $(LINK_OBJS) $(LINK_DEPS) Makefile
 	$(RISCV_GCC) $(CFLAGS) $(INCLUDES) $(LINK_OBJS) -o $@ $(LDFLAGS)
 	$(RISCV_OBJCOPY) -O binary $@ $@.bin
-	$(RISCV_OBJDUMP) -alDS -M no-aliases $@ > $@.dump
+	$(RISCV_OBJDUMP) $@ -S > $@.dump
 
 $(ASM_OBJS): %.o: %.S
 	$(RISCV_GCC) $(CFLAGS) $(INCLUDES) -c -o $@ $<

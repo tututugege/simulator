@@ -166,7 +166,7 @@ void ROB::comb_commit() {
   out.rob2dis->rob_flag = flag;
 
   stall_cycle++;
-  if (stall_cycle > 1000) {
+  if (stall_cycle > 500) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -217,11 +217,14 @@ void ROB::comb_complete() {
   //  执行完毕的标记
   for (int i = 0; i < ISSUE_WAY; i++) {
     if (in.prf2rob->entry[i].valid) {
-      int bank_idx = in.prf2rob->entry[i].uop.rob_idx & 0b11;
-      int line_idx = in.prf2rob->entry[i].uop.rob_idx >> 2;
+      int bank_idx = in.prf2rob->entry[i].uop.rob_idx &
+                     ((1 << __builtin_ctz(ROB_BANK_NUM)) - 1);
+      int line_idx =
+          in.prf2rob->entry[i].uop.rob_idx >> __builtin_ctz(ROB_BANK_NUM);
+
       entry_1[bank_idx][line_idx].uop.cplt_num++;
 
-      if (i == IQ_LD) {
+      if (i == IQ_LD0 || i == IQ_LD1) {
         if (is_page_fault(in.prf2rob->entry[i].uop)) {
           entry_1[bank_idx][line_idx].uop.result =
               in.prf2rob->entry[i].uop.result;
@@ -229,7 +232,7 @@ void ROB::comb_complete() {
         }
       }
 
-      if (i == IQ_STA) {
+      if (i == IQ_STA0 || i == IQ_STA1) {
         if (is_page_fault(in.prf2rob->entry[i].uop)) {
           entry_1[bank_idx][line_idx].uop.result =
               in.prf2rob->entry[i].uop.result;
@@ -255,16 +258,21 @@ void ROB::comb_complete() {
 void ROB::comb_branch() {
   // 分支预测失败
   if (in.dec_bcast->mispred && !out.rob_bcast->flush) {
-    enq_ptr_1 = ((in.dec_bcast->redirect_rob_idx >> 2) + 1) % (ROB_LINE_NUM);
+    enq_ptr_1 =
+        ((in.dec_bcast->redirect_rob_idx >> __builtin_ctz(ROB_BANK_NUM)) + 1) %
+        (ROB_LINE_NUM);
     count_1 = count - (enq_ptr + ROB_LINE_NUM - enq_ptr_1) % ROB_LINE_NUM;
 
     if (enq_ptr_1 > enq_ptr) {
       flag_1 = !flag;
     }
 
-    for (int i = (in.dec_bcast->redirect_rob_idx & 0b11) + 1; i < ROB_BANK_NUM;
-         i++) {
-      entry_1[i][in.dec_bcast->redirect_rob_idx >> 2].valid = false;
+    for (int i = (in.dec_bcast->redirect_rob_idx &
+                  ((1 << __builtin_ctz(ROB_BANK_NUM)) - 1)) +
+                 1;
+         i < ROB_BANK_NUM; i++) {
+      entry_1[i][in.dec_bcast->redirect_rob_idx >> __builtin_ctz(ROB_BANK_NUM)]
+          .valid = false;
     }
   }
 }
