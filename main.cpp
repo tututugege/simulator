@@ -8,7 +8,7 @@
 
 namespace fs = std::filesystem;
 using namespace std;
-extern Ref_cpu ref_cpu;
+extern RefCpu ref_cpu;
 
 // 1. 定义配置结构
 struct SimConfig {

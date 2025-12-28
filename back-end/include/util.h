@@ -4,13 +4,7 @@
 #define LOOP_INC(idx, length) idx = (idx + 1) % (length)
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
 
-#ifdef CONFIG_BPU
 inline bool is_branch(Inst_type type) { return type == BR || type == JALR; }
-#else
-inline bool is_branch(Inst_type type) {
-  return type == BR || type == JALR || type == JAL;
-}
-#endif
 
 inline bool is_store(Inst_uop uop) {
   return uop.type == STORE || uop.type == AMO && uop.amoop != LR;

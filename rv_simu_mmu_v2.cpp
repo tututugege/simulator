@@ -1,5 +1,5 @@
 #include "BPU/target_predictor/btb.h"
-#include "Dcache_Utils.h"
+#include "oracle.h"
 #include <RISCV.h>
 #include <SimCpu.h>
 #include <TOP.h>
@@ -21,8 +21,8 @@ void SimCpu::init() {
   back.init();
   mmu.reset();
 
-#ifdef CONFIG_BPU
   // reset
+#ifdef CONFIG_BPU
   front_in.reset = true;
   front_in.FIFO_read_enable = true;
   front_top(&front_in, &front_out);
@@ -54,9 +54,7 @@ void SimCpu::cycle() {
 #endif
 
   // step2: feedback to front-end
-#ifdef CONFIG_BPU
   back2front_comb();
-#endif
 
   back.seq();
 
@@ -85,47 +83,13 @@ void SimCpu::front_cycle() {
 
   if (!ctx.stall || ctx.misprediction || ctx.exception) {
 
-#if defined(CONFIG_BPU)
-
     front_in.FIFO_read_enable = true;
     front_in.refetch = (ctx.misprediction || ctx.exception);
+
+#ifdef CONFIG_BPU
     front_top(&front_in, &front_out);
-
 #else
-    for (int j = 0; j < FETCH_WIDTH; j++) {
-      front_out.pc[j] = number_PC;
-      front_out.FIFO_valid = true;
-      front_out.inst_valid[j] = true;
-
-      uint32_t p_addr;
-
-      bool mstatus[32], sstatus[32];
-
-      cvt_number_to_bit_unsigned(mstatus, back.out.mstatus, 32);
-
-      cvt_number_to_bit_unsigned(sstatus, back.out.sstatus, 32);
-
-      if ((back.out.satp & 0x80000000) && back.out.privilege != 3) {
-
-        front_out.page_fault_inst[j] =
-            !va2pa(p_addr, number_PC, back.out.satp, 0, mstatus, sstatus,
-                   back.out.privilege, p_memory);
-        if (front_out.page_fault_inst[j]) {
-          front_out.instructions[j] = INST_NOP;
-        } else {
-          front_out.instructions[j] = p_memory[p_addr / 4];
-        }
-      } else {
-        front_out.page_fault_inst[j] = false;
-        front_out.instructions[j] = p_memory[number_PC / 4];
-      }
-
-      front_out.predict_dir[j] = false;
-      number_PC += 4;
-    }
-
-    front_out.predict_next_fetch_address = number_PC;
-
+    get_oracle(front_in, front_out);
 #endif
 
     bool no_taken = true;
@@ -154,6 +118,7 @@ void SimCpu::front_cycle() {
         no_taken = false;
     }
   } else {
+
 #ifdef CONFIG_BPU
     front_in.FIFO_read_enable = false;
     front_in.refetch = false;
@@ -335,34 +300,4 @@ bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
   }
 
   return false;
-}
-
-void load_image(const std::string &filename) {
-  ifstream inst_data(filename, ios::in);
-  if (!inst_data.is_open()) {
-    cout << "Error: Image " << filename << " does not exist" << endl;
-    exit(1);
-  }
-
-  inst_data.seekg(0, std::ios::end);
-  streamsize size = inst_data.tellg();
-  inst_data.seekg(0, std::ios::beg);
-
-  if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
-                      size)) {
-    std::cerr << "读取文件失败！" << std::endl;
-    exit(1);
-  }
-
-  inst_data.close();
-
-  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
-  p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
-  p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
-  p_memory[uint32_t(0xc / 4)] = 0x00028067;
-  p_memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
-
-#ifdef CONFIG_DIFFTEST
-  init_difftest(size);
-#endif
 }

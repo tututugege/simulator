@@ -1,5 +1,6 @@
 #include "CSR.h"
 #include "IO.h"
+#include "oracle.h"
 #include "ref.h"
 #include <RISCV.h>
 #include <TOP.h>
@@ -709,6 +710,10 @@ void Back_Top::load_image(const std::string &filename) {
 
 #ifdef CONFIG_DIFFTEST
   init_difftest(size);
+#endif
+
+#ifndef CONFIG_BPU
+  init_oracle(size);
 #endif
 }
 

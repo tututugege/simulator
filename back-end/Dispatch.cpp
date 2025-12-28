@@ -147,7 +147,6 @@ void Dispatch::comb_dispatch() {
         pre_dis_uop[3 * i + 1].uop.dest_en = false;
         break;
       case JAL:
-#ifdef CONFIG_BPU
         if (i < FETCH_WIDTH / 2) {
           to_iq[IQ_INTM][i] = true;
         } else {
@@ -156,24 +155,6 @@ void Dispatch::comb_dispatch() {
         pre_dis_uop[3 * i] = inst_alloc[i];
         pre_dis_uop[3 * i].uop.op = UOP_ADD;
         pre_dis_uop[3 * i].uop.imm = 4;
-
-#else
-        if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
-          to_iq[IQ_BR0][i] = true;
-        } else {
-          to_iq[IQ_INTD][i] = true;
-          to_iq[IQ_BR1][i] = true;
-        }
-
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_ADD;
-        pre_dis_uop[3 * i].uop.imm = 4;
-        pre_dis_uop[3 * i + 1] = inst_alloc[i];
-        pre_dis_uop[3 * i + 1].uop.op = UOP_JUMP;
-        pre_dis_uop[3 * i + 1].uop.src1_en = false;
-        pre_dis_uop[3 * i + 1].uop.dest_en = false;
-#endif
 
         break;
       case STORE:

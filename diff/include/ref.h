@@ -73,7 +73,7 @@ typedef struct CPU_state {
   bool store;
 } CPU_state;
 
-class Ref_cpu {
+class RefCpu {
 public:
   uint32_t *memory;
   uint32_t Instruction;
@@ -107,4 +107,10 @@ public:
   void store_data();
   bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
   bool va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
+
+  bool is_br;
+  bool br_taken;
+
+  bool is_csr;
+  bool is_exception;
 };

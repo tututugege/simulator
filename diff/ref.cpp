@@ -1,4 +1,5 @@
 #include "ref.h"
+#include "CSR.h"
 #include "RISCV.h"
 #include "SimCpu.h"
 #include "config.h"
@@ -134,9 +135,7 @@ uint32_t f32_classify(float32_t f) {
   return res;
 }
 
-int cvt_number_to_csr(int csr_idx);
-
-void Ref_cpu::init(uint32_t reset_pc) {
+void RefCpu::init(uint32_t reset_pc) {
   state.pc = reset_pc;
   memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
   for (int i = 0; i < 32; i++) {
@@ -155,7 +154,8 @@ void Ref_cpu::init(uint32_t reset_pc) {
   page_fault_store = false;
 }
 
-void Ref_cpu::exec() {
+void RefCpu::exec() {
+  is_csr = is_exception = is_br = br_taken = false;
   illegal_exception = page_fault_load = page_fault_inst = page_fault_store =
       asy = false;
   state.store = false;
@@ -163,11 +163,11 @@ void Ref_cpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    if (fast_run) {
-      page_fault_inst = !va2pa(p_addr, state.pc, 0);
-    } else {
-      page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
-    }
+#ifdef CONFIG_RUN_REF
+    page_fault_inst = !va2pa(p_addr, state.pc, 0);
+#else
+    page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
+#endif
 
     if (page_fault_inst) {
       exception(state.pc);
@@ -192,7 +192,8 @@ void Ref_cpu::exec() {
   RISCV();
 }
 
-void Ref_cpu::exception(uint32_t trap_val) {
+void RefCpu::exception(uint32_t trap_val) {
+  is_exception = true;
   uint32_t next_pc = state.pc + 4;
 
   // 重新获取当前状态（因为exec可能没传进来最新的）
@@ -398,7 +399,7 @@ void Ref_cpu::exception(uint32_t trap_val) {
   state.pc = next_pc;
 }
 
-void Ref_cpu::RISCV() {
+void RefCpu::RISCV() {
   // === 优化 1: 极速解码 ===
   // 使用 BITS 宏直接提取字段，完全替代 bool 数组操作
   uint32_t opcode = BITS(Instruction, 6, 0);
@@ -495,6 +496,11 @@ void Ref_cpu::RISCV() {
     exception(0);
   } else if (opcode == number_10_opcode_ecall) {
     // SYSTEM 指令 (CSR, WFI, MRET等)
+    if (Instruction == INST_WFI) {
+      is_csr = false;
+    } else {
+      is_csr = true;
+    }
     RV32CSR();
   } else if (opcode == number_11_opcode_lrw) {
     RV32A();
@@ -510,7 +516,7 @@ void Ref_cpu::RISCV() {
   state.gpr[0] = 0;
 }
 
-void Ref_cpu::RV32Zfinx() {
+void RefCpu::RV32Zfinx() {
 
   uint32_t next_pc = state.pc + 4;
   // 1. 解码基础字段
@@ -729,7 +735,7 @@ skip_flags_update:
   state.pc = next_pc;
 }
 
-void Ref_cpu::RV32CSR() {
+void RefCpu::RV32CSR() {
   // pc + 4
   uint32_t next_pc = state.pc + 4;
 
@@ -830,7 +836,7 @@ void Ref_cpu::RV32CSR() {
   state.pc = next_pc;
 }
 
-void Ref_cpu::RV32A() {
+void RefCpu::RV32A() {
   // pc + 4
   uint32_t next_pc = state.pc + 4;
   uint32_t funct5 = BITS(Instruction, 31, 27);
@@ -845,21 +851,26 @@ void Ref_cpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+#ifdef CONFIG_RUN_REF
     bool page_fault;
 
-    if (fast_run) {
-      if (funct5 == 2) {
-        page_fault = !va2pa(p_addr, v_addr, 1);
-      } else {
-        page_fault = !va2pa(p_addr, v_addr, 2);
-      }
+    if (funct5 == 2) {
+      page_fault = !va2pa(p_addr, v_addr, 1);
     } else {
-      if (funct5 == 2) {
-        page_fault = !va2pa_fixed(p_addr, v_addr, 1);
-      } else {
-        page_fault = !va2pa_fixed(p_addr, v_addr, 2);
-      }
+      page_fault = !va2pa(p_addr, v_addr, 2);
     }
+
+#else
+
+    bool page_fault;
+
+    if (funct5 == 2) {
+      page_fault = !va2pa_fixed(p_addr, v_addr, 1);
+    } else {
+      page_fault = !va2pa_fixed(p_addr, v_addr, 2);
+    }
+
+#endif
 
     if (page_fault) {
       if (funct5 == 2) {
@@ -953,7 +964,7 @@ void Ref_cpu::RV32A() {
   state.pc = next_pc;
 }
 
-void Ref_cpu::RV32IM() {
+void RefCpu::RV32IM() {
   // pc + 4
   uint32_t next_pc = state.pc + 4;
   uint32_t opcode = BITS(Instruction, 6, 0);
@@ -977,50 +988,61 @@ void Ref_cpu::RV32IM() {
     break;
   }
   case number_2_opcode_jal: { // jal
+    is_br = true;
+    br_taken = true;
     next_pc = state.pc + immJ(Instruction);
     state.gpr[reg_d_index] = state.pc + 4;
     break;
   }
   case number_3_opcode_jalr: { // jalr
+    is_br = true;
+    br_taken = true;
     bool bit_temp[32];
     next_pc = (reg_rdata1 + immI(Instruction)) & 0xFFFFFFFC;
     state.gpr[reg_d_index] = state.pc + 4;
     break;
   }
   case number_4_opcode_beq: { // beq, bne, blt, bge, bltu, bgeu
+    is_br = true;
     switch (funct3) {
     case 0: { // beq
       if (reg_rdata1 == reg_rdata2) {
+        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 1: { // bne
       if (reg_rdata1 != reg_rdata2) {
+        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 4: { // blt
       if ((int32_t)reg_rdata1 < (int32_t)reg_rdata2) {
+        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 5: { // bge
       if ((int32_t)reg_rdata1 >= (int32_t)reg_rdata2) {
+        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 6: { // bltu
       if ((uint32_t)reg_rdata1 < (uint32_t)reg_rdata2) {
+        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
     }
     case 7: { // bgeu
       if ((uint32_t)reg_rdata1 >= (uint32_t)reg_rdata2) {
+        br_taken = true;
         next_pc = (state.pc + immB(Instruction));
       }
       break;
@@ -1032,11 +1054,11 @@ void Ref_cpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      if (fast_run) {
-        page_fault_load = !va2pa(p_addr, v_addr, 1);
-      } else {
-        page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
-      }
+#ifdef CONFIG_RUN_REF
+      page_fault_load = !va2pa(p_addr, v_addr, 1);
+#else
+      page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
+#endif
     }
 
     if (page_fault_load) {
@@ -1084,11 +1106,11 @@ void Ref_cpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      if (fast_run) {
-        page_fault_store = !va2pa(p_addr, v_addr, 2);
-      } else {
-        page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
-      }
+#ifdef CONFIG_RUN_REF
+      page_fault_store = !va2pa(p_addr, v_addr, 2);
+#else
+      page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
+#endif
     }
 
     if (page_fault_store) {
@@ -1303,7 +1325,7 @@ void Ref_cpu::RV32IM() {
   state.pc = next_pc;
 }
 
-void Ref_cpu::store_data() {
+void RefCpu::store_data() {
 
   uint32_t p_addr = state.store_addr;
   int offset = p_addr & 0x3;
@@ -1334,8 +1356,9 @@ void Ref_cpu::store_data() {
     char temp;
     temp = wdata & 0x000000ff;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
-    if (fast_run)
-      cout << temp;
+#ifdef CONFIG_RUN_REF_PRINT
+    cout << temp;
+#endif
   }
 
   if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 7) {
@@ -1356,11 +1379,13 @@ void Ref_cpu::store_data() {
     state.csr[csr_sip] = state.csr[csr_sip] & ~(1 << 9);
   }
 
+#ifndef CONFIG_RUN_REF
   state.store_data = state.store_data << offset * 8;
   state.store_strb = state.store_strb << offset * 8;
+#endif
 }
 
-bool Ref_cpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
+bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   uint32_t mstatus = state.csr[csr_mstatus];
   uint32_t sstatus = state.csr[csr_sstatus];
   uint32_t satp = state.csr[csr_satp];
@@ -1495,7 +1520,7 @@ bool Ref_cpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
  * 目的：当 SFENCE.VMA 还没有执行、存在两种合法的页表映射时，保证
  * DUT 与参考模型的页表映射一致，避免 difftest 失败。
  */
-bool Ref_cpu::va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
+bool RefCpu::va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   bool ret = va2pa(p_addr, v_addr, type);
 #ifndef CONFIG_LOOSE_VA2PA
   return ret;

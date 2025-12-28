@@ -89,8 +89,8 @@ using namespace std;
 #define WARMUP 100000000
 
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
 #define CONFIG_MMU
+#define CONFIG_BPU
 #define CONFIG_CACHE
 // #define ENABLE_MULTI_BR
 
