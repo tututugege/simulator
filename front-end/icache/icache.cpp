@@ -3,6 +3,8 @@
 #include "../frontend.h"
 #include "RISCV.h"
 #include "SimCpu.h"
+#include "TOP.h"
+#include "config.h"
 #include <cstdint>
 #include <cstdio>
 // no actual icache, just a simple simulation
@@ -13,6 +15,7 @@
 ICache icache;
 
 extern uint32_t *p_memory;
+extern Back_Top back;
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
            bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
 

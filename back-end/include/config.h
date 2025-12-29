@@ -57,7 +57,7 @@ using namespace std;
 #define ALU_NUM 2
 #define BRU_NUM 2
 
-#define LOG_START 0
+#define LOG_START 200000
 // #define LOG_ENABLE
 
 #ifndef LOG_ENABLE
@@ -229,7 +229,7 @@ typedef struct {
   wire7_t preg;
 } WakeInfo;
 
-class Perf_count {
+class PerfCount {
 public:
   bool perf_start = false;
   uint64_t cycle = 0;
@@ -366,7 +366,7 @@ extern long long sim_time;
 
 class SimContext {
 public:
-  Perf_count perf;
+  PerfCount perf;
   bool sim_end = false;
   bool stall = false;
   bool misprediction = false;

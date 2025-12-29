@@ -1,1 +1,5 @@
 *.o
+new_coremark/*.o
+new_coremark/*.dump
+new_dhrystone/*.o
+new_dhrystone/*.dump
