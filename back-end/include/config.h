@@ -64,7 +64,7 @@ using namespace std;
 #define BRU_NUM 2
 
 #define LOG_START 0
-#define LOG 1
+#define LOG 0
 #define MEM_LOG 0
 
 extern long long sim_time;
