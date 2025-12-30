@@ -116,9 +116,6 @@ void difftest_skip() {
 }
 
 void difftest_step(bool check) {
-  if (sim_time == 808634) {
-    cout << endl << hex << ref_cpu.state.gpr[10] << endl;
-  }
   ref_cpu.exec();
   if (check)
     checkregs();

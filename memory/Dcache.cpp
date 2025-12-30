@@ -90,7 +90,6 @@ void Dcache::comb_s2() {
 
   uncache_access = (s2_reg_ld.uop.page_fault_load == true) |
                    (s2_reg_ld.addr == 0x1fd0e000) |
-                   ((s2_reg_ld.addr & 0xfffffff0) == 0x10000000) |
                    (s2_reg_ld.addr == 0x1fd0e004);
 
   if (s2_reg_st.valid) {
