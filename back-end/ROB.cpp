@@ -167,7 +167,6 @@ void ROB::comb_commit() {
         out.rob2csr->commit = true;
       } else if (entry[single_idx][deq_ptr].uop.type == SFENCE_VMA) {
         out.rob_bcast->fence = true;
-        cout << "fence" << endl;
       } else {
         if (entry[single_idx][deq_ptr].uop.type != CSR &&
             entry[single_idx][deq_ptr].uop.type != SFENCE_VMA) {
@@ -237,7 +236,7 @@ void ROB::comb_commit() {
     // << endl; cout << "dec2front ready: " << dec <<
     // back.idu.out.dec2front->ready << endl;
 
-    exit(1);
+    // exit(1);
   }
 }
 

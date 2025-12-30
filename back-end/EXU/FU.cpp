@@ -264,6 +264,27 @@ void ldu(Inst_uop &inst, bool mmu_page_fault, uint32_t mmu_ppn, Mem_REQ *&out) {
     data = cpu.ctx.perf.commit_num;
   } else if (p_addr == 0x1fd0e004) {
     data = 0;
+  } else if ((p_addr & 0xFFFFFFF0) == UART_BASE) {
+    data = p_memory[p_addr >> 2];
+    data = data >> (offset * 8);
+    if (size == 0) {
+      mask = 0xFF;
+      if (data & 0x80)
+        sign = 0xFFFFFF00;
+    } else if (size == 0b01) {
+      mask = 0xFFFF;
+      if (data & 0x8000)
+        sign = 0xFFFF0000;
+    } else {
+      mask = 0xFFFFFFFF;
+    }
+
+    data = data & mask;
+
+    // 有符号数
+    if (!(inst.func3 & 0b100)) {
+      data = data | sign;
+    }
   }
 
   if (!ret) {

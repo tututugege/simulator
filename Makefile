@@ -34,7 +34,7 @@ clean:
 	rm -rf ./baremetal/test.code
 
 gdb:
-	g++ $(CXXINCLUDE) $(CXXSRC) -g -march=native -lz
+	g++ $(CXXINCLUDE) $(CXXSRC) -O0 -g -march=native -lz
 	gdb --args ./a.out $(IMG)
 
 gdb_linux:

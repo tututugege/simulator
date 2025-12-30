@@ -83,8 +83,6 @@ using namespace std;
 
 #define DEBUG_ADDR 0x807a1848 // 0x807a4000
 #define CONFIG_DIFFTEST
-// #define CONFIG_RUN_REF
-// #define CONFIG_RUN_CKPT
 #define SIMPOINT_INTERVAL 100000000
 #define WARMUP 100000000
 
@@ -371,5 +369,6 @@ public:
   bool stall = false;
   bool misprediction = false;
   bool exception = false;
+  bool is_ckpt;
   uint32_t *p_memory;
 };

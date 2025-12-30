@@ -1,6 +1,5 @@
 #include "include/icache_module.h"
 #include <cstring>
-#include <iostream>
 
 using namespace icache_module_n;
 
@@ -30,16 +29,12 @@ void ICache::reset() {
   replace_idx_next = 0;
   ppn_r = 0;
   mem_gnt = 0;
-  pipe1_to_pipe2.valid_r = false;
-  pipe2_to_pipe1.ready = true; // initially ready
 }
 
 void ICache::set_refetch() {
   // 出现了重取指令信号，重新设置状态
   state = IDLE;
   mem_axi_state = AXI_IDLE;
-  pipe1_to_pipe2.valid_r = false;
-  pipe2_to_pipe1.ready = true; // initially ready
 }
 
 void ICache::comb() {
@@ -133,7 +128,7 @@ void ICache::comb_pipe1() {
    * Channel 2: pipe1 to IFU
    */
   // Set ready signal for IFU - only ready when pipe2 is ready to accept data
-  io.out.ifu_req_ready = pipe2_to_pipe1.ready;
+  io.out.ifu_req_ready = pipe1_to_pipe2.valid && pipe2_to_pipe1.ready;
 }
 
 /*
@@ -165,9 +160,9 @@ void ICache::comb_pipe2() {
   io.out.mem_resp_ready = false;
   io.out.mem_req_valid = false;
   io.out.ifu_resp_valid = false;
-  io.out.ifu_page_fault = false; // default: no page fault
   mem_axi_state_next = mem_axi_state;
-  pipe2_to_pipe1.ready = false;
+  pipe2_to_pipe1.ready = (state == IDLE); 
+  // pipe2_to_pipe1.ready &= (state_next == IDLE); // state_next will be calculated later
   
   switch (state) {
     case IDLE:
@@ -175,17 +170,6 @@ void ICache::comb_pipe2() {
       // - pipe2 already has valid data
       // - ppn from MMU is valid
       if (pipe1_to_pipe2.valid_r && io.in.ppn_valid) {
-        // deal with page fault
-        if (io.in.page_fault) {
-          for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = 0; // return NOPs
-          }
-          io.out.ifu_resp_valid = true; // response valid signal for IFU
-          io.out.ifu_page_fault = true; // page fault signal for IFU
-          pipe2_to_pipe1.ready = true;  // ready for next input
-          state_next = IDLE;
-          return;
-        }
         // Check if the tag matches
         bool hit = false;
         for (uint32_t way = 0; way < way_cnt; ++way) {
@@ -201,15 +185,11 @@ void ICache::comb_pipe2() {
         }
         // set wire signals
         io.out.ifu_resp_valid = hit; // response valid signal for IFU
+        io.out.ifu_req_ready = hit; // ready signal for IFU
         pipe2_to_pipe1.ready = hit; // only ready when hit
         state_next = hit ? IDLE : SWAP_IN;
-      } else if (pipe1_to_pipe2.valid_r && !io.in.ppn_valid) {
-        // waiting for valid input from MMU
-        pipe2_to_pipe1.ready = false;
-        state_next = IDLE;
       } else {
-        // waiting for valid input from pipe1
-        pipe2_to_pipe1.ready = true;
+        // waiting for valid input from pipe1 and MMU
         state_next = IDLE;
       }
       // 默认只有在 SWAP_IN 状态下才会向 memory 发起请求
@@ -309,9 +289,6 @@ void ICache::seq_pipe1() {
       pipe1_to_pipe2.cache_set_valid_r[way] = pipe1_to_pipe2.cache_set_valid_w[way];
     }
     pipe1_to_pipe2.index_r = pipe1_to_pipe2.index_w;
-  } else if (!pipe2_to_pipe1.ready) {
-    // hold the data in pipe2 when pipe2 is not ready
-    pipe1_to_pipe2.valid_r = true;
   }
 
   if (io.in.ppn_valid && io.out.ppn_ready) {

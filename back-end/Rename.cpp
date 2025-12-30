@@ -276,14 +276,17 @@ void Rename ::comb_commit() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (in.rob_commit->commit_entry[i].valid) {
       ctx->perf.commit_num++;
-      if (ctx->perf.commit_num == WARMUP && !ctx->perf.perf_start) {
-        ctx->perf.perf_reset();
-        ctx->perf.perf_start = true;
-      }
 
-      if (ctx->perf.commit_num == SIMPOINT_INTERVAL && ctx->perf.perf_start) {
-        ctx->perf.perf_print();
-        ctx->sim_end = true;
+      if (ctx->is_ckpt) {
+        if (ctx->perf.commit_num == WARMUP && !ctx->perf.perf_start) {
+          ctx->perf.perf_reset();
+          ctx->perf.perf_start = true;
+        }
+
+        if (ctx->perf.commit_num == SIMPOINT_INTERVAL && ctx->perf.perf_start) {
+          ctx->perf.perf_print();
+          ctx->sim_end = true;
+        }
       }
 
       Inst_uop *inst = &in.rob_commit->commit_entry[i].uop;

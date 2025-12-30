@@ -187,6 +187,28 @@ void SimCpu::back2mmu_comb() {
   // for flush tlb:
   // - if request flush, set flush_valid = true in back-end later
   mmu.io.in.tlb_flush.flush_valid = false;
+
+  // mmu.io.in.mmu_dcache_req = *back.out.dcache2ptw_req;
+  // mmu.io.in.mmu_dcache_resp = *back.out.dcache2ptw_resp;
+
+#if defined(CONFIG_CACHE) && defined(CONFIG_MMU)
+  mmu.io.in.mmu_dcache_req = back.out.dcache2ptw_req;
+  mmu.io.in.mmu_dcache_resp = back.out.dcache2ptw_resp;
+
+  back.in.ptw2dcache_req = mmu.io.out.mmu_dcache_req;
+  back.in.ptw2dcache_resp = mmu.io.out.mmu_dcache_resp;
+#endif
+  // printf("\nmmu.io.in.mmu_dcache_req.ready=%d
+  // sim_time:%lld\n",mmu.io.in.mmu_dcache_req.ready, sim_time);
+  // printf("mmu.io.in.mmu_dcache_resp.valid=%d
+  // mmu.io.in.mmu_dcache_resp.miss=%d mmu.io.in.mmu_dcache_resp.data=0x%08X
+  // sim_time:%lld\n",mmu.io.in.mmu_dcache_resp.valid,
+  // mmu.io.in.mmu_dcache_resp.miss, mmu.io.in.mmu_dcache_resp.data, sim_time);
+  // printf("back.in.ptw2dcache_req.valid=%d back.in.ptw2dcache_req.paddr=0x%08X
+  // sim_time:%lld\n",back.in.ptw2dcache_req.valid,
+  // back.in.ptw2dcache_req.paddr, sim_time);
+  // printf("back.in.ptw2dcache_resp.ready=%d
+  // sim_time:%lld\n",back.in.ptw2dcache_resp.ready, sim_time);
 }
 
 bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,

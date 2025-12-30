@@ -164,6 +164,7 @@ int main(int argc, char *argv[]) {
     std::cout << "[Mode] CKPT: Restoring from Snapshot..." << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.restore_checkpoint(config.target_file);
+    cpu.ctx.is_ckpt = true;
   } else if (config.mode == SimConfig::FAST) {
     std::cout << "[Mode] FAST: Hybrid Execution Strategy" << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;
@@ -184,16 +185,14 @@ int main(int argc, char *argv[]) {
 
   cpu.init();
 
-#ifdef CONFIG_RUN_REF
-  while (1) {
-    difftest_step(false);
-    sim_time++;
-    if (sim_time % 100000000 == 0) {
-      cout << dec << sim_time << endl;
-    }
-  }
-
-#endif
+  // ref_cpu.fast_run = true;
+  // while (1) {
+  //   difftest_step(false);
+  //   sim_time++;
+  //   if (sim_time % 100000000 == 0) {
+  //     cout << dec << sim_time << endl;
+  //   }
+  // }
 
   // main loop
   for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {

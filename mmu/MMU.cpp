@@ -236,9 +236,9 @@ void MMU::comb_arbiter() {
  */
 void MMU::comb_ptw() {
   // 模拟 PTW 与 DCache 的交互
-  ptw.in.dcache_req->ready = true;  // always ready to accept dcache req
-  ptw.in.dcache_resp->valid = true; // always valid dcache resp
-  ptw.in.dcache_resp->miss = true;  // always miss for now
+  // ptw.in.dcache_req->ready = true;  // always ready to accept dcache req
+  // ptw.in.dcache_resp->valid = true; // always valid dcache resp
+  // ptw.in.dcache_resp->miss = true;  // always miss for now
 
   // arbiter between multiple PTW requests
   comb_arbiter();
