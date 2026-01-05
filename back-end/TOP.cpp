@@ -79,6 +79,10 @@ void Back_Top::difftest_cycle() {
 }
 
 void Back_Top::difftest_inst(Inst_uop *inst) {
+  if (inst->pc == 0x00187360) {
+    cout << "yes" << endl;
+  }
+
   if (inst->type == JALR) {
     if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
       ctx->perf.ret_br_num++;

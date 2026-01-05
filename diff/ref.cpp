@@ -164,7 +164,12 @@ void Ref_cpu::exec() {
     if (fast_run) {
       page_fault_inst = !va2pa(p_addr, state.pc, 0);
     } else {
+
+#ifdef CONFIG_MMU
       page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
+#else
+      page_fault_inst = !va2pa(p_addr, state.pc, 0);
+#endif
     }
 
     if (page_fault_inst) {
@@ -852,11 +857,19 @@ void Ref_cpu::RV32A() {
         page_fault = !va2pa(p_addr, v_addr, 2);
       }
     } else {
+#ifdef CONFIG_MMU
       if (funct5 == 2) {
         page_fault = !va2pa_fixed(p_addr, v_addr, 1);
       } else {
         page_fault = !va2pa_fixed(p_addr, v_addr, 2);
       }
+#else
+      if (funct5 == 2) {
+        page_fault = !va2pa(p_addr, v_addr, 1);
+      } else {
+        page_fault = !va2pa(p_addr, v_addr, 2);
+      }
+#endif
     }
 
     if (page_fault) {
@@ -1033,7 +1046,11 @@ void Ref_cpu::RV32IM() {
       if (fast_run) {
         page_fault_load = !va2pa(p_addr, v_addr, 1);
       } else {
+#ifdef CONFIG_MMU
         page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
+#else
+        page_fault_load = !va2pa(p_addr, v_addr, 1);
+#endif
       }
     }
 
@@ -1085,7 +1102,11 @@ void Ref_cpu::RV32IM() {
       if (fast_run) {
         page_fault_store = !va2pa(p_addr, v_addr, 2);
       } else {
+#ifdef CONFIG_MMU
         page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
+#else
+        page_fault_store = !va2pa(p_addr, v_addr, 2);
+#endif
       }
     }
 
