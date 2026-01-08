@@ -56,6 +56,37 @@ void SimCpu::cycle() {
   // step2: feedback to front-end
   back2front_comb();
 
+  // // LOG ROB status
+  // cout << "ROB状态: " << endl;
+  // for (int i = 0; i < ROB_BANK_NUM; i++) {
+  //   for (int j = 0; j < ROB_NUM / 4; j++) {
+  //     Inst_entry *rob_entry = &back.rob.entry[i][j];
+  //     if (rob_entry->valid) {
+  //       cout << "1";
+  //     } else {
+  //       cout << "0";
+  //     }
+  //   }
+  //   cout << endl;
+  // }
+  // // list the valid rob entries
+  // for (int i = 0; i < ROB_BANK_NUM; i++) {
+  //   for (int j = 0; j < ROB_NUM / 4; j++) {
+  //     Inst_entry *rob_entry = &back.rob.entry[i][j];
+  //     if (rob_entry->valid) {
+  //       cout << "ROB Entry valid: PC= " << hex << rob_entry->uop.pc
+  //            << " Inst= " << rob_entry->uop.instruction 
+  //            << " rob_idx= " << dec << (int) rob_entry->uop.rob_idx
+  //            << " inst_idx= " << dec << (int) rob_entry->uop.inst_idx
+  //            << " pc=" << hex << rob_entry->uop.pc
+  //            << " pc_next=" << hex << rob_entry->uop.pc_next
+  //            << " mispred=" << rob_entry->uop.mispred
+  //            << " br_taken=" << rob_entry->uop.br_taken
+  //            << endl;
+  //     }
+  //   }
+  // }
+
   back.seq();
 
 #ifdef CONFIG_MMU

@@ -125,7 +125,7 @@ void BPU_top(struct BPU_in *in, struct BPU_out *out) {
     // }
 #endif
 
-    uint32_t mask = 0xFFFFFFE0;
+    uint32_t mask = ~(ICACHE_LINE_SIZE - 1);
 
     // do TAGE for FETCH_WIDTH instructions
     uint32_t pc_boundry = pc_reg + (FETCH_WIDTH * 4);
