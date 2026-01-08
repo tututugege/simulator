@@ -118,7 +118,7 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
           fifo_in.predecode_target_address[i] = 0;
         }
       }
-      uint32_t mask = 0xFFFFFFE0;
+      uint32_t mask = ~(ICACHE_LINE_SIZE - 1);
       fifo_in.seq_next_pc = icache_out.fetch_pc + (FETCH_WIDTH * 4);
       if ((fifo_in.seq_next_pc & mask) != (icache_out.fetch_pc & mask)) {
         fifo_in.seq_next_pc &= mask;
@@ -179,8 +179,10 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
   if (predecode_checker_valid) {
     // read from PTAB and instFIFO
     ptab_in.read_enable = true;
+    ptab_in.refetch = false;
     ptab_in.write_enable = false;
     fifo_in.read_enable = true;
+    fifo_in.refetch = false;
     fifo_in.write_enable = false;
     instruction_FIFO_top(&fifo_in, &fifo_out);
     PTAB_top(&ptab_in, &ptab_out);
@@ -264,12 +266,7 @@ void front_top(struct front_top_in *in, struct front_top_out *out) {
     for (int j = 0; j < 4; j++) { // TN_MAX = 4
       out->tage_idx[i][j] = front2back_fifo_out.tage_idx[i][j];
     }
-#ifdef USE_TRUE_ICACHE
     out->inst_valid[i] = front2back_fifo_out.inst_valid[i];
-#else
-    out->inst_valid[i] =
-        true; // when not using true icache model, all instructions are valid
-#endif
 
     // if(out->pc[i] == 0x80000a48) {
     //   DEBUG_LOG_SMALL_2("out->pc[%d]: %x, pred_addr: %x\n", i, out->pc[i],

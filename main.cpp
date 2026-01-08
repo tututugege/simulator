@@ -210,6 +210,9 @@ int main(int argc, char *argv[]) {
 
     if (cpu.ctx.sim_end)
       break;
+
+    if (cpu.ctx.perf.commit_num >= MAX_COMMIT_INST)
+      break;
   }
 
   if (sim_time != MAX_SIM_TIME) {
@@ -221,6 +224,8 @@ int main(int argc, char *argv[]) {
   } else {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
+    cout << "\033[1;31m------------------------------\033[0m" << endl;
+    cpu.ctx.perf.perf_print();
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     exit(1);
   }
