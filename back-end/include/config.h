@@ -63,8 +63,8 @@ using namespace std;
 #define STD_NUM 2
 #define BRU_NUM 2
 
-#define LOG_START 0
-#define LOG 0
+#define LOG_START 4333300
+#define LOG (1 && sim_time > LOG_START)
 #define MEM_LOG 0
 
 extern long long sim_time;

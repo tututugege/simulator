@@ -1,4 +1,5 @@
 #include "IO.h"
+#include "SimCpu.h"
 #include <RISCV.h>
 #include <ROB.h>
 #include <TOP.h>
@@ -87,6 +88,12 @@ void ROB::comb_commit() {
             entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
           single_commit = false;
         }
+
+        if (entry[i][deq_ptr].uop.type == SFENCE_VMA &&
+            cpu.back.stq.count != 0) {
+          single_commit = false;
+        }
+
         break;
       }
     }

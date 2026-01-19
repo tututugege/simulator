@@ -10,7 +10,7 @@
 extern Cache cache;
 
 void STQ::comb() {
-  out.stq2front->fence_stall = (state == FENCE);
+  // out.stq2front->fence_stall = (state == FENCE);
   int num = count;
   static int last_ch = 0;
 

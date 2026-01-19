@@ -318,6 +318,10 @@ void ldu(Inst_uop &inst) {
     offset = 0b0;
   }
 
+  if (inst.pc == 0x00187360) {
+    cout << "yes" << endl;
+  }
+
   uint32_t data;
   bool page_fault = !cpu.back.load_data(data, addr, inst.rob_idx);
 

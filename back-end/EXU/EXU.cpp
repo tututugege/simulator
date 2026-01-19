@@ -157,10 +157,10 @@ void FU::exec(Inst_uop &inst) {
     } else if (inst.op == UOP_DIV) { // div
       latency = 1;
     } else if (inst.op == UOP_LOAD) {
-      latency = cache.cache_access(inst.src1_rdata + inst.imm);
-      // latency = 1;
+      // latency = cache.cache_access(inst.src1_rdata + inst.imm);
+      latency = 1;
     } else if (inst.op == UOP_STA) {
-      latency = 2;
+      latency = 1;
     } else {
       latency = 1;
     }
