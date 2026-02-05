@@ -13,7 +13,7 @@ void MEMORY::init() {
 void MEMORY::comb() {
   if (data_cnt > 0 && in.control->wen == 0) {
     out.data->done = true;
-    out.data->last = data_cnt == in.control->len + 1;
+    out.data->last = data_cnt == (uint32_t)in.control->len + 1;
     out.data->data = rdata;
 
   } else if (state == TRANSFER && in.control->wen == 1) {
@@ -29,7 +29,7 @@ void MEMORY::comb() {
 void MEMORY::seq() {
   if (state == TRANSFER) {
     uint32_t addr_offset =
-        ((in.control->addr >> 2) & (0xffffffff << in.control->size) | data_cnt)
+        (((in.control->addr >> 2) & (0xffffffff << in.control->size)) | data_cnt)
         << 2;
 
     if (in.control->wen == 0) {
@@ -106,7 +106,7 @@ void MEMORY::seq() {
              state == LATENCY) {
     state = TRANSFER;
   } else if (in.control->en == true && in.control->wen == 0 &&
-             data_cnt == in.control->len + 1 && state == TRANSFER) { // AXI优化
+             data_cnt == (uint32_t)in.control->len + 1 && state == TRANSFER) { // AXI优化
     state = MEM_IDLE;
   } else if (in.control->en == true && in.control->wen == 1 &&
              in.control->done && in.control->last && state == TRANSFER) {

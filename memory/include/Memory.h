@@ -9,12 +9,12 @@ const int MemorySize = 1<<20; // 1MB内存
 class MEMORY_IN
 {
 public:
-    EXMem_CONTROL* control;
+    ExmemControlIO* control;
 };
 class MEMORY_OUT
 {
 public:
-    EXMem_DATA* data;
+    ExmemDataIO* data;
 };
 
 enum MEMORY_STATE{
@@ -31,14 +31,14 @@ public:
 
     MEMORY_IN in;
     MEMORY_OUT out;
-    reg32_t Latency_cnt;
+    reg<32> Latency_cnt;
 
     MEMORY_STATE state;
 
-    reg32_t data_cnt;
-    reg32_t rdata;
+    reg<32> data_cnt;
+    reg<32> rdata;
 
-    reg1_t donereg;
+    reg<1> donereg;
     void init();
     
 };

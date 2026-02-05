@@ -25,6 +25,8 @@
 #include <frontend.h>
 #include <iostream>
 
+#define ICACHE_LINE_SIZE 32 // Size of a cache line in bytes
+
 namespace icache_module_n {
 // i-Cache State
 enum ICacheState {
@@ -85,7 +87,7 @@ public:
   ICache();
 
   void reset();
-  void set_refetch();
+  void set_refetch(bool fence_i);
   void comb();
   void comb_pipe1();
   void comb_pipe2();

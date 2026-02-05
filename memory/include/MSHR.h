@@ -24,7 +24,7 @@ typedef struct{
     uint32_t wstrb;
     uint32_t wdata;
     
-    Inst_uop uop;
+    InstUop uop;
 }table_entry;
 
 enum MSHR_STATE{
@@ -38,26 +38,26 @@ enum MSHR_STATE{
 
 class MSHR_IN {
 public:
-    Dcache_MSHR* dcache2mshr_ld;
-    Dcache_MSHR* dcache2mshr_st;    
-    Dcache_CONTROL* control;
+    DcacheMshrIO* dcache2mshr_ld;
+    DcacheMshrIO* dcache2mshr_st;    
+    DcacheControlIO* control;
 
-    EXMem_DATA* arbiter2mshr_data;
+    ExmemDataIO* arbiter2mshr_data;
 
-    WB_MSHR* writebuffer2mshr;
+    WbMshrIO* writebuffer2mshr;
 
 };
 class MSHR_OUT {
 public:
-    Mem_RESP* mshr2cpu_resp;
-    Mem_READY* mshr2dcache_ready;
-    EXMem_CONTROL* mshr2arbiter_control;
+    MemRespIO* mshr2cpu_resp;
+    MemReadyIO* mshr2dcache_ready;
+    ExmemControlIO* mshr2arbiter_control;
 
-    MSHR_WB* mshr2writebuffer;
+    MshrWbIO* mshr2writebuffer;
 
-    MSHR_Arbiter* mshr2arbiter;
+    MshrArbiterIO* mshr2arbiter;
 
-    MSHR_FWD* mshr2dcache_fwd;
+    MshrFwdIO* mshr2dcache_fwd;
 
 };
 
@@ -85,5 +85,5 @@ public:
     void table_free(uint32_t idx);
     uint32_t find_entry(uint32_t addr);
     void entry_add(uint32_t idx,uint32_t index,uint32_t tag);
-    void table_add(uint32_t idx,bool type,uint32_t offset,uint32_t reg,uint32_t wstrb,uint32_t wdata,Inst_uop uop);
+    void table_add(uint32_t idx,bool type,uint32_t offset,uint32_t reg,uint32_t wstrb,uint32_t wdata,InstUop uop);
 };

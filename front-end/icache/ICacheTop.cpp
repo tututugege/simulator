@@ -1,12 +1,15 @@
 #include "include/ICacheTop.h"
-#include "../front_module.h"
+#define DEBUG_PRINT 0
 #include "../frontend.h"
 #include "RISCV.h"
-#include "TOP.h"
+// #include "TOP.h"
 #include "config.h" // For SimContext
-#include "cvt.h"
+// #include "cvt.h"
 #include "include/icache_module.h"
 #include "mmu_io.h"
+#include "ref.h"
+#include <BackTop.h>
+#include <Csr.h>
 #include <MMU.h>
 #include <SimCpu.h>
 #include <cstdio>
@@ -18,8 +21,93 @@ extern uint32_t *p_memory;
 extern ICache icache; // Defined in icache.cpp
 
 // Forward declaration if not available in headers
-bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t satp, uint32_t type,
-           bool *mstatus, bool *sstatus, int privilege, uint32_t *p_memory);
+bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
+           CsrStatusIO *status, uint32_t *p_memory) {
+  // === 1. 状态准备 (保持不变) ===
+  uint32_t mstatus = status->mstatus;
+  uint32_t satp = status->satp;
+  uint32_t privilege = status->privilege;
+
+  // 提取控制位
+  bool mxr = (mstatus & MSTATUS_MXR) != 0;
+  bool sum = (mstatus & MSTATUS_SUM) != 0;
+  bool mprv = (mstatus & MSTATUS_MPRV) != 0;
+
+  // 计算有效特权级
+  int eff_priv = privilege;
+  if (type != 0 && mprv) {
+    eff_priv = (mstatus >> MSTATUS_MPP_SHIFT) & 0x3;
+  }
+
+  // === 2. 开启页表漫游循环 ===
+  // SV32 有两级：Level 1 (Superpage) -> Level 0 (4KB Page)
+  uint32_t ppn = satp & 0x3FFFFF;
+
+  for (int level = 1; level >= 0; level--) {
+    // A. 计算当前层级的 VPN 和 PTE 地址
+    // Level 1: shift=22, Level 0: shift=12
+    int vpn_shift = 12 + level * 10;
+    uint32_t vpn = (v_addr >> vpn_shift) & 0x3FF;
+
+    uint32_t pte_addr = (ppn << 12) + (vpn * 4);
+    uint32_t pte = p_memory[pte_addr >> 2]; // 直接读内存 (暂不考虑 Cache 模拟)
+
+    // B. 有效性检查 (!V 或 !R && W)
+    if (!(pte & PTE_V) || (!(pte & PTE_R) && (pte & PTE_W))) {
+      return false;
+    }
+
+    // C. 判断是否为叶子节点 (R=1 或 X=1 表示找到了！)
+    if ((pte & PTE_R) || (pte & PTE_X)) {
+      // 1. 对齐检查 (Superpage 要求低位 PPN 为 0)
+      // 如果是 Level 1，PPN 的低 10 位必须为 0
+      if ((pte >> 10) & ((1 << (level * 10)) - 1)) {
+        return false;
+      }
+
+      // 2. 权限检查 (Permission Check)
+      if (type == 0 && !(pte & PTE_X))
+        return false; // Fetch
+      if (type == 1 && !(pte & PTE_R) && !(mxr && (pte & PTE_X)))
+        return false; // Load
+      if (type == 2 && !(pte & PTE_W))
+        return false; // Store
+
+      // 3. 用户/特权级检查
+      bool is_user_page = (pte & PTE_U) != 0;
+      if (eff_priv == 0 && !is_user_page)
+        return false; // U 访 S
+      if (eff_priv == 1 && is_user_page && !sum)
+        return false; // S 访 U
+
+      // 4. A/D 位检查
+      if (!(pte & PTE_A))
+        return false;
+      if (type == 2 && !(pte & PTE_D))
+        return false;
+
+      // --- D. 计算物理地址 (通用公式) ---
+      // Level 1: mask = 0x3FFFFF (22位), Level 0: mask = 0xFFF (12位)
+      uint32_t mask = (1 << vpn_shift) - 1;
+
+      // 物理地址 = (PTE.PPN 对齐后的高位) | (虚拟地址的低位偏移)
+      // (pte >> 10) << 12 还原出物理基址，& ~mask 清掉低位，换成 v_addr 的低位
+      p_addr = (((pte >> 10) << 12) & ~mask) | (v_addr & mask);
+
+      return true; // ✅ 翻译成功！
+    }
+
+    // D. 如果不是叶子节点，继续向下走
+    if (level == 0) {
+      return false; // Level 0 必须是叶子，否则就是无效页表
+    }
+
+    // 更新 PPN 为下一级页表的基址
+    ppn = (pte >> 10) & 0x3FFFFF;
+  }
+
+  return false; // 兜底
+}
 
 // --- ICacheTop Implementation ---
 
@@ -47,7 +135,7 @@ void TrueICacheTop::comb() {
 
   // deal with "refetch" signal (Async Reset behavior)
   if (in->refetch) {
-    icache_hw.set_refetch();
+    icache_hw.set_refetch(in->fence_i);
     valid_reg = false;
     mem_busy = false;
     mem_latency_cnt = 0;
@@ -76,7 +164,6 @@ void TrueICacheTop::comb() {
       icache_hw.io.in.mem_resp_valid = false;
     }
     bool mem_resp_valid = icache_hw.io.in.mem_resp_valid;
-    bool mem_resp_ready = icache_hw.io.out.mem_resp_ready;
     if (mem_resp_valid) {
       uint32_t mask = ~(ICACHE_LINE_SIZE - 1);
       uint32_t cacheline_base_addr = icache_hw.io.out.mem_req_addr & mask;
@@ -93,7 +180,9 @@ void TrueICacheTop::comb() {
 
   // set input for request to mmu
   cpu.mmu.io.in.mmu_ifu_req.op_type = mmu_n::OP_FETCH;
-  cpu.mmu.io.in.mmu_ifu_resp.ready = true;
+  // [Fix] Only acknowledge MMU response when ICache is actually ready to
+  // consume the PPN
+  cpu.mmu.io.in.mmu_ifu_resp.ready = icache_hw.io.out.ppn_ready;
   if (icache_hw.io.out.ifu_req_ready && icache_hw.io.in.ifu_req_valid) {
     cpu.mmu.io.in.mmu_ifu_req.valid =
         icache_hw.io.out.ifu_req_ready && in->icache_read_valid;
@@ -205,15 +294,9 @@ void SimpleICacheTop::comb() {
   out->fetch_pc = in->fetch_address;
 
   if (in->icache_read_valid) {
-    bool mstatus[32], sstatus[32];
-
-    cvt_number_to_bit_unsigned(mstatus, cpu.back.out.mstatus, 32);
-    cvt_number_to_bit_unsigned(sstatus, cpu.back.out.sstatus, 32);
-
     for (int i = 0; i < FETCH_WIDTH; i++) {
       uint32_t v_addr = in->fetch_address + (i * 4);
-      uint32_t p_addr;
-
+      uint32_t p_addr = 0;
       if (v_addr / ICACHE_LINE_SIZE != (in->fetch_address) / ICACHE_LINE_SIZE) {
         out->fetch_group[i] = INST_NOP;
         out->page_fault_inst[i] = false;
@@ -221,11 +304,12 @@ void SimpleICacheTop::comb() {
         continue;
       }
       out->inst_valid[i] = true;
+      if (in->run_comb_only)
+        continue;
 
       if ((cpu.back.out.satp & 0x80000000) && cpu.back.out.privilege != 3) {
         out->page_fault_inst[i] =
-            !va2pa(p_addr, v_addr, cpu.back.out.satp, 0, mstatus, sstatus,
-                   cpu.back.out.privilege, p_memory);
+            !va2pa(p_addr, v_addr, 0, cpu.back.csr->out.csr_status, p_memory);
         if (out->page_fault_inst[i]) {
           out->fetch_group[i] = INST_NOP;
         } else {
@@ -237,8 +321,10 @@ void SimpleICacheTop::comb() {
       }
 
       if (DEBUG_PRINT) {
-        printf("[icache] pmem_address: %x\n", p_addr);
-        printf("[icache] instruction : %x\n", out->fetch_group[i]);
+        printf("[icache] vaddr: %08x -> paddr: %08x, inst: %08x, satp: %x, "
+               "priv: %d\n",
+               v_addr, p_addr, out->fetch_group[i], cpu.back.out.satp,
+               cpu.back.out.privilege);
       }
     }
   } else {

@@ -29,10 +29,10 @@ private:
   /*
    * Internal Modules
    */
-  TLB tlb;
-  PTW ptw;
   PTW_to_TLB ptw2tlb; // PTW 到 TLB 的接口
   TLB_to_PTW tlb2ptw; // TLB 到 PTW 的接口
+  TLB tlb;
+  PTW ptw;
   enum mmu_n::Privilege privilege;
 
   // wire candidates for arbiter

@@ -29,12 +29,12 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
     while (!ptab.empty()) {
       ptab.pop();
     }
-    // we allow one write to PTAB in refetch cycle...
+    // [Fix] Allow write to PTAB in refetch cycle...
   }
   // when there is new prediction, add it to PTAB
   if (in->write_enable) {
     if (ptab.size() >= PTAB_SIZE) {
-      assert(0); // should not reach here
+      Assert(0); // should not reach here
     }
     PTAB_entry entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -51,8 +51,8 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
     ptab.push(entry);
   }
 
-  // output prediction
-  if (in->read_enable && !ptab.empty()) {
+  // output prediction (Peek)
+  if (!ptab.empty()) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       out->predict_dir[i] = ptab.front().predict_dir[i];
       out->predict_base_pc[i] = ptab.front().predict_base_pc[i];
@@ -64,6 +64,9 @@ void PTAB_top(struct PTAB_in *in, struct PTAB_out *out) {
       }
     }
     out->predict_next_fetch_address = ptab.front().predict_next_fetch_address;
+  }
+
+  if (in->read_enable && !ptab.empty()) {
     ptab.pop();
   }
   out->full = ptab.size() == PTAB_SIZE;

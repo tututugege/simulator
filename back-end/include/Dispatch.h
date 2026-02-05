@@ -2,29 +2,53 @@
 #include "IO.h"
 #include "config.h"
 
-class Back_Top;
+class BackTop;
 
 class DIS_OUT {
 public:
-  Dis_Ren *dis2ren;
-  Dis_Rob *dis2rob;
-  Dis_Iss *dis2iss;
-  Dis_Stq *dis2stq;
+  DisRenIO *dis2ren;
+  DisRobIO *dis2rob;
+  DisIssIO *dis2iss;
+  DisLsuIO *dis2lsu;
 };
 
 class DIS_IN {
 public:
-  Ren_Dis *ren2dis;
-  Rob_Dis *rob2dis;
-  Iss_Dis *iss2dis;
-  Stq_Dis *stq2dis;
-  Prf_Awake *prf_awake;
-  Iss_Awake *iss_awake;
-  Rob_Broadcast *rob_bcast;
-  Dec_Broadcast *dec_bcast;
+  RenDisIO *ren2dis;
+  RobDisIO *rob2dis;
+  IssDisIO *iss2dis;
+  LsuDisIO *lsu2dis;
+  PrfAwakeIO *prf_awake;
+  IssAwakeIO *iss_awake;
+  RobBroadcastIO *rob_bcast;
+  DecBroadcastIO *dec_bcast;
+};
+
+struct UopPacket {
+  int iq_id;   // 目标 IQ
+  InstUop uop; // 微操作内容
 };
 
 class Dispatch {
+private:
+  int decompose_inst(const InstEntry &original_inst, UopPacket *out_uops);
+
+  InstEntry inst_alloc[FETCH_WIDTH];
+
+  // 记录每条指令 Dispatch 是否成功 (comb_dispatch -> comb_fire)
+  bool dispatch_success_flags[FETCH_WIDTH];
+
+  // 辅助 Mask，用于追踪每条指令占用了哪个 STQ 端口
+  wire<4> stq_port_mask[MAX_STQ_DISPATCH_WIDTH];
+
+  struct DispatchCache {
+    int count;                     // 拆分数量
+    int iq_ids[MAX_UOPS_PER_INST]; // 仅保存目标 IQ 的 ID
+  };
+
+  // 用于在 comb_dispatch 和 comb_fire 之间传递数据
+  DispatchCache dispatch_cache[FETCH_WIDTH];
+
 public:
   Dispatch(SimContext *ctx) { this->ctx = ctx; }
   SimContext *ctx;
@@ -38,6 +62,7 @@ public:
   void comb_pipeline();
   void seq();
 
-  Inst_entry inst_r[FETCH_WIDTH];
-  Inst_entry inst_r_1[FETCH_WIDTH];
+  DispatchIO get_hardware_io(); // Hardware Reference
+  InstEntry inst_r[FETCH_WIDTH];
+  InstEntry inst_r_1[FETCH_WIDTH];
 };

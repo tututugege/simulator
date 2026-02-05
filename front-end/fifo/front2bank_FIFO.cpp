@@ -31,11 +31,11 @@ void front2back_FIFO_top(struct front2back_FIFO_in *in, struct front2back_FIFO_o
     while (!front2back_fifo.empty()) {
       front2back_fifo.pop();
     }
-    // we allow write to happen during refetch...
+    // [Fix] Allow write to happen during refetch (fall through)
   }
   if (in->write_enable) {
     if(front2back_fifo.size() >= FRONT2BACK_FIFO_SIZE) {
-      assert(0); // should not reach here
+      Assert(0); // should not reach here
     }
     FRONT2BACK_FIFO_entry entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {

@@ -15,14 +15,14 @@ typedef struct{
 
 class WriteBuffer_IN{
 public:
-    EXMem_DATA* arbiter2writebuffer_data;
-    MSHR_WB* mshr2writebuffer;
+    ExmemDataIO* arbiter2writebuffer_data;
+    MshrWbIO* mshr2writebuffer;
 };
 class WriteBuffer_OUT{
 public:
-    EXMem_CONTROL* writebuffer2arbiter_control;
-    WB_Arbiter* writebuffer2arbiter;
-    WB_MSHR* writebuffer2mshr;
+    ExmemControlIO* writebuffer2arbiter_control;
+    WbArbiterIO* writebuffer2arbiter;
+    WbMshrIO* writebuffer2mshr;
 };
 class WriteBuffer {
 public:

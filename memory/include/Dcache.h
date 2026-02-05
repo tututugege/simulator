@@ -7,16 +7,16 @@
 
 class Dcache_IN {
 public:
-    Mem_REQ* ldq2dcache_req;
-    Mem_REQ* stq2dcache_req;
+    MemReqIO* ldq2dcache_req;
+    MemReqIO* stq2dcache_req;
 
-    Dcache_CONTROL* control;
-    WB_Arbiter_Dcache* wb_arbiter2dcache;
-    WriteBuffer_Dcache* wb2dcache;
+    DcacheControlIO* control;
+    WbArbiterDcacheIO* wb_arbiter2dcache;
+    WritebufferDcacheIO* wb2dcache;
 
-    Mem_READY* mshr2dcache_ready;
+    MemReadyIO* mshr2dcache_ready;
 
-    MSHR_FWD* mshr2dcache_fwd;
+    MshrFwdIO* mshr2dcache_fwd;
 #if defined(CONFIG_MMU)&& defined(CONFIG_CACHE)
     dcache_resp_slave_t *ptw2dcache_resp;
     dcache_req_master_t *ptw2dcache_req;
@@ -24,13 +24,13 @@ public:
 };
 class Dcache_OUT {
 public:
-    Mem_RESP* dcache2ldq_resp;
-    Mem_RESP* dcache2stq_resp;
-    Mem_READY* dcache2ldq_ready;
-    Mem_READY* dcache2stq_ready;
+    MemRespIO* dcache2ldq_resp;
+    MemRespIO* dcache2stq_resp;
+    MemReadyIO* dcache2ldq_ready;
+    MemReadyIO* dcache2stq_ready;
 
-    Dcache_MSHR* dcache2mshr_ld;
-    Dcache_MSHR* dcache2mshr_st;
+    DcacheMshrIO* dcache2mshr_ld;
+    DcacheMshrIO* dcache2mshr_st;
 #if defined(CONFIG_MMU)&& defined(CONFIG_CACHE)
     dcache_req_slave_t *dcache2ptw_req;
     dcache_resp_master_t *dcache2ptw_resp;
@@ -45,7 +45,7 @@ typedef struct
     uint32_t index;
     uint32_t wdata;
     uint8_t wstrb;
-    Inst_uop uop;
+    InstUop uop;
 }Pipe_Reg;
 
 class Dcache {

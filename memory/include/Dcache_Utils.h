@@ -21,8 +21,8 @@ const int DCACHE_LINE_NUM =
   (((addr) >> (DCACHE_OFFSET_BITS + 2)) & ((1 << DCACHE_INDEX_BITS) - 1))
 #define GET_OFFSET(addr) (((addr) >> 2) & ((1 << DCACHE_OFFSET_BITS) - 1))
 #define GET_ADDR(tag, index, offset)                                           \
-  ((tag << (DCACHE_INDEX_BITS + DCACHE_OFFSET_BITS) |                          \
-    index << DCACHE_OFFSET_BITS | offset)                                      \
+  (((tag) << (DCACHE_INDEX_BITS + DCACHE_OFFSET_BITS) |                          \
+    (index) << DCACHE_OFFSET_BITS | (offset))                                      \
    << 2)
 
 extern uint32_t dcache_data[DCACHE_LINE_NUM][DCACHE_WAY_NUM][DCACHE_OFFSET_NUM];

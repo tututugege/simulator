@@ -9,6 +9,7 @@ struct front_top_in {
   // from back-end
   bool back2front_valid[COMMIT_WIDTH];
   bool refetch;
+  bool fence_i;
   uint32_t refetch_address;
   uint32_t predict_base_pc[COMMIT_WIDTH];
   bool predict_dir[COMMIT_WIDTH];
@@ -76,6 +77,7 @@ struct BPU_out {
 struct icache_in {
   bool reset;
   bool refetch;
+  bool fence_i;
   // from BPU
   bool icache_read_valid;
   uint32_t fetch_address;

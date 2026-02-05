@@ -17,7 +17,7 @@ void predecode_checker_top(struct predecode_checker_in *in, struct predecode_che
                 out->predict_dir_corrected[i] = true;
                 break;
             default:
-                assert(0); // should not reach here
+                Assert(0); // should not reach here
                 break;
         }
     }

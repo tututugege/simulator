@@ -46,12 +46,21 @@ void ICache::reset() {
   pipe2_to_pipe1.ready = true; // initially ready
 }
 
-void ICache::set_refetch() {
+void ICache::set_refetch(bool fence_i) {
   // 出现了重取指令信号，重新设置状态
   state = IDLE;
   mem_axi_state = AXI_IDLE;
   pipe1_to_pipe2.valid_r = false;
   pipe2_to_pipe1.ready = true; // initially ready
+  
+  // [Fix] Invalidate all cache lines to ensure coherence (ONLY if fence is requested)
+  if (fence_i) {
+    for (uint32_t i = 0; i < set_num; ++i) {
+      for (uint32_t j = 0; j < way_cnt; ++j) {
+        cache_valid[i][j] = false;
+      }
+    }
+  }
 }
 
 void ICache::comb() {
@@ -222,6 +231,9 @@ void ICache::comb_pipe2() {
       io.out.ifu_resp_valid = hit; // response valid signal for IFU
       pipe2_to_pipe1.ready = hit;  // only ready when hit
       state_next = hit ? IDLE : SWAP_IN;
+      
+      // [Fix] Only accept new PPN when we actually consume the current one (hit/fault)
+      io.out.ppn_ready = hit;
     } else if (pipe1_to_pipe2.valid_r && !io.in.ppn_valid) {
       // waiting for valid input from MMU
       pipe2_to_pipe1.ready = false;
@@ -234,8 +246,8 @@ void ICache::comb_pipe2() {
     // 默认只有在 SWAP_IN 状态下才会向 memory 发起请求
     io.out.mem_req_valid = false;
     io.out.mem_resp_ready = false;
-    // only accept new ppn when pipe2 is not holding valid data
-    io.out.ppn_ready = pipe1_to_pipe2.valid_r;
+    // PPN ready is handled inside the if (pipe1_to_pipe2.valid_r && io.in.ppn_valid) block
+    // or remains false by default.
     break;
 
   case SWAP_IN:

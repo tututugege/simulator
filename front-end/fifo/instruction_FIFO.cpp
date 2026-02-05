@@ -1,6 +1,6 @@
 #include "front_fifo.h"
 #include <array>
-#include <assert.h>
+// #include <assert.h>
 #include <iostream>
 #include <queue>
 
@@ -33,16 +33,17 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
     }
     out->full = false;
     out->empty = true;
+    // [Fix] Allow writing after clear
   }
   if (fifo.size() > INSTRUCTION_FIFO_SIZE)
-    assert(0);
+    Assert(0);
 
   // std::cout << "FIFO size:" << fifo.size() << std::endl;
 
   // if FIFO is not full and icache has new data
   if (in->write_enable) {
     if (fifo.size() >= INSTRUCTION_FIFO_SIZE) {
-      assert(0); // should not reach here
+      Assert(0); // should not reach here
     }
     FIFO_entry entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -56,8 +57,8 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
     fifo.push(entry);
   }
 
-  // output data
-  if (in->read_enable && !fifo.empty()) {
+  // output data (Peek)
+  if (!fifo.empty()) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       out->instructions[i] = fifo.front().instructions[i];
       out->page_fault_inst[i] = fifo.front().page_fault_inst[i];
@@ -66,6 +67,10 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
       out->predecode_target_address[i] = fifo.front().predecode_target_address[i];
     }
     out->seq_next_pc = fifo.front().seq_next_pc;
+  }
+
+  // Pop logic
+  if (in->read_enable && !fifo.empty()) {
     fifo.pop();
     out->FIFO_valid = true;
   } else {

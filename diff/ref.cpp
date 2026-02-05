@@ -1,13 +1,16 @@
 #include "ref.h"
-#include "CSR.h"
+#include "Csr.h"
 #include "RISCV.h"
 #include "SimCpu.h"
 #include "config.h"
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 extern "C" {
 #include "softfloat.h"
 }
+
+extern RefCpu ref_cpu; // Monitor
 
 // ---------------- 辅助工具 ----------------
 static inline float32_t to_f32(uint32_t v) {
@@ -137,10 +140,11 @@ uint32_t f32_classify(float32_t f) {
 
 void RefCpu::init(uint32_t reset_pc) {
   state.pc = reset_pc;
-  memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
+  memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
   for (int i = 0; i < 32; i++) {
     state.gpr[i] = 0;
   }
+
   for (int i = 0; i < 21; i++) {
     state.csr[i] = 0;
   }
@@ -163,11 +167,7 @@ void RefCpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    if (fast_run) {
-      page_fault_inst = !va2pa(p_addr, state.pc, 0);
-    } else {
-      page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
-    }
+    page_fault_inst = !va2pa_fixed(p_addr, state.pc, 0);
 
     if (page_fault_inst) {
       exception(state.pc);
@@ -181,15 +181,15 @@ void RefCpu::exec() {
 
   if (Instruction == INST_EBREAK) {
     state.pc += 4;
-    if (fast_run) {
+    if (!strict_mmu_check) {
       cout << "sim_time: " << sim_time << endl;
       sim_end = true;
       exit(0);
       return;
     }
-
     return;
   }
+
   RISCV();
 }
 
@@ -426,8 +426,8 @@ void RefCpu::RISCV() {
   // bool medeleg_M_ecall = (medeleg >> 11) & 1; // 通常M-ecall不委托
 
   bool medeleg_page_fault_inst = (medeleg >> 12) & 1;
-  bool medeleg_page_fault_load = (medeleg >> 13) & 1;
-  bool medeleg_page_fault_store = (medeleg >> 15) & 1;
+  // bool medeleg_page_fault_load = (medeleg >> 13) & 1;
+  // bool medeleg_page_fault_store = (medeleg >> 15) & 1;
 
   // === 优化 3: 中断判断逻辑 (位运算) ===
   // M-mode 中断条件:Pending & Enabled & NotDelegated & (CurrentPriv < M ||
@@ -743,7 +743,6 @@ void RefCpu::RV32CSR() {
   // 使用宏直接提取，无需 copy_indice
   uint32_t rd = BITS(Instruction, 11, 7);
   uint32_t rs1 = BITS(Instruction, 19, 15);
-  uint32_t uimm = rs1; // 对于立即数CSR指令，rs1字段就是立即数
   uint32_t csr_addr = BITS(Instruction, 31, 20);
   uint32_t funct3 = BITS(Instruction, 14, 12);
 
@@ -752,7 +751,7 @@ void RefCpu::RV32CSR() {
   bool we = funct3 == 1 || rs1 != 0;
   bool re = funct3 != 1 || rd != 0;
   uint32_t wcmd = funct3 & 0b11;
-  uint32_t csr_wdata, wdata;
+  uint32_t wdata;
 
   if (funct3 & 0b100) {
     wdata = rs1;
@@ -785,7 +784,7 @@ void RefCpu::RV32CSR() {
     }
 
     if (we) {
-      uint32_t csr_wdata;
+      uint32_t csr_wdata = 0;
       if (wcmd == CSR_W) {
         csr_wdata = wdata;
       } else if (wcmd == CSR_S) {
@@ -854,19 +853,10 @@ void RefCpu::RV32A() {
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
     bool page_fault;
 
-    if (fast_run) {
-      if (funct5 == 2) {
-        page_fault = !va2pa(p_addr, v_addr, 1);
-      } else {
-        page_fault = !va2pa(p_addr, v_addr, 2);
-      }
+    if (funct5 == 2) {
+      page_fault = !va2pa_fixed(p_addr, v_addr, 1);
     } else {
-
-      if (funct5 == 2) {
-        page_fault = !va2pa_fixed(p_addr, v_addr, 1);
-      } else {
-        page_fault = !va2pa_fixed(p_addr, v_addr, 2);
-      }
+      page_fault = !va2pa_fixed(p_addr, v_addr, 2);
     }
 
     if (page_fault) {
@@ -980,7 +970,6 @@ void RefCpu::RV32IM() {
     break;
   }
   case number_1_opcode_auipc: { // auipc
-    bool bit_temp[32];
     state.gpr[reg_d_index] = immU(Instruction) + state.pc;
     break;
   }
@@ -994,7 +983,6 @@ void RefCpu::RV32IM() {
   case number_3_opcode_jalr: { // jalr
     is_br = true;
     br_taken = true;
-    bool bit_temp[32];
     next_pc = (reg_rdata1 + immI(Instruction)) & 0xFFFFFFFC;
     state.gpr[reg_d_index] = state.pc + 4;
     break;
@@ -1051,10 +1039,7 @@ void RefCpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      if (fast_run)
-        page_fault_load = !va2pa(p_addr, v_addr, 1);
-      else
-        page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
+      page_fault_load = !va2pa_fixed(p_addr, v_addr, 1);
     }
 
     if (page_fault_load) {
@@ -1062,6 +1047,7 @@ void RefCpu::RV32IM() {
       return;
 
     } else {
+
       uint32_t data = memory[p_addr >> 2];
       uint32_t offset = p_addr & 0b11;
       uint32_t size = funct3 & 0b11;
@@ -1086,13 +1072,6 @@ void RefCpu::RV32IM() {
         data = data | sign;
       }
 
-      if (p_addr == 0x1fd0e000) {
-        data = sim_time;
-      }
-      if (p_addr == 0x1fd0e004) {
-        data = 0;
-      }
-
       state.gpr[reg_d_index] = data;
     }
     break;
@@ -1102,10 +1081,7 @@ void RefCpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      if (fast_run)
-        page_fault_store = !va2pa(p_addr, v_addr, 2);
-      else
-        page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
+      page_fault_store = !va2pa_fixed(p_addr, v_addr, 2);
     }
 
     if (page_fault_store) {
@@ -1351,7 +1327,7 @@ void RefCpu::store_data() {
     char temp;
     temp = wdata & 0x000000ff;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
-    if (fast_run)
+    if (uart_print)
       cout << temp;
   }
 
@@ -1364,7 +1340,7 @@ void RefCpu::store_data() {
   }
 
   if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 5) {
-    memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xfff0ffff | 0x00030000;
+    memory[0x10000000 / 4] = (memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
   }
 
   if (p_addr == 0xc201004 && (state.store_data & 0x000000ff) == 0xa) {
@@ -1379,7 +1355,6 @@ void RefCpu::store_data() {
 
 bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   uint32_t mstatus = state.csr[csr_mstatus];
-  uint32_t sstatus = state.csr[csr_sstatus];
   uint32_t satp = state.csr[csr_satp];
 
   // 1. 提取状态位 (直接位运算，极快)
@@ -1451,6 +1426,7 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
     // PPN[1] 是 PTE[31:20]，对应 PA[31:22]
     // v_addr & 0x3FFFFF 保留低 22 位 (VPN[0] + Offset)
     p_addr = ((pte1 << 2) & 0xFFC00000) | (v_addr & 0x3FFFFF);
+
     return true;
   }
 
@@ -1517,8 +1493,13 @@ bool RefCpu::va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
 #ifndef CONFIG_LOOSE_VA2PA
   return ret;
 #endif
-  extern int ren_commit_idx; // extern from Rename.cpp, for difftest debug
-  Inst_entry ren_commit_entry = cpu.back.out.commit_entry[ren_commit_idx];
+
+  if (!strict_mmu_check) {
+    return ret;
+  }
+
+  extern int ren_commit_idx; // extern from Ren.cpp, for difftest debug
+  InstEntry ren_commit_entry = cpu.back.out.commit_entry[ren_commit_idx];
   bool dut_page_fault_inst = ren_commit_entry.uop.page_fault_inst;
   bool dut_page_fault_load = ren_commit_entry.uop.page_fault_load;
   bool dut_page_fault_store = ren_commit_entry.uop.page_fault_store;

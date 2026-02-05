@@ -104,7 +104,7 @@ pred_out TAGE_get_prediction(uint32_t PC) {
   uint8_t pcpn = TN_MAX;
   uint8_t altpcpn = TN_MAX;
   bool alt_pred = false;
-  bool pcpn_pred = false;
+  // bool pcpn_pred = false;
   // Take the longest history entry
   for (int i = TN_MAX - 1; i >= 0; i--) {
     if (tag_table[i][tage_index[i]] == tag[i]) {
@@ -132,7 +132,7 @@ pred_out TAGE_get_prediction(uint32_t PC) {
   struct pred_out ret; 
 
   if (pcpn >= TN_MAX) { // pcpn not found
-    pcpn_pred = base_pred;
+    // pcpn_pred = base_pred;
     ret.pred = base_pred;
     ret.altpred = alt_pred;
     ret.pcpn = pcpn;
@@ -143,7 +143,7 @@ pred_out TAGE_get_prediction(uint32_t PC) {
     return ret;
   }
   if (cnt_table[pcpn][tage_index[pcpn]] >= 4) {
-    pcpn_pred = true;
+    // pcpn_pred = true;
     ret.pred = true;
     ret.altpred = alt_pred;
     ret.pcpn = pcpn;
@@ -153,7 +153,7 @@ pred_out TAGE_get_prediction(uint32_t PC) {
     }
     return ret;
   }
-  pcpn_pred = false;
+  // pcpn_pred = false;
   ret.pred = false;
   ret.altpred = alt_pred;
   ret.pcpn = pcpn;
@@ -217,7 +217,7 @@ void TAGE_do_update(uint32_t PC, bool real_dir, pred_out pred_out) {
   bool pred_dir = pred_out.pred;
   bool alt_pred = pred_out.altpred;
   uint8_t pcpn = pred_out.pcpn;
-  uint8_t altpcpn = pred_out.altpcpn;
+  // uint8_t altpcpn = pred_out.altpcpn;
 
   // get tag for all Tn
   for (int i = 0; i < TN_MAX; i++) {

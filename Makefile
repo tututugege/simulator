@@ -1,83 +1,104 @@
-# Makefile with multi-threaded compilation support
+# ==========================================
+# Optimized Simulator Makefile
+# ==========================================
 
-CXX := g++
-# Flags for the default target
-CXXFLAGS := -O3 -march=native -funroll-loops -mtune=native --std=c++2a
-LDFLAGS := -lz -lstdc++fs
-
-# Include directories
-CXXINCLUDE := -I./include/ \
-              -I./back-end/include/ \
-              -I./back-end/EXU/include/ \
-              -I./back-end/tools/include/ \
-              -I./diff/include/ \
-              -I./front-end/ \
-              -I./mmu/include/ \
-              -I./memory/include/
-
-# Source files (dynamically found)
-SRCS := $(shell find ./back-end/ -name "*.cpp")
-SRCS += $(shell find ./front-end/ -name "*.cpp")
-SRCS += $(shell find ./diff/ -name "*.cpp")
-SRCS += $(shell find ./mmu/ -name "*.cpp")
-SRCS += $(shell find ./memory/ -name "*.cpp")
-SRCS += ./main.cpp
-SRCS += ./rv_simu_mmu_v2.cpp
-
-# Output binary
-TARGET := a.out
-# Build directory for object files
 BUILD_DIR := build
+SIM_EXE   := $(BUILD_DIR)/simulator
+IMG     := ./baremetal/memory
 
-# Object files (mapped from source files)
-OBJS := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
-# Dependency files
-DEPS := $(OBJS:.o=.d)
+# Compiler & Flags
+CXX      := g++
+CXXFLAGS := -Ofast -march=native -funroll-loops -mtune=native -lz
+CXXFLAGS += -MMD -MP 
+CXXFLAGS += -Wall -Wextra -Wno-unused-parameter
+CXXFLAGS += --std=c++2a
 
 # Libraries
 LIBS := ./softfloat.a
+LDFLAGS := -lz -lstdc++fs
 
-# Default target
-default: $(TARGET)
+# Debug Flags (Use 'make DEBUG=1' to enable)
+ifdef DEBUG
+    CXXFLAGS += -g -O0
+else
+    CXXFLAGS += -DNDEBUG
+endif
 
-# Link object files to create the executable
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) $(OBJS) $(LIBS) $(LDFLAGS) -o $@
+# Include Paths
+INCLUDES := -I./include/ \
+            -I./back-end/include/ \
+            -I./back-end/Exu/include/ \
+            -I./back-end/Lsu/include/ \
+            -I./back-end/tools/include/ \
+            -I./diff/include/ \
+            -I./front-end/ \
+            -I./mmu/include/ \
+            -I./memory/include/
 
-# Compile source files to object files
-# -MMD -MP generates dependency info
+# Source Files
+# (Using find to locate all cpp files)
+CXXSRC := $(shell find ./back-end -name "*.cpp") \
+          $(shell find ./front-end -name "*.cpp") \
+          $(shell find ./diff -name "*.cpp") \
+          $(shell find ./mmu -name "*.cpp") \
+          $(shell find ./memory -name "*.cpp") \
+          ./main.cpp \
+          ./rv_simu_mmu_v2.cpp
+
+# Object Files
+OBJS := $(CXXSRC:%.cpp=$(BUILD_DIR)/%.o)
+DEPS := $(OBJS:.o=.d)
+
+# ==========================================
+# Rules
+# ==========================================
+
+.PHONY: all clean run gdb coverage help gdb_linux
+
+all: $(SIM_EXE)
+
+# Link
+$(SIM_EXE): $(OBJS) $(LIBS)
+	@echo "Linking $@"
+	@$(CXX) $(OBJS) $(LIBS) $(LDFLAGS) -o $@ $(CXXFLAGS)
+
+# Compile
 $(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CXXINCLUDE) -MMD -MP -c $< -o $@
+	@echo "Compiling $<"
+	@$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
-# Include generated dependencies
--include $(DEPS)
+# Run
+run: $(SIM_EXE)
+	./$(SIM_EXE) $(IMG)
 
-# --- Other Targets (maintained from original) ---
-# Note: These targets are kept monolithic as per the original Makefile 
-# to ensure specific flags are applied correctly without complex conditional logic.
+# Debug with GDB
+gdb: CXXFLAGS += -g -O0
+gdb: $(SIM_EXE)
+	gdb --args ./$(SIM_EXE) $(IMG)
 
-MEM_DIR=./baremetal
-IMG=./baremetal/linux.bin
+gdb_linux: CXXFLAGS += -g
+gdb_linux: $(SIM_EXE)
+	gdb --args ./$(SIM_EXE) ./baremetal/linux.bin
 
-cov: 
-	$(CXX) $(CXXINCLUDE) $(SRCS) $(LIBS) -O0 --coverage -o $(TARGET)
+# Coverage
+coverage: CXXFLAGS += --coverage -O0
+coverage: $(SIM_EXE)
 
-run: 
-	./$(TARGET) $(IMG)
-
+# Clean
 clean:
-	rm -f $(TARGET)
-	rm -rf $(BUILD_DIR)
-	rm -rf ./baremetal/memory
-	rm -rf ./baremetal/test.code
+	@echo "Cleaning build artifacts..."
+	@rm -rf $(BUILD_DIR)
+	@rm -rf ./baremetal/memory ./baremetal/test.code
+	@rm -f a.out
 
-gdb:
-	$(CXX) $(CXXINCLUDE) $(SRCS) $(LIBS) -O0 -g -march=native -lz -o $(TARGET)
-	gdb --args ./$(TARGET) $(IMG)
+help:
+	@echo "Usage:"
+	@echo "  make          - Build the simulator"
+	@echo "  make run      - Build and run the simulator"
+	@echo "  make debug    - Build with debug symbols"
+	@echo "  make clean    - Clean build files"
+	@echo "  make gdb_linux - Debug linux"
 
-gdb_linux:
-	$(CXX) $(CXXINCLUDE) $(SRCS) $(LIBS) -g -o $(TARGET)
-	gdb --args ./$(TARGET) ./baremetal/linux.bin
-
-.PHONY: default all clean mem run linux gdb gdb_linux cov
+# Include dependencies
+-include $(DEPS)

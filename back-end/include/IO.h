@@ -1,308 +1,640 @@
 #pragma once
 
 #include "config.h"
+#include <cstdint>
 #include <sys/types.h>
 #include <util.h>
+#include "ModuleIOs.h"
 
-typedef struct {
-  reg32_t addr;
-  reg32_t size;
-  reg32_t data;
-  reg32_t inst;
+struct DecRenIO {
 
-  reg1_t commit;
-  reg1_t addr_valid;
-  reg1_t data_valid;
-  reg1_t valid;
-  reg4_t tag;
-  reg2_t issued;
-} STQ_entry;
+  InstUop uop[FETCH_WIDTH];
+  wire<1> valid[FETCH_WIDTH];
+  DecRenIO() {
+    for (auto &v : uop)
+      v = {};
+    for (auto &v : valid)
+      v = {};
+  }
+};
 
-typedef struct {
-  Inst_uop uop[FETCH_WIDTH];
-  wire1_t valid[FETCH_WIDTH];
-} Dec_Ren;
+struct RenDecIO {
 
-typedef struct {
-  wire1_t ready;
-} Ren_Dec;
+  wire<1> ready;
 
-typedef struct {
-  wire1_t fire[FETCH_WIDTH];
-  wire1_t ready;
-} Dec_Front;
+  RenDecIO() { ready = {}; }
+};
 
-typedef struct {
-  wire32_t inst[FETCH_WIDTH];
-  wire32_t pc[FETCH_WIDTH];
-  wire1_t valid[FETCH_WIDTH];
-  wire1_t predict_dir[FETCH_WIDTH];
+struct DecFrontIO {
 
-  wire1_t alt_pred[FETCH_WIDTH];
-  wire8_t altpcpn[FETCH_WIDTH];
-  wire8_t pcpn[FETCH_WIDTH];
-  wire32_t predict_next_fetch_address[FETCH_WIDTH];
-  wire32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
-  wire1_t page_fault_inst[FETCH_WIDTH];
-} Front_Dec;
+  wire<1> fire[FETCH_WIDTH];
+  wire<1> ready;
 
-typedef struct {
-  wire1_t mispred;
-  wire16_t br_mask;
-  wire4_t br_tag;
-  wire7_t redirect_rob_idx;
-} Dec_Broadcast;
+  DecFrontIO() {
+    for (auto &v : fire)
+      v = {};
+    ready = {};
+  }
+};
 
-typedef struct {
-  Inst_entry commit_entry[COMMIT_WIDTH];
-} Rob_Commit;
+struct FrontDecIO {
 
-typedef struct {
-  wire1_t ready;
-  wire1_t empty;
-  wire1_t stall;
-  wire7_t enq_idx;
-  wire1_t rob_flag;
-} Rob_Dis;
+  wire<32> inst[FETCH_WIDTH];
+  wire<32> pc[FETCH_WIDTH];
+  wire<1> valid[FETCH_WIDTH];
+  wire<1> predict_dir[FETCH_WIDTH];
 
-typedef struct {
-  Inst_uop uop[FETCH_WIDTH];
-  wire1_t valid[FETCH_WIDTH];
-  wire1_t dis_fire[FETCH_WIDTH];
-} Dis_Rob;
+  wire<1> alt_pred[FETCH_WIDTH];
+  wire<8> altpcpn[FETCH_WIDTH];
+  wire<8> pcpn[FETCH_WIDTH];
+  wire<32> predict_next_fetch_address[FETCH_WIDTH];
+  wire<32> tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
+  wire<1> page_fault_inst[FETCH_WIDTH];
 
-typedef struct {
-  Inst_uop uop[FETCH_WIDTH];
-  wire1_t valid[FETCH_WIDTH];
-} Ren_Dis;
+  FrontDecIO() {
+    for (auto &v : inst)
+      v = {};
+    for (auto &v : pc)
+      v = {};
+    for (auto &v : valid)
+      v = {};
+    for (auto &v : predict_dir)
+      v = {};
+    for (auto &v : alt_pred)
+      v = {};
+    for (auto &v : altpcpn)
+      v = {};
+    for (auto &v : pcpn)
+      v = {};
+    for (auto &v : predict_next_fetch_address)
+      v = {};
+    for (auto &tage_idx_0 : tage_idx)
+      for (auto &idx : tage_idx_0)
+        idx = {};
 
-typedef struct {
-  wire1_t ready;
-} Dis_Ren;
+    for (auto &v : page_fault_inst)
+      v = {};
+  }
+};
 
-typedef struct {
+struct DecBroadcastIO {
+
+  wire<1> mispred;
+  wire<16> br_mask;
+  wire<4> br_tag;
+  wire<7> redirect_rob_idx;
+
+  DecBroadcastIO() {
+    mispred = {};
+    br_mask = {};
+    br_tag = {};
+    redirect_rob_idx = {};
+  }
+};
+
+struct RobCommitIO {
+
+  InstEntry commit_entry[COMMIT_WIDTH];
+
+  RobCommitIO() {
+    for (auto &v : commit_entry)
+      v = {};
+  }
+};
+
+struct RobDisIO {
+
+  wire<1> ready;
+  wire<1> empty;
+  wire<1> stall;
+  wire<7> enq_idx;
+  wire<1> rob_flag;
+
+  RobDisIO() {
+    ready = {};
+    empty = {};
+    stall = {};
+    enq_idx = {};
+    rob_flag = {};
+  }
+};
+
+struct DisRobIO {
+
+  InstUop uop[FETCH_WIDTH];
+  wire<1> valid[FETCH_WIDTH];
+  wire<1> dis_fire[FETCH_WIDTH];
+
+  DisRobIO() {
+    for (auto &v : uop)
+      v = {};
+    for (auto &v : valid)
+      v = {};
+    for (auto &v : dis_fire)
+      v = {};
+  }
+};
+
+struct RenDisIO {
+
+  InstUop uop[FETCH_WIDTH];
+  wire<1> valid[FETCH_WIDTH];
+
+  RenDisIO() {
+    for (auto &v : uop)
+      v = {};
+    for (auto &v : valid)
+      v = {};
+  }
+};
+
+struct DisRenIO {
+
+  wire<1> ready;
+
+  DisRenIO() { ready = {}; }
+};
+
+struct PrfAwakeIO {
+
   WakeInfo wake;
-} Prf_Awake;
 
-// TODO: MAGIC NUMBER 2
-typedef struct {
-  Inst_uop uop[IQ_NUM][2];
-  wire1_t valid[IQ_NUM][2];
-  wire1_t dis_fire[IQ_NUM][2];
-} Dis_Iss;
+  PrfAwakeIO() { wake = {}; }
+};
 
-// TODO: MAGIC NUMBER 2
-typedef struct {
-  wire1_t ready[IQ_NUM][2];
-} Iss_Dis;
+struct DisIssIO {
 
-typedef struct {
-  WakeInfo wake[ALU_NUM + 2]; // 2 alu + mul + div
-} Iss_Awake;
+  InstEntry req[IQ_NUM][MAX_IQ_DISPATCH_WIDTH];
+  DisIssIO() {
+    for (auto &iq_req : req)
+      for (auto &r : iq_req)
+        r = {};
+  }
+};
 
-typedef struct {
-  wire1_t flush;
-  wire1_t mret;
-  wire1_t sret;
-  wire1_t ecall;
-  wire1_t exception;
-  wire1_t fence;
+struct IssDisIO {
 
-  wire1_t page_fault_inst;
-  wire1_t page_fault_load;
-  wire1_t page_fault_store;
-  wire1_t illegal_inst;
-  wire1_t interrupt;
-  wire32_t trap_val;
-  wire32_t pc;
-} Rob_Broadcast;
+  int ready_num[IQ_NUM];
 
-typedef struct {
-  Inst_entry iss_entry[ISSUE_WAY];
-} Iss_Prf;
+  IssDisIO() {
+    for (auto &v : ready_num)
+      v = 0;
+  }
+};
 
-typedef struct {
-  Inst_entry iss_entry[ISSUE_WAY];
-  wire1_t ready[ISSUE_WAY];
-} Prf_Exe;
+struct IssAwakeIO {
 
-typedef struct {
-  Inst_entry entry[ISSUE_WAY];
-} Exe_Prf;
+  WakeInfo wake[MAX_WAKEUP_PORTS];
 
-typedef struct {
-  wire1_t ready[ISSUE_WAY];
-} Exe_Iss;
+  IssAwakeIO() {
+    for (auto &v : wake)
+      v = {};
+  }
+};
 
-typedef struct {
-  Inst_entry entry[ISSUE_WAY];
-} Prf_Rob;
+struct RobBroadcastIO {
 
-typedef struct {
-  wire1_t mispred;
-  wire32_t redirect_pc;
-  wire7_t redirect_rob_idx;
-  wire4_t br_tag;
-} Prf_Dec;
+  wire<1> flush;
+  wire<1> mret;
+  wire<1> sret;
+  wire<1> ecall;
+  wire<1> exception;
+  wire<1> fence;
+  wire<1> fence_i;
 
-typedef struct {
-  wire4_t tag[2];
-  wire1_t valid[2];
-  wire1_t dis_fire[2];
-} Dis_Stq;
+  wire<1> page_fault_inst;
+  wire<1> page_fault_load;
+  wire<1> page_fault_store;
+  wire<1> illegal_inst;
+  wire<1> interrupt;
+  wire<32> trap_val;
+  wire<32> pc;
 
-// TODO: MAGIC NUMBER 2
-typedef struct {
-  wire1_t ready[2];
-  wire4_t stq_idx;
-} Stq_Dis;
+  RobBroadcastIO() {
+    flush = {};
+    mret = {};
+    sret = {};
+    ecall = {};
+    exception = {};
+    fence = {};
+    fence_i = {};
+    page_fault_inst = {};
+    page_fault_load = {};
+    page_fault_store = {};
+    illegal_inst = {};
+    interrupt = {};
+    trap_val = {};
+    pc = {};
+  }
+};
 
-typedef struct {
-  wire1_t fence_stall;
-} Stq_Front;
+struct IssPrfIO {
 
-typedef struct {
-  // 地址写入
-  Inst_entry addr_entry;
-  // 数据写入
-  Inst_entry data_entry;
-} Exe_Stq;
+  InstEntry iss_entry[ISSUE_WIDTH];
 
-typedef struct {
-  wire1_t we;
-  wire1_t re;
-  wire12_t idx;
-  wire32_t wdata;
-  wire32_t wcmd;
-} Exe_Csr;
+  IssPrfIO() {
+    for (auto &v : iss_entry)
+      v = {};
+  }
+};
 
-typedef struct {
-  wire32_t rdata;
-} Csr_Exe;
+struct PrfExeIO {
 
-typedef struct {
-  wire1_t interrupt_req;
-} Csr_Rob;
+  InstEntry iss_entry[ISSUE_WIDTH];
 
-typedef struct {
-  wire32_t epc;
-  wire32_t trap_pc;
-} Csr_Front;
+  PrfExeIO() {
+    for (auto &v : iss_entry)
+      v = {};
+  }
+};
 
-typedef struct {
-  wire32_t sstatus;
-  wire32_t mstatus;
-  wire32_t satp;
-  wire2_t privilege;
-} Csr_Status;
+struct ExePrfIO {
 
-typedef struct {
-  wire1_t interrupt_resp;
-  wire1_t commit;
-} Rob_Csr;
+  InstEntry entry[ISSUE_WIDTH];
+  InstEntry bypass[TOTAL_FU_COUNT];
 
-typedef struct {
-  wire1_t en;
-  wire1_t wen;
-  wire32_t addr;
-  wire32_t wdata;
-  wire8_t wstrb;
+  ExePrfIO() {
+    for (auto &v : entry)
+      v = {};
 
-  Inst_uop uop;
-} Mem_REQ;
-typedef struct {
-  wire1_t ready;
-} Mem_READY;
-typedef struct {
-  wire1_t wen;
-  wire1_t valid;
-  wire32_t data;
+    for (auto &v : bypass)
+      v = {};
+  }
+};
 
-  wire32_t addr;
-  Inst_uop uop;
-} Mem_RESP;
+struct ExeIssIO {
 
-typedef struct {
-  wire1_t flush;
-  wire1_t mispred;
-  wire16_t br_mask;
-} Dcache_CONTROL;
+  wire<1> ready[ISSUE_WIDTH];
+  int64_t fu_ready_mask[ISSUE_WIDTH];
 
-typedef struct {
-  wire1_t valid;
-  wire1_t wen;
-  wire32_t addr;
-  wire32_t wstrb;
-  wire32_t wdata;
+  ExeIssIO() {
+    for (auto &v : ready)
+      v = {};
+    for (auto &v : fu_ready_mask)
+      v = {};
+  }
+};
 
-  Inst_uop uop;
-} Dcache_MSHR;
+struct PrfRobIO {
 
-typedef struct {
-  wire1_t stall_ld;
-  wire1_t stall_st;
-} WB_Arbiter_Dcache;
+  InstEntry entry[ISSUE_WIDTH];
 
-typedef struct {
-  wire1_t valid;
-  wire32_t wdata;
+  PrfRobIO() {
+    for (auto &v : entry)
+      v = {};
+  }
+};
 
-  wire1_t flush;
-  wire1_t mispred;
-  wire16_t br_mask;
+struct PrfDecIO {
 
-  Inst_uop uop;
-} Dcache_WriteBuffer;
+  wire<1> mispred;
+  wire<32> redirect_pc;
+  wire<7> redirect_rob_idx;
+  wire<4> br_tag;
 
-typedef struct {
-  wire1_t stall;
-} WriteBuffer_Dcache;
+  PrfDecIO() {
+    mispred = {};
+    redirect_pc = {};
+    redirect_rob_idx = {};
+    br_tag = {};
+  }
+};
 
-typedef struct {
-  wire1_t en;
-  wire1_t wen;
-  wire8_t sel;
-  wire8_t len;
-  wire1_t done;
-  wire1_t last;
-  wire2_t size;
-  wire32_t addr;
-  wire32_t wdata;
-} EXMem_CONTROL;
-typedef struct {
-  wire32_t data;
-  wire1_t last;
-  wire1_t done;
-} EXMem_DATA;
-typedef struct {
-  EXMem_CONTROL control;
-  EXMem_DATA data;
-} EXMem_IO;
+struct ExeCsrIO {
 
-typedef struct {
-  wire1_t valid;
-  wire32_t addr;
-  wire32_t data[4];
-} MSHR_WB;
+  wire<1> we;
+  wire<1> re;
+  wire<12> idx;
+  wire<32> wdata;
+  wire<32> wcmd;
 
-typedef struct {
-  wire1_t ready;
-} WB_MSHR;
-typedef struct {
-  wire1_t arbiter_priority;
-} WB_Arbiter;
+  ExeCsrIO() {
+    we = {};
+    re = {};
+    idx = {};
+    wdata = {};
+    wcmd = {};
+  }
+};
 
-typedef struct {
-  wire1_t valid;
-  wire32_t addr;
-  wire32_t rdata;
+struct CsrExeIO {
 
-} MSHR_FWD;
+  wire<32> rdata;
 
-typedef struct {
+  CsrExeIO() { rdata = {}; }
+};
+
+struct CsrRobIO {
+
+  wire<1> interrupt_req;
+
+  CsrRobIO() { interrupt_req = {}; }
+};
+
+struct CsrFrontIO {
+
+  wire<32> epc;
+  wire<32> trap_pc;
+
+  CsrFrontIO() {
+    epc = {};
+    trap_pc = {};
+  }
+};
+
+struct CsrStatusIO {
+
+  wire<32> sstatus;
+  wire<32> mstatus;
+  wire<32> satp;
+  wire<2> privilege;
+
+  CsrStatusIO() {
+    sstatus = {};
+    mstatus = {};
+    satp = {};
+    privilege = {};
+  }
+};
+
+struct RobCsrIO {
+
+  wire<1> interrupt_resp;
+  wire<1> commit;
+
+  RobCsrIO() {
+    interrupt_resp = {};
+    commit = {};
+  }
+};
+
+struct MemReqIO {
+
+  wire<1> en;
+  wire<1> wen;
+  wire<32> addr;
+  wire<32> wdata;
+  wire<8> wstrb;
+
+  InstUop uop;
+
+  MemReqIO() {
+    en = {};
+    wen = {};
+    addr = {};
+    wdata = {};
+    wstrb = {};
+    uop = {};
+  }
+};
+
+struct MemReadyIO {
+
+  wire<1> ready;
+
+  MemReadyIO() { ready = {}; }
+};
+
+struct MemRespIO {
+
+  wire<1> wen;
+  wire<1> valid;
+  wire<32> data;
+
+  wire<32> addr;
+  InstUop uop;
+
+  MemRespIO() {
+    wen = {};
+    valid = {};
+    data = {};
+    addr = {};
+    uop = {};
+  }
+};
+
+struct DcacheControlIO {
+
+  wire<1> flush;
+  wire<1> mispred;
+  wire<16> br_mask;
+
+  DcacheControlIO() {
+    flush = {};
+    mispred = {};
+    br_mask = {};
+  }
+};
+
+struct DcacheMshrIO {
+
+  wire<1> valid;
+  wire<1> wen;
+  wire<32> addr;
+  wire<32> wstrb;
+  wire<32> wdata;
+
+  InstUop uop;
+
+  DcacheMshrIO() {
+    valid = {};
+    wen = {};
+    addr = {};
+    wstrb = {};
+    wdata = {};
+    uop = {};
+  }
+};
+
+struct WbArbiterDcacheIO {
+
+  wire<1> stall_ld;
+  wire<1> stall_st;
+
+  WbArbiterDcacheIO() {
+    stall_ld = {};
+    stall_st = {};
+  }
+};
+
+struct DcacheWritebufferIO {
+
+  wire<1> valid;
+  wire<32> wdata;
+
+  wire<1> flush;
+  wire<1> mispred;
+  wire<16> br_mask;
+
+  InstUop uop;
+
+  DcacheWritebufferIO() {
+    valid = {};
+    wdata = {};
+    flush = {};
+    mispred = {};
+    br_mask = {};
+    uop = {};
+  }
+};
+
+struct WritebufferDcacheIO {
+
+  wire<1> stall;
+
+  WritebufferDcacheIO() { stall = {}; }
+};
+
+struct ExmemControlIO {
+
+  wire<1> en;
+  wire<1> wen;
+  wire<8> sel;
+  wire<8> len;
+  wire<1> done;
+  wire<1> last;
+  wire<2> size;
+  wire<32> addr;
+  wire<32> wdata;
+
+  ExmemControlIO() {
+    en = {};
+    wen = {};
+    sel = {};
+    len = {};
+    done = {};
+    last = {};
+    size = {};
+    addr = {};
+    wdata = {};
+  }
+};
+struct ExmemDataIO {
+
+  wire<32> data;
+  wire<1> last;
+  wire<1> done;
+
+  ExmemDataIO() {
+    data = {};
+    last = {};
+    done = {};
+  }
+};
+struct ExmemIO {
+
+  ExmemControlIO control;
+  ExmemDataIO data;
+
+  ExmemIO() {
+    control = {};
+    data = {};
+  }
+};
+
+struct MshrWbIO {
+
+  wire<1> valid;
+  wire<32> addr;
+  wire<32> data[4];
+
+  MshrWbIO() {
+    valid = {};
+    addr = {};
+    for (auto &v : data)
+      v = {};
+  }
+};
+
+struct WbMshrIO {
+
+  wire<1> ready;
+
+  WbMshrIO() { ready = {}; }
+};
+struct WbArbiterIO {
+
+  wire<1> arbiter_priority;
+
+  WbArbiterIO() { arbiter_priority = {}; }
+};
+
+struct MshrFwdIO {
+
+  wire<1> valid;
+  wire<32> addr;
+  wire<32> rdata;
+
+  MshrFwdIO() {
+    valid = {};
+    addr = {};
+    rdata = {};
+  }
+};
+
+struct MshrArbiterIO {
+
   bool prority;
-} MSHR_Arbiter;
 
-typedef struct {
+  MshrArbiterIO() { prority = false; }
+};
+
+struct PrfDcacheIO {
+
   bool stall;
-} Prf_Dcache;
+
+  PrfDcacheIO() { stall = false; }
+};
+
+struct LsuDisIO {
+
+  int stq_tail; // 当前分配指针
+  int stq_free; // 剩余空闲条目数
+
+  LsuDisIO() {
+    stq_tail = 0;
+    stq_free = 0;
+  }
+};
+
+struct LsuExeIO {
+
+  InstEntry wb_req[LSU_LOAD_WB_WIDTH];
+  InstEntry sta_wb_req[LSU_STA_COUNT];
+
+  LsuExeIO() {
+    for (auto &v : wb_req)
+      v = {};
+    for (auto &v : sta_wb_req)
+      v = {};
+  }
+};
+
+struct DisLsuIO {
+
+  bool alloc_req[MAX_STQ_DISPATCH_WIDTH];
+  uint32_t tag[MAX_STQ_DISPATCH_WIDTH];
+  uint32_t func3[MAX_STQ_DISPATCH_WIDTH];
+  uint32_t rob_idx[MAX_STQ_DISPATCH_WIDTH];
+  uint32_t rob_flag[MAX_STQ_DISPATCH_WIDTH];
+
+  DisLsuIO() {
+    for (auto &v : alloc_req)
+      v = false;
+    for (auto &v : tag)
+      v = 0;
+  }
+};
+
+struct ExeLsuIO {
+
+  InstEntry agu_req[LSU_AGU_COUNT];
+  InstEntry sdu_req[LSU_SDU_COUNT];
+
+  ExeLsuIO() {
+    for (auto &v : agu_req)
+      v = {};
+    for (auto &v : sdu_req)
+      v = {};
+  }
+};

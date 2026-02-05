@@ -1,6 +1,6 @@
 #include "ras.h"
 #include "../../frontend.h"
-#include <cassert>
+// #include <cassert>
 
 #define RAS_ENTRY_NUM 64
 #define RAS_CNT_LEN 8 // cnt for repeated call

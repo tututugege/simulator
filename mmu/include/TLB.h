@@ -93,8 +93,8 @@ private:
   static constexpr int PLRU_TREE_SIZE = TLB_SIZE - 1;
   static constexpr int PLRU_TREE_DEPTH =
       __builtin_ctz(TLB_SIZE); // log2(TLB_SIZE)
-  reg1_t plru_tree[PLRU_TREE_SIZE];
-  wire1_t plru_tree_next[PLRU_TREE_SIZE]; // 组合逻辑计算的下一个状态
+  reg<1> plru_tree[PLRU_TREE_SIZE];
+  wire<1> plru_tree_next[PLRU_TREE_SIZE]; // 组合逻辑计算的下一个状态
 
   struct {
     bool update_valid; // 是否需要更新 PLRU 树

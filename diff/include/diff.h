@@ -1,8 +1,7 @@
 #pragma once
-/*#include <top_config.h>*/
+#include "ref.h"
 #include <config.h>
 #include <cstdint>
-#include <ref.h>
 
 enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
 

@@ -1,5 +1,7 @@
 #pragma once
+#include "config.h"
 #include <cstdint>
+#include <cstring>
 
 #define RISCV_MODE_U 0b00
 #define RISCV_MODE_S 0b01
@@ -13,7 +15,7 @@
     struct {                                                                   \
       int64_t n : len;                                                         \
     } __x = {.n = (int64_t)x};                                                 \
-    (uint64_t) __x.n;                                                          \
+    (uint64_t)__x.n;                                                           \
   })
 
 #define immI(i) SEXT(BITS(i, 31, 20), 12)
@@ -63,7 +65,7 @@
 #define MSTATUS_MPP_SHIFT 11
 
 typedef struct CPU_state {
-  uint32_t gpr[32];
+  uint32_t gpr[ARF_NUM];
   uint32_t csr[21];
   uint32_t pc;
 
@@ -71,6 +73,11 @@ typedef struct CPU_state {
   uint32_t store_data;
   uint32_t store_strb;
   bool store;
+  uint32_t instruction;
+  bool page_fault_inst;
+  bool page_fault_load;
+  bool page_fault_store;
+  uint32_t inst_idx;
 } CPU_state;
 
 class RefCpu {
@@ -92,9 +99,9 @@ public:
   bool S_timer_interrupt;
   bool S_external_interrupt;
 
-  bool sim_end;
-
-  bool fast_run = false;
+  bool sim_end = false;
+  bool strict_mmu_check = false;
+  bool uart_print = false;
 
   void init(uint32_t reset_pc);
   void exec();

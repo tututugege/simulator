@@ -4,15 +4,15 @@
 
 class WriteBack_Arbiter_IN {
 public:
-    Mem_RESP* mshr_resp;
-    Mem_RESP* dcache_st_resp;
-    Mem_RESP* dcache_ld_resp;
+    MemRespIO* mshr_resp;
+    MemRespIO* dcache_st_resp;
+    MemRespIO* dcache_ld_resp;
 };
 class WriteBack_Arbiter_OUT {
 public:
-    Mem_RESP* ld_resp;
-    Mem_RESP* st_resp;
-    WB_Arbiter_Dcache* wb_arbiter2dcache;
+    MemRespIO* ld_resp;
+    MemRespIO* st_resp;
+    WbArbiterDcacheIO* wb_arbiter2dcache;
 };
 class WriteBack_Arbiter {
 public:

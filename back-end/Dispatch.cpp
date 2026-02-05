@@ -1,64 +1,70 @@
 #include "config.h"
 #include <Dispatch.h>
 #include <SimCpu.h>
-#include <cvt.h>
 #include <util.h>
 
-// 对每个IQ选择最多2个
-static wire4_t uop_sel[IQ_NUM][2] = {0};
-static wire1_t to_iq[IQ_NUM][FETCH_WIDTH] = {0};
-static Inst_entry inst_alloc[FETCH_WIDTH];
-static wire4_t stq_mask[2] = {0};
-
-// 分配rob_idx stq_idx
 void Dispatch::comb_alloc() {
-  int store_num = 0;
+  int store_alloc_count = 0; // 当前周期已分配的 store 数量
+  wire<16> current_cycle_store_mask = 0;
 
-  for (int i = 0; i < 2; i++) {
-    out.dis2stq->valid[i] = false;
-    stq_mask[i] = 0;
+  // 初始化输出
+  for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
+    out.dis2lsu->alloc_req[k] = false;
+    stq_port_mask[k] = 0;
   }
 
-  wire16_t pre_store_mask = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     inst_alloc[i] = inst_r[i];
-    inst_alloc[i].uop.rob_idx = (in.rob2dis->enq_idx << 2) + i;
-    inst_alloc[i].uop.rob_flag = in.rob2dis->rob_flag;
+    out.dis2rob->valid[i] = inst_r[i].valid;
 
+    // 分配 ROB ID (重排序缓存索引)
+    inst_alloc[i].uop.rob_idx = make_rob_idx(in.rob2dis->enq_idx, i);
+    inst_alloc[i].uop.rob_flag = in.rob2dis->rob_flag;
+    inst_alloc[i].uop.cplt_num = 0;  // 初始化完成计数器
+
+    // Load 需要知道之前的 Store
     if (is_load(inst_r[i].uop)) {
-      inst_alloc[i].uop.pre_sta_mask = pre_store_mask;
-      inst_alloc[i].uop.pre_std_mask = pre_store_mask;
+      inst_alloc[i].uop.pre_sta_mask = current_cycle_store_mask;
+      inst_alloc[i].uop.pre_std_mask = current_cycle_store_mask;
     }
 
-    // 每周期只能dispatch 2个store
+    // 处理 Store 分配
     if (inst_r[i].valid && is_store(inst_r[i].uop)) {
-      if (store_num < 2) {
-        inst_alloc[i].uop.stq_idx = (in.stq2dis->stq_idx + store_num) % STQ_NUM;
-        out.dis2stq->valid[store_num] = true;
-        out.dis2stq->tag[store_num] = inst_r[i].uop.tag;
-        pre_store_mask = pre_store_mask | (1 << inst_alloc[i].uop.stq_idx);
-        stq_mask[store_num] = 1 << i;
-        store_num++;
+      // 检查是否有足够的 STQ 端口
+      if (store_alloc_count < in.lsu2dis->stq_free) {
+        // 计算 STQ Index
+        int allocated_idx =
+            (in.lsu2dis->stq_tail + store_alloc_count) % STQ_NUM;
+        inst_alloc[i].uop.stq_idx = allocated_idx;
+
+        // 填充 STQ 请求
+        out.dis2lsu->tag[store_alloc_count] = inst_r[i].uop.tag;
+
+        // 记录 Mask
+        current_cycle_store_mask |= (1 << allocated_idx);
+        stq_port_mask[store_alloc_count] =
+            (1 << i); // 记录这条指令占用了这个端口
+
+        store_alloc_count++;
+      } else {
+        out.dis2rob->valid[i] = false;
       }
     }
 
-    out.dis2rob->valid[i] = inst_r[i].valid;
     out.dis2rob->uop[i] = inst_alloc[i].uop;
   }
 }
 
-// busytable bypass
+// BusyTable 旁路 (BusyTable Bypass)
 void Dispatch::comb_wake() {
   if (in.prf_awake->wake.valid) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       if (inst_alloc[i].uop.src1_preg == in.prf_awake->wake.preg) {
         inst_alloc[i].uop.src1_busy = false;
-        // inst_alloc[i].uop.src1_latency = 0;
         inst_r_1[i].uop.src1_busy = false;
       }
       if (inst_alloc[i].uop.src2_preg == in.prf_awake->wake.preg) {
         inst_alloc[i].uop.src2_busy = false;
-        // inst_alloc[i].uop.src2_latency = 0;
         inst_r_1[i].uop.src2_busy = false;
       }
     }
@@ -81,296 +87,145 @@ void Dispatch::comb_wake() {
 }
 
 void Dispatch::comb_dispatch() {
-  Inst_entry pre_dis_uop[FETCH_WIDTH * 3];
+  // 1. 清空输出 req
   for (int i = 0; i < IQ_NUM; i++) {
-    for (int j = 0; j < 2; j++) {
-      uop_sel[i][j] = 0;
-    }
-    for (int j = 0; j < FETCH_WIDTH; j++) {
-      to_iq[i][j] = false;
+    for (int w = 0; w < MAX_IQ_DISPATCH_WIDTH; w++) {
+      out.dis2iss->req[i][w].valid = false;
     }
   }
+
+  int iq_usage[IQ_NUM] = {0};
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (inst_r[i].valid) {
-      switch (inst_r[i].uop.type) {
-      case ADD:
-        if (i < FETCH_WIDTH / 2)
-          to_iq[IQ_INTM][i] = true;
-        else
-          to_iq[IQ_INTD][i] = true;
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_ADD;
-        break;
-      case MUL:
-        to_iq[IQ_INTM][i] = true;
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_MUL;
-        break;
-      case DIV:
-        to_iq[IQ_INTD][i] = true;
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_DIV;
+    dispatch_success_flags[i] = false;
+    dispatch_cache[i].count = 0; // 重置计数
 
-        break;
-      case BR:
-        if (i < FETCH_WIDTH / 2)
-          to_iq[IQ_BR0][i] = true;
-        else
-          to_iq[IQ_BR1][i] = true;
+    if (!inst_r[i].valid) {
+      dispatch_success_flags[i] = true;
+      continue;
+    }
 
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_BR;
+    // === 1. 临时拆分 (Full Data) ===
+    // 在栈上分配，用完即弃，不占用类成员空间
+    UopPacket temp_uops[MAX_UOPS_PER_INST];
+    int cnt = decompose_inst(inst_alloc[i], temp_uops);
 
-        break;
-      case LOAD:
-        to_iq[IQ_LD][i] = true;
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_LOAD;
+    // === 2. 相当于中间变量 存入缓存 ===
+    dispatch_cache[i].count = cnt;
+    for (int k = 0; k < cnt; k++) {
+      dispatch_cache[i].iq_ids[k] = temp_uops[k].iq_id;
+    }
 
-        break;
-      case JALR:
-        if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
-          to_iq[IQ_BR0][i] = true;
-        } else {
-          to_iq[IQ_INTD][i] = true;
-          to_iq[IQ_BR1][i] = true;
-        }
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_ADD;
-        pre_dis_uop[3 * i].uop.imm = 4;
-        pre_dis_uop[3 * i].uop.src1_en = false;
-        pre_dis_uop[3 * i + 1] = inst_alloc[i];
-        pre_dis_uop[3 * i + 1].uop.op = UOP_JUMP;
-        pre_dis_uop[3 * i + 1].uop.src1_en = true;
-        pre_dis_uop[3 * i + 1].uop.dest_en = false;
-        break;
-      case JAL:
-        if (i < FETCH_WIDTH / 2) {
-          to_iq[IQ_INTM][i] = true;
-        } else {
-          to_iq[IQ_INTD][i] = true;
-        }
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_ADD;
-        pre_dis_uop[3 * i].uop.imm = 4;
+    // === 3. 检查容量 ===
 
-        break;
-      case STORE:
-        to_iq[IQ_STA][i] = true;
-        to_iq[IQ_STD][i] = true;
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        pre_dis_uop[3 * i].uop.op = UOP_STA;
-        pre_dis_uop[3 * i].uop.src1_en = true;
-        pre_dis_uop[3 * i].uop.src2_en = false;
-        pre_dis_uop[3 * i + 1] = inst_alloc[i];
-        pre_dis_uop[3 * i + 1].uop.op = UOP_STD;
-        pre_dis_uop[3 * i + 1].uop.src1_en = false;
-        pre_dis_uop[3 * i + 1].uop.src2_en = true;
+    bool fit = true;
+    for (int k = 0; k < cnt; k++) {
+      int target = temp_uops[k].iq_id;
 
-        break;
+      // ✅ 直接查表！不需要 Isu 告诉它，它自己就能看 config.h
+      int port_limit = GLOBAL_IQ_CONFIG[target].dispatch_width;
 
-      case AMO:
-        if (inst_r[i].uop.amoop == LR) {
-          to_iq[IQ_LD][i] = true;
-          pre_dis_uop[3 * i] = inst_alloc[i];
-          pre_dis_uop[3 * i].uop.op = UOP_LOAD;
-          pre_dis_uop[3 * i].uop.src2_en = false;
-        } else if (inst_r[i].uop.amoop == SC) {
-          if (i < FETCH_WIDTH / 2)
-            to_iq[IQ_INTM][i] = true;
-          else
-            to_iq[IQ_INTD][i] = true;
-          to_iq[IQ_STA][i] = true;
-          to_iq[IQ_STD][i] = true;
-
-          pre_dis_uop[3 * i] = inst_alloc[i];
-          pre_dis_uop[3 * i].uop.op = UOP_ADD;
-          pre_dis_uop[3 * i].uop.src1_preg = 0;
-          pre_dis_uop[3 * i].uop.src1_busy = false;
-          pre_dis_uop[3 * i].uop.src2_is_imm = true;
-          pre_dis_uop[3 * i].uop.src2_en = false;
-          pre_dis_uop[3 * i].uop.imm = 0;
-          pre_dis_uop[3 * i + 1] = inst_alloc[i];
-          pre_dis_uop[3 * i + 1].uop.op = UOP_STA;
-          pre_dis_uop[3 * i + 1].uop.src2_en = false;
-          pre_dis_uop[3 * i + 2] = inst_alloc[i];
-          pre_dis_uop[3 * i + 2].uop.op = UOP_STD;
-          pre_dis_uop[3 * i + 2].uop.src1_en = false;
-        } else {
-          to_iq[IQ_LD][i] = true;
-          to_iq[IQ_STA][i] = true;
-          to_iq[IQ_STD][i] = true;
-          pre_dis_uop[3 * i] = inst_alloc[i];
-          pre_dis_uop[3 * i].uop.op = UOP_LOAD;
-          pre_dis_uop[3 * i].uop.src2_en = false;
-          pre_dis_uop[3 * i].uop.imm = 0;
-          pre_dis_uop[3 * i + 1] = inst_alloc[i];
-          pre_dis_uop[3 * i + 1].uop.op = UOP_STA;
-          pre_dis_uop[3 * i + 1].uop.src2_en = false;
-          pre_dis_uop[3 * i + 1].uop.imm = 0;
-          pre_dis_uop[3 * i + 2] = inst_alloc[i];
-          pre_dis_uop[3 * i + 2].uop.op = UOP_STD;
-          pre_dis_uop[3 * i + 2].uop.src1_preg = inst_r[i].uop.dest_preg;
-          pre_dis_uop[3 * i + 2].uop.src1_busy = true;
-        }
+      if (iq_usage[target] >= port_limit ||
+          iq_usage[target] >= in.iss2dis->ready_num[target]) {
+        fit = false;
         break;
-      default:
-        to_iq[IQ_INTM][i] = true;
-        pre_dis_uop[3 * i] = inst_alloc[i];
-        switch (inst_r[i].uop.type) {
-        case NOP:
-          pre_dis_uop[3 * i].uop.op = UOP_ADD;
-          break;
-        case CSR:
-          pre_dis_uop[3 * i].uop.op = UOP_CSR;
-          break;
-        case ECALL:
-          pre_dis_uop[3 * i].uop.op = UOP_ECALL;
-          break;
-        case MRET:
-          pre_dis_uop[3 * i].uop.op = UOP_MRET;
-          break;
-        case SRET:
-          pre_dis_uop[3 * i].uop.op = UOP_SRET;
-          break;
-        case SFENCE_VMA:
-          pre_dis_uop[3 * i].uop.op = UOP_SFENCE_VMA;
-          break;
-        case EBREAK:
-          pre_dis_uop[3 * i].uop.op = UOP_EBREAK;
-          break;
-        default:
-          exit(1);
-          break;
-        }
       }
     }
-  }
 
-  wire2_t ready_num[IQ_NUM];
-  for (int i = 0; i < IQ_NUM; i++) {
-    if (in.iss2dis->ready[i][1]) {
-      ready_num[i] = 2;
-    } else if (in.iss2dis->ready[i][0]) {
-      ready_num[i] = 1;
+    // === 4. 提交发射请求 ===
+    if (fit) {
+      dispatch_success_flags[i] = true;
+      for (int k = 0; k < cnt; k++) {
+        int target = temp_uops[k].iq_id;
+        int slot = iq_usage[target];
+
+        out.dis2iss->req[target][slot].valid = true;
+        out.dis2iss->req[target][slot].uop = temp_uops[k].uop;
+
+        iq_usage[target]++;
+      }
     } else {
-      ready_num[i] = 0;
-    }
-  }
-
-  for (int i = 0; i < IQ_NUM; i++) {
-    int num = 0;
-    for (int j = 0; j < FETCH_WIDTH && num < ready_num[i]; j++) {
-      if (to_iq[i][j]) {
-        uop_sel[i][num] = 1 << j;
-        num++;
-      }
-    }
-  }
-
-  // 根据uop_sel选择指令
-  for (int i = 0; i < IQ_NUM; i++) {
-    for (int j = 0; j < 2; j++) {
-      if (uop_sel[i][j] != 0) {
-        out.dis2iss->valid[i][j] = true;
-        int idx = __builtin_ctz(uop_sel[i][j]);
-        // 根据指令type区分选第一个uop还是第二个uop
-        if ((inst_r[idx].uop.type == JALR || inst_r[idx].uop.type == JAL) &&
-            i >= IQ_BR0) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == STORE && i == IQ_STD) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == AMO && i == IQ_STA) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 1].uop;
-        } else if (inst_r[idx].uop.type == AMO && i == IQ_STD) {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx + 2].uop;
-        } else {
-          out.dis2iss->uop[i][j] = pre_dis_uop[3 * idx].uop;
-        }
-      } else {
-        out.dis2iss->valid[i][j] = false;
-      }
+      break;
     }
   }
 }
 
 void Dispatch::comb_fire() {
-  // 判断一个inst是否所有uop都能接收
-  wire1_t iss_ready[FETCH_WIDTH];
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    iss_ready[i] = true;
-    for (int j = 0; j < IQ_NUM; j++) {
-      if (to_iq[j][i]) {
-        iss_ready[i] =
-            iss_ready[i] && ((1 << i) & (uop_sel[j][0] | uop_sel[j][1]));
+  bool pre_stall = false;
+  bool pre_fire = false;
+  bool global_flush =
+      in.rob_bcast->flush || in.dec_bcast->mispred || in.rob2dis->stall;
 
-#ifdef CONFIG_PERF_COUNTER
-        if (!((1 << i) & (uop_sel[j][0] | uop_sel[j][1]))) {
-          ctx->perf.isu_entry_stall[j]++;
-        }
-#endif
+  // === 步骤 1: 计算 Fire 信号 (确认分派) ===
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    // 修正：有效的 Fire 信号意味着指令本身有效且资源分配（如 STQ）成功
+    bool basic_fire = out.dis2rob->valid[i] &&
+                      dispatch_success_flags[i] && // IQ 检查通过
+                      in.rob2dis->ready &&         // ROB 有空间
+                      !pre_stall && !global_flush;
+
+    // 特殊检查：CSR
+    if (is_CSR(inst_r[i].uop.type)) {
+      if (!in.rob2dis->empty || pre_fire)
+        basic_fire = false;
+    }
+
+    out.dis2rob->dis_fire[i] = basic_fire;
+
+    if (inst_r[i].valid && !basic_fire)
+      pre_stall = true;
+
+    if (basic_fire)
+      pre_fire = true;
+  }
+
+  // 更新 Rename 单元的 Ready 信号
+  out.dis2ren->ready = !pre_stall;
+
+  // === 步骤 2: 撤销无效的 IQ 请求 (回滚) ===
+  int iq_slot_idx[IQ_NUM] = {0};
+
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (!inst_r[i].valid)
+      continue;
+    if (!dispatch_success_flags[i])
+      break;
+
+    // 从缓存读取元数据
+    int cnt = dispatch_cache[i].count;
+
+    if (!out.dis2rob->dis_fire[i]) {
+      // Fire 失败 -> 撤销请求
+      for (int k = 0; k < cnt; k++) {
+        // 直接使用缓存的 ID
+        int target = dispatch_cache[i].iq_ids[k];
+        int slot = iq_slot_idx[target];
+
+        out.dis2iss->req[target][slot].valid = false; // 撤销！
+        iq_slot_idx[target]++;
+      }
+    } else {
+      // Fire 成功 -> 跳过
+      for (int k = 0; k < cnt; k++) {
+        int target = dispatch_cache[i].iq_ids[k];
+        iq_slot_idx[target]++;
       }
     }
   }
 
-  int store_num = 0;
-  wire1_t pre_stall = false;
-  wire1_t csr_stall = false;
-  wire1_t pre_fire = false;
-  wire1_t pre_is_flush = false;
-
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    out.dis2rob->dis_fire[i] =
-        (out.dis2rob->valid[i] && in.rob2dis->ready) &&
-        (inst_r[i].valid && iss_ready[i]) && !pre_stall && !in.rob2dis->stall &&
-        (!is_CSR(inst_r[i].uop.type) || in.rob2dis->empty && !pre_fire) &&
-        !pre_is_flush && !in.dec_bcast->mispred && !in.rob_bcast->flush;
-
-    if (is_store(inst_r[i].uop)) {
-      out.dis2rob->dis_fire[i] =
-          out.dis2rob->dis_fire[i] &&
-          (((1 << i) & stq_mask[0]) && in.stq2dis->ready[0] ||
-           ((1 << i) & stq_mask[1]) && in.stq2dis->ready[1]);
-    }
-
-    pre_stall = inst_r[i].valid && !out.dis2rob->dis_fire[i];
-    pre_fire = out.dis2rob->dis_fire[i];
-    pre_is_flush = inst_r[i].valid && is_flush_inst(inst_r[i].uop);
-
-#ifdef CONFIG_PERF_COUNTER
-    if (inst_r[i].valid && !out.dis2rob->dis_fire[i]) {
-      if (!in.rob2dis->ready) {
-        ctx->perf.rob_entry_stall++;
-      } else if (is_store(inst_r[i].uop)) {
-
-      } else if (!iss_ready[i]) {
-        // perf.isu_entry_stall++;
+  // === 步骤 3: 更新 STQ 的 Fire 信号 ===
+  for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
+    // 如果端口 k 分配给了指令 i，且指令 i Fire 了，则 STQ Fire
+    if (stq_port_mask[k] != 0) {
+      int inst_idx = __builtin_ctz(stq_port_mask[k]); // 找到对应的指令索引
+      if (out.dis2rob->dis_fire[inst_idx]) {
+        out.dis2lsu->alloc_req[k] = true;
+        out.dis2lsu->tag[k] = out.dis2rob->uop[inst_idx].tag;
+        out.dis2lsu->rob_idx[k] = out.dis2rob->uop[inst_idx].rob_idx;
+        out.dis2lsu->rob_flag[k] = out.dis2rob->uop[inst_idx].rob_flag;
+        out.dis2lsu->func3[k] = out.dis2rob->uop[inst_idx].func3;
       }
     }
-#endif
-  }
-
-  for (int i = 0; i < IQ_NUM; i++) {
-    for (int j = 0; j < 2; j++) {
-      if (uop_sel[i][j] != 0) {
-        out.dis2iss->dis_fire[i][j] =
-            out.dis2rob->dis_fire[__builtin_ctz(uop_sel[i][j])];
-      } else {
-        out.dis2iss->dis_fire[i][j] = false;
-      }
-    }
-  }
-
-  for (int i = 0; i < 2; i++) {
-    out.dis2stq->dis_fire[i] =
-        out.dis2rob->dis_fire[__builtin_ctz(stq_mask[i])];
-  }
-
-  out.dis2ren->ready = true;
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    out.dis2ren->ready &= out.dis2rob->dis_fire[i] || !inst_r[i].valid;
   }
 }
 
@@ -391,4 +246,230 @@ void Dispatch::seq() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     inst_r[i] = inst_r_1[i];
   }
+}
+
+int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
+  int count = 0;
+  const auto &src_uop = inst.uop;
+
+  switch (src_uop.type) {
+  case ADD:
+    out_uops[0].iq_id = IQ_INT;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_ADD;
+    count = 1;
+    break;
+  case MUL:
+    out_uops[0].iq_id = IQ_INT;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_MUL;
+    count = 1;
+    break;
+  case DIV:
+    out_uops[0].iq_id = IQ_INT;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_DIV;
+    count = 1;
+    break;
+  case BR:
+    out_uops[0].iq_id = IQ_BR;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_BR;
+    count = 1;
+    break;
+
+  case LOAD:
+    out_uops[0].iq_id = IQ_LD;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_LOAD;
+    count = 1;
+    break;
+
+  case STORE:
+    // 拆分为 STA + STD
+    out_uops[0].iq_id = IQ_STA;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_STA;
+    out_uops[0].uop.src2_en = false; // STA 只用 src1 (Base)
+
+    out_uops[1].iq_id = IQ_STD;
+    out_uops[1].uop = src_uop;
+    out_uops[1].uop.op = UOP_STD;
+    out_uops[1].uop.src1_en = false; // STD 数据源修正
+    out_uops[1].uop.src2_en = true;  // STD 只用 src2 (Data)
+    count = 2;
+    break;
+
+  case JALR:
+    // JALR -> ADD (PC+4) + JUMP
+    out_uops[0].iq_id = IQ_INT;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_ADD;
+    out_uops[0].uop.imm = 4;
+    out_uops[0].uop.src1_en = false; // PC+4 不需要 src1
+    out_uops[0].uop.src2_en = false; // PC+4 不需要 src2
+
+    out_uops[1].iq_id = IQ_BR;
+    out_uops[1].uop = src_uop;
+    out_uops[1].uop.op = UOP_JUMP;
+    out_uops[1].uop.src1_en = true; // JALR 需要 src1 (Base)
+    out_uops[1].uop.dest_en = false;
+    count = 2;
+    break;
+
+  case JAL:
+    // JAL -> ADD (PC+4) + JUMP
+    out_uops[0].iq_id = IQ_INT;
+    out_uops[0].uop = src_uop;
+    out_uops[0].uop.op = UOP_ADD;
+    out_uops[0].uop.imm = 4;
+    out_uops[0].uop.src1_en = false; // PC+4 不需要 src1
+    out_uops[0].uop.src2_en = false; // PC+4 不需要 src2
+
+    out_uops[1].iq_id = IQ_BR;
+    out_uops[1].uop = src_uop;
+    out_uops[1].uop.op = UOP_JUMP;
+    out_uops[1].uop.dest_en = false; // 跳转不写寄存器
+    count = 2;
+    break;
+
+  case AMO:
+    if ((src_uop.func7 >> 2) == AmoOp::LR) {
+      out_uops[0].iq_id = IQ_LD;
+      out_uops[0].uop = src_uop;
+      out_uops[0].uop.op = UOP_LOAD;
+      out_uops[0].uop.src2_en = false;
+      count = 1;
+    } else if ((src_uop.func7 >> 2) == AmoOp::SC) {
+      // SC -> INT(0) + STA + STD
+      out_uops[0].iq_id = IQ_INT;
+      out_uops[0].uop = src_uop;
+      out_uops[0].uop.op = UOP_ADD; // 预设 0 (假定成功，LSU会覆盖? 或者这里仅仅是占位)
+                                    // 实际 SC 的返回值由 LSU Writeback 决定，通常是 Store 成功与否
+                                    // 如果这里 INT 写了 rd，后面 LSU 可能会再次写 rd
+      out_uops[0].uop.src1_preg = 0; // x0
+      out_uops[0].uop.src1_busy = false;
+      out_uops[0].uop.imm = 0;
+      out_uops[0].uop.src1_en = false;
+      out_uops[0].uop.src2_en = false;
+
+      out_uops[1].iq_id = IQ_STA;
+      out_uops[1].uop = src_uop;
+      out_uops[1].uop.op = UOP_STA;
+      out_uops[1].uop.src2_en = false;
+      out_uops[1].uop.dest_en = false; // Fix: STA 不写回寄存器
+
+      out_uops[2].iq_id = IQ_STD;
+      out_uops[2].uop = src_uop;
+      out_uops[2].uop.op = UOP_STD;
+      out_uops[2].uop.src1_en = false;
+      out_uops[2].uop.dest_en = false; // Fix: STD 不写回寄存器
+      count = 3;
+    } else {
+      // AMO RMW -> LOAD + STA + STD
+      out_uops[0].iq_id = IQ_LD;
+      out_uops[0].uop = src_uop;
+      out_uops[0].uop.op = UOP_LOAD;
+      out_uops[0].uop.src2_en = false;
+
+      out_uops[1].iq_id = IQ_STA;
+      out_uops[1].uop = src_uop;
+      out_uops[1].uop.op = UOP_STA;
+      out_uops[1].uop.src2_en = false;
+      out_uops[1].uop.dest_en = false; // Fix: STA 不写回寄存器
+
+      out_uops[2].iq_id = IQ_STD;
+      out_uops[2].uop = src_uop;
+      out_uops[2].uop.op = UOP_STD;
+      // 假设 SDU 负责计算，需要原 dest_preg 作为操作数 (数据源)
+      // 注意: 这里 src1_preg 被设为 dest_preg，用于读取内存旧值进行原子运算? 
+      // 不，Load 结果写到了 dest_preg。STD 需要用到这个 dest_preg (Load Result) 吗?
+      // 通常 AMO: Load -> (ALU in LSU or STD?) -> Store
+      // 如果计算在 LSU 内部完成 (Atomic)，则 STD 可能只需要传 src2 (rs2)?
+      // 代码原意: out_uops[2].uop.src1_preg = src_uop.dest_preg;
+      // 这意味着 STD 依赖于 Load 的结果 (dest_preg)。
+      // 如果 Load 正确写回了 dest_preg，那么 STD 读取它是对的。
+      out_uops[2].uop.src1_preg = src_uop.dest_preg;
+      if ((src_uop.func7 >> 2) == AmoOp::SWAP) {
+          out_uops[2].uop.src1_busy = false; // Swap doesn't need Load result (Old Val) for Store
+          // DEBUG
+          if (src_uop.pc == 0xc03870f4) {
+             printf("[Dispatch Fix] Triggered for Target PC %x. Clearing src1_busy.\n", src_uop.pc);
+          }
+      } else {
+          out_uops[2].uop.src1_busy = true;
+      }
+      out_uops[2].uop.dest_en = false; // Fix: STD 不写回寄存器
+      count = 3;
+    }
+    break;
+
+  // 改编自：NOP, CSR, 等
+  default: // NOP, CSR, 等
+    out_uops[0].iq_id = IQ_INT;
+    out_uops[0].uop = src_uop;
+    // 特殊指令走整数队列 (IQ_INT)
+    switch (src_uop.type) {
+    case NOP:
+      out_uops[0].uop.op = UOP_ADD;
+      break;
+    case CSR:
+      out_uops[0].uop.op = UOP_CSR;
+      break;
+    case ECALL:
+      out_uops[0].uop.op = UOP_ECALL;
+      break;
+    case MRET:
+      out_uops[0].uop.op = UOP_MRET;
+      break;
+    case SRET:
+      out_uops[0].uop.op = UOP_SRET;
+      break;
+    case SFENCE_VMA:
+      out_uops[0].uop.op = UOP_SFENCE_VMA;
+      break;
+    case FENCE_I:
+      out_uops[0].uop.op = UOP_FENCE_I;
+      break;
+    case EBREAK:
+      out_uops[0].uop.op = UOP_EBREAK;
+      break;
+    default:
+      exit(1);
+    }
+    count = 1;
+    break;
+  }
+  return count;
+}
+
+DispatchIO Dispatch::get_hardware_io() {
+  DispatchIO hardware;
+
+  // --- Inputs ---
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    hardware.from_ren.valid[i] = in.ren2dis->valid[i];
+    hardware.from_ren.uop[i]   = RenDisUop::filter(in.ren2dis->uop[i]);
+  }
+  hardware.from_rob.ready = in.rob2dis->ready;
+  hardware.from_rob.full  = in.rob2dis->stall;
+  for (int j = 0; j < IQ_NUM; j++) {
+    hardware.from_iss.ready_num[j] = in.iss2dis->ready_num[j];
+  }
+  hardware.from_back.flush = in.rob_bcast->flush;
+
+  // --- Outputs ---
+  hardware.to_ren.ready = out.dis2ren->ready;
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    hardware.to_rob.valid[i] = out.dis2rob->valid[i];
+    hardware.to_rob.uop[i]   = RobUop::filter(out.dis2rob->uop[i]);
+  }
+  for (int j = 0; j < IQ_NUM; j++) {
+    for (int k = 0; k < MAX_IQ_DISPATCH_WIDTH; k++) {
+      hardware.to_iss.valid[j][k] = out.dis2iss->req[j][k].valid;
+      hardware.to_iss.uop[j][k]   = DisIssUop::filter(out.dis2iss->req[j][k].uop);
+    }
+  }
+
+  return hardware;
 }

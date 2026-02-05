@@ -5,21 +5,21 @@
 class ARBITER_IN
 {
 public:
-    EXMem_CONTROL* writebuffer2arbiter_control;
-    EXMem_CONTROL* mshr2arbiter_control;
+    ExmemControlIO* writebuffer2arbiter_control;
+    ExmemControlIO* mshr2arbiter_control;
 
-    WB_Arbiter* writebuffer2arbiter;
-    MSHR_Arbiter* mshr2arbiter;
+    WbArbiterIO* writebuffer2arbiter;
+    MshrArbiterIO* mshr2arbiter;
 
-    EXMem_DATA* mem_data;
+    ExmemDataIO* mem_data;
 };
 class ARBITER_OUT
 {
 public:
-    EXMem_DATA* arbiter2writebuffer_data;
-    EXMem_DATA* arbiter2mshr_data;
+    ExmemDataIO* arbiter2writebuffer_data;
+    ExmemDataIO* arbiter2mshr_data;
 
-    EXMem_CONTROL* mem_control;
+    ExmemControlIO* mem_control;
 };
 typedef enum {
     ARBITER_STATE_IDLE = 0,

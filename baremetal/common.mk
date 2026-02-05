@@ -1,4 +1,4 @@
-RISCV_ARCH := rv32ima_zfinx
+RISCV_ARCH := rv32ima
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
 CFLAGS += -O0 
@@ -14,17 +14,16 @@ RISCV_AR      := $(abspath $(RISCV_PATH)ar)
 RISCV_OBJCOPY := $(abspath $(RISCV_PATH)objcopy)
 RISCV_READELF := $(abspath $(RISCV_PATH)readelf)
 
-.PHONY: all
+.PHONY: all clean
 
-BINARY = $(CURDIR)/$(TARGET).bin
+BUILD_DIR ?= build
+ELF := $(BUILD_DIR)/$(TARGET)
+BINARY := $(ELF).bin
+MEMORY_BIN := $(COMMON_DIR)/memory
 
-all: $(TARGET)
-	cp $(BINARY) $(COMMON_DIR)/memory
-	make -C $(COMMON_DIR)/.. run
-
+# Sources
 ASM_SRCS += $(COMMON_DIR)/start.S
-
-C_SRCS += $(wildcard *.c, $(COMMON_DIR)/lib/*.c)
+override C_SRCS += $(wildcard *.c) $(wildcard $(COMMON_DIR)/lib/*.c)
 
 LINKER_SCRIPT := $(COMMON_DIR)/link.lds
 
@@ -33,30 +32,44 @@ INCLUDES += -I$(COMMON_DIR)/include
 
 LDFLAGS += -T $(LINKER_SCRIPT) -nostartfiles -Wl,--gc-sections -Wl,--check-sections
 
-ASM_OBJS := $(ASM_SRCS:.S=.o)
-C_OBJS := $(C_SRCS:.c=.o)
+# Define objects (sort to remove duplicates)
+ASM_OBJS := $(sort $(addprefix $(BUILD_DIR)/, $(notdir $(ASM_SRCS:.S=.o))))
+C_OBJS := $(sort $(addprefix $(BUILD_DIR)/, $(notdir $(C_SRCS:.c=.o))))
+
+# Handle source paths via VPATH
+SRC_DIRS := $(sort $(dir $(ASM_SRCS) $(C_SRCS)))
+vpath %.S $(SRC_DIRS)
+vpath %.c $(SRC_DIRS)
 
 LINK_OBJS += $(ASM_OBJS) $(C_OBJS)
 LINK_DEPS += $(LINKER_SCRIPT)
 
-CLEAN_OBJS += $(TARGET) $(LINK_OBJS) $(TARGET).dump $(TARGET).bin
+# Objects to clean (everything in build dir)
+CLEAN_DIRS += $(BUILD_DIR)
 
 CFLAGS += -march=$(RISCV_ARCH)
 CFLAGS += -mabi=$(RISCV_ABI)
-
 CFLAGS += -mcmodel=$(RISCV_MCMODEL)  -O2 --specs=nosys.specs  -gdwarf
 
-$(TARGET): $(LINK_OBJS) $(LINK_DEPS) Makefile
+all: $(ELF)
+	cp $(BINARY) $(MEMORY_BIN)
+	make -C $(COMMON_DIR)/.. run
+
+$(ELF): $(LINK_OBJS) $(LINK_DEPS) Makefile
+	@mkdir -p $(dir $@)
 	$(RISCV_GCC) $(CFLAGS) $(INCLUDES) $(LINK_OBJS) -o $@ $(LDFLAGS)
-	$(RISCV_OBJCOPY) -O binary $@ $@.bin
-	$(RISCV_OBJDUMP) -alDS -M no-aliases $@ > $@.dump
+	$(RISCV_OBJCOPY) -O binary $@ $(BINARY)
+	$(RISCV_OBJDUMP) -alDS -M no-aliases $@ > $(ELF).dump
 
-$(ASM_OBJS): %.o: %.S
+$(BUILD_DIR)/%.o: %.S
+	@mkdir -p $(dir $@)
 	$(RISCV_GCC) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
-$(C_OBJS): %.o: %.c
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
 	$(RISCV_GCC) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
-.PHONY: clean
 clean:
-	rm -f $(CLEAN_OBJS)
+	rm -rf $(CLEAN_DIRS)
+
+

@@ -12,7 +12,7 @@ uint32_t mshr_paddr;
 bool ld_merge = false;
 bool st_merge = false;
 uint32_t trans_offset = 0;
-Inst_uop trans_uop;
+InstUop trans_uop;
 bool merge_flag_ld = false;
 bool merge_flag_st = false;
 
@@ -113,7 +113,7 @@ void MSHR::comb_out()
 }
 void MSHR::comb_ready()
 {
-    out.mshr2dcache_ready->ready = count_mshr < MSHR_ENTRY_SIZE - 1 & count_table < MSHR_TABLE_SIZE - 1;
+    out.mshr2dcache_ready->ready = (count_mshr < MSHR_ENTRY_SIZE - 1) && (count_table < MSHR_TABLE_SIZE - 1);
 }
 void MSHR::comb()
 {
@@ -128,7 +128,7 @@ void MSHR::seq()
     }
     if (in.control->mispred)
     {
-        for (int i = 0; i < count_table; i++)
+        for (uint32_t i = 0; i < count_table; i++)
         {
             uint32_t idx = (table_head + i) % MSHR_TABLE_SIZE;
             if (mshr_table[idx].valid && mshr_table[idx].type == 0)
@@ -142,7 +142,7 @@ void MSHR::seq()
     }
     if (in.control->flush)
     {
-        for (int i = 0; i < count_table; i++)
+        for (uint32_t i = 0; i < count_table; i++)
         {
             uint32_t idx = (table_head + i) % MSHR_TABLE_SIZE;
             if (mshr_table[idx].valid && mshr_table[idx].type == 0)
@@ -209,7 +209,7 @@ void MSHR::seq()
         done_type = 0;
         merge_flag_ld = false;
         merge_flag_st = false;
-        for (int i = 0; i < count_table; i++)
+        for (uint32_t i = 0; i < count_table; i++)
         {
             uint32_t table_index = (table_head + i) % MSHR_TABLE_SIZE;
             if (mshr_table[table_index].valid && mshr_table[table_index].entry == mshr_head)
@@ -372,7 +372,7 @@ uint32_t MSHR::find_entry(uint32_t addr)
     }
     return MSHR_ENTRY_SIZE;
 }
-void MSHR::table_add(uint32_t idx, bool type, uint32_t offset, uint32_t reg, uint32_t wstrb, uint32_t wdata, Inst_uop uop)
+void MSHR::table_add(uint32_t idx, bool type, uint32_t offset, uint32_t reg, uint32_t wstrb, uint32_t wdata, InstUop uop)
 {
     mshr_table[table_tail].valid = true;
     mshr_table[table_tail].entry = idx;

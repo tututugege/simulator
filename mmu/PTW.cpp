@@ -1,5 +1,6 @@
 #include "include/PTW.h"
 #include <iostream>
+#include <cstring>
 
 using namespace std;
 using namespace ptw_n;
@@ -80,7 +81,8 @@ void PTW::comb() {
         } else {
           // D-Cache Hit, process PTE
           uint32_t pte_number = in.dcache_resp->data;
-          pte1 = *reinterpret_cast<pte_t *>(&pte_number);
+          // pte1 = *reinterpret_cast<pte_t *>(&pte_number);
+          std::memcpy(&pte1, &pte_number, sizeof(pte_t));
           // decide next step based on PTE (refill or next level)
           bool is_megapage = false;
           if (is_page_fault(pte1, op_type, true, &is_megapage)) {
@@ -115,12 +117,13 @@ void PTW::comb() {
       ptw_mem_access_cycles++; // 模拟内存访问延迟
     } else {
       // 访问内存，加载一级页表项
-      uint32_t pte1_addr =
-          ((mmu_state->satp.ppn & 0xFFFFF) << 10) | (vpn1 & 0x3FF);
+      // uint32_t pte1_addr =
+      //     ((mmu_state->satp.ppn & 0xFFFFF) << 10) | (vpn1 & 0x3FF);
       uint32_t pte1_number =
           p_memory[((mmu_state->satp.ppn & 0xFFFFF) << 10) |
                    (vpn1 & 0x3FF)]; // 计算一级页表项的物理地址
-      pte1 = *reinterpret_cast<pte_t *>(&pte1_number);
+      // pte1 = *reinterpret_cast<pte_t *>(&pte1_number);
+      std::memcpy(&pte1, &pte1_number, sizeof(pte_t));
       // 根据是否 page fault 来决定下一个状态
       bool is_megapage = false;
       if (is_page_fault(pte1, op_type, true, &is_megapage)) {
@@ -176,7 +179,8 @@ void PTW::comb() {
         } else {
           // D-Cache Hit, process PTE
           uint32_t pte2_number = in.dcache_resp->data;
-          pte2 = *reinterpret_cast<pte_t *>(&pte2_number);
+          // pte2 = *reinterpret_cast<pte_t *>(&pte2_number);
+          std::memcpy(&pte2, &pte2_number, sizeof(pte_t));
           // decide next step based on PTE (refill or next level)
           bool is_megapage = false;
           if (is_page_fault(pte2, op_type, false, &is_megapage)) {
@@ -223,7 +227,8 @@ void PTW::comb() {
       uint32_t pte2_number =
           p_memory[((pte2_ppn) & 0xFFFFF) << 10 |
                    (vpn0 & 0x3FF)]; // 计算二级页表项的物理地址
-      pte2 = *reinterpret_cast<pte_t *>(&pte2_number);
+      // pte2 = *reinterpret_cast<pte_t *>(&pte2_number);
+      std::memcpy(&pte2, &pte2_number, sizeof(pte_t));
       // 根据是否 page fault 来决定下一个状态
       bool is_megapage = false;
       if (is_page_fault(pte2, op_type, false, &is_megapage)) {

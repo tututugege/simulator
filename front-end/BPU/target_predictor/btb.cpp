@@ -324,7 +324,7 @@ void btb_update(uint32_t pc, uint32_t actualAddr, uint32_t br_type,
 
   printf("pc: %x, br_type: %x\n", pc, br_type);
   // should not reach here
-  assert(0);
+  Assert(0);
 }
 
 // void btb_update(uint32_t pc, uint32_t actualAddr, uint32_t br_type,

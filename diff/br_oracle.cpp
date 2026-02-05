@@ -1,20 +1,19 @@
+#include "config.h"
+#include "diff.h"
+#include "front_IO.h"
 #include "oracle.h"
 #include "ref.h"
-static RefCpu oracle;
-
-#include <config.h>
-#include <cvt.h>
-#include <diff.h>
-#include <front_IO.h>
+#include <cstring>
 #include <random>
-#include <ref.h>
+
+static RefCpu oracle;
 
 #define BP_ACCURACY 95
 
 void init_oracle(int img_size) {
   oracle.init(0);
-  memcpy(oracle.memory + 0x80000000 / 4, p_memory + 0x80000000 / 4,
-         img_size * sizeof(uint32_t));
+  std::memcpy(oracle.memory + 0x80000000 / 4, p_memory + 0x80000000 / 4,
+              img_size * sizeof(uint32_t));
   oracle.memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
   oracle.memory[uint32_t(0x0 / 4)] = 0xf1402573;
   oracle.memory[uint32_t(0x4 / 4)] = 0x83e005b7;
@@ -33,13 +32,13 @@ void init_oracle(int img_size) {
 void get_oracle(struct front_top_in &in, struct front_top_out &out) {
   int i;
   static bool stall = false;
-  random_device rd;
-  mt19937 gen(rd());
-  uniform_int_distribution<int> dis(1, 100);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<int> dis(1, 100);
 
   if (in.refetch) {
     stall = false;
-    assert(in.refetch_address == oracle.state.pc);
+    Assert(in.refetch_address == oracle.state.pc);
   }
 
   if (stall) {

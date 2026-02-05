@@ -14,9 +14,10 @@ extern RefCpu ref_cpu;
 struct SimConfig {
   // [修改] 增加 FAST 模式
   enum Mode {
-    RUN,  // 原 Normal模式：从头运行二进制文件 (乱序)
-    CKPT, // Ckpt模式：从快照恢复
-    FAST  // Fast模式：先单周期快进，再乱序执行
+    RUN,     // 运行模式：从头运行二进制文件 (乱序)
+    CKPT,    // 快照模式：从快照恢复
+    FAST,    // 快速模式：先单周期快进，再乱序执行
+    REF_ONLY // 仅运行 Reference Model
   } mode = RUN;
 
   // 统一的目标文件路径
@@ -30,8 +31,9 @@ struct SimConfig {
 void print_help(char *argv[]) {
   std::cout << "Usage: " << argv[0] << " [options] <target_file>" << std::endl;
   std::cout << "\nOptions:" << std::endl;
-  std::cout << "  -m, --mode <run|ckpt|fast>  Set execution mode (default: run)"
-            << std::endl;
+  std::cout
+      << "  -m, --mode <run|ckpt|fast|ref>  Set execution mode (default: run)"
+      << std::endl;
   std::cout << "  -f, --fast-forward <num>    Number of cycles/insts to "
                "fast-forward (only for fast mode)"
             << std::endl;
@@ -42,6 +44,8 @@ void print_help(char *argv[]) {
             << " --mode ckpt checkpoint/mcf/ckpt_sp1.gz" << std::endl;
   std::cout << "  Fast Mode:  " << argv[0]
             << " --mode fast -f 1000000 spec_mem/mcf.bin" << std::endl;
+  std::cout << "  Ref Only:   " << argv[0] << " --mode ref spec_mem/mcf.bin"
+            << std::endl;
 }
 
 // 3. 文件检查函数
@@ -71,15 +75,14 @@ int main(int argc, char *argv[]) {
   // 长参数定义
   static struct option long_options[] = {
       {"mode", required_argument, 0, 'm'},
-      {"fast-forward", required_argument, 0, 'f'}, // [新增] 长参数
+      {"fast-forward", required_argument, 0, 'f'}, // 快进参数
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}};
 
   int opt;
   int option_index = 0;
 
-  // --- A. 解析 Flags ---
-  // [修改] getopt 字符串增加 "f:"
+  // --- A. 解析命令行参数 ---
   while ((opt = getopt_long(argc, argv, "m:f:h", long_options,
                             &option_index)) != -1) {
     switch (opt) {
@@ -89,16 +92,18 @@ int main(int argc, char *argv[]) {
         config.mode = SimConfig::CKPT;
       } else if (m == "run") {
         config.mode = SimConfig::RUN;
-      } else if (m == "fast") { // [新增] 解析 fast 模式
+      } else if (m == "fast") {
         config.mode = SimConfig::FAST;
+      } else if (m == "ref") {
+        config.mode = SimConfig::REF_ONLY;
       } else {
         std::cerr << "Error: Unknown mode '" << m
-                  << "'. Use 'run', 'ckpt', or 'fast'." << std::endl;
+                  << "'. Use 'run', 'ckpt', 'fast', or 'ref'." << std::endl;
         return 1;
       }
       break;
     }
-    case 'f': { // [新增] 解析快进数值
+    case 'f': {
       try {
         config.fast_forward_count = std::stoull(optarg);
       } catch (const std::exception &e) {
@@ -136,7 +141,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // [新增] FAST 模式的逻辑校验
+  // 快速模式逻辑校验
   if (config.mode == SimConfig::FAST) {
     if (config.fast_forward_count == 0) {
       std::cerr << "Error: FAST mode requires a positive number for "
@@ -145,14 +150,17 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   } else {
-    // 如果不是 FAST 模式，却指定了 -f，可以报个 Warning
+    // 如果不是快速模式，却指定了 -f，则报错
     if (config.fast_forward_count > 0) {
       std::cerr << "Warning: --fast-forward (-f) is ignored in RUN/CKPT mode."
                 << std::endl;
     }
   }
 
-  p_memory = new uint32_t[PHYSICAL_MEMORY_LENGTH];
+
+
+  p_memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
+  cpu.init();
 
   // --- D. 模拟器启动逻辑 ---
   if (config.mode == SimConfig::RUN) {
@@ -172,30 +180,50 @@ int main(int argc, char *argv[]) {
               << config.fast_forward_count << " cycles..." << std::endl;
 
     cpu.back.load_image(config.target_file);
-    ref_cpu.fast_run = true;
+    ref_cpu.strict_mmu_check = false;
+    ref_cpu.uart_print = true;
 
-    for (int i = 0; i < config.fast_forward_count; i++) {
+    for (uint64_t i = 0; i < config.fast_forward_count; i++) {
       difftest_step(false);
     }
 
     cpu.back.restore_from_ref();
-    ref_cpu.fast_run = false;
+    cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
+    ref_cpu.strict_mmu_check = true;
+    ref_cpu.uart_print = false;
+
     std::cout << "[Step 2] Run O3 CPU ... " << endl;
+  } else if (config.mode == SimConfig::REF_ONLY) {
+    std::cout << "[Mode] REF_ONLY: Reference Model Validation" << std::endl;
+    std::cout << "[File] " << config.target_file << std::endl;
+    cpu.back.load_image(config.target_file);
+    ref_cpu.uart_print = true;
+
+    // cpu.init(); // Moved to top
+
+    ref_cpu.strict_mmu_check = false;
+
+    std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
+
+    sim_time = 0;
+    while (sim_time < (long long)MAX_SIM_TIME) { // Or a large limit
+      difftest_step(false);
+      sim_time++;
+      if (sim_time % 10000000 == 0) {
+        cout << dec << sim_time << endl;
+      }
+      // Since Ref doesn't have an explicit 'end' signal exposed easily, usually
+      // relies on cycles or trap
+    }
+    std::cout << "[Debug] Ref Model Run Completed." << std::endl;
+    free(p_memory);
+    return 0;
   }
 
-  cpu.init();
+  // cpu.init(); // Moved to top
 
-  // ref_cpu.fast_run = true;
-  // while (1) {
-  //   difftest_step(false);
-  //   sim_time++;
-  //   if (sim_time % 100000000 == 0) {
-  //     cout << dec << sim_time << endl;
-  //   }
-  // }
-
-  // main loop
-  for (sim_time = 0; sim_time < MAX_SIM_TIME; sim_time++) {
+  // 主循环
+  for (sim_time = 0; sim_time < (long long)MAX_SIM_TIME; sim_time++) {
     if (sim_time % 10000000 == 0) {
       cout << dec << sim_time << endl;
     }
@@ -218,7 +246,7 @@ int main(int argc, char *argv[]) {
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    cpu.ctx.perf.perf_print();
+    // cpu.ctx.perf.perf_print();  // Disabled for cleaner output
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
   } else {
@@ -230,6 +258,6 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  delete p_memory;
+  free(p_memory);
   return 0;
 }

@@ -7,30 +7,43 @@ COLOR_NONE  = \033[0m
 RESULT = .result
 $(shell > $(RESULT))
 
+# Find all test names based on .c files in cpu-tests/
 ALL ?= $(basename $(notdir $(shell find cpu-tests -name "*.c")))
 
-all: $(addprefix Makefile., $(ALL))
-	@echo "test list [$(words $(ALL)) item(s)]:" $(ALL)
+.PHONY: all list run clean help $(ALL)
 
-$(ALL): %: Makefile.%
+# Default target: list available tests
+all: help
 
-Makefile.%: cpu-tests/%.c
-	/bin/echo -e "COMMON_DIR = ..\nTARGET = $*\nC_SRCS = $<\ninclude ../common.mk" > $@
-	if make -f  $@; then \
+help:
+	@echo "Usage:"
+	@echo "  make list        - List all available tests"
+	@echo "  make run         - Run all tests"
+	@echo "  make <testname>  - Run a specific test (e.g., 'make add')"
+	@echo "  make clean       - Clean build artifacts"
+
+list:
+	@echo "Available tests [$(words $(ALL))]:"
+	@echo $(ALL) | fmt -w 80
+
+# Run all tests
+run: $(ALL)
+	@cat $(RESULT)
+	@rm -f $(RESULT)
+
+# Rule for individual tests
+# Invokes common.mk directly without generating a temporary Makefile
+$(ALL): %:
+	@echo "Running test: $*"
+	@if $(MAKE) -s -f ../common.mk \
+		COMMON_DIR=.. \
+		TARGET=$* \
+		C_SRCS=cpu-tests/$*.c; then \
 		printf "[%14s] $(COLOR_GREEN)PASS$(COLOR_NONE)\n" $* >> $(RESULT); \
 	else \
 		printf "[%14s] $(COLOR_RED)***FAIL***$(COLOR_NONE)\n" $* >> $(RESULT); \
 	fi
-	# rm -f $* $*.bin
-	rm -f Makefile.$*
-
-run: all
-	@cat $(RESULT)
-	@rm $(RESULT)
-
-gdb:
-	make -C ../.. gdb
+	@ echo "Finished test: $*"
 
 clean:
-	rm -rf *.dump
-	rm -rf ./cpu-tests/*.o
+	rm -rf build $(RESULT)

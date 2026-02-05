@@ -1,5 +1,5 @@
-.cache/*
-*.dump
-*.bin
-!cpu-test/*
+.cache/
+/build/
+*.log
+!cpu-tests/
 !Makefile

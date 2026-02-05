@@ -13,11 +13,12 @@ using namespace mmu_n;
  * MMU Inner Module connections
  */
 MMU::MMU()
-    : io{}, tlb2ptw{}, ptw2tlb{}, tlb(&ptw2tlb, // PTW to TLB interface
-                                      &io.in.mmu_ifu_req, // IFU Port Signals
-                                      io.in.mmu_lsu_req,  // LSU Port Signals
-                                      &io.in.tlb_flush,   // TLB Flush Signal
-                                      &io.in.state.satp),
+    : io{}, ptw2tlb{}, tlb2ptw{},
+      tlb(&ptw2tlb,           // PTW to TLB interface
+          &io.in.mmu_ifu_req, // IFU Port Signals
+          io.in.mmu_lsu_req,  // LSU Port Signals
+          &io.in.tlb_flush,   // TLB Flush Signal
+          &io.in.state.satp),
       ptw(&tlb2ptw,                // TLB to PTW interface
           &ptw2tlb,                // PTW to TLB interface
           &io.out.mmu_dcache_req,  // dcache_req master
