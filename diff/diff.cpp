@@ -1,6 +1,7 @@
 #include "diff.h"
 #include "RISCV.h"
 #include "config.h"
+#include "util.h"
 
 #include <cstring>
 #include <iostream>

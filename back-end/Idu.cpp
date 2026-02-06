@@ -8,12 +8,7 @@
 #include <util.h>
 
 // 中间信号
-#ifdef ENABLE_MULTI_BR
-#define MAX_TAG_ALLOC_NUM 2
-static wire<4> alloc_tag[MAX_TAG_ALLOC_NUM]; // 分配的新 Tag
-#else
-static wire<4> alloc_tag; // 分配的新 Tag
-#endif
+static wire<4> alloc_tag[FETCH_WIDTH]; // 分配的新 Tag
 
 void decode(InstUop &uop, uint32_t instructinn);
 
@@ -32,14 +27,13 @@ void Idu::init() {
   }
 }
 
-#ifdef ENABLE_MULTI_BR
 // 译码并分配 Tag
 void Idu::comb_decode() {
 
-  wire<1> alloc_valid[MAX_TAG_ALLOC_NUM];
+  wire<1> alloc_valid[FETCH_WIDTH];
   int alloc_num = 0;
   int i;
-  for (i = 0; i < MAX_BR_NUM && alloc_num < MAX_TAG_ALLOC_NUM; i++) {
+  for (i = 0; i < MAX_BR_NUM && alloc_num < max_br_per_cycle; i++) {
     if (tag_vec[i]) {
       alloc_tag[alloc_num] = i;
       alloc_valid[alloc_num] = true;
@@ -47,11 +41,9 @@ void Idu::comb_decode() {
     }
   }
 
-  if (i == MAX_BR_NUM) {
-    for (int i = alloc_num; i < MAX_TAG_ALLOC_NUM; i++) {
-      alloc_tag[i] = 0;
-      alloc_valid[i] = false;
-    }
+  for (int i = alloc_num; i < FETCH_WIDTH; i++) {
+    alloc_tag[i] = 0;
+    alloc_valid[i] = false;
   }
 
   for (i = 0; i < FETCH_WIDTH; i++) {
@@ -101,7 +93,7 @@ void Idu::comb_decode() {
     if (in.front2dec->valid[i] && is_branch(out.dec2ren->uop[i].type)) {
       if (!alloc_valid[br_num]) {
 #ifdef CONFIG_PERF_COUNTER
-        perf.idu_tag_stall++;
+        ctx->perf.idu_tag_stall++;
 #endif
         stall = true;
         break;
@@ -119,102 +111,15 @@ void Idu::comb_decode() {
   }
 }
 
-#else
-// 译码并分配 Tag
-void Idu::comb_decode() {
-  wire<1> no_tag = false;
-  bool has_br = false; // 一周期只能解码一条分支指令
-  bool stall = false;
-
-  // 查找新的 Tag
-  // 即查找 01 串中第一个 1 的位置
-  // 如果分配两个，可以从两头分别找
-  for (alloc_tag = 0; alloc_tag < MAX_BR_NUM; alloc_tag++) {
-    if (tag_vec[alloc_tag])
-      break;
-  }
-
-  // 无剩余的 Tag 相当于 tag_vec == 0
-  if (alloc_tag == MAX_BR_NUM) {
-    no_tag = true;
-    alloc_tag = 0;
-  }
-
-  int i;
-  for (i = 0; i < FETCH_WIDTH; i++) {
-    if (in.front2dec->valid[i]) {
-      out.dec2ren->valid[i] = true;
-      if (in.front2dec->page_fault_inst[i]) {
-        out.dec2ren->uop[i].uop_num = 1;
-        out.dec2ren->uop[i].page_fault_inst = true;
-        out.dec2ren->uop[i].page_fault_load = false;
-        out.dec2ren->uop[i].page_fault_store = false;
-        out.dec2ren->uop[i].type = NOP;
-        out.dec2ren->uop[i].src1_en = out.dec2ren->uop[i].src2_en =
-            out.dec2ren->uop[i].dest_en = false;
-      } else {
-        // 实际电路中4个译码电路每周期无论是否valid都会运行
-        decode(out.dec2ren->uop[i], in.front2dec->inst[i]);
-      }
-    } else {
-      out.dec2ren->valid[i] = false;
-      continue;
-    }
-
-    out.dec2ren->uop[i].tag = (has_br) ? alloc_tag : now_tag;
-    out.dec2ren->uop[i].pc = in.front2dec->pc[i];
-    out.dec2ren->uop[i].pred_br_taken = in.front2dec->predict_dir[i];
-    out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
-    out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
-    out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
-    for (int j = 0; j < 4; j++) { // TN_MAX = 4
-      out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];
-    }
-
-    out.dec2ren->uop[i].pred_br_pc =
-        in.front2dec->predict_next_fetch_address[i];
-
-    if (DCACHE_LOG) {
-      printf("Idu Decode: inst=0x%08x pc=0x%08x pred_br_pc=0x%08x "
-             "pred_br_taken=%d alt_pred=%d pcpn=%d altpcpn=%d tag=%d\n",
-             in.front2dec->inst[i], out.dec2ren->uop[i].pc,
-             out.dec2ren->uop[i].pred_br_pc, out.dec2ren->uop[i].pred_br_taken,
-             out.dec2ren->uop[i].alt_pred, out.dec2ren->uop[i].pcpn,
-             out.dec2ren->uop[i].altpcpn, out.dec2ren->uop[i].tag);
-    }
-    // 用于调试
-    if (out.dec2ren->uop[i].type == JAL) {
-      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
-    } else {
-      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
-    }
-
-    if (in.front2dec->valid[i] && is_branch(out.dec2ren->uop[i].type)) {
-      if (!no_tag && !has_br) {
-        has_br = true;
-      } else {
-#ifdef CONFIG_PERF_COUNTER
-        if (has_br)
-          ctx->perf.idu_br_stall++;
-        if (no_tag)
-          ctx->perf.idu_tag_stall++;
-#endif
-
-        stall = true;
-        break;
-      }
-    }
-  }
-
-  if (stall) {
-    for (; i < FETCH_WIDTH; i++) {
-      out.dec2ren->valid[i] = false;
-    }
-  }
-}
-#endif
-
 void Idu::comb_branch() {
+  // Init next state
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    tag_vec_1[i] = tag_vec[i];
+    tag_list_1[i] = tag_list[i];
+  }
+  enq_ptr_1 = enq_ptr;
+  now_tag_1 = now_tag;
+
   // 如果一周期实现不方便，可以用状态机多周期实现
   if (in.prf2dec->mispred) {
     out.dec_bcast->mispred = true;
@@ -261,7 +166,6 @@ void Idu::comb_fire() {
     }
   }
 
-#ifdef ENABLE_MULTI_BR
   int br_num = 0;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.dec2front->fire[i] = out.dec2ren->valid[i] && in.ren2dec->ready;
@@ -276,21 +180,6 @@ void Idu::comb_fire() {
       br_num++;
     }
   }
-#else
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    out.dec2front->fire[i] = out.dec2ren->valid[i] && in.ren2dec->ready;
-    out.dec2front->ready = out.dec2front->ready &&
-                           (!in.front2dec->valid[i] || out.dec2ren->valid[i]);
-
-    if (out.dec2front->fire[i] && is_branch(out.dec2ren->uop[i].type)) {
-      now_tag_1 = alloc_tag;
-      tag_vec_1[alloc_tag] = false;
-      tag_list_1[enq_ptr] = alloc_tag;
-      LOOP_INC(enq_ptr_1, MAX_BR_NUM);
-    }
-  }
-
-#endif
 }
 
 void Idu::comb_release_tag() {

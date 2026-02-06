@@ -1,17 +1,29 @@
 #pragma once
-#include "config.h"
+#include "types.h"
 
 #define LOOP_INC(idx, length) idx = (idx + 1) % (length)
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
+// Custom Assert Macro to avoid WSL2 issues
+#define Assert(cond)                                                           \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      printf("\033[1;31mAssertion failed: %s, file %s, line %d\033[0m\n",      \
+             #cond, __FILE__, __LINE__);                                       \
+      exit(1);                                                                 \
+    }                                                                          \
+  } while (0)
 
 inline int get_rob_line(uint32_t rob_idx) { return rob_idx >> 2; }
 inline int get_rob_bank(uint32_t rob_idx) { return rob_idx & 0b11; }
-inline uint32_t make_rob_idx(uint32_t line, uint32_t bank) { return (line << 2) | bank; }
+inline uint32_t make_rob_idx(uint32_t line, uint32_t bank) {
+  return (line << 2) | bank;
+}
 
 inline bool is_branch(InstType type) { return type == BR || type == JALR; }
 
 inline bool is_store(InstUop uop) {
-  return uop.type == STORE || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR);
+  return uop.type == STORE ||
+         (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR);
 }
 
 inline bool is_load(InstUop uop) {

@@ -207,6 +207,7 @@ void Rob::comb_complete() {
     if (in.prf2rob->entry[i].valid) {
       int bank_idx = get_rob_bank(in.prf2rob->entry[i].uop.rob_idx);
       int line_idx = get_rob_line(in.prf2rob->entry[i].uop.rob_idx);
+
       entry_1[bank_idx][line_idx].uop.cplt_num++;
 
       if (i == IQ_LD_PORT_BASE) {

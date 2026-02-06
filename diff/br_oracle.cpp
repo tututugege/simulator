@@ -3,6 +3,7 @@
 #include "front_IO.h"
 #include "oracle.h"
 #include "ref.h"
+#include "util.h"
 #include <cstring>
 #include <random>
 

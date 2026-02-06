@@ -1,4 +1,5 @@
 #include "front_fifo.h"
+#include "util.h"
 #include <array>
 // #include <assert.h>
 #include <iostream>
@@ -64,7 +65,8 @@ void instruction_FIFO_top(struct instruction_FIFO_in *in,
       out->page_fault_inst[i] = fifo.front().page_fault_inst[i];
       out->inst_valid[i] = fifo.front().inst_valid[i];
       out->predecode_type[i] = fifo.front().predecode_type[i];
-      out->predecode_target_address[i] = fifo.front().predecode_target_address[i];
+      out->predecode_target_address[i] =
+          fifo.front().predecode_target_address[i];
     }
     out->seq_next_pc = fifo.front().seq_next_pc;
   }

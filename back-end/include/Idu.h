@@ -21,8 +21,12 @@ public:
 
 class Idu {
 public:
-  Idu(SimContext *ctx) { this->ctx = ctx; }
+  Idu(SimContext *ctx, int max_br = 1) {
+    this->ctx = ctx;
+    this->max_br_per_cycle = max_br;
+  }
   SimContext *ctx;
+  int max_br_per_cycle;
   IduIn in;
   IduOut out;
   void decode(InstUop &uop, uint32_t inst);

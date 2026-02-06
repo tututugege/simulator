@@ -43,9 +43,9 @@ public:
   uint32_t load_data;
 #endif
 
-  reg<32> reg_file[Prf_NUM];
+  reg<32> reg_file[PRF_NUM];
   InstEntry inst_r[ISSUE_WIDTH];
 
-  wire<32> reg_file_1[Prf_NUM];
+  wire<32> reg_file_1[PRF_NUM];
   InstEntry inst_r_1[ISSUE_WIDTH];
 };

@@ -16,7 +16,6 @@ extern RefCpu ref_cpu;
 
 void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory);
 
-
 void BackTop::difftest_cycle() {
 #ifdef CONFIG_DIFFTEST
   int commit_indices[COMMIT_WIDTH];
@@ -36,7 +35,7 @@ void BackTop::difftest_cycle() {
   if (commit_num > 0) {
     for (int i = 0; i < commit_num; i++) {
       InstUop *inst = &rob->out.rob_commit->commit_entry[commit_indices[i]].uop;
-      
+
       // 1. 同步侧效应 (Sync side effects for EVERY instruction)
       difftest_sync(inst);
 
@@ -54,10 +53,14 @@ void BackTop::difftest_cycle() {
           Assert(e.addr_valid && e.data_valid);
           dut_cpu.store = true;
           dut_cpu.store_addr = e.p_addr;
-          if (e.func3 == 0b00) dut_cpu.store_data = e.data & 0xFF;
-          else if (e.func3 == 0b01) dut_cpu.store_data = e.data & 0xFFFF;
-          else dut_cpu.store_data = e.data;
-          dut_cpu.store_data = dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
+          if (e.func3 == 0b00)
+            dut_cpu.store_data = e.data & 0xFF;
+          else if (e.func3 == 0b01)
+            dut_cpu.store_data = e.data & 0xFFFF;
+          else
+            dut_cpu.store_data = e.data;
+          dut_cpu.store_data = dut_cpu.store_data
+                               << (dut_cpu.store_addr & 0b11) * 8;
         } else {
           dut_cpu.store = false;
         }
@@ -69,8 +72,10 @@ void BackTop::difftest_cycle() {
         dut_cpu.page_fault_store = inst->page_fault_store;
         dut_cpu.inst_idx = inst->inst_idx;
 
-        if (skip) difftest_skip();
-        else difftest_step(true);
+        if (skip)
+          difftest_skip();
+        else
+          difftest_step(true);
       } else {
         // 中间指令只步进模型，不触发 checkregs
         difftest_step(false);
@@ -134,7 +139,8 @@ void BackTop::difftest_sync(InstUop *inst) {
         p_memory[0xc201004 / 4] = 0xa;
         p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xfff0ffff;
       } else if (cmd == 5) {
-        p_memory[0x10000000 / 4] = (p_memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
+        p_memory[0x10000000 / 4] =
+            (p_memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
       }
     }
 
@@ -191,7 +197,7 @@ void BackTop::difftest_inst(InstUop *inst) {
 
 void BackTop::init() {
 
-  idu = new Idu(ctx);
+  idu = new Idu(ctx, MAX_BR_PER_CYCLE);
   rename = new Ren(ctx);
   dis = new Dispatch(ctx);
   isu = new Isu(ctx);
@@ -404,10 +410,10 @@ void BackTop::comb() {
     }
   }
 
-    if (LOG) {
-      cout << "flush" << endl;
-      cout << "redirect_pc: " << hex << out.redirect_pc << endl;
-    }
+  if (LOG) {
+    cout << "flush" << endl;
+    cout << "redirect_pc: " << hex << out.redirect_pc << endl;
+  }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     out.commit_entry[i] = rob->out.rob_commit->commit_entry[i];
@@ -505,7 +511,7 @@ void BackTop::restore_from_ref() {
   uint8_t privilege;
   get_state(state, privilege, p_memory);
   number_PC = state.pc;
-  
+
   csr->privilege = csr->privilege_1 = privilege;
   for (int i = 0; i < ARF_NUM; i++) {
     prf->reg_file[i] = state.gpr[i];

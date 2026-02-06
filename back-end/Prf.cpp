@@ -204,7 +204,7 @@ void Prf::comb_pipeline() {
 }
 
 void Prf::seq() {
-  for (int i = 0; i < Prf_NUM; i++) {
+  for (int i = 0; i < PRF_NUM; i++) {
     reg_file[i] = reg_file_1[i];
   }
 

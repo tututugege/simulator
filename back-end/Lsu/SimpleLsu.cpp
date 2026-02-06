@@ -1,7 +1,6 @@
 #include "SimpleLsu.h"
 #include "AbstractLsu.h"
 #include "config.h"
-#include "ref.h"
 #include "util.h"
 #include <cstdint>
 #include <cstring>
@@ -111,7 +110,7 @@ void SimpleLsu::comb_load_res() {
 
       finished_loads.pop_front();
     } else {
-      break; 
+      break;
     }
   }
 
@@ -145,14 +144,15 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
     task.cplt_time = sim_time + 1;
   } else {
     task.paddr = p_addr;
-    
+
     // [Fix] Disable Store-to-Load Forwarding for MMIO ranges
     // These addresses involve side effects and must read from consistent memory
-    bool is_mmio = ((p_addr & 0xFFFFF000) == 0x10000000) || 
+    bool is_mmio = ((p_addr & 0xFFFFF000) == 0x10000000) ||
                    ((p_addr & 0xFF000000) == 0x0c000000);
-    
+
     task.flush_pipe = is_mmio;
-    auto fwd_res = is_mmio ? std::make_pair(0, 0u) : check_store_forward(p_addr, inst);
+    auto fwd_res =
+        is_mmio ? std::make_pair(0, 0u) : check_store_forward(p_addr, inst);
 
     if (fwd_res.first == 1) {
       // 这里的 Store 给了我们数据！不用查缓存了！
@@ -201,26 +201,27 @@ void SimpleLsu::handle_store_addr(const InstUop &inst) {
   // Translate VA -> PA
   uint32_t pa = inst.result;
   bool ret = mmu->translate(pa, inst.result, 2, in.csr_status); // 2=Store
-  
+
   if (!ret) {
-      // ⚠️ Store Page Fault Detected!
-      // Report to ROB via Writeback/Exception path
-      InstUop fault_op = inst;
-      fault_op.page_fault_store = true;
-      fault_op.cplt_time = sim_time; // Immediate failure
-      
-      // Store address calculation completed (with exception)
-      finished_sta_reqs.push_back(fault_op);
+    // ⚠️ Store Page Fault Detected!
+    // Report to ROB via Writeback/Exception path
+    InstUop fault_op = inst;
+    fault_op.page_fault_store = true;
+    fault_op.cplt_time = sim_time; // Immediate failure
+
+    // Store address calculation completed (with exception)
+    finished_sta_reqs.push_back(fault_op);
   } else {
-      // Normal STA completion (Optional: we could also return it through Port 5 
-      // to ensure ROB only considers it complete AFTER MMU translation. 
-      // Given the user's advice, we will let ALL STA results go through Port 5 via LSU.)
-      InstUop success_op = inst;
-      success_op.cplt_time = sim_time;
-      bool is_mmio = ((pa & 0xFFFFF000) == 0x10000000) || 
-                     ((pa & 0xFF000000) == 0x0c000000);
-      success_op.flush_pipe = is_mmio;
-      finished_sta_reqs.push_back(success_op);
+    // Normal STA completion (Optional: we could also return it through Port 5
+    // to ensure ROB only considers it complete AFTER MMU translation.
+    // Given the user's advice, we will let ALL STA results go through Port 5
+    // via LSU.)
+    InstUop success_op = inst;
+    success_op.cplt_time = sim_time;
+    bool is_mmio =
+        ((pa & 0xFFFFF000) == 0x10000000) || ((pa & 0xFF000000) == 0x0c000000);
+    success_op.flush_pipe = is_mmio;
+    finished_sta_reqs.push_back(success_op);
   }
 
   stq[idx].p_addr = pa;
@@ -228,9 +229,8 @@ void SimpleLsu::handle_store_addr(const InstUop &inst) {
 }
 
 void SimpleLsu::handle_store_data(const InstUop &inst) {
-  int idx = inst.stq_idx;
-  stq[idx].data = inst.result; // Use result from SduUnit (handles AMO ALU)
-  stq[idx].data_valid = true;
+  stq[inst.stq_idx].data = inst.result;
+  stq[inst.stq_idx].data_valid = true;
 }
 
 // =========================================================
@@ -324,6 +324,16 @@ void SimpleLsu::seq() {
       }
     }
 
+    // [Fix] Also clear finished_loads that are waiting for WB
+    auto it_finished = finished_loads.begin();
+    while (it_finished != finished_loads.end()) {
+      if ((1 << it_finished->tag) & mask) {
+        it_finished = finished_loads.erase(it_finished);
+      } else {
+        ++it_finished;
+      }
+    }
+
     // 分支误预测：Tail 回滚到某个中间点
     int recovery_tail = find_recovery_tail(mask);
 
@@ -401,7 +411,8 @@ void SimpleLsu::seq() {
           merge_data_to_word(old_val, head.data, paddr, head.func3);
       p_memory[word_idx] = new_val;
 
-      // Simple MMIO Write Side Effect (consistent with ref.cpp and BackTop cheat logic)
+      // Simple MMIO Write Side Effect (consistent with ref.cpp and BackTop
+      // cheat logic)
       if (paddr == 0x10000000) {
         // UART Output Logic
         char temp = new_val & 0xFF;
@@ -414,16 +425,14 @@ void SimpleLsu::seq() {
           p_memory[0x0c201004 / 4] = 0xa;
           p_memory[0x10000000 / 4] &= 0xfff0ffff;
         } else if (cmd == 5) {
-          p_memory[0x10000000 / 4] = (p_memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
+          p_memory[0x10000000 / 4] =
+              (p_memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
         }
       } else if (paddr == 0x0c201004) {
         if ((head.data & 0xff) == 0xa) {
           p_memory[0x0c201004 / 4] = 0x0;
         }
       }
-
-      if (LOG)
-        printf("[LSU] Retire Store[%d] to Mem\n", stq_head);
 
       // 2. 清理条目
       head.valid = false;
@@ -502,7 +511,6 @@ void SimpleLsu::seq() {
       ++it;
     }
   }
-
 }
 
 // =========================================================
@@ -591,9 +599,17 @@ SimpleLsu::check_store_forward(uint32_t p_addr, const InstUop &load_uop) {
     StqEntry &entry = stq[ptr];
 
     // A. 基础有效性与年龄检查
-    if (entry.valid && entry.addr_valid &&
-        is_store_older(entry.rob_idx, entry.rob_flag, load_uop.rob_idx,
-                       load_uop.rob_flag)) {
+    // 🛡️ CRITICAL FIX: 已提交的 Store 在程序顺序上一定比当前指令老
+    bool is_older =
+        entry.committed || is_store_older(entry.rob_idx, entry.rob_flag,
+                                          load_uop.rob_idx, load_uop.rob_flag);
+
+    if (entry.valid && is_older) {
+      if (!entry.addr_valid) {
+        return {
+            2,
+            0}; // 🛡️ CRITICAL FIX: Stall if an older store's address is unknown
+      }
 
       // B. 区间重叠计算
       int store_width = get_mem_width(entry.func3);

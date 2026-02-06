@@ -124,15 +124,18 @@ int SimpleCache::cache_access(uint32_t addr) {
     }
   }
 
+  if (addr < 0x80000000) {
+    return 1;
+  }
   if (i == WAY_NUM) {
     cache_evict(addr);
     ctx->perf.cache_miss_num++;
-    return MISS_LATENCY;
+    return HIT_LATENCY + rand() % (MISS_LATENCY - HIT_LATENCY + 1);
   } else {
 #ifdef PLRU_EVICT
     update_plru(get_index(addr), i);
 #endif
   }
 
-  return HIT_LATENCY;
+  return HIT_LATENCY + rand() % (MISS_LATENCY - HIT_LATENCY + 1);
 }

@@ -8,21 +8,21 @@
 
 // 多个comb复用的中间信号
 static wire<1> fire[FETCH_WIDTH];
-static wire<1> spec_alloc_flush[Prf_NUM];
-static wire<1> spec_alloc_mispred[Prf_NUM];
-static wire<1> spec_alloc_normal[Prf_NUM];
-static wire<1> free_vec_flush[Prf_NUM];
-static wire<1> free_vec_mispred[Prf_NUM];
-static wire<1> free_vec_normal[Prf_NUM];
+static wire<1> spec_alloc_flush[PRF_NUM];
+static wire<1> spec_alloc_mispred[PRF_NUM];
+static wire<1> spec_alloc_normal[PRF_NUM];
+static wire<1> free_vec_flush[PRF_NUM];
+static wire<1> free_vec_mispred[PRF_NUM];
+static wire<1> free_vec_normal[PRF_NUM];
 static wire<7> spec_RAT_flush[ARF_NUM + 1];
 static wire<7> spec_RAT_mispred[ARF_NUM + 1];
 static wire<7> spec_RAT_normal[ARF_NUM + 1];
-static wire<1> busy_table_awake[Prf_NUM];
+static wire<1> busy_table_awake[PRF_NUM];
 
 int ren_commit_idx;
 
 void Ren::init() {
-  for (int i = 0; i < Prf_NUM; i++) {
+  for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
 
     if (i < ARF_NUM + 1) {
@@ -44,15 +44,15 @@ void Ren::init() {
   memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM + 1) * sizeof(reg<7>));
   memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) * sizeof(reg<7>));
 
-  memcpy(spec_alloc_mispred, spec_alloc, Prf_NUM);
-  memcpy(spec_alloc_flush, spec_alloc, Prf_NUM);
-  memcpy(spec_alloc_normal, spec_alloc, Prf_NUM);
-  memcpy(spec_alloc_1, spec_alloc, Prf_NUM);
+  memcpy(spec_alloc_mispred, spec_alloc, PRF_NUM);
+  memcpy(spec_alloc_flush, spec_alloc, PRF_NUM);
+  memcpy(spec_alloc_normal, spec_alloc, PRF_NUM);
+  memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
 
-  memcpy(free_vec_mispred, free_vec, Prf_NUM);
-  memcpy(free_vec_flush, free_vec, Prf_NUM);
-  memcpy(free_vec_normal, free_vec, Prf_NUM);
-  memcpy(free_vec_1, free_vec, Prf_NUM);
+  memcpy(free_vec_mispred, free_vec, PRF_NUM);
+  memcpy(free_vec_flush, free_vec, PRF_NUM);
+  memcpy(free_vec_normal, free_vec, PRF_NUM);
+  memcpy(free_vec_1, free_vec, PRF_NUM);
 }
 
 void Ren::comb_alloc() {
@@ -61,7 +61,7 @@ void Ren::comb_alloc() {
   wire<1> alloc_valid[FETCH_WIDTH] = {false};
   int alloc_num = 0;
 
-  for (int i = 0; i < Prf_NUM && alloc_num < FETCH_WIDTH; i++) {
+  for (int i = 0; i < PRF_NUM && alloc_num < FETCH_WIDTH; i++) {
     if (free_vec[i]) {
       alloc_reg[alloc_num] = i;
       alloc_valid[alloc_num] = true;
@@ -194,7 +194,7 @@ void Ren::comb_rename() {
 }
 
 void Ren::comb_fire() {
-  memcpy(busy_table_1, busy_table_awake, sizeof(wire<1>) * Prf_NUM);
+  memcpy(busy_table_1, busy_table_awake, sizeof(wire<1>) * PRF_NUM);
   for (int i = 0; i < FETCH_WIDTH; i++) {
     fire[i] = out.ren2dis->valid[i] && in.dis2ren->ready;
   }
@@ -219,7 +219,7 @@ void Ren::comb_fire() {
         RAT_checkpoint_1[inst_r[i].uop.tag][j] = spec_RAT_normal[j];
       }
 
-      for (int j = 0; j < Prf_NUM; j++) {
+      for (int j = 0; j < PRF_NUM; j++) {
         alloc_checkpoint_1[inst_r[i].uop.tag][j] = false;
       }
     }
@@ -243,7 +243,7 @@ void Ren::comb_branch() {
     }
 
     // 恢复空闲列表 (Free List)
-    for (int j = 0; j < Prf_NUM; j++) {
+    for (int j = 0; j < PRF_NUM; j++) {
       free_vec_mispred[j] =
           free_vec[j] || alloc_checkpoint[in.dec_bcast->br_tag][j];
       spec_alloc_mispred[j] =
@@ -260,7 +260,7 @@ void Ren ::comb_flush() {
     }
 
     // 恢复空闲列表 (Free List)
-    for (int j = 0; j < Prf_NUM; j++) {
+    for (int j = 0; j < PRF_NUM; j++) {
       // 使用free_vec_normal  当前周期提交的指令释放的寄存器(例如CSRR)要考虑
       free_vec_flush[j] = free_vec_normal[j] || spec_alloc_normal[j];
       spec_alloc_flush[j] = false;
@@ -306,12 +306,12 @@ void Ren ::comb_commit() {
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
-      // cpu.back.difftest_inst(inst);
+      cpu.back.difftest_inst(inst);
     }
   }
 
 #ifdef CONFIG_DIFFTEST
-  cpu.back.difftest_cycle();
+  // cpu.back.difftest_cycle();
 #endif
 }
 
@@ -328,16 +328,16 @@ void Ren ::comb_pipeline() {
   }
 
   if (in.rob_bcast->flush) {
-    memcpy(spec_alloc_1, spec_alloc_flush, Prf_NUM);
-    memcpy(free_vec_1, free_vec_flush, Prf_NUM);
+    memcpy(spec_alloc_1, spec_alloc_flush, PRF_NUM);
+    memcpy(free_vec_1, free_vec_flush, PRF_NUM);
     memcpy(spec_RAT_1, spec_RAT_flush, (ARF_NUM + 1) * sizeof(reg<7>));
   } else if (in.dec_bcast->mispred) {
-    memcpy(spec_alloc_1, spec_alloc_mispred, Prf_NUM);
-    memcpy(free_vec_1, free_vec_mispred, Prf_NUM);
+    memcpy(spec_alloc_1, spec_alloc_mispred, PRF_NUM);
+    memcpy(free_vec_1, free_vec_mispred, PRF_NUM);
     memcpy(spec_RAT_1, spec_RAT_mispred, (ARF_NUM + 1) * sizeof(reg<7>));
   } else {
-    memcpy(spec_alloc_1, spec_alloc_normal, Prf_NUM);
-    memcpy(free_vec_1, free_vec_normal, Prf_NUM);
+    memcpy(spec_alloc_1, spec_alloc_normal, PRF_NUM);
+    memcpy(free_vec_1, free_vec_normal, PRF_NUM);
     memcpy(spec_RAT_1, spec_RAT_normal, (ARF_NUM + 1) * sizeof(reg<7>));
   }
 }
@@ -348,27 +348,27 @@ void Ren ::seq() {
   memcpy(spec_RAT, spec_RAT_1, (ARF_NUM + 1) * sizeof(reg<7>));
   memcpy(arch_RAT, arch_RAT_1, (ARF_NUM + 1) * sizeof(reg<7>));
 
-  memcpy(free_vec, free_vec_1, Prf_NUM);
-  memcpy(busy_table, busy_table_1, Prf_NUM);
-  memcpy(spec_alloc, spec_alloc_1, Prf_NUM);
+  memcpy(free_vec, free_vec_1, PRF_NUM);
+  memcpy(busy_table, busy_table_1, PRF_NUM);
+  memcpy(spec_alloc, spec_alloc_1, PRF_NUM);
 
   memcpy(RAT_checkpoint, RAT_checkpoint_1,
          MAX_BR_NUM * (ARF_NUM + 1) * sizeof(reg<7>));
   memcpy(alloc_checkpoint, alloc_checkpoint_1,
-         MAX_BR_NUM * Prf_NUM * sizeof(reg<1>));
+         MAX_BR_NUM * PRF_NUM * sizeof(reg<1>));
 
-  memcpy(spec_alloc_normal, spec_alloc, Prf_NUM);
-  // memcpy(spec_alloc_mispred, spec_alloc, Prf_NUM);
-  // memcpy(spec_alloc_flush, spec_alloc, Prf_NUM); //
+  memcpy(spec_alloc_normal, spec_alloc, PRF_NUM);
+  // memcpy(spec_alloc_mispred, spec_alloc, PRF_NUM);
+  // memcpy(spec_alloc_flush, spec_alloc, PRF_NUM); //
 
-  memcpy(free_vec_normal, free_vec, Prf_NUM);
-  // memcpy(free_vec_mispred, free_vec, Prf_NUM);
-  // memcpy(free_vec_flush, free_vec, Prf_NUM);
+  memcpy(free_vec_normal, free_vec, PRF_NUM);
+  // memcpy(free_vec_mispred, free_vec, PRF_NUM);
+  // memcpy(free_vec_flush, free_vec, PRF_NUM);
 
   memcpy(spec_RAT_normal, spec_RAT, (ARF_NUM + 1) * sizeof(reg<7>));
   // memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) * sizeof(reg<7>));
   // memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM + 1) * sizeof(reg<7>));
-  memcpy(busy_table_awake, busy_table, Prf_NUM * sizeof(wire<1>));
+  memcpy(busy_table_awake, busy_table, PRF_NUM * sizeof(wire<1>));
 }
 
 RenIO Ren::get_hardware_io() {
