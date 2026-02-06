@@ -158,7 +158,6 @@ typedef struct InstUop {
   wire<7> rob_idx;
   wire<4> stq_idx;
   wire<16> pre_sta_mask;
-  wire<16> pre_std_mask;
 
   // ROB 信息
   wire<2> uop_num;

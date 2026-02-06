@@ -25,7 +25,6 @@ void Dispatch::comb_alloc() {
     // Load 需要知道之前的 Store
     if (is_load(inst_r[i].uop)) {
       inst_alloc[i].uop.pre_sta_mask = current_cycle_store_mask;
-      inst_alloc[i].uop.pre_std_mask = current_cycle_store_mask;
     }
 
     // 处理 Store 分配

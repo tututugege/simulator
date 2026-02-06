@@ -85,8 +85,6 @@ public:
         uint32_t mask = (1 << stq_idx);
         if (is_addr)
           entry_1[i].uop.pre_sta_mask &= ~mask;
-        else
-          entry_1[i].uop.pre_std_mask &= ~mask;
       }
     }
   }
@@ -179,7 +177,7 @@ private:
         (!op.src1_en || !op.src1_busy) && (!op.src2_en || !op.src2_busy);
     bool mem_ok = true;
     if (op.op == UOP_LOAD) { // 假设 op_type
-      mem_ok = (op.pre_sta_mask == 0) && (op.pre_std_mask == 0);
+      mem_ok = (op.pre_sta_mask == 0);
     }
     return ops_ok && mem_ok;
   }

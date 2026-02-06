@@ -98,20 +98,7 @@ void Isu::comb_enq() {
             }
           }
 
-          // 扫描 STD 队列
-          for (const auto &entry : iqs[IQ_STD].get_entries_1()) {
-            if (entry.valid)
-              uop.pre_std_mask |= (1 << entry.uop.stq_idx);
           }
-          // 修正：清除本周期正在发射的 STD 掩码
-          for (int k = 0; k < LSU_SDU_COUNT; k++) {
-            if (out.iss2prf->iss_entry[IQ_STD_PORT_BASE + k].valid) {
-              uop.pre_std_mask &=
-                  ~(1 << out.iss2prf->iss_entry[IQ_STD_PORT_BASE + k]
-                             .uop.stq_idx);
-            }
-          }
-        }
 
         // 修正：检查本周期的寄存器唤醒 (快速/慢速唤醒)
         // out.iss_awake 包含在 comb_awake 中生成的所有唤醒信号
@@ -271,13 +258,6 @@ void Isu::comb_awake() {
     if (out.iss2prf->iss_entry[IQ_STA_PORT_BASE + i].valid) {
       iqs[IQ_LD].clear_store_mask(
           out.iss2prf->iss_entry[IQ_STA_PORT_BASE + i].uop.stq_idx, true);
-    }
-  }
-
-  for (int i = 0; i < LSU_SDU_COUNT; i++) {
-    if (out.iss2prf->iss_entry[IQ_STD_PORT_BASE + i].valid) {
-      iqs[IQ_LD].clear_store_mask(
-          out.iss2prf->iss_entry[IQ_STD_PORT_BASE + i].uop.stq_idx, false);
     }
   }
 
