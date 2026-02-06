@@ -127,27 +127,27 @@ void BackTop::difftest_sync(InstUop *inst) {
     StqEntry e = lsu->get_stq_entry(inst->stq_idx);
 
     // --- UART/PLIC Cheat Synchronization (matching ref.cpp) ---
-    if (e.p_addr == 0x10000000) {
-      p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xffffff00;
+    if (e.p_addr == UART_ADDR_BASE) {
+      p_memory[UART_ADDR_BASE / 4] = p_memory[UART_ADDR_BASE / 4] & 0xffffff00;
     }
 
-    if (e.p_addr == 0x10000001) {
+    if (e.p_addr == UART_ADDR_BASE + 1) {
       uint8_t cmd = e.data & 0xff;
       if (cmd == 7) {
         csr->CSR_RegFile_1[csr_mip] = csr->CSR_RegFile[csr_mip] | (1 << 9);
         csr->CSR_RegFile_1[csr_sip] = csr->CSR_RegFile[csr_sip] | (1 << 9);
-        p_memory[0xc201004 / 4] = 0xa;
-        p_memory[0x10000000 / 4] = p_memory[0x10000000 / 4] & 0xfff0ffff;
+        p_memory[PLIC_CLAIM_ADDR / 4] = 0xa;
+        p_memory[UART_ADDR_BASE / 4] = p_memory[UART_ADDR_BASE / 4] & 0xfff0ffff;
       } else if (cmd == 5) {
-        p_memory[0x10000000 / 4] =
-            (p_memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
+        p_memory[UART_ADDR_BASE / 4] =
+            (p_memory[UART_ADDR_BASE / 4] & 0xfff0ffff) | 0x00030000;
       }
     }
 
-    if (e.p_addr == 0xc201004 && (e.data & 0x000000ff) == 0xa) {
+    if (e.p_addr == PLIC_CLAIM_ADDR && (e.data & 0x000000ff) == 0xa) {
       csr->CSR_RegFile_1[csr_mip] = csr->CSR_RegFile[csr_mip] & ~(1 << 9);
       csr->CSR_RegFile_1[csr_sip] = csr->CSR_RegFile[csr_sip] & ~(1 << 9);
-      p_memory[0xc201004 / 4] = 0x0;
+      p_memory[PLIC_CLAIM_ADDR / 4] = 0x0;
     }
   }
 }

@@ -95,11 +95,13 @@ void Ren::comb_alloc() {
 
 void Ren::comb_wake() {
   // busy_table wake up
-  if (in.prf_awake->wake.valid) {
-    busy_table_awake[in.prf_awake->wake.preg] = false;
+  for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
+    if (in.prf_awake->wake[i].valid) {
+      busy_table_awake[in.prf_awake->wake[i].preg] = false;
+    }
   }
 
-  for (int i = 0; i < ALU_NUM + 2; i++) {
+  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
     if (in.iss_awake->wake[i].valid) {
       busy_table_awake[in.iss_awake->wake[i].preg] = false;
     }

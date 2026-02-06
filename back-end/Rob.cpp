@@ -189,7 +189,7 @@ void Rob::comb_commit() {
                "is_page_fault: %d inst_idx: %lld type: %d op: %d\n",
                entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].uop.instruction,
                entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
-               (i + (deq_ptr << 2)), is_page_fault(entry[i][deq_ptr].uop),
+               (i + (deq_ptr * ROB_BANK_NUM)), is_page_fault(entry[i][deq_ptr].uop),
                (long long)entry[i][deq_ptr].uop.inst_idx,
                entry[i][deq_ptr].uop.type, entry[i][deq_ptr].uop.op);
       } else {
@@ -210,19 +210,23 @@ void Rob::comb_complete() {
 
       entry_1[bank_idx][line_idx].uop.cplt_num++;
 
-      if (i == IQ_LD_PORT_BASE) {
-        if (is_page_fault(in.prf2rob->entry[i].uop)) {
-          entry_1[bank_idx][line_idx].uop.result =
-              in.prf2rob->entry[i].uop.result;
-          entry_1[bank_idx][line_idx].uop.page_fault_load = true;
+      for (int k = 0; k < LSU_LDU_COUNT; k++) {
+        if (i == IQ_LD_PORT_BASE + k) {
+          if (is_page_fault(in.prf2rob->entry[i].uop)) {
+            entry_1[bank_idx][line_idx].uop.result =
+                in.prf2rob->entry[i].uop.result;
+            entry_1[bank_idx][line_idx].uop.page_fault_load = true;
+          }
         }
       }
 
-      if (i == IQ_STA_PORT_BASE) {
-        if (is_page_fault(in.prf2rob->entry[i].uop)) {
-          entry_1[bank_idx][line_idx].uop.result =
-              in.prf2rob->entry[i].uop.result;
-          entry_1[bank_idx][line_idx].uop.page_fault_store = true;
+      for (int k = 0; k < LSU_STA_COUNT; k++) {
+        if (i == IQ_STA_PORT_BASE + k) {
+          if (is_page_fault(in.prf2rob->entry[i].uop)) {
+            entry_1[bank_idx][line_idx].uop.result =
+                in.prf2rob->entry[i].uop.result;
+            entry_1[bank_idx][line_idx].uop.page_fault_store = true;
+          }
         }
       }
 

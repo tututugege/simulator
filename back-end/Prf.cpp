@@ -137,23 +137,28 @@ void Prf::comb_complete() {
 // 4. 唤醒逻辑 (Wakeup)
 // ==========================================
 void Prf::comb_awake() {
-  out.prf_awake->wake.valid = false;
+  for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
+    out.prf_awake->wake[i].valid = false;
+  }
 
-    // 遍历寻找有效的 Load 唤醒 (适配旧接口)
-    for (int i = 0; i < ISSUE_WIDTH; i++) {
-      if (inst_r[i].valid && inst_r[i].uop.dest_en && is_load(inst_r[i].uop)) {
-        // FIX: 跳过被 Mispred Squash 的指令
-        bool is_squashed = in.dec_bcast->mispred && 
-                           (in.dec_bcast->br_mask & (1 << inst_r[i].uop.tag));
-        if (is_squashed) {
-          continue;  // 不发送被 Squash 指令的 Wakeup
-        }
+  int awake_idx = 0;
+  // 遍历寻找有效的 Load 唤醒 (支持多端口)
+  for (int i = 0; i < ISSUE_WIDTH; i++) {
+    if (inst_r[i].valid && inst_r[i].uop.dest_en && is_load(inst_r[i].uop)) {
+      // FIX: 跳过被 Mispred Squash 的指令
+      bool is_squashed = in.dec_bcast->mispred &&
+                         (in.dec_bcast->br_mask & (1 << inst_r[i].uop.tag));
+      if (is_squashed) {
+        continue; // 不发送被 Squash 指令的 Wakeup
+      }
 
-        out.prf_awake->wake.valid = true;
-        out.prf_awake->wake.preg = inst_r[i].uop.dest_preg;
-        break;
+      if (awake_idx < LSU_LOAD_WB_WIDTH) {
+        out.prf_awake->wake[awake_idx].valid = true;
+        out.prf_awake->wake[awake_idx].preg = inst_r[i].uop.dest_preg;
+        awake_idx++;
       }
     }
+  }
 }
 
 void Prf::comb_branch() {

@@ -24,7 +24,6 @@ constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 
 constexpr int FETCH_WIDTH = 4;
 constexpr int COMMIT_WIDTH = 4;
-constexpr int ISSUE_WIDTH = 8;
 
 constexpr int ARF_NUM = 32;
 constexpr int PRF_NUM = 128; // Physical Register File size
@@ -97,57 +96,23 @@ constexpr uint64_t OP_MASK_LD = (1ULL << UOP_LOAD);
 constexpr uint64_t OP_MASK_STA = (1ULL << UOP_STA);
 constexpr uint64_t OP_MASK_STD = (1ULL << UOP_STD);
 
-constexpr int MAX_IQ_DISPATCH_WIDTH = 4;
-constexpr int MAX_STQ_DISPATCH_WIDTH = 2;
-constexpr int MAX_WAKEUP_PORTS = 7;
-constexpr int MAX_UOPS_PER_INST = 3;
-
-constexpr int ALU_NUM = 4;
-constexpr int BRU_NUM = 1;
-constexpr int STQ_NUM = 16;
-constexpr int MUL_MAX_LATENCY = 2;
-constexpr int DIV_MAX_LATENCY = 18;
-
-// LSU Config
-constexpr int LSU_STA_COUNT = 1;
-constexpr int LSU_LDU_COUNT = 1;
-constexpr int LSU_AGU_COUNT = LSU_STA_COUNT + LSU_LDU_COUNT;
-constexpr int LSU_SDU_COUNT = 1;
-constexpr int LSU_LOAD_WB_WIDTH = 1;
-
-constexpr int IQ_ALU_PORT_BASE = 0;
-constexpr int IQ_LD_PORT_BASE = ALU_NUM;
-constexpr int IQ_STA_PORT_BASE = (IQ_LD_PORT_BASE + LSU_LDU_COUNT);
-constexpr int IQ_STD_PORT_BASE = (IQ_STA_PORT_BASE + LSU_STA_COUNT);
-constexpr int IQ_BR_PORT_BASE = (IQ_STD_PORT_BASE + LSU_SDU_COUNT);
-
-constexpr int TOTAL_FU_COUNT = 11;
-
-// ==========================================
-// 2. IQ 逻辑配置 (IQ Logical Config)
-// ==========================================
-
-// Instruction Queue Configuration
-constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 32, 4, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, 0,
-     4},
-    {IQ_LD, 16, 2, OP_MASK_LD, 4, 1},
-    {IQ_STA, 16, 2, OP_MASK_STA, 5, 1},
-    {IQ_STD, 16, 2, OP_MASK_STD, 6, 1},
-    {IQ_BR, 16, 1, OP_MASK_BR, 7, 1}};
-
 // 全局物理端口定义
 // 这里的顺序很重要，后面 IQ 会通过下标索引它
+// [重要声明] CSR 指令目前硬绑定在 Port 0，如果调整配置，请确保 Port 0 包含 OP_MASK_CSR
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR}, // Port 0
     {1, OP_MASK_ALU | OP_MASK_DIV},               // Port 1
     {2, OP_MASK_ALU},                             // Port 2
     {3, OP_MASK_ALU},                             // Port 3
     {4, OP_MASK_LD},                              // Port 4
-    {5, OP_MASK_STA},                             // Port 5
-    {6, OP_MASK_STD},                             // Port 6
-    {7, OP_MASK_BR}                               // Port 7
+    {5, OP_MASK_LD},                              // Port 5
+    {6, OP_MASK_STA},                             // Port 6
+    {7, OP_MASK_STD},                             // Port 7
+    {8, OP_MASK_BR}                               // Port 8
 };
+
+constexpr int ISSUE_WIDTH =
+    sizeof(GLOBAL_ISSUE_PORT_CONFIG) / sizeof(GLOBAL_ISSUE_PORT_CONFIG[0]);
 
 // 辅助函数：根据 Port Index 获取 Mask
 constexpr uint64_t get_port_capability(int port_idx) {
@@ -157,3 +122,91 @@ constexpr uint64_t get_port_capability(int port_idx) {
   }
   return 0;
 }
+
+// 辅助函数：根据 Mask 计算端口数量
+constexpr int count_ports_with_mask(uint64_t mask) {
+  int count = 0;
+  for (const auto &cfg : GLOBAL_ISSUE_PORT_CONFIG) {
+    if (cfg.support_mask & mask)
+      count++;
+  }
+  return count;
+}
+
+// 辅助函数：查找支持该 Mask 的第一个端口
+constexpr int find_first_port_with_mask(uint64_t mask) {
+  for (int i = 0; i < ISSUE_WIDTH; i++) {
+    if (GLOBAL_ISSUE_PORT_CONFIG[i].support_mask & mask)
+      return i;
+  }
+  return -1;
+}
+
+constexpr int MAX_IQ_DISPATCH_WIDTH = 4;
+constexpr int MAX_STQ_DISPATCH_WIDTH = 2;
+constexpr int MAX_UOPS_PER_INST = 3;
+
+constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
+constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
+constexpr int STQ_NUM = 16;
+constexpr int MAX_INFLIGHT_LOADS = 32;
+constexpr int MUL_MAX_LATENCY = 2;
+constexpr int DIV_MAX_LATENCY = 18;
+
+// LSU Config
+constexpr int LSU_STA_COUNT = count_ports_with_mask(OP_MASK_STA);
+constexpr int LSU_LDU_COUNT = count_ports_with_mask(OP_MASK_LD);
+constexpr int LSU_AGU_COUNT = LSU_STA_COUNT + LSU_LDU_COUNT;
+constexpr int LSU_SDU_COUNT = count_ports_with_mask(OP_MASK_STD);
+constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
+
+constexpr int MAX_WAKEUP_PORTS =
+    LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
+    count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
+
+// MMIO Address Space
+constexpr uint32_t UART_ADDR_BASE  = 0x10000000;
+constexpr uint32_t UART_ADDR_MASK  = 0xFFFFFFF0;
+constexpr uint32_t PLIC_ADDR_BASE  = 0x0c000000;
+constexpr uint32_t PLIC_ADDR_MASK  = 0xFC000000;
+constexpr uint32_t PLIC_CLAIM_ADDR = 0x0c201004;
+constexpr uint32_t CLINT_ADDR_BASE = 0x02000000;
+constexpr uint32_t CLINT_ADDR_MASK = 0xFFFF0000;
+
+constexpr int IQ_ALU_PORT_BASE = find_first_port_with_mask(OP_MASK_ALU);
+constexpr int IQ_LD_PORT_BASE = find_first_port_with_mask(OP_MASK_LD);
+constexpr int IQ_STA_PORT_BASE = find_first_port_with_mask(OP_MASK_STA);
+constexpr int IQ_STD_PORT_BASE = find_first_port_with_mask(OP_MASK_STD);
+constexpr int IQ_BR_PORT_BASE = find_first_port_with_mask(OP_MASK_BR);
+
+// 计算总功能单元数量 (用于 Bypass 广播)
+constexpr int calculate_total_fu_count() {
+  int total = 0;
+  uint64_t major_masks[] = {OP_MASK_ALU, OP_MASK_CSR, OP_MASK_MUL, OP_MASK_DIV,
+                            OP_MASK_BR,  OP_MASK_LD,  OP_MASK_STA, OP_MASK_STD};
+  for (const auto &cfg : GLOBAL_ISSUE_PORT_CONFIG) {
+    for (uint64_t m : major_masks) {
+      if (cfg.support_mask & m)
+        total++;
+    }
+  }
+  return total;
+}
+constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
+
+// ==========================================
+// 2. IQ 逻辑配置 (IQ Logical Config)
+// ==========================================
+
+// Instruction Queue Configuration
+constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
+    {IQ_INT, 32, 4, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR,
+     IQ_ALU_PORT_BASE, count_ports_with_mask(OP_MASK_ALU)},
+    {IQ_LD, 16, 2, OP_MASK_LD, IQ_LD_PORT_BASE,
+     count_ports_with_mask(OP_MASK_LD)},
+    {IQ_STA, 16, 2, OP_MASK_STA, IQ_STA_PORT_BASE,
+     count_ports_with_mask(OP_MASK_STA)},
+    {IQ_STD, 16, 2, OP_MASK_STD, IQ_STD_PORT_BASE,
+     count_ports_with_mask(OP_MASK_STD)},
+    {IQ_BR, 16, 1, OP_MASK_BR, IQ_BR_PORT_BASE,
+     count_ports_with_mask(OP_MASK_BR)}};

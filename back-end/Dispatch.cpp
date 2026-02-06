@@ -5,6 +5,7 @@
 
 void Dispatch::comb_alloc() {
   int store_alloc_count = 0; // 当前周期已分配的 store 数量
+  int load_alloc_count = 0;  // 当前周期已分配的 load 数量
   wire<16> current_cycle_store_mask = 0;
 
   // 初始化输出
@@ -23,8 +24,15 @@ void Dispatch::comb_alloc() {
     inst_alloc[i].uop.cplt_num = 0;  // 初始化完成计数器
 
     // Load 需要知道之前的 Store
-    if (is_load(inst_r[i].uop)) {
+    if (inst_r[i].valid && is_load(inst_r[i].uop)) {
       inst_alloc[i].uop.pre_sta_mask = current_cycle_store_mask;
+
+      // 检查 Load 队列限制
+      if (load_alloc_count < in.lsu2dis->ldq_free) {
+        load_alloc_count++;
+      } else {
+        out.dis2rob->valid[i] = false;
+      }
     }
 
     // 处理 Store 分配
@@ -56,20 +64,22 @@ void Dispatch::comb_alloc() {
 
 // BusyTable 旁路 (BusyTable Bypass)
 void Dispatch::comb_wake() {
-  if (in.prf_awake->wake.valid) {
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      if (inst_alloc[i].uop.src1_preg == in.prf_awake->wake.preg) {
-        inst_alloc[i].uop.src1_busy = false;
-        inst_r_1[i].uop.src1_busy = false;
-      }
-      if (inst_alloc[i].uop.src2_preg == in.prf_awake->wake.preg) {
-        inst_alloc[i].uop.src2_busy = false;
-        inst_r_1[i].uop.src2_busy = false;
+  for (int w = 0; w < LSU_LOAD_WB_WIDTH; w++) {
+    if (in.prf_awake->wake[w].valid) {
+      for (int i = 0; i < FETCH_WIDTH; i++) {
+        if (inst_alloc[i].uop.src1_preg == in.prf_awake->wake[w].preg) {
+          inst_alloc[i].uop.src1_busy = false;
+          inst_r_1[i].uop.src1_busy = false;
+        }
+        if (inst_alloc[i].uop.src2_preg == in.prf_awake->wake[w].preg) {
+          inst_alloc[i].uop.src2_busy = false;
+          inst_r_1[i].uop.src2_busy = false;
+        }
       }
     }
   }
 
-  for (int i = 0; i < ALU_NUM + 2; i++) {
+  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
     if (in.iss_awake->wake[i].valid) {
       for (int j = 0; j < FETCH_WIDTH; j++) {
         if (inst_alloc[j].uop.src1_preg == in.iss_awake->wake[i].preg) {

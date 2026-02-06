@@ -12,63 +12,72 @@ Exu::~Exu() {
 }
 
 void Exu::init() {
-  // 1. 创建物理 FU 实例
-  // 注意：这里的 Latency 参数可以提取到 Config 中
-  auto alu0 = new AluUnit("ALU0", 0);
-  auto alu1 = new AluUnit("ALU1", 1);
-  auto alu2 = new AluUnit("ALU2", 2);
-  auto alu3 = new AluUnit("ALU3", 3);
-
-  auto mul = new MulUnit("MUL", 0, MUL_MAX_LATENCY);
-  auto div = new DivUnit("DIV", 1, DIV_MAX_LATENCY); // 固定延迟
-  auto bru = new BruUnit("BRU", 7);
-
-  // LSU 相关 FU
-  auto ldu = new AguUnit("AGU", 4, out.exe2lsu, 1);          //  AGU
-  auto sta = new AguUnit("AGU", 5, out.exe2lsu, 0);          //  AGU
-  auto sdu = new SduUnit("SDU", 6, out.exe2lsu, 0);          // STD
-  auto csr = new CsrUnit("CSR", 1, out.exe2csr, in.csr2exe); // CSR
-
-  // 将它们加入管理列表
-  units.push_back(div);
-  units.push_back(mul);
-  units.push_back(ldu);
-  units.push_back(bru);
-  units.push_back(sta);
-  units.push_back(sdu);
-  units.push_back(csr);
-  units.push_back(alu0);
-  units.push_back(alu1);
-  units.push_back(alu2);
-  units.push_back(alu3);
-
-  // 3. 配置端口映射 (Mapping)
-  // Port 0: ALU0 + MUL + CSR
-  // Port 1: ALU1 + DIV
-  // Port 2: ALU2
-  // Port 3: ALU3
-  // Port 4: AGU (Load)
-  // Port 5: AGU (STA)
-  // Port 6: STD (STD)
-  // Port 7: BRU
+  int alu_cnt = 0;
+  int agu_cnt = 0;
+  int sdu_cnt = 0;
 
   port_mappings.resize(ISSUE_WIDTH);
-  // FIX: Prioritize MUL/DIV over ALU to prevent predictive wakeup hazard
-  // Because MUL uses predictive wakeup, it MUST NOT be stalled by ALU at
-  // writeback.
-  port_mappings[0].entries.push_back({mul, OP_MASK_MUL});  // MUL
-  port_mappings[0].entries.push_back({alu0, OP_MASK_ALU}); // ALU0
-  port_mappings[0].entries.push_back({csr, OP_MASK_CSR});  // csr
 
-  port_mappings[1].entries.push_back({div, OP_MASK_DIV});  // DIV
-  port_mappings[1].entries.push_back({alu1, OP_MASK_ALU}); // ALU1
+  for (int i = 0; i < ISSUE_WIDTH; i++) {
+    uint64_t mask = GLOBAL_ISSUE_PORT_CONFIG[i].support_mask;
 
-  port_mappings[2].entries.push_back({alu2, OP_MASK_ALU}); // alu2
-  port_mappings[3].entries.push_back({alu3, OP_MASK_ALU}); // alu3
-  port_mappings[4].entries.push_back({ldu, OP_MASK_LD});   // ldu
-  port_mappings[5].entries.push_back({sta, OP_MASK_STA});  // sta
-  port_mappings[6].entries.push_back({sdu, OP_MASK_STD});  // std
-  port_mappings[7].entries.push_back({bru, OP_MASK_BR});   // bru
+    // 1. MUL (Priority for writeback)
+    if (mask & OP_MASK_MUL) {
+      auto mul = new MulUnit("MUL", i, MUL_MAX_LATENCY);
+      units.push_back(mul);
+      port_mappings[i].entries.push_back({mul, OP_MASK_MUL});
+    }
+
+    // 2. DIV
+    if (mask & OP_MASK_DIV) {
+      auto div = new DivUnit("DIV", i, DIV_MAX_LATENCY);
+      units.push_back(div);
+      port_mappings[i].entries.push_back({div, OP_MASK_DIV});
+    }
+
+    // 3. AGU (Load)
+    if (mask & OP_MASK_LD) {
+      auto ldu = new AguUnit("AGU_LD", i, out.exe2lsu, agu_cnt++);
+      units.push_back(ldu);
+      port_mappings[i].entries.push_back({ldu, OP_MASK_LD});
+    }
+
+    // 4. AGU (STA)
+    if (mask & OP_MASK_STA) {
+      auto sta = new AguUnit("AGU_STA", i, out.exe2lsu, agu_cnt++);
+      units.push_back(sta);
+      port_mappings[i].entries.push_back({sta, OP_MASK_STA});
+    }
+
+    // 5. SDU (STD)
+    if (mask & OP_MASK_STD) {
+      auto sdu = new SduUnit("SDU", i, out.exe2lsu, sdu_cnt++);
+      units.push_back(sdu);
+      port_mappings[i].entries.push_back({sdu, OP_MASK_STD});
+    }
+
+    // 6. BRU
+    if (mask & OP_MASK_BR) {
+      auto bru = new BruUnit("BRU", i);
+      units.push_back(bru);
+      port_mappings[i].entries.push_back({bru, OP_MASK_BR});
+    }
+
+    // 7. ALU
+    if (mask & OP_MASK_ALU) {
+      std::string alu_name = "ALU" + std::to_string(alu_cnt++);
+      auto alu = new AluUnit(alu_name, i);
+      units.push_back(alu);
+      port_mappings[i].entries.push_back({alu, OP_MASK_ALU});
+    }
+
+    // 8. CSR
+    if (mask & OP_MASK_CSR) {
+      auto csr = new CsrUnit("CSR", i, out.exe2csr, in.csr2exe);
+      units.push_back(csr);
+      port_mappings[i].entries.push_back({csr, OP_MASK_CSR});
+    }
+  }
 
   // 初始化流水线寄存器
   for (int i = 0; i < ISSUE_WIDTH; i++) {

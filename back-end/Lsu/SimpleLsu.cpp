@@ -45,6 +45,7 @@ void SimpleLsu::comb_lsu2dis_info() {
 
   // 注意：这里的 count 必须是当前周期的准确值
   out.lsu2dis->stq_free = STQ_NUM - this->stq_count;
+  out.lsu2dis->ldq_free = MAX_INFLIGHT_LOADS - this->inflight_loads.size();
 }
 
 void SimpleLsu::comb_stq_alloc() {
@@ -147,8 +148,8 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
 
     // [Fix] Disable Store-to-Load Forwarding for MMIO ranges
     // These addresses involve side effects and must read from consistent memory
-    bool is_mmio = ((p_addr & 0xFFFFF000) == 0x10000000) ||
-                   ((p_addr & 0xFF000000) == 0x0c000000);
+    bool is_mmio = ((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
+                   ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
 
     task.flush_pipe = is_mmio;
     auto fwd_res =
@@ -219,7 +220,7 @@ void SimpleLsu::handle_store_addr(const InstUop &inst) {
     InstUop success_op = inst;
     success_op.cplt_time = sim_time;
     bool is_mmio =
-        ((pa & 0xFFFFF000) == 0x10000000) || ((pa & 0xFF000000) == 0x0c000000);
+        ((pa & UART_ADDR_MASK) == UART_ADDR_BASE) || ((pa & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
     success_op.flush_pipe = is_mmio;
     finished_sta_reqs.push_back(success_op);
   }
@@ -413,24 +414,24 @@ void SimpleLsu::seq() {
 
       // Simple MMIO Write Side Effect (consistent with ref.cpp and BackTop
       // cheat logic)
-      if (paddr == 0x10000000) {
+      if (paddr == UART_ADDR_BASE) {
         // UART Output Logic
         char temp = new_val & 0xFF;
         std::cout << temp << std::flush;
         // Consumption side effect
         p_memory[word_idx] &= 0xFFFFFF00;
-      } else if (paddr == 0x10000001) {
+      } else if (paddr == UART_ADDR_BASE + 1) {
         uint8_t cmd = head.data & 0xff;
         if (cmd == 7) {
-          p_memory[0x0c201004 / 4] = 0xa;
-          p_memory[0x10000000 / 4] &= 0xfff0ffff;
+          p_memory[PLIC_CLAIM_ADDR / 4] = 0xa;
+          p_memory[UART_ADDR_BASE / 4] &= 0xfff0ffff;
         } else if (cmd == 5) {
-          p_memory[0x10000000 / 4] =
-              (p_memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
+          p_memory[UART_ADDR_BASE / 4] =
+              (p_memory[UART_ADDR_BASE / 4] & 0xfff0ffff) | 0x00030000;
         }
-      } else if (paddr == 0x0c201004) {
+      } else if (paddr == PLIC_CLAIM_ADDR) {
         if ((head.data & 0xff) == 0xa) {
-          p_memory[0x0c201004 / 4] = 0x0;
+          p_memory[PLIC_CLAIM_ADDR / 4] = 0x0;
         }
       }
 

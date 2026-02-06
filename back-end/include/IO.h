@@ -157,9 +157,12 @@ struct DisRenIO {
 
 struct PrfAwakeIO {
 
-  WakeInfo wake;
+  WakeInfo wake[LSU_LOAD_WB_WIDTH];
 
-  PrfAwakeIO() { wake = {}; }
+  PrfAwakeIO() {
+    for (auto &w : wake)
+      w = {};
+  }
 };
 
 struct DisIssIO {
@@ -590,10 +593,12 @@ struct LsuDisIO {
 
   int stq_tail; // 当前分配指针
   int stq_free; // 剩余空闲条目数
+  int ldq_free; // 剩余 Load 队列空闲数
 
   LsuDisIO() {
     stq_tail = 0;
     stq_free = 0;
+    ldq_free = 0;
   }
 };
 

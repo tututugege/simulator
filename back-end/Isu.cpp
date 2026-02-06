@@ -213,10 +213,12 @@ void Isu::comb_awake() {
   int idx = 0;
 
   // 来源 A: 慢速唤醒 (来自写回阶段：Load / 缓存缺失)
-  if (in.prf_awake->wake.valid) {
-    valid_flags[idx] = true;
-    pregs[idx] = in.prf_awake->wake.preg;
-    idx++;
+  for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
+    if (in.prf_awake->wake[i].valid) {
+      valid_flags[idx] = true;
+      pregs[idx] = in.prf_awake->wake[i].preg;
+      idx++;
+    }
   }
 
   // 来源 B: 延迟唤醒 (乘法/除法完成)
