@@ -8,7 +8,7 @@ IMG     := ./baremetal/memory
 
 # Compiler & Flags
 CXX      := g++
-CXXFLAGS := -Ofast -march=native -funroll-loops -mtune=native -lz
+CXXFLAGS := -O3 -march=native -funroll-loops -mtune=native -lz
 CXXFLAGS += -MMD -MP 
 CXXFLAGS += -Wall -Wextra -Wno-unused-parameter
 CXXFLAGS += --std=c++2a

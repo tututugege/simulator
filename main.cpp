@@ -160,6 +160,10 @@ int main(int argc, char *argv[]) {
 
 
   p_memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
+  if (!p_memory) {
+      std::cerr << "Error: Failed to allocate memory!" << std::endl;
+      exit(1);
+  }
   cpu.init();
 
   // --- D. 模拟器启动逻辑 ---

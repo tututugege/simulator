@@ -26,6 +26,10 @@ void Idu::init() {
   tag_vec_1[0] = false;
   now_tag_1 = now_tag = 0;
   enq_ptr_1 = enq_ptr = 1;
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    tag_list[i] = 0;
+    tag_list_1[i] = 0;
+  }
 }
 
 #ifdef ENABLE_MULTI_BR

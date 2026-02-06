@@ -16,6 +16,7 @@ void Rob::init() {
   for (int i = 0; i < ROB_LINE_NUM; i++) {
     for (int j = 0; j < ROB_BANK_NUM; j++) {
       entry[j][i].valid = false;
+      entry_1[j][i].valid = false;
     }
   }
 }
@@ -64,7 +65,6 @@ void Rob::comb_commit() {
                                            entry[i][deq_ptr].uop.uop_num));
   }
 
-
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
   wire<1> single_commit = false;
   wire<2> single_idx = 0;
@@ -99,6 +99,7 @@ void Rob::comb_commit() {
   if (commit && !single_commit) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
+      entry_1[i][deq_ptr].valid = false;
     }
 
     stall_cycle = 0;
@@ -288,8 +289,6 @@ void Rob::comb_fire() {
         entry_1[i][enq_ptr].uop = in.dis2rob->uop[i];
         entry_1[i][enq_ptr].uop.cplt_num = 0;
         enq = true;
-      } else {
-        entry_1[i][enq_ptr].valid = false;
       }
     }
   }
@@ -336,20 +335,23 @@ RobIO Rob::get_hardware_io() {
   // --- Inputs ---
   for (int i = 0; i < FETCH_WIDTH; i++) {
     hardware.from_dis.valid[i] = in.dis2rob->valid[i];
-    hardware.from_dis.uop[i]   = RobUop::filter(in.dis2rob->uop[i]);
+    hardware.from_dis.uop[i] = RobUop::filter(in.dis2rob->uop[i]);
   }
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     hardware.from_exe.valid[i] = in.prf2rob->entry[i].valid;
-    hardware.from_exe.uop[i]   = ExeWbUop::filter(in.prf2rob->entry[i].uop);
+    hardware.from_exe.uop[i] = ExeWbUop::filter(in.prf2rob->entry[i].uop);
   }
 
   // --- Outputs ---
   hardware.to_dis.stall = out.rob2dis->stall;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    hardware.to_ren.commit_valid[i]   = out.rob_commit->commit_entry[i].valid;
-    hardware.to_ren.commit_areg[i]    = out.rob_commit->commit_entry[i].uop.dest_areg;
-    hardware.to_ren.commit_preg[i]    = out.rob_commit->commit_entry[i].uop.dest_preg;
-    hardware.to_ren.commit_dest_en[i] = out.rob_commit->commit_entry[i].uop.dest_en;
+    hardware.to_ren.commit_valid[i] = out.rob_commit->commit_entry[i].valid;
+    hardware.to_ren.commit_areg[i] =
+        out.rob_commit->commit_entry[i].uop.dest_areg;
+    hardware.to_ren.commit_preg[i] =
+        out.rob_commit->commit_entry[i].uop.dest_preg;
+    hardware.to_ren.commit_dest_en[i] =
+        out.rob_commit->commit_entry[i].uop.dest_en;
   }
   hardware.to_all.flush = out.rob_bcast->flush;
 
