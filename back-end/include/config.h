@@ -71,7 +71,7 @@ constexpr int FETCH_WIDTH = 4;
 constexpr int COMMIT_WIDTH = 4;
 constexpr int ISSUE_WIDTH = 8;
 
-constexpr int ARF_NUM = 33;
+constexpr int ARF_NUM = 32;
 constexpr int Prf_NUM = 128; // Physical Register File size
 constexpr int MAX_BR_NUM = 16;
 constexpr int CSR_NUM = 21;

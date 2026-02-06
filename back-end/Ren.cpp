@@ -25,8 +25,7 @@ void Ren::init() {
   for (int i = 0; i < Prf_NUM; i++) {
     spec_alloc[i] = false;
 
-    // 初始化的时候平均分到free_vec的四个部分
-    if (i < ARF_NUM) {
+    if (i < ARF_NUM + 1) {
       spec_RAT[i] = i;
       arch_RAT[i] = i;
       free_vec[i] = false;
@@ -76,11 +75,6 @@ void Ren::comb_alloc() {
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.ren2dis->uop[i] = inst_r[i].uop;
     out.ren2dis->uop[i].dest_preg = alloc_reg[i];
-    // Remap x0 (dest_areg=0) to Logical Reg 32 (Temp) to allow dependency
-    // tracking
-    if (inst_r[i].uop.dest_areg == 0) {
-      out.ren2dis->uop[i].dest_areg = 32;
-    }
     // 分配寄存器
     if (inst_r[i].valid && inst_r[i].uop.dest_en && !stall) {
       out.ren2dis->valid[i] = alloc_valid[i];
@@ -197,13 +191,6 @@ void Ren::comb_rename() {
       out.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
     }
   }
-
-  // 特殊处理：临时使用的 32 号寄存器在提交时可以立即回收物理寄存器
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (out.ren2dis->uop[i].dest_areg == 32) {
-      out.ren2dis->uop[i].old_dest_preg = out.ren2dis->uop[i].dest_preg;
-    }
-  }
 }
 
 void Ren::comb_fire() {
@@ -217,16 +204,7 @@ void Ren::comb_fire() {
       int dest_preg = out.ren2dis->uop[i].dest_preg;
       spec_alloc_normal[dest_preg] = true;
       free_vec_normal[dest_preg] = false;
-
-      // Use remapped Dest AREG (handled in comb_alloc) or manually remap if
-      // needed. Since comb_fire logic uses inst_r (latch inputs) which still
-      // has dest_areg=0, we must remap it here to 32 to update spec_RAT
-      // properly.
-      uint32_t wb_areg = inst_r[i].uop.dest_areg;
-      if (wb_areg == 0)
-        wb_areg = 32;
-
-      spec_RAT_normal[wb_areg] = dest_preg;
+      spec_RAT_normal[inst_r[i].uop.dest_areg] = dest_preg;
       busy_table_1[dest_preg] = true;
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][dest_preg] = true;
@@ -406,22 +384,25 @@ RenIO Ren::get_hardware_io() {
 
   hardware.from_rob.flush = in.rob_bcast->flush;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    hardware.from_rob.commit_valid[i]   = in.rob_commit->commit_entry[i].valid;
-    hardware.from_rob.commit_areg[i]    = in.rob_commit->commit_entry[i].uop.dest_areg;
-    hardware.from_rob.commit_preg[i]    = in.rob_commit->commit_entry[i].uop.dest_preg;
-    hardware.from_rob.commit_dest_en[i] = in.rob_commit->commit_entry[i].uop.dest_en;
+    hardware.from_rob.commit_valid[i] = in.rob_commit->commit_entry[i].valid;
+    hardware.from_rob.commit_areg[i] =
+        in.rob_commit->commit_entry[i].uop.dest_areg;
+    hardware.from_rob.commit_preg[i] =
+        in.rob_commit->commit_entry[i].uop.dest_preg;
+    hardware.from_rob.commit_dest_en[i] =
+        in.rob_commit->commit_entry[i].uop.dest_en;
   }
 
   for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
     hardware.from_back.wake_valid[i] = in.iss_awake->wake[i].valid;
-    hardware.from_back.wake_preg[i]  = in.iss_awake->wake[i].preg;
+    hardware.from_back.wake_preg[i] = in.iss_awake->wake[i].preg;
   }
 
   // --- Outputs ---
   hardware.to_dec.ready = out.ren2dec->ready;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     hardware.to_dis.valid[i] = out.ren2dis->valid[i];
-    hardware.to_dis.uop[i]   = RenDisUop::filter(out.ren2dis->uop[i]);
+    hardware.to_dis.uop[i] = RenDisUop::filter(out.ren2dis->uop[i]);
   }
 
   return hardware;

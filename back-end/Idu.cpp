@@ -439,12 +439,12 @@ void Idu::decode(InstUop &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = false;
     uop.src2_en = false;
-    
+
     // Check funct3 for FENCE.I (001)
     if (number_funct3_unsigned == 0b001) {
-        uop.type = FENCE_I; // Strict separation
+      uop.type = FENCE_I; // Strict separation
     } else {
-        uop.type = NOP; // Ordinary FENCE is NOP
+      uop.type = NOP; // Ordinary FENCE is NOP
     }
     break;
   }
@@ -539,11 +539,13 @@ void Idu::decode(InstUop &uop, uint32_t inst) {
 
   uop.uop_num = uop_num;
 
+  if (uop.type == AMO && uop.dest_areg == 0 && (uop.func7 >> 2) != AmoOp::LR &&
+      (uop.func7 >> 2) != AmoOp::SC) {
+    uop.dest_areg = 32;
+  }
 
-  // 不写0寄存器
-  // Modified: Allow dest_en=true for dest_areg=0, handled by Ren remapping to LReg 32.
-  // if (uop.dest_areg == 0)
-  //   uop.dest_en = false;
+  if (uop.dest_areg == 0)
+    uop.dest_en = false;
 }
 
 IduIO Idu::get_hardware_io() {
@@ -552,26 +554,26 @@ IduIO Idu::get_hardware_io() {
   // --- Inputs ---
   for (int i = 0; i < FETCH_WIDTH; i++) {
     hardware.from_front.valid[i] = in.front2dec->valid[i];
-    hardware.from_front.inst[i]  = in.front2dec->inst[i];
+    hardware.from_front.inst[i] = in.front2dec->inst[i];
   }
   hardware.from_ren.ready = in.ren2dec->ready;
-  
-  hardware.from_back.flush   = in.rob_bcast->flush;
+
+  hardware.from_back.flush = in.rob_bcast->flush;
   hardware.from_back.mispred = in.prf2dec->mispred;
-  hardware.from_back.br_tag  = in.prf2dec->br_tag;
+  hardware.from_back.br_tag = in.prf2dec->br_tag;
 
   // --- Outputs ---
   hardware.to_front.ready = out.dec2front->ready;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     hardware.to_front.fire[i] = out.dec2front->fire[i];
-    
+
     hardware.to_ren.valid[i] = out.dec2ren->valid[i];
-    hardware.to_ren.uop[i]   = DecRenUop::filter(out.dec2ren->uop[i]);
+    hardware.to_ren.uop[i] = DecRenUop::filter(out.dec2ren->uop[i]);
   }
 
   hardware.to_back.mispred = out.dec_bcast->mispred;
   hardware.to_back.br_mask = out.dec_bcast->br_mask;
-  hardware.to_back.br_tag  = out.dec_bcast->br_tag;
+  hardware.to_back.br_tag = out.dec_bcast->br_tag;
 
   return hardware;
 }
