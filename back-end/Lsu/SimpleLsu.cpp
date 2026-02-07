@@ -1,6 +1,7 @@
 #include "SimpleLsu.h"
 #include "AbstractLsu.h"
 #include "config.h"
+#include "oracle.h"
 #include "util.h"
 #include <cstdint>
 #include <cstring>
@@ -172,11 +173,16 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
       uint32_t mem_val = p_memory[p_addr >> 2];
 
       // Simple MMIO Read Interception
+      // Sync with Oracle's timer to prevent execution divergence
       if (p_addr == 0x1fd0e000) {
-        mem_val = (uint32_t)sim_time;
+#ifdef CONFIG_BPU
+        mem_val = sim_time;
+#else
+        mem_val = get_oracle_timer();
+#endif
         task.difftest_skip = true;
       } else if (p_addr == 0x1fd0e004) {
-        mem_val = (uint32_t)(sim_time >> 32);
+        mem_val = 0;
         task.difftest_skip = true;
       } else {
         // Normal Memory Access (or Garbage). DO NOT SKIP.
@@ -219,8 +225,8 @@ void SimpleLsu::handle_store_addr(const InstUop &inst) {
     // via LSU.)
     InstUop success_op = inst;
     success_op.cplt_time = sim_time;
-    bool is_mmio =
-        ((pa & UART_ADDR_MASK) == UART_ADDR_BASE) || ((pa & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
+    bool is_mmio = ((pa & UART_ADDR_MASK) == UART_ADDR_BASE) ||
+                   ((pa & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
     success_op.flush_pipe = is_mmio;
     finished_sta_reqs.push_back(success_op);
   }

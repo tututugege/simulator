@@ -42,14 +42,14 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // [Debug & Logging Config]
 // ==========================================
 
-constexpr uint64_t LOG_START = 185790000;
+constexpr uint64_t LOG_START = 4582800;
 // #define LOG_ENABLE // Enable logging support (controlled by macros below)
 
 extern long long sim_time; // Global simulation time
 
 #ifdef LOG_ENABLE
                            // Adjust these conditions to enable specific logs
-#define LOG (sim_time >= 185790000LL)
+#define LOG (sim_time >= (long long)LOG_START)
 #define DEBUG (LOG)
 #define MEM_LOG (LOG)
 #define DCACHE_LOG (LOG)
@@ -98,7 +98,8 @@ constexpr uint64_t OP_MASK_STD = (1ULL << UOP_STD);
 
 // 全局物理端口定义
 // 这里的顺序很重要，后面 IQ 会通过下标索引它
-// [重要声明] CSR 指令目前硬绑定在 Port 0，如果调整配置，请确保 Port 0 包含 OP_MASK_CSR
+// [重要声明] CSR 指令目前硬绑定在 Port 0，如果调整配置，请确保 Port 0 包含
+// OP_MASK_CSR
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR}, // Port 0
     {1, OP_MASK_ALU | OP_MASK_DIV},               // Port 1
@@ -165,10 +166,10 @@ constexpr int MAX_WAKEUP_PORTS =
     count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
 
 // MMIO Address Space
-constexpr uint32_t UART_ADDR_BASE  = 0x10000000;
-constexpr uint32_t UART_ADDR_MASK  = 0xFFFFFFF0;
-constexpr uint32_t PLIC_ADDR_BASE  = 0x0c000000;
-constexpr uint32_t PLIC_ADDR_MASK  = 0xFC000000;
+constexpr uint32_t UART_ADDR_BASE = 0x10000000;
+constexpr uint32_t UART_ADDR_MASK = 0xFFFFFFF0;
+constexpr uint32_t PLIC_ADDR_BASE = 0x0c000000;
+constexpr uint32_t PLIC_ADDR_MASK = 0xFC000000;
 constexpr uint32_t PLIC_CLAIM_ADDR = 0x0c201004;
 constexpr uint32_t CLINT_ADDR_BASE = 0x02000000;
 constexpr uint32_t CLINT_ADDR_MASK = 0xFFFF0000;

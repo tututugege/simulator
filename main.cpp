@@ -68,7 +68,16 @@ bool validate_path(const std::string &path) {
 long long sim_time = 0;
 SimCpu cpu;
 
+
+void exit_handler() {
+  std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
+  std::cout << "Simulation Exited. Printing Perf Stats..." << std::endl;
+  cpu.ctx.perf.perf_print();
+  std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
+}
+
 int main(int argc, char *argv[]) {
+  atexit(exit_handler);
 
   SimConfig config;
 
@@ -250,7 +259,7 @@ int main(int argc, char *argv[]) {
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    // cpu.ctx.perf.perf_print();  // Disabled for cleaner output
+    cpu.ctx.perf.perf_print();  // Disabled for cleaner output
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
   } else {

@@ -1,15 +1,14 @@
 #include "config.h"
 #include "diff.h"
 #include "front_IO.h"
-#include "oracle.h"
 #include "ref.h"
 #include "util.h"
+#include <cstdint>
 #include <cstring>
-#include <random>
 
 static RefCpu oracle;
 
-#define BP_ACCURACY 95
+uint64_t get_oracle_timer() { return oracle.oracle_timer; }
 
 void init_oracle(int img_size) {
   oracle.init(0);
@@ -33,16 +32,40 @@ void init_oracle(int img_size) {
 void get_oracle(struct front_top_in &in, struct front_top_out &out) {
   int i;
   static bool stall = false;
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<int> dis(1, 100);
 
   if (in.refetch) {
+    Assert(!in.is_mispred && "Mispred width oracle");
+    Assert(in.refetch_address == oracle.state.pc && "Error refetch PC");
+
+    bool state_mismatch = false;
+    // 检查 GPR
+    for (int i = 0; i < 32; i++) {
+      if (oracle.state.gpr[i] != dut_cpu.gpr[i]) {
+        printf("[ORACLE ERROR] GPR[%d] mismatch at sync! Oracle:0x%08x, "
+               "DUT:0x%08x\n",
+               i, oracle.state.gpr[i], dut_cpu.gpr[i]);
+        state_mismatch = true;
+      }
+    }
+
+    if (state_mismatch) {
+      printf("[ORACLE ERROR] State divergence detected at PC 0x%08x "
+             "(Refetch to 0x%08x)\n",
+             oracle.state.pc, in.refetch_address);
+      Assert(0);
+    }
+
     stall = false;
-    Assert(in.refetch_address == oracle.state.pc);
   }
 
   if (stall) {
+    // 添加stall状态日志
+    if (LOG) {
+      printf("[ORACLE] Still stalled at PC 0x%08x, waiting for flush. Flags: "
+             "Ex:%d CSR:%d MMIO:%d\n",
+             oracle.state.pc, oracle.is_exception, oracle.is_csr,
+             oracle.is_mmio_load);
+    }
     out.FIFO_valid = false;
     for (i = 0; i < FETCH_WIDTH; i++) {
       out.inst_valid[i] = false;
@@ -60,7 +83,13 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
     oracle.exec();
     out.instructions[i] = oracle.Instruction;
 
-    if (oracle.is_exception || oracle.is_csr) {
+    if (oracle.is_exception || oracle.is_csr || oracle.is_mmio_load) {
+      if (LOG) {
+        printf("[ORACLE] Stalling at PC 0x%08x, Inst 0x%08x (Ex:%d, CSR:%d, "
+               "MMIO:%d)\n",
+               out.pc[i], out.instructions[i], oracle.is_exception,
+               oracle.is_csr, oracle.is_mmio_load);
+      }
       out.predict_dir[i] = false;
       stall = true;
 
@@ -71,9 +100,6 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
     }
 
     if (oracle.is_br) {
-      // stall = (rand() % 100 >= BP_ACCURACY);
-
-      stall = false;
       if (stall) {
         out.predict_dir[i] = !oracle.br_taken;
         out.predict_next_fetch_address = 0;

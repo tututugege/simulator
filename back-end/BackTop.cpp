@@ -137,7 +137,8 @@ void BackTop::difftest_sync(InstUop *inst) {
         csr->CSR_RegFile_1[csr_mip] = csr->CSR_RegFile[csr_mip] | (1 << 9);
         csr->CSR_RegFile_1[csr_sip] = csr->CSR_RegFile[csr_sip] | (1 << 9);
         p_memory[PLIC_CLAIM_ADDR / 4] = 0xa;
-        p_memory[UART_ADDR_BASE / 4] = p_memory[UART_ADDR_BASE / 4] & 0xfff0ffff;
+        p_memory[UART_ADDR_BASE / 4] =
+            p_memory[UART_ADDR_BASE / 4] & 0xfff0ffff;
       } else if (cmd == 5) {
         p_memory[UART_ADDR_BASE / 4] =
             (p_memory[UART_ADDR_BASE / 4] & 0xfff0ffff) | 0x00030000;
@@ -408,11 +409,10 @@ void BackTop::comb() {
     } else {
       out.redirect_pc = rob->out.rob_bcast->pc + 4;
     }
-  }
-
-  if (LOG) {
-    cout << "flush" << endl;
-    cout << "redirect_pc: " << hex << out.redirect_pc << endl;
+    if (LOG) {
+      cout << "flush" << endl;
+      cout << "redirect_pc: " << hex << out.redirect_pc << endl;
+    }
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {

@@ -67,5 +67,5 @@ inline bool is_exception(InstUop uop) {
 inline bool is_flush_inst(InstUop uop) {
   return uop.type == CSR || uop.type == ECALL || uop.type == MRET ||
          uop.type == SRET || uop.type == SFENCE_VMA || is_exception(uop) ||
-         uop.type == EBREAK || uop.flush_pipe;
+         uop.type == EBREAK || (uop.flush_pipe && is_load(uop));
 }

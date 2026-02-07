@@ -1,16 +1,16 @@
 #include "BPU/target_predictor/btb.h"
-#include "oracle.h"
 #include <BackTop.h>
 #include <RISCV.h>
 #include <SimCpu.h>
 #include <config.h>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <diff.h>
 #include <front_IO.h>
 #include <front_module.h>
+#include <oracle.h>
 #include <util.h>
-#include <cstring>
 
 uint32_t *p_memory;
 
@@ -31,7 +31,8 @@ void SimCpu::init() {
 // 强制重置前端 PC (用于 FAST 模式切换)
 void SimCpu::restore_pc(uint32_t pc) {
   front_in.reset = false;
-  front_in.FIFO_read_enable = false; // [Fix] Don't pop instruction here, save it for Cycle 0
+  front_in.FIFO_read_enable =
+      false; // [Fix] Don't pop instruction here, save it for Cycle 0
   front_in.refetch = true;
   front_in.fence_i = true; // 强制刷新 ICache
   front_in.refetch_address = pc;
@@ -102,6 +103,8 @@ void SimCpu::front_cycle() {
     front_in.FIFO_read_enable = true;
     front_in.refetch = (back.out.mispred || back.out.flush);
     front_in.fence_i = back.out.fence_i;
+    front_in.is_mispred = back.out.mispred && !back.out.flush; // 纯分支误预测
+    front_in.is_rob_flush = back.out.flush; // ROB flush (exception/CSR/fence)
     if (front_in.refetch) {
       front_in.refetch_address =
           back.out.redirect_pc; // 再次确保赋值，防止时序错位

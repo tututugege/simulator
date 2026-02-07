@@ -165,6 +165,7 @@ typedef struct ExeWbUop {
   wire<1>  page_fault_inst;
   wire<1>  page_fault_load;
   wire<1>  page_fault_store;
+  wire<1>  flush_pipe;
 
   static ExeWbUop filter(const InstUop& full) {
     ExeWbUop slim;
@@ -176,6 +177,7 @@ typedef struct ExeWbUop {
     slim.page_fault_inst  = full.page_fault_inst;
     slim.page_fault_load  = full.page_fault_load;
     slim.page_fault_store = full.page_fault_store;
+    slim.flush_pipe       = full.flush_pipe;
     return slim;
   }
 } ExeWbUop;

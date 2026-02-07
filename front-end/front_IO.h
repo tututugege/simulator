@@ -10,6 +10,9 @@ struct front_top_in {
   bool back2front_valid[COMMIT_WIDTH];
   bool refetch;
   bool fence_i;
+  // Flush type for debugging Oracle sync
+  bool is_mispred;    // 分支误预测
+  bool is_rob_flush;  // ROB发起的flush（exception/CSR/fence等）
   uint32_t refetch_address;
   uint32_t predict_base_pc[COMMIT_WIDTH];
   bool predict_dir[COMMIT_WIDTH];

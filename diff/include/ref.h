@@ -102,6 +102,7 @@ public:
   bool sim_end = false;
   bool strict_mmu_check = false;
   bool uart_print = false;
+  uint64_t oracle_timer = 0;
 
   void init(uint32_t reset_pc);
   void exec();
@@ -120,4 +121,6 @@ public:
 
   bool is_csr;
   bool is_exception;
+  bool is_mmio_load;
+  bool is_mmio_store;
 };

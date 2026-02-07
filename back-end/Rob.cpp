@@ -154,9 +154,9 @@ void Rob::comb_commit() {
         out.rob_bcast->fence = true;
       } else if (entry[single_idx][deq_ptr].uop.flush_pipe) {
         // MMIO-triggered flush, no extra CSR/MMU actions needed here
+        out.rob_bcast->pc = entry[single_idx][deq_ptr].uop.pc;
       } else {
-        if (entry[single_idx][deq_ptr].uop.type != CSR &&
-            entry[single_idx][deq_ptr].uop.type != SFENCE_VMA) {
+        if (entry[single_idx][deq_ptr].uop.type != CSR) {
           cout << hex << entry[single_idx][deq_ptr].uop.instruction << endl;
           exit(1);
         }
@@ -231,6 +231,8 @@ void Rob::comb_complete() {
       }
 
       // for debug
+      entry_1[bank_idx][line_idx].uop.flush_pipe =
+          in.prf2rob->entry[i].uop.flush_pipe;
       entry_1[bank_idx][line_idx].uop.difftest_skip =
           in.prf2rob->entry[i].uop.difftest_skip;
       if (is_branch_uop(in.prf2rob->entry[i].uop.op)) {

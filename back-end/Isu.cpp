@@ -50,12 +50,13 @@ void Isu::init() {
   }
 }
 
+
 int Isu::get_latency(UopType uop) {
   if (uop == UOP_MUL)
     return MUL_MAX_LATENCY; // 乘法指令延迟
   if (uop == UOP_DIV)
     return DIV_MAX_LATENCY; // 除法指令延迟
-  return 0;                 // 其他指令认为是单周期，走 Fast Wakeup
+  return 1;                 // 其他指令认为是单周期，走 Fast Wakeup
 }
 
 // =================================================================
@@ -191,10 +192,10 @@ void Isu::comb_calc_latency_next() {
     if (inst.valid && inst.uop.dest_en) {
       int lat = get_latency(inst.uop.op);
 
-      if (lat > 0) {
+      if (lat > 1) {
         LatencyEntry new_entry;
         new_entry.valid = true;
-        new_entry.countdown = lat;
+        new_entry.countdown = lat - 1;
         new_entry.dest_preg = inst.uop.dest_preg;
         new_entry.tag = inst.uop.tag;
 
@@ -237,9 +238,9 @@ void Isu::comb_awake() {
     const auto &entry = out.iss2prf->iss_entry[i];
     if (entry.valid && entry.uop.dest_en) {
       int lat = get_latency(entry.uop.op);
-      // 只有 lat == 0 (单周期) 的指令才做快速唤醒
+      // 只有 lat <= 1 (单周期) 的指令才做快速唤醒
       // Load 指令暂时不做推测唤醒
-      if (lat == 0 && entry.uop.op != UOP_LOAD) {
+      if (lat <= 1 && entry.uop.op != UOP_LOAD) {
         valid_flags[idx] = true;
         pregs[idx] = entry.uop.dest_preg;
         idx++;

@@ -161,7 +161,7 @@ void RefCpu::init(uint32_t reset_pc) {
 void RefCpu::exec() {
   is_csr = is_exception = is_br = br_taken = false;
   illegal_exception = page_fault_load = page_fault_inst = page_fault_store =
-      asy = false;
+      asy = is_mmio_load = is_mmio_store = false;
   state.store = false;
 
   uint32_t p_addr = state.pc;
@@ -1047,8 +1047,21 @@ void RefCpu::RV32IM() {
       return;
 
     } else {
+      if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
+          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
+        is_mmio_load = true;
+      }
 
-      uint32_t data = memory[p_addr >> 2];
+      // Timer MMIO 特殊处理：使用 oracle_timer 保持与 DUT 同步
+      uint32_t data;
+      if (p_addr == 0x1fd0e000) {
+        oracle_timer += 1000;
+        data = oracle_timer;
+      } else if (p_addr == 0x1fd0e004) {
+        data = 0;
+      } else {
+        data = memory[p_addr >> 2];
+      }
       uint32_t offset = p_addr & 0b11;
       uint32_t size = funct3 & 0b11;
       uint32_t sign = 0, mask;
@@ -1088,6 +1101,10 @@ void RefCpu::RV32IM() {
       exception(v_addr);
       return;
     } else {
+      if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
+          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
+        is_mmio_store = true;
+      }
 
       state.store = true;
       state.store_addr = p_addr;
