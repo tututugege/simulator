@@ -17,12 +17,12 @@ typedef struct DecRenUop {
   wire<7>  func7;          // 辅助功能码 (funct7)
   
   // 寄存器索引 (Architectural Register Indices)
-  wire<6>  dest_areg;
-  wire<6>  src1_areg;
-  wire<6>  src2_areg;
+  wire<AREG_IDX_WIDTH> dest_areg;
+  wire<AREG_IDX_WIDTH> src1_areg;
+  wire<AREG_IDX_WIDTH> src2_areg;
 
   // 控制与元数据 (Control and Metadata)
-  wire<4>  tag;            // 分支预测 Tag (Branch Tag for Squashing)
+  wire<BR_TAG_WIDTH> tag;            // 分支预测 Tag (Branch Tag for Squashing)
   wire<2>  uop_num;        // micro-op 数量 (Number of uops)
   
   // Explicit signals (Verilog-friendly)
@@ -63,10 +63,13 @@ typedef struct DecRenUop {
 typedef struct RenDisUop {
   wire<32>  pc;            // 程序计数器
   DecRenUop base;          // 核心译码信息 (Includes Type)
-  wire<7>   dest_preg;     // 物理目标寄存器
-  wire<7>   src1_preg;     // 物理源寄存器 1
-  wire<7>   src2_preg;     // 物理源寄存器 2
-  wire<7>   old_dest_preg; // 旧物理目标寄存器
+  wire<AREG_IDX_WIDTH> dest_areg;
+  wire<AREG_IDX_WIDTH> src1_areg;
+  wire<AREG_IDX_WIDTH> src2_areg;
+  wire<PRF_IDX_WIDTH>  dest_preg;     // 物理目标寄存器
+  wire<PRF_IDX_WIDTH>  src1_preg;     // 物理源寄存器 1
+  wire<PRF_IDX_WIDTH>  src2_preg;     // 物理源寄存器 2
+  wire<PRF_IDX_WIDTH>  old_dest_preg; // 旧物理目标寄存器
   wire<1>   src1_busy;     // 源 1 忙状态
   wire<1>   src2_busy;     // 源 2 忙状态
 
@@ -90,11 +93,11 @@ typedef struct DisIssUop {
   UopType   op;            // 微操作码 (Specific Uop Type)
   wire<32>  imm;           // 立即数
   // 重命名后的物理寄存器索引
-  wire<7>   dest_preg, src1_preg, src2_preg;
-  wire<7>   rob_idx;       // ROB 索引
-  wire<4>   stq_idx;       // LD/ST 队列索引
-  wire<12>  csr_idx;       // CSR 索引 (Critical Fix)
-  wire<4>   tag;           // Branch Tag (Critical Fix)
+  wire<PRF_IDX_WIDTH> dest_preg, src1_preg, src2_preg;
+  wire<ROB_IDX_WIDTH> rob_idx;       // ROB 索引
+  wire<STQ_IDX_WIDTH> stq_idx;       // LD/ST 队列索引
+  wire<CSR_IDX_WIDTH> csr_idx;       // CSR 索引 (Critical Fix)
+  wire<BR_TAG_WIDTH>  tag;           // Branch Tag (Critical Fix)
   wire<3>   func3;         // 辅助功能码 (funct3)
   wire<7>   func7;         // 辅助功能码 (funct7)
   wire<1>   src1_busy, src2_busy;
@@ -127,10 +130,10 @@ typedef struct IssExeUop {
   wire<32> pc;             // 程序计数器
   UopType  op;             // 具体操作码 (Specific Uop Type)
   wire<32> imm;            // 立即数
-  wire<7>  dest_preg;      // 目标寄存器
-  wire<7>  rob_idx;        // ROB 索引
-  wire<12> csr_idx;        // CSR 索引
-  wire<4>  tag;            // Branch Tag
+  wire<PRF_IDX_WIDTH>  dest_preg;      // 目标寄存器
+  wire<ROB_IDX_WIDTH>  rob_idx;        // ROB 索引
+  wire<CSR_IDX_WIDTH>  csr_idx;        // CSR 索引
+  wire<BR_TAG_WIDTH>   tag;            // Branch Tag
   wire<3>  func3;          // 辅助功能码
   wire<7>  func7;          // 辅助功能码
   wire<1>  src1_is_pc;     // 操作数 1 Mux
@@ -159,9 +162,9 @@ typedef struct IssExeUop {
 typedef struct ExeWbUop {
   UopType  op;             // 具体操作码 (Specific Uop Type)
   wire<32> result;         // 计算结果 (Execution Result)
-  wire<7>  dest_preg;      // 目标寄存器 (Destination Register)
-  wire<7>  rob_idx;        // ROB 索引 (ROB Index)
-  wire<4>  tag;            // Branch Tag
+  wire<PRF_IDX_WIDTH> dest_preg;      // 目标寄存器 (Destination Register)
+  wire<ROB_IDX_WIDTH> rob_idx;        // ROB 索引 (ROB Index)
+  wire<BR_TAG_WIDTH>  tag;            // Branch Tag
   wire<1>  page_fault_inst;
   wire<1>  page_fault_load;
   wire<1>  page_fault_store;
@@ -189,11 +192,11 @@ typedef struct RobUop {
   wire<32> instruction;    // 用于异常记录
   
   // 寄存器更新核心字段 (User Requested Optimization)
-  wire<7>  dest_preg;      // 目标物理寄存器
-  wire<7>  old_dest_preg;  // 需释放的旧物理寄存器
-  wire<6>  dest_areg;      // 目标逻辑寄存器 (用于更新 RAT)
+  wire<PRF_IDX_WIDTH>  dest_preg;      // 目标物理寄存器
+  wire<PRF_IDX_WIDTH>  old_dest_preg;  // 需释放的旧物理寄存器
+  wire<AREG_IDX_WIDTH> dest_areg;      // 目标逻辑寄存器 (用于更新 RAT)
   wire<1>  dest_en;        // 目标寄存器写使能
-  wire<4>  tag;            // Branch Tag
+  wire<BR_TAG_WIDTH>   tag;            // Branch Tag
 
   // 状态与异常
   wire<2>  uop_num;        // 该指令拆分的 uop 总数
@@ -248,7 +251,7 @@ typedef struct IduIO {
   struct {
     wire<1>  flush;              // Global pipeline flush
     wire<1>  mispred;            // Misprediction detected from PRF/EXE
-    wire<4>  br_tag;             // Tag that mispredicted
+    wire<BR_TAG_WIDTH>  br_tag;             // Tag that mispredicted
   } from_back;
 
   // --- Outputs ---
@@ -264,8 +267,8 @@ typedef struct IduIO {
 
   struct {
     wire<1>  mispred;            // Broadcast mispred to squash backend
-    wire<16> br_mask;            // Branch mask to clear
-    wire<4>  br_tag;
+    wire<BR_MASK_WIDTH> br_mask;            // Branch mask to clear (TODO: parameterize)
+    wire<BR_TAG_WIDTH>  br_tag;
   } to_back;
 } IduIO;
 
@@ -285,15 +288,15 @@ typedef struct RenIO {
     wire<1>  flush;              // Global pipeline flush
     // Commit info needed for archiving RAT and freeing regs
     wire<1>  commit_valid[COMMIT_WIDTH];
-    wire<6>  commit_areg[COMMIT_WIDTH];
-    wire<7>  commit_preg[COMMIT_WIDTH];
+    wire<AREG_IDX_WIDTH>  commit_areg[COMMIT_WIDTH];
+    wire<PRF_IDX_WIDTH>   commit_preg[COMMIT_WIDTH];
     wire<1>  commit_dest_en[COMMIT_WIDTH];
   } from_rob;
 
   struct {
     // Wakeup signals from backend
     wire<1>  wake_valid[MAX_WAKEUP_PORTS];
-    wire<7>  wake_preg[MAX_WAKEUP_PORTS];
+    wire<PRF_IDX_WIDTH>  wake_preg[MAX_WAKEUP_PORTS];
   } from_back;
 
   // --- Outputs ---
@@ -368,7 +371,7 @@ typedef struct IssueIO {
 
   struct {
     wire<1>  wake_valid[MAX_WAKEUP_PORTS];
-    wire<7>  wake_preg[MAX_WAKEUP_PORTS];
+    wire<PRF_IDX_WIDTH>  wake_preg[MAX_WAKEUP_PORTS];
   } awake_bus;                   // Internal/External Wakeup
 } IssueIO;
 
@@ -413,8 +416,8 @@ typedef struct RobIO {
 
   struct {
     wire<1>     commit_valid[COMMIT_WIDTH];
-    wire<6>     commit_areg[COMMIT_WIDTH];
-    wire<7>     commit_preg[COMMIT_WIDTH];
+    wire<AREG_IDX_WIDTH>     commit_areg[COMMIT_WIDTH];
+    wire<PRF_IDX_WIDTH>      commit_preg[COMMIT_WIDTH];
     wire<1>     commit_dest_en[COMMIT_WIDTH];
   } to_ren;
 

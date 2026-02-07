@@ -39,7 +39,7 @@ private:
   bool dispatch_success_flags[FETCH_WIDTH];
 
   // 辅助 Mask，用于追踪每条指令占用了哪个 STQ 端口
-  wire<4> stq_port_mask[MAX_STQ_DISPATCH_WIDTH];
+  wire<FETCH_WIDTH> stq_port_mask[MAX_STQ_DISPATCH_WIDTH];
 
   struct DispatchCache {
     int count;                     // 拆分数量

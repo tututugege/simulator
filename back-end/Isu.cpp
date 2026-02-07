@@ -88,13 +88,13 @@ void Isu::comb_enq() {
           // 扫描 STA 队列
           for (const auto &entry : iqs[IQ_STA].get_entries_1()) {
             if (entry.valid)
-              uop.pre_sta_mask |= (1 << entry.uop.stq_idx);
+              uop.pre_sta_mask |= (1ULL << entry.uop.stq_idx);
           }
           // 修正：清除本周期正在发射的 STA 掩码（防止竞争状态）
           for (int k = 0; k < LSU_STA_COUNT; k++) {
             if (out.iss2prf->iss_entry[IQ_STA_PORT_BASE + k].valid) {
               uop.pre_sta_mask &=
-                  ~(1 << out.iss2prf->iss_entry[IQ_STA_PORT_BASE + k]
+                  ~(1ULL << out.iss2prf->iss_entry[IQ_STA_PORT_BASE + k]
                              .uop.stq_idx);
             }
           }
@@ -289,7 +289,7 @@ void Isu::comb_flush() {
     // 清空延迟流水线管道条目
     auto it = latency_pipe_1.begin();
     while (it != latency_pipe_1.end()) {
-      if ((1 << it->tag) & in.dec_bcast->br_mask) {
+      if ((1ULL << it->tag) & in.dec_bcast->br_mask) {
         it = latency_pipe_1.erase(it);
       } else {
         ++it;

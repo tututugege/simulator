@@ -147,7 +147,7 @@ void Prf::comb_awake() {
     if (inst_r[i].valid && inst_r[i].uop.dest_en && is_load(inst_r[i].uop)) {
       // FIX: 跳过被 Mispred Squash 的指令
       bool is_squashed = in.dec_bcast->mispred &&
-                         (in.dec_bcast->br_mask & (1 << inst_r[i].uop.tag));
+                         (in.dec_bcast->br_mask & (1ULL << inst_r[i].uop.tag));
       if (is_squashed) {
         continue; // 不发送被 Squash 指令的 Wakeup
       }
@@ -165,7 +165,7 @@ void Prf::comb_branch() {
   if (in.dec_bcast->mispred) {
     for (int i = 0; i < ISSUE_WIDTH; i++) {
       if (inst_r[i].valid &&
-          (in.dec_bcast->br_mask & (1 << inst_r[i].uop.tag))) {
+          (in.dec_bcast->br_mask & (1ULL << inst_r[i].uop.tag))) {
         inst_r_1[i].valid = false;
       }
     }

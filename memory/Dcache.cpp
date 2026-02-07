@@ -33,14 +33,14 @@ void Dcache::init() {
   total_num = 0;
   miss_num = 0;
 
-  memset(&s1_reg_ld, 0, sizeof(Pipe_Reg));
-  memset(&s2_reg_ld, 0, sizeof(Pipe_Reg));
-  memset(&s1_reg_st, 0, sizeof(Pipe_Reg));
-  memset(&s2_reg_st, 0, sizeof(Pipe_Reg));
-  memset(&s1_next_ld, 0, sizeof(Pipe_Reg));
-  memset(&s2_next_ld, 0, sizeof(Pipe_Reg));
-  memset(&s1_next_st, 0, sizeof(Pipe_Reg));
-  memset(&s2_next_st, 0, sizeof(Pipe_Reg));
+  s1_reg_ld = {};
+  s2_reg_ld = {};
+  s1_reg_st = {};
+  s2_reg_st = {};
+  s1_next_ld = {};
+  s2_next_ld = {};
+  s1_next_st = {};
+  s2_next_st = {};
 }
 void Dcache::comb_out_ldq() {
   out.dcache2ldq_resp->valid =
@@ -84,9 +84,9 @@ void Dcache::comb_s2() {
 
   global_flush = in.control->flush;
   global_mispred1 =
-      (in.control->br_mask & (1 << s1_reg_ld.uop.tag)) && in.control->mispred;
+      (in.control->br_mask & (1ULL << s1_reg_ld.uop.tag)) && in.control->mispred;
   global_mispred2 =
-      (in.control->br_mask & (1 << s2_reg_ld.uop.tag)) && in.control->mispred;
+      (in.control->br_mask & (1ULL << s2_reg_ld.uop.tag)) && in.control->mispred;
 
   uncache_access = (s2_reg_ld.uop.page_fault_load == true) |
                    (s2_reg_ld.addr == 0x1fd0e000) |

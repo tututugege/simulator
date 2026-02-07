@@ -314,7 +314,7 @@ void SimpleLsu::seq() {
     // 清除 inflight_loads 中被 Squash 的指令
     auto it_inflight = inflight_loads.begin();
     while (it_inflight != inflight_loads.end()) {
-      if ((1 << it_inflight->tag) & mask) {
+      if ((1ULL << it_inflight->tag) & mask) {
         it_inflight = inflight_loads.erase(it_inflight);
       } else {
         ++it_inflight;
@@ -324,7 +324,7 @@ void SimpleLsu::seq() {
     // 清除 finished_sta_reqs 中被 Squash 的指令
     auto it_sta = finished_sta_reqs.begin();
     while (it_sta != finished_sta_reqs.end()) {
-      if ((1 << it_sta->tag) & mask) {
+      if ((1ULL << it_sta->tag) & mask) {
         it_sta = finished_sta_reqs.erase(it_sta);
       } else {
         ++it_sta;
@@ -334,7 +334,7 @@ void SimpleLsu::seq() {
     // [Fix] Also clear finished_loads that are waiting for WB
     auto it_finished = finished_loads.begin();
     while (it_finished != finished_loads.end()) {
-      if ((1 << it_finished->tag) & mask) {
+      if ((1ULL << it_finished->tag) & mask) {
         it_finished = finished_loads.erase(it_finished);
       } else {
         ++it_finished;
@@ -523,7 +523,7 @@ void SimpleLsu::seq() {
 // =========================================================
 // 辅助：基于 Tag 查找新的 Tail
 // =========================================================
-int SimpleLsu::find_recovery_tail(uint32_t br_mask) {
+int SimpleLsu::find_recovery_tail(mask_t br_mask) {
   // 从 Commit 指针（安全点）开始，向 Tail 扫描
   // 我们要找的是“第一个”被误预测影响的指令
   // 因为是顺序分配，一旦找到一个，后面（更年轻）的肯定也都要丢弃
@@ -544,7 +544,7 @@ int SimpleLsu::find_recovery_tail(uint32_t br_mask) {
 
   for (int i = 0; i < count; i++) {
     // 检查当前条目是否依赖于被误预测的分支
-    if (stq[ptr].valid && ((1 << stq[ptr].tag) & br_mask)) {
+    if (stq[ptr].valid && ((1ULL << stq[ptr].tag) & br_mask)) {
       // 找到了！这个位置就是错误路径的开始
       // 新的 Tail 应该回滚到这里
       return ptr;

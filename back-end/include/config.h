@@ -1,8 +1,16 @@
 #pragma once
-#include "types.h"
+#include "base_types.h"
 #include <cstdio>  // Replaced <stdio.h> with <cstdio>
 #include <cstdlib> // For exit()
 #include <cstring> // Added for memset
+
+// Helper to compute log2 at compile time
+constexpr int clog2(int n) {
+  int res = 0;
+  while (n > (1 << res))
+    res++;
+  return res;
+}
 
 // ==========================================
 // [System Configuration]
@@ -22,18 +30,20 @@ constexpr uint64_t PHYSICAL_MEMORY_LENGTH =
     1ULL * 1024 * 1024 * 1024;                      // 1G elements = 4GB
 constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 
-constexpr int FETCH_WIDTH = 4;
-constexpr int COMMIT_WIDTH = 4;
+constexpr int FETCH_WIDTH = 16;
+constexpr int COMMIT_WIDTH = FETCH_WIDTH;
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 128; // Physical Register File size
-constexpr int MAX_BR_NUM = 16;
-constexpr int MAX_BR_PER_CYCLE = 2;
+constexpr int PRF_NUM = 256; // Physical Register File size
+constexpr int MAX_BR_NUM = 64;
+constexpr int MAX_BR_PER_CYCLE = 8;
 constexpr int CSR_NUM = 21;
 
-constexpr int ROB_BANK_NUM = 4;
-constexpr int ROB_NUM = 128;
-constexpr int ROB_LINE_NUM = 32; // (ROB_NUM / ROB_BANK_NUM)
+constexpr int ROB_BANK_NUM = 16;
+constexpr int ROB_NUM = 256;
+constexpr int ROB_LINE_NUM = 16; // (ROB_NUM / ROB_BANK_NUM)
+
+// Sanity Checks moved to later in the file where all parameters are defined
 
 constexpr int WARMUP = 100000000;
 constexpr int SIMPOINT_INTERVAL = 100000000;
@@ -102,14 +112,21 @@ constexpr uint64_t OP_MASK_STD = (1ULL << UOP_STD);
 // OP_MASK_CSR
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR}, // Port 0
-    {1, OP_MASK_ALU | OP_MASK_DIV},               // Port 1
-    {2, OP_MASK_ALU},                             // Port 2
+    {1, OP_MASK_ALU | OP_MASK_MUL},               // Port 1
+    {2, OP_MASK_ALU | OP_MASK_DIV},               // Port 2
     {3, OP_MASK_ALU},                             // Port 3
-    {4, OP_MASK_LD},                              // Port 4
-    {5, OP_MASK_LD},                              // Port 5
-    {6, OP_MASK_STA},                             // Port 6
-    {7, OP_MASK_STD},                             // Port 7
-    {8, OP_MASK_BR}                               // Port 8
+    {4, OP_MASK_ALU},                             // Port 4
+    {5, OP_MASK_ALU},                             // Port 5
+    {6, OP_MASK_LD},                              // Port 6
+    {7, OP_MASK_LD},                              // Port 7
+    {8, OP_MASK_LD},                              // Port 8
+    {9, OP_MASK_LD},                              // Port 9
+    {10, OP_MASK_STA},                            // Port 10
+    {11, OP_MASK_STA},                            // Port 11
+    {12, OP_MASK_STD},                            // Port 12
+    {13, OP_MASK_STD},                            // Port 13
+    {14, OP_MASK_BR},                             // Port 14
+    {15, OP_MASK_BR}                              // Port 15
 };
 
 constexpr int ISSUE_WIDTH =
@@ -143,14 +160,14 @@ constexpr int find_first_port_with_mask(uint64_t mask) {
   return -1;
 }
 
-constexpr int MAX_IQ_DISPATCH_WIDTH = 4;
-constexpr int MAX_STQ_DISPATCH_WIDTH = 2;
+constexpr int MAX_IQ_DISPATCH_WIDTH = FETCH_WIDTH;
+constexpr int MAX_STQ_DISPATCH_WIDTH = 8;
 constexpr int MAX_UOPS_PER_INST = 3;
 
 constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
-constexpr int STQ_NUM = 16;
-constexpr int MAX_INFLIGHT_LOADS = 32;
+constexpr int STQ_NUM = 64;
+constexpr int MAX_INFLIGHT_LOADS = 64;
 constexpr int MUL_MAX_LATENCY = 2;
 constexpr int DIV_MAX_LATENCY = 18;
 
@@ -164,6 +181,25 @@ constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
     count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
+
+// Configuration Sanity Checks
+static_assert(MAX_BR_NUM <= 64, "MAX_BR_NUM exceeds maximum wire width (64)");
+static_assert(STQ_NUM <= 64, "STQ_NUM exceeds maximum wire width (64)");
+static_assert(ROB_NUM % ROB_BANK_NUM == 0,
+              "ROB_NUM must be a multiple of ROB_BANK_NUM");
+static_assert(PRF_NUM >= ARF_NUM,
+              "PRF_NUM must be greater than or equal to ARF_NUM");
+static_assert(MAX_INFLIGHT_LOADS <= STQ_NUM,
+              "MAX_INFLIGHT_LOADS should not exceed STQ_NUM");
+
+// Width Constants for parameterized types
+constexpr int AREG_IDX_WIDTH = 6;
+constexpr int PRF_IDX_WIDTH = clog2(PRF_NUM);
+constexpr int ROB_IDX_WIDTH = clog2(ROB_NUM);
+constexpr int STQ_IDX_WIDTH = clog2(STQ_NUM);
+constexpr int BR_TAG_WIDTH = clog2(MAX_BR_NUM);
+constexpr int BR_MASK_WIDTH = MAX_BR_NUM;
+constexpr int CSR_IDX_WIDTH = 12; // Standard RISC-V CSR address width
 
 // MMIO Address Space
 constexpr uint32_t UART_ADDR_BASE = 0x10000000;
@@ -201,13 +237,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 
 // Instruction Queue Configuration
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 32, 4, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR,
-     IQ_ALU_PORT_BASE, count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 16, 2, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_INT, 64, FETCH_WIDTH,
+     OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
+     count_ports_with_mask(OP_MASK_ALU)},
+    {IQ_LD, 32, FETCH_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 16, 2, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 32, FETCH_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 16, 2, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 32, FETCH_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 16, 1, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 32, FETCH_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
+
+#include "types.h"

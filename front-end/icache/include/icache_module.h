@@ -25,8 +25,6 @@
 #include <frontend.h>
 #include <iostream>
 
-#define ICACHE_LINE_SIZE 32 // Size of a cache line in bytes
-
 namespace icache_module_n {
 // i-Cache State
 enum ICacheState {

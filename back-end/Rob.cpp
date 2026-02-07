@@ -67,7 +67,7 @@ void Rob::comb_commit() {
 
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
   wire<1> single_commit = false;
-  wire<2> single_idx = 0;
+  wire<clog2(ROB_BANK_NUM)> single_idx = 0;
 
   if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -172,7 +172,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 200) {
+  if (stall_cycle > 500) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -189,7 +189,8 @@ void Rob::comb_commit() {
                "is_page_fault: %d inst_idx: %lld type: %d op: %d\n",
                entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].uop.instruction,
                entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
-               (i + (deq_ptr * ROB_BANK_NUM)), is_page_fault(entry[i][deq_ptr].uop),
+               (i + (deq_ptr * ROB_BANK_NUM)),
+               is_page_fault(entry[i][deq_ptr].uop),
                (long long)entry[i][deq_ptr].uop.inst_idx,
                entry[i][deq_ptr].uop.type, entry[i][deq_ptr].uop.op);
       } else {

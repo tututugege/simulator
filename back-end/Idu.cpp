@@ -8,7 +8,7 @@
 #include <util.h>
 
 // 中间信号
-static wire<4> alloc_tag[FETCH_WIDTH]; // 分配的新 Tag
+static tag_t alloc_tag[FETCH_WIDTH]; // 分配的新 Tag
 
 void decode(InstUop &uop, uint32_t instructinn);
 
@@ -131,7 +131,7 @@ void Idu::comb_branch() {
     out.dec_bcast->br_mask = 0;
     // TODO: 换while
     while (tag_list[enq_pre] != in.prf2dec->br_tag) {
-      out.dec_bcast->br_mask |= 1 << tag_list[enq_ptr_1];
+      out.dec_bcast->br_mask |= 1ULL << tag_list[enq_ptr_1];
       tag_vec_1[tag_list[enq_ptr_1]] = true;
       LOOP_DEC(enq_ptr_1, MAX_BR_NUM);
       LOOP_DEC(enq_pre, MAX_BR_NUM);

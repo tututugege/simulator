@@ -1,33 +1,12 @@
 #pragma once
-
-#include <cstdint>
-#include <type_traits>
+#include "config.h"
 #include <cstring>
 #include <iostream>
 #include <string>
 
-// ==========================================
-// [Type Definitions & Utilities]
-// ==========================================
-
-// Recursive template to find suitable container type
-template <int N>
-using AutoType = typename std::conditional<
-    N == 1, bool,
-    typename std::conditional<
-        N <= 8, uint8_t,
-        typename std::conditional<
-            N <= 16, uint16_t,
-            typename std::conditional<
-                N <= 32, uint32_t,
-                typename std::conditional<N <= 64, uint64_t, uint64_t>::type>::
-                type>::type>::type>::type;
-
-template <int N> using wire = AutoType<N>;
-template <int N> using reg = AutoType<N>;
-
-typedef wire<7> preg_t;
-typedef wire<4> tag_t;
+typedef wire<PRF_IDX_WIDTH> preg_t;
+typedef wire<BR_TAG_WIDTH> tag_t;
+typedef wire<BR_MASK_WIDTH> mask_t;
 
 // Standard library usings (kept for compatibility)
 using std::cin;
@@ -40,48 +19,6 @@ using std::string;
 // ==========================================
 // [Instruction & Pipeline Definitions]
 // ==========================================
-
-enum UopType {
-  UOP_JUMP,
-  UOP_ADD,
-  UOP_BR,
-  UOP_LOAD,
-  UOP_STA,
-  UOP_STD,
-  UOP_CSR,
-  UOP_ECALL,
-  UOP_EBREAK,
-  UOP_SFENCE_VMA,
-  UOP_FENCE_I,
-  UOP_MRET,
-  UOP_SRET,
-  UOP_MUL,
-  UOP_DIV,
-  MAX_UOP_TYPE
-};
-
-enum IQType {
-  IQ_INT,
-  IQ_LD,
-  IQ_STA,
-  IQ_STD,
-  IQ_BR,
-  IQ_NUM,
-};
-
-struct IssuePortConfigInfo {
-  int port_idx;          // 物理端口号 (Out.iss2prf 的下标)
-  uint64_t support_mask; // 该端口支持的操作掩码 (Capability)
-};
-
-struct IQStaticConfig {
-  int id;                 // IQ ID
-  int size;               // 队列深度
-  int dispatch_width;     // 入队宽度 (Dispatch 写端口数)
-  uint64_t supported_ops; // IQ 整体接收什么指令 (用于 Dispatch 路由)
-  int port_start_idx;
-  int port_num;
-};
 
 enum InstType {
   NOP,
@@ -125,9 +62,9 @@ constexpr uint8_t MAXU = 0b11100;
 typedef struct InstUop {
   wire<32> instruction;
 
-  wire<6> dest_areg, src1_areg, src2_areg;
-  wire<7> dest_preg, src1_preg, src2_preg; // log2(ROB_NUM)
-  wire<7> old_dest_preg;
+  wire<AREG_IDX_WIDTH> dest_areg, src1_areg, src2_areg;
+  wire<PRF_IDX_WIDTH> dest_preg, src1_preg, src2_preg; // log2(PRF_NUM)
+  wire<PRF_IDX_WIDTH> old_dest_preg;
   wire<32> src1_rdata, src2_rdata;
   wire<32> result;
   wire<32> paddr;
@@ -153,11 +90,11 @@ typedef struct InstUop {
   wire<7> func7;
   wire<32> imm; // 好像不用32bit 先用着
   wire<32> pc;  // 未来将会优化pc的获取
-  wire<4> tag;
-  wire<12> csr_idx;
-  wire<7> rob_idx;
-  wire<4> stq_idx;
-  wire<16> pre_sta_mask;
+  wire<BR_TAG_WIDTH> tag;
+  wire<CSR_IDX_WIDTH> csr_idx;
+  wire<ROB_IDX_WIDTH> rob_idx;
+  wire<STQ_IDX_WIDTH> stq_idx;
+  wire<STQ_NUM> pre_sta_mask;
 
   // ROB 信息
   wire<2> uop_num;
@@ -190,7 +127,7 @@ typedef struct {
 
 typedef struct {
   wire<1> valid;
-  wire<7> preg;
+  wire<PRF_IDX_WIDTH> preg;
 } WakeInfo;
 
 #include "PerfCount.h"

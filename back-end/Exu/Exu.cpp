@@ -104,7 +104,7 @@ void Exu::comb_ready() {
 
     bool is_killed = false;
     if (inst_r[i].valid && in.dec_bcast->mispred &&
-        ((1 << inst_r[i].uop.tag) & in.dec_bcast->br_mask)) {
+        ((1ULL << inst_r[i].uop.tag) & in.dec_bcast->br_mask)) {
       is_killed = true;
     }
 
@@ -153,7 +153,7 @@ void Exu::comb_pipeline() {
       inst_r_1[i].valid = false;
     }
     for (auto fu : units)
-      fu->flush(0xFFFFFFFF);
+      fu->flush((mask_t)-1);
     return;
   }
 
@@ -181,7 +181,7 @@ void Exu::comb_pipeline() {
     // 🔍 Step 1: 检查当前 inst_r 是否被 Kill (Mispred)
     bool current_killed = false;
     if (inst_r[i].valid && in.dec_bcast->mispred) {
-      if ((1 << inst_r[i].uop.tag) & in.dec_bcast->br_mask) {
+      if ((1ULL << inst_r[i].uop.tag) & in.dec_bcast->br_mask) {
         current_killed = true;
       }
     }
@@ -229,7 +229,7 @@ void Exu::comb_exec() {
       if (in.rob_bcast->flush)
         is_killed = true;
       if (in.dec_bcast->mispred &&
-          ((1 << inst_r[i].uop.tag) & in.dec_bcast->br_mask)) {
+          ((1ULL << inst_r[i].uop.tag) & in.dec_bcast->br_mask)) {
         is_killed = true;
       }
 
@@ -305,7 +305,7 @@ void Exu::comb_exec() {
         // --- 正常的写回处理 ---
         bool flushed = in.rob_bcast->flush;
         if (in.dec_bcast->mispred &&
-            ((1 << res->tag) & in.dec_bcast->br_mask)) {
+            ((1ULL << res->tag) & in.dec_bcast->br_mask)) {
           flushed = true;
         }
 

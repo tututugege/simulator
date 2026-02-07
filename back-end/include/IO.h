@@ -80,9 +80,9 @@ struct FrontDecIO {
 struct DecBroadcastIO {
 
   wire<1> mispred;
-  wire<16> br_mask;
-  wire<4> br_tag;
-  wire<7> redirect_rob_idx;
+  wire<BR_MASK_WIDTH> br_mask;
+  wire<BR_TAG_WIDTH> br_tag;
+  wire<ROB_IDX_WIDTH> redirect_rob_idx;
 
   DecBroadcastIO() {
     mispred = {};
@@ -107,7 +107,7 @@ struct RobDisIO {
   wire<1> ready;
   wire<1> empty;
   wire<1> stall;
-  wire<7> enq_idx;
+  wire<ROB_IDX_WIDTH> enq_idx;
   wire<1> rob_flag;
 
   RobDisIO() {
@@ -292,8 +292,8 @@ struct PrfDecIO {
 
   wire<1> mispred;
   wire<32> redirect_pc;
-  wire<7> redirect_rob_idx;
-  wire<4> br_tag;
+  wire<ROB_IDX_WIDTH> redirect_rob_idx;
+  wire<BR_TAG_WIDTH> br_tag;
 
   PrfDecIO() {
     mispred = {};
@@ -420,7 +420,7 @@ struct DcacheControlIO {
 
   wire<1> flush;
   wire<1> mispred;
-  wire<16> br_mask;
+  wire<BR_MASK_WIDTH> br_mask;
 
   DcacheControlIO() {
     flush = {};
@@ -467,7 +467,7 @@ struct DcacheWritebufferIO {
 
   wire<1> flush;
   wire<1> mispred;
-  wire<16> br_mask;
+  wire<BR_MASK_WIDTH> br_mask;
 
   InstUop uop;
 
@@ -618,7 +618,7 @@ struct LsuExeIO {
 struct DisLsuIO {
 
   bool alloc_req[MAX_STQ_DISPATCH_WIDTH];
-  uint32_t tag[MAX_STQ_DISPATCH_WIDTH];
+  uint32_t tag[MAX_STQ_DISPATCH_WIDTH]; // TODO: use wire<BR_TAG_WIDTH>?
   uint32_t func3[MAX_STQ_DISPATCH_WIDTH];
   uint32_t rob_idx[MAX_STQ_DISPATCH_WIDTH];
   uint32_t rob_flag[MAX_STQ_DISPATCH_WIDTH];

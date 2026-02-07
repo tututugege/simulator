@@ -67,7 +67,7 @@ private:
   void handle_load_req(const InstUop &uop);
   void handle_store_addr(const InstUop &uop);
   void handle_store_data(const InstUop &uop);
-  int find_recovery_tail(uint32_t br_mask);
+  int find_recovery_tail(mask_t br_mask);
   bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag);
 
   std::pair<int, uint32_t> check_store_forward(uint32_t p_addr,

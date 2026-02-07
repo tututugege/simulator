@@ -6,7 +6,7 @@
 void Dispatch::comb_alloc() {
   int store_alloc_count = 0; // 当前周期已分配的 store 数量
   int load_alloc_count = 0;  // 当前周期已分配的 load 数量
-  wire<16> current_cycle_store_mask = 0;
+  wire<64> current_cycle_store_mask = 0;
 
   // 初始化输出
   for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
@@ -27,8 +27,9 @@ void Dispatch::comb_alloc() {
     if (inst_r[i].valid && is_load(inst_r[i].uop)) {
       inst_alloc[i].uop.pre_sta_mask = current_cycle_store_mask;
 
-      // 检查 Load 队列限制
-      if (load_alloc_count < in.lsu2dis->ldq_free) {
+      // 检查 Load 队列限制和端口限制
+      if (load_alloc_count < in.lsu2dis->ldq_free &&
+          load_alloc_count < GLOBAL_IQ_CONFIG[IQ_LD].dispatch_width) {
         load_alloc_count++;
       } else {
         out.dis2rob->valid[i] = false;
@@ -37,8 +38,9 @@ void Dispatch::comb_alloc() {
 
     // 处理 Store 分配
     if (inst_r[i].valid && is_store(inst_r[i].uop)) {
-      // 检查是否有足够的 STQ 端口
-      if (store_alloc_count < in.lsu2dis->stq_free) {
+      // 检查是否有足够的 STQ 端口和队列空间
+      if (store_alloc_count < in.lsu2dis->stq_free &&
+          store_alloc_count < MAX_STQ_DISPATCH_WIDTH) {
         // 计算 STQ Index
         int allocated_idx =
             (in.lsu2dis->stq_tail + store_alloc_count) % STQ_NUM;
@@ -48,7 +50,7 @@ void Dispatch::comb_alloc() {
         out.dis2lsu->tag[store_alloc_count] = inst_r[i].uop.tag;
 
         // 记录 Mask
-        current_cycle_store_mask |= (1 << allocated_idx);
+        current_cycle_store_mask |= (1ULL << allocated_idx);
         stq_port_mask[store_alloc_count] =
             (1 << i); // 记录这条指令占用了这个端口
 

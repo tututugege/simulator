@@ -36,7 +36,7 @@ public:
   // 动作：结果被取走了，从 FU 里移除它
   virtual void pop_finished() = 0;
 
-  virtual void flush(uint32_t br_mask) = 0;
+  virtual void flush(mask_t br_mask) = 0;
 };
 
 // 固定延迟、可流水化：ALU、MUL、FADD、FMUL
@@ -77,8 +77,8 @@ public:
 
   // 新增：清空队列
 
-  void flush(uint32_t br_mask) override {
-    if (br_mask == 0xFFFFFFFF) {
+  void flush(mask_t br_mask) override {
+    if (br_mask == (mask_t)-1) {
       // 全局 Flush
       pipeline.clear();
     } else {
@@ -88,7 +88,7 @@ public:
       while (it != pipeline.end()) {
         // 假设 InstUop 有 br_mask 域 (依赖掩码) 或 tag 域
         // 检查：如果指令依赖于被误预测的分支
-        if ((1 << it->tag) & br_mask) { // 或者 check dependency mask
+        if ((1ULL << it->tag) & br_mask) { // 或者 check dependency mask
           it = pipeline.erase(it);
         } else {
           ++it;
@@ -175,16 +175,16 @@ public:
 
   void pop_finished() override { busy = false; }
 
-  void flush(uint32_t br_mask) override {
+  void flush(mask_t br_mask) override {
     if (!busy)
       return;
 
     bool kill = false;
-    if (br_mask == 0xFFFFFFFF) {
+    if (br_mask == (mask_t)-1) {
       kill = true;
     } else {
       // 检查当前正在计算的指令是否在错误路径上
-      if ((1 << current_inst.tag) & br_mask) {
+      if ((1ULL << current_inst.tag) & br_mask) {
         kill = true;
       }
     }

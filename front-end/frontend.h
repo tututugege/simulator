@@ -16,7 +16,7 @@
 #endif
 
 #ifndef ICACHE_LINE_SIZE
-#define ICACHE_LINE_SIZE 32 // Size of a cache line in bytes
+#define ICACHE_LINE_SIZE 64 // Size of a cache line in bytes
 #endif
 
 /*#define IO_version*/

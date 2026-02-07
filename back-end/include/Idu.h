@@ -42,14 +42,14 @@ public:
   IduIO get_hardware_io(); // 获取硬件级别 IO (Hardware Reference)
 
   // 状态
-  reg<4> tag_list[MAX_BR_NUM];
-  reg<4> enq_ptr;
+  reg<BR_TAG_WIDTH> tag_list[MAX_BR_NUM];
+  reg<BR_TAG_WIDTH> enq_ptr;
+  reg<BR_TAG_WIDTH> now_tag;
   reg<1> tag_vec[MAX_BR_NUM];
-  reg<4> now_tag;
 
   // 下一周期状态
-  wire<4> tag_list_1[MAX_BR_NUM];
-  wire<4> enq_ptr_1;
+  wire<BR_TAG_WIDTH> tag_list_1[MAX_BR_NUM];
+  wire<BR_TAG_WIDTH> enq_ptr_1;
+  wire<BR_TAG_WIDTH> now_tag_1;
   wire<1> tag_vec_1[MAX_BR_NUM];
-  wire<4> now_tag_1;
 };

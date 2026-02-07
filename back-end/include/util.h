@@ -13,10 +13,10 @@
     }                                                                          \
   } while (0)
 
-inline int get_rob_line(uint32_t rob_idx) { return rob_idx >> 2; }
-inline int get_rob_bank(uint32_t rob_idx) { return rob_idx & 0b11; }
+inline int get_rob_line(uint32_t rob_idx) { return rob_idx / ROB_BANK_NUM; }
+inline int get_rob_bank(uint32_t rob_idx) { return rob_idx % ROB_BANK_NUM; }
 inline uint32_t make_rob_idx(uint32_t line, uint32_t bank) {
-  return (line << 2) | bank;
+  return (line * ROB_BANK_NUM) | bank;
 }
 
 inline bool is_branch(InstType type) { return type == BR || type == JALR; }

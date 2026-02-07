@@ -37,15 +37,15 @@ public:
   RobOut out;
 
   // 状态
-  InstEntry entry[ROB_BANK_NUM][ROB_NUM / 4];
-  reg<5> enq_ptr;
-  reg<5> deq_ptr;
+  InstEntry entry[ROB_BANK_NUM][ROB_LINE_NUM];
+  reg<clog2(ROB_LINE_NUM)> enq_ptr;
+  reg<clog2(ROB_LINE_NUM)> deq_ptr;
   reg<1> enq_flag;
   reg<1> deq_flag;
 
-  InstEntry entry_1[ROB_BANK_NUM][ROB_NUM / 4];
-  wire<5> enq_ptr_1;
-  wire<5> deq_ptr_1;
+  InstEntry entry_1[ROB_BANK_NUM][ROB_LINE_NUM];
+  wire<clog2(ROB_LINE_NUM)> enq_ptr_1;
+  wire<clog2(ROB_LINE_NUM)> deq_ptr_1;
   wire<1> enq_flag_1;
   wire<1> deq_flag_1;
 

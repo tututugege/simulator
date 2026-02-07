@@ -82,7 +82,7 @@ public:
   void clear_store_mask(int stq_idx, bool is_addr) {
     for (int i = 0; i < size; i++) {
       if (entry_1[i].valid) {
-        uint32_t mask = (1 << stq_idx);
+        AutoType<STQ_NUM> mask = (1ULL << stq_idx);
         if (is_addr)
           entry_1[i].uop.pre_sta_mask &= ~mask;
       }
@@ -90,9 +90,9 @@ public:
   }
 
   // Flush
-  void flush_br(uint32_t br_mask) {
+  void flush_br(mask_t br_mask) {
     for (int i = 0; i < size; i++) {
-      if (entry_1[i].valid && ((1 << entry_1[i].uop.tag) & br_mask)) {
+      if (entry_1[i].valid && ((1ULL << entry_1[i].uop.tag) & br_mask)) {
         entry_1[i].valid = false;
         count_1--;
       }

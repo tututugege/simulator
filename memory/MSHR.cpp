@@ -133,7 +133,7 @@ void MSHR::seq()
             uint32_t idx = (table_head + i) % MSHR_TABLE_SIZE;
             if (mshr_table[idx].valid && mshr_table[idx].type == 0)
             {
-                if (in.control->br_mask & (1 << mshr_table[idx].uop.tag))
+                if (in.control->br_mask & (1ULL << mshr_table[idx].uop.tag))
                 {
                     table_free(idx);
                 }
@@ -324,7 +324,7 @@ void MSHR::seq()
         count_table--;
     }
 
-    bool mispred = in.control->mispred && (in.control->br_mask & (1 << in.dcache2mshr_ld->uop.tag));
+    bool mispred = in.control->mispred && (in.control->br_mask & (1ULL << in.dcache2mshr_ld->uop.tag));
     if (in.dcache2mshr_ld->valid && !mispred && !merge_flag_ld)
     {
         uint32_t entry_idx = find_entry(in.dcache2mshr_ld->addr);

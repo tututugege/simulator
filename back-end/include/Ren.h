@@ -44,18 +44,18 @@ public:
 
   // register
   InstEntry inst_r[FETCH_WIDTH];
-  reg<7> arch_RAT[ARF_NUM + 1];
-  reg<7> spec_RAT[ARF_NUM + 1];
-  reg<7> RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
+  reg<PRF_IDX_WIDTH> arch_RAT[ARF_NUM + 1];
+  reg<PRF_IDX_WIDTH> spec_RAT[ARF_NUM + 1];
+  reg<PRF_IDX_WIDTH> RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
   reg<1> free_vec[PRF_NUM];
   reg<1> alloc_checkpoint[MAX_BR_NUM][PRF_NUM];
   reg<1> busy_table[PRF_NUM];
   reg<1> spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
   InstEntry inst_r_1[FETCH_WIDTH];
-  wire<7> arch_RAT_1[ARF_NUM + 1];
-  wire<7> spec_RAT_1[ARF_NUM + 1];
-  wire<7> RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];
+  wire<PRF_IDX_WIDTH> arch_RAT_1[ARF_NUM + 1];
+  wire<PRF_IDX_WIDTH> spec_RAT_1[ARF_NUM + 1];
+  wire<PRF_IDX_WIDTH> RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];
   wire<1> free_vec_1[PRF_NUM];
   wire<1> alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
   wire<1> busy_table_1[PRF_NUM];
