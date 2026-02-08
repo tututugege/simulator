@@ -209,54 +209,43 @@ void Isu::comb_calc_latency_next() {
 // 4. comb_awake: 统一唤醒逻辑
 // =================================================================
 void Isu::comb_awake() {
-  bool valid_flags[MAX_WAKEUP_PORTS];
-  uint32_t pregs[MAX_WAKEUP_PORTS];
-  int idx = 0;
+  std::vector<uint32_t> pregs;
+  pregs.reserve(MAX_WAKEUP_PORTS); // 预分配避免重复分配
 
   // 来源 A: 慢速唤醒 (来自写回阶段：Load / 缓存缺失)
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
     if (in.prf_awake->wake[i].valid) {
-      valid_flags[idx] = true;
-      pregs[idx] = in.prf_awake->wake[i].preg;
-      idx++;
+      pregs.push_back(in.prf_awake->wake[i].preg);
     }
   }
 
   // 来源 B: 延迟唤醒 (乘法/除法完成)
-  // 检查 latency_pipe 中倒计时为 0 的条目
   for (const auto &le : latency_pipe) {
     if (le.valid && le.countdown == 0) {
-      valid_flags[idx] = true;
-      pregs[idx] = le.dest_preg;
-      idx++;
+      pregs.push_back(le.dest_preg);
     }
   }
 
   // 来源 C: 快速唤醒 (本周期发射的单周期 ALU 指令)
-  // 遍历所有发射端口
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     const auto &entry = out.iss2prf->iss_entry[i];
     if (entry.valid && entry.uop.dest_en) {
       int lat = get_latency(entry.uop.op);
-      // 只有 lat <= 1 (单周期) 的指令才做快速唤醒
-      // Load 指令暂时不做推测唤醒
       if (lat <= 1 && entry.uop.op != UOP_LOAD) {
-        valid_flags[idx] = true;
-        pregs[idx] = entry.uop.dest_preg;
-        idx++;
+        pregs.push_back(entry.uop.dest_preg);
       }
     }
   }
 
-  Assert(idx <= MAX_WAKEUP_PORTS);
+  Assert(pregs.size() <= MAX_WAKEUP_PORTS);
+  
   // === 统一广播 ===
   // 1. 唤醒所有 IQ
   for (auto &q : iqs) {
-    q.wakeup(valid_flags, pregs, idx);
+    q.wakeup(pregs);
   }
 
   // 2. Load 依赖唤醒 (Store Mask)
-  // 直接使用常量索引 IQ_LD
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     if (out.iss2prf->iss_entry[IQ_STA_PORT_BASE + i].valid) {
       iqs[IQ_LD].clear_store_mask(
@@ -265,9 +254,8 @@ void Isu::comb_awake() {
   }
 
   // 3. 输出给外部 (iss_awake) - 用于通知 rename table 等
-  // 将上面收集到的唤醒信号输出
-  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
-    if (i < idx) {
+  for (size_t i = 0; i < MAX_WAKEUP_PORTS; i++) {
+    if (i < pregs.size()) {
       out.iss_awake->wake[i].valid = true;
       out.iss_awake->wake[i].preg = pregs[i];
     } else {

@@ -62,17 +62,28 @@ public:
   }
 
   // 唤醒逻辑
-  void wakeup(bool *valid_flags, uint32_t *pregs, int num_wakeups) {
+  void wakeup(const std::vector<uint32_t> &pregs) {
     for (int i = 0; i < size; i++) {
       if (entry_1[i].valid) {
         InstUop &uop = entry_1[i].uop;
-        for (int j = 0; j < num_wakeups; j++) {
-          if (valid_flags[j]) {
-            if (uop.src1_en && uop.src1_preg == pregs[j])
-              uop.src1_busy = false;
-            if (uop.src2_en && uop.src2_preg == pregs[j])
-              uop.src2_busy = false;
-          }
+        
+        // 优化: 仅当操作数正在等待时才检查唤醒
+        if (uop.src1_en && uop.src1_busy) {
+            for (uint32_t preg : pregs) {
+                if (uop.src1_preg == preg) {
+                    uop.src1_busy = false;
+                    break; // 只有一个生产者
+                }
+            }
+        }
+
+        if (uop.src2_en && uop.src2_busy) {
+            for (uint32_t preg : pregs) {
+                if (uop.src2_preg == preg) {
+                    uop.src2_busy = false;
+                    break;
+                }
+            }
         }
       }
     }

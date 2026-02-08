@@ -3,10 +3,8 @@
 #include <config.h>
 #include <cstdint>
 #include <cstdlib>
-#include <filesystem>
 #include <getopt.h>
 
-namespace fs = std::filesystem;
 using namespace std;
 extern RefCpu ref_cpu;
 
@@ -48,31 +46,13 @@ void print_help(char *argv[]) {
             << std::endl;
 }
 
-// 3. 文件检查函数
-bool validate_path(const std::string &path) {
-  if (path.empty()) {
-    std::cerr << "Error: Target file path is empty." << std::endl;
-    return false;
-  }
-  if (!fs::exists(path)) {
-    std::cerr << "Error: File not found: " << path << std::endl;
-    return false;
-  }
-  if (fs::is_directory(path)) {
-    std::cerr << "Error: Path is a directory: " << path << std::endl;
-    return false;
-  }
-  return true;
-}
-
 long long sim_time = 0;
 SimCpu cpu;
-
 
 void exit_handler() {
   std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
   std::cout << "Simulation Exited. Printing Perf Stats..." << std::endl;
-  // cpu.ctx.perf.perf_print();
+  cpu.ctx.perf.perf_print();
   std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
 }
 
@@ -145,11 +125,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // --- C. 校验 ---
-  if (!validate_path(config.target_file)) {
-    return 1;
-  }
-
   // 快速模式逻辑校验
   if (config.mode == SimConfig::FAST) {
     if (config.fast_forward_count == 0) {
@@ -166,12 +141,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
-
-
   p_memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
   if (!p_memory) {
-      std::cerr << "Error: Failed to allocate memory!" << std::endl;
-      exit(1);
+    std::cerr << "Error: Failed to allocate memory!" << std::endl;
+    exit(1);
   }
   cpu.init();
 
@@ -260,7 +233,7 @@ int main(int argc, char *argv[]) {
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    cpu.ctx.perf.perf_print();  // Disabled for cleaner output
+    cpu.ctx.perf.perf_print(); // Disabled for cleaner output
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
   } else {

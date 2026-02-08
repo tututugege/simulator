@@ -30,17 +30,17 @@ constexpr uint64_t PHYSICAL_MEMORY_LENGTH =
     1ULL * 1024 * 1024 * 1024;                      // 1G elements = 4GB
 constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 
-constexpr int FETCH_WIDTH = 16;
+constexpr int FETCH_WIDTH = 8;
 constexpr int COMMIT_WIDTH = FETCH_WIDTH;
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 256; // Physical Register File size
+constexpr int PRF_NUM = 160; // Optimized for 8-wide
 constexpr int MAX_BR_NUM = 64;
-constexpr int MAX_BR_PER_CYCLE = 8;
+constexpr int MAX_BR_PER_CYCLE = 4; // Scaled for 8-wide
 constexpr int CSR_NUM = 21;
 
-constexpr int ROB_BANK_NUM = 16;
-constexpr int ROB_NUM = 256;
+constexpr int ROB_BANK_NUM = 8;
+constexpr int ROB_NUM = 128;
 constexpr int ROB_LINE_NUM = 16; // (ROB_NUM / ROB_BANK_NUM)
 
 // Sanity Checks moved to later in the file where all parameters are defined
@@ -111,22 +111,16 @@ constexpr uint64_t OP_MASK_STD = (1ULL << UOP_STD);
 // [重要声明] CSR 指令目前硬绑定在 Port 0，如果调整配置，请确保 Port 0 包含
 // OP_MASK_CSR
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
-    {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR}, // Port 0
-    {1, OP_MASK_ALU | OP_MASK_MUL},               // Port 1
-    {2, OP_MASK_ALU | OP_MASK_DIV},               // Port 2
-    {3, OP_MASK_ALU},                             // Port 3
-    {4, OP_MASK_ALU},                             // Port 4
-    {5, OP_MASK_ALU},                             // Port 5
-    {6, OP_MASK_LD},                              // Port 6
-    {7, OP_MASK_LD},                              // Port 7
-    {8, OP_MASK_LD},                              // Port 8
-    {9, OP_MASK_LD},                              // Port 9
-    {10, OP_MASK_STA},                            // Port 10
-    {11, OP_MASK_STA},                            // Port 11
-    {12, OP_MASK_STD},                            // Port 12
-    {13, OP_MASK_STD},                            // Port 13
-    {14, OP_MASK_BR},                             // Port 14
-    {15, OP_MASK_BR}                              // Port 15
+    {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR | OP_MASK_DIV}, // Port 0: Full ALU + System
+    {1, OP_MASK_ALU | OP_MASK_MUL},                             // Port 1: ALU + Mul
+    {2, OP_MASK_ALU},                                           // Port 2: Simple ALU
+    {3, OP_MASK_ALU},                                           // Port 3: Simple ALU
+    {4, OP_MASK_LD},                                            // Port 4: Load 0
+    {5, OP_MASK_LD},                                            // Port 5: Load 1
+    {6, OP_MASK_STA},                                           // Port 6: Store Addr
+    {7, OP_MASK_STD},                                           // Port 7: Store Data
+    {8, OP_MASK_BR},                                            // Port 8: Branch 0
+    {9, OP_MASK_BR}                                             // Port 9: Branch 1
 };
 
 constexpr int ISSUE_WIDTH =
@@ -161,7 +155,7 @@ constexpr int find_first_port_with_mask(uint64_t mask) {
 }
 
 constexpr int MAX_IQ_DISPATCH_WIDTH = FETCH_WIDTH;
-constexpr int MAX_STQ_DISPATCH_WIDTH = 8;
+constexpr int MAX_STQ_DISPATCH_WIDTH = 4;
 constexpr int MAX_UOPS_PER_INST = 3;
 
 constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
