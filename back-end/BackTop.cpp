@@ -538,15 +538,43 @@ void BackTop::restore_checkpoint(const std::string &filename) {
     exit(1);
   }
 
-  CPU_state state;
+  typedef struct Old_CPU_state {
+    uint32_t gpr[32];
+    uint32_t csr[21];
+    uint32_t pc;
+
+    uint32_t store_addr;
+    uint32_t store_data;
+    uint32_t store_strb;
+    bool store;
+  } Old_CPU_state;
+
+  Old_CPU_state old_state;
   uint64_t interval_inst_count;
 
   // 1. 恢复状态
-  gz_read_pod(file, state);
+  gz_read_pod(file, old_state);
   gz_read_pod(file, interval_inst_count);
+
+  CPU_state state;
+  memcpy(state.gpr, old_state.gpr, sizeof(state.gpr));
+  memcpy(state.csr, old_state.csr, sizeof(state.csr));
+  state.pc = old_state.pc;
+  state.store_addr = old_state.store_addr;
+  state.store_data = old_state.store_data;
+  state.store_strb = old_state.store_strb;
+  state.store = old_state.store;
+
+  // 初始化新字段
+  state.instruction = 0;
+  state.page_fault_inst = false;
+  state.page_fault_load = false;
+  state.page_fault_store = false;
+  state.inst_idx = 0;
 
   number_PC = state.pc;
   csr->privilege = csr->privilege_1 = RISCV_MODE_U;
+
   for (int i = 0; i < ARF_NUM; i++) {
     prf->reg_file[i] = state.gpr[i];
     prf->reg_file_1[i] = state.gpr[i];
@@ -563,8 +591,8 @@ void BackTop::restore_checkpoint(const std::string &filename) {
     exit(1);
   }
 
-  // [重要] 计算总字节数
-  uint64_t total_bytes = (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t);
+  // [重要] 计算总字节数 (checkpoint 为 4GB)
+  uint64_t total_bytes = 4ULL * 1024 * 1024 * 1024;
   uint8_t *byte_ptr = reinterpret_cast<uint8_t *>(p_memory);
   uint64_t remain = total_bytes;
 

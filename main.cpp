@@ -72,7 +72,7 @@ SimCpu cpu;
 void exit_handler() {
   std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
   std::cout << "Simulation Exited. Printing Perf Stats..." << std::endl;
-  cpu.ctx.perf.perf_print();
+  // cpu.ctx.perf.perf_print();
   std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
 }
 
@@ -186,6 +186,7 @@ int main(int argc, char *argv[]) {
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.restore_checkpoint(config.target_file);
     cpu.ctx.is_ckpt = true;
+    cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
   } else if (config.mode == SimConfig::FAST) {
     std::cout << "[Mode] FAST: Hybrid Execution Strategy" << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;

@@ -163,7 +163,7 @@ void Exu::comb_pipeline() {
   // B. Flush inst_r 本身！(您漏了)
 
   if (in.dec_bcast->mispred) {
-    uint32_t mask = in.dec_bcast->br_mask;
+    mask_t mask = in.dec_bcast->br_mask;
 
     // A. Flush FU
     for (auto fu : units)

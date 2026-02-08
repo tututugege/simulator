@@ -136,7 +136,7 @@ void Idu::comb_branch() {
       LOOP_DEC(enq_ptr_1, MAX_BR_NUM);
       LOOP_DEC(enq_pre, MAX_BR_NUM);
     }
-    out.dec_bcast->br_mask |= 1 << tag_list[enq_ptr_1];
+    out.dec_bcast->br_mask |= 1ULL << tag_list[enq_ptr_1];
     now_tag_1 = tag_list[enq_ptr_1];
     LOOP_INC(enq_ptr_1, MAX_BR_NUM);
   } else {

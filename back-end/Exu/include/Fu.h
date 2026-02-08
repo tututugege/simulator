@@ -48,7 +48,7 @@ protected:
           inst.result = operand1 + operand2;
         break;
       case SLL:
-        inst.result = operand1 << operand2;
+        inst.result = operand1 << (operand2 & 0x1F);
         break;
       case SLT:
         inst.result = ((signed)operand1 < (signed)operand2);
@@ -61,9 +61,9 @@ protected:
         break;
       case SRL:
         if ((inst.func7 >> 5) & 1)
-          inst.result = ((signed)operand1 >> operand2);
+          inst.result = (int32_t)operand1 >> (operand2 & 0x1F);
         else
-          inst.result = ((unsigned)operand1 >> operand2);
+          inst.result = (uint32_t)operand1 >> (operand2 & 0x1F);
         break;
       case OR:
         inst.result = (operand1 | operand2);

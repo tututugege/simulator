@@ -11,7 +11,7 @@ extern uint32_t *p_memory;
 
 SimpleLsu::SimpleLsu(SimContext *ctx) : AbstractLsu(ctx), cache(ctx) {
   // Initialize MMU
-  mmu = new SimpleMmu(ctx);
+  mmu = new SimpleMmu(ctx, this);
 
   stq_head = 0;
   stq_tail = 0;
@@ -310,7 +310,7 @@ void SimpleLsu::seq() {
   }
 
   if (is_mispred) {
-    uint32_t mask = in.dec_bcast->br_mask;
+    uint64_t mask = in.dec_bcast->br_mask;
     // 清除 inflight_loads 中被 Squash 的指令
     auto it_inflight = inflight_loads.begin();
     while (it_inflight != inflight_loads.end()) {
@@ -403,6 +403,7 @@ void SimpleLsu::seq() {
 
   // === Step 4: 正常的出队逻辑 (Retire/Writeback) ===
   // 只要 Head != Commit，说明有东西已经 Commit 了，可以写内存
+  // [Note] 保持单端口提交以隔离 coherent_read 修复
 
   if (stq_head != stq_commit) {
     StqEntry &head = stq[stq_head];
@@ -418,13 +419,10 @@ void SimpleLsu::seq() {
           merge_data_to_word(old_val, head.data, paddr, head.func3);
       p_memory[word_idx] = new_val;
 
-      // Simple MMIO Write Side Effect (consistent with ref.cpp and BackTop
-      // cheat logic)
+      // Simple MMIO Write Side Effect
       if (paddr == UART_ADDR_BASE) {
-        // UART Output Logic
         char temp = new_val & 0xFF;
         std::cout << temp << std::flush;
-        // Consumption side effect
         p_memory[word_idx] &= 0xFFFFFF00;
       } else if (paddr == UART_ADDR_BASE + 1) {
         uint8_t cmd = head.data & 0xff;
@@ -446,8 +444,8 @@ void SimpleLsu::seq() {
       head.committed = false;
       head.addr_valid = false;
       head.data_valid = false;
-      head.addr = 0; // 清除陈旧地址
-      head.data = 0; // 清除陈旧数据
+      head.addr = 0;
+      head.data = 0;
 
       // 3. 移动 Head
       stq_head = (stq_head + 1) % STQ_NUM;
@@ -693,4 +691,27 @@ SimpleLsu::check_store_forward(uint32_t p_addr, const InstUop &load_uop) {
   return {true, final_data};
 }
 
-// va2pa moved to SimpleMmu::translate
+
+uint32_t SimpleLsu::coherent_read(uint32_t p_addr) {
+  // 1. 基准值：读物理内存
+  uint32_t data = p_memory[p_addr >> 2];
+
+  // 2. 遍历 STQ 进行覆盖 (Coherent Check)
+  // 虽然 MMU walk 通常是 4 字节对齐的 Word 访问，
+  // 但我们支持字节合并以应对所有潜在对齐情况。
+  int ptr = stq_head;
+  int count = stq_count;
+  for (int i = 0; i < count; i++) {
+    const auto &entry = stq[ptr];
+    if (entry.valid && entry.addr_valid) {
+      // 检查地址范围是否有重叠 (当前访存地址的核心 Word)
+      if ((entry.p_addr & ~0x3) == (p_addr & ~0x3)) {
+        // 使用现有的合并助手更新结果
+        data = merge_data_to_word(data, entry.data, entry.p_addr, entry.func3);
+      }
+    }
+    ptr = (ptr + 1) % STQ_NUM;
+  }
+
+  return data;
+}

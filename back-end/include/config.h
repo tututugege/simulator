@@ -5,9 +5,9 @@
 #include <cstring> // Added for memset
 
 // Helper to compute log2 at compile time
-constexpr int clog2(int n) {
+constexpr int clog2(uint64_t n) {
   int res = 0;
-  while (n > (1 << res))
+  while (n > (1ULL << res))
     res++;
   return res;
 }

@@ -175,7 +175,7 @@ void Csr::comb_exception() {
     // next_mcause = interruptType;
     uint32_t cause =
         (M_software_interrupt || M_timer_interrupt || M_external_interrupt)
-            ? 1 << 31
+            ? 1U << 31
             : 0;
 
     cause += M_software_interrupt ? 3
@@ -228,7 +228,7 @@ void Csr::comb_exception() {
     CSR_RegFile_1[csr_sepc] = in.rob_bcast->pc;
     uint32_t cause =
         (S_software_interrupt || S_timer_interrupt || S_external_interrupt)
-            ? 1 << 31
+            ? 1U << 31
             : 0;
 
     cause +=

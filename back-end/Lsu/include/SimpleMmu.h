@@ -6,15 +6,15 @@
 #include "config.h"
 
 class SimContext; // Forward declaration
+class AbstractLsu;
 
 class SimpleMmu : public AbstractMmu {
 private:
     SimContext *ctx;
-    // Helper access to memory pointer -> Removed to use global one directly
-    // uint32_t *p_memory; 
+    AbstractLsu *lsu = nullptr;
 
 public:
-    SimpleMmu(SimContext *ctx);
+    SimpleMmu(SimContext *ctx, AbstractLsu *lsu = nullptr);
 
     bool translate(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
                          CsrStatusIO *status) override;

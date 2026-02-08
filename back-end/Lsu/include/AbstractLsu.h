@@ -72,6 +72,9 @@ public:
 
   virtual void set_csr(Csr *csr) {}
 
+  // 一致性访存接口 (供 MMU 使用)
+  virtual uint32_t coherent_read(uint32_t p_addr) = 0;
+
   // 辅助函数
   int get_mem_width(int func3) {
     switch (func3 & 0b11) { // 忽略符号位

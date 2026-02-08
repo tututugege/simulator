@@ -61,6 +61,9 @@ public:
 
   void set_csr(Csr *c) override { this->csr_module = c; }
 
+  // 一致性访存接口 (供 MMU 使用)
+  uint32_t coherent_read(uint32_t p_addr) override;
+
 private:
   Csr *csr_module = nullptr;
   // 内部辅助函数

@@ -2,6 +2,7 @@
 #include "RISCV.h"
 #include "config.h"
 #include "util.h"
+#include "Csr.h"
 
 #include <cstring>
 #include <iostream>
@@ -31,7 +32,8 @@ void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
               (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
 
   uint32_t p_addr;
-  Assert(ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0));
+  bool success = ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0);
+  Assert(success);
 }
 
 void get_state(CPU_state &dut_state, uint8_t &privilege, uint32_t *dut_memory) {
