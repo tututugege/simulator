@@ -23,6 +23,7 @@ class Rob {
 public:
   Rob(SimContext *ctx) { this->ctx = ctx; }
   SimContext *ctx;
+  class AbstractLsu *lsu = nullptr;
   void init();
   void seq();
   void comb_ready();

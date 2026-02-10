@@ -65,7 +65,11 @@ void BackTop::difftest_cycle() {
           dut_cpu.store = false;
         }
 
-        dut_cpu.pc = inst->pc_next;
+        // For branches/JAL/flush, PC is in the union (set by BRU or comb flush).
+        dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL || rob->out.rob_bcast->flush)
+                         ? rob->out.rob_commit->commit_entry[commit_indices[i]]
+                               .extra_data.pc_next
+                         : inst->pc + 4;
         dut_cpu.instruction = inst->instruction;
         dut_cpu.page_fault_inst = inst->page_fault_inst;
         dut_cpu.page_fault_load = inst->page_fault_load;
@@ -101,11 +105,11 @@ void BackTop::difftest_sync(InstUop *inst) {
       if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
         ctx->perf.ret_mispred_num++;
         bool pred_taken = false;
-        if(ftq) {
-            FTQEntry &entry = ftq->get(inst->ftq_idx);
-            if(entry.valid) {
-                pred_taken = entry.pred_taken_mask[inst->ftq_offset];
-            }
+        if (ftq) {
+          FTQEntry &entry = ftq->get(inst->ftq_idx);
+          if (entry.valid) {
+            pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+          }
         }
         if (!pred_taken) {
           ctx->perf.ret_dir_mispred++;
@@ -115,11 +119,11 @@ void BackTop::difftest_sync(InstUop *inst) {
       } else {
         ctx->perf.jalr_mispred_num++;
         bool pred_taken = false;
-        if(ftq) {
-            FTQEntry &entry = ftq->get(inst->ftq_idx);
-            if(entry.valid) {
-                pred_taken = entry.pred_taken_mask[inst->ftq_offset];
-            }
+        if (ftq) {
+          FTQEntry &entry = ftq->get(inst->ftq_idx);
+          if (entry.valid) {
+            pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+          }
         }
         if (!pred_taken) {
           ctx->perf.jalr_dir_mispred++;
@@ -129,11 +133,11 @@ void BackTop::difftest_sync(InstUop *inst) {
       }
     } else if (inst->type == BR) {
       bool pred_taken = false;
-      if(ftq) {
-          FTQEntry &entry = ftq->get(inst->ftq_idx);
-          if(entry.valid) {
-              pred_taken = entry.pred_taken_mask[inst->ftq_offset];
-          }
+      if (ftq) {
+        FTQEntry &entry = ftq->get(inst->ftq_idx);
+        if (entry.valid) {
+          pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+        }
       }
       if (pred_taken != inst->br_taken) {
         ctx->perf.cond_dir_mispred++;
@@ -174,7 +178,8 @@ void BackTop::difftest_sync(InstUop *inst) {
   }
 }
 
-void BackTop::difftest_inst(InstUop *inst) {
+void BackTop::difftest_inst(InstEntry *inst_entry) {
+  InstUop *inst = &inst_entry->uop;
   difftest_sync(inst);
 
 #ifdef CONFIG_DIFFTEST
@@ -202,7 +207,9 @@ void BackTop::difftest_inst(InstUop *inst) {
   for (int i = 0; i < CSR_NUM; i++) {
     dut_cpu.csr[i] = csr->CSR_RegFile_1[i];
   }
-  dut_cpu.pc = inst->pc_next;
+  dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL || rob->out.rob_bcast->flush)
+                   ? inst_entry->extra_data.pc_next
+                   : inst->pc + 4;
   dut_cpu.instruction = inst->instruction;
   dut_cpu.page_fault_inst = inst->page_fault_inst;
   dut_cpu.page_fault_load = inst->page_fault_load;
@@ -228,6 +235,7 @@ void BackTop::init() {
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new SimpleLsu(ctx);
+  rob->lsu = lsu;
   lsu->set_csr(csr);
 
   idu->out.dec2front = &dec2front;
@@ -442,8 +450,10 @@ void BackTop::comb() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     out.commit_entry[i] = rob->out.rob_commit->commit_entry[i];
     if (out.commit_entry[i].valid && out.flush) {
-      out.commit_entry[i].uop.pc_next = out.redirect_pc;
-      rob->out.rob_commit->commit_entry[i].uop.pc_next = out.redirect_pc;
+      // Flush: override extra_data.pc_next with redirect_pc for ALL instructions
+      // so Difftest can read the correct next-PC (trap vector, epc, etc.)
+      out.commit_entry[i].extra_data.pc_next = out.redirect_pc;
+      rob->out.rob_commit->commit_entry[i].extra_data.pc_next = out.redirect_pc;
     }
   }
 
@@ -466,10 +476,11 @@ void BackTop::comb() {
 
 void BackTop::seq() {
   // FTQ Reclamation
-  for(int i=0; i<COMMIT_WIDTH; i++) {
-      if(out.commit_entry[i].valid && out.commit_entry[i].uop.ftq_is_last) {
-          if(ftq) ftq->pop();
-      }
+  for (int i = 0; i < COMMIT_WIDTH; i++) {
+    if (out.commit_entry[i].valid && out.commit_entry[i].uop.ftq_is_last) {
+      if (ftq)
+        ftq->pop();
+    }
   }
 
   // rename -> isu/stq/rob

@@ -35,7 +35,6 @@ file(GLOB_RECURSE BACKEND_SOURCES "back-end/*.cpp")
 file(GLOB_RECURSE FRONTEND_SOURCES "front-end/*.cpp") 
 file(GLOB_RECURSE DIFF_SOURCES "diff/*.cpp")
 file(GLOB_RECURSE MMU_SOURCES "mmu/*.cpp")
-file(GLOB_RECURSE MEMORY_SOURCES "memory/*.cpp")
 
 # Combine all sources
 set(SOURCES 
@@ -43,7 +42,6 @@ set(SOURCES
     ${FRONTEND_SOURCES}
     ${DIFF_SOURCES}
     ${MMU_SOURCES}
-    ${MEMORY_SOURCES}   
     rv_simu_mmu_v2.cpp
     main.cpp
 )
@@ -58,7 +56,6 @@ include_directories(
     ./diff/include/
     ./front-end/
     ./mmu/include/
-    ./memory/include/
 )
 
 # Create executable

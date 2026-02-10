@@ -54,10 +54,8 @@ public:
   // 时序逻辑实现
   void seq() override;
 
-  StqEntry get_stq_entry(int stq_idx) override {
-    Assert(stq_idx < STQ_NUM);
-    return stq[stq_idx];
-  }
+  StqEntry get_stq_entry(int stq_idx) override;
+  uint32_t get_load_addr(int rob_idx) override;
 
   void set_csr(Csr *c) override { this->csr_module = c; }
 

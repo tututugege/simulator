@@ -32,8 +32,7 @@ INCLUDES := -I./include/ \
             -I./back-end/tools/include/ \
             -I./diff/include/ \
             -I./front-end/ \
-            -I./mmu/include/ \
-            -I./memory/include/
+            -I./mmu/include/
 
 # Source Files
 # (Using find to locate all cpp files)
@@ -41,7 +40,6 @@ CXXSRC := $(shell find ./back-end -name "*.cpp") \
           $(shell find ./front-end -name "*.cpp") \
           $(shell find ./diff -name "*.cpp") \
           $(shell find ./mmu -name "*.cpp") \
-          $(shell find ./memory -name "*.cpp") \
           ./main.cpp \
           ./rv_simu_mmu_v2.cpp
 

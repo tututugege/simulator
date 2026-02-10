@@ -60,8 +60,14 @@ constexpr uint8_t MAXU = 0b11100;
 // [Structs & Classes]
 // ==========================================
 
+typedef union {
+  uint32_t instruction;
+  uint32_t pc_next;
+} RobExtraData;
+
 typedef struct InstUop {
-  wire<32> instruction;
+  wire<32> instruction; // Debug only: raw instruction bits (not for hardware logic)
+  wire<32> diag_val;    // Hardware: Shared field for instruction or pc_next
 
   wire<AREG_IDX_WIDTH> dest_areg, src1_areg, src2_areg;
   wire<PRF_IDX_WIDTH> dest_preg, src1_preg, src2_preg; // log2(PRF_NUM)
@@ -85,7 +91,6 @@ typedef struct InstUop {
   // 分支预测更新信息
   wire<1> mispred;
   wire<1> br_taken;
-  wire<32> pc_next;
 
   wire<1> dest_en, src1_en, src2_en;
   wire<1> src1_busy, src2_busy;
@@ -129,6 +134,7 @@ typedef struct InstUop {
 typedef struct {
   wire<1> valid;
   InstUop uop;
+  RobExtraData extra_data;
 } InstEntry;
 
 typedef struct {

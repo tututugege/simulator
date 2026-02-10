@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <util.h>
+#include <AbstractLsu.h>
 
 void Rob::init() {
   deq_ptr = deq_ptr_1 = 0;
@@ -129,6 +130,7 @@ void Rob::comb_commit() {
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop;
+    out.rob_commit->commit_entry[i].extra_data = entry[i][deq_ptr].extra_data;
   }
 
   // 一组提交
@@ -172,7 +174,7 @@ void Rob::comb_commit() {
         out.rob_bcast->sret = true;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_store) {
         out.rob_bcast->page_fault_store = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.result;
+        out.rob_bcast->trap_val = lsu->get_stq_entry(entry[single_idx][deq_ptr].uop.stq_idx).addr;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_load) {
         out.rob_bcast->page_fault_load = true;
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.result;
@@ -181,7 +183,7 @@ void Rob::comb_commit() {
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.pc;
       } else if (entry[single_idx][deq_ptr].uop.illegal_inst) {
         out.rob_bcast->illegal_inst = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
+        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].extra_data.instruction;
       } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
         ctx->exit_reason = ExitReason::EBREAK;
       } else if (entry[single_idx][deq_ptr].uop.type == WFI) {
@@ -224,12 +226,12 @@ void Rob::comb_commit() {
       if (entry[i][deq_ptr].valid) {
         printf("0x%08x: 0x%08x cplt_num: %d  uop_num: %d rob_idx:%d "
                "is_page_fault: %d inst_idx: %lld type: %d op: %d\n",
-               entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].uop.instruction,
-               entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
-               (i + (deq_ptr * ROB_BANK_NUM)),
-               is_page_fault(entry[i][deq_ptr].uop),
-               (long long)entry[i][deq_ptr].uop.inst_idx,
-               entry[i][deq_ptr].uop.type, entry[i][deq_ptr].uop.op);
+                entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].extra_data.instruction,
+                entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
+                (i + (deq_ptr * ROB_BANK_NUM)),
+                is_page_fault(entry[i][deq_ptr].uop),
+                (long long)entry[i][deq_ptr].uop.inst_idx,
+                entry[i][deq_ptr].uop.type, entry[i][deq_ptr].uop.op);
       } else {
         printf("[Bank %d] INVALID\n", i);
       }
@@ -274,8 +276,8 @@ void Rob::comb_complete() {
       entry_1[bank_idx][line_idx].uop.difftest_skip =
           in.prf2rob->entry[i].uop.difftest_skip;
       if (is_branch_uop(in.prf2rob->entry[i].uop.op)) {
-        entry_1[bank_idx][line_idx].uop.pc_next =
-            in.prf2rob->entry[i].uop.pc_next;
+        entry_1[bank_idx][line_idx].extra_data.pc_next =
+            in.prf2rob->entry[i].uop.diag_val;
         entry_1[bank_idx][line_idx].uop.mispred =
             in.prf2rob->entry[i].uop.mispred;
         entry_1[bank_idx][line_idx].uop.br_taken =
@@ -333,6 +335,8 @@ void Rob::comb_fire() {
         entry_1[i][enq_ptr].valid = true;
         entry_1[i][enq_ptr].uop = in.dis2rob->uop[i];
         entry_1[i][enq_ptr].uop.cplt_num = 0;
+        // Instruction bits are transported via diag_val at dispatch
+        entry_1[i][enq_ptr].extra_data.instruction = in.dis2rob->uop[i].diag_val;
         enq = true;
       }
     }

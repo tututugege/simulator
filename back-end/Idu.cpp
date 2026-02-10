@@ -80,13 +80,6 @@ void Idu::comb_decode() {
 
     // out.dec2ren->uop[i].pred_br_pc =
     //     in.front2dec->predict_next_fetch_address[i];
-
-    // for debug
-    if (is_branch(out.dec2ren->uop[i].type)) {
-      out.dec2ren->uop[i].pc_next = in.front2dec->predict_next_fetch_address[i];
-    } else {
-      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
-    }
   }
 
   int br_num = 0;
@@ -285,6 +278,7 @@ void Idu::decode(InstUop &uop, uint32_t inst) {
 
   // 准备立即数
   uop.instruction = inst;
+  uop.diag_val = inst;
   uop.dest_areg = reg_d_index;
   uop.src1_areg = reg_a_index;
   uop.src2_areg = reg_b_index;

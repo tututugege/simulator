@@ -31,7 +31,7 @@ void Prf::comb_br_check() {
 
   out.prf2dec->mispred = mispred;
   if (mispred) {
-    out.prf2dec->redirect_pc = mispred_uop->pc_next;
+    out.prf2dec->redirect_pc = mispred_uop->diag_val; // Calculated target in BRU
     out.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;
     out.prf2dec->br_tag = mispred_uop->tag;
     out.prf2dec->ftq_idx = mispred_uop->ftq_idx;
@@ -40,7 +40,7 @@ void Prf::comb_br_check() {
            << hex << out.prf2dec->redirect_pc << endl;
   } else {
     // 默认输出第一个槽位的信息（如果没有误预测，这个值通常被忽略）
-    out.prf2dec->redirect_pc = inst_r[0].uop.pc_next;
+    out.prf2dec->redirect_pc = inst_r[0].uop.diag_val;
     out.prf2dec->redirect_rob_idx = inst_r[0].uop.rob_idx;
     out.prf2dec->br_tag = inst_r[0].uop.tag;
     out.prf2dec->ftq_idx = 0;

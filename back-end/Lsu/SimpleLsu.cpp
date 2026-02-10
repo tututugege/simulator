@@ -708,6 +708,20 @@ SimpleLsu::check_store_forward(uint32_t p_addr, const InstUop &load_uop) {
 }
 
 
+uint32_t SimpleLsu::get_load_addr(int rob_idx) {
+  for (const auto &it : inflight_loads) {
+    if (it.rob_idx == rob_idx)
+      return it.result; // For LOADS, result holds the VA
+  }
+  for (const auto &it : finished_loads) {
+    if (it.rob_idx == rob_idx)
+      return it.result;
+  }
+  return 0;
+}
+
+StqEntry SimpleLsu::get_stq_entry(int stq_idx) { return stq[stq_idx]; }
+
 uint32_t SimpleLsu::coherent_read(uint32_t p_addr) {
   // 1. 基准值：读物理内存
   uint32_t data = p_memory[p_addr >> 2];

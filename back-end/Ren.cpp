@@ -307,7 +307,7 @@ void Ren ::comb_commit() {
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
-      cpu.back.difftest_inst(inst);
+      cpu.back.difftest_inst(&in.rob_commit->commit_entry[i]);
     }
   }
 

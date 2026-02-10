@@ -189,7 +189,8 @@ typedef struct ExeWbUop {
 typedef struct RobUop {
   InstType type;           // 指令类型 (用于提交副作用)
   wire<32> pc;             // 用于异常处理
-  wire<32> instruction;    // 用于异常记录
+  wire<32> instruction;    // Debug only: raw instruction (not for hardware logic)
+  wire<32> diag_val;       // 诊断信息 (指令或跳转目标)
   
   // 寄存器更新核心字段 (User Requested Optimization)
   wire<PRF_IDX_WIDTH>  dest_preg;      // 目标物理寄存器
@@ -204,7 +205,6 @@ typedef struct RobUop {
   wire<1>  page_fault_inst, page_fault_load, page_fault_store, illegal_inst;
   
   // 分支更新
-  wire<32> pc_next;
   wire<1>  br_taken;
   wire<1>  mispred;
 
@@ -224,7 +224,7 @@ typedef struct RobUop {
     slim.page_fault_load = full.page_fault_load;
     slim.page_fault_store = full.page_fault_store;
     slim.illegal_inst    = full.illegal_inst;
-    slim.pc_next         = full.pc_next;
+    slim.diag_val        = full.diag_val;
     slim.br_taken        = full.br_taken;
     slim.mispred         = full.mispred;
     return slim;

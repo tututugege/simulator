@@ -182,7 +182,7 @@ void SimCpu::back2front_comb() {
       front_in.predict_base_pc[i] = inst->pc;
       front_in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
-      front_in.actual_target[i] = inst->pc_next;
+      front_in.actual_target[i] = (is_branch(inst->type) || inst->type == JAL) ? back.out.commit_entry[i].extra_data.pc_next : inst->pc + 4;
       int br_type = BR_NONCTL;
       if (is_branch(inst->type)) {
         br_type = BR_DIRECT;

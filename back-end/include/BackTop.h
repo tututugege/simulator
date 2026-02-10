@@ -1,22 +1,15 @@
 #pragma once
 #include "IO.h"
-#include <Arbiter.h>
 #include <Csr.h>
-#include <Dcache.h>
 #include <Dispatch.h>
 #include <Exu.h>
+#include <FTQ.h>
 #include <Idu.h>
 #include <Isu.h>
-#include <MSHR.h>
-#include <Memory.h>
 #include <Prf.h>
 #include <Ren.h>
 #include <Rob.h>
-#include <WriteBack_Arbiter.h>
-#include <WriteBuffer.h>
-#include <WriteBuffer.h>
 #include <config.h>
-#include <FTQ.h>
 #include <cstdint>
 
 class SimContext;
@@ -153,7 +146,7 @@ public:
   void restore_from_ref();
 
   // debug
-  void difftest_inst(InstUop *inst);
+  void difftest_inst(InstEntry *inst_entry);
   void difftest_cycle();
   void difftest_sync(InstUop *inst);
 };

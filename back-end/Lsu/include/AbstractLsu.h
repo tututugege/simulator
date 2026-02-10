@@ -1,6 +1,5 @@
 #pragma once
 #include "IO.h"
-#include "config.h"
 
 class Csr;
 class SimContext;
@@ -70,6 +69,7 @@ public:
 
   // debug接口
   virtual StqEntry get_stq_entry(int stq_idx) = 0;
+  virtual uint32_t get_load_addr(int rob_idx) = 0;
 
   virtual void set_csr(Csr *csr) {}
 

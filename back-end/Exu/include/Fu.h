@@ -327,7 +327,7 @@ protected:
     }
 
     inst.br_taken = br_taken;
-    inst.pc_next = br_taken ? pc_br : (inst.pc + 4);
+    inst.diag_val = br_taken ? pc_br : (inst.pc + 4);
   }
 };
 
