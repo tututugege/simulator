@@ -21,7 +21,7 @@ void Dispatch::comb_alloc() {
     // 分配 ROB ID (重排序缓存索引)
     inst_alloc[i].uop.rob_idx = make_rob_idx(in.rob2dis->enq_idx, i);
     inst_alloc[i].uop.rob_flag = in.rob2dis->rob_flag;
-    inst_alloc[i].uop.cplt_num = 0;  // 初始化完成计数器
+    inst_alloc[i].uop.cplt_num = 0; // 初始化完成计数器
 
     // Load 需要知道之前的 Store
     if (inst_r[i].valid && is_load(inst_r[i].uop)) {
@@ -169,7 +169,6 @@ void Dispatch::comb_fire() {
 
   // === 步骤 1: 计算 Fire 信号 (确认分派) ===
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    // 修正：有效的 Fire 信号意味着指令本身有效且资源分配（如 STQ）成功
     bool basic_fire = out.dis2rob->valid[i] &&
                       dispatch_success_flags[i] && // IQ 检查通过
                       in.rob2dis->ready &&         // ROB 有空间
@@ -238,6 +237,79 @@ void Dispatch::comb_fire() {
       }
     }
   }
+
+#ifdef CONFIG_PERF_COUNTER
+  bool is_core_bound_rob[FETCH_WIDTH] = {false};
+  bool is_core_bound_iq[FETCH_WIDTH] = {false};
+  bool is_mem_l1_bound[FETCH_WIDTH] = {false};
+  bool is_mem_ext_bound[FETCH_WIDTH] = {false};
+
+  // Analyze stall reasons for each slot
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (!out.dis2rob->dis_fire[i] && inst_r[i].valid) {
+
+      // Priority: ROB > LSU > IQ
+      // If ROB is full/stalled
+      if (!in.rob2dis->ready) { // ROB Full
+        if (in.rob2dis->head_is_memory && in.rob2dis->head_not_ready) {
+          if (in.rob2dis->head_is_miss) {
+            is_mem_ext_bound[i] = true;
+          } else {
+            is_mem_l1_bound[i] = true;
+          }
+        } else {
+          is_core_bound_rob[i] = true;
+        }
+      }
+      // If Dispatch Logic failed (IQ check or LSU check)
+      else if (!dispatch_success_flags[i]) {
+        bool lsu_stall = false;
+        if (is_load(inst_r[i].uop)) {
+          if (in.lsu2dis->ldq_free == 0)
+            lsu_stall = true;
+        } else if (is_store(inst_r[i].uop)) {
+          if (in.lsu2dis->stq_free == 0)
+            lsu_stall = true;
+        }
+
+        if (lsu_stall) {
+          is_mem_l1_bound[i] = true;
+        } else {
+          is_core_bound_iq[i] = true;
+        }
+      }
+    }
+  }
+
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (out.dis2rob->dis_fire[i]) {
+      ctx->perf.slots_issued++;
+    } else if (inst_r[i].valid) {
+      ctx->perf.slots_backend_bound++;
+
+      if (is_mem_l1_bound[i]) {
+        ctx->perf.slots_mem_bound_lsu++;
+        ctx->perf.slots_mem_l1_bound++;
+      } else if (is_mem_ext_bound[i]) {
+        ctx->perf.slots_mem_bound_lsu++;
+        ctx->perf.slots_mem_ext_bound++;
+      } else if (is_core_bound_rob[i]) {
+        ctx->perf.slots_core_bound_rob++;
+      } else if (is_core_bound_iq[i]) {
+        ctx->perf.slots_core_bound_iq++;
+      } else {
+        // Default to IQ bound if no other reason identified for Backend Bound
+        ctx->perf.slots_core_bound_iq++;
+      }
+    } else {
+      ctx->perf.slots_frontend_bound++;
+      if (ctx->perf.icache_busy)
+        ctx->perf.slots_fetch_latency++;
+      else
+        ctx->perf.slots_fetch_bandwidth++;
+    }
+  }
+#endif
 }
 
 void Dispatch::comb_pipeline() {
@@ -355,9 +427,10 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
       // SC -> INT(0) + STA + STD
       out_uops[0].iq_id = IQ_INT;
       out_uops[0].uop = src_uop;
-      out_uops[0].uop.op = UOP_ADD; // 预设 0 (假定成功，LSU会覆盖? 或者这里仅仅是占位)
-                                    // 实际 SC 的返回值由 LSU Writeback 决定，通常是 Store 成功与否
-                                    // 如果这里 INT 写了 rd，后面 LSU 可能会再次写 rd
+      out_uops[0].uop.op =
+          UOP_ADD; // 预设 0 (假定成功，LSU会覆盖? 或者这里仅仅是占位)
+                   // 实际 SC 的返回值由 LSU Writeback 决定，通常是 Store
+                   // 成功与否 如果这里 INT 写了 rd，后面 LSU 可能会再次写 rd
       out_uops[0].uop.src1_preg = 0; // x0
       out_uops[0].uop.src1_busy = false;
       out_uops[0].uop.imm = 0;
@@ -393,22 +466,25 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
       out_uops[2].uop = src_uop;
       out_uops[2].uop.op = UOP_STD;
       // 假设 SDU 负责计算，需要原 dest_preg 作为操作数 (数据源)
-      // 注意: 这里 src1_preg 被设为 dest_preg，用于读取内存旧值进行原子运算? 
-      // 不，Load 结果写到了 dest_preg。STD 需要用到这个 dest_preg (Load Result) 吗?
-      // 通常 AMO: Load -> (ALU in LSU or STD?) -> Store
-      // 如果计算在 LSU 内部完成 (Atomic)，则 STD 可能只需要传 src2 (rs2)?
-      // 代码原意: out_uops[2].uop.src1_preg = src_uop.dest_preg;
-      // 这意味着 STD 依赖于 Load 的结果 (dest_preg)。
-      // 如果 Load 正确写回了 dest_preg，那么 STD 读取它是对的。
+      // 注意: 这里 src1_preg 被设为 dest_preg，用于读取内存旧值进行原子运算?
+      // 不，Load 结果写到了 dest_preg。STD 需要用到这个 dest_preg (Load Result)
+      // 吗? 通常 AMO: Load -> (ALU in LSU or STD?) -> Store 如果计算在 LSU
+      // 内部完成 (Atomic)，则 STD 可能只需要传 src2 (rs2)? 代码原意:
+      // out_uops[2].uop.src1_preg = src_uop.dest_preg; 这意味着 STD 依赖于 Load
+      // 的结果 (dest_preg)。 如果 Load 正确写回了 dest_preg，那么 STD
+      // 读取它是对的。
       out_uops[2].uop.src1_preg = src_uop.dest_preg;
       if ((src_uop.func7 >> 2) == AmoOp::SWAP) {
-          out_uops[2].uop.src1_busy = false; // Swap doesn't need Load result (Old Val) for Store
-          // DEBUG
-          if (src_uop.pc == 0xc03870f4) {
-             printf("[Dispatch Fix] Triggered for Target PC %x. Clearing src1_busy.\n", src_uop.pc);
-          }
+        out_uops[2].uop.src1_busy =
+            false; // Swap doesn't need Load result (Old Val) for Store
+        // DEBUG
+        if (src_uop.pc == 0xc03870f4) {
+          printf("[Dispatch Fix] Triggered for Target PC %x. Clearing "
+                 "src1_busy.\n",
+                 src_uop.pc);
+        }
       } else {
-          out_uops[2].uop.src1_busy = true;
+        out_uops[2].uop.src1_busy = true;
       }
       out_uops[2].uop.dest_en = false; // Fix: STD 不写回寄存器
       count = 3;
@@ -445,8 +521,11 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
     case EBREAK:
       out_uops[0].uop.op = UOP_EBREAK;
       break;
+    case WFI:
+      out_uops[0].uop.op = UOP_WFI;
+      break;
     default:
-      exit(1);
+      Assert(0 && "unknown instruction");
     }
     count = 1;
     break;
@@ -460,10 +539,10 @@ DispatchIO Dispatch::get_hardware_io() {
   // --- Inputs ---
   for (int i = 0; i < FETCH_WIDTH; i++) {
     hardware.from_ren.valid[i] = in.ren2dis->valid[i];
-    hardware.from_ren.uop[i]   = RenDisUop::filter(in.ren2dis->uop[i]);
+    hardware.from_ren.uop[i] = RenDisUop::filter(in.ren2dis->uop[i]);
   }
   hardware.from_rob.ready = in.rob2dis->ready;
-  hardware.from_rob.full  = in.rob2dis->stall;
+  hardware.from_rob.full = in.rob2dis->stall;
   for (int j = 0; j < IQ_NUM; j++) {
     hardware.from_iss.ready_num[j] = in.iss2dis->ready_num[j];
   }
@@ -473,12 +552,12 @@ DispatchIO Dispatch::get_hardware_io() {
   hardware.to_ren.ready = out.dis2ren->ready;
   for (int i = 0; i < FETCH_WIDTH; i++) {
     hardware.to_rob.valid[i] = out.dis2rob->valid[i];
-    hardware.to_rob.uop[i]   = RobUop::filter(out.dis2rob->uop[i]);
+    hardware.to_rob.uop[i] = RobUop::filter(out.dis2rob->uop[i]);
   }
   for (int j = 0; j < IQ_NUM; j++) {
     for (int k = 0; k < MAX_IQ_DISPATCH_WIDTH; k++) {
       hardware.to_iss.valid[j][k] = out.dis2iss->req[j][k].valid;
-      hardware.to_iss.uop[j][k]   = DisIssUop::filter(out.dis2iss->req[j][k].uop);
+      hardware.to_iss.uop[j][k] = DisIssUop::filter(out.dis2iss->req[j][k].uop);
     }
   }
 

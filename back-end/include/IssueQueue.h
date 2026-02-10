@@ -35,6 +35,10 @@ public:
   std::vector<InstEntry> entry_1;
   int count, count_1;
 
+  // Wakeup Matrix: [Physical Register] -> Bitmask of IQ slots
+  std::vector<uint64_t> wake_matrix_src1;
+  std::vector<uint64_t> wake_matrix_src2;
+
   IssueQueue(const IssueQueueConfig &cfg)
       : id(cfg.id), size(cfg.size),
         dispatch_width(cfg.dispatch_width), // <--- 初始化
@@ -44,6 +48,10 @@ public:
     entry_1.resize(size);
     count = 0;
     count_1 = 0;
+
+    // Initialize Wakeup Matrices
+    wake_matrix_src1.resize(PRF_NUM, 0);
+    wake_matrix_src2.resize(PRF_NUM, 0);
   }
 
   // 入队 (返回成功入队的个数)
@@ -54,6 +62,16 @@ public:
       if (!entry_1[i].valid) {
         entry_1[i] = inst;
         entry_1[i].valid = true;
+        
+        // Update Wakeup Matrix
+        const auto& uop = inst.uop;
+        if (uop.src1_en && uop.src1_busy) {
+            wake_matrix_src1[uop.src1_preg] |= (1ULL << i);
+        }
+        if (uop.src2_en && uop.src2_busy) {
+            wake_matrix_src2[uop.src2_preg] |= (1ULL << i);
+        }
+
         count_1++;
         return 1;
       }
@@ -61,31 +79,41 @@ public:
     return 0;
   }
 
-  // 唤醒逻辑
+  // 唤醒逻辑 (Matrix-Based)
   void wakeup(const std::vector<uint32_t> &pregs) {
-    for (int i = 0; i < size; i++) {
-      if (entry_1[i].valid) {
-        InstUop &uop = entry_1[i].uop;
-        
-        // 优化: 仅当操作数正在等待时才检查唤醒
-        if (uop.src1_en && uop.src1_busy) {
-            for (uint32_t preg : pregs) {
-                if (uop.src1_preg == preg) {
-                    uop.src1_busy = false;
-                    break; // 只有一个生产者
+    for (uint32_t preg : pregs) {
+        // --- 唤醒 SRC1 ---
+        uint64_t mask1 = wake_matrix_src1[preg];
+        if (mask1) {
+            wake_matrix_src1[preg] = 0; // Hardware wires clear the matrix
+            
+            while (mask1) {
+                int idx = __builtin_ctzll(mask1); // Find first set bit
+                mask1 &= ~(1ULL << idx);          // Clear bit
+                
+                // Robustness Check: Ensure the slot still holds the expected instruction
+                if (entry_1[idx].valid && entry_1[idx].uop.src1_en && 
+                    entry_1[idx].uop.src1_preg == preg) {
+                    entry_1[idx].uop.src1_busy = false;
                 }
             }
         }
 
-        if (uop.src2_en && uop.src2_busy) {
-            for (uint32_t preg : pregs) {
-                if (uop.src2_preg == preg) {
-                    uop.src2_busy = false;
-                    break;
+        // --- 唤醒 SRC2 ---
+        uint64_t mask2 = wake_matrix_src2[preg];
+        if (mask2) {
+            wake_matrix_src2[preg] = 0; // Hardware wires clear the matrix
+            
+            while (mask2) {
+                int idx = __builtin_ctzll(mask2);
+                mask2 &= ~(1ULL << idx);
+                
+                if (entry_1[idx].valid && entry_1[idx].uop.src2_en && 
+                    entry_1[idx].uop.src2_preg == preg) {
+                    entry_1[idx].uop.src2_busy = false;
                 }
             }
         }
-      }
     }
   }
 
@@ -114,6 +142,10 @@ public:
     for (auto &e : entry_1)
       e.valid = false;
     count_1 = 0;
+    
+    // Clear Wakeup Matrices
+    std::fill(wake_matrix_src1.begin(), wake_matrix_src1.end(), 0);
+    std::fill(wake_matrix_src2.begin(), wake_matrix_src2.end(), 0);
   }
 
   // 提交调度结果 (将选中的指令移出队列)

@@ -485,8 +485,9 @@ void RefCpu::RISCV() {
   // WFI 检查 (简单处理)
   if (Instruction == INST_WFI && !asy && !page_fault_inst && !page_fault_load &&
       !page_fault_store) {
-    std::cout << " WFI " << std::endl;
-    exit(1);
+    Assert(0 && "WFI instruction encountered in Reference Model (Exit intended)");
+    // state.pc += 4;
+    // return;
   }
 
   if (page_fault_inst) {
@@ -1528,39 +1529,25 @@ bool RefCpu::va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
     if (dut_page_fault_inst) {
       ret = false; // 以 DUT MMU 为准
     } else if (!dut_page_fault_inst && !ret) {
-      cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault "
-              "mismatch!"
-           << endl;
-      cout << "VA: " << hex << v_addr << endl;
-      cout << "sim_time: " << dec << sim_time << endl;
-      exit(1);
+      Assert(0 && "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault mismatch!");
     }
     break;
   case 1: // load
     if (dut_page_fault_load) {
       ret = false;
     } else if (!dut_page_fault_load && !ret) {
-      cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!"
-           << endl;
-      cout << "VA: " << hex << v_addr << endl;
-      cout << "sim_time: " << dec << sim_time << endl;
-      exit(1);
+      Assert(0 && "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!");
     }
     break;
   case 2: // store
     if (dut_page_fault_store) {
       ret = false;
     } else if (!dut_page_fault_store && !ret) {
-      cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!"
-           << endl;
-      cout << "VA: " << hex << v_addr << endl;
-      cout << "sim_time: " << dec << sim_time << endl;
-      exit(1);
+      Assert(0 && "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!");
     }
     break;
   default:
-    cout << "[va2pa_fixed] Error: unknown access type!" << endl;
-    exit(1);
+    Assert(0 && "[va2pa_fixed] Error: unknown access type!");
   }
   return ret;
 }

@@ -47,6 +47,15 @@ void SimpleLsu::comb_lsu2dis_info() {
   // 注意：这里的 count 必须是当前周期的准确值
   out.lsu2dis->stq_free = STQ_NUM - this->stq_count;
   out.lsu2dis->ldq_free = MAX_INFLIGHT_LOADS - this->inflight_loads.size();
+
+  // Populate miss_mask (Phase 4)
+  uint64_t mask = 0;
+  for (const auto &it : inflight_loads) {
+    if (it.is_cache_miss) {
+      mask |= (1ULL << it.rob_idx);
+    }
+  }
+  out.lsu2rob->miss_mask = mask;
 }
 
 void SimpleLsu::comb_stq_alloc() {
@@ -138,6 +147,7 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
   // 只要 inflight_loads 不被当作寄存器输出回环即可
 
   InstUop task = inst;
+  task.is_cache_miss = false; // Initialize to false
   uint32_t p_addr;
   bool ret = mmu->translate(p_addr, task.result, 1, in.csr_status);
 
@@ -170,6 +180,9 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
       // 模拟 Cache 访问
       int latency = cache.cache_access(p_addr);
       task.cplt_time = sim_time + latency;
+      if (latency >= cache.MISS_LATENCY) {
+          task.is_cache_miss = true;
+      }
       uint32_t mem_val = p_memory[p_addr >> 2];
 
       // Simple MMIO Read Interception
@@ -503,6 +516,9 @@ void SimpleLsu::seq() {
       } else if (fwd_res.first == 0) { // Miss -> Memory
         int lat = cache.cache_access(it->paddr);
         it->cplt_time = sim_time + lat;
+        if (lat >= cache.MISS_LATENCY) {
+            it->is_cache_miss = true;
+        }
         uint32_t mem_val = p_memory[it->paddr >> 2];
         it->result = extract_data(mem_val, it->paddr, it->func3);
       }

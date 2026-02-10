@@ -1,6 +1,7 @@
 #pragma once
 #include "AbstractFU.h" // for __builtin_clz
 #include "IO.h"
+#include "FTQ.h"
 #include "config.h"
 // #include <cassert>
 #include <climits>
@@ -76,6 +77,9 @@ protected:
       }
       break;
     }
+    case UOP_WFI:
+      inst.result = 0; // WFI doesn't produce result, treated as NOP here
+      break;
     default: {
       inst.result = operand1 + operand2;
       break;
@@ -243,10 +247,11 @@ class BruUnit : public FixedLatencyFU {
   static constexpr int BGE = 0b101;
   static constexpr int BLTU = 0b110;
   static constexpr int BGEU = 0b111;
+  FTQ *ftq;
 
 public:
-  BruUnit(std::string name = "BRU", int port_idx = 0)
-      : FixedLatencyFU(name, port_idx, 1) {}
+  BruUnit(std::string name, int port_idx, FTQ *ftq)
+      : FixedLatencyFU(name, port_idx, 1), ftq(ftq) {}
 
 protected:
   void impl_compute(InstUop &inst) override {
@@ -290,8 +295,32 @@ protected:
       br_taken = false;
     }
 
-    if ((br_taken && inst.pred_br_taken && inst.pred_br_pc == pc_br) ||
-        (!br_taken && !inst.pred_br_taken)) {
+    // FTQ lookup
+    bool pred_taken = false;
+    uint32_t pred_target = 0;
+
+    FTQEntry &ftq_entry = ftq->get(inst.ftq_idx);
+    if (ftq_entry.valid) {
+      pred_taken = ftq_entry.pred_taken_mask[inst.ftq_offset];
+      if (pred_taken) {
+        // If predicted taken, the target MUST be the block's next_pc ??? 
+        // Logic: specific branch target logic
+        // If it's a conditional branch inside the block, and predicted taken,
+        // it usually implies it's the last instruction of the block or redirects flow.
+        // Simplified: if pred_taken, we expect target to be ftq_entry.next_pc?
+        // Or do we store targets?
+        // Current design: FTQ stores next_pc of the BLOCK.
+        // If there are multiple branches, only one is taken?
+        // Assuming block ends at the taken branch.
+        pred_target = ftq_entry.next_pc; 
+      } else {
+        pred_target = inst.pc + 4; // Check if compressed?
+      }
+    }
+
+    // Verify
+    if ((br_taken && pred_taken && pred_target == pc_br) ||
+        (!br_taken && !pred_taken)) {
       inst.mispred = false;
     } else {
       inst.mispred = true;

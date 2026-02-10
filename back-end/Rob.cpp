@@ -41,6 +41,42 @@ void Rob::comb_ready() {
       }
     }
   }
+  // Determine Head Status for Memory Bound Calculation (Refined Phase 3.6 -
+  // Oldest First) User Feedback: Find the *oldest* incomplete instruction. If
+  // entry[0] is a DIV (blocked) and entry[1] is a LOAD (blocked), the stall is
+  // caused by the DIV (Core Bound), not the LOAD.
+
+  bool found_stall = false;
+  bool stall_is_mem = false;
+  bool stall_is_miss = false;
+
+  for (int i = 0; i < ROB_BANK_NUM; i++) {
+    if (entry[i][deq_ptr].valid) {
+      bool is_ready =
+          (entry[i][deq_ptr].uop.cplt_num == entry[i][deq_ptr].uop.uop_num);
+
+      if (!is_ready) {
+        // This is the oldest incomplete instruction. It is the bottleneck.
+        found_stall = true;
+        if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {
+          stall_is_mem = true;
+          uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
+          stall_is_miss = (in.lsu2rob->miss_mask >> rob_idx) & 1;
+        } else {
+          stall_is_mem = false;
+          stall_is_miss = false;
+        }
+        break; // Stop scanning once the first blocker is found.
+      }
+      // If valid but ready, it's not the blocker. Continue to the next younger
+      // instruction.
+    }
+  }
+
+  out.rob2dis->head_not_ready = found_stall;
+  out.rob2dis->head_is_memory = (found_stall && stall_is_mem);
+  out.rob2dis->head_is_miss = (found_stall && stall_is_miss);
+
   out.rob2dis->empty = is_empty();
   out.rob2dis->ready = !is_full();
 }
@@ -147,7 +183,9 @@ void Rob::comb_commit() {
         out.rob_bcast->illegal_inst = true;
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.instruction;
       } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
-        ctx->sim_end = true;
+        ctx->exit_reason = ExitReason::EBREAK;
+      } else if (entry[single_idx][deq_ptr].uop.type == WFI) {
+        ctx->exit_reason = ExitReason::WFI;
       } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
         out.rob2csr->commit = true;
       } else if (entry[single_idx][deq_ptr].uop.type == SFENCE_VMA) {
@@ -157,8 +195,7 @@ void Rob::comb_commit() {
         out.rob_bcast->pc = entry[single_idx][deq_ptr].uop.pc;
       } else {
         if (entry[single_idx][deq_ptr].uop.type != CSR) {
-          cout << hex << entry[single_idx][deq_ptr].uop.instruction << endl;
-          exit(1);
+          Assert(0 && "ERROR: unknown instruction during commit");
         }
       }
     }
@@ -198,7 +235,7 @@ void Rob::comb_commit() {
       }
     }
 
-    exit(1);
+    Assert(0 && "ROB Deadlock detected (stall_cycle > 500)");
   }
 }
 

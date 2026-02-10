@@ -1,0 +1,1186 @@
+[1mdiff --git a/CMakeLists.txt b/CMakeLists.txt[m
+[1mindex 4c8b616..31c124b 100644[m
+[1m--- a/CMakeLists.txt[m
+[1m+++ b/CMakeLists.txt[m
+[36m@@ -45,6 +45,7 @@[m [mset(SOURCES[m
+     ${MMU_SOURCES}[m
+     ${MEMORY_SOURCES}   [m
+     rv_simu_mmu_v2.cpp[m
+[32m+[m[32m    main.cpp[m
+ )[m
+ [m
+ # Set include directories[m
+[36m@@ -66,6 +67,8 @@[m [madd_executable(${EXECUTABLE_NAME} ${SOURCES})[m
+ # Set optimization flags[m
+ target_compile_options(${EXECUTABLE_NAME} PRIVATE -O3)[m
+ [m
+[32m+[m[32mtarget_link_libraries(${EXECUTABLE_NAME} z ${CMAKE_SOURCE_DIR}/softfloat.a)[m
+[32m+[m
+ # Add run target (custom target)[m
+ add_custom_target(run[m
+     COMMAND ./${EXECUTABLE_NAME} ${MEMORY_IMAGE_PATH}[m
+[1mdiff --git a/back-end/BackTop.cpp b/back-end/BackTop.cpp[m
+[1mindex 1dc816b..a922f1a 100644[m
+[1m--- a/back-end/BackTop.cpp[m
+[1m+++ b/back-end/BackTop.cpp[m
+[36m@@ -100,21 +100,42 @@[m [mvoid BackTop::difftest_sync(InstUop *inst) {[m
+     if (inst->type == JALR) {[m
+       if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {[m
+         ctx->perf.ret_mispred_num++;[m
+[31m-        if (!inst->pred_br_taken) {[m
+[32m+[m[32m        bool pred_taken = false;[m
+[32m+[m[32m        if(ftq) {[m
+[32m+[m[32m            FTQEntry &entry = ftq->get(inst->ftq_idx);[m
+[32m+[m[32m            if(entry.valid) {[m
+[32m+[m[32m                pred_taken = entry.pred_taken_mask[inst->ftq_offset];[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+[32m+[m[32m        if (!pred_taken) {[m
+           ctx->perf.ret_dir_mispred++;[m
+         } else {[m
+           ctx->perf.ret_addr_mispred++;[m
+         }[m
+       } else {[m
+         ctx->perf.jalr_mispred_num++;[m
+[31m-        if (!inst->pred_br_taken) {[m
+[32m+[m[32m        bool pred_taken = false;[m
+[32m+[m[32m        if(ftq) {[m
+[32m+[m[32m            FTQEntry &entry = ftq->get(inst->ftq_idx);[m
+[32m+[m[32m            if(entry.valid) {[m
+[32m+[m[32m                pred_taken = entry.pred_taken_mask[inst->ftq_offset];[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+[32m+[m[32m        if (!pred_taken) {[m
+           ctx->perf.jalr_dir_mispred++;[m
+         } else {[m
+           ctx->perf.jalr_addr_mispred++;[m
+         }[m
+       }[m
+     } else if (inst->type == BR) {[m
+[31m-      if (inst->pred_br_taken != inst->br_taken) {[m
+[32m+[m[32m      bool pred_taken = false;[m
+[32m+[m[32m      if(ftq) {[m
+[32m+[m[32m          FTQEntry &entry = ftq->get(inst->ftq_idx);[m
+[32m+[m[32m          if(entry.valid) {[m
+[32m+[m[32m              pred_taken = entry.pred_taken_mask[inst->ftq_offset];[m
+[32m+[m[32m          }[m
+[32m+[m[32m      }[m
+[32m+[m[32m      if (pred_taken != inst->br_taken) {[m
+         ctx->perf.cond_dir_mispred++;[m
+       } else {[m
+         ctx->perf.cond_addr_mispred++;[m
+[36m@@ -197,13 +218,13 @@[m [mvoid BackTop::difftest_inst(InstUop *inst) {[m
+ }[m
+ [m
+ void BackTop::init() {[m
+[31m-[m
+[31m-  idu = new Idu(ctx, MAX_BR_PER_CYCLE);[m
+[32m+[m[32m  ftq = new FTQ();[m
+[32m+[m[32m  idu = new Idu(ctx, ftq, MAX_BR_PER_CYCLE);[m
+   rename = new Ren(ctx);[m
+   dis = new Dispatch(ctx);[m
+   isu = new Isu(ctx);[m
+   prf = new Prf(ctx);[m
+[31m-  exu = new Exu(ctx);[m
+[32m+[m[32m  exu = new Exu(ctx, ftq);[m
+   csr = new Csr();[m
+   rob = new Rob(ctx);[m
+   lsu = new SimpleLsu(ctx);[m
+[36m@@ -315,6 +336,7 @@[m [mvoid BackTop::init() {[m
+   csr->init();[m
+   rob->init();[m
+   lsu->init();[m
+[32m+[m[32m  lsu->init();[m
+ }[m
+ [m
+ void BackTop::comb_csr_status() {[m
+[36m@@ -443,6 +465,13 @@[m [mvoid BackTop::comb() {[m
+ }[m
+ [m
+ void BackTop::seq() {[m
+[32m+[m[32m  // FTQ Reclamation[m
+[32m+[m[32m  for(int i=0; i<COMMIT_WIDTH; i++) {[m
+[32m+[m[32m      if(out.commit_entry[i].valid && out.commit_entry[i].uop.ftq_is_last) {[m
+[32m+[m[32m          if(ftq) ftq->pop();[m
+[32m+[m[32m      }[m
+[32m+[m[32m  }[m
+[32m+[m
+   // rename -> isu/stq/rob[m
+   // exu -> prf[m
+   rename->seq();[m
+[36m@@ -462,23 +491,20 @@[m [mvoid BackTop::seq() {[m
+ // --- 辅助函数：简化 zlib 读写 POD 类型 ---[m
+ template <typename T> void gz_write_pod(gzFile file, const T &data) {[m
+   if (gzwrite(file, &data, sizeof(T)) != sizeof(T)) {[m
+[31m-    std::cerr << "Error writing data to gzip file." << std::endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "Error writing data to gzip file.");[m
+   }[m
+ }[m
+ [m
+ template <typename T> void gz_read_pod(gzFile file, T &data) {[m
+   if (gzread(file, &data, sizeof(T)) != sizeof(T)) {[m
+[31m-    std::cerr << "Error reading data from gzip file." << std::endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "Error reading data from gzip file.");[m
+   }[m
+ }[m
+ [m
+ void BackTop::load_image(const std::string &filename) {[m
+   std::ifstream inst_data(filename, std::ios::in);[m
+   if (!inst_data.is_open()) {[m
+[31m-    cout << "Error: Image " << filename << " does not exist" << endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "Error: Image does not exist");[m
+   }[m
+ [m
+   inst_data.seekg(0, std::ios::end);[m
+[36m@@ -487,8 +513,7 @@[m [mvoid BackTop::load_image(const std::string &filename) {[m
+ [m
+   if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),[m
+                       size)) {[m
+[31m-    std::cerr << "读取文件失败！" << std::endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "读取文件失败！");[m
+   }[m
+ [m
+   inst_data.close();[m
+[36m@@ -536,8 +561,7 @@[m [mvoid BackTop::restore_checkpoint(const std::string &filename) {[m
+   }[m
+ [m
+   if (!file) {[m
+[31m-    std::cerr << "Error: Could not open file: " << filename << std::endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "Error: Could not open checkpoint file");[m
+   }[m
+ [m
+   typedef struct Old_CPU_state {[m
+[36m@@ -589,8 +613,7 @@[m [mvoid BackTop::restore_checkpoint(const std::string &filename) {[m
+ [m
+   // 2. 恢复内存[m
+   if (p_memory == nullptr) {[m
+[31m-    std::cerr << "Error: Memory not allocated." << std::endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "Error: Memory not allocated during checkpoint restore.");[m
+   }[m
+ [m
+   // [重要] 计算总字节数 (checkpoint 为 4GB)[m
+[36m@@ -607,12 +630,10 @@[m [mvoid BackTop::restore_checkpoint(const std::string &filename) {[m
+ [m
+     int read_bytes = gzread(file, byte_ptr, chunk);[m
+     if (read_bytes < 0) {[m
+[31m-      std::cerr << "Error: gzread failed." << std::endl;[m
+[31m-      exit(1);[m
+[32m+[m[32m      Assert(0 && "Error: gzread failed during checkpoint restore.");[m
+     }[m
+     if (read_bytes == 0) {[m
+[31m-      std::cerr << "Error: Unexpected EOF." << std::endl;[m
+[31m-      exit(1);[m
+[32m+[m[32m      Assert(0 && "Error: Unexpected EOF during checkpoint restore.");[m
+     }[m
+ [m
+     byte_ptr += read_bytes;[m
+[1mdiff --git a/back-end/Dispatch.cpp b/back-end/Dispatch.cpp[m
+[1mindex 69d5dfb..ef409cc 100644[m
+[1m--- a/back-end/Dispatch.cpp[m
+[1m+++ b/back-end/Dispatch.cpp[m
+[36m@@ -21,7 +21,7 @@[m [mvoid Dispatch::comb_alloc() {[m
+     // 分配 ROB ID (重排序缓存索引)[m
+     inst_alloc[i].uop.rob_idx = make_rob_idx(in.rob2dis->enq_idx, i);[m
+     inst_alloc[i].uop.rob_flag = in.rob2dis->rob_flag;[m
+[31m-    inst_alloc[i].uop.cplt_num = 0;  // 初始化完成计数器[m
+[32m+[m[32m    inst_alloc[i].uop.cplt_num = 0; // 初始化完成计数器[m
+ [m
+     // Load 需要知道之前的 Store[m
+     if (inst_r[i].valid && is_load(inst_r[i].uop)) {[m
+[36m@@ -169,7 +169,6 @@[m [mvoid Dispatch::comb_fire() {[m
+ [m
+   // === 步骤 1: 计算 Fire 信号 (确认分派) ===[m
+   for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[31m-    // 修正：有效的 Fire 信号意味着指令本身有效且资源分配（如 STQ）成功[m
+     bool basic_fire = out.dis2rob->valid[i] &&[m
+                       dispatch_success_flags[i] && // IQ 检查通过[m
+                       in.rob2dis->ready &&         // ROB 有空间[m
+[36m@@ -240,73 +239,76 @@[m [mvoid Dispatch::comb_fire() {[m
+   }[m
+ [m
+ #ifdef CONFIG_PERF_COUNTER[m
+[31m-    bool is_core_bound_rob[FETCH_WIDTH] = {false};[m
+[31m-    bool is_core_bound_iq[FETCH_WIDTH] = {false};[m
+[31m-    bool is_mem_l1_bound[FETCH_WIDTH] = {false};[m
+[31m-    bool is_mem_ext_bound[FETCH_WIDTH] = {false};[m
+[31m-[m
+[31m-    // Analyze stall reasons for each slot[m
+[31m-    for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[31m-        if (!out.dis2rob->dis_fire[i] && inst_r[i].valid) {[m
+[31m-            [m
+[31m-            // Priority: ROB > LSU > IQ[m
+[31m-            // If ROB is full/stalled[m
+[31m-            if (!in.rob2dis->ready) { // ROB Full[m
+[31m-                 // Refined Logic Phase 4: Check ROB Head + Miss Status[m
+[31m-                 if (in.rob2dis->head_is_memory && in.rob2dis->head_not_ready) {[m
+[31m-                     if (in.rob2dis->head_is_miss) {[m
+[31m-                         is_mem_ext_bound[i] = true;[m
+[31m-                     } else {[m
+[31m-                         is_mem_l1_bound[i] = true;[m
+[31m-                     }[m
+[31m-                 } else {[m
+[31m-                     is_core_bound_rob[i] = true; // ROB blocked by other instructions -> Core Bound[m
+[31m-                 }[m
+[31m-            } [m
+[31m-            // If Dispatch Logic failed (IQ check or LSU check)[m
+[31m-            else if (!dispatch_success_flags[i]) {[m
+[31m-                 bool lsu_stall = false;[m
+[31m-                 if (is_load(inst_r[i].uop)) {[m
+[31m-                     if (in.lsu2dis->ldq_free == 0) lsu_stall = true; [m
+[31m-                 } else if (is_store(inst_r[i].uop)) {[m
+[31m-                     if (in.lsu2dis->stq_free == 0) lsu_stall = true;[m
+[31m-                 }[m
+[31m-                 [m
+[31m-                 if (lsu_stall) {[m
+[31m-                     // Queues full are generally considered L1 Bound (Internal structural stall)[m
+[31m-                     is_mem_l1_bound[i] = true;[m
+[31m-                 } else {[m
+[31m-                     is_core_bound_iq[i] = true;[m
+[31m-                 }[m
+[31m-            }[m
+[31m-        }[m
+[31m-    }[m
+[32m+[m[32m  bool is_core_bound_rob[FETCH_WIDTH] = {false};[m
+[32m+[m[32m  bool is_core_bound_iq[FETCH_WIDTH] = {false};[m
+[32m+[m[32m  bool is_mem_l1_bound[FETCH_WIDTH] = {false};[m
+[32m+[m[32m  bool is_mem_ext_bound[FETCH_WIDTH] = {false};[m
+ [m
+[31m-    for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[31m-      if (out.dis2rob->dis_fire[i]) {[m
+[31m-          ctx->perf.slots_issued++;[m
+[31m-      } else if (inst_r[i].valid) {[m
+[31m-          ctx->perf.slots_backend_bound++;[m
+[31m-          [m
+[31m-          if (is_mem_l1_bound[i]) {[m
+[31m-              ctx->perf.slots_mem_bound_lsu++;[m
+[31m-              ctx->perf.slots_mem_l1_bound++;[m
+[31m-          } else if (is_mem_ext_bound[i]) {[m
+[31m-              ctx->perf.slots_mem_bound_lsu++;[m
+[31m-              ctx->perf.slots_mem_ext_bound++;[m
+[31m-          } else if (is_core_bound_rob[i]) {[m
+[31m-              ctx->perf.slots_core_bound_rob++;[m
+[31m-          } else if (is_core_bound_iq[i]) {[m
+[31m-              ctx->perf.slots_core_bound_iq++;[m
+[32m+[m[32m  // Analyze stall reasons for each slot[m
+[32m+[m[32m  for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[32m+[m[32m    if (!out.dis2rob->dis_fire[i] && inst_r[i].valid) {[m
+[32m+[m
+[32m+[m[32m      // Priority: ROB > LSU > IQ[m
+[32m+[m[32m      // If ROB is full/stalled[m
+[32m+[m[32m      if (!in.rob2dis->ready) { // ROB Full[m
+[32m+[m[32m        if (in.rob2dis->head_is_memory && in.rob2dis->head_not_ready) {[m
+[32m+[m[32m          if (in.rob2dis->head_is_miss) {[m
+[32m+[m[32m            is_mem_ext_bound[i] = true;[m
+           } else {[m
+[31m-              // Default to IQ bound if no other reason identified for Backend Bound[m
+[31m-              ctx->perf.slots_core_bound_iq++;[m
+[32m+[m[32m            is_mem_l1_bound[i] = true;[m
+           }[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          is_core_bound_rob[i] = true;[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m[32m      // If Dispatch Logic failed (IQ check or LSU check)[m
+[32m+[m[32m      else if (!dispatch_success_flags[i]) {[m
+[32m+[m[32m        bool lsu_stall = false;[m
+[32m+[m[32m        if (is_load(inst_r[i].uop)) {[m
+[32m+[m[32m          if (in.lsu2dis->ldq_free == 0)[m
+[32m+[m[32m            lsu_stall = true;[m
+[32m+[m[32m        } else if (is_store(inst_r[i].uop)) {[m
+[32m+[m[32m          if (in.lsu2dis->stq_free == 0)[m
+[32m+[m[32m            lsu_stall = true;[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        if (lsu_stall) {[m
+[32m+[m[32m          is_mem_l1_bound[i] = true;[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          is_core_bound_iq[i] = true;[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[32m+[m[32m    if (out.dis2rob->dis_fire[i]) {[m
+[32m+[m[32m      ctx->perf.slots_issued++;[m
+[32m+[m[32m    } else if (inst_r[i].valid) {[m
+[32m+[m[32m      ctx->perf.slots_backend_bound++;[m
+[32m+[m
+[32m+[m[32m      if (is_mem_l1_bound[i]) {[m
+[32m+[m[32m        ctx->perf.slots_mem_bound_lsu++;[m
+[32m+[m[32m        ctx->perf.slots_mem_l1_bound++;[m
+[32m+[m[32m      } else if (is_mem_ext_bound[i]) {[m
+[32m+[m[32m        ctx->perf.slots_mem_bound_lsu++;[m
+[32m+[m[32m        ctx->perf.slots_mem_ext_bound++;[m
+[32m+[m[32m      } else if (is_core_bound_rob[i]) {[m
+[32m+[m[32m        ctx->perf.slots_core_bound_rob++;[m
+[32m+[m[32m      } else if (is_core_bound_iq[i]) {[m
+[32m+[m[32m        ctx->perf.slots_core_bound_iq++;[m
+       } else {[m
+[31m-          ctx->perf.slots_frontend_bound++;[m
+[31m-          if (ctx->perf.icache_busy) ctx->perf.slots_fetch_latency++; else ctx->perf.slots_fetch_bandwidth++;[m
+[32m+[m[32m        // Default to IQ bound if no other reason identified for Backend Bound[m
+[32m+[m[32m        ctx->perf.slots_core_bound_iq++;[m
+       }[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      ctx->perf.slots_frontend_bound++;[m
+[32m+[m[32m      if (ctx->perf.icache_busy)[m
+[32m+[m[32m        ctx->perf.slots_fetch_latency++;[m
+[32m+[m[32m      else[m
+[32m+[m[32m        ctx->perf.slots_fetch_bandwidth++;[m
+     }[m
+[32m+[m[32m  }[m
+ #endif[m
+ }[m
+ [m
+[36m@@ -425,9 +427,10 @@[m [mint Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {[m
+       // SC -> INT(0) + STA + STD[m
+       out_uops[0].iq_id = IQ_INT;[m
+       out_uops[0].uop = src_uop;[m
+[31m-      out_uops[0].uop.op = UOP_ADD; // 预设 0 (假定成功，LSU会覆盖? 或者这里仅仅是占位)[m
+[31m-                                    // 实际 SC 的返回值由 LSU Writeback 决定，通常是 Store 成功与否[m
+[31m-                                    // 如果这里 INT 写了 rd，后面 LSU 可能会再次写 rd[m
+[32m+[m[32m      out_uops[0].uop.op =[m
+[32m+[m[32m          UOP_ADD; // 预设 0 (假定成功，LSU会覆盖? 或者这里仅仅是占位)[m
+[32m+[m[32m                   // 实际 SC 的返回值由 LSU Writeback 决定，通常是 Store[m
+[32m+[m[32m                   // 成功与否 如果这里 INT 写了 rd，后面 LSU 可能会再次写 rd[m
+       out_uops[0].uop.src1_preg = 0; // x0[m
+       out_uops[0].uop.src1_busy = false;[m
+       out_uops[0].uop.imm = 0;[m
+[36m@@ -463,22 +466,25 @@[m [mint Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {[m
+       out_uops[2].uop = src_uop;[m
+       out_uops[2].uop.op = UOP_STD;[m
+       // 假设 SDU 负责计算，需要原 dest_preg 作为操作数 (数据源)[m
+[31m-      // 注意: 这里 src1_preg 被设为 dest_preg，用于读取内存旧值进行原子运算? [m
+[31m-      // 不，Load 结果写到了 dest_preg。STD 需要用到这个 dest_preg (Load Result) 吗?[m
+[31m-      // 通常 AMO: Load -> (ALU in LSU or STD?) -> Store[m
+[31m-      // 如果计算在 LSU 内部完成 (Atomic)，则 STD 可能只需要传 src2 (rs2)?[m
+[31m-      // 代码原意: out_uops[2].uop.src1_preg = src_uop.dest_preg;[m
+[31m-      // 这意味着 STD 依赖于 Load 的结果 (dest_preg)。[m
+[31m-      // 如果 Load 正确写回了 dest_preg，那么 STD 读取它是对的。[m
+[32m+[m[32m      // 注意: 这里 src1_preg 被设为 dest_preg，用于读取内存旧值进行原子运算?[m
+[32m+[m[32m      // 不，Load 结果写到了 dest_preg。STD 需要用到这个 dest_preg (Load Result)[m
+[32m+[m[32m      // 吗? 通常 AMO: Load -> (ALU in LSU or STD?) -> Store 如果计算在 LSU[m
+[32m+[m[32m      // 内部完成 (Atomic)，则 STD 可能只需要传 src2 (rs2)? 代码原意:[m
+[32m+[m[32m      // out_uops[2].uop.src1_preg = src_uop.dest_preg; 这意味着 STD 依赖于 Load[m
+[32m+[m[32m      // 的结果 (dest_preg)。 如果 Load 正确写回了 dest_preg，那么 STD[m
+[32m+[m[32m      // 读取它是对的。[m
+       out_uops[2].uop.src1_preg = src_uop.dest_preg;[m
+       if ((src_uop.func7 >> 2) == AmoOp::SWAP) {[m
+[31m-          out_uops[2].uop.src1_busy = false; // Swap doesn't need Load result (Old Val) for Store[m
+[31m-          // DEBUG[m
+[31m-          if (src_uop.pc == 0xc03870f4) {[m
+[31m-             printf("[Dispatch Fix] Triggered for Target PC %x. Clearing src1_busy.\n", src_uop.pc);[m
+[31m-          }[m
+[32m+[m[32m        out_uops[2].uop.src1_busy =[m
+[32m+[m[32m            false; // Swap doesn't need Load result (Old Val) for Store[m
+[32m+[m[32m        // DEBUG[m
+[32m+[m[32m        if (src_uop.pc == 0xc03870f4) {[m
+[32m+[m[32m          printf("[Dispatch Fix] Triggered for Target PC %x. Clearing "[m
+[32m+[m[32m                 "src1_busy.\n",[m
+[32m+[m[32m                 src_uop.pc);[m
+[32m+[m[32m        }[m
+       } else {[m
+[31m-          out_uops[2].uop.src1_busy = true;[m
+[32m+[m[32m        out_uops[2].uop.src1_busy = true;[m
+       }[m
+       out_uops[2].uop.dest_en = false; // Fix: STD 不写回寄存器[m
+       count = 3;[m
+[36m@@ -515,8 +521,11 @@[m [mint Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {[m
+     case EBREAK:[m
+       out_uops[0].uop.op = UOP_EBREAK;[m
+       break;[m
+[32m+[m[32m    case WFI:[m
+[32m+[m[32m      out_uops[0].uop.op = UOP_WFI;[m
+[32m+[m[32m      break;[m
+     default:[m
+[31m-      exit(1);[m
+[32m+[m[32m      Assert(0 && "unknown instruction");[m
+     }[m
+     count = 1;[m
+     break;[m
+[36m@@ -530,10 +539,10 @@[m [mDispatchIO Dispatch::get_hardware_io() {[m
+   // --- Inputs ---[m
+   for (int i = 0; i < FETCH_WIDTH; i++) {[m
+     hardware.from_ren.valid[i] = in.ren2dis->valid[i];[m
+[31m-    hardware.from_ren.uop[i]   = RenDisUop::filter(in.ren2dis->uop[i]);[m
+[32m+[m[32m    hardware.from_ren.uop[i] = RenDisUop::filter(in.ren2dis->uop[i]);[m
+   }[m
+   hardware.from_rob.ready = in.rob2dis->ready;[m
+[31m-  hardware.from_rob.full  = in.rob2dis->stall;[m
+[32m+[m[32m  hardware.from_rob.full = in.rob2dis->stall;[m
+   for (int j = 0; j < IQ_NUM; j++) {[m
+     hardware.from_iss.ready_num[j] = in.iss2dis->ready_num[j];[m
+   }[m
+[36m@@ -543,12 +552,12 @@[m [mDispatchIO Dispatch::get_hardware_io() {[m
+   hardware.to_ren.ready = out.dis2ren->ready;[m
+   for (int i = 0; i < FETCH_WIDTH; i++) {[m
+     hardware.to_rob.valid[i] = out.dis2rob->valid[i];[m
+[31m-    hardware.to_rob.uop[i]   = RobUop::filter(out.dis2rob->uop[i]);[m
+[32m+[m[32m    hardware.to_rob.uop[i] = RobUop::filter(out.dis2rob->uop[i]);[m
+   }[m
+   for (int j = 0; j < IQ_NUM; j++) {[m
+     for (int k = 0; k < MAX_IQ_DISPATCH_WIDTH; k++) {[m
+       hardware.to_iss.valid[j][k] = out.dis2iss->req[j][k].valid;[m
+[31m-      hardware.to_iss.uop[j][k]   = DisIssUop::filter(out.dis2iss->req[j][k].uop);[m
+[32m+[m[32m      hardware.to_iss.uop[j][k] = DisIssUop::filter(out.dis2iss->req[j][k].uop);[m
+     }[m
+   }[m
+ [m
+[1mdiff --git a/back-end/Exu/Exu.cpp b/back-end/Exu/Exu.cpp[m
+[1mindex 80efd51..eb161f8 100644[m
+[1m--- a/back-end/Exu/Exu.cpp[m
+[1m+++ b/back-end/Exu/Exu.cpp[m
+[36m@@ -1,7 +1,7 @@[m
+ #include "Exu.h"[m
+ #include "config.h"[m
+ [m
+[31m-Exu::Exu(SimContext *ctx) : ctx(ctx) {[m
+[32m+[m[32mExu::Exu(SimContext *ctx, FTQ *ftq) : ctx(ctx), ftq(ftq) {[m
+   // 可以在这里或 init 创建 backend[m
+ }[m
+ [m
+[36m@@ -58,7 +58,7 @@[m [mvoid Exu::init() {[m
+ [m
+     // 6. BRU[m
+     if (mask & OP_MASK_BR) {[m
+[31m-      auto bru = new BruUnit("BRU", i);[m
+[32m+[m[32m      auto bru = new BruUnit("BRU", i, ftq);[m
+       units.push_back(bru);[m
+       port_mappings[i].entries.push_back({bru, OP_MASK_BR});[m
+     }[m
+[1mdiff --git a/back-end/Exu/include/Exu.h b/back-end/Exu/include/Exu.h[m
+[1mindex beb13f0..40e73ee 100644[m
+[1m--- a/back-end/Exu/include/Exu.h[m
+[1m+++ b/back-end/Exu/include/Exu.h[m
+[36m@@ -3,6 +3,7 @@[m
+ #include "IO.h"[m
+ #include <Fu.h> // 包含具体的 FU 定义[m
+ #include <config.h>[m
+[32m+[m[32m#include <FTQ.h>[m
+ #include <vector>[m
+ [m
+ struct FuEntry {[m
+[36m@@ -34,10 +35,11 @@[m [mpublic:[m
+ [m
+ class Exu {[m
+ public:[m
+[31m-  Exu(SimContext *ctx);[m
+[32m+[m[32m  Exu(SimContext *ctx, FTQ *ftq);[m
+   ~Exu(); // 析构函数释放 FU 内存[m
+ [m
+   SimContext *ctx;[m
+[32m+[m[32m  FTQ *ftq;[m
+   std::vector<PortMapping> port_mappings;[m
+ [m
+   void init();[m
+[1mdiff --git a/back-end/Exu/include/Fu.h b/back-end/Exu/include/Fu.h[m
+[1mindex d29447f..75817e1 100644[m
+[1m--- a/back-end/Exu/include/Fu.h[m
+[1m+++ b/back-end/Exu/include/Fu.h[m
+[36m@@ -1,6 +1,7 @@[m
+ #pragma once[m
+ #include "AbstractFU.h" // for __builtin_clz[m
+ #include "IO.h"[m
+[32m+[m[32m#include "FTQ.h"[m
+ #include "config.h"[m
+ // #include <cassert>[m
+ #include <climits>[m
+[36m@@ -76,6 +77,9 @@[m [mprotected:[m
+       }[m
+       break;[m
+     }[m
+[32m+[m[32m    case UOP_WFI:[m
+[32m+[m[32m      inst.result = 0; // WFI doesn't produce result, treated as NOP here[m
+[32m+[m[32m      break;[m
+     default: {[m
+       inst.result = operand1 + operand2;[m
+       break;[m
+[36m@@ -243,10 +247,11 @@[m [mclass BruUnit : public FixedLatencyFU {[m
+   static constexpr int BGE = 0b101;[m
+   static constexpr int BLTU = 0b110;[m
+   static constexpr int BGEU = 0b111;[m
+[32m+[m[32m  FTQ *ftq;[m
+ [m
+ public:[m
+[31m-  BruUnit(std::string name = "BRU", int port_idx = 0)[m
+[31m-      : FixedLatencyFU(name, port_idx, 1) {}[m
+[32m+[m[32m  BruUnit(std::string name, int port_idx, FTQ *ftq)[m
+[32m+[m[32m      : FixedLatencyFU(name, port_idx, 1), ftq(ftq) {}[m
+ [m
+ protected:[m
+   void impl_compute(InstUop &inst) override {[m
+[36m@@ -290,8 +295,32 @@[m [mprotected:[m
+       br_taken = false;[m
+     }[m
+ [m
+[31m-    if ((br_taken && inst.pred_br_taken && inst.pred_br_pc == pc_br) ||[m
+[31m-        (!br_taken && !inst.pred_br_taken)) {[m
+[32m+[m[32m    // FTQ lookup[m
+[32m+[m[32m    bool pred_taken = false;[m
+[32m+[m[32m    uint32_t pred_target = 0;[m
+[32m+[m
+[32m+[m[32m    FTQEntry &ftq_entry = ftq->get(inst.ftq_idx);[m
+[32m+[m[32m    if (ftq_entry.valid) {[m
+[32m+[m[32m      pred_taken = ftq_entry.pred_taken_mask[inst.ftq_offset];[m
+[32m+[m[32m      if (pred_taken) {[m
+[32m+[m[32m        // If predicted taken, the target MUST be the block's next_pc ???[m[41m [m
+[32m+[m[32m        // Logic: specific branch target logic[m
+[32m+[m[32m        // If it's a conditional branch inside the block, and predicted taken,[m
+[32m+[m[32m        // it usually implies it's the last instruction of the block or redirects flow.[m
+[32m+[m[32m        // Simplified: if pred_taken, we expect target to be ftq_entry.next_pc?[m
+[32m+[m[32m        // Or do we store targets?[m
+[32m+[m[32m        // Current design: FTQ stores next_pc of the BLOCK.[m
+[32m+[m[32m        // If there are multiple branches, only one is taken?[m
+[32m+[m[32m        // Assuming block ends at the taken branch.[m
+[32m+[m[32m        pred_target = ftq_entry.next_pc;[m[41m [m
+[32m+[m[32m      } else {[m
+[32m+[m[32m        pred_target = inst.pc + 4; // Check if compressed?[m
+[32m+[m[32m      }[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    // Verify[m
+[32m+[m[32m    if ((br_taken && pred_taken && pred_target == pc_br) ||[m
+[32m+[m[32m        (!br_taken && !pred_taken)) {[m
+       inst.mispred = false;[m
+     } else {[m
+       inst.mispred = true;[m
+[1mdiff --git a/back-end/Idu.cpp b/back-end/Idu.cpp[m
+[1mindex ebb9446..c4913d1 100644[m
+[1m--- a/back-end/Idu.cpp[m
+[1m+++ b/back-end/Idu.cpp[m
+[36m@@ -67,20 +67,23 @@[m [mvoid Idu::comb_decode() {[m
+     }[m
+ [m
+     out.dec2ren->uop[i].pc = in.front2dec->pc[i];[m
+[31m-    out.dec2ren->uop[i].pred_br_taken = in.front2dec->predict_dir[i];[m
+[31m-    out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];[m
+[31m-    out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];[m
+[31m-    out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];[m
+[31m-    for (int j = 0; j < 4; j++) { // TN_MAX = 4[m
+[31m-      out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];[m
+[31m-    }[m
+[32m+[m[32m    out.dec2ren->uop[i].ftq_idx = ftq->tail;[m
+[32m+[m[32m    out.dec2ren->uop[i].ftq_offset = i;[m
+[32m+[m
+[32m+[m[32m    // out.dec2ren->uop[i].pred_br_taken = in.front2dec->predict_dir[i];[m
+[32m+[m[32m    // out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];[m
+[32m+[m[32m    // out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];[m
+[32m+[m[32m    // out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];[m
+[32m+[m[32m    // for (int j = 0; j < 4; j++) { // TN_MAX = 4[m
+[32m+[m[32m    //   out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];[m
+[32m+[m[32m    // }[m
+ [m
+[31m-    out.dec2ren->uop[i].pred_br_pc =[m
+[31m-        in.front2dec->predict_next_fetch_address[i];[m
+[32m+[m[32m    // out.dec2ren->uop[i].pred_br_pc =[m
+[32m+[m[32m    //     in.front2dec->predict_next_fetch_address[i];[m
+ [m
+     // for debug[m
+     if (is_branch(out.dec2ren->uop[i].type)) {[m
+[31m-      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;[m
+[32m+[m[32m      out.dec2ren->uop[i].pc_next = in.front2dec->predict_next_fetch_address[i];[m
+     } else {[m
+       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;[m
+     }[m
+[36m@@ -109,6 +112,30 @@[m [mvoid Idu::comb_decode() {[m
+       out.dec2ren->uop[i].tag = 0;[m
+     }[m
+   }[m
+[32m+[m
+[32m+[m[32m  // FTQ Full Stall[m
+[32m+[m[32m  if (ftq->is_full()) {[m
+[32m+[m[32m      for (int k = 0; k < FETCH_WIDTH; k++) {[m
+[32m+[m[32m          out.dec2ren->valid[k] = false;[m
+[32m+[m[32m          out.dec2ren->uop[k].tag = 0;[m
+[32m+[m[32m      }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  // Set ftq_is_last for the last valid uop in the packet[m
+[32m+[m[32m  int last_valid_idx = -1;[m
+[32m+[m[32m  for (int j = FETCH_WIDTH - 1; j >= 0; j--) {[m
+[32m+[m[32m      if (out.dec2ren->valid[j]) {[m
+[32m+[m[32m          last_valid_idx = j;[m
+[32m+[m[32m          break;[m
+[32m+[m[32m      }[m
+[32m+[m[32m  }[m
+[32m+[m[41m  [m
+[32m+[m[32m  // Initialize to false[m
+[32m+[m[32m  for(int j=0; j<FETCH_WIDTH; j++) out.dec2ren->uop[j].ftq_is_last = false;[m
+[32m+[m
+[32m+[m[32m  if (last_valid_idx != -1) {[m
+[32m+[m[32m      out.dec2ren->uop[last_valid_idx].ftq_is_last = true;[m
+[32m+[m[32m  }[m
+ }[m
+ [m
+ void Idu::comb_branch() {[m
+[36m@@ -154,11 +181,26 @@[m [mvoid Idu::comb_flush() {[m
+     now_tag_1 = 0;[m
+     enq_ptr_1 = 1;[m
+     tag_list_1[0] = 0;[m
+[32m+[m
+[32m+[m[32m    // Flush: 完全重置 FTQ[m
+[32m+[m[32m    ftq->head = 0;[m
+[32m+[m[32m    ftq->tail = 0;[m
+[32m+[m[32m    ftq->count = 0;[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  // Mispred: 回滚 FTQ tail 到误预测分支的下一个条目[m
+[32m+[m[32m  if (in.prf2dec->mispred) {[m
+[32m+[m[32m    int mispred_ftq = in.prf2dec->ftq_idx;[m
+[32m+[m[32m    // 误预测分支本身的 FTQ 条目是正确路径的，保留它[m
+[32m+[m[32m    // 但之后分配的所有条目都是错误路径的，需要释放[m
+[32m+[m[32m    int new_tail = (mispred_ftq + 1) % FTQ::FTQ_SIZE;[m
+[32m+[m[32m    ftq->tail = new_tail;[m
+[32m+[m[32m    ftq->count = (new_tail - ftq->head + FTQ::FTQ_SIZE) % FTQ::FTQ_SIZE;[m
+   }[m
+ }[m
+ [m
+ void Idu::comb_fire() {[m
+[31m-  out.dec2front->ready = in.ren2dec->ready && !in.prf2dec->mispred;[m
+[32m+[m[32m  out.dec2front->ready = in.ren2dec->ready && !in.prf2dec->mispred && !ftq->is_full();[m
+ [m
+   if (in.prf2dec->mispred || in.rob_bcast->flush) {[m
+     for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[36m@@ -198,6 +240,33 @@[m [mvoid Idu::seq() {[m
+     tag_list[i] = tag_list_1[i];[m
+   }[m
+   enq_ptr = enq_ptr_1;[m
+[32m+[m
+[32m+[m[32m  bool fire = false;[m
+[32m+[m[32m  for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[32m+[m[32m    if (out.dec2front->fire[i]) {[m
+[32m+[m[32m      fire = true;[m
+[32m+[m[32m      break;[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  if (fire && !in.rob_bcast->flush) {[m
+[32m+[m[32m    int idx = ftq->tail;[m
+[32m+[m[32m    ftq->entries[idx].valid = true;[m
+[32m+[m[32m    ftq->entries[idx].start_pc = in.front2dec->pc[0];[m
+[32m+[m[32m    ftq->entries[idx].next_pc = in.front2dec->predict_next_fetch_address[0];[m
+[32m+[m
+[32m+[m[32m    for (int i = 0; i < FETCH_WIDTH; i++) {[m
+[32m+[m[32m      ftq->entries[idx].pred_taken_mask[i] = in.front2dec->predict_dir[i];[m
+[32m+[m[32m      // ftq->entries[idx].mid_pred[i] = in.front2dec->alt_pred[i];[m[41m [m
+[32m+[m[32m      ftq->entries[idx].alt_pred[i] = in.front2dec->alt_pred[i];[m
+[32m+[m[32m      ftq->entries[idx].altpcpn[i] = in.front2dec->altpcpn[i];[m
+[32m+[m[32m      ftq->entries[idx].pcpn[i] = in.front2dec->pcpn[i];[m
+[32m+[m[32m      for (int j = 0; j < 4; j++) {[m
+[32m+[m[32m        ftq->entries[idx].tage_idx[i][j] = in.front2dec->tage_idx[i][j];[m
+[32m+[m[32m      }[m
+[32m+[m[32m    }[m
+[32m+[m[32m    ftq->alloc();[m
+[32m+[m[32m  }[m
+ }[m
+ [m
+ void Idu::decode(InstUop &uop, uint32_t inst) {[m
+[1mdiff --git a/back-end/Prf.cpp b/back-end/Prf.cpp[m
+[1mindex 6788440..c396f5d 100644[m
+[1m--- a/back-end/Prf.cpp[m
+[1m+++ b/back-end/Prf.cpp[m
+[36m@@ -34,6 +34,7 @@[m [mvoid Prf::comb_br_check() {[m
+     out.prf2dec->redirect_pc = mispred_uop->pc_next;[m
+     out.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;[m
+     out.prf2dec->br_tag = mispred_uop->tag;[m
+[32m+[m[32m    out.prf2dec->ftq_idx = mispred_uop->ftq_idx;[m
+     if (LOG)[m
+       cout << "PC " << hex << mispred_uop->pc << " misprediction redirect_pc 0x"[m
+            << hex << out.prf2dec->redirect_pc << endl;[m
+[36m@@ -42,6 +43,7 @@[m [mvoid Prf::comb_br_check() {[m
+     out.prf2dec->redirect_pc = inst_r[0].uop.pc_next;[m
+     out.prf2dec->redirect_rob_idx = inst_r[0].uop.rob_idx;[m
+     out.prf2dec->br_tag = inst_r[0].uop.tag;[m
+[32m+[m[32m    out.prf2dec->ftq_idx = 0;[m
+   }[m
+ }[m
+ [m
+[1mdiff --git a/back-end/Rob.cpp b/back-end/Rob.cpp[m
+[1mindex fe6f513..74ab608 100644[m
+[1m--- a/back-end/Rob.cpp[m
+[1m+++ b/back-end/Rob.cpp[m
+[36m@@ -41,33 +41,35 @@[m [mvoid Rob::comb_ready() {[m
+       }[m
+     }[m
+   }[m
+[31m-  // Determine Head Status for Memory Bound Calculation (Refined Phase 3.6 - Oldest First)[m
+[31m-  // User Feedback: Find the *oldest* incomplete instruction.[m
+[31m-  // If entry[0] is a DIV (blocked) and entry[1] is a LOAD (blocked), [m
+[31m-  // the stall is caused by the DIV (Core Bound), not the LOAD.[m
+[31m-  [m
+[32m+[m[32m  // Determine Head Status for Memory Bound Calculation (Refined Phase 3.6 -[m
+[32m+[m[32m  // Oldest First) User Feedback: Find the *oldest* incomplete instruction. If[m
+[32m+[m[32m  // entry[0] is a DIV (blocked) and entry[1] is a LOAD (blocked), the stall is[m
+[32m+[m[32m  // caused by the DIV (Core Bound), not the LOAD.[m
+[32m+[m
+   bool found_stall = false;[m
+   bool stall_is_mem = false;[m
+   bool stall_is_miss = false;[m
+[31m-  [m
+[32m+[m
+   for (int i = 0; i < ROB_BANK_NUM; i++) {[m
+     if (entry[i][deq_ptr].valid) {[m
+[31m-      bool is_ready = (entry[i][deq_ptr].uop.cplt_num == entry[i][deq_ptr].uop.uop_num);[m
+[31m-      [m
+[32m+[m[32m      bool is_ready =[m
+[32m+[m[32m          (entry[i][deq_ptr].uop.cplt_num == entry[i][deq_ptr].uop.uop_num);[m
+[32m+[m
+       if (!is_ready) {[m
+[31m-          // This is the oldest incomplete instruction. It is the bottleneck.[m
+[31m-          found_stall = true;[m
+[31m-          if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {[m
+[31m-              stall_is_mem = true;[m
+[31m-              uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);[m
+[31m-              stall_is_miss = (in.lsu2rob->miss_mask >> rob_idx) & 1;[m
+[31m-          } else {[m
+[31m-              stall_is_mem = false;[m
+[31m-              stall_is_miss = false;[m
+[31m-          }[m
+[31m-          break; // Stop scanning once the first blocker is found.[m
+[32m+[m[32m        // This is the oldest incomplete instruction. It is the bottleneck.[m
+[32m+[m[32m        found_stall = true;[m
+[32m+[m[32m        if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {[m
+[32m+[m[32m          stall_is_mem = true;[m
+[32m+[m[32m          uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);[m
+[32m+[m[32m          stall_is_miss = (in.lsu2rob->miss_mask >> rob_idx) & 1;[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          stall_is_mem = false;[m
+[32m+[m[32m          stall_is_miss = false;[m
+[32m+[m[32m        }[m
+[32m+[m[32m        break; // Stop scanning once the first blocker is found.[m
+       }[m
+[31m-      // If valid but ready, it's not the blocker. Continue to the next younger instruction.[m
+[32m+[m[32m      // If valid but ready, it's not the blocker. Continue to the next younger[m
+[32m+[m[32m      // instruction.[m
+     }[m
+   }[m
+ [m
+[36m@@ -193,8 +195,7 @@[m [mvoid Rob::comb_commit() {[m
+         out.rob_bcast->pc = entry[single_idx][deq_ptr].uop.pc;[m
+       } else {[m
+         if (entry[single_idx][deq_ptr].uop.type != CSR) {[m
+[31m-          cout << hex << entry[single_idx][deq_ptr].uop.instruction << endl;[m
+[31m-          exit(1);[m
+[32m+[m[32m          Assert(0 && "ERROR: unknown instruction during commit");[m
+         }[m
+       }[m
+     }[m
+[36m@@ -234,7 +235,7 @@[m [mvoid Rob::comb_commit() {[m
+       }[m
+     }[m
+ [m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "ROB Deadlock detected (stall_cycle > 500)");[m
+   }[m
+ }[m
+ [m
+[1mdiff --git a/back-end/include/BackTop.h b/back-end/include/BackTop.h[m
+[1mindex dc51fb4..3839770 100644[m
+[1m--- a/back-end/include/BackTop.h[m
+[1m+++ b/back-end/include/BackTop.h[m
+[36m@@ -14,7 +14,9 @@[m
+ #include <Rob.h>[m
+ #include <WriteBack_Arbiter.h>[m
+ #include <WriteBuffer.h>[m
+[32m+[m[32m#include <WriteBuffer.h>[m
+ #include <config.h>[m
+[32m+[m[32m#include <FTQ.h>[m
+ #include <cstdint>[m
+ [m
+ class SimContext;[m
+[36m@@ -115,6 +117,7 @@[m [mpublic:[m
+   Csr *csr;[m
+   Rob *rob;[m
+   AbstractLsu *lsu;[m
+[32m+[m[32m  FTQ *ftq;[m
+ [m
+   Back_in in;[m
+   Back_out out;[m
+[36m@@ -133,6 +136,7 @@[m [mpublic:[m
+     delete prf;[m
+     delete rob;[m
+     delete csr;[m
+[32m+[m[32m    delete ftq;[m
+   }[m
+ [m
+   uint32_t number_PC = 0;[m
+[1mdiff --git a/back-end/include/IO.h b/back-end/include/IO.h[m
+[1mindex d720622..c0ff71d 100644[m
+[1m--- a/back-end/include/IO.h[m
+[1m+++ b/back-end/include/IO.h[m
+[36m@@ -299,12 +299,14 @@[m [mstruct PrfDecIO {[m
+   wire<32> redirect_pc;[m
+   wire<ROB_IDX_WIDTH> redirect_rob_idx;[m
+   wire<BR_TAG_WIDTH> br_tag;[m
+[32m+[m[32m  int ftq_idx;  // FTQ index of mispredicting branch, for tail recovery[m
+ [m
+   PrfDecIO() {[m
+     mispred = {};[m
+     redirect_pc = {};[m
+     redirect_rob_idx = {};[m
+     br_tag = {};[m
+[32m+[m[32m    ftq_idx = 0;[m
+   }[m
+ };[m
+ [m
+[1mdiff --git a/back-end/include/Idu.h b/back-end/include/Idu.h[m
+[1mindex dd61fd7..2ccadc7 100644[m
+[1m--- a/back-end/include/Idu.h[m
+[1m+++ b/back-end/include/Idu.h[m
+[36m@@ -1,6 +1,8 @@[m
+ #pragma once[m
+ #include "IO.h"[m
+ #include "config.h"[m
+[32m+[m[32m#include "config.h"[m
+[32m+[m[32m#include "FTQ.h"[m
+ class SimContext;[m
+ [m
+ class IduIn {[m
+[36m@@ -21,11 +23,13 @@[m [mpublic:[m
+ [m
+ class Idu {[m
+ public:[m
+[31m-  Idu(SimContext *ctx, int max_br = 1) {[m
+[32m+[m[32m  Idu(SimContext *ctx, FTQ *ftq, int max_br = 1) {[m
+     this->ctx = ctx;[m
+[32m+[m[32m    this->ftq = ftq;[m
+     this->max_br_per_cycle = max_br;[m
+   }[m
+   SimContext *ctx;[m
+[32m+[m[32m  FTQ *ftq;[m
+   int max_br_per_cycle;[m
+   IduIn in;[m
+   IduOut out;[m
+[1mdiff --git a/back-end/include/IssueQueue.h b/back-end/include/IssueQueue.h[m
+[1mindex f04a7c6..bac4696 100644[m
+[1m--- a/back-end/include/IssueQueue.h[m
+[1m+++ b/back-end/include/IssueQueue.h[m
+[36m@@ -35,6 +35,10 @@[m [mpublic:[m
+   std::vector<InstEntry> entry_1;[m
+   int count, count_1;[m
+ [m
+[32m+[m[32m  // Wakeup Matrix: [Physical Register] -> Bitmask of IQ slots[m
+[32m+[m[32m  std::vector<uint64_t> wake_matrix_src1;[m
+[32m+[m[32m  std::vector<uint64_t> wake_matrix_src2;[m
+[32m+[m
+   IssueQueue(const IssueQueueConfig &cfg)[m
+       : id(cfg.id), size(cfg.size),[m
+         dispatch_width(cfg.dispatch_width), // <--- 初始化[m
+[36m@@ -44,6 +48,10 @@[m [mpublic:[m
+     entry_1.resize(size);[m
+     count = 0;[m
+     count_1 = 0;[m
+[32m+[m
+[32m+[m[32m    // Initialize Wakeup Matrices[m
+[32m+[m[32m    wake_matrix_src1.resize(PRF_NUM, 0);[m
+[32m+[m[32m    wake_matrix_src2.resize(PRF_NUM, 0);[m
+   }[m
+ [m
+   // 入队 (返回成功入队的个数)[m
+[36m@@ -54,6 +62,16 @@[m [mpublic:[m
+       if (!entry_1[i].valid) {[m
+         entry_1[i] = inst;[m
+         entry_1[i].valid = true;[m
+[32m+[m[41m        [m
+[32m+[m[32m        // Update Wakeup Matrix[m
+[32m+[m[32m        const auto& uop = inst.uop;[m
+[32m+[m[32m        if (uop.src1_en && uop.src1_busy) {[m
+[32m+[m[32m            wake_matrix_src1[uop.src1_preg] |= (1ULL << i);[m
+[32m+[m[32m        }[m
+[32m+[m[32m        if (uop.src2_en && uop.src2_busy) {[m
+[32m+[m[32m            wake_matrix_src2[uop.src2_preg] |= (1ULL << i);[m
+[32m+[m[32m        }[m
+[32m+[m
+         count_1++;[m
+         return 1;[m
+       }[m
+[36m@@ -61,31 +79,41 @@[m [mpublic:[m
+     return 0;[m
+   }[m
+ [m
+[31m-  // 唤醒逻辑[m
+[32m+[m[32m  // 唤醒逻辑 (Matrix-Based)[m
+   void wakeup(const std::vector<uint32_t> &pregs) {[m
+[31m-    for (int i = 0; i < size; i++) {[m
+[31m-      if (entry_1[i].valid) {[m
+[31m-        InstUop &uop = entry_1[i].uop;[m
+[31m-        [m
+[31m-        // 优化: 仅当操作数正在等待时才检查唤醒[m
+[31m-        if (uop.src1_en && uop.src1_busy) {[m
+[31m-            for (uint32_t preg : pregs) {[m
+[31m-                if (uop.src1_preg == preg) {[m
+[31m-                    uop.src1_busy = false;[m
+[31m-                    break; // 只有一个生产者[m
+[32m+[m[32m    for (uint32_t preg : pregs) {[m
+[32m+[m[32m        // --- 唤醒 SRC1 ---[m
+[32m+[m[32m        uint64_t mask1 = wake_matrix_src1[preg];[m
+[32m+[m[32m        if (mask1) {[m
+[32m+[m[32m            wake_matrix_src1[preg] = 0; // Hardware wires clear the matrix[m
+[32m+[m[41m            [m
+[32m+[m[32m            while (mask1) {[m
+[32m+[m[32m                int idx = __builtin_ctzll(mask1); // Find first set bit[m
+[32m+[m[32m                mask1 &= ~(1ULL << idx);          // Clear bit[m
+[32m+[m[41m                [m
+[32m+[m[32m                // Robustness Check: Ensure the slot still holds the expected instruction[m
+[32m+[m[32m                if (entry_1[idx].valid && entry_1[idx].uop.src1_en &&[m[41m [m
+[32m+[m[32m                    entry_1[idx].uop.src1_preg == preg) {[m
+[32m+[m[32m                    entry_1[idx].uop.src1_busy = false;[m
+                 }[m
+             }[m
+         }[m
+ [m
+[31m-        if (uop.src2_en && uop.src2_busy) {[m
+[31m-            for (uint32_t preg : pregs) {[m
+[31m-                if (uop.src2_preg == preg) {[m
+[31m-                    uop.src2_busy = false;[m
+[31m-                    break;[m
+[32m+[m[32m        // --- 唤醒 SRC2 ---[m
+[32m+[m[32m        uint64_t mask2 = wake_matrix_src2[preg];[m
+[32m+[m[32m        if (mask2) {[m
+[32m+[m[32m            wake_matrix_src2[preg] = 0; // Hardware wires clear the matrix[m
+[32m+[m[41m            [m
+[32m+[m[32m            while (mask2) {[m
+[32m+[m[32m                int idx = __builtin_ctzll(mask2);[m
+[32m+[m[32m                mask2 &= ~(1ULL << idx);[m
+[32m+[m[41m                [m
+[32m+[m[32m                if (entry_1[idx].valid && entry_1[idx].uop.src2_en &&[m[41m [m
+[32m+[m[32m                    entry_1[idx].uop.src2_preg == preg) {[m
+[32m+[m[32m                    entry_1[idx].uop.src2_busy = false;[m
+                 }[m
+             }[m
+         }[m
+[31m-      }[m
+     }[m
+   }[m
+ [m
+[36m@@ -114,6 +142,10 @@[m [mpublic:[m
+     for (auto &e : entry_1)[m
+       e.valid = false;[m
+     count_1 = 0;[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Clear Wakeup Matrices[m
+[32m+[m[32m    std::fill(wake_matrix_src1.begin(), wake_matrix_src1.end(), 0);[m
+[32m+[m[32m    std::fill(wake_matrix_src2.begin(), wake_matrix_src2.end(), 0);[m
+   }[m
+ [m
+   // 提交调度结果 (将选中的指令移出队列)[m
+[1mdiff --git a/back-end/include/base_types.h b/back-end/include/base_types.h[m
+[1mindex c1d9d8e..6626ee1 100644[m
+[1m--- a/back-end/include/base_types.h[m
+[1m+++ b/back-end/include/base_types.h[m
+[36m@@ -34,6 +34,7 @@[m [menum UopType {[m
+   UOP_SRET,[m
+   UOP_MUL,[m
+   UOP_DIV,[m
+[32m+[m[32m  UOP_WFI,[m
+   MAX_UOP_TYPE[m
+ };[m
+ [m
+[1mdiff --git a/back-end/include/config.h b/back-end/include/config.h[m
+[1mindex 99a47c8..13a3f0e 100644[m
+[1m--- a/back-end/include/config.h[m
+[1m+++ b/back-end/include/config.h[m
+[36m@@ -52,7 +52,7 @@[m [mconstexpr int SIMPOINT_INTERVAL = 100000000;[m
+ // [Debug & Logging Config][m
+ // ==========================================[m
+ [m
+[31m-constexpr uint64_t LOG_START = 4582800;[m
+[32m+[m[32mconstexpr uint64_t LOG_START = 0;[m
+ // #define LOG_ENABLE // Enable logging support (controlled by macros below)[m
+ [m
+ extern long long sim_time; // Global simulation time[m
+[36m@@ -97,7 +97,7 @@[m [mconstexpr uint32_t UART_BASE = 0x10000000;[m
+ constexpr uint64_t OP_MASK_ALU = (1ULL << UOP_ADD) | (1ULL << UOP_ECALL) |[m
+                                  (1ULL << UOP_EBREAK) | (1ULL << UOP_MRET) |[m
+                                  (1ULL << UOP_SRET) | (1ULL << UOP_SFENCE_VMA) |[m
+[31m-                                 (1ULL << UOP_FENCE_I);[m
+[32m+[m[32m                                 (1ULL << UOP_FENCE_I) | (1ULL << UOP_WFI);[m
+ constexpr uint64_t OP_MASK_CSR = (1ULL << UOP_CSR);[m
+ constexpr uint64_t OP_MASK_MUL = (1ULL << UOP_MUL);[m
+ constexpr uint64_t OP_MASK_DIV = (1ULL << UOP_DIV);[m
+[1mdiff --git a/back-end/include/types.h b/back-end/include/types.h[m
+[1mindex e7faf28..205c118 100644[m
+[1m--- a/back-end/include/types.h[m
+[1m+++ b/back-end/include/types.h[m
+[36m@@ -71,12 +71,16 @@[m [mtypedef struct InstUop {[m
+   wire<32> paddr;[m
+ [m
+   // 分支预测信息[m
+[31m-  wire<1> pred_br_taken;[m
+[31m-  wire<1> alt_pred;[m
+[31m-  wire<8> altpcpn;[m
+[31m-  wire<8> pcpn;[m
+[31m-  wire<32> pred_br_pc;[m
+[31m-  wire<32> tage_idx[4]; // TN_MAX = 4[m
+[32m+[m[32m  // wire<1> pred_br_taken; // Moved to FTQ[m
+[32m+[m[32m  // wire<1> alt_pred;      // Moved to FTQ[m
+[32m+[m[32m  // wire<8> altpcpn;       // Moved to FTQ[m
+[32m+[m[32m  // wire<8> pcpn;          // Moved to FTQ[m
+[32m+[m[32m  // wire<32> pred_br_pc;   // Moved to FTQ (next_pc)[m
+[32m+[m[32m  // wire<32> tage_idx[4]; // TN_MAX = 4 // Moved to FTQ[m
+[32m+[m
+[32m+[m[32m  int ftq_idx;[m
+[32m+[m[32m  int ftq_offset;[m
+[32m+[m[32m  bool ftq_is_last;[m
+ [m
+   // 分支预测更新信息[m
+   wire<1> mispred;[m
+[1mdiff --git a/back-end/include/util.h b/back-end/include/util.h[m
+[1mindex c7bd54f..a730d59 100644[m
+[1m--- a/back-end/include/util.h[m
+[1m+++ b/back-end/include/util.h[m
+[36m@@ -3,12 +3,13 @@[m
+ [m
+ #define LOOP_INC(idx, length) idx = (idx + 1) % (length)[m
+ #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)[m
+[32m+[m[32mextern long long sim_time;[m
+ // Custom Assert Macro to avoid WSL2 issues[m
+ #define Assert(cond)                                                           \[m
+   do {                                                                         \[m
+     if (!(cond)) {                                                             \[m
+[31m-      printf("\033[1;31mAssertion failed: %s, file %s, line %d\033[0m\n",      \[m
+[31m-             #cond, __FILE__, __LINE__);                                       \[m
+[32m+[m[32m      printf("\033[1;31mAssertion failed: %s, file %s, line %d, cycle %lld\033[0m\n", \[m
+[32m+[m[32m             #cond, __FILE__, __LINE__, sim_time);                             \[m
+       exit(1);                                                                 \[m
+     }                                                                          \[m
+   } while (0)[m
+[1mdiff --git a/diff/diff.cpp b/diff/diff.cpp[m
+[1mindex 862051f..bf24250 100644[m
+[1m--- a/diff/diff.cpp[m
+[1m+++ b/diff/diff.cpp[m
+[36m@@ -114,7 +114,7 @@[m [mfault:[m
+   printf("Ref Inst: %08x\tDUT Inst: %08x\n", ref_cpu.Instruction,[m
+          dut_cpu.instruction);[m
+ [m
+[31m-  exit(1);[m
+[32m+[m[32m  Assert(0 && "Difftest: Register or Memory mismatch detected.");[m
+ }[m
+ [m
+ void difftest_skip() {[m
+[1mdiff --git a/diff/ref.cpp b/diff/ref.cpp[m
+[1mindex 9af0ad7..21d29c2 100644[m
+[1m--- a/diff/ref.cpp[m
+[1m+++ b/diff/ref.cpp[m
+[36m@@ -485,8 +485,9 @@[m [mvoid RefCpu::RISCV() {[m
+   // WFI 检查 (简单处理)[m
+   if (Instruction == INST_WFI && !asy && !page_fault_inst && !page_fault_load &&[m
+       !page_fault_store) {[m
+[31m-    std::cout << " WFI " << std::endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "WFI instruction encountered in Reference Model (Exit intended)");[m
+[32m+[m[32m    // state.pc += 4;[m
+[32m+[m[32m    // return;[m
+   }[m
+ [m
+   if (page_fault_inst) {[m
+[36m@@ -1528,39 +1529,25 @@[m [mbool RefCpu::va2pa_fixed(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {[m
+     if (dut_page_fault_inst) {[m
+       ret = false; // 以 DUT MMU 为准[m
+     } else if (!dut_page_fault_inst && !ret) {[m
+[31m-      cout << "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault "[m
+[31m-              "mismatch!"[m
+[31m-           << endl;[m
+[31m-      cout << "VA: " << hex << v_addr << endl;[m
+[31m-      cout << "sim_time: " << dec << sim_time << endl;[m
+[31m-      exit(1);[m
+[32m+[m[32m      Assert(0 && "[va2pa_fixed] Error: va2pa_fixed instruction fetch page fault mismatch!");[m
+     }[m
+     break;[m
+   case 1: // load[m
+     if (dut_page_fault_load) {[m
+       ret = false;[m
+     } else if (!dut_page_fault_load && !ret) {[m
+[31m-      cout << "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!"[m
+[31m-           << endl;[m
+[31m-      cout << "VA: " << hex << v_addr << endl;[m
+[31m-      cout << "sim_time: " << dec << sim_time << endl;[m
+[31m-      exit(1);[m
+[32m+[m[32m      Assert(0 && "[va2pa_fixed] Error: va2pa_fixed load page fault mismatch!");[m
+     }[m
+     break;[m
+   case 2: // store[m
+     if (dut_page_fault_store) {[m
+       ret = false;[m
+     } else if (!dut_page_fault_store && !ret) {[m
+[31m-      cout << "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!"[m
+[31m-           << endl;[m
+[31m-      cout << "VA: " << hex << v_addr << endl;[m
+[31m-      cout << "sim_time: " << dec << sim_time << endl;[m
+[31m-      exit(1);[m
+[32m+[m[32m      Assert(0 && "[va2pa_fixed] Error: va2pa_fixed store page fault mismatch!");[m
+     }[m
+     break;[m
+   default:[m
+[31m-    cout << "[va2pa_fixed] Error: unknown access type!" << endl;[m
+[31m-    exit(1);[m
+[32m+[m[32m    Assert(0 && "[va2pa_fixed] Error: unknown access type!");[m
+   }[m
+   return ret;[m
+ }[m
+[1mdiff --git a/rv_simu_mmu_v2.cpp b/rv_simu_mmu_v2.cpp[m
+[1mindex 01fd254..feb2ac8 100644[m
+[1m--- a/rv_simu_mmu_v2.cpp[m
+[1m+++ b/rv_simu_mmu_v2.cpp[m
+[36m@@ -83,8 +83,10 @@[m [mvoid SimCpu::cycle() {[m
+   mmu.seq();[m
+ #endif[m
+ [m
+[31m-  if (ctx.exit_reason != ExitReason::NONE)[m
+[32m+[m[32m  if (ctx.exit_reason != ExitReason::NONE) {[m
+[32m+[m[32m    printf("Simulation Exited with Reason: %d\n", (int)ctx.exit_reason);[m
+     return;[m
+[32m+[m[32m  }[m
+ [m
+   if (back.out.mispred || back.out.flush) {[m
+     back.number_PC = back.out.redirect_pc;[m
+[36m@@ -158,7 +160,25 @@[m [mvoid SimCpu::back2front_comb() {[m
+     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;[m
+ [m
+     if (front_in.back2front_valid[i]) {[m
+[31m-      front_in.predict_dir[i] = inst->pred_br_taken;[m
+[32m+[m[41m      [m
+[32m+[m[32m      bool pred_taken = false;[m
+[32m+[m[32m      bool alt_pred = false;[m
+[32m+[m[32m      uint8_t altpcpn = 0;[m
+[32m+[m[32m      uint8_t pcpn = 0;[m
+[32m+[m[32m      uint32_t tage_idx[4] = {0};[m
+[32m+[m
+[32m+[m[32m      if(back.ftq) {[m
+[32m+[m[32m          FTQEntry &entry = back.ftq->get(inst->ftq_idx);[m
+[32m+[m[32m          if(entry.valid) {[m
+[32m+[m[32m             pred_taken = entry.pred_taken_mask[inst->ftq_offset];[m
+[32m+[m[32m             alt_pred = entry.alt_pred[inst->ftq_offset];[m
+[32m+[m[32m             altpcpn = entry.altpcpn[inst->ftq_offset];[m
+[32m+[m[32m             pcpn = entry.pcpn[inst->ftq_offset];[m
+[32m+[m[32m             for(int k=0; k<4; k++) tage_idx[k] = entry.tage_idx[inst->ftq_offset][k];[m
+[32m+[m[32m          }[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      front_in.predict_dir[i] = pred_taken;[m
+       front_in.predict_base_pc[i] = inst->pc;[m
+       front_in.actual_dir[i] =[m
+           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;[m
+[36m@@ -180,11 +200,11 @@[m [mvoid SimCpu::back2front_comb() {[m
+       }[m
+ [m
+       front_in.actual_br_type[i] = br_type;[m
+[31m-      front_in.alt_pred[i] = inst->alt_pred;[m
+[31m-      front_in.altpcpn[i] = inst->altpcpn;[m
+[31m-      front_in.pcpn[i] = inst->pcpn;[m
+[32m+[m[32m      front_in.alt_pred[i] = alt_pred;[m
+[32m+[m[32m      front_in.altpcpn[i] = altpcpn;[m
+[32m+[m[32m      front_in.pcpn[i] = pcpn;[m
+       for (int j = 0; j < 4; j++) { // TN_MAX = 4 (分支预测相关索引)[m
+[31m-        front_in.tage_idx[i][j] = inst->tage_idx[j];[m
+[32m+[m[32m        front_in.tage_idx[i][j] = tage_idx[j];[m
+       }[m
+     }[m
+   }[m

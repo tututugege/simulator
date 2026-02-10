@@ -34,6 +34,7 @@ void Prf::comb_br_check() {
     out.prf2dec->redirect_pc = mispred_uop->pc_next;
     out.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;
     out.prf2dec->br_tag = mispred_uop->tag;
+    out.prf2dec->ftq_idx = mispred_uop->ftq_idx;
     if (LOG)
       cout << "PC " << hex << mispred_uop->pc << " misprediction redirect_pc 0x"
            << hex << out.prf2dec->redirect_pc << endl;
@@ -42,6 +43,7 @@ void Prf::comb_br_check() {
     out.prf2dec->redirect_pc = inst_r[0].uop.pc_next;
     out.prf2dec->redirect_rob_idx = inst_r[0].uop.rob_idx;
     out.prf2dec->br_tag = inst_r[0].uop.tag;
+    out.prf2dec->ftq_idx = 0;
   }
 }
 

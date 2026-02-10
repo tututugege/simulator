@@ -109,6 +109,9 @@ struct RobDisIO {
   wire<1> stall;
   wire<ROB_IDX_WIDTH> enq_idx;
   wire<1> rob_flag;
+  wire<1> head_is_memory;
+  wire<1> head_is_miss;
+  wire<1> head_not_ready;
 
   RobDisIO() {
     ready = {};
@@ -116,6 +119,8 @@ struct RobDisIO {
     stall = {};
     enq_idx = {};
     rob_flag = {};
+    head_is_memory = {};
+    head_not_ready = {};
   }
 };
 
@@ -294,12 +299,14 @@ struct PrfDecIO {
   wire<32> redirect_pc;
   wire<ROB_IDX_WIDTH> redirect_rob_idx;
   wire<BR_TAG_WIDTH> br_tag;
+  int ftq_idx;  // FTQ index of mispredicting branch, for tail recovery
 
   PrfDecIO() {
     mispred = {};
     redirect_pc = {};
     redirect_rob_idx = {};
     br_tag = {};
+    ftq_idx = 0;
   }
 };
 
@@ -599,6 +606,14 @@ struct LsuDisIO {
     stq_tail = 0;
     stq_free = 0;
     ldq_free = 0;
+  }
+};
+
+struct LsuRobIO {
+  wire<ROB_NUM> miss_mask;
+
+  LsuRobIO() {
+    miss_mask = 0;
   }
 };
 

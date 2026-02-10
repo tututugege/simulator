@@ -17,7 +17,7 @@ constexpr int clog2(uint64_t n) {
 // ==========================================
 
 #ifndef ICACHE_MISS_LATENCY
-#define ICACHE_MISS_LATENCY 100
+#define ICACHE_MISS_LATENCY 50
 #endif
 
 #ifndef MAX_COMMIT_INST
@@ -52,7 +52,7 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // [Debug & Logging Config]
 // ==========================================
 
-constexpr uint64_t LOG_START = 4582800;
+constexpr uint64_t LOG_START = 0;
 // #define LOG_ENABLE // Enable logging support (controlled by macros below)
 
 extern long long sim_time; // Global simulation time
@@ -97,7 +97,7 @@ constexpr uint32_t UART_BASE = 0x10000000;
 constexpr uint64_t OP_MASK_ALU = (1ULL << UOP_ADD) | (1ULL << UOP_ECALL) |
                                  (1ULL << UOP_EBREAK) | (1ULL << UOP_MRET) |
                                  (1ULL << UOP_SRET) | (1ULL << UOP_SFENCE_VMA) |
-                                 (1ULL << UOP_FENCE_I);
+                                 (1ULL << UOP_FENCE_I) | (1ULL << UOP_WFI);
 constexpr uint64_t OP_MASK_CSR = (1ULL << UOP_CSR);
 constexpr uint64_t OP_MASK_MUL = (1ULL << UOP_MUL);
 constexpr uint64_t OP_MASK_DIV = (1ULL << UOP_DIV);
@@ -111,16 +111,17 @@ constexpr uint64_t OP_MASK_STD = (1ULL << UOP_STD);
 // [重要声明] CSR 指令目前硬绑定在 Port 0，如果调整配置，请确保 Port 0 包含
 // OP_MASK_CSR
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
-    {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR | OP_MASK_DIV}, // Port 0: Full ALU + System
-    {1, OP_MASK_ALU | OP_MASK_MUL},                             // Port 1: ALU + Mul
-    {2, OP_MASK_ALU},                                           // Port 2: Simple ALU
-    {3, OP_MASK_ALU},                                           // Port 3: Simple ALU
-    {4, OP_MASK_LD},                                            // Port 4: Load 0
-    {5, OP_MASK_LD},                                            // Port 5: Load 1
-    {6, OP_MASK_STA},                                           // Port 6: Store Addr
-    {7, OP_MASK_STD},                                           // Port 7: Store Data
-    {8, OP_MASK_BR},                                            // Port 8: Branch 0
-    {9, OP_MASK_BR}                                             // Port 9: Branch 1
+    {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR |
+            OP_MASK_DIV},           // Port 0: Full ALU + System
+    {1, OP_MASK_ALU | OP_MASK_MUL}, // Port 1: ALU + Mul
+    {2, OP_MASK_ALU},               // Port 2: Simple ALU
+    {3, OP_MASK_ALU},               // Port 3: Simple ALU
+    {4, OP_MASK_LD},                // Port 4: Load 0
+    {5, OP_MASK_LD},                // Port 5: Load 1
+    {6, OP_MASK_STA},               // Port 6: Store Addr
+    {7, OP_MASK_STD},               // Port 7: Store Data
+    {8, OP_MASK_BR},                // Port 8: Branch 0
+    {9, OP_MASK_BR}                 // Port 9: Branch 1
 };
 
 constexpr int ISSUE_WIDTH =

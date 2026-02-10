@@ -22,6 +22,7 @@ typedef struct {
 // 输出信号 (发送给各个流水级)
 typedef struct {
   LsuDisIO *lsu2dis;
+  LsuRobIO *lsu2rob;
   LsuExeIO *lsu2exe;
 } LsuOut;
 

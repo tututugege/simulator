@@ -45,13 +45,15 @@ set(SOURCES
     ${MMU_SOURCES}
     ${MEMORY_SOURCES}   
     rv_simu_mmu_v2.cpp
+    main.cpp
 )
 
 # Set include directories
 include_directories(
     ./include/
     ./back-end/include/
-    ./back-end/EXU/include/
+    ./back-end/Exu/include/
+    ./back-end/Lsu/include/
     ./back-end/tools/include/
     ./diff/include/
     ./front-end/
@@ -64,6 +66,8 @@ add_executable(${EXECUTABLE_NAME} ${SOURCES})
 
 # Set optimization flags
 target_compile_options(${EXECUTABLE_NAME} PRIVATE -O3)
+
+target_link_libraries(${EXECUTABLE_NAME} z ${CMAKE_SOURCE_DIR}/softfloat.a)
 
 # Add run target (custom target)
 add_custom_target(run

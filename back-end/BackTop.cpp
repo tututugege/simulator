@@ -100,21 +100,42 @@ void BackTop::difftest_sync(InstUop *inst) {
     if (inst->type == JALR) {
       if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
         ctx->perf.ret_mispred_num++;
-        if (!inst->pred_br_taken) {
+        bool pred_taken = false;
+        if(ftq) {
+            FTQEntry &entry = ftq->get(inst->ftq_idx);
+            if(entry.valid) {
+                pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+            }
+        }
+        if (!pred_taken) {
           ctx->perf.ret_dir_mispred++;
         } else {
           ctx->perf.ret_addr_mispred++;
         }
       } else {
         ctx->perf.jalr_mispred_num++;
-        if (!inst->pred_br_taken) {
+        bool pred_taken = false;
+        if(ftq) {
+            FTQEntry &entry = ftq->get(inst->ftq_idx);
+            if(entry.valid) {
+                pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+            }
+        }
+        if (!pred_taken) {
           ctx->perf.jalr_dir_mispred++;
         } else {
           ctx->perf.jalr_addr_mispred++;
         }
       }
     } else if (inst->type == BR) {
-      if (inst->pred_br_taken != inst->br_taken) {
+      bool pred_taken = false;
+      if(ftq) {
+          FTQEntry &entry = ftq->get(inst->ftq_idx);
+          if(entry.valid) {
+              pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+          }
+      }
+      if (pred_taken != inst->br_taken) {
         ctx->perf.cond_dir_mispred++;
       } else {
         ctx->perf.cond_addr_mispred++;
@@ -197,13 +218,13 @@ void BackTop::difftest_inst(InstUop *inst) {
 }
 
 void BackTop::init() {
-
-  idu = new Idu(ctx, MAX_BR_PER_CYCLE);
+  ftq = new FTQ();
+  idu = new Idu(ctx, ftq, MAX_BR_PER_CYCLE);
   rename = new Ren(ctx);
   dis = new Dispatch(ctx);
   isu = new Isu(ctx);
   prf = new Prf(ctx);
-  exu = new Exu(ctx);
+  exu = new Exu(ctx, ftq);
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new SimpleLsu(ctx);
@@ -278,6 +299,7 @@ void BackTop::init() {
   rob->in.dis2rob = &dis2rob;
   rob->in.dec_bcast = &dec_bcast;
   rob->in.prf2rob = &prf2rob;
+  rob->in.lsu2rob = &lsu2rob;
   rob->in.dec_bcast = &dec_bcast;
   rob->in.csr2rob = &csr2rob;
 
@@ -304,6 +326,7 @@ void BackTop::init() {
 
   lsu->out.lsu2exe = &lsu2exe;
   lsu->out.lsu2dis = &lsu2dis;
+  lsu->out.lsu2rob = &lsu2rob;
 
   idu->init();
   rename->init();
@@ -312,6 +335,7 @@ void BackTop::init() {
   exu->init();
   csr->init();
   rob->init();
+  lsu->init();
   lsu->init();
 }
 
@@ -441,6 +465,13 @@ void BackTop::comb() {
 }
 
 void BackTop::seq() {
+  // FTQ Reclamation
+  for(int i=0; i<COMMIT_WIDTH; i++) {
+      if(out.commit_entry[i].valid && out.commit_entry[i].uop.ftq_is_last) {
+          if(ftq) ftq->pop();
+      }
+  }
+
   // rename -> isu/stq/rob
   // exu -> prf
   rename->seq();
@@ -460,23 +491,20 @@ void BackTop::seq() {
 // --- 辅助函数：简化 zlib 读写 POD 类型 ---
 template <typename T> void gz_write_pod(gzFile file, const T &data) {
   if (gzwrite(file, &data, sizeof(T)) != sizeof(T)) {
-    std::cerr << "Error writing data to gzip file." << std::endl;
-    exit(1);
+    Assert(0 && "Error writing data to gzip file.");
   }
 }
 
 template <typename T> void gz_read_pod(gzFile file, T &data) {
   if (gzread(file, &data, sizeof(T)) != sizeof(T)) {
-    std::cerr << "Error reading data from gzip file." << std::endl;
-    exit(1);
+    Assert(0 && "Error reading data from gzip file.");
   }
 }
 
 void BackTop::load_image(const std::string &filename) {
   std::ifstream inst_data(filename, std::ios::in);
   if (!inst_data.is_open()) {
-    cout << "Error: Image " << filename << " does not exist" << endl;
-    exit(1);
+    Assert(0 && "Error: Image does not exist");
   }
 
   inst_data.seekg(0, std::ios::end);
@@ -485,8 +513,7 @@ void BackTop::load_image(const std::string &filename) {
 
   if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
                       size)) {
-    std::cerr << "读取文件失败！" << std::endl;
-    exit(1);
+    Assert(0 && "读取文件失败！");
   }
 
   inst_data.close();
@@ -534,8 +561,7 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   }
 
   if (!file) {
-    std::cerr << "Error: Could not open file: " << filename << std::endl;
-    exit(1);
+    Assert(0 && "Error: Could not open checkpoint file");
   }
 
   typedef struct Old_CPU_state {
@@ -587,8 +613,7 @@ void BackTop::restore_checkpoint(const std::string &filename) {
 
   // 2. 恢复内存
   if (p_memory == nullptr) {
-    std::cerr << "Error: Memory not allocated." << std::endl;
-    exit(1);
+    Assert(0 && "Error: Memory not allocated during checkpoint restore.");
   }
 
   // [重要] 计算总字节数 (checkpoint 为 4GB)
@@ -605,12 +630,10 @@ void BackTop::restore_checkpoint(const std::string &filename) {
 
     int read_bytes = gzread(file, byte_ptr, chunk);
     if (read_bytes < 0) {
-      std::cerr << "Error: gzread failed." << std::endl;
-      exit(1);
+      Assert(0 && "Error: gzread failed during checkpoint restore.");
     }
     if (read_bytes == 0) {
-      std::cerr << "Error: Unexpected EOF." << std::endl;
-      exit(1);
+      Assert(0 && "Error: Unexpected EOF during checkpoint restore.");
     }
 
     byte_ptr += read_bytes;

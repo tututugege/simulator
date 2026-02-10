@@ -1,6 +1,8 @@
 #pragma once
 #include "IO.h"
 #include "config.h"
+#include "config.h"
+#include "FTQ.h"
 class SimContext;
 
 class IduIn {
@@ -21,11 +23,13 @@ public:
 
 class Idu {
 public:
-  Idu(SimContext *ctx, int max_br = 1) {
+  Idu(SimContext *ctx, FTQ *ftq, int max_br = 1) {
     this->ctx = ctx;
+    this->ftq = ftq;
     this->max_br_per_cycle = max_br;
   }
   SimContext *ctx;
+  FTQ *ftq;
   int max_br_per_cycle;
   IduIn in;
   IduOut out;

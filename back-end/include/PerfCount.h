@@ -1,17 +1,17 @@
 #pragma once
-#include <iostream>
-#include <cstdio>
-#include <cstdint>
 #include "config.h"
+#include <cstdint>
+#include <cstdio>
+#include <iostream>
 
 class PerfCount {
 public:
-  bool perf_start = false;
+  bool perf_start = false; bool icache_busy = false;
   uint64_t cycle = 0;
   uint64_t commit_num = 0;
 
-  uint64_t cache_access_num = 0;
-  uint64_t cache_miss_num = 0;
+  uint64_t dcache_access_num = 0;
+  uint64_t dcache_miss_num = 0;
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -38,6 +38,22 @@ public:
   uint64_t ren_reg_stall = 0;
   uint64_t idu_tag_stall = 0;
 
+  uint64_t len_issued_num = 0;
+  uint64_t slots_issued = 0;
+  uint64_t slots_backend_bound = 0;
+  uint64_t slots_frontend_bound = 0;
+
+  // Level 2 Counters
+  uint64_t slots_fetch_latency = 0;
+  uint64_t slots_fetch_bandwidth = 0;
+  uint64_t slots_mem_bound_lsu = 0;
+  uint64_t slots_core_bound_iq = 0;
+  uint64_t slots_core_bound_rob = 0;
+
+  // Level 3 Counters
+  uint64_t slots_mem_l1_bound = 0;
+  uint64_t slots_mem_ext_bound = 0;
+
   uint64_t isu_entry_stall[IQ_NUM];
   uint64_t isu_raw_stall[IQ_NUM];
   uint64_t isu_ready_num[IQ_NUM];
@@ -45,9 +61,9 @@ public:
   void perf_reset() {
     cycle = 0;
     commit_num = 0;
-    // cache
-    cache_access_num = 0;
-    cache_miss_num = 0;
+    // dcache
+    dcache_access_num = 0;
+    dcache_miss_num = 0;
     icache_access_num = 0;
     icache_miss_num = 0;
 
@@ -68,6 +84,20 @@ public:
 
     ret_dir_mispred = 0;
     ret_addr_mispred = 0;
+
+    len_issued_num = 0;
+    slots_issued = 0;
+    slots_backend_bound = 0;
+    slots_frontend_bound = 0;
+
+    slots_fetch_latency = 0;
+    slots_fetch_bandwidth = 0;
+    slots_mem_bound_lsu = 0;
+    slots_core_bound_iq = 0;
+    slots_core_bound_rob = 0;
+
+    slots_mem_l1_bound = 0;
+    slots_mem_ext_bound = 0;
   }
 
   void perf_print() {
@@ -76,20 +106,21 @@ public:
     printf("\033[1;32mipc            : %f\033[0m\n",
            (double)commit_num / cycle);
     printf("\n");
-    perf_print_cache();
+    perf_print_dcache();
     perf_print_icache();
     perf_print_branch();
+    perf_print_tma();
   }
 
-  void perf_print_cache() {
-    printf("\033[1;32m*********CACHE COUNTER************\033[0m\n");
+  void perf_print_dcache() {
+    printf("\033[1;32m*********DCACHE COUNTER************\033[0m\n");
 
-    printf("\033[1;32mcache accuracy : %f\033[0m\n",
-           1 - cache_miss_num / (double)cache_access_num);
-    printf("\033[1;32mcache access   : %ld\033[0m\n", cache_access_num);
-    printf("\033[1;32mcache hit      : %ld\033[0m\n",
-           cache_access_num - cache_miss_num);
-    printf("\033[1;32mcache miss     : %ld\033[0m\n", cache_miss_num);
+    printf("\033[1;32mdcache accuracy : %f\033[0m\n",
+           1 - dcache_miss_num / (double)dcache_access_num);
+    printf("\033[1;32mdcache access   : %ld\033[0m\n", dcache_access_num);
+    printf("\033[1;32mdcache hit      : %ld\033[0m\n",
+           dcache_access_num - dcache_miss_num);
+    printf("\033[1;32mdcache miss     : %ld\033[0m\n", dcache_miss_num);
     printf("\n");
   }
 
@@ -152,5 +183,55 @@ public:
     for (int i = 0; i < IQ_NUM; i++) {
       printf("\033[1;32miq%d raw  num : %ld\033[0m\n", i, isu_raw_stall[i]);
     }
+  }
+  void perf_print_tma() {
+    printf(
+        "\033[1;32m*********Top-Down Analysis (Level 1)************\033[0m\n");
+
+    // Total slots available
+    uint64_t total_slots =
+        slots_issued + slots_backend_bound + slots_frontend_bound;
+    if (total_slots == 0)
+      total_slots = 1; // Avoid divide by zero
+
+    // Frontend Bound
+    double frontend_bound_pct = (double)slots_frontend_bound / total_slots;
+
+    // Backend Bound
+    double backend_bound_pct = (double)slots_backend_bound / total_slots;
+
+    // Bad Speculation
+    int64_t bad_speculation_slots = (int64_t)slots_issued - (int64_t)commit_num;
+    if (bad_speculation_slots < 0)
+      bad_speculation_slots = 0;
+    double bad_speculation_pct = (double)bad_speculation_slots / total_slots;
+
+    // Retiring
+    double retiring_pct = (double)commit_num / total_slots;
+
+    printf("\033[1;32mTotal Slots      : %ld\033[0m\n", total_slots);
+    printf("\033[1;32mFrontend Bound   : %.2f%%\033[0m\n",
+           frontend_bound_pct * 100.0);
+    printf("\033[1;32m  - Fetch Latency  : %.2f%% (Approx by ICache "
+           "Miss)\033[0m\n",
+           (double)slots_fetch_latency / total_slots * 100.0);
+    printf("\033[1;32m  - Fetch Bandwidth: %.2f%%\033[0m\n",
+           (double)slots_fetch_bandwidth / total_slots * 100.0);
+    printf("\033[1;32mBackend Bound    : %.2f%%\033[0m\n",
+           backend_bound_pct * 100.0);
+    printf("\033[1;32m  - Memory Bound   : %.2f%% (LSU Stall)\033[0m\n",
+           (double)slots_mem_bound_lsu / total_slots * 100.0);
+    printf("\033[1;32m    - L1 Bound       : %.2f%%\033[0m\n",
+           (double)slots_mem_l1_bound / total_slots * 100.0);
+    printf("\033[1;32m    - Ext Memory Bound: %.2f%%\033[0m\n",
+           (double)slots_mem_ext_bound / total_slots * 100.0);
+    printf("\033[1;32m  - Core Bound     : %.2f%% (IQ/ROB Stall)\033[0m\n",
+           (double)(slots_core_bound_iq + slots_core_bound_rob) / total_slots *
+               100.0);
+    printf("\033[1;32mBad Speculation  : %.2f%%\033[0m\n",
+           bad_speculation_pct * 100.0);
+    printf("\033[1;32mRetiring         : %.2f%%\033[0m\n",
+           retiring_pct * 100.0);
+    printf("\n");
   }
 };

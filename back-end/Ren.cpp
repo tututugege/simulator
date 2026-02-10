@@ -283,7 +283,7 @@ void Ren ::comb_commit() {
         }
 
         if (ctx->perf.commit_num == SIMPOINT_INTERVAL && ctx->perf.perf_start) {
-          ctx->sim_end = true;
+          ctx->exit_reason = ExitReason::SIMPOINT;
         }
       }
 

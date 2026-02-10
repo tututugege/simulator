@@ -50,6 +50,9 @@ long long sim_time = 0;
 SimCpu cpu;
 
 void exit_handler() {
+  if (cpu.ctx.exit_reason == ExitReason::NONE) {
+    return;
+  }
   std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
   std::cout << "Simulation Exited. Printing Perf Stats..." << std::endl;
   cpu.ctx.perf.perf_print();
@@ -223,24 +226,26 @@ int main(int argc, char *argv[]) {
 
     cpu.cycle();
 
-    if (cpu.ctx.sim_end)
+    if (cpu.ctx.exit_reason != ExitReason::NONE)
       break;
 
-    if (cpu.ctx.perf.commit_num >= MAX_COMMIT_INST)
+    if (cpu.ctx.perf.commit_num >= MAX_COMMIT_INST) {
+      cpu.ctx.exit_reason = ExitReason::SIMPOINT;
       break;
+    }
   }
 
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    cpu.ctx.perf.perf_print(); // Disabled for cleaner output
+    // cpu.ctx.perf.perf_print(); // Handled by exit_handler
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
   } else {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
     cout << "\033[1;31m------------------------------\033[0m" << endl;
-    cpu.ctx.perf.perf_print();
+    // cpu.ctx.perf.perf_print(); // Handled by exit_handler if reached limit
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     exit(1);
   }

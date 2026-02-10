@@ -67,20 +67,23 @@ void Idu::comb_decode() {
     }
 
     out.dec2ren->uop[i].pc = in.front2dec->pc[i];
-    out.dec2ren->uop[i].pred_br_taken = in.front2dec->predict_dir[i];
-    out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
-    out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
-    out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
-    for (int j = 0; j < 4; j++) { // TN_MAX = 4
-      out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];
-    }
+    out.dec2ren->uop[i].ftq_idx = ftq->tail;
+    out.dec2ren->uop[i].ftq_offset = i;
 
-    out.dec2ren->uop[i].pred_br_pc =
-        in.front2dec->predict_next_fetch_address[i];
+    // out.dec2ren->uop[i].pred_br_taken = in.front2dec->predict_dir[i];
+    // out.dec2ren->uop[i].alt_pred = in.front2dec->alt_pred[i];
+    // out.dec2ren->uop[i].altpcpn = in.front2dec->altpcpn[i];
+    // out.dec2ren->uop[i].pcpn = in.front2dec->pcpn[i];
+    // for (int j = 0; j < 4; j++) { // TN_MAX = 4
+    //   out.dec2ren->uop[i].tage_idx[j] = in.front2dec->tage_idx[i][j];
+    // }
+
+    // out.dec2ren->uop[i].pred_br_pc =
+    //     in.front2dec->predict_next_fetch_address[i];
 
     // for debug
     if (is_branch(out.dec2ren->uop[i].type)) {
-      out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pred_br_pc;
+      out.dec2ren->uop[i].pc_next = in.front2dec->predict_next_fetch_address[i];
     } else {
       out.dec2ren->uop[i].pc_next = out.dec2ren->uop[i].pc + 4;
     }
@@ -108,6 +111,30 @@ void Idu::comb_decode() {
       out.dec2ren->valid[i] = false;
       out.dec2ren->uop[i].tag = 0;
     }
+  }
+
+  // FTQ Full Stall
+  if (ftq->is_full()) {
+      for (int k = 0; k < FETCH_WIDTH; k++) {
+          out.dec2ren->valid[k] = false;
+          out.dec2ren->uop[k].tag = 0;
+      }
+  }
+
+  // Set ftq_is_last for the last valid uop in the packet
+  int last_valid_idx = -1;
+  for (int j = FETCH_WIDTH - 1; j >= 0; j--) {
+      if (out.dec2ren->valid[j]) {
+          last_valid_idx = j;
+          break;
+      }
+  }
+  
+  // Initialize to false
+  for(int j=0; j<FETCH_WIDTH; j++) out.dec2ren->uop[j].ftq_is_last = false;
+
+  if (last_valid_idx != -1) {
+      out.dec2ren->uop[last_valid_idx].ftq_is_last = true;
   }
 }
 
@@ -154,11 +181,26 @@ void Idu::comb_flush() {
     now_tag_1 = 0;
     enq_ptr_1 = 1;
     tag_list_1[0] = 0;
+
+    // Flush: 完全重置 FTQ
+    ftq->head = 0;
+    ftq->tail = 0;
+    ftq->count = 0;
+  }
+
+  // Mispred: 回滚 FTQ tail 到误预测分支的下一个条目
+  if (in.prf2dec->mispred) {
+    int mispred_ftq = in.prf2dec->ftq_idx;
+    // 误预测分支本身的 FTQ 条目是正确路径的，保留它
+    // 但之后分配的所有条目都是错误路径的，需要释放
+    int new_tail = (mispred_ftq + 1) % FTQ::FTQ_SIZE;
+    ftq->tail = new_tail;
+    ftq->count = (new_tail - ftq->head + FTQ::FTQ_SIZE) % FTQ::FTQ_SIZE;
   }
 }
 
 void Idu::comb_fire() {
-  out.dec2front->ready = in.ren2dec->ready && !in.prf2dec->mispred;
+  out.dec2front->ready = in.ren2dec->ready && !in.prf2dec->mispred && !ftq->is_full();
 
   if (in.prf2dec->mispred || in.rob_bcast->flush) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -198,6 +240,33 @@ void Idu::seq() {
     tag_list[i] = tag_list_1[i];
   }
   enq_ptr = enq_ptr_1;
+
+  bool fire = false;
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (out.dec2front->fire[i]) {
+      fire = true;
+      break;
+    }
+  }
+
+  if (fire && !in.rob_bcast->flush) {
+    int idx = ftq->tail;
+    ftq->entries[idx].valid = true;
+    ftq->entries[idx].start_pc = in.front2dec->pc[0];
+    ftq->entries[idx].next_pc = in.front2dec->predict_next_fetch_address[0];
+
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      ftq->entries[idx].pred_taken_mask[i] = in.front2dec->predict_dir[i];
+      // ftq->entries[idx].mid_pred[i] = in.front2dec->alt_pred[i]; 
+      ftq->entries[idx].alt_pred[i] = in.front2dec->alt_pred[i];
+      ftq->entries[idx].altpcpn[i] = in.front2dec->altpcpn[i];
+      ftq->entries[idx].pcpn[i] = in.front2dec->pcpn[i];
+      for (int j = 0; j < 4; j++) {
+        ftq->entries[idx].tage_idx[i][j] = in.front2dec->tage_idx[i][j];
+      }
+    }
+    ftq->alloc();
+  }
 }
 
 void Idu::decode(InstUop &uop, uint32_t inst) {
@@ -386,7 +455,7 @@ void Idu::decode(InstUop &uop, uint32_t inst) {
       } else if (inst == INST_MRET) {
         uop.type = MRET;
       } else if (inst == INST_WFI) {
-        uop.type = NOP;
+        uop.type = WFI;
       } else if (inst == INST_SRET) {
         uop.type = SRET;
       } else if (number_funct7_unsigned == 0b0001001 &&

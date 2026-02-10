@@ -113,10 +113,10 @@ void SimpleCache::cache_evict(uint32_t addr) {
 }
 
 int SimpleCache::cache_access(uint32_t addr) {
-  ctx->perf.cache_access_num++;
+  ctx->perf.dcache_access_num++;
   uint32_t tag;
   int i;
-
+  
   for (i = 0; i < WAY_NUM; i++) {
     tag = cache_tag[i][get_index(addr)];
     if (cache_valid[i][get_index(addr)] && tag == (uint32_t)get_tag(addr)) {
@@ -129,7 +129,7 @@ int SimpleCache::cache_access(uint32_t addr) {
   }
   if (i == WAY_NUM) {
     cache_evict(addr);
-    ctx->perf.cache_miss_num++;
+    ctx->perf.dcache_miss_num++;
     return MISS_LATENCY + rand() % 10;
   } else {
 #ifdef PLRU_EVICT

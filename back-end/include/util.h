@@ -3,12 +3,13 @@
 
 #define LOOP_INC(idx, length) idx = (idx + 1) % (length)
 #define LOOP_DEC(idx, length) idx = (idx + (length) - 1) % (length)
+extern long long sim_time;
 // Custom Assert Macro to avoid WSL2 issues
 #define Assert(cond)                                                           \
   do {                                                                         \
     if (!(cond)) {                                                             \
-      printf("\033[1;31mAssertion failed: %s, file %s, line %d\033[0m\n",      \
-             #cond, __FILE__, __LINE__);                                       \
+      printf("\033[1;31mAssertion failed: %s, file %s, line %d, cycle %lld\033[0m\n", \
+             #cond, __FILE__, __LINE__, sim_time);                             \
       exit(1);                                                                 \
     }                                                                          \
   } while (0)

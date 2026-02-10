@@ -31,6 +31,7 @@ enum InstType {
   CSR,
   ECALL,
   EBREAK,
+  WFI,
   SFENCE_VMA,
   FENCE_I,
   MRET,
@@ -70,12 +71,16 @@ typedef struct InstUop {
   wire<32> paddr;
 
   // 分支预测信息
-  wire<1> pred_br_taken;
-  wire<1> alt_pred;
-  wire<8> altpcpn;
-  wire<8> pcpn;
-  wire<32> pred_br_pc;
-  wire<32> tage_idx[4]; // TN_MAX = 4
+  // wire<1> pred_br_taken; // Moved to FTQ
+  // wire<1> alt_pred;      // Moved to FTQ
+  // wire<8> altpcpn;       // Moved to FTQ
+  // wire<8> pcpn;          // Moved to FTQ
+  // wire<32> pred_br_pc;   // Moved to FTQ (next_pc)
+  // wire<32> tage_idx[4]; // TN_MAX = 4 // Moved to FTQ
+
+  int ftq_idx;
+  int ftq_offset;
+  bool ftq_is_last;
 
   // 分支预测更新信息
   wire<1> mispred;
@@ -109,6 +114,7 @@ typedef struct InstUop {
 
   InstType type;
   UopType op;
+  bool is_cache_miss;
 
   // Debug
   bool difftest_skip;
@@ -133,9 +139,11 @@ typedef struct {
 #include "PerfCount.h"
 
 // Added to support Remote icache
+enum class ExitReason { NONE, EBREAK, WFI, SIMPOINT };
+
 class SimContext {
 public:
   PerfCount perf;
-  bool sim_end = false;
+  ExitReason exit_reason = ExitReason::NONE;
   bool is_ckpt;
 };

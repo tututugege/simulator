@@ -9,8 +9,6 @@ class SimpleCache {
   static constexpr int OFFSET_WIDTH = 6;
   static constexpr int INDEX_WIDTH = 8;
   static constexpr int WAY_NUM = 4;
-  int HIT_LATENCY;
-  int MISS_LATENCY;
 
   uint32_t cache_tag[WAY_NUM][1 << INDEX_WIDTH];
   bool cache_valid[WAY_NUM][1 << INDEX_WIDTH];
@@ -30,6 +28,8 @@ public:
     HIT_LATENCY = 1;
     MISS_LATENCY = 50;
   }
+  int HIT_LATENCY;
+  int MISS_LATENCY;
 
   SimContext *ctx;
   int cache_select_evict(uint32_t addr);

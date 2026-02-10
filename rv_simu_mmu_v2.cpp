@@ -83,8 +83,10 @@ void SimCpu::cycle() {
   mmu.seq();
 #endif
 
-  if (ctx.sim_end)
+  if (ctx.exit_reason != ExitReason::NONE) {
+    printf("Simulation Exited with Reason: %d\n", (int)ctx.exit_reason);
     return;
+  }
 
   if (back.out.mispred || back.out.flush) {
     back.number_PC = back.out.redirect_pc;
@@ -158,7 +160,25 @@ void SimCpu::back2front_comb() {
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
 
     if (front_in.back2front_valid[i]) {
-      front_in.predict_dir[i] = inst->pred_br_taken;
+      
+      bool pred_taken = false;
+      bool alt_pred = false;
+      uint8_t altpcpn = 0;
+      uint8_t pcpn = 0;
+      uint32_t tage_idx[4] = {0};
+
+      if(back.ftq) {
+          FTQEntry &entry = back.ftq->get(inst->ftq_idx);
+          if(entry.valid) {
+             pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+             alt_pred = entry.alt_pred[inst->ftq_offset];
+             altpcpn = entry.altpcpn[inst->ftq_offset];
+             pcpn = entry.pcpn[inst->ftq_offset];
+             for(int k=0; k<4; k++) tage_idx[k] = entry.tage_idx[inst->ftq_offset][k];
+          }
+      }
+
+      front_in.predict_dir[i] = pred_taken;
       front_in.predict_base_pc[i] = inst->pc;
       front_in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
@@ -180,11 +200,11 @@ void SimCpu::back2front_comb() {
       }
 
       front_in.actual_br_type[i] = br_type;
-      front_in.alt_pred[i] = inst->alt_pred;
-      front_in.altpcpn[i] = inst->altpcpn;
-      front_in.pcpn[i] = inst->pcpn;
+      front_in.alt_pred[i] = alt_pred;
+      front_in.altpcpn[i] = altpcpn;
+      front_in.pcpn[i] = pcpn;
       for (int j = 0; j < 4; j++) { // TN_MAX = 4 (分支预测相关索引)
-        front_in.tage_idx[i][j] = inst->tage_idx[j];
+        front_in.tage_idx[i][j] = tage_idx[j];
       }
     }
   }

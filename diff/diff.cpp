@@ -114,7 +114,7 @@ fault:
   printf("Ref Inst: %08x\tDUT Inst: %08x\n", ref_cpu.Instruction,
          dut_cpu.instruction);
 
-  exit(1);
+  Assert(0 && "Difftest: Register or Memory mismatch detected.");
 }
 
 void difftest_skip() {

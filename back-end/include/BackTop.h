@@ -14,7 +14,9 @@
 #include <Rob.h>
 #include <WriteBack_Arbiter.h>
 #include <WriteBuffer.h>
+#include <WriteBuffer.h>
 #include <config.h>
+#include <FTQ.h>
 #include <cstdint>
 
 class SimContext;
@@ -90,6 +92,7 @@ private:
 
   LsuExeIO lsu2exe;
   LsuDisIO lsu2dis;
+  LsuRobIO lsu2rob;
 
   RobDisIO rob2dis;
   RobCsrIO rob2csr;
@@ -114,6 +117,7 @@ public:
   Csr *csr;
   Rob *rob;
   AbstractLsu *lsu;
+  FTQ *ftq;
 
   Back_in in;
   Back_out out;
@@ -132,6 +136,7 @@ public:
     delete prf;
     delete rob;
     delete csr;
+    delete ftq;
   }
 
   uint32_t number_PC = 0;
