@@ -136,6 +136,13 @@ void Rob::comb_commit() {
   // 一组提交
   if (commit && !single_commit) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid) {
+        const auto &uop = entry[i][deq_ptr].uop;
+        if (is_load(uop)) {
+          uint32_t alignment_mask = (uop.func3 & 0x3) == 0 ? 0 : (uop.func3 & 0x3) == 1 ? 1 : 3;
+          Assert((uop.paddr & alignment_mask) == 0 && "DUT: Load address misaligned at commit!");
+        }
+      }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
       entry_1[i][deq_ptr].valid = false;
     }
@@ -153,6 +160,14 @@ void Rob::comb_commit() {
         out.rob_commit->commit_entry[i].valid = true;
       else
         out.rob_commit->commit_entry[i].valid = false;
+    }
+
+    if (entry[single_idx][deq_ptr].valid) {
+      const auto &uop = entry[single_idx][deq_ptr].uop;
+      if (is_load(uop)) {
+        uint32_t alignment_mask = (uop.func3 & 0x3) == 0 ? 0 : (uop.func3 & 0x3) == 1 ? 1 : 3;
+        Assert((uop.paddr & alignment_mask) == 0 && "DUT: Load address misaligned at single commit!");
+      }
     }
 
     entry_1[single_idx][deq_ptr].valid = false;
@@ -252,6 +267,9 @@ void Rob::comb_complete() {
 
       for (int k = 0; k < LSU_LDU_COUNT; k++) {
         if (i == IQ_LD_PORT_BASE + k) {
+          // 保存物理地址，用于 Commit 时的对齐检查
+          entry_1[bank_idx][line_idx].uop.paddr = in.prf2rob->entry[i].uop.paddr;
+          
           if (is_page_fault(in.prf2rob->entry[i].uop)) {
             entry_1[bank_idx][line_idx].uop.result =
                 in.prf2rob->entry[i].uop.result;

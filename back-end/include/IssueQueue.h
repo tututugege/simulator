@@ -31,8 +31,8 @@ public:
   int dispatch_width;
   std::vector<PortBinding> ports;
 
-  std::vector<InstEntry> entry;
-  std::vector<InstEntry> entry_1;
+  std::vector<UopEntry> entry;
+  std::vector<UopEntry> entry_1;
   int count, count_1;
 
   // Wakeup Matrix: [Physical Register] -> Bitmask of IQ slots
@@ -55,7 +55,7 @@ public:
   }
 
   // 入队 (返回成功入队的个数)
-  int enqueue(const InstEntry &inst) {
+  int enqueue(const UopEntry &inst) {
     if (count_1 >= size)
       return 0;
     for (int i = 0; i < size; i++) {
@@ -211,10 +211,10 @@ public:
   }
 
   // 用于 Store Mask 扫描的只读访问
-  const std::vector<InstEntry> &get_entries_1() const { return entry_1; }
+  const std::vector<UopEntry> &get_entries_1() const { return entry_1; }
 
 private:
-  bool is_ready(const InstEntry &ent) {
+  bool is_ready(const UopEntry &ent) {
     const auto &op = ent.uop;
     bool ops_ok =
         (!op.src1_en || !op.src1_busy) && (!op.src2_en || !op.src2_busy);

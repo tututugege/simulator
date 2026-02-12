@@ -22,12 +22,21 @@ inline uint32_t make_rob_idx(uint32_t line, uint32_t bank) {
 
 inline bool is_branch(InstType type) { return type == BR || type == JALR; }
 
-inline bool is_store(InstUop uop) {
+inline bool is_store(InstInfo uop) {
   return uop.type == STORE ||
          (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR);
 }
 
-inline bool is_load(InstUop uop) {
+inline bool is_store(MicroOp uop) {
+  return uop.type == STORE ||
+         (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR);
+}
+
+inline bool is_load(InstInfo uop) {
+  return uop.type == LOAD || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::SC);
+}
+
+inline bool is_load(MicroOp uop) {
   return uop.type == LOAD || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::SC);
 }
 
@@ -42,7 +51,15 @@ inline bool is_CSR_uop(UopType op) {
           op == UOP_EBREAK);
 }
 
-inline bool cmp_inst_age(InstUop inst1, InstUop inst2) {
+inline bool cmp_inst_age(InstInfo inst1, InstInfo inst2) {
+  if (inst1.rob_flag == inst2.rob_flag) {
+    return inst1.rob_idx > inst2.rob_idx;
+  } else {
+    return inst1.rob_idx < inst2.rob_idx;
+  }
+}
+
+inline bool cmp_inst_age(MicroOp inst1, MicroOp inst2) {
   if (inst1.rob_flag == inst2.rob_flag) {
     return inst1.rob_idx > inst2.rob_idx;
   } else {
@@ -56,16 +73,31 @@ inline bool is_std_uop(UopType op) { return op == UOP_STD; }
 
 inline bool is_load_uop(UopType op) { return op == UOP_LOAD; }
 
-inline bool is_page_fault(InstUop uop) {
+inline bool is_page_fault(InstInfo uop) {
   return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;
 }
 
-inline bool is_exception(InstUop uop) {
+inline bool is_page_fault(MicroOp uop) {
+  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;
+}
+
+inline bool is_exception(InstInfo uop) {
   return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store ||
          uop.illegal_inst || uop.type == ECALL;
 }
 
-inline bool is_flush_inst(InstUop uop) {
+inline bool is_exception(MicroOp uop) {
+  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store ||
+         uop.illegal_inst || uop.type == ECALL;
+}
+
+inline bool is_flush_inst(InstInfo uop) {
+  return uop.type == CSR || uop.type == ECALL || uop.type == MRET ||
+         uop.type == SRET || uop.type == SFENCE_VMA || is_exception(uop) ||
+         uop.type == EBREAK || (uop.flush_pipe && is_load(uop));
+}
+
+inline bool is_flush_inst(MicroOp uop) {
   return uop.type == CSR || uop.type == ECALL || uop.type == MRET ||
          uop.type == SRET || uop.type == SFENCE_VMA || is_exception(uop) ||
          uop.type == EBREAK || (uop.flush_pipe && is_load(uop));

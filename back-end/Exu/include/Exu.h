@@ -63,8 +63,8 @@ public:
   std::vector<AbstractFU *> units;
 
   // pipeline registers
-  InstEntry inst_r[ISSUE_WIDTH];   // 当前执行级指令
-  InstEntry inst_r_1[ISSUE_WIDTH]; // 下一周期指令 (Latch)
+  UopEntry inst_r[ISSUE_WIDTH];   // 当前执行级指令
+  UopEntry inst_r_1[ISSUE_WIDTH]; // 下一周期指令 (Latch)
                                    //
 private:
   bool issue_stall[ISSUE_WIDTH];

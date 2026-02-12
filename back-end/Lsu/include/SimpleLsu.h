@@ -24,13 +24,13 @@ private:
   int stq_count;
 
   // 2. 正在飞行的 Load 队列 (模拟 Cache 延迟)
-  std::list<InstUop> inflight_loads;
+  std::list<MicroOp> inflight_loads;
 
   // 3. 完成的 Load 队列 (等待写回)
-  std::deque<InstUop> finished_loads;
+  std::deque<MicroOp> finished_loads;
 
   // 4. 完成的 STA 队列 (等待访存流水线对齐写回)
-  std::deque<InstUop> finished_sta_reqs;
+  std::deque<MicroOp> finished_sta_reqs;
 
   // 4. 下一周期需要更新的状态 (Latches)
   int next_stq_tail;
@@ -65,12 +65,12 @@ public:
 private:
   Csr *csr_module = nullptr;
   // 内部辅助函数
-  void handle_load_req(const InstUop &uop);
-  void handle_store_addr(const InstUop &uop);
-  void handle_store_data(const InstUop &uop);
+  void handle_load_req(const MicroOp &uop);
+  void handle_store_addr(const MicroOp &uop);
+  void handle_store_data(const MicroOp &uop);
   int find_recovery_tail(mask_t br_mask);
   bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag);
 
   std::pair<int, uint32_t> check_store_forward(uint32_t p_addr,
-                                                const InstUop &load_uop);
+                                                const MicroOp &load_uop);
 };

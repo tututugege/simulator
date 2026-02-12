@@ -34,8 +34,8 @@ typedef struct DecRenUop {
   wire<1>  page_fault_inst;
   wire<1>  illegal_inst;    // 非法指令异常 (Illegal Instruction)
 
-  // Filter function: Maps full InstUop to DecRenUop
-  static DecRenUop filter(const InstUop& full) {
+  // Filter function: Maps full InstInfo to DecRenUop
+  static DecRenUop filter(const InstInfo& full) {
     DecRenUop slim;
     slim.pc        = full.pc;
     slim.type      = full.type;
@@ -73,7 +73,7 @@ typedef struct RenDisUop {
   wire<1>   src1_busy;     // 源 1 忙状态
   wire<1>   src2_busy;     // 源 2 忙状态
 
-  static RenDisUop filter(const InstUop& full) {
+  static RenDisUop filter(const InstInfo& full) {
     RenDisUop slim;
     slim.pc            = full.pc;
     slim.base          = DecRenUop::filter(full);
@@ -103,7 +103,7 @@ typedef struct DisIssUop {
   wire<1>   src1_busy, src2_busy;
   wire<1>   src1_is_pc, src2_is_imm;
 
-  static DisIssUop filter(const InstUop& full) {
+  static DisIssUop filter(const MicroOp& full) {
     DisIssUop slim;
     slim.pc        = full.pc;
     slim.op        = full.op;
@@ -140,7 +140,7 @@ typedef struct IssExeUop {
   wire<1>  src2_is_imm;    // 操作数 2 Mux
   wire<1>  illegal_inst;   // 异常透传
 
-  static IssExeUop filter(const InstUop& full) {
+  static IssExeUop filter(const MicroOp& full) {
     IssExeUop slim;
     slim.pc        = full.pc;
     slim.op        = full.op;
@@ -170,7 +170,7 @@ typedef struct ExeWbUop {
   wire<1>  page_fault_store;
   wire<1>  flush_pipe;
 
-  static ExeWbUop filter(const InstUop& full) {
+  static ExeWbUop filter(const MicroOp& full) {
     ExeWbUop slim;
     slim.op               = full.op;
     slim.result           = full.result;
@@ -208,7 +208,7 @@ typedef struct RobUop {
   wire<1>  br_taken;
   wire<1>  mispred;
 
-  static RobUop filter(const InstUop& full) {
+  static RobUop filter(const InstInfo& full) {
     RobUop slim;
     slim.type            = full.type;
     slim.pc              = full.pc;

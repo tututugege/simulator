@@ -81,7 +81,7 @@ void Isu::comb_enq() {
     for (int w = 0; w < max_w; w++) {
       // 使用新接口结构 req[i][w]
       if (in.dis2iss->req[i][w].valid) {
-        InstUop &uop = in.dis2iss->req[i][w].uop;
+        MicroOp &uop = in.dis2iss->req[i][w].uop;
 
         // === 加载指令 (Load) 依赖掩码生成 ===
         if (i == IQ_LD) {
@@ -113,7 +113,7 @@ void Isu::comb_enq() {
           }
         }
 
-        InstEntry new_entry;
+        UopEntry new_entry;
         new_entry.uop = uop;
         new_entry.valid = true;
         // 记录入队时间

@@ -338,32 +338,32 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
   switch (src_uop.type) {
   case ADD:
     out_uops[0].iq_id = IQ_INT;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_ADD;
     count = 1;
     break;
   case MUL:
     out_uops[0].iq_id = IQ_INT;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_MUL;
     count = 1;
     break;
   case DIV:
     out_uops[0].iq_id = IQ_INT;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_DIV;
     count = 1;
     break;
   case BR:
     out_uops[0].iq_id = IQ_BR;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_BR;
     count = 1;
     break;
 
   case LOAD:
     out_uops[0].iq_id = IQ_LD;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_LOAD;
     count = 1;
     break;
@@ -371,12 +371,12 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
   case STORE:
     // 拆分为 STA + STD
     out_uops[0].iq_id = IQ_STA;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_STA;
     out_uops[0].uop.src2_en = false; // STA 只用 src1 (Base)
 
     out_uops[1].iq_id = IQ_STD;
-    out_uops[1].uop = src_uop;
+    std::memcpy(&out_uops[1].uop, &src_uop, sizeof(InstInfo));
     out_uops[1].uop.op = UOP_STD;
     out_uops[1].uop.src1_en = false; // STD 数据源修正
     out_uops[1].uop.src2_en = true;  // STD 只用 src2 (Data)
@@ -386,14 +386,14 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
   case JALR:
     // JALR -> ADD (PC+4) + JUMP
     out_uops[0].iq_id = IQ_INT;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_ADD;
     out_uops[0].uop.imm = 4;
     out_uops[0].uop.src1_en = false; // PC+4 不需要 src1
     out_uops[0].uop.src2_en = false; // PC+4 不需要 src2
 
     out_uops[1].iq_id = IQ_BR;
-    out_uops[1].uop = src_uop;
+    std::memcpy(&out_uops[1].uop, &src_uop, sizeof(InstInfo));
     out_uops[1].uop.op = UOP_JUMP;
     out_uops[1].uop.src1_en = true; // JALR 需要 src1 (Base)
     out_uops[1].uop.dest_en = false;
@@ -403,14 +403,14 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
   case JAL:
     // JAL -> ADD (PC+4) + JUMP
     out_uops[0].iq_id = IQ_INT;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     out_uops[0].uop.op = UOP_ADD;
     out_uops[0].uop.imm = 4;
     out_uops[0].uop.src1_en = false; // PC+4 不需要 src1
     out_uops[0].uop.src2_en = false; // PC+4 不需要 src2
 
     out_uops[1].iq_id = IQ_BR;
-    out_uops[1].uop = src_uop;
+    std::memcpy(&out_uops[1].uop, &src_uop, sizeof(InstInfo));
     out_uops[1].uop.op = UOP_JUMP;
     out_uops[1].uop.dest_en = false; // 跳转不写寄存器
     count = 2;
@@ -419,14 +419,14 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
   case AMO:
     if ((src_uop.func7 >> 2) == AmoOp::LR) {
       out_uops[0].iq_id = IQ_LD;
-      out_uops[0].uop = src_uop;
+      std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
       out_uops[0].uop.op = UOP_LOAD;
       out_uops[0].uop.src2_en = false;
       count = 1;
     } else if ((src_uop.func7 >> 2) == AmoOp::SC) {
       // SC -> INT(0) + STA + STD
       out_uops[0].iq_id = IQ_INT;
-      out_uops[0].uop = src_uop;
+      std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
       out_uops[0].uop.op =
           UOP_ADD; // 预设 0 (假定成功，LSU会覆盖? 或者这里仅仅是占位)
                    // 实际 SC 的返回值由 LSU Writeback 决定，通常是 Store
@@ -438,13 +438,13 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
       out_uops[0].uop.src2_en = false;
 
       out_uops[1].iq_id = IQ_STA;
-      out_uops[1].uop = src_uop;
+      std::memcpy(&out_uops[1].uop, &src_uop, sizeof(InstInfo));
       out_uops[1].uop.op = UOP_STA;
       out_uops[1].uop.src2_en = false;
       out_uops[1].uop.dest_en = false; // Fix: STA 不写回寄存器
 
       out_uops[2].iq_id = IQ_STD;
-      out_uops[2].uop = src_uop;
+      std::memcpy(&out_uops[2].uop, &src_uop, sizeof(InstInfo));
       out_uops[2].uop.op = UOP_STD;
       out_uops[2].uop.src1_en = false;
       out_uops[2].uop.dest_en = false; // Fix: STD 不写回寄存器
@@ -452,18 +452,18 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
     } else {
       // AMO RMW -> LOAD + STA + STD
       out_uops[0].iq_id = IQ_LD;
-      out_uops[0].uop = src_uop;
+      std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
       out_uops[0].uop.op = UOP_LOAD;
       out_uops[0].uop.src2_en = false;
 
       out_uops[1].iq_id = IQ_STA;
-      out_uops[1].uop = src_uop;
+      std::memcpy(&out_uops[1].uop, &src_uop, sizeof(InstInfo));
       out_uops[1].uop.op = UOP_STA;
       out_uops[1].uop.src2_en = false;
       out_uops[1].uop.dest_en = false; // Fix: STA 不写回寄存器
 
       out_uops[2].iq_id = IQ_STD;
-      out_uops[2].uop = src_uop;
+      std::memcpy(&out_uops[2].uop, &src_uop, sizeof(InstInfo));
       out_uops[2].uop.op = UOP_STD;
       // 假设 SDU 负责计算，需要原 dest_preg 作为操作数 (数据源)
       // 注意: 这里 src1_preg 被设为 dest_preg，用于读取内存旧值进行原子运算?
@@ -494,7 +494,7 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
   // 改编自：NOP, CSR, 等
   default: // NOP, CSR, 等
     out_uops[0].iq_id = IQ_INT;
-    out_uops[0].uop = src_uop;
+    std::memcpy(&out_uops[0].uop, &src_uop, sizeof(InstInfo));
     // 特殊指令走整数队列 (IQ_INT)
     switch (src_uop.type) {
     case NOP:

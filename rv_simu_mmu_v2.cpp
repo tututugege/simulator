@@ -156,7 +156,7 @@ void SimCpu::front_cycle() {
 void SimCpu::back2front_comb() {
   front_in.FIFO_read_enable = false;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    InstUop *inst = &back.out.commit_entry[i].uop;
+    InstInfo *inst = &back.out.commit_entry[i].uop;
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
 
     if (front_in.back2front_valid[i]) {

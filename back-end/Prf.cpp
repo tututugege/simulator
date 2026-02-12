@@ -13,7 +13,7 @@ void Prf::init() {}
 void Prf::comb_br_check() {
   // 检查写回级是否有误预测的分支指令
   bool mispred = false;
-  InstUop *mispred_uop = nullptr;
+  MicroOp *mispred_uop = nullptr;
 
   // 遍历所有写回槽位
   for (int i = 0; i < ISSUE_WIDTH; i++) {
@@ -54,7 +54,7 @@ void Prf::comb_read() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     // 1. 直接传递 Issue 内容
     out.prf2exe->iss_entry[i] = in.iss2prf->iss_entry[i];
-    InstEntry *entry = &out.prf2exe->iss_entry[i];
+    UopEntry *entry = &out.prf2exe->iss_entry[i];
 
     if (!entry->valid)
       continue;

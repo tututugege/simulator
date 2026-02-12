@@ -22,7 +22,7 @@ public:
 
   // === 2. 接收指令 (Issue Stage 调用) ===
   // 动作：塞进去
-  virtual void accept(InstUop inst) = 0;
+  virtual void accept(MicroOp inst) = 0;
 
   // === 3. 时钟步进 (Execute Stage 调用) ===
   // 动作：内部状态流转一拍
@@ -31,7 +31,7 @@ public:
   // === 4. 获取结果 (Writeback Stage 调用) ===
   // 问：这一拍有做完的指令吗？
   // 注意：返回指针，如果为 nullptr 表示没结果
-  virtual InstUop *get_finished_uop() = 0;
+  virtual MicroOp *get_finished_uop() = 0;
 
   // 动作：结果被取走了，从 FU 里移除它
   virtual void pop_finished() = 0;
@@ -43,7 +43,7 @@ public:
 class FixedLatencyFU : public AbstractFU {
 protected:
   int latency;
-  std::deque<InstUop> pipeline;
+  std::deque<MicroOp> pipeline;
 
 public:
   FixedLatencyFU(std::string n, int port_idx, int lat)
@@ -58,7 +58,7 @@ public:
     return pipeline.size() < limit;
   }
 
-  void accept(InstUop inst) override {
+  void accept(MicroOp inst) override {
     // 1. 立即执行功能计算 (Magic Execution)
     //    虽然硬件是在延迟结束后才出结果，但模拟器里为了方便，
     //    通常在入队时就直接算好结果存在 inst 里。
@@ -86,7 +86,7 @@ public:
       // 使用迭代器遍历 deque
       auto it = pipeline.begin();
       while (it != pipeline.end()) {
-        // 假设 InstUop 有 br_mask 域 (依赖掩码) 或 tag 域
+        // 假设 MicroOp 有 br_mask 域 (依赖掩码) 或 tag 域
         // 检查：如果指令依赖于被误预测的分支
         if ((1ULL << it->tag) & br_mask) { // 或者 check dependency mask
           it = pipeline.erase(it);
@@ -97,7 +97,7 @@ public:
     }
   }
 
-  InstUop *get_finished_uop() override {
+  MicroOp *get_finished_uop() override {
     // For latency=1 FUs, instruction completes in the SAME cycle it's accepted
     // cplt_time = sim_time + latency - 1 = sim_time + 1 - 1 = sim_time
     // The newest instruction (back) is the one that just completed!
@@ -124,13 +124,13 @@ public:
 
 protected:
   // === 核心钩子：子类必须实现具体的计算逻辑 ===
-  virtual void impl_compute(InstUop &inst) = 0;
+  virtual void impl_compute(MicroOp &inst) = 0;
 };
 
 class IterativeFU : public AbstractFU {
 protected:
   int remaining_cycles;
-  InstUop current_inst; // 迭代单元通常是非流水化的，持有一个 latch 即可
+  MicroOp current_inst; // 迭代单元通常是非流水化的，持有一个 latch 即可
   bool busy;
   int max_latency;
 
@@ -143,7 +143,7 @@ public:
     return !busy; // 忙则拒收
   }
 
-  void accept(InstUop inst) override {
+  void accept(MicroOp inst) override {
     // === 1. 功能计算 (Functional) ===
     // 在这里调用虚函数，计算 result = src1 / src2
     impl_compute(inst);
@@ -166,7 +166,7 @@ public:
     }
   }
 
-  InstUop *get_finished_uop() override {
+  MicroOp *get_finished_uop() override {
     if (busy && remaining_cycles == 0) {
       return &current_inst;
     }
@@ -198,10 +198,10 @@ public:
 
 protected:
   // 1. 负责算“结果是多少” (Common for all FUs)
-  virtual void impl_compute(InstUop &inst) = 0;
+  virtual void impl_compute(MicroOp &inst) = 0;
 
   // 2. 负责算“耗时多久” (Specific to IterativeFU)
-  virtual int calculate_latency(const InstUop &inst) {
+  virtual int calculate_latency(const MicroOp &inst) {
     return max_latency; // 默认返回最大延迟
   }
 };

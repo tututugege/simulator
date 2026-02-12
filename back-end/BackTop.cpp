@@ -34,7 +34,7 @@ void BackTop::difftest_cycle() {
 
   if (commit_num > 0) {
     for (int i = 0; i < commit_num; i++) {
-      InstUop *inst = &rob->out.rob_commit->commit_entry[commit_indices[i]].uop;
+      InstInfo *inst = &rob->out.rob_commit->commit_entry[commit_indices[i]].uop;
 
       // 1. 同步侧效应 (Sync side effects for EVERY instruction)
       difftest_sync(inst);
@@ -89,7 +89,7 @@ void BackTop::difftest_cycle() {
 #endif
 }
 
-void BackTop::difftest_sync(InstUop *inst) {
+void BackTop::difftest_sync(InstInfo *inst) {
   if (inst->type == JALR) {
     if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
       ctx->perf.ret_br_num++;
@@ -179,7 +179,7 @@ void BackTop::difftest_sync(InstUop *inst) {
 }
 
 void BackTop::difftest_inst(InstEntry *inst_entry) {
-  InstUop *inst = &inst_entry->uop;
+  InstInfo *inst = &inst_entry->uop;
   difftest_sync(inst);
 
 #ifdef CONFIG_DIFFTEST

@@ -33,7 +33,7 @@ public:
   int max_br_per_cycle;
   IduIn in;
   IduOut out;
-  void decode(InstUop &uop, uint32_t inst);
+  void decode(InstInfo &uop, uint32_t inst);
 
   void init();
   void comb_decode();      // 译码并分配tag

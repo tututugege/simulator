@@ -138,7 +138,7 @@ void SimpleLsu::comb_load_res() {
 }
 
 // 内部辅助: 启动 Load 流程 (原 dispatch_load)
-void SimpleLsu::handle_load_req(const InstUop &inst) {
+void SimpleLsu::handle_load_req(const MicroOp &inst) {
   // 注意：这里是组合逻辑，不能直接修改 inflight_loads (这是 seq 的状态)
   // 但为了简化代码，我们假设这里是一个 "Next State Logic"，或者有一个 input
   // latch 严格的硬件模拟应该把 task 放入一个 new_tasks 列表，在 seq 里 merge
@@ -146,7 +146,7 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
   // 这里采用简化做法：直接操作 inflight_loads，但在 seq 里处理时间推进
   // 只要 inflight_loads 不被当作寄存器输出回环即可
 
-  InstUop task = inst;
+  MicroOp task = inst;
   task.is_cache_miss = false; // Initialize to false
   uint32_t p_addr;
   bool ret = mmu->translate(p_addr, task.result, 1, in.csr_status);
@@ -171,10 +171,6 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
       // 这就是所谓的“Store-to-Load Forwarding Latency” (通常很短，0 或 1)
       task.result = fwd_res.second;
       task.cplt_time = sim_time + 0; // 这一拍直接完成！
-
-      // 注意：如果是 Stall 逻辑 (Store 地址匹配但数据未就绪)，
-      // 这里的 check_store_forwarding 应该返回特殊状态，或者在这里不做
-      // push_back
     } else if (fwd_res.first == 0) {
       // ❌ STQ 里没有，去读内存
       // 模拟 Cache 访问
@@ -215,7 +211,7 @@ void SimpleLsu::handle_load_req(const InstUop &inst) {
   inflight_loads.push_back(task);
 }
 
-void SimpleLsu::handle_store_addr(const InstUop &inst) {
+void SimpleLsu::handle_store_addr(const MicroOp &inst) {
   int idx = inst.stq_idx;
   stq[idx].addr = inst.result; // VA
   // Translate VA -> PA
@@ -225,7 +221,7 @@ void SimpleLsu::handle_store_addr(const InstUop &inst) {
   if (!ret) {
     // ⚠️ Store Page Fault Detected!
     // Report to ROB via Writeback/Exception path
-    InstUop fault_op = inst;
+    MicroOp fault_op = inst;
     fault_op.page_fault_store = true;
     fault_op.cplt_time = sim_time; // Immediate failure
 
@@ -236,7 +232,7 @@ void SimpleLsu::handle_store_addr(const InstUop &inst) {
     // to ensure ROB only considers it complete AFTER MMU translation.
     // Given the user's advice, we will let ALL STA results go through Port 5
     // via LSU.)
-    InstUop success_op = inst;
+    MicroOp success_op = inst;
     success_op.cplt_time = sim_time;
     bool is_mmio = ((pa & UART_ADDR_MASK) == UART_ADDR_BASE) ||
                    ((pa & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
@@ -248,7 +244,7 @@ void SimpleLsu::handle_store_addr(const InstUop &inst) {
   stq[idx].addr_valid = true;
 }
 
-void SimpleLsu::handle_store_data(const InstUop &inst) {
+void SimpleLsu::handle_store_data(const MicroOp &inst) {
   stq[inst.stq_idx].data = inst.result;
   stq[inst.stq_idx].data_valid = true;
 }
@@ -423,20 +419,22 @@ void SimpleLsu::seq() {
 
     // 只有当这一项完全 Ready 时才出队
     if (head.valid && head.addr_valid && head.data_valid) {
+      // 在提交到内存之前，进行最终的对齐检查
+      uint32_t alignment_mask = (head.func3 & 0x3) == 0 ? 0 : (head.func3 & 0x3) == 1 ? 1 : 3;
+      Assert((head.p_addr & alignment_mask) == 0 && "DUT: Store address misaligned at commit!");
+
       // 1. 写内存 (Memory Access)
       cache.cache_access(head.p_addr);
       uint32_t paddr = head.p_addr;
-      uint32_t word_idx = paddr >> 2;
-      uint32_t old_val = p_memory[word_idx];
-      uint32_t new_val =
-          merge_data_to_word(old_val, head.data, paddr, head.func3);
-      p_memory[word_idx] = new_val;
+      uint32_t old_val = p_memory[paddr >> 2];
+      uint32_t new_val = merge_data_to_word(old_val, head.data, paddr, head.func3);
+      p_memory[paddr >> 2] = new_val;
 
       // Simple MMIO Write Side Effect
       if (paddr == UART_ADDR_BASE) {
         char temp = new_val & 0xFF;
         std::cout << temp << std::flush;
-        p_memory[word_idx] &= 0xFFFFFF00;
+        p_memory[paddr >> 2] &= 0xFFFFFF00;
       } else if (paddr == UART_ADDR_BASE + 1) {
         uint8_t cmd = head.data & 0xff;
         if (cmd == 7) {
@@ -582,128 +580,44 @@ bool SimpleLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag) {
 // 🛡️ [Nanako Implementation] 完整的 STLF 模拟逻辑
 // =========================================================
 std::pair<int, uint32_t>
-SimpleLsu::check_store_forward(uint32_t p_addr, const InstUop &load_uop) {
+SimpleLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
 
-  // Load 的范围
-  int load_width = get_mem_width(load_uop.func3);
-  uint32_t load_start = p_addr;
-  uint32_t load_end = p_addr + load_width;
-
-  // 1. 【底板准备】直接从 Memory 读取数据作为 "默认背景" 🖼️
-  // 即使后面 STQ 完全覆盖了它，读一次内存的开销在功能模拟器里也可以接受
-  // 这样保证了那些没有被 Store 覆盖到的 "缝隙" 自动拥有了内存里的正确值
-
-  uint8_t byte_buffer[8]; // 这里的 buffer 直接初始化为内存值
-
-  for (int k = 0; k < load_width; k++) {
-    uint32_t curr_addr = load_start + k;
-    // 模拟字节粒度读取内存 (提取对应的 Byte)
-    // 注意：这里假设 p_memory 是 uint32_t*，需要移位提取
-    uint32_t mem_word = p_memory[curr_addr >> 2];
-    int bit_offset = (curr_addr & 3) * 8;
-    byte_buffer[k] = (mem_word >> bit_offset) & 0xFF;
-  }
-
-  // 标记是否命中了 STQ (虽然数据混合了，但如果没有命中任何 Store，
-  // 逻辑上这不算是一次 Forwarding，而是普通的 Cache Access。
-  // 不过为了简化，如果只想复用这个混合结果，这里其实可以忽略 hit_any，
-  // 但为了模拟器的统计准确性，还是记录一下比较好)
+  uint32_t current_word = p_memory[p_addr >> 2];
   bool hit_any = false;
-
-  // 2. 【涂层覆盖】正向遍历 STQ (Head -> Tail) 🖌️
-  // 后面的 Store 会自动覆盖前面的 Store，也会覆盖底板 Memory
 
   int ptr = this->stq_head;
   int current_count = this->stq_count;
 
   for (int i = 0; i < current_count; i++) {
     StqEntry &entry = stq[ptr];
-
-    // A. 基础有效性与年龄检查
-    // 🛡️ CRITICAL FIX: 已提交的 Store 在程序顺序上一定比当前指令老
-    bool is_older =
-        entry.committed || is_store_older(entry.rob_idx, entry.rob_flag,
-                                          load_uop.rob_idx, load_uop.rob_flag);
-
+    bool is_older = entry.committed || is_store_older(entry.rob_idx, entry.rob_flag,
+                                                      load_uop.rob_idx, load_uop.rob_flag);
     if (entry.valid && is_older) {
-      if (!entry.addr_valid) {
-        return {
-            2,
-            0}; // 🛡️ CRITICAL FIX: Stall if an older store's address is unknown
-      }
+      if (!entry.addr_valid) return {2, 0};
 
-      // B. 区间重叠计算
+      // 更加精确的重叠检查
       int store_width = get_mem_width(entry.func3);
+      int load_width = get_mem_width(load_uop.func3);
       uint32_t s_start = entry.p_addr;
-      uint32_t s_end = entry.p_addr + store_width;
+      uint32_t s_end = s_start + store_width;
+      uint32_t l_start = p_addr;
+      uint32_t l_end = l_start + load_width;
 
-      uint32_t overlap_start = (load_start > s_start) ? load_start : s_start;
-      uint32_t overlap_end = (load_end < s_end) ? load_end : s_end;
+      uint32_t overlap_start = std::max(s_start, l_start);
+      uint32_t overlap_end = std::min(s_end, l_end);
 
-      // C. 如果有重叠
       if (overlap_start < overlap_end) {
         hit_any = true;
-
-        if (!entry.data_valid) {
-          // 必须等待数据就绪
-          // 返回 2 (Retry) 让 Handle Load Req / Seq 暂停处理
-          return {2, 0};
-        }
-
-        // D. 【关键】直接覆盖底板！
-        for (uint32_t addr = overlap_start; addr < overlap_end; addr++) {
-          int s_offset = addr - s_start;    // Store 里的偏移
-          int l_offset = addr - load_start; // Buffer 里的偏移
-
-          // 提取 Store 的字节，无情地覆盖掉 Buffer 里的 Memory 值 (或旧 Store
-          // 值)
-          byte_buffer[l_offset] = (entry.data >> (s_offset * 8)) & 0xFF;
-        }
+        if (!entry.data_valid) return {2, 0};
+        current_word = merge_data_to_word(current_word, entry.data, entry.p_addr, entry.func3);
       }
     }
-
     ptr = (ptr + 1) % STQ_NUM;
   }
 
-  // 3. 打包结果
-  // 如果 hit_any = false，说明完全没碰到 STQ，buffer 里就是纯 Memory 数据
-  // 如果 hit_any = true，说明 buffer 里是 Memory + Store 的混合体 (完美
-  // Forwarding)
+  if (!hit_any) return {false, 0};
 
-  // 这里的策略取决于你是否想把 "完全没命中 STQ" 算作 Forwarding 成功
-  // 通常：
-  // - 如果完全没命中，返回 false，让外部走标准的 cache_access (为了统计 Cache
-  // Miss/Hit)
-  // - 如果命中了（哪怕只覆盖了 1 个字节），就返回 true，直接用这里拼好的数据
-
-  if (!hit_any) {
-    return {false, 0};
-  }
-
-  uint32_t final_data = 0;
-  for (int k = 0; k < load_width; k++) {
-    final_data |= ((uint32_t)byte_buffer[k] << (k * 8));
-  }
-
-  // 4. 符号扩展 (Sign Extension) 📐
-  // 不需要 Offset 移动！只需要处理符号位！
-
-  switch (load_uop.func3) {
-  case 0x0: // LB (8-bit Signed)
-    // 检查第 7 位，如果是 1，则高 24 位全填 1
-    if (final_data & 0x80)
-      final_data |= 0xFFFFFF00;
-    break;
-
-  case 0x1: // LH (16-bit Signed)
-    // 检查第 15 位，如果是 1，则高 16 位全填 1
-    if (final_data & 0x8000)
-      final_data |= 0xFFFF0000;
-    break;
-
-    // LBU (0x4), LHU (0x5), LW (0x2) 不需要做任何事，
-    // 因为 final_data 初始化为 0，高位天然是 0 (Zero Extended)
-  }
+  uint32_t final_data = extract_data(current_word, p_addr, load_uop.func3);
   return {true, final_data};
 }
 
@@ -723,20 +637,17 @@ uint32_t SimpleLsu::get_load_addr(int rob_idx) {
 StqEntry SimpleLsu::get_stq_entry(int stq_idx) { return stq[stq_idx]; }
 
 uint32_t SimpleLsu::coherent_read(uint32_t p_addr) {
-  // 1. 基准值：读物理内存
+  // 1. 基准值：读物理内存 (假设 p_addr 已对齐到 4)
   uint32_t data = p_memory[p_addr >> 2];
 
   // 2. 遍历 STQ 进行覆盖 (Coherent Check)
-  // 虽然 MMU walk 通常是 4 字节对齐的 Word 访问，
-  // 但我们支持字节合并以应对所有潜在对齐情况。
   int ptr = stq_head;
   int count = stq_count;
   for (int i = 0; i < count; i++) {
     const auto &entry = stq[ptr];
     if (entry.valid && entry.addr_valid) {
-      // 检查地址范围是否有重叠 (当前访存地址的核心 Word)
-      if ((entry.p_addr & ~0x3) == (p_addr & ~0x3)) {
-        // 使用现有的合并助手更新结果
+      // 只要 Store 的 Word 地址匹配，就进行 merge (假设 aligned Store 不跨 Word)
+      if ((entry.p_addr >> 2) == (p_addr >> 2)) {
         data = merge_data_to_word(data, entry.data, entry.p_addr, entry.func3);
       }
     }

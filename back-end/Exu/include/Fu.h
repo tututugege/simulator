@@ -24,7 +24,7 @@ public:
       : FixedLatencyFU(name, port_idx, 1) {}
 
 protected:
-  void impl_compute(InstUop &inst) override {
+  void impl_compute(MicroOp &inst) override {
     uint32_t operand1, operand2;
     if (inst.src1_is_pc)
       operand1 = inst.pc;
@@ -105,7 +105,7 @@ public:
 
 protected:
   int get_lsu_port_id() override { return this->agu_port_idx; }
-  void impl_compute(InstUop &inst) override {
+  void impl_compute(MicroOp &inst) override {
     // 1. 计算虚拟地址 (Common logic)
     // Load 和 Store (STA) 都需要计算地址： Base + Offset
     uint64_t vaddr = inst.src1_rdata + inst.imm;
@@ -140,7 +140,7 @@ public:
 
 protected:
   int get_lsu_port_id() override { return this->sdu_port_idx; }
-  void impl_compute(InstUop &inst) override {
+  void impl_compute(MicroOp &inst) override {
     uint32_t result_data = 0;
 
     // === 1. 获取操作数 & 计算 Store Data ===
@@ -174,10 +174,10 @@ protected:
         result_data = op1 | op2;
         break;
       case AmoOp::MIN:
-        result_data = ((int64_t)op1 < (int64_t)op2) ? op1 : op2;
+        result_data = ((int32_t)op1 < (int32_t)op2) ? op1 : op2;
         break;
       case AmoOp::MAX:
-        result_data = ((int64_t)op1 > (int64_t)op2) ? op1 : op2;
+        result_data = ((int32_t)op1 > (int32_t)op2) ? op1 : op2;
         break;
       case AmoOp::MINU:
         result_data = (op1 < op2) ? op1 : op2;
@@ -211,7 +211,7 @@ public:
       : FixedLatencyFU(name, port_idx, lat) {}
 
 protected:
-  void impl_compute(InstUop &inst) override {
+  void impl_compute(MicroOp &inst) override {
     int64_t s1 = (int64_t)(int32_t)inst.src1_rdata;
     int64_t s2 = (int64_t)(int32_t)inst.src2_rdata;
     uint64_t u1 = (uint32_t)inst.src1_rdata;
@@ -254,7 +254,7 @@ public:
       : FixedLatencyFU(name, port_idx, 1), ftq(ftq) {}
 
 protected:
-  void impl_compute(InstUop &inst) override {
+  void impl_compute(MicroOp &inst) override {
     uint32_t operand1 = inst.src1_rdata;
     uint32_t operand2 = inst.src2_rdata;
     uint32_t pc_br = inst.pc + inst.imm;
@@ -342,7 +342,7 @@ public:
       : IterativeFU(name, port_idx, lat) {}
 
 protected:
-  void impl_compute(InstUop &inst) override {
+  void impl_compute(MicroOp &inst) override {
     int32_t dividend = (int32_t)inst.src1_rdata;
     int32_t divisor = (int32_t)inst.src2_rdata;
     uint32_t u_dividend = (uint32_t)inst.src1_rdata;
@@ -413,7 +413,7 @@ public:
       : FixedLatencyFU(name, port_idx, 1), exe2csr(exe2csr), csr2exe(csr2exe) {}
 
 protected:
-  void impl_compute(InstUop &inst) override {
+  void impl_compute(MicroOp &inst) override {
     if (exe2csr->re) {
       inst.result = csr2exe->rdata;
     }

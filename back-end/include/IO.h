@@ -8,7 +8,7 @@
 
 struct DecRenIO {
 
-  InstUop uop[FETCH_WIDTH];
+  InstInfo uop[FETCH_WIDTH];
   wire<1> valid[FETCH_WIDTH];
   DecRenIO() {
     for (auto &v : uop)
@@ -126,7 +126,7 @@ struct RobDisIO {
 
 struct DisRobIO {
 
-  InstUop uop[FETCH_WIDTH];
+  InstInfo uop[FETCH_WIDTH];
   wire<1> valid[FETCH_WIDTH];
   wire<1> dis_fire[FETCH_WIDTH];
 
@@ -142,7 +142,7 @@ struct DisRobIO {
 
 struct RenDisIO {
 
-  InstUop uop[FETCH_WIDTH];
+  InstInfo uop[FETCH_WIDTH];
   wire<1> valid[FETCH_WIDTH];
 
   RenDisIO() {
@@ -172,7 +172,7 @@ struct PrfAwakeIO {
 
 struct DisIssIO {
 
-  InstEntry req[IQ_NUM][MAX_IQ_DISPATCH_WIDTH];
+  UopEntry req[IQ_NUM][MAX_IQ_DISPATCH_WIDTH];
   DisIssIO() {
     for (auto &iq_req : req)
       for (auto &r : iq_req)
@@ -238,7 +238,7 @@ struct RobBroadcastIO {
 
 struct IssPrfIO {
 
-  InstEntry iss_entry[ISSUE_WIDTH];
+  UopEntry iss_entry[ISSUE_WIDTH];
 
   IssPrfIO() {
     for (auto &v : iss_entry)
@@ -248,7 +248,7 @@ struct IssPrfIO {
 
 struct PrfExeIO {
 
-  InstEntry iss_entry[ISSUE_WIDTH];
+  UopEntry iss_entry[ISSUE_WIDTH];
 
   PrfExeIO() {
     for (auto &v : iss_entry)
@@ -258,8 +258,8 @@ struct PrfExeIO {
 
 struct ExePrfIO {
 
-  InstEntry entry[ISSUE_WIDTH];
-  InstEntry bypass[TOTAL_FU_COUNT];
+  UopEntry entry[ISSUE_WIDTH];
+  UopEntry bypass[TOTAL_FU_COUNT];
 
   ExePrfIO() {
     for (auto &v : entry)
@@ -285,7 +285,7 @@ struct ExeIssIO {
 
 struct PrfRobIO {
 
-  InstEntry entry[ISSUE_WIDTH];
+  UopEntry entry[ISSUE_WIDTH];
 
   PrfRobIO() {
     for (auto &v : entry)
@@ -386,7 +386,7 @@ struct MemReqIO {
   wire<32> wdata;
   wire<8> wstrb;
 
-  InstUop uop;
+  MicroOp uop;
 
   MemReqIO() {
     en = {};
@@ -412,7 +412,7 @@ struct MemRespIO {
   wire<32> data;
 
   wire<32> addr;
-  InstUop uop;
+  MicroOp uop;
 
   MemRespIO() {
     wen = {};
@@ -444,7 +444,7 @@ struct DcacheMshrIO {
   wire<32> wstrb;
   wire<32> wdata;
 
-  InstUop uop;
+  MicroOp uop;
 
   DcacheMshrIO() {
     valid = {};
@@ -476,7 +476,7 @@ struct DcacheWritebufferIO {
   wire<1> mispred;
   wire<BR_MASK_WIDTH> br_mask;
 
-  InstUop uop;
+  MicroOp uop;
 
   DcacheWritebufferIO() {
     valid = {};
@@ -619,8 +619,8 @@ struct LsuRobIO {
 
 struct LsuExeIO {
 
-  InstEntry wb_req[LSU_LOAD_WB_WIDTH];
-  InstEntry sta_wb_req[LSU_STA_COUNT];
+  UopEntry wb_req[LSU_LOAD_WB_WIDTH];
+  UopEntry sta_wb_req[LSU_STA_COUNT];
 
   LsuExeIO() {
     for (auto &v : wb_req)
@@ -648,8 +648,8 @@ struct DisLsuIO {
 
 struct ExeLsuIO {
 
-  InstEntry agu_req[LSU_AGU_COUNT];
-  InstEntry sdu_req[LSU_SDU_COUNT];
+  UopEntry agu_req[LSU_AGU_COUNT];
+  UopEntry sdu_req[LSU_SDU_COUNT];
 
   ExeLsuIO() {
     for (auto &v : agu_req)

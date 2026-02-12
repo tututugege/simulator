@@ -44,8 +44,8 @@ public:
 #endif
 
   reg<32> reg_file[PRF_NUM];
-  InstEntry inst_r[ISSUE_WIDTH];
+  UopEntry inst_r[ISSUE_WIDTH];
 
   wire<32> reg_file_1[PRF_NUM];
-  InstEntry inst_r_1[ISSUE_WIDTH];
+  UopEntry inst_r_1[ISSUE_WIDTH];
 };

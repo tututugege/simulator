@@ -26,7 +26,7 @@ public:
 
 struct UopPacket {
   int iq_id;   // 目标 IQ
-  InstUop uop; // 微操作内容
+  MicroOp uop; // 微操作内容
 };
 
 class Dispatch {

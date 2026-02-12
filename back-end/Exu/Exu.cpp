@@ -277,7 +277,7 @@ void Exu::comb_exec() {
   int fu_global_idx = 0; // 用于给每个 FU 编号
   // 遍历所有 FU 单元
   for (auto fu : units) {
-    InstUop *res = fu->get_finished_uop(); // 看看这个 FU 算完没
+    MicroOp *res = fu->get_finished_uop(); // 看看这个 FU 算完没
 
     if (res) {
       // ✅ 无论是否能写回，先广播出去给 Bypass 用！
@@ -294,7 +294,7 @@ void Exu::comb_exec() {
       AbstractFU *fu = map_entry.fu;
 
       // 检查这个 FU 有没有结果吐出来
-      InstUop *res = fu->get_finished_uop();
+      MicroOp *res = fu->get_finished_uop();
 
       if (res) {
         if (out.exe2prf->entry[p_idx].valid) {
@@ -343,7 +343,7 @@ void Exu::comb_exec() {
   // LSU 的 Load 结果
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
     if (in.lsu2exe->wb_req[i].valid) {
-      InstUop &load_uop = in.lsu2exe->wb_req[i].uop;
+      MicroOp &load_uop = in.lsu2exe->wb_req[i].uop;
 
       int wb_port_idx = IQ_LD_PORT_BASE + i;
 
@@ -359,7 +359,7 @@ void Exu::comb_exec() {
   // [新增] LSU 的 STA 结果 (带 Page Fault)
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     if (in.lsu2exe->sta_wb_req[i].valid) {
-      InstUop &sta_uop = in.lsu2exe->sta_wb_req[i].uop;
+      MicroOp &sta_uop = in.lsu2exe->sta_wb_req[i].uop;
 
       int wb_port_idx = IQ_STA_PORT_BASE + i;
 

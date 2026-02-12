@@ -287,7 +287,7 @@ void Ren ::comb_commit() {
         }
       }
 
-      InstUop *inst = &in.rob_commit->commit_entry[i].uop;
+      InstInfo *inst = &in.rob_commit->commit_entry[i].uop;
 
       // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
       // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收

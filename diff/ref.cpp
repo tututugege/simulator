@@ -874,6 +874,13 @@ void RefCpu::RV32A() {
     }
   }
 
+  if (p_addr & 0x3) {
+    Assert((p_addr & 3) == 0 && "AMO address misaligned!");
+    illegal_exception = true;
+    exception(v_addr);
+    return;
+  }
+
   if (funct5 != 2) {
     state.store = true;
     state.store_addr = p_addr;
@@ -984,7 +991,7 @@ void RefCpu::RV32IM() {
   case number_3_opcode_jalr: { // jalr
     is_br = true;
     br_taken = true;
-    next_pc = (reg_rdata1 + immI(Instruction)) & 0xFFFFFFFC;
+    next_pc = (reg_rdata1 + immI(Instruction)) & 0xFFFFFFFE;
     state.gpr[reg_d_index] = state.pc + 4;
     break;
   }
@@ -1046,14 +1053,19 @@ void RefCpu::RV32IM() {
     if (page_fault_load) {
       exception(v_addr);
       return;
-
     } else {
+      uint32_t alignment_mask = (funct3 & 0x3) == 0 ? 0 : (funct3 & 0x3) == 1 ? 1 : 3;
+      Assert((p_addr & alignment_mask) == 0 && "Load address misaligned!");
       if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
           ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
         is_mmio_load = true;
       }
 
       // Timer MMIO 特殊处理：使用 oracle_timer 保持与 DUT 同步
+      uint64_t data_l = (uint64_t)memory[p_addr >> 2];
+      uint64_t data_h = (uint64_t)memory[(p_addr >> 2) + 1];
+      uint64_t data64 = (data_h << 32) | data_l;
+
       uint32_t data;
       if (p_addr == 0x1fd0e000) {
         oracle_timer += 1000;
@@ -1061,12 +1073,10 @@ void RefCpu::RV32IM() {
       } else if (p_addr == 0x1fd0e004) {
         data = 0;
       } else {
-        data = memory[p_addr >> 2];
+        data = (uint32_t)(data64 >> ((p_addr & 0b11) * 8));
       }
-      uint32_t offset = p_addr & 0b11;
-      uint32_t size = funct3 & 0b11;
-      uint32_t sign = 0, mask;
-      data = data >> (offset * 8);
+    uint32_t size = funct3 & 0b11;
+    uint32_t sign = 0, mask;
       if (size == 0) {
         mask = 0xFF;
         if (data & 0x80)
@@ -1102,6 +1112,8 @@ void RefCpu::RV32IM() {
       exception(v_addr);
       return;
     } else {
+      uint32_t alignment_mask = (funct3 & 0x3) == 0 ? 0 : (funct3 & 0x3) == 1 ? 1 : 3;
+      Assert((p_addr & alignment_mask) == 0 && "Store address misaligned!");
       if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
           ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
         is_mmio_store = true;
@@ -1155,17 +1167,17 @@ void RefCpu::RV32IM() {
       break;
     }
     case 1: { // slli
-      state.gpr[reg_d_index] = reg_rdata1 << immI(Instruction);
+      state.gpr[reg_d_index] = reg_rdata1 << (immI(Instruction) & 0x1F);
       break;
     }
     case 5: { // srli, srai
       switch (funct7) {
       case 0: { // srli
-        state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> immI(Instruction);
+        state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> (immI(Instruction) & 0x1F);
         break;
       }
       case 32: { // srai
-        state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> immI(Instruction);
+        state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> (immI(Instruction) & 0x1F);
         break;
       }
       }
@@ -1261,7 +1273,7 @@ void RefCpu::RV32IM() {
         break;
       }
       case 1: { // sll
-        state.gpr[reg_d_index] = reg_rdata1 << reg_rdata2;
+        state.gpr[reg_d_index] = reg_rdata1 << (reg_rdata2 & 0x1F);
         break;
       }
       case 2: { // slt
@@ -1281,11 +1293,11 @@ void RefCpu::RV32IM() {
       case 5: { // srl, sra
         switch (funct7) {
         case 0: { // srl
-          state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> reg_rdata2;
+          state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> (reg_rdata2 & 0x1F);
           break;
         }
         case 32: { // sra
-          state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> reg_rdata2;
+          state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> (reg_rdata2 & 0x1F);
           break;
         }
         }
@@ -1318,28 +1330,30 @@ void RefCpu::store_data() {
 
   uint32_t p_addr = state.store_addr;
   int offset = p_addr & 0x3;
-  uint32_t wstrb = state.store_strb << offset;
-  uint32_t wdata = state.store_data << (offset * 8);
-  uint32_t old_data = memory[p_addr / 4];
-  uint32_t mask = 0;
+  uint64_t wstrb = (uint64_t)state.store_strb << offset;
+  uint64_t wdata = (uint64_t)state.store_data << (offset * 8);
 
-  if (wstrb & 0b1)
-    mask |= 0xFF;
-  if (wstrb & 0b10)
-    mask |= 0xFF00;
-  if (wstrb & 0b100)
-    mask |= 0xFF0000;
-  if (wstrb & 0b1000)
-    mask |= 0xFF000000;
-  /*if ((number_funct3_unsigned == 1 && p_addr % 2 == 1) ||*/
-  /*    (number_funct3_unsigned == 2 && p_addr % 4 != 0)) {*/
-  /*  cout << "Store Memory Address Align Error!!!" << endl;*/
-  /*  cout << "funct3 code: " << dec << number_funct3_unsigned << endl;*/
-  /*  cout << "addr: " << hex << p_addr << endl;*/
-  /*  exit(-1);*/
-  /*}*/
+  for (int i = 0; i < 2; i++) {
+    uint32_t current_wstrb = (wstrb >> (i * 4)) & 0xF;
+    uint32_t current_wdata = (wdata >> (i * 32)) & 0xFFFFFFFF;
+    if (current_wstrb == 0)
+      continue;
 
-  memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
+    uint32_t mask = 0;
+    if (current_wstrb & 0b1)
+      mask |= 0xFF;
+    if (current_wstrb & 0b10)
+      mask |= 0xFF00;
+    if (current_wstrb & 0b100)
+      mask |= 0xFF0000;
+    if (current_wstrb & 0b1000)
+      mask |= 0xFF000000;
+
+    uint32_t old_data = memory[(p_addr >> 2) + i];
+    memory[(p_addr >> 2) + i] = (mask & current_wdata) | (~mask & old_data);
+  }
+
+  // UART and Interrupt logic follows...
 
   if (p_addr == UART_BASE) {
     char temp;

@@ -10,7 +10,7 @@
 // 中间信号
 static tag_t alloc_tag[FETCH_WIDTH]; // 分配的新 Tag
 
-void decode(InstUop &uop, uint32_t instructinn);
+void decode(InstInfo &uop, uint32_t instructinn);
 
 void Idu::init() {
   for (int i = 1; i < MAX_BR_NUM; i++) {
@@ -262,7 +262,7 @@ void Idu::seq() {
   }
 }
 
-void Idu::decode(InstUop &uop, uint32_t inst) {
+void Idu::decode(InstInfo &uop, uint32_t inst) {
   // 操作数来源以及type
   // uint32_t imm;
   int uop_num = 1;

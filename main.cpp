@@ -241,6 +241,12 @@ int main(int argc, char *argv[]) {
     // cpu.ctx.perf.perf_print(); // Handled by exit_handler
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
+    if (cpu.ctx.exit_reason == ExitReason::EBREAK) {
+      uint32_t a0 = cpu.get_reg(10);
+      free(p_memory);
+      return a0;
+    }
+
   } else {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;

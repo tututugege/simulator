@@ -148,5 +148,8 @@ public:
   // debug
   void difftest_inst(InstEntry *inst_entry);
   void difftest_cycle();
-  void difftest_sync(InstUop *inst);
+  void difftest_sync(InstInfo *inst);
+  uint32_t get_reg(uint8_t arch_idx) {
+    return prf->reg_file[rename->arch_RAT_1[arch_idx]];
+  }
 };

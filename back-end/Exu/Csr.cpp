@@ -110,7 +110,8 @@ void Csr::comb_exception() {
   bool medeleg_page_fault_store = (medeleg >> 15) & 1;
 
   // === 优化 3：中断判断逻辑 (位运算) ===
-  // M-mode 中断条件：Pending & Enabled & NotDelegated & (CurrentPriv < M || MIE=1)
+  // M-mode 中断条件：Pending & Enabled & NotDelegated & (CurrentPriv < M ||
+  // MIE=1)
 
   // 软件中断 (Software Interrupts)
   bool M_software_interrupt = (mip_reg & MIP_MSIP) && (mie_reg & MIP_MSIP) &&
@@ -318,8 +319,6 @@ void Csr::comb_exception() {
 
     out.csr2front->epc = CSR_RegFile[csr_sepc];
   }
-  // CSR_RegFile_1[csr_mstatus] = cvt_bit_to_number_unsigned(mstatus, 32);
-  // CSR_RegFile_1[csr_sstatus] = cvt_bit_to_number_unsigned(sstatus, 32);
 }
 
 void Csr::comb_csr_write() {
