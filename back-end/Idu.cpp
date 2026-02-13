@@ -186,9 +186,9 @@ void Idu::comb_flush() {
     int mispred_ftq = in.prf2dec->ftq_idx;
     // 误预测分支本身的 FTQ 条目是正确路径的，保留它
     // 但之后分配的所有条目都是错误路径的，需要释放
-    int new_tail = (mispred_ftq + 1) % FTQ::FTQ_SIZE;
+    int new_tail = (mispred_ftq + 1) % FTQ_SIZE;
     ftq->tail = new_tail;
-    ftq->count = (new_tail - ftq->head + FTQ::FTQ_SIZE) % FTQ::FTQ_SIZE;
+    ftq->count = (new_tail - ftq->head + FTQ_SIZE) % FTQ_SIZE;
   }
 }
 

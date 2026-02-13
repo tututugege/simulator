@@ -14,12 +14,12 @@
 
 uint32_t *p_memory;
 
+// 复位逻辑
 void SimCpu::init() {
 
   back.init();
   mmu.reset();
 
-  // 复位逻辑
 #ifdef CONFIG_BPU
   front_in.reset = true;
   front_in.FIFO_read_enable = true;
@@ -31,13 +31,12 @@ void SimCpu::init() {
 // 强制重置前端 PC (用于 FAST 模式切换)
 void SimCpu::restore_pc(uint32_t pc) {
   front_in.reset = false;
-  front_in.FIFO_read_enable =
-      false; // [Fix] Don't pop instruction here, save it for Cycle 0
+  front_in.FIFO_read_enable = false;
   front_in.refetch = true;
   front_in.fence_i = true; // 强制刷新 ICache
   front_in.refetch_address = pc;
 
-  // [Fix] 刷新 CSR 状态输出 (SATP, Privilege) 以确保 MMU 模式正确
+  // 刷新 CSR 状态输出 (SATP, Privilege) 以确保 MMU 模式正确
   back.comb_csr_status();
 
   // 运行一次前端逻辑以应用 PC
@@ -47,7 +46,6 @@ void SimCpu::restore_pc(uint32_t pc) {
   get_oracle(front_in, front_out);
 #endif
 
-  // 清除 flags
   front_in.refetch = false;
   front_in.fence_i = false;
 }
@@ -160,29 +158,33 @@ void SimCpu::back2front_comb() {
     front_in.back2front_valid[i] = back.out.commit_entry[i].valid;
 
     if (front_in.back2front_valid[i]) {
-      
+
       bool pred_taken = false;
       bool alt_pred = false;
       uint8_t altpcpn = 0;
       uint8_t pcpn = 0;
       uint32_t tage_idx[4] = {0};
 
-      if(back.ftq) {
-          FTQEntry &entry = back.ftq->get(inst->ftq_idx);
-          if(entry.valid) {
-             pred_taken = entry.pred_taken_mask[inst->ftq_offset];
-             alt_pred = entry.alt_pred[inst->ftq_offset];
-             altpcpn = entry.altpcpn[inst->ftq_offset];
-             pcpn = entry.pcpn[inst->ftq_offset];
-             for(int k=0; k<4; k++) tage_idx[k] = entry.tage_idx[inst->ftq_offset][k];
-          }
+      if (back.ftq) {
+        FTQEntry &entry = back.ftq->get(inst->ftq_idx);
+        if (entry.valid) {
+          pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+          alt_pred = entry.alt_pred[inst->ftq_offset];
+          altpcpn = entry.altpcpn[inst->ftq_offset];
+          pcpn = entry.pcpn[inst->ftq_offset];
+          for (int k = 0; k < 4; k++)
+            tage_idx[k] = entry.tage_idx[inst->ftq_offset][k];
+        }
       }
 
       front_in.predict_dir[i] = pred_taken;
       front_in.predict_base_pc[i] = inst->pc;
       front_in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
-      front_in.actual_target[i] = (is_branch(inst->type) || inst->type == JAL) ? back.out.commit_entry[i].extra_data.pc_next : inst->pc + 4;
+      front_in.actual_target[i] =
+          (is_branch(inst->type) || inst->type == JAL)
+              ? back.out.commit_entry[i].uop.diag_val
+              : inst->pc + 4;
       int br_type = BR_NONCTL;
       if (is_branch(inst->type)) {
         br_type = BR_DIRECT;

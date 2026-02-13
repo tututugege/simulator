@@ -34,9 +34,10 @@ void BackTop::difftest_cycle() {
 
   if (commit_num > 0) {
     for (int i = 0; i < commit_num; i++) {
-      InstInfo *inst = &rob->out.rob_commit->commit_entry[commit_indices[i]].uop;
+      InstInfo *inst =
+          &rob->out.rob_commit->commit_entry[commit_indices[i]].uop;
 
-      // 1. 同步侧效应 (Sync side effects for EVERY instruction)
+      // 1. difftest副作用：性能计数器 中断
       difftest_sync(inst);
 
       // 2. 如果是最后一条指令，填充完整的 dut_cpu 状态用于比对
@@ -65,10 +66,12 @@ void BackTop::difftest_cycle() {
           dut_cpu.store = false;
         }
 
-        // For branches/JAL/flush, PC is in the union (set by BRU or comb flush).
-        dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL || rob->out.rob_bcast->flush)
+        // For branches/JAL/flush, PC is in the union (set by BRU or comb
+        // flush).
+        dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL ||
+                      rob->out.rob_bcast->flush)
                          ? rob->out.rob_commit->commit_entry[commit_indices[i]]
-                               .extra_data.pc_next
+                               .uop.diag_val
                          : inst->pc + 4;
         dut_cpu.instruction = inst->instruction;
         dut_cpu.page_fault_inst = inst->page_fault_inst;
@@ -207,9 +210,10 @@ void BackTop::difftest_inst(InstEntry *inst_entry) {
   for (int i = 0; i < CSR_NUM; i++) {
     dut_cpu.csr[i] = csr->CSR_RegFile_1[i];
   }
-  dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL || rob->out.rob_bcast->flush)
-                   ? inst_entry->extra_data.pc_next
-                   : inst->pc + 4;
+  dut_cpu.pc =
+      (is_branch(inst->type) || inst->type == JAL || rob->out.rob_bcast->flush)
+          ? inst_entry->uop.diag_val
+          : inst->pc + 4;
   dut_cpu.instruction = inst->instruction;
   dut_cpu.page_fault_inst = inst->page_fault_inst;
   dut_cpu.page_fault_load = inst->page_fault_load;
@@ -450,10 +454,11 @@ void BackTop::comb() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     out.commit_entry[i] = rob->out.rob_commit->commit_entry[i];
     if (out.commit_entry[i].valid && out.flush) {
-      // Flush: override extra_data.pc_next with redirect_pc for ALL instructions
-      // so Difftest can read the correct next-PC (trap vector, epc, etc.)
-      out.commit_entry[i].extra_data.pc_next = out.redirect_pc;
-      rob->out.rob_commit->commit_entry[i].extra_data.pc_next = out.redirect_pc;
+      // Flush: override extra_data.pc_next with redirect_pc for ALL
+      // instructions so Difftest can read the correct next-PC (trap vector,
+      // epc, etc.)
+      out.commit_entry[i].uop.diag_val = out.redirect_pc;
+      rob->out.rob_commit->commit_entry[i].uop.diag_val = out.redirect_pc;
     }
   }
 

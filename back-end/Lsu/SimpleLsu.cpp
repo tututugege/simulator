@@ -153,9 +153,10 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
 
   if (!ret) {
     task.page_fault_load = true;
+    task.diag_val = task.result; // Store faulting virtual address
     task.cplt_time = sim_time + 1;
   } else {
-    task.paddr = p_addr;
+    task.diag_val = p_addr;
 
     // [Fix] Disable Store-to-Load Forwarding for MMIO ranges
     // These addresses involve side effects and must read from consistent memory
@@ -507,18 +508,18 @@ void SimpleLsu::seq() {
   while (it != inflight_loads.end()) {
     // 🔄 Replay Check: 如果任务处于等待状态 (cplt_time == LLONG_MAX)
     if (it->cplt_time == 0x7FFFFFFFFFFFFFFF) {
-      auto fwd_res = check_store_forward(it->paddr, *it);
+      auto fwd_res = check_store_forward(it->diag_val, *it);
       if (fwd_res.first == 1) { // Hit -> Success
         it->result = fwd_res.second;
         it->cplt_time = sim_time;      // 完成
       } else if (fwd_res.first == 0) { // Miss -> Memory
-        int lat = cache.cache_access(it->paddr);
+        int lat = cache.cache_access(it->diag_val);
         it->cplt_time = sim_time + lat;
         if (lat >= cache.MISS_LATENCY) {
             it->is_cache_miss = true;
         }
-        uint32_t mem_val = p_memory[it->paddr >> 2];
-        it->result = extract_data(mem_val, it->paddr, it->func3);
+        uint32_t mem_val = p_memory[it->diag_val >> 2];
+        it->result = extract_data(mem_val, it->diag_val, it->func3);
       }
       // If 2 (Retry), keep waiting
     }

@@ -17,7 +17,6 @@ public:
   ExePrfIO *exe2prf;
   DecBroadcastIO *dec_bcast;
   RobBroadcastIO *rob_bcast;
-  MemRespIO *cache2prf;
 };
 
 class Prf {

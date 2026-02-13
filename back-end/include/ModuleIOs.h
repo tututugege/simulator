@@ -19,7 +19,6 @@ typedef struct DecRenUop {
   // 寄存器索引 (Architectural Register Indices)
   wire<AREG_IDX_WIDTH> dest_areg;
   wire<AREG_IDX_WIDTH> src1_areg;
-  wire<AREG_IDX_WIDTH> src2_areg;
 
   // 控制与元数据 (Control and Metadata)
   wire<BR_TAG_WIDTH> tag;            // 分支预测 Tag (Branch Tag for Squashing)
@@ -45,7 +44,6 @@ typedef struct DecRenUop {
     slim.func7     = full.func7;
     slim.dest_areg = full.dest_areg;
     slim.src1_areg = full.src1_areg;
-    slim.src2_areg = full.src2_areg;
     slim.tag       = full.tag;
     slim.uop_num   = full.uop_num;
     slim.dest_en   = full.dest_en;
@@ -65,7 +63,6 @@ typedef struct RenDisUop {
   DecRenUop base;          // 核心译码信息 (Includes Type)
   wire<AREG_IDX_WIDTH> dest_areg;
   wire<AREG_IDX_WIDTH> src1_areg;
-  wire<AREG_IDX_WIDTH> src2_areg;
   wire<PRF_IDX_WIDTH>  dest_preg;     // 物理目标寄存器
   wire<PRF_IDX_WIDTH>  src1_preg;     // 物理源寄存器 1
   wire<PRF_IDX_WIDTH>  src2_preg;     // 物理源寄存器 2

@@ -195,6 +195,9 @@ constexpr int STQ_IDX_WIDTH = clog2(STQ_NUM);
 constexpr int BR_TAG_WIDTH = clog2(MAX_BR_NUM);
 constexpr int BR_MASK_WIDTH = MAX_BR_NUM;
 constexpr int CSR_IDX_WIDTH = 12; // Standard RISC-V CSR address width
+constexpr int FTQ_SIZE = 64;
+constexpr int FTQ_IDX_WIDTH = clog2(FTQ_SIZE);
+constexpr int FTQ_OFFSET_WIDTH = clog2(FETCH_WIDTH);
 
 // MMIO Address Space
 constexpr uint32_t UART_ADDR_BASE = 0x10000000;

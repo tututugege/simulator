@@ -130,7 +130,6 @@ void Rob::comb_commit() {
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop;
-    out.rob_commit->commit_entry[i].extra_data = entry[i][deq_ptr].extra_data;
   }
 
   // 一组提交
@@ -140,7 +139,7 @@ void Rob::comb_commit() {
         const auto &uop = entry[i][deq_ptr].uop;
         if (is_load(uop)) {
           uint32_t alignment_mask = (uop.func3 & 0x3) == 0 ? 0 : (uop.func3 & 0x3) == 1 ? 1 : 3;
-          Assert((uop.paddr & alignment_mask) == 0 && "DUT: Load address misaligned at commit!");
+          Assert((uop.diag_val & alignment_mask) == 0 && "DUT: Load address misaligned at commit!");
         }
       }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
@@ -166,7 +165,7 @@ void Rob::comb_commit() {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       if (is_load(uop)) {
         uint32_t alignment_mask = (uop.func3 & 0x3) == 0 ? 0 : (uop.func3 & 0x3) == 1 ? 1 : 3;
-        Assert((uop.paddr & alignment_mask) == 0 && "DUT: Load address misaligned at single commit!");
+        Assert((uop.diag_val & alignment_mask) == 0 && "DUT: Load address misaligned at single commit!");
       }
     }
 
@@ -192,13 +191,13 @@ void Rob::comb_commit() {
         out.rob_bcast->trap_val = lsu->get_stq_entry(entry[single_idx][deq_ptr].uop.stq_idx).addr;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_load) {
         out.rob_bcast->page_fault_load = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.result;
+        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
       } else if (entry[single_idx][deq_ptr].uop.page_fault_inst) {
         out.rob_bcast->page_fault_inst = true;
         out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.pc;
       } else if (entry[single_idx][deq_ptr].uop.illegal_inst) {
         out.rob_bcast->illegal_inst = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].extra_data.instruction;
+        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
       } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
         ctx->exit_reason = ExitReason::EBREAK;
       } else if (entry[single_idx][deq_ptr].uop.type == WFI) {
@@ -240,13 +239,13 @@ void Rob::comb_commit() {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
         printf("0x%08x: 0x%08x cplt_num: %d  uop_num: %d rob_idx:%d "
-               "is_page_fault: %d inst_idx: %lld type: %d op: %d\n",
-                entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].extra_data.instruction,
+               "is_page_fault: %d inst_idx: %lld type: %d\n",
+                entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].uop.diag_val,
                 entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
                 (i + (deq_ptr * ROB_BANK_NUM)),
                 is_page_fault(entry[i][deq_ptr].uop),
                 (long long)entry[i][deq_ptr].uop.inst_idx,
-                entry[i][deq_ptr].uop.type, entry[i][deq_ptr].uop.op);
+                entry[i][deq_ptr].uop.type);
       } else {
         printf("[Bank %d] INVALID\n", i);
       }
@@ -268,10 +267,10 @@ void Rob::comb_complete() {
       for (int k = 0; k < LSU_LDU_COUNT; k++) {
         if (i == IQ_LD_PORT_BASE + k) {
           // 保存物理地址，用于 Commit 时的对齐检查
-          entry_1[bank_idx][line_idx].uop.paddr = in.prf2rob->entry[i].uop.paddr;
+          entry_1[bank_idx][line_idx].uop.diag_val = in.prf2rob->entry[i].uop.diag_val;
           
           if (is_page_fault(in.prf2rob->entry[i].uop)) {
-            entry_1[bank_idx][line_idx].uop.result =
+            entry_1[bank_idx][line_idx].uop.diag_val =
                 in.prf2rob->entry[i].uop.result;
             entry_1[bank_idx][line_idx].uop.page_fault_load = true;
           }
@@ -281,7 +280,7 @@ void Rob::comb_complete() {
       for (int k = 0; k < LSU_STA_COUNT; k++) {
         if (i == IQ_STA_PORT_BASE + k) {
           if (is_page_fault(in.prf2rob->entry[i].uop)) {
-            entry_1[bank_idx][line_idx].uop.result =
+            entry_1[bank_idx][line_idx].uop.diag_val =
                 in.prf2rob->entry[i].uop.result;
             entry_1[bank_idx][line_idx].uop.page_fault_store = true;
           }
@@ -294,7 +293,7 @@ void Rob::comb_complete() {
       entry_1[bank_idx][line_idx].uop.difftest_skip =
           in.prf2rob->entry[i].uop.difftest_skip;
       if (is_branch_uop(in.prf2rob->entry[i].uop.op)) {
-        entry_1[bank_idx][line_idx].extra_data.pc_next =
+        entry_1[bank_idx][line_idx].uop.diag_val =
             in.prf2rob->entry[i].uop.diag_val;
         entry_1[bank_idx][line_idx].uop.mispred =
             in.prf2rob->entry[i].uop.mispred;
@@ -353,8 +352,6 @@ void Rob::comb_fire() {
         entry_1[i][enq_ptr].valid = true;
         entry_1[i][enq_ptr].uop = in.dis2rob->uop[i];
         entry_1[i][enq_ptr].uop.cplt_num = 0;
-        // Instruction bits are transported via diag_val at dispatch
-        entry_1[i][enq_ptr].extra_data.instruction = in.dis2rob->uop[i].diag_val;
         enq = true;
       }
     }

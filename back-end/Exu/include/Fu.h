@@ -146,7 +146,7 @@ protected:
     // === 1. 获取操作数 & 计算 Store Data ===
     uint32_t op1 = inst.src1_rdata;
     uint32_t op2 = inst.src2_rdata;
-    bool is_atomic = inst.type == AMO;
+    bool is_atomic = inst.is_atomic;
 
     if (!is_atomic) {
       // 普通 Store: src2_rdata 是要存的数据 (对应 RS2)

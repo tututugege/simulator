@@ -36,7 +36,6 @@ struct FTQEntry {
 
 class FTQ {
 public:
-  static const int FTQ_SIZE = 64; // Adjust based on ROB/Structure size
   FTQEntry entries[FTQ_SIZE];
   int head; // Oldest
   int tail; // Newest (allocation point)

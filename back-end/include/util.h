@@ -8,7 +8,8 @@ extern long long sim_time;
 #define Assert(cond)                                                           \
   do {                                                                         \
     if (!(cond)) {                                                             \
-      printf("\033[1;31mAssertion failed: %s, file %s, line %d, cycle %lld\033[0m\n", \
+      printf("\033[1;31mAssertion failed: %s, file %s, line %d, cycle "        \
+             "%lld\033[0m\n",                                                  \
              #cond, __FILE__, __LINE__, sim_time);                             \
       exit(1);                                                                 \
     }                                                                          \
@@ -28,8 +29,7 @@ inline bool is_store(InstInfo uop) {
 }
 
 inline bool is_store(MicroOp uop) {
-  return uop.type == STORE ||
-         (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR);
+  return uop.op == UOP_STA || uop.op == UOP_STD;
 }
 
 inline bool is_load(InstInfo uop) {
@@ -37,7 +37,7 @@ inline bool is_load(InstInfo uop) {
 }
 
 inline bool is_load(MicroOp uop) {
-  return uop.type == LOAD || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::SC);
+  return uop.op == UOP_LOAD;
 }
 
 inline bool is_CSR(InstType type) {
@@ -88,7 +88,7 @@ inline bool is_exception(InstInfo uop) {
 
 inline bool is_exception(MicroOp uop) {
   return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store ||
-         uop.illegal_inst || uop.type == ECALL;
+         uop.illegal_inst || is_CSR_uop(uop.op);
 }
 
 inline bool is_flush_inst(InstInfo uop) {
@@ -98,7 +98,6 @@ inline bool is_flush_inst(InstInfo uop) {
 }
 
 inline bool is_flush_inst(MicroOp uop) {
-  return uop.type == CSR || uop.type == ECALL || uop.type == MRET ||
-         uop.type == SRET || uop.type == SFENCE_VMA || is_exception(uop) ||
-         uop.type == EBREAK || (uop.flush_pipe && is_load(uop));
+  return is_CSR_uop(uop.op) || is_exception(uop) ||
+         (uop.flush_pipe && is_load(uop));
 }

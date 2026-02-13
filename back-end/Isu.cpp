@@ -116,8 +116,7 @@ void Isu::comb_enq() {
         UopEntry new_entry;
         new_entry.uop = uop;
         new_entry.valid = true;
-        // 记录入队时间
-        new_entry.uop.enqueue_time = sim_time;
+        // 记录入队时间 (已移除)
         // 调试已移除
 
         // 入队

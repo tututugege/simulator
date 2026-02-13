@@ -10,7 +10,6 @@ extern RefCpu ref_cpu;
 
 // 1. 定义配置结构
 struct SimConfig {
-  // [修改] 增加 FAST 模式
   enum Mode {
     RUN,     // 运行模式：从头运行二进制文件 (乱序)
     CKPT,    // 快照模式：从快照恢复
@@ -18,10 +17,9 @@ struct SimConfig {
     REF_ONLY // 仅运行 Reference Model
   } mode = RUN;
 
-  // 统一的目标文件路径
+  // 目标文件路径
   std::string target_file;
-
-  // [新增] 存储 Fast-forward 的指令数/周期数
+  // 存储 Fast-forward 的指令数/周期数
   uint64_t fast_forward_count = 0;
 };
 
@@ -153,7 +151,6 @@ int main(int argc, char *argv[]) {
 
   // --- D. 模拟器启动逻辑 ---
   if (config.mode == SimConfig::RUN) {
-    // [修改] 日志更新为 Binary Image
     std::cout << "[Mode] RUN: Loading Binary Image..." << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.load_image(config.target_file);
@@ -188,9 +185,6 @@ int main(int argc, char *argv[]) {
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.load_image(config.target_file);
     ref_cpu.uart_print = true;
-
-    // cpu.init(); // Moved to top
-
     ref_cpu.strict_mmu_check = false;
 
     std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
@@ -202,15 +196,11 @@ int main(int argc, char *argv[]) {
       if (sim_time % 10000000 == 0) {
         cout << dec << sim_time << endl;
       }
-      // Since Ref doesn't have an explicit 'end' signal exposed easily, usually
-      // relies on cycles or trap
     }
     std::cout << "[Debug] Ref Model Run Completed." << std::endl;
     free(p_memory);
     return 0;
   }
-
-  // cpu.init(); // Moved to top
 
   // 主循环
   for (sim_time = 0; sim_time < (long long)MAX_SIM_TIME; sim_time++) {
@@ -235,15 +225,15 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  free(p_memory);
+
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
     cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    // cpu.ctx.perf.perf_print(); // Handled by exit_handler
     cout << "\033[1;32m-----------------------------\033[0m" << endl;
 
     if (cpu.ctx.exit_reason == ExitReason::EBREAK) {
       uint32_t a0 = cpu.get_reg(10);
-      free(p_memory);
       return a0;
     }
 
@@ -251,11 +241,9 @@ int main(int argc, char *argv[]) {
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     cout << "\033[1;31mTIME OUT!!!!QAQ\033[0m" << endl;
     cout << "\033[1;31m------------------------------\033[0m" << endl;
-    // cpu.ctx.perf.perf_print(); // Handled by exit_handler if reached limit
     cout << "\033[1;31m------------------------------\033[0m" << endl;
     exit(1);
   }
 
-  free(p_memory);
   return 0;
 }
