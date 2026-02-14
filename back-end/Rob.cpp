@@ -256,22 +256,22 @@ void Rob::comb_commit() {
 }
 
 void Rob::comb_complete() {
-  //  执行完毕的标记
+  //  执行完毕的标记 (Early Completion Phase 2)
   for (int i = 0; i < ISSUE_WIDTH; i++) {
-    if (in.prf2rob->entry[i].valid) {
-      int bank_idx = get_rob_bank(in.prf2rob->entry[i].uop.rob_idx);
-      int line_idx = get_rob_line(in.prf2rob->entry[i].uop.rob_idx);
+    if (in.exu2rob->entry[i].valid) {
+      int bank_idx = get_rob_bank(in.exu2rob->entry[i].uop.rob_idx);
+      int line_idx = get_rob_line(in.exu2rob->entry[i].uop.rob_idx);
 
       entry_1[bank_idx][line_idx].uop.cplt_num++;
 
       for (int k = 0; k < LSU_LDU_COUNT; k++) {
         if (i == IQ_LD_PORT_BASE + k) {
           // 保存物理地址，用于 Commit 时的对齐检查
-          entry_1[bank_idx][line_idx].uop.diag_val = in.prf2rob->entry[i].uop.diag_val;
+          entry_1[bank_idx][line_idx].uop.diag_val = in.exu2rob->entry[i].uop.diag_val;
           
-          if (is_page_fault(in.prf2rob->entry[i].uop)) {
+          if (is_page_fault(in.exu2rob->entry[i].uop)) {
             entry_1[bank_idx][line_idx].uop.diag_val =
-                in.prf2rob->entry[i].uop.result;
+                in.exu2rob->entry[i].uop.result;
             entry_1[bank_idx][line_idx].uop.page_fault_load = true;
           }
         }
@@ -279,9 +279,9 @@ void Rob::comb_complete() {
 
       for (int k = 0; k < LSU_STA_COUNT; k++) {
         if (i == IQ_STA_PORT_BASE + k) {
-          if (is_page_fault(in.prf2rob->entry[i].uop)) {
+          if (is_page_fault(in.exu2rob->entry[i].uop)) {
             entry_1[bank_idx][line_idx].uop.diag_val =
-                in.prf2rob->entry[i].uop.result;
+                in.exu2rob->entry[i].uop.result;
             entry_1[bank_idx][line_idx].uop.page_fault_store = true;
           }
         }
@@ -289,16 +289,16 @@ void Rob::comb_complete() {
 
       // for debug
       entry_1[bank_idx][line_idx].uop.flush_pipe =
-          in.prf2rob->entry[i].uop.flush_pipe;
+          in.exu2rob->entry[i].uop.flush_pipe;
       entry_1[bank_idx][line_idx].uop.difftest_skip =
-          in.prf2rob->entry[i].uop.difftest_skip;
-      if (is_branch_uop(in.prf2rob->entry[i].uop.op)) {
+          in.exu2rob->entry[i].uop.difftest_skip;
+      if (is_branch_uop(in.exu2rob->entry[i].uop.op)) {
         entry_1[bank_idx][line_idx].uop.diag_val =
-            in.prf2rob->entry[i].uop.diag_val;
+            in.exu2rob->entry[i].uop.diag_val;
         entry_1[bank_idx][line_idx].uop.mispred =
-            in.prf2rob->entry[i].uop.mispred;
+            in.exu2rob->entry[i].uop.mispred;
         entry_1[bank_idx][line_idx].uop.br_taken =
-            in.prf2rob->entry[i].uop.br_taken;
+            in.exu2rob->entry[i].uop.br_taken;
       }
     }
   }
@@ -402,8 +402,8 @@ RobIO Rob::get_hardware_io() {
     hardware.from_dis.uop[i] = RobUop::filter(in.dis2rob->uop[i]);
   }
   for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.from_exe.valid[i] = in.prf2rob->entry[i].valid;
-    hardware.from_exe.uop[i] = ExeWbUop::filter(in.prf2rob->entry[i].uop);
+    hardware.from_exe.valid[i] = in.exu2rob->entry[i].valid;
+    hardware.from_exe.uop[i] = ExeWbUop::filter(in.exu2rob->entry[i].uop);
   }
 
   // --- Outputs ---

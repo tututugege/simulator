@@ -22,8 +22,9 @@ Idu 模块是后端流水线的入口，主要负责将取指阶段获得的指�
 | `dec2ren.uop` | `FETCH_WIDTH * sizeof(Uop)` | 输出 | Rename | 译码后的微指令序列 |
 | `dec2ren.valid` | `FETCH_WIDTH * 1` | 输出 | Rename | 传递给 Rename 的有效位 |
 | `ren2dec.ready` | 1 | 输入 | Rename | Rename 阶段就绪信号 |
-| `prf2dec.mispred` | 1 | 输入 | PRF/BRU | 分支误预测信号 |
-| `prf2dec.br_tag` | `BR_TAG_WIDTH` | 输入 | PRF/BRU | 误预测分支的标签 |
+| `exu2id.mispred` | 1 | 输入 | EXU | **早期误预测信号**：执行级直接触发的恢复信号 |
+| `exu2id.br_tag` | `BR_TAG_WIDTH` | 输入 | EXU | 误预测分支的标签 |
+| `exu2id.redirect_pc`| 32 | 输入 | EXU | 误预测跳转目标 PC |
 | `rob_bcast.flush` | 1 | 输入 | ROB | 流水线冲刷信号 |
 | `commit.commit_entry` | `COMMIT_WIDTH * sizeof(Entry)` | 输入 | ROB | 指令提交信息（用于 Tag 回收） |
 
@@ -56,9 +57,9 @@ IDU 内部维护了一个循环队列 `tag_list` 和一个空闲比特向量 `ta
 - **功能描述**：并发调用译码逻辑，将原始指令解析为 Uops。同时为分支指令分配新的 `br_tag`。
 - **关键控制**：检测 FTQ 是否已满或 Tag 资源是否耗尽，若发生则触发 Stall 反压前端。
 
-### 4.2 `comb_branch` (分支误预测处理)
-- **功能描述**：当接收到 `prf2dec->mispred` 时，根据误预测分支的 Tag 查找 `tag_list`。
-- **关键信号**：生成 `dec_bcast->br_mask`，标定所有受影响需要冲刷的分支，并回滚 Tag 分配指针。
+### 4.2 `comb_branch` (早期分支误预测处理)
+- **功能描述**：当接收到 `exu2id->mispred`（来自执行单元的早期完成确认）时，立即启动恢复流程。
+- **关键信号**：生成 `dec_bcast->br_mask`，标定所有受影响需要冲刷的分支，回滚 Tag 分配指针，并直接向前端发送 `redirect_pc`。这种早期恢复机制显著降低了误预测惩罚（从退休级提前到执行级）。
 
 ### 4.3 `comb_fire` (流控握手)
 - **功能描述**：综合上游取指有效性、下游 Rename 准备状态及内部冲刷/Stall 状态，决定 `fire` 信号。

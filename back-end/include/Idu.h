@@ -9,9 +9,9 @@ class IduIn {
 public:
   FrontDecIO *front2dec;
   RenDecIO *ren2dec;
-  PrfDecIO *prf2dec;
   RobBroadcastIO *rob_bcast;
   RobCommitIO *commit;
+  ExuIdIO *exu2id; // [New] From Exu
 };
 
 class IduOut {
@@ -56,4 +56,8 @@ public:
   wire<BR_TAG_WIDTH> enq_ptr_1;
   wire<BR_TAG_WIDTH> now_tag_1;
   wire<1> tag_vec_1[MAX_BR_NUM];
+
+  // [New] Latch for Branch Result from Exu
+  ExuIdIO br_latch;
+  ExuIdIO br_latch_1;
 };

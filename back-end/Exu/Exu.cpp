@@ -263,6 +263,7 @@ void Exu::comb_exec() {
 
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     out.exe2prf->entry[i].valid = false;
+    out.exu2rob->entry[i].valid = false;
   }
 
   for (int i = 0; i < LSU_AGU_COUNT; i++) {
@@ -288,90 +289,133 @@ void Exu::comb_exec() {
     fu_global_idx++;
   }
 
-  // 二、写回逻辑 (Writeback)
+  // ==========================================
+  // 二、写回逻辑 (Writeback) - 终极解耦重构
+  // ==========================================
+
+  // 结果收集容器 (利用现有 UopEntry 静态数组)
+  UopEntry int_res[ALU_NUM];
+  UopEntry br_res[BRU_NUM];
+
+  // 1. 全局端口扫描与立即分发 (Total Port Scan)
   for (int p_idx = 0; p_idx < ISSUE_WIDTH; p_idx++) {
+    AbstractFU *winner_fu = nullptr;
+    MicroOp *u = nullptr;
+
+    // 仲裁：选择该端口的胜出 FU
     for (auto &map_entry : port_mappings[p_idx].entries) {
-      AbstractFU *fu = map_entry.fu;
-
-      // 检查这个 FU 有没有结果吐出来
-      MicroOp *res = fu->get_finished_uop();
-
-      if (res) {
-        if (out.exe2prf->entry[p_idx].valid) {
-          // 糟糕！端口已经被同组的兄弟占了！
-          continue;
-        }
-
-        // --- 正常的写回处理 ---
-        bool flushed = in.rob_bcast->flush;
-        if (in.dec_bcast->mispred &&
-            ((1ULL << res->tag) & in.dec_bcast->br_mask)) {
-          flushed = true;
-        }
-
-        // 关键修正：写回端口用于唤醒发射队列中的依赖指令
-        // 即使指令被冲刷，也必须写回以广播唤醒信号！
-        // PRF 阶段会负责过滤掉被冲刷的指令
-        // [修正] STA 和 LOAD 都不再通过 native 路径写回端口，而是等 LSU 返回
-        if (res->op != UOP_LOAD && res->op != UOP_STA) {
-          out.exe2prf->entry[p_idx].valid = true;
-          out.exe2prf->entry[p_idx].uop = *res;
-        }
-
-        // LSU 请求：只在非冲刷 (Flush) 时发送
-        if (!flushed) {
-          if (res->op == UOP_STA || res->op == UOP_LOAD) {
-            int lsu_idx = fu->get_lsu_port_id();
-            out.exe2lsu->agu_req[lsu_idx].valid = true;
-            out.exe2lsu->agu_req[lsu_idx].uop = *res;
-          } else if (res->op == UOP_STD) {
-            int lsu_idx = fu->get_lsu_port_id();
-            out.exe2lsu->sdu_req[lsu_idx].valid = true;
-            out.exe2lsu->sdu_req[lsu_idx].uop = *res;
-          }
-        }
-
-        // ✅ 总是移除结果，避免重复广播
-        fu->pop_finished();
-
-        // 既然这个端口被我占了，同组的其他 FU 就别想了，跳出内层循环
+      if (MicroOp *res = map_entry.fu->get_finished_uop()) {
+        u = res;
+        winner_fu = map_entry.fu;
         break;
       }
     }
+    if (!u) continue;
+
+    bool flushed = in.rob_bcast->flush || 
+                  (in.dec_bcast->mispred && ((1ULL << u->tag) & in.dec_bcast->br_mask));
+
+    // A. 立即驱动 ROB (非访存指令在此完成)
+    // 注意：LOAD/STA 的完成通报由 LSU 回调阶段处理
+    if (u->op != UOP_LOAD && u->op != UOP_STA) {
+      out.exu2rob->entry[p_idx].valid = true;
+      out.exu2rob->entry[p_idx].uop = *u;
+    }
+
+    // B. 立即外发 LSU 请求
+    if (!flushed) {
+      int lsu_idx = winner_fu->get_lsu_port_id();
+      if (u->op == UOP_STA || u->op == UOP_LOAD) {
+        out.exe2lsu->agu_req[lsu_idx].valid = true;
+        out.exe2lsu->agu_req[lsu_idx].uop = *u;
+      } else if (u->op == UOP_STD) {
+        out.exe2lsu->sdu_req[lsu_idx].valid = true;
+        out.exe2lsu->sdu_req[lsu_idx].uop = *u;
+      }
+    }
+
+    // C. 收集分类结果
+    // 收集 INT 写回信息 (仅限需要写回目的寄存器的 ALU 指令)
+    if (p_idx >= IQ_ALU_PORT_BASE && p_idx < IQ_ALU_PORT_BASE + ALU_NUM && u->dest_en) {
+      int idx = p_idx - IQ_ALU_PORT_BASE;
+      int_res[idx].uop = *u;
+      int_res[idx].valid = true;
+    }
+    // 收集 BR 信息 (用于分支仲裁)
+    if (p_idx >= IQ_BR_PORT_BASE && p_idx < IQ_BR_PORT_BASE + BRU_NUM) {
+      int idx = p_idx - IQ_BR_PORT_BASE;
+      br_res[idx].uop = *u;
+      br_res[idx].valid = true;
+    }
+
+    winner_fu->pop_finished();
   }
 
-  // LSU 的 Load 结果
+  // 2. 选择性写回分发 (Writeback Distribution)
+  
+  // A. 处理常规计算写回 (仅扫描 INT 结果)
+  for (int i = 0; i < ALU_NUM; i++) {
+    if (int_res[i].valid) {
+      int p_idx = IQ_ALU_PORT_BASE + i;
+      out.exe2prf->entry[p_idx].valid = true;
+      out.exe2prf->entry[p_idx].uop = int_res[i].uop;
+    }
+  }
+
+  // B. 处理 LSU 回调写回 (LOAD/STA 数据回流)
+  // 此处同时驱动 PRF 和 ROB
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
     if (in.lsu2exe->wb_req[i].valid) {
-      MicroOp &load_uop = in.lsu2exe->wb_req[i].uop;
+      int p_idx = IQ_LD_PORT_BASE + i;
+      MicroOp &u = in.lsu2exe->wb_req[i].uop;
+      Assert(!out.exe2prf->entry[p_idx].valid);
+      out.exe2prf->entry[p_idx].valid = true;
+      out.exe2prf->entry[p_idx].uop = u;
+      out.exu2rob->entry[p_idx].valid = true;
+      out.exu2rob->entry[p_idx].uop = u;
+    }
+  }
 
-      int wb_port_idx = IQ_LD_PORT_BASE + i;
+  for (int i = 0; i < LSU_STA_COUNT; i++) {
+    if (in.lsu2exe->sta_wb_req[i].valid) {
+      int p_idx = IQ_STA_PORT_BASE + i;
+      MicroOp &u = in.lsu2exe->sta_wb_req[i].uop;
+      Assert(!out.exe2prf->entry[p_idx].valid);
+      out.exe2prf->entry[p_idx].valid = true;
+      out.exe2prf->entry[p_idx].uop = u;
+      out.exu2rob->entry[p_idx].valid = true;
+      out.exu2rob->entry[p_idx].uop = u;
+    }
+  }
 
-      if (!out.exe2prf->entry[wb_port_idx].valid) {
-        out.exe2prf->entry[wb_port_idx].valid = true;
-        out.exe2prf->entry[wb_port_idx].uop = load_uop;
-      } else {
-        Assert(0);
+  // ==========================================
+  // 三、分支误预测仲裁 (Early Recovery)
+  // ==========================================
+  bool mispred = false;
+  MicroOp *mispred_uop = nullptr;
+
+  for (int i = 0; i < BRU_NUM; i++) {
+    if (br_res[i].valid && br_res[i].uop.mispred) {
+      if (!mispred) {
+        mispred = true;
+        mispred_uop = &br_res[i].uop;
+      } else if (cmp_inst_age(*mispred_uop, br_res[i].uop)) {
+        mispred_uop = &br_res[i].uop;
       }
     }
   }
 
-  // [新增] LSU 的 STA 结果 (带 Page Fault)
-  for (int i = 0; i < LSU_STA_COUNT; i++) {
-    if (in.lsu2exe->sta_wb_req[i].valid) {
-      MicroOp &sta_uop = in.lsu2exe->sta_wb_req[i].uop;
-
-      int wb_port_idx = IQ_STA_PORT_BASE + i;
-
-      if (!out.exe2prf->entry[wb_port_idx].valid) {
-        out.exe2prf->entry[wb_port_idx].valid = true;
-        out.exe2prf->entry[wb_port_idx].uop = sta_uop;
-      } else {
-        // 如果端口已被同周期的其他非访存指令占领，这里会报错。
-        // 由于 STA 是独占端口的，且 AGU 已被跳过写回，这里理论上应该是干净的。
-        Assert(0);
-      }
-    }
+  out.exu2id->mispred = mispred;
+  if (mispred) {
+    out.exu2id->redirect_pc = mispred_uop->diag_val;
+    out.exu2id->redirect_rob_idx = mispred_uop->rob_idx;
+    out.exu2id->br_tag = mispred_uop->tag;
+    out.exu2id->ftq_idx = mispred_uop->ftq_idx;
+  } else {
+    out.exu2id->redirect_pc = 0;
+    out.exu2id->redirect_rob_idx = 0;
+    out.exu2id->br_tag = 0;
+    out.exu2id->ftq_idx = 0;
   }
 }
 

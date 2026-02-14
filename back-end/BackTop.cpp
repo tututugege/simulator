@@ -247,9 +247,9 @@ void BackTop::init() {
   idu->out.dec_bcast = &dec_bcast;
   idu->in.front2dec = &front2dec;
   idu->in.ren2dec = &ren2dec;
-  idu->in.prf2dec = &prf2dec;
   idu->in.rob_bcast = &rob_bcast;
   idu->in.commit = &rob_commit;
+  idu->in.exu2id = &exu2id;
 
   rename->in.dec2ren = &dec2ren;
   rename->in.dis2ren = &dis2ren;
@@ -286,10 +286,8 @@ void BackTop::init() {
   isu->out.iss2prf = &iss2prf;
   isu->out.iss_awake = &iss_awake;
 
-  prf->out.prf2rob = &prf2rob;
-  prf->out.prf_awake = &prf_awake;
-  prf->out.prf2dec = &prf2dec;
   prf->out.prf2exe = &prf2exe;
+  prf->out.prf_awake = &prf_awake;
 
   prf->in.iss2prf = &iss2prf;
   prf->in.exe2prf = &exe2prf;
@@ -301,19 +299,20 @@ void BackTop::init() {
   exu->in.rob_bcast = &rob_bcast;
   exu->in.lsu2exe = &lsu2exe;
   exu->in.csr2exe = &csr2exe;
-  exu->in.lsu2exe = &lsu2exe;
 
   exu->out.exe2prf = &exe2prf;
   exu->out.exe2iss = &exe2iss;
   exu->out.exe2lsu = &exe2lsu;
+  exu->out.exe2lsu = &exe2lsu;
   exu->out.exe2csr = &exe2csr;
+  exu->out.exu2id = &exu2id;
+  exu->out.exu2rob = &exu2rob;
 
   rob->in.dis2rob = &dis2rob;
   rob->in.dec_bcast = &dec_bcast;
-  rob->in.prf2rob = &prf2rob;
   rob->in.lsu2rob = &lsu2rob;
-  rob->in.dec_bcast = &dec_bcast;
   rob->in.csr2rob = &csr2rob;
+  rob->in.exu2rob = &exu2rob;
 
   rob->out.rob_bcast = &rob_bcast;
   rob->out.rob_commit = &rob_commit;
@@ -348,7 +347,6 @@ void BackTop::init() {
   csr->init();
   rob->init();
   lsu->init();
-  lsu->init();
 }
 
 void BackTop::comb_csr_status() {
@@ -380,7 +378,6 @@ void BackTop::comb() {
 
   // 每个空行表示分层  下层会依赖上层产生的某个信号
   idu->comb_decode();
-  prf->comb_br_check();
   csr->comb_interrupt();
   rename->comb_alloc();
   prf->comb_complete();
@@ -433,9 +430,9 @@ void BackTop::comb() {
 
   // 1. Normal case (No Rob flush)
   if (!rob->out.rob_bcast->flush) {
-    out.mispred = prf->out.prf2dec->mispred;
+    out.mispred = idu->out.dec_bcast->mispred;
     out.stall = !idu->out.dec2front->ready;
-    out.redirect_pc = prf->out.prf2dec->redirect_pc;
+    out.redirect_pc = idu->br_latch.redirect_pc;
   } else {
     out.mispred = true;
     if (rob->out.rob_bcast->mret || rob->out.rob_bcast->sret) {

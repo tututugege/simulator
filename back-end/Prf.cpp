@@ -10,42 +10,6 @@ void Prf::init() {}
 // ==========================================
 // 1. 分支检查 (Writeback 阶段)
 // ==========================================
-void Prf::comb_br_check() {
-  // 检查写回级是否有误预测的分支指令
-  bool mispred = false;
-  MicroOp *mispred_uop = nullptr;
-
-  // 遍历所有写回槽位
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    if (inst_r[i].valid && inst_r[i].uop.mispred) {
-
-      // 找到最老的一条误预测指令 (Age logic)
-      if (!mispred) {
-        mispred = true;
-        mispred_uop = &inst_r[i].uop;
-      } else if (cmp_inst_age(*mispred_uop, inst_r[i].uop)) {
-        mispred_uop = &inst_r[i].uop;
-      }
-    }
-  }
-
-  out.prf2dec->mispred = mispred;
-  if (mispred) {
-    out.prf2dec->redirect_pc = mispred_uop->diag_val; // Calculated target in BRU
-    out.prf2dec->redirect_rob_idx = mispred_uop->rob_idx;
-    out.prf2dec->br_tag = mispred_uop->tag;
-    out.prf2dec->ftq_idx = mispred_uop->ftq_idx;
-    if (LOG)
-      cout << "PC " << hex << mispred_uop->pc << " misprediction redirect_pc 0x"
-           << hex << out.prf2dec->redirect_pc << endl;
-  } else {
-    // 默认输出第一个槽位的信息（如果没有误预测，这个值通常被忽略）
-    out.prf2dec->redirect_pc = inst_r[0].uop.diag_val;
-    out.prf2dec->redirect_rob_idx = inst_r[0].uop.rob_idx;
-    out.prf2dec->br_tag = inst_r[0].uop.tag;
-    out.prf2dec->ftq_idx = 0;
-  }
-}
 
 // ==========================================
 // 2. 寄存器读取 (Dispatch 阶段) + Bypass
@@ -125,15 +89,7 @@ void Prf::comb_read() {
 // ==========================================
 // 3. 提交辅助 (Forward to ROB)
 // ==========================================
-void Prf::comb_complete() {
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    if (inst_r[i].valid) {
-      out.prf2rob->entry[i] = inst_r[i];
-    } else {
-      out.prf2rob->entry[i].valid = false;
-    }
-  }
-}
+void Prf::comb_complete() {}
 
 // ==========================================
 // 4. 唤醒逻辑 (Wakeup)

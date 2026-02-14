@@ -88,13 +88,13 @@
 | | Csr | `comb_exception` | 异常汇总 | `rob_commit`, `interrupt` (Group 2) |
 | | Rob | `comb_flush` | 全局冲刷信号 | `exception`, `mispred` (Group 1/2) |
 | | Rob | `comb_branch` | 分支重定向 | `mispred` (Group 1) |
-| | Idu | `comb_branch` | 前端重定向 | `mispred`, `redirect_pc` |
+| | Idu | `comb_branch` | 前端重定向 | `exu2id`, `mispred`, `redirect_pc` |
 | | Lsu/Isu/Dis | `comb_flush` | 模块级冲刷 | `rob_bcast.flush` (Group 2) |
 | **Group 3: Execution & Writeback**<br>*(执行计算，产生结果与唤醒)* | Exu | `comb_exec` | ALU/Mul/Div计算 | `isu2exe` (Issue Latch) |
 | | Lsu | `comb_load_res` | Load 结果回写 | Memory response |
 | | Prf | `comb_pipeline` | 锁存执行结果 | `exe2prf` (Group 3) |
 | | Prf | `comb_complete` | 标记完成 | `exe2prf` (Group 3) |
-| | Rob | `comb_complete` | 更新ROB计数 | `prf2rob` (Group 3) |
+| | Rob | `comb_complete` | 更新ROB计数 | `exu2rob` (Group 3), `lsu2rob` |
 | | Prf | `comb_awake` | 生成唤醒信号 | `exe2prf`, `wb_bypass` (Group 3) |
 | **Group 4: Issue & Read**<br>*(被唤醒，读取操作数)* | Isu | `comb_wakeup` | 唤醒 IQ 指令 | `prf_awake` (Group 3) |
 | | Isu | `comb_select` | 选择发射指令 | Ready Bit Mask |

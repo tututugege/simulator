@@ -25,6 +25,8 @@ void Idu::init() {
     tag_list[i] = 0;
     tag_list_1[i] = 0;
   }
+  br_latch = {};
+  br_latch_1 = {};
 }
 
 // 译码并分配 Tag
@@ -141,16 +143,16 @@ void Idu::comb_branch() {
   now_tag_1 = now_tag;
 
   // 如果一周期实现不方便，可以用状态机多周期实现
-  if (in.prf2dec->mispred) {
+  if (br_latch.mispred) {
     out.dec_bcast->mispred = true;
-    out.dec_bcast->br_tag = in.prf2dec->br_tag;
-    out.dec_bcast->redirect_rob_idx = in.prf2dec->redirect_rob_idx;
+    out.dec_bcast->br_tag = br_latch.br_tag;
+    out.dec_bcast->redirect_rob_idx = br_latch.redirect_rob_idx;
 
     LOOP_DEC(enq_ptr_1, MAX_BR_NUM);
     int enq_pre = (enq_ptr_1 + MAX_BR_NUM - 1) % MAX_BR_NUM;
     out.dec_bcast->br_mask = 0;
     // TODO: 换while
-    while (tag_list[enq_pre] != in.prf2dec->br_tag) {
+    while (tag_list[enq_pre] != br_latch.br_tag) {
       out.dec_bcast->br_mask |= 1ULL << tag_list[enq_ptr_1];
       tag_vec_1[tag_list[enq_ptr_1]] = true;
       LOOP_DEC(enq_ptr_1, MAX_BR_NUM);
@@ -182,8 +184,9 @@ void Idu::comb_flush() {
   }
 
   // Mispred: 回滚 FTQ tail 到误预测分支的下一个条目
-  if (in.prf2dec->mispred) {
-    int mispred_ftq = in.prf2dec->ftq_idx;
+  // Mispred: 回滚 FTQ tail 到误预测分支的下一个条目
+  if (br_latch.mispred) {
+    int mispred_ftq = br_latch.ftq_idx;
     // 误预测分支本身的 FTQ 条目是正确路径的，保留它
     // 但之后分配的所有条目都是错误路径的，需要释放
     int new_tail = (mispred_ftq + 1) % FTQ_SIZE;
@@ -193,9 +196,9 @@ void Idu::comb_flush() {
 }
 
 void Idu::comb_fire() {
-  out.dec2front->ready = in.ren2dec->ready && !in.prf2dec->mispred && !ftq->is_full();
+  out.dec2front->ready = in.ren2dec->ready && !br_latch.mispred && !ftq->is_full();
 
-  if (in.prf2dec->mispred || in.rob_bcast->flush) {
+  if (br_latch.mispred || in.rob_bcast->flush) {
     for (int i = 0; i < FETCH_WIDTH; i++) {
       out.dec2ren->valid[i] = false;
     }
@@ -259,6 +262,17 @@ void Idu::seq() {
       }
     }
     ftq->alloc();
+  }
+
+  // Latch Exu Branch Result
+  if (!in.rob_bcast->flush) {
+    br_latch.mispred = in.exu2id->mispred;
+    br_latch.redirect_pc = in.exu2id->redirect_pc;
+    br_latch.redirect_rob_idx = in.exu2id->redirect_rob_idx;
+    br_latch.br_tag = in.exu2id->br_tag;
+    br_latch.ftq_idx = in.exu2id->ftq_idx;
+  } else {
+    br_latch = {};
   }
 }
 
@@ -515,8 +529,9 @@ IduIO Idu::get_hardware_io() {
   hardware.from_ren.ready = in.ren2dec->ready;
 
   hardware.from_back.flush = in.rob_bcast->flush;
-  hardware.from_back.mispred = in.prf2dec->mispred;
-  hardware.from_back.br_tag = in.prf2dec->br_tag;
+  hardware.from_back.flush = in.rob_bcast->flush;
+  hardware.from_back.mispred = br_latch.mispred;
+  hardware.from_back.br_tag = br_latch.br_tag;
 
   // --- Outputs ---
   hardware.to_front.ready = out.dec2front->ready;

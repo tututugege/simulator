@@ -10,7 +10,7 @@ ROB (Reorder Buffer) 是乱序执行处理器维护程序顺序 (Program Order) 
 | 信号/字段 | 位宽 (bits) | 方向 | 来源/去向 | 描述 |
 | :--- | :--- | :--- | :--- | :--- |
 | `dis2rob.uop` | `FETCH_WIDTH * sizeof(Uop)` | 输入 | Dispatch | 新分派指令的 ROB 请求 |
-| `prf2rob.entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输入 | Prf | 指令完成通知 (Complete) |
+| `exu2rob.entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输入 | Exu | **早期完成通知 (Complete)**：指令执行结束信号 |
 | `dec_bcast.mispred` | 1 | 输入 | Idu | 分支误预测信号 |
 | `csr2rob.interrupt` | 1 | 输入 | Csr | 外部中断请求 |
 
@@ -56,8 +56,8 @@ ROB 实现了两种提交模式：
 - **功能描述**：根据 Dispatch 的 `dis_fire` 信号，将新指令写入 `enq_ptr` 指向的行，并推进指针。
 
 ### 4.3 `comb_complete` (完成标记)
-- **功能描述**：监听写回总线。
-- **逻辑**：根据写回指令的 `rob_idx` 找到对应条目，增加其 `cplt_num`。当 `cplt_num == uop_num`（针对被拆分的指令）时，该条目视为完成。
+- **功能描述**：监听 `exu2rob` (Backend Exec) 和 `lsu2rob` (Memory Interface) 完成总线。
+- **逻辑**：根据回传指令的 `rob_idx` 找到对应条目，增加其 `cplt_num`。由于优化后的后端过滤了部分 PRF 写回（如分支/存储），此总线是 ROB 获知指令执行状态的唯一数据源。当 `cplt_num == uop_num` 时，该条目视为已完成。
 - **异常记录**：如果遭遇 Page Fault 或分支误预测，在此阶段将异常信息记录到 ROB 条目中，**但不立即触发**，而是等到提交阶段。
 
 ### 4.4 `comb_commit` (提交与异常触发)

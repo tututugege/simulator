@@ -19,7 +19,9 @@ Exu (Execution Unit) 是后端流水线的计算中心，负责执行所有的�
 | :--- | :--- | :--- | :--- | :--- |
 | `exe2iss.ready` | `ISSUE_WIDTH * 1` | 输出 | Isu | 各发射端口对应的 FU 是否空闲 (Credit/Busy) |
 | `exe2prf.bypass` | `TOTAL_FU * sizeof(Entry)` | 输出 | Prf | **旁路广播**：所有 FU 完成的结果 (含推测结果) |
-| `exe2prf.entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输出 | Prf | **写回总线**：竞争胜出的写回结果 |
+| `exe2prf.entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输出 | Prf | **写回总线**：经过滤和仲裁后的 PRF 写回结果 |
+| `exu2rob.entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输出 | ROB | **早期完成总线**：指令执行完成信号 (脱离 PRF 写回) |
+| `exu2id.mispred` | - | 输出 | Idu | **早期跳转恢复**：检测到分支误预测时立即触发前端重定向 |
 | `exe2lsu.agu/sdu_req`| - | 输出 | Lsu | 发送给 LSU 的地址或数据请求 |
 | `exe2csr` | - | 输出 | Csr | CSR 读写请求 |
 
@@ -104,13 +106,24 @@ classDiagram
 - **功能描述**：生成 `exe2iss.ready` 信号。
 - **逻辑**：只有当指令对应的目标 FU (如 ALU) 不繁忙 (`can_accept()`) 且流水线寄存器为空时，才置 Ready。这实现了基于 Credit 的流控。
 
-### 4.2 `comb_exec` (执行与写回仲裁)
-- **输入分发**：将 `inst_r` 中的指令分发给对应的 FU 实例。
-- **旁路广播 (Bypass)**：收集所有 FU 的 `get_finished_uop()` 结果，**无条件**放入 `exe2prf.bypass` 接口，供 Dispatch/Issue/Prf 阶段实现 0 周期转发。
-- **写回仲裁 (Writeback)**：
-  - 由于多个 FU (如 ALU 和 MUL) 可能共享同一个写回端口（物理发射端口），需要进行仲裁。
-  - 当前策略：优先服务高延迟或固定优先级的 FU。
-  - **特殊处理**：Store 指令 (STA/STD) 和 Load 指令不直接通过 Exu 写回端口写回 PRF，而是通过 LSU 接口处理。
+### 4.2 `comb_exec` (终极解耦写回重构)
+为了实现最高效的数据流驱动，`comb_exec` 采用了“全局扫描 + 选择性分发”的三段式设计：
+
+#### **阶段 1：全局扫描与立即驱动 (Global Scan & Immediate Drive)**
+- **操作**：遍历所有 `ISSUE_WIDTH` 发射端口进行 FU 仲裁。
+- **立即分发**：
+    - **ROB 完成**：非访存指令在赢得仲裁后立即驱动 `exu2rob` 通报完成。
+    - **LSU 请求**：访存请求（AGU/SDU）立即驱动 `exe2lsu` 发送。
+- **按类收集**：将物理端口的结果分类暂存至静态数组（`int_res` 和 `br_res`），剥离非必要的端口依赖。
+
+#### **阶段 2：选择性写回与回调 (Selective Distribution)**
+- **常规写回**：仅遍历 `int_res` 数组，将具备 `dest_en` 的计算结果分发至 `exe2prf`。
+- **统一回调**：集中处理来自 LSU 的 Load/STA 异步回调，同时驱动 PRF 数据写回与 ROB 完成通报。
+
+#### **阶段 3：静态分支仲裁 (Static Branch Arbitration)**
+- **逻辑**：仅遍历固定大小的 `br_res` 数组进行误预测检测。由于脱离了全局总线扫描，仲裁逻辑更加静态且高效。
+
+---
 
 ### 4.3 `comb_to_csr` (CSR 预处理)
 - **功能描述**：解析 CSR 指令的读写行为，驱动 CSR 单元接口。

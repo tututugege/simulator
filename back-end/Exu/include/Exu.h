@@ -31,6 +31,8 @@ public:
   ExeIssIO *exe2iss;
   ExeCsrIO *exe2csr;
   ExeLsuIO *exe2lsu;
+  ExuIdIO *exu2id; // [New] Early Branch Resolution
+  ExuRobIO *exu2rob;
 };
 
 class Exu {

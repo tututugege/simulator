@@ -13,10 +13,10 @@ public:
 class RobIn {
 public:
   DisRobIO *dis2rob;
-  PrfRobIO *prf2rob;
   CsrRobIO *csr2rob;
   LsuRobIO *lsu2rob;
   DecBroadcastIO *dec_bcast;
+  ExuRobIO *exu2rob;
 };
 
 class Rob {

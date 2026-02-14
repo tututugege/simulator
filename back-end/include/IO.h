@@ -283,17 +283,18 @@ struct ExeIssIO {
   }
 };
 
-struct PrfRobIO {
 
+struct ExuRobIO {
   UopEntry entry[ISSUE_WIDTH];
 
-  PrfRobIO() {
+  ExuRobIO() {
     for (auto &v : entry)
       v = {};
   }
 };
 
-struct PrfDecIO {
+
+struct ExuIdIO {
 
   wire<1> mispred;
   wire<32> redirect_pc;
@@ -301,7 +302,7 @@ struct PrfDecIO {
   wire<BR_TAG_WIDTH> br_tag;
   int ftq_idx;  // FTQ index of mispredicting branch, for tail recovery
 
-  PrfDecIO() {
+  ExuIdIO() {
     mispred = {};
     redirect_pc = {};
     redirect_rob_idx = {};

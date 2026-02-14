@@ -6,8 +6,6 @@
 class PrfOut {
 public:
   PrfExeIO *prf2exe;
-  PrfRobIO *prf2rob;
-  PrfDecIO *prf2dec;
   PrfAwakeIO *prf_awake;
 };
 
@@ -26,7 +24,6 @@ public:
   PrfIn in;
   PrfOut out;
 
-  void comb_br_check();
   void comb_branch();
   void comb_complete();
   void comb_awake();

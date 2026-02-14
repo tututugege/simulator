@@ -20,7 +20,6 @@ Prf (Physical Register File) 模块是后端数据流的汇聚点。它不仅负
 | `prf2exe.iss_entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输出 | Exu | 读出操作数后的指令包 |
 | `prf2dec.mispred` | 1 | 输出 | Idu/Ren | 误预测信号 |
 | `prf2dec.redirect_pc` | 32 | 输出 | Idu | 误预测重定向目标地址 |
-| `prf2rob.entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输出 | ROB | 写回完成的指令（通知 ROB 标记 Complete） |
 | `prf_awake` | `LSU_WIDTH * sizeof(Wake)` | 输出 | Isu/Ren | Load 写回唤醒信号 |
 
 ---
@@ -57,8 +56,6 @@ Prf (Physical Register File) 模块是后端数据流的汇聚点。它不仅负
 - **功能描述**：在 Writeback 阶段 (`inst_r`) 检查是否有指令被标记为误预测 (`mispred`)。
 - **仲裁**：如果同一周期有多条分支误预测，选择**最老 (Oldest)** 的一条（根据 ROB ID 比较）作为重定向基准，生成 `redirect_pc` 和 `br_tag`。
 
-### 4.3 `comb_complete` (完成通知)
-- **功能描述**：将 Writeback 阶段的指令状态发送给 ROB，通知其标记为 `Complete`，准备提交。
 
 ### 4.4 `comb_awake` (Load 唤醒)
 - **功能描述**：处理 Load 指令的唤醒。

@@ -75,9 +75,9 @@ private:
   IssDisIO iss2dis;
 
   PrfExeIO prf2exe;
-  PrfRobIO prf2rob;
   PrfAwakeIO prf_awake;
-  PrfDecIO prf2dec;
+  ExuIdIO exu2id;
+  ExuRobIO exu2rob;
 
   ExePrfIO exe2prf;
   ExeIssIO exe2iss;
