@@ -17,6 +17,7 @@ extern "C" {
 // ==========================================
 class FPUSoftfloat : public FixedLatencyFU {
     static constexpr int FADD = 0b00000;
+    static constexpr int FSUB = 0b00001;
     static constexpr int FMUL = 0b00010;
 
 public:
@@ -34,6 +35,10 @@ protected:
     case UOP_FP:{
         switch (inst.func7 >> 2) {
         case FADD:
+            inst.result = f32_add(a,b).v;
+            break;
+        case FSUB:
+            b.v ^= 0x80000000;
             inst.result = f32_add(a,b).v;
             break;
         case FMUL:
@@ -57,6 +62,7 @@ protected:
 // ==========================================
 class FPURtl : public FixedLatencyFU {
     static constexpr int FADD = 0b00000;
+    static constexpr int FSUB = 0b00001;
     static constexpr int FMUL = 0b00010;
 
 public:
@@ -124,6 +130,9 @@ protected:
             switch (inst.func7 >> 2) {
             case FADD:
                 inst.result = rtlFADD32(a, b, rm);
+                break;
+            case FSUB:
+                inst.result = rtlFADD32(a, b ^ 0x80000000, rm);
                 break;
             case FMUL:
                 inst.result = rtlFMUL32(a, b, rm);
