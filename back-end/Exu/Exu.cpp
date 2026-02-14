@@ -1,4 +1,5 @@
 #include "Exu.h"
+#include "FPU.h"
 #include "config.h"
 
 Exu::Exu(SimContext *ctx, FTQ *ftq) : ctx(ctx), ftq(ftq) {
@@ -76,6 +77,16 @@ void Exu::init() {
       auto csr = new CsrUnit("CSR", i, out.exe2csr, in.csr2exe);
       units.push_back(csr);
       port_mappings[i].entries.push_back({csr, OP_MASK_CSR});
+    }
+
+    // 9. FP
+    if (mask & OP_MASK_FP) {
+      auto fpu = new FPURtl("FPU", i, 1);
+      units.push_back(fpu);
+      FuEntry fpu_entry;
+      fpu_entry.fu = fpu;
+      fpu_entry.support_mask = OP_MASK_FP;
+      port_mappings[i].entries.push_back(fpu_entry);
     }
   }
 

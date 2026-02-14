@@ -355,6 +355,12 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
     out_uops[0].uop.op = UOP_DIV;
     count = 1;
     break;
+  case FP:
+    out_uops[0].iq_id = IQ_INT;
+    out_uops[0].uop = MicroOp(src_uop);
+    out_uops[0].uop.op = UOP_FP;
+    count = 1;
+    break;
   case BR:
     out_uops[0].iq_id = IQ_BR;
     out_uops[0].uop = MicroOp(src_uop);

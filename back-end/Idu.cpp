@@ -497,6 +497,15 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
 
+  case number_12_opcode_float: {
+    uop.dest_en = true;
+    uop.src1_en = true;
+    uop.src2_en = true;
+    uop.src2_is_imm = false;
+    uop.type = FP;
+    break;
+  }
+
   default: {
     uop.dest_en = false;
     uop.src1_en = false;

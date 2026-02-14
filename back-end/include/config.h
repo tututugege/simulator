@@ -105,6 +105,7 @@ constexpr uint64_t OP_MASK_BR = (1ULL << UOP_BR) | (1ULL << UOP_JUMP);
 constexpr uint64_t OP_MASK_LD = (1ULL << UOP_LOAD);
 constexpr uint64_t OP_MASK_STA = (1ULL << UOP_STA);
 constexpr uint64_t OP_MASK_STD = (1ULL << UOP_STD);
+constexpr uint64_t OP_MASK_FP = (1ULL << UOP_FP);
 
 // 全局物理端口定义
 // 这里的顺序很重要，后面 IQ 会通过下标索引它
@@ -113,7 +114,7 @@ constexpr uint64_t OP_MASK_STD = (1ULL << UOP_STD);
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     {0, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR |
             OP_MASK_DIV},           // Port 0: Full ALU + System
-    {1, OP_MASK_ALU | OP_MASK_MUL}, // Port 1: ALU + Mul
+    {1, OP_MASK_ALU | OP_MASK_MUL | OP_MASK_FP}, // Port 1: ALU + Mul + FP
     {2, OP_MASK_ALU},               // Port 2: Simple ALU
     {3, OP_MASK_ALU},               // Port 3: Simple ALU
     {4, OP_MASK_LD},                // Port 4: Load 0
@@ -218,7 +219,8 @@ constexpr int IQ_BR_PORT_BASE = find_first_port_with_mask(OP_MASK_BR);
 constexpr int calculate_total_fu_count() {
   int total = 0;
   uint64_t major_masks[] = {OP_MASK_ALU, OP_MASK_CSR, OP_MASK_MUL, OP_MASK_DIV,
-                            OP_MASK_BR,  OP_MASK_LD,  OP_MASK_STA, OP_MASK_STD};
+                            OP_MASK_BR,  OP_MASK_LD,  OP_MASK_STA, OP_MASK_STD,
+                            OP_MASK_FP};
   for (const auto &cfg : GLOBAL_ISSUE_PORT_CONFIG) {
     for (uint64_t m : major_masks) {
       if (cfg.support_mask & m)

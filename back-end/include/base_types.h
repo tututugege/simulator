@@ -35,6 +35,7 @@ enum UopType {
   UOP_MUL,
   UOP_DIV,
   UOP_WFI,
+  UOP_FP,
   MAX_UOP_TYPE
 };
 

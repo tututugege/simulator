@@ -38,7 +38,8 @@ enum InstType {
   SRET,
   MUL,
   DIV,
-  AMO
+  AMO,
+  FP
 };
 
 // AMO Operations (funct7[6:2])
