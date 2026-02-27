@@ -51,10 +51,10 @@ void exit_handler() {
   if (cpu.ctx.exit_reason == ExitReason::NONE) {
     return;
   }
-  std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
+  std::cout << "\033[38;5;34m-----------------------------\033[0m" << std::endl;
   std::cout << "Simulation Exited. Printing Perf Stats..." << std::endl;
   cpu.ctx.perf.perf_print();
-  std::cout << "\033[1;32m-----------------------------\033[0m" << std::endl;
+  std::cout << "\033[38;5;34m-----------------------------\033[0m" << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -230,9 +230,9 @@ int main(int argc, char *argv[]) {
   free(p_memory);
 
   if (sim_time != MAX_SIM_TIME) {
-    cout << "\033[1;32m-----------------------------\033[0m" << endl;
-    cout << "\033[1;32mSuccess!!!!\033[0m" << endl;
-    cout << "\033[1;32m-----------------------------\033[0m" << endl;
+    cout << "\033[38;5;34m-----------------------------\033[0m" << endl;
+    cout << "\033[38;5;34mSuccess!!!!\033[0m" << endl;
+    cout << "\033[38;5;34m-----------------------------\033[0m" << endl;
 
     if (cpu.ctx.exit_reason == ExitReason::EBREAK) {
       uint32_t a0 = cpu.get_reg(10);

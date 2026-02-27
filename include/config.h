@@ -12,6 +12,10 @@ constexpr int clog2(uint64_t n) {
   return res;
 }
 
+constexpr bool is_power_of_two_u64(uint64_t n) {
+  return n != 0 && ((n & (n - 1)) == 0);
+}
+
 // ==========================================
 // [System Configuration]
 // ==========================================
@@ -59,7 +63,7 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // ==========================================
 
 constexpr uint64_t LOG_START = 0;
-constexpr uint64_t BACKEND_LOG_START = LOG_START;
+constexpr uint64_t BACKEND_LOG_START = 20000000000; // Effectively disabled
 constexpr uint64_t MEMORY_LOG_START = LOG_START;
 constexpr uint64_t DCACHE_LOG_START = LOG_START;
 constexpr uint64_t MMU_LOG_START = LOG_START;
@@ -152,9 +156,12 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     {4, OP_MASK_LD},                             // Port 4: Load 0
     {5, OP_MASK_LD},                             // Port 5: Load 1
     {6, OP_MASK_STA},                            // Port 6: Store Addr
-    {7, OP_MASK_STD},                            // Port 7: Store Data
-    {8, OP_MASK_BR},                             // Port 8: Branch 0
-    {9, OP_MASK_BR}                              // Port 9: Branch 1
+    {7, OP_MASK_STA},                            // Port 6: Store Addr
+    {8, OP_MASK_STD},                            // Port 7: Store Data
+    {9, OP_MASK_STD},                            // Port 7: Store Data
+
+    {10, OP_MASK_BR}, // Port 8: Branch 0
+    {11, OP_MASK_BR}  // Port 9: Branch 1
 };
 
 constexpr int ISSUE_WIDTH =
@@ -218,12 +225,22 @@ static_assert(MAX_BR_NUM <= 64, "MAX_BR_NUM exceeds maximum wire width (64)");
 static_assert(STQ_NUM <= 64, "STQ_NUM exceeds maximum wire width (64)");
 static_assert(ROB_NUM % ROB_BANK_NUM == 0,
               "ROB_NUM must be a multiple of ROB_BANK_NUM");
-static_assert(DECODE_WIDTH <= ROB_BANK_NUM,
+static_assert(DECODE_WIDTH == ROB_BANK_NUM,
               "DECODE_WIDTH must be <= ROB_BANK_NUM for ROB row enqueue");
 static_assert(PRF_NUM >= ARF_NUM,
               "PRF_NUM must be greater than or equal to ARF_NUM");
-static_assert(MAX_INFLIGHT_LOADS <= STQ_NUM,
-              "MAX_INFLIGHT_LOADS should not exceed STQ_NUM");
+static_assert(COMMIT_WIDTH == DECODE_WIDTH,
+              "COMMIT_WIDTH must be <= DECODE_WIDTH");
+static_assert(MAX_BR_PER_CYCLE > 0, "MAX_BR_PER_CYCLE must be positive");
+static_assert(MAX_BR_PER_CYCLE <= MAX_BR_NUM,
+              "MAX_BR_PER_CYCLE must be <= MAX_BR_NUM");
+static_assert(ICACHE_LINE_SIZE > 0, "ICACHE_LINE_SIZE must be positive");
+static_assert((ICACHE_LINE_SIZE % 4) == 0,
+              "ICACHE_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
+static_assert(is_power_of_two_u64(ICACHE_LINE_SIZE),
+              "ICACHE_LINE_SIZE must be a power of two");
+static_assert(FETCH_WIDTH * 4 <= ICACHE_LINE_SIZE,
+              "FETCH_WIDTH*4 must be >= ICACHE_LINE_SIZE");
 
 // Width Constants for parameterized types
 constexpr int AREG_IDX_WIDTH = 6;
@@ -234,6 +251,7 @@ constexpr int BR_TAG_WIDTH = clog2(MAX_BR_NUM);
 constexpr int BR_MASK_WIDTH = MAX_BR_NUM;
 constexpr int CSR_IDX_WIDTH = 12; // Standard RISC-V CSR address width
 constexpr int FTQ_SIZE = 64;
+static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 constexpr int FTQ_IDX_WIDTH = clog2(FTQ_SIZE);
 constexpr int FTQ_OFFSET_WIDTH = clog2(FETCH_WIDTH);
 

@@ -48,30 +48,159 @@ protected:
         else
           inst.result = operand1 + operand2;
         break;
-      case SLL:
-        inst.result = operand1 << (operand2 & 0x1F);
+      case SLL: {
+        uint32_t shift = operand2 & 0x1F;
+        if (inst.func7 == 0) // sll
+          inst.result = operand1 << shift;
+        else if (inst.func7 == 0x30 && !inst.src2_is_imm) // rol (Zbb)
+          inst.result = (operand1 << shift) | (operand1 >> (32 - shift));
+        else if (inst.func7 == 0x24) // bclr (Zbs)
+          inst.result = operand1 & ~(1u << shift);
+        else if (inst.func7 == 0x14) // bset (Zbs)
+          inst.result = operand1 | (1u << shift);
+        else if (inst.func7 == 0x34) // binv (Zbs)
+          inst.result = operand1 ^ (1u << shift);
+        else if (inst.func7 == 0x05) { // clmul (Zbc)
+          uint32_t output = 0;
+          for (int i = 0; i < 32; i++) {
+            if ((operand2 >> i) & 1)
+              output ^= (operand1 << i);
+          }
+          inst.result = output;
+        } else if (inst.func7 == 0x30 && inst.src2_is_imm) { // OP-IMM Zbb Unary
+          uint32_t sub_op = inst.imm & 0x1F; // rs2 is in imm field
+          if (sub_op == 0)                   // clz
+            inst.result = (operand1 == 0) ? 32 : __builtin_clz(operand1);
+          else if (sub_op == 1) // ctz
+            inst.result = (operand1 == 0) ? 32 : __builtin_ctz(operand1);
+          else if (sub_op == 2) // pcnt
+            inst.result = __builtin_popcount(operand1);
+          else if (sub_op == 4) // sext.b
+            inst.result = (uint32_t)(int32_t)(int8_t)(operand1 & 0xFF);
+          else if (sub_op == 5) // sext.h
+            inst.result = (uint32_t)(int32_t)(int16_t)(operand1 & 0xFFFF);
+        }
         break;
-      case SLT:
-        inst.result = ((signed)operand1 < (signed)operand2);
+      }
+      case SLT: {
+        if (inst.func7 == 0) // slt
+          inst.result = ((signed)operand1 < (signed)operand2);
+        else if (inst.func7 == 0x10 && !inst.src2_is_imm) // sh1add (Zba)
+          inst.result = operand2 + (operand1 << 1);
+        else if (inst.func7 == 0x05 && !inst.src2_is_imm) { // clmulr (Zbc)
+          uint32_t output = 0;
+          for (int i = 0; i < 32; i++) {
+            if ((operand2 >> i) & 1)
+              output ^= (operand1 >> (31 - i));
+          }
+          inst.result = output;
+        } else {
+          inst.result = ((signed)operand1 < (signed)operand2);
+        }
         break;
-      case SLTU:
-        inst.result = ((unsigned)operand1 < (unsigned)operand2);
+      }
+      case SLTU: {
+        if (inst.func7 == 0) // sltu
+          inst.result = ((unsigned)operand1 < (unsigned)operand2);
+        else if (inst.func7 == 0x05 && !inst.src2_is_imm) { // clmulh (Zbc)
+          uint32_t output = 0;
+          for (int i = 1; i < 32; i++) {
+            if ((operand2 >> i) & 1)
+              output ^= (operand1 >> (32 - i));
+          }
+          inst.result = output;
+        } else {
+          inst.result = ((unsigned)operand1 < (unsigned)operand2);
+        }
         break;
-      case XOR:
-        inst.result = (operand1 ^ operand2);
-        break;
-      case SRL:
-        if ((inst.func7 >> 5) & 1)
-          inst.result = (int32_t)operand1 >> (operand2 & 0x1F);
+      }
+      case XOR: {
+        if (inst.func7 == 0) // xor
+          inst.result = (operand1 ^ operand2);
+        else if (inst.func7 == 0x20 && !inst.src2_is_imm) // xnor (Zbb)
+          inst.result = ~(operand1 ^ operand2);
+        else if (inst.func7 == 0x10 && !inst.src2_is_imm) // sh2add (Zba)
+          inst.result = operand2 + (operand1 << 2);
+        else if (inst.func7 == 0x05 && !inst.src2_is_imm) // min (Zbb)
+          inst.result =
+              ((int32_t)operand1 < (int32_t)operand2) ? operand1 : operand2;
+        else if (inst.func7 == 0x04 && !inst.src2_is_imm) // pack (Zbb)
+          inst.result = (operand1 & 0x0000FFFF) | (operand2 << 16);
         else
-          inst.result = (uint32_t)operand1 >> (operand2 & 0x1F);
+          inst.result = (operand1 ^ operand2);
         break;
-      case OR:
-        inst.result = (operand1 | operand2);
+      }
+      case SRL: {
+        uint32_t shift = operand2 & 0x1F;
+        if (inst.func7 == 0) // srl
+          inst.result = (uint32_t)operand1 >> shift;
+        else if ((inst.func7 == 0x20) && !inst.src2_is_imm) // sra
+          inst.result = (int32_t)operand1 >> shift;
+        else if (((inst.func7 >> 5) & 1) && inst.src2_is_imm &&
+                 (inst.func7 != 0x30) && (inst.func7 != 0x24) &&
+                 (inst.func7 != 0x34) && (inst.func7 != 0x14)) // srai
+          inst.result = (int32_t)operand1 >> shift;
+        else if (inst.func7 == 0x30) { // ror (Zbb)
+          inst.result = (operand1 >> shift) | (operand1 << (32 - shift));
+        } else if (inst.func7 == 0x24) { // bext (Zbs)
+          inst.result = (operand1 >> shift) & 1;
+        } else if (inst.func7 == 0x34 && inst.src2_is_imm) { // rev8 (Zbb)
+          if ((inst.imm & 0x1F) == 24) {                     // shamt = 24
+            uint32_t x = operand1;
+            inst.result = ((x & 0xFF) << 24) | ((x & 0xFF00) << 8) |
+                          ((x & 0xFF0000) >> 8) | ((x & 0xFF000000) >> 24);
+          }
+        } else if (inst.func7 == 0x14 && inst.src2_is_imm) { // orcb (Zbb)
+          if ((inst.imm & 0x1F) == 7) {                      // shamt = 7
+            uint32_t x = operand1;
+            uint32_t res = 0;
+            if (x & 0xFF)
+              res |= 0xFF;
+            if (x & 0xFF00)
+              res |= 0xFF00;
+            if (x & 0xFF0000)
+              res |= 0xFF0000;
+            if (x & 0xFF000000)
+              res |= 0xFF000000;
+            inst.result = res;
+          }
+        } else if (inst.func7 == 0x05 && !inst.src2_is_imm) { // minu (Zbb)
+          inst.result =
+              ((uint32_t)operand1 < (uint32_t)operand2) ? operand1 : operand2;
+        } else {
+          inst.result = (uint32_t)operand1 >> shift;
+        }
         break;
-      case AND:
-        inst.result = (operand1 & operand2);
+      }
+      case OR: {
+        if (inst.func7 == 0) // or
+          inst.result = (operand1 | operand2);
+        else if (inst.func7 == 0x20 && !inst.src2_is_imm) // orn (Zbb)
+          inst.result = (operand1 | ~operand2);
+        else if (inst.func7 == 0x05 && !inst.src2_is_imm) // max (Zbb)
+          inst.result =
+              ((int32_t)operand1 > (int32_t)operand2) ? operand1 : operand2;
+        else if (inst.func7 == 0x10 && !inst.src2_is_imm) // sh3add (Zba)
+          inst.result = operand2 + (operand1 << 3);
+        else
+          inst.result = (operand1 | operand2);
         break;
+      }
+      case AND: {
+        if (inst.func7 == 0) // and
+          inst.result = (operand1 & operand2);
+        else if (inst.func7 == 0x20 && !inst.src2_is_imm) // andn (Zbb)
+          inst.result = (operand1 & ~operand2);
+        else if (inst.func7 == 0x05 && !inst.src2_is_imm) // maxu (Zbb)
+          inst.result =
+              ((uint32_t)operand1 > (uint32_t)operand2) ? operand1 : operand2;
+        else if (inst.func7 == 0x04 && !inst.src2_is_imm) // packh (Zbb)
+          inst.result =
+              (operand1 & 0x000000FF) | ((operand2 & 0x000000FF) << 8);
+        else
+          inst.result = (operand1 & operand2);
+        break;
+      }
       default:
         Assert(0);
       }
@@ -352,7 +481,7 @@ protected:
       else
         inst.result = u_dividend / u_divisor;
       break;
-    case 6: // rem
+    case 6: // rem (Rem is my waifu)
       if (divisor == 0)
         inst.result = dividend;
       else if (dividend == INT32_MIN && divisor == -1)

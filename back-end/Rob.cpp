@@ -235,7 +235,7 @@ void Rob::comb_commit() {
         out.rob_bcast->pc = entry[single_idx][deq_ptr].uop.pc;
       } else {
         if (entry[single_idx][deq_ptr].uop.type != CSR) {
-          Assert(0 && "ERROR: unknown instruction during commit");
+          Assert(0 && "Error: Who is Rem? This pointer is forgotten.");
         }
       }
     }
@@ -345,6 +345,13 @@ void Rob::comb_branch() {
     if (enq_ptr_1 > enq_ptr) {
       enq_flag_1 = !enq_flag;
     }
+
+    // Fix: Mark the branch that caused misprediction as ftq_is_last.
+    // Since everything after it in the same FTQ block is flushed, it effectively becomes 
+    // the 'last' instruction that will ever commit for this FTQ entry.
+    int redirect_bank = get_rob_bank(in.dec_bcast->redirect_rob_idx);
+    int redirect_line = get_rob_line(in.dec_bcast->redirect_rob_idx);
+    entry_1[redirect_bank][redirect_line].uop.ftq_is_last = true;
 
     // 修正：明确使从重定向点到旧 Tail 的所有条目失效
     // 这可以处理多行回溯并防止“僵尸提交”

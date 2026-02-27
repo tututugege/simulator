@@ -171,8 +171,9 @@ void Csr::comb_exception() {
     mstatus &= ~MSTATUS_MIE;
 
     // 同步 sstatus (sstatus 是 mstatus 的影子)
+    uint32_t sstatus_mask = 0x800DE133;
     CSR_RegFile_1[csr_mstatus] = mstatus;
-    CSR_RegFile_1[csr_sstatus] = mstatus;
+    CSR_RegFile_1[csr_sstatus] = mstatus & sstatus_mask;
 
     privilege_1 = RISCV_MODE_M; // 机器模式 (Machine Mode)
 
@@ -230,8 +231,10 @@ void Csr::comb_exception() {
     sstatus &= ~MSTATUS_SIE;
 
     // 写回
+    uint32_t sstatus_mask = 0x800DE133;
     CSR_RegFile_1[csr_sstatus] = sstatus;
-    CSR_RegFile_1[csr_mstatus] = sstatus;
+    CSR_RegFile_1[csr_mstatus] =
+        (CSR_RegFile[csr_mstatus] & ~sstatus_mask) | (sstatus & sstatus_mask);
 
     privilege_1 = 1; // 监管者模式 (Supervisor Mode)
 
@@ -258,8 +261,9 @@ void Csr::comb_exception() {
     mstatus &= ~MSTATUS_MPP;
 
     // 同步 sstatus
+    uint32_t sstatus_mask = 0x800DE133;
     CSR_RegFile_1[csr_mstatus] = mstatus;
-    CSR_RegFile_1[csr_sstatus] = mstatus;
+    CSR_RegFile_1[csr_sstatus] = mstatus & sstatus_mask;
     out.csr2front->epc = CSR_RegFile[csr_mepc];
   } else if (in.rob_bcast->sret) {
     // SIE = SPIE
@@ -276,8 +280,10 @@ void Csr::comb_exception() {
     // SPP = U (0)
     sstatus &= ~MSTATUS_SPP;
 
+    uint32_t sstatus_mask = 0x800DE133;
     CSR_RegFile_1[csr_sstatus] = sstatus;
-    CSR_RegFile_1[csr_mstatus] = sstatus;
+    CSR_RegFile_1[csr_mstatus] =
+        (CSR_RegFile[csr_mstatus] & ~sstatus_mask) | (sstatus & sstatus_mask);
 
     out.csr2front->epc = CSR_RegFile[csr_sepc];
   }
@@ -299,38 +305,42 @@ void Csr::comb_csr_write() {
     }
 
     if (csr_idx == number_mie || csr_idx == number_sie) {
-      if (csr_idx == number_sie)
-        csr_wdata =
-            (CSR_RegFile[csr_mie] & 0xfffffccc) | (csr_wdata & 0x00000333);
-      else
-        csr_wdata =
-            (CSR_RegFile[csr_mie] & 0xfffff444) | (csr_wdata & 0x00000bbb);
+      uint32_t mie_mask = 0x00000bbb;
+      uint32_t sie_mask = 0x00000333;
 
-      CSR_RegFile_1[csr_mie] = csr_wdata;
-      CSR_RegFile_1[csr_sie] = csr_wdata;
-    } else if (csr_idx == number_mip || csr_idx == number_sip) {
-
-      if (csr_idx == number_mip)
-        csr_wdata =
-            (CSR_RegFile[csr_mip] & 0xfffffccc) | (csr_wdata & 0x00000333);
-      else
-        csr_wdata =
-            (CSR_RegFile[csr_mip] & 0xfffff444) | (csr_wdata & 0x00000bbb);
-
-      CSR_RegFile_1[csr_mip] = csr_wdata;
-      CSR_RegFile_1[csr_sip] = csr_wdata;
-    } else if (csr_idx == number_mstatus || csr_idx == number_sstatus) {
-
-      if (csr_idx == number_sstatus) {
-        csr_wdata = (CSR_RegFile[csr_sstatus] & 0x7ff21ecc) |
-                    (csr_wdata & (~0x7ff21ecc));
+      if (csr_idx == number_sie) {
+        CSR_RegFile_1[csr_mie] =
+            (CSR_RegFile[csr_mie] & ~sie_mask) | (csr_wdata & sie_mask);
       } else {
-        csr_wdata = (CSR_RegFile[csr_mstatus] & 0x7f800644) |
-                    (csr_wdata & (~0x7f800644));
+        CSR_RegFile_1[csr_mie] = csr_wdata & mie_mask;
+      }
+      CSR_RegFile_1[csr_sie] = CSR_RegFile_1[csr_mie] & sie_mask;
+    } else if (csr_idx == number_mip || csr_idx == number_sip) {
+      uint32_t mip_mask = 0x00000bbb;
+      uint32_t sip_mask = 0x00000333;
+
+      if (csr_idx == number_sip) {
+        CSR_RegFile_1[csr_mip] =
+            (CSR_RegFile[csr_mip] & ~sip_mask) | (csr_wdata & sip_mask);
+      } else {
+        CSR_RegFile_1[csr_mip] = csr_wdata & mip_mask;
       }
 
-      CSR_RegFile_1[csr_mstatus] = csr_wdata;
-      CSR_RegFile_1[csr_sstatus] = csr_wdata;
+      CSR_RegFile_1[csr_sip] = CSR_RegFile_1[csr_mip] & sip_mask;
+    } else if (csr_idx == number_mstatus || csr_idx == number_sstatus) {
+
+      uint32_t mstatus_mask = 0x807FF9BB;
+      uint32_t sstatus_mask = 0x800DE133;
+
+      if (csr_idx == number_sstatus) {
+        CSR_RegFile_1[csr_mstatus] = (CSR_RegFile[csr_mstatus] & ~sstatus_mask) |
+                                     (csr_wdata & sstatus_mask);
+      } else {
+        CSR_RegFile_1[csr_mstatus] = (CSR_RegFile[csr_mstatus] & ~mstatus_mask) |
+                                     (csr_wdata & mstatus_mask);
+      }
+
+      CSR_RegFile_1[csr_sstatus] = CSR_RegFile_1[csr_mstatus] & sstatus_mask;
 
     } else {
       CSR_RegFile_1[cvt_number_to_csr(csr_idx)] = csr_wdata;

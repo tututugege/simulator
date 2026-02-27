@@ -87,7 +87,7 @@ void Idu::comb_decode() {
       out.dec2ren->uop[i].br_mask = running_mask;
       continue;
     }
-    
+
     if (is_branch(out.dec2ren->uop[i].type)) {
       if (!alloc_valid[br_num]) {
 #ifdef CONFIG_PERF_COUNTER
@@ -146,8 +146,8 @@ void Idu::comb_branch() {
   }
 
   // 1.5. 全局更新 br_mask_cp：已解析分支的 bit 从所有快照中清除
-  //      硬件实现：每个 br_mask_cp 寄存器加一个 AND 门，清除 clear_mask 对应的位
-  //      这防止了 tag 被复用后，旧快照仍然"保护"新指令的问题
+  //      硬件实现：每个 br_mask_cp 寄存器加一个 AND 门，清除 clear_mask
+  //      对应的位 这防止了 tag 被复用后，旧快照仍然"保护"新指令的问题
   if (clear != 0) {
     for (int i = 1; i < MAX_BR_NUM; i++) {
       br_mask_cp_1[i] &= ~clear;
@@ -340,7 +340,8 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
-    // srli, srai
+    // srli, srai, AND Zbb/Zbs imm extensions (clz, ctz, pcnt, sext, bseti,
+    // bclri, binvi)
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = false;
@@ -349,6 +350,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
+    // AND Zba/Zbb/Zbc/Zbs extensions (sh1add, clmul, xnor, pack, min, max, etc)
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = true;
