@@ -886,19 +886,14 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     // ========================================================================
     front_state_req.valid = true;
     if (do_predecode_flush) {
-        // // flush 所有中间 FIFO
-        // fetch_addr_fifo_in.reset = true;
-        // fetch_address_FIFO_top(&fetch_addr_fifo_in, &fetch_addr_fifo_out);
-        
-        // fifo_in.reset = true;
-        // instruction_FIFO_top(&fifo_in, &fifo_out);
-        
-        // ptab_in.reset = true;
-        // PTAB_top(&ptab_in, &ptab_out);
-        
-        icache_in.reset = true;
-        icache_in.csr_status = in->csr_status;
-        icache_comb_calc(&icache_in, &icache_out);
+        // Predecode correction only needs a narrow frontend replay, not a full
+        // icache reset. Use a comb-only refetch to flush the in-flight lookup.
+        icache_in.reset = false;
+        icache_in.refetch = true;
+        icache_in.icache_read_valid = false;
+        icache_in.fetch_address = predecode_flush_address;
+        icache_in.run_comb_only = true;
+        icache_top(&icache_in, &icache_out);
         
         front_state_req.next_predecode_refetch = true;
         front_state_req.next_predecode_refetch_address = predecode_flush_address;

@@ -7,8 +7,12 @@
 class PtwMemPort;
 class PtwWalkPort;
 class SimContext;
+namespace axi_interconnect {
+struct ReadMasterPort_t;
+}
 extern PtwMemPort *icache_ptw_mem_port;
 extern PtwWalkPort *icache_ptw_walk_port;
+extern axi_interconnect::ReadMasterPort_t *icache_mem_read_port;
 
 void BPU_top(struct BPU_in *in, struct BPU_out *out);
 void BPU_change_pc_reg(uint32_t new_pc);
@@ -20,6 +24,7 @@ void icache_seq_write();
 void icache_set_context(SimContext *ctx);
 void icache_set_ptw_mem_port(PtwMemPort *port);
 void icache_set_ptw_walk_port(PtwWalkPort *port);
+void icache_set_mem_read_port(axi_interconnect::ReadMasterPort_t *port);
 
 void instruction_FIFO_top(struct instruction_FIFO_in *in,
                           struct instruction_FIFO_out *out);

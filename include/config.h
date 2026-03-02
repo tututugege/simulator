@@ -21,7 +21,26 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 // ==========================================
 
 #ifndef ICACHE_MISS_LATENCY
+#ifdef AXI_KIT_DDR_LATENCY
+#define ICACHE_MISS_LATENCY AXI_KIT_DDR_LATENCY
+#else
 #define ICACHE_MISS_LATENCY 50
+#endif
+#endif
+
+#ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
+#define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
+#endif
+
+#ifndef CONFIG_AXI_PROTOCOL
+// Interconnect backend protocol selector:
+// - 4: AXI4 (default)
+// - 3: AXI3 (compat mode)
+#define CONFIG_AXI_PROTOCOL 4
+#endif
+
+#if (CONFIG_AXI_PROTOCOL != 3) && (CONFIG_AXI_PROTOCOL != 4)
+#error "CONFIG_AXI_PROTOCOL must be 3 or 4"
 #endif
 
 #ifndef MAX_COMMIT_INST

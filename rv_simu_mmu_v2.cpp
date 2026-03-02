@@ -165,10 +165,19 @@ void SimCpu::init() {
 
   front.icache_ptw_walk_port = mem_subsystem.itlb_walk_port;
   front.icache_ptw_mem_port = mem_subsystem.itlb_ptw_port;
+#ifdef CONFIG_BPU
+  front.icache_mem_read_port = mem_subsystem.icache_read_port();
+#else
+  // The oracle frontend does not step the icache model, so keep the AXI read
+  // port disconnected in non-BPU builds.
+  front.icache_mem_read_port = nullptr;
+#endif
 
   // 第四阶段：统一执行各模块复位逻辑
-  front.init();
+  // 先初始化内存子系统，确保 front.init()/front.step_bpu() 期间若访问 icache AXI
+  // 端口时，互连/DDRx/MMIO 后端已经完成 init，不会命中未初始化握手状态。
   mem_subsystem.init();
+  front.init();
   oracle_pending_valid = false;
   oracle_pending_out = {};
 }

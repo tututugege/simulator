@@ -9,6 +9,9 @@ class SimContext; // Forward declaration
 class AbstractMmu;
 class PtwMemPort;
 class PtwWalkPort;
+namespace axi_interconnect {
+struct ReadMasterPort_t;
+}
 
 // Abstract Base Class for ICache Top-level Logic
 class ICacheTop {
@@ -33,6 +36,9 @@ public:
   virtual void seq() = 0;
   virtual void set_ptw_mem_port(PtwMemPort *port) { (void)port; }
   virtual void set_ptw_walk_port(PtwWalkPort *port) { (void)port; }
+  virtual void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) {
+    (void)port;
+  }
 
   void syncPerf();
 
@@ -56,8 +62,19 @@ public:
 // Implementation using the True ICache Module (Detailed Simulation)
 class TrueICacheTop : public ICacheTop {
 private:
+  enum class AxiFillState : uint8_t {
+    IDLE = 0,
+    REQ = 1,
+    WAIT = 2,
+    RESP_READY = 3,
+  };
   bool mem_busy = false;
   int mem_latency_cnt = 0;
+  AxiFillState axi_fill_state = AxiFillState::IDLE;
+  bool axi_fill_stale = false;
+  uint32_t axi_fill_base_addr = 0;
+  uint32_t axi_fill_chunk_idx = 0;
+  uint32_t axi_fill_data[ICACHE_LINE_SIZE / 4] = {};
   uint32_t current_vaddr_reg = 0;
   bool valid_reg = false;
   AbstractMmu *mmu_model = nullptr;
@@ -69,15 +86,22 @@ private:
   bool tlb_clear_pending_comb = false;
   PtwMemPort *ptw_mem_port = nullptr;
   PtwWalkPort *ptw_walk_port = nullptr;
+  axi_interconnect::ReadMasterPort_t *mem_read_port = nullptr;
+  bool lookup_pending = false;
+  uint32_t lookup_delay = 0;
+  uint32_t lookup_index = 0;
+  uint32_t lookup_pc = 0;
+  uint32_t lookup_seed = 1;
 
-  ICache &icache_hw;
+  icache_module_n::ICache &icache_hw;
 
 public:
-  TrueICacheTop(ICache &hw);
+  TrueICacheTop(icache_module_n::ICache &hw);
   void comb() override;
   void seq() override;
   void set_ptw_mem_port(PtwMemPort *port) override;
   void set_ptw_walk_port(PtwWalkPort *port) override;
+  void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) override;
 };
 
 // Implementation using the Simple ICache Model (Ideal P-Memory Access)
@@ -98,6 +122,7 @@ public:
   void seq() override;
   void set_ptw_mem_port(PtwMemPort *port) override;
   void set_ptw_walk_port(PtwWalkPort *port) override;
+  void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) override;
 };
 
 // Factory function to get the singleton instance

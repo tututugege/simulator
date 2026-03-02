@@ -1,0 +1,3 @@
+[submodule "axi-interconnect-kit"]
+	path = axi-interconnect-kit
+	url = git@github.com:dyh1807/axi-interconnect-kit.git

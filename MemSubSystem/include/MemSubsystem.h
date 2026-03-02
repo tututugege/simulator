@@ -14,6 +14,10 @@
 class SimContext;
 class MemSubsystemPtwMemPortAdapter;
 class MemSubsystemPtwWalkPortAdapter;
+struct AxiMemBackend;
+namespace axi_interconnect {
+struct ReadMasterPort_t;
+}
 
 class MemSubsystem {
 public:
@@ -44,10 +48,12 @@ public:
   void comb();
   void seq();
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
+  axi_interconnect::ReadMasterPort_t *icache_read_port();
 
 private:
   SimContext *ctx;
   std::unique_ptr<AbstractDcache> dcache;
+  std::unique_ptr<AxiMemBackend> axi_backend;
   PeripheralModel peripheral;
   MemPtwBlock ptw_block;
   MemReadArbBlock read_arb_block;
