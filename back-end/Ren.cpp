@@ -289,12 +289,14 @@ void Ren ::comb_commit() {
       ctx->perf.commit_num++;
 
       if (ctx->is_ckpt) {
-        if (ctx->perf.commit_num == WARMUP && !ctx->perf.perf_start) {
+        if (!ctx->perf.perf_start &&
+            ctx->perf.commit_num >= ctx->ckpt_warmup_commit_target) {
           ctx->perf.perf_reset();
           ctx->perf.perf_start = true;
         }
 
-        if (ctx->perf.commit_num == SIMPOINT_INTERVAL && ctx->perf.perf_start) {
+        if (ctx->perf.perf_start &&
+            ctx->perf.commit_num >= SIMPOINT_INTERVAL) {
           ctx->exit_reason = ExitReason::SIMPOINT;
         }
       }

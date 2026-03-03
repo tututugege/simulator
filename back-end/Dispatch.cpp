@@ -196,6 +196,7 @@ void Dispatch::comb_fire() {
 
   // === 步骤 1: 计算 Fire 信号 (确认分派) ===
   for (int i = 0; i < DECODE_WIDTH; i++) {
+    bool is_atomic_inst = inst_r[i].valid && inst_r[i].uop.type == AMO;
     bool basic_fire = out.dis2rob->valid[i] &&
                       dispatch_success_flags[i] && // IQ 检查通过
                       in.rob2dis->ready &&         // ROB 有空间
@@ -206,10 +207,20 @@ void Dispatch::comb_fire() {
       if (!in.rob2dis->empty || pre_fire)
         basic_fire = false;
     }
+    // 原子指令串行化：仅允许在 ROB 空且本拍无更早指令发射时进入后端。
+    if (is_atomic_inst) {
+      if (!in.rob2dis->empty || pre_fire) {
+        basic_fire = false;
+      }
+    }
 
     out.dis2rob->dis_fire[i] = basic_fire;
 
     if (inst_r[i].valid && !basic_fire)
+      pre_stall = true;
+
+    // 原子指令本拍独占发射，后续槽位全部阻塞。
+    if (basic_fire && is_atomic_inst)
       pre_stall = true;
 
     if (basic_fire)
@@ -537,12 +548,13 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
       out_uops[0].uop.imm = 0;
       out_uops[0].uop.src1_en = false;
       out_uops[0].uop.src2_en = false;
+      out_uops[0].uop.dest_en = false; // SC result must come from LSU, not placeholder INT
 
       out_uops[1].iq_id = IQ_STA;
       out_uops[1].uop = MicroOp(src_uop);
       out_uops[1].uop.op = UOP_STA;
       out_uops[1].uop.src2_en = false;
-      out_uops[1].uop.dest_en = false; // Fix: STA 不写回寄存器
+      out_uops[1].uop.dest_en = true;  // Reuse LSU STA wb port to write SC result (0/1)
 
       out_uops[2].iq_id = IQ_STD;
       out_uops[2].uop = MicroOp(src_uop);

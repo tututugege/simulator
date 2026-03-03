@@ -228,7 +228,7 @@ void Isu::comb_awake() {
     const auto &entry = out.iss2prf->iss_entry[i];
     if (entry.valid && entry.uop.dest_en) {
       int lat = get_latency(entry.uop.op);
-      if (lat <= 1 && entry.uop.op != UOP_LOAD) {
+      if (lat <= 1 && entry.uop.op != UOP_LOAD && entry.uop.op != UOP_STA) {
         pregs.push_back(entry.uop.dest_preg);
       }
     }

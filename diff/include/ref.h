@@ -84,7 +84,7 @@ typedef struct CPU_state {
 
 class RefCpu {
 public:
-  uint32_t *memory;
+  uint32_t *memory = nullptr;
   uint32_t Instruction;
   CPU_state state;
   uint8_t privilege;

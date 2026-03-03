@@ -48,8 +48,8 @@ inline IrqState eval_interrupts(uint32_t mstatus, uint32_t mie_reg,
 } // namespace
 
 void Csr::init() {
-  CSR_RegFile[csr_misa] = 0x40141101;   // U/S/M  RV32I/A/M
-  CSR_RegFile_1[csr_misa] = 0x40141101; // U/S/M  RV32I/A/M
+  CSR_RegFile[csr_misa] = 0x40141103;   // U/S/M  RV32I/A/M/B
+  CSR_RegFile_1[csr_misa] = 0x40141103; // U/S/M  RV32I/A/M/B
 }
 
 void Csr::comb_csr_status() {

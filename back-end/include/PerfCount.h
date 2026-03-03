@@ -378,8 +378,6 @@ public:
            (double)slots_core_bound_rob / total_slots * 100.0);
     printf("\033[38;5;34mBad Speculation  : %.2f%%\033[0m\n",
            bad_speculation_pct * 100.0);
-    printf("\033[38;5;34m  - Squash Waste   : %.2f%% (Counted in Frontend Recovery)\033[0m\n",
-           (double)slots_squash_waste / total_slots * 100.0);
     printf("\033[38;5;34mRetiring         : %.2f%%\033[0m\n",
            retiring_pct * 100.0);
     printf("\n");

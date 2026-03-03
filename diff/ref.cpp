@@ -141,7 +141,12 @@ uint32_t f32_classify(float32_t f) {
 
 void RefCpu::init(uint32_t reset_pc) {
   state.pc = reset_pc;
+  if (memory != nullptr) {
+    free(memory);
+    memory = nullptr;
+  }
   memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
+  Assert(memory != nullptr && "RefCpu::init: memory allocation failed");
   for (int i = 0; i < 32; i++) {
     state.gpr[i] = 0;
   }
@@ -149,7 +154,7 @@ void RefCpu::init(uint32_t reset_pc) {
   for (int i = 0; i < 21; i++) {
     state.csr[i] = 0;
   }
-  state.csr[csr_misa] = 0x40141101;
+  state.csr[csr_misa] = 0x40141103;
   privilege = 0b11;
 
   state.store = false;
@@ -157,6 +162,8 @@ void RefCpu::init(uint32_t reset_pc) {
   page_fault_inst = false;
   page_fault_load = false;
   page_fault_store = false;
+  state.reserve_valid = false;
+  state.reserve_addr = 0;
 }
 
 void RefCpu::exec() {
@@ -872,17 +879,18 @@ void RefCpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    bool page_fault;
+    bool page_fault_1 = !va2pa(p_addr, v_addr, 1);
+    bool page_fault_2 = !va2pa(p_addr, v_addr, 2);
 
-    if (funct5 == 2) {
-      page_fault = !va2pa(p_addr, v_addr, 1);
-    } else {
-      page_fault = !va2pa(p_addr, v_addr, 2);
-    }
-
-    if (page_fault) {
+    if (page_fault_1 || page_fault_2) {
       if (funct5 == 2) {
-        page_fault_load = true;
+        if (page_fault_1) {
+          page_fault_load = true;
+        }
+      } else if (funct5 == 3) {
+        if (page_fault_2) {
+          page_fault_store = true;
+        }
       } else {
         page_fault_store = true;
       }
@@ -894,11 +902,10 @@ void RefCpu::RV32A() {
     }
   }
 
-  if (p_addr & 0x3) {
-    Assert((p_addr & 3) == 0 && "AMO address misaligned!");
-    illegal_exception = true;
-    exception(v_addr);
-    return;
+  if (p_addr % 4 != 0) {
+    std::cerr << "Misaligned AMO Access! addr: 0x" << std::hex << v_addr
+              << std::endl;
+    exit(-1);
   }
 
   if (funct5 != 2) {
@@ -1485,31 +1492,28 @@ void RefCpu::RV32IM() {
 void RefCpu::store_data() {
 
   uint32_t p_addr = state.store_addr;
-  int offset = p_addr & 0x3;
-  uint64_t wstrb = (uint64_t)state.store_strb << offset;
-  uint64_t wdata = (uint64_t)state.store_data << (offset * 8);
-
-  for (int i = 0; i < 2; i++) {
-    uint32_t current_wstrb = (wstrb >> (i * 4)) & 0xF;
-    uint32_t current_wdata = (wdata >> (i * 32)) & 0xFFFFFFFF;
-    if (current_wstrb == 0)
-      continue;
-
-    uint32_t mask = 0;
-    if (current_wstrb & 0b1)
-      mask |= 0xFF;
-    if (current_wstrb & 0b10)
-      mask |= 0xFF00;
-    if (current_wstrb & 0b100)
-      mask |= 0xFF0000;
-    if (current_wstrb & 0b1000)
-      mask |= 0xFF000000;
-
-    uint32_t old_data = memory[(p_addr >> 2) + i];
-    memory[(p_addr >> 2) + i] = (mask & current_wdata) | (~mask & old_data);
+  if (state.store && state.reserve_valid && state.reserve_addr == p_addr) {
+    // Invalidate reservation only when a store hits the reserved address.
+    state.reserve_valid = false;
   }
+  int offset = p_addr & 0x3;
+  uint32_t wstrb = state.store_strb << offset;
+  uint32_t wdata = state.store_data << (offset * 8);
+  uint32_t old_data = memory[p_addr / 4];
+  uint32_t mask = 0;
 
-  // UART and Interrupt logic follows...
+  if (wstrb & 0b1)
+    mask |= 0xFF;
+  if (wstrb & 0b10)
+    mask |= 0xFF00;
+  if (wstrb & 0b100)
+    mask |= 0xFF0000;
+  if (wstrb & 0b1000)
+    mask |= 0xFF000000;
+
+  if (state.store) {
+    memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
+  }
 
   if (p_addr == UART_ADDR_BASE) {
     char temp;

@@ -56,6 +56,9 @@ private:
   std::deque<MicroOp> finished_sta_reqs;
   // 5. STA 地址翻译重试队列 (DTLB/PTW miss -> RETRY)
   std::deque<MicroOp> pending_sta_addr_reqs;
+  // 6. LR/SC reservation state
+  bool reserve_valid = false;
+  uint32_t reserve_addr = 0;
 
 public:
   SimpleLsu(SimContext *ctx);
