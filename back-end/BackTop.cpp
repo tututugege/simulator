@@ -16,7 +16,7 @@
 void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory);
 
 void BackTop::init() {
-  pre_idu_queue = new PreIduQueue();
+  pre_idu_queue = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
   rename = new Ren(ctx);
   dis = new Dispatch(ctx);

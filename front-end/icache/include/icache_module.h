@@ -1,16 +1,13 @@
 /*
  * Architecture of current I-Cache design:
- * - 8-way set associative cache
- * - 128 sets
- * - 32 bytes per cache line
+ * - set-associative cache (from config.h)
+ * - set count / line size from config.h
  * - Random replacement policy
  * - 2-stage pipeline: comb1 -> seq1 -> comb2
  *
  * Address split:
- * PC[31:12], PC[11:5], PC[4:0]
- * - PC[31:12]: 20-bit Tag
- * - PC[11:5]: 7-bit Index to cache set
- * - PC[4:0]: 5-bit Byte offset within a cache line
+ * PC[31 : ICACHE_INDEX_BITS + ICACHE_OFFSET_BITS], ...
+ * - Tag/Index/Offset split from config.h
  *    - PC[4:2]: 3-bit Word offset within a cache line
  *    - PC[1:0]: 2-bit Byte offset within a word
  *
@@ -119,14 +116,11 @@ private:
    * offset_bits + index_bits + tag_bits = 32
    * for current design, tag_bits = 20
    */
-  static uint32_t const offset_bits =
-      __builtin_ctz(ICACHE_LINE_SIZE); // log2(ICACHE_LINE_SIZE)
-  static uint32_t const index_bits = 12 - offset_bits;
-  static uint32_t const set_num = 1 << index_bits; // Total number of cache sets
-  static uint32_t const word_num =
-      1 << (offset_bits - 2); // Number of words per cache line (8 words, since
-                              // each word is 4 bytes)
-  static uint32_t const way_cnt = 8; // 8-way set associative cache
+  static uint32_t const offset_bits = ICACHE_OFFSET_BITS;
+  static uint32_t const index_bits = ICACHE_INDEX_BITS;
+  static uint32_t const set_num = ICACHE_SET_NUM; // Total number of cache sets
+  static uint32_t const word_num = ICACHE_WORD_NUM;
+  static uint32_t const way_cnt = ICACHE_WAY_NUM;
   uint32_t cache_data[set_num][way_cnt][word_num]; // Cache data storage
   uint32_t cache_tag[set_num][way_cnt];            // Cache tags
   bool cache_valid[set_num][way_cnt]; // Valid bits for each cache line

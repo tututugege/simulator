@@ -5,6 +5,8 @@
 #include "InstructionBuffer.h"
 #include "config.h"
 
+class SimContext;
+
 struct PreIduIssueIO {
   InstructionBufferEntry entries[DECODE_WIDTH];
   PreIduIssueIO() {
@@ -33,6 +35,7 @@ public:
 
 class PreIduQueue {
 public:
+  explicit PreIduQueue(SimContext *ctx = nullptr) : ctx(ctx) {}
   PreIduQueueIn in;
   PreIduQueueOut out;
 
@@ -45,6 +48,8 @@ public:
   void seq();
 
 private:
+  SimContext *ctx = nullptr;
+
   int ftq_alloc(const FTQEntry &entry);
   void ftq_pop(int pop_cnt);
   void ftq_recover(int new_tail);

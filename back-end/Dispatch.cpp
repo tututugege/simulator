@@ -75,7 +75,7 @@ void Dispatch::comb_alloc() {
 
     // Load 需要知道之前的 Store
     if (inst_r[i].valid && is_load(inst_r[i].uop)) {
-      inst_alloc[i].uop.stq_idx = (in.lsu2dis->stq_tail + store_alloc_count) % STQ_NUM;
+      inst_alloc[i].uop.stq_idx = (in.lsu2dis->stq_tail + store_alloc_count) % STQ_SIZE;
 
       // 检查 Load 队列限制和端口限制
       if (load_alloc_count < in.lsu2dis->ldq_free &&
@@ -97,7 +97,7 @@ void Dispatch::comb_alloc() {
           store_alloc_count < MAX_STQ_DISPATCH_WIDTH) {
         // 计算 STQ Index
         int allocated_idx =
-            (in.lsu2dis->stq_tail + store_alloc_count) % STQ_NUM;
+            (in.lsu2dis->stq_tail + store_alloc_count) % STQ_SIZE;
         inst_alloc[i].uop.stq_idx = allocated_idx;
 
         stq_port_owner[store_alloc_count] = i;
@@ -279,6 +279,8 @@ void Dispatch::comb_fire() {
   bool is_core_bound_iq[DECODE_WIDTH] = {false};
   bool is_mem_l1_bound[DECODE_WIDTH] = {false};
   bool is_mem_ext_bound[DECODE_WIDTH] = {false};
+  bool is_mem_ldq_full[DECODE_WIDTH] = {false};
+  bool is_mem_stq_full[DECODE_WIDTH] = {false};
 
   // Analyze stall reasons for each slot
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -301,11 +303,15 @@ void Dispatch::comb_fire() {
       else if (!dispatch_success_flags[i]) {
         bool lsu_stall = false;
         if (is_load(inst_r[i].uop)) {
-          if (in.lsu2dis->ldq_free == 0)
+          if (in.lsu2dis->ldq_free == 0) {
             lsu_stall = true;
+            is_mem_ldq_full[i] = true;
+          }
         } else if (is_store(inst_r[i].uop)) {
-          if (in.lsu2dis->stq_free == 0)
+          if (in.lsu2dis->stq_free == 0) {
             lsu_stall = true;
+            is_mem_stq_full[i] = true;
+          }
         }
 
         if (lsu_stall) {
@@ -326,6 +332,12 @@ void Dispatch::comb_fire() {
       if (is_mem_l1_bound[i]) {
         ctx->perf.slots_mem_bound_lsu++;
         ctx->perf.slots_mem_l1_bound++;
+        if (is_mem_ldq_full[i]) {
+          ctx->perf.slots_mem_bound_ldq_full++;
+        }
+        if (is_mem_stq_full[i]) {
+          ctx->perf.slots_mem_bound_stq_full++;
+        }
       } else if (is_mem_ext_bound[i]) {
         ctx->perf.slots_mem_bound_lsu++;
         ctx->perf.slots_mem_ext_bound++;
@@ -338,11 +350,17 @@ void Dispatch::comb_fire() {
         ctx->perf.slots_core_bound_iq++;
       }
     } else {
-      if (ctx->perf.pending_squash_slots > 0) {
+      ctx->perf.slots_frontend_bound++;
+      if (ctx->perf.pending_squash_mispred_slots > 0) {
+        ctx->perf.slots_frontend_recovery_mispred++;
         ctx->perf.slots_squash_waste++;
-        ctx->perf.pending_squash_slots--;
+        ctx->perf.pending_squash_mispred_slots--;
+      } else if (ctx->perf.pending_squash_flush_slots > 0) {
+        ctx->perf.slots_frontend_recovery_flush++;
+        ctx->perf.slots_squash_waste++;
+        ctx->perf.pending_squash_flush_slots--;
       } else {
-        ctx->perf.slots_frontend_bound++;
+        ctx->perf.slots_frontend_pure++;
         if (ctx->perf.icache_busy)
           ctx->perf.slots_fetch_latency++;
         else
@@ -367,11 +385,12 @@ void Dispatch::comb_pipeline() {
       if (in.rob_bcast->flush) {
         ctx->perf.squash_flush_dis += killed;
         ctx->perf.squash_flush_total += killed;
+        ctx->perf.pending_squash_flush_slots += killed;
       } else {
         ctx->perf.squash_mispred_dis += killed;
         ctx->perf.squash_mispred_total += killed;
+        ctx->perf.pending_squash_mispred_slots += killed;
       }
-      ctx->perf.pending_squash_slots += killed;
     }
 #endif
   }

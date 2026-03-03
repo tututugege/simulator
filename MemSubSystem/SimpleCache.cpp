@@ -3,7 +3,6 @@
 #include "oracle.h"
 #include <cstdint>
 #include <cstdlib>
-#include <algorithm>
 
 extern uint32_t *p_memory;
 
@@ -130,26 +129,19 @@ int SimpleCache::cache_access(uint32_t addr) {
   }
 
   if (addr < 0x80000000) {
-    return 1;
+    return DCACHE_HIT_LATENCY;
   }
   if (i == WAY_NUM) {
     cache_evict(addr);
     ctx->perf.dcache_miss_num++;
-    return MISS_LATENCY + rand() % 10;
+    return DCACHE_MISS_LATENCY;
   } else {
 #ifdef PLRU_EVICT
     update_plru(get_index(addr), i);
 #endif
   }
 
-  return HIT_LATENCY;
-}
-
-bool SimpleCache::should_write_ready() const {
-  if (!stress_mode) {
-    return true;
-  }
-  return (rand() % 100) < write_ready_pct;
+  return DCACHE_HIT_LATENCY;
 }
 
 void SimpleCache::handle_write_req(const MemReqIO &req) {
@@ -186,7 +178,7 @@ void SimpleCache::accept_req(const MemReqIO &req) {
   int latency = cache_access(req.addr);
   PendingReq pending{};
   pending.req = req;
-  pending.req.uop.is_cache_miss = (latency >= MISS_LATENCY);
+  pending.req.uop.is_cache_miss = (latency >= DCACHE_MISS_LATENCY);
   pending.complete_time = sim_time + latency;
   pending_reqs.push_back(pending);
 }
@@ -196,12 +188,11 @@ void SimpleCache::drive_resp(MemRespIO &resp) const { resp = pending_resp; }
 void SimpleCache::init() {}
 
 void SimpleCache::comb() {
-  bool wready = should_write_ready();
   if (lsu_wready_io != nullptr) {
-    lsu_wready_io->ready = wready;
+    lsu_wready_io->ready = true;
   }
 
-  if (wready && lsu_wreq_io != nullptr) {
+  if (lsu_wreq_io != nullptr) {
     handle_write_req(*lsu_wreq_io);
   }
 

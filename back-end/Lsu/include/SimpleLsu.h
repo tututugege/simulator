@@ -38,14 +38,14 @@ private:
   // === 内部状态寄存器 (对应 seq 更新) ===
 
   // 1. Store Queue (简化的环形缓冲区)
-  StqEntry stq[STQ_NUM];
+  StqEntry stq[STQ_SIZE];
   int stq_head;   // deq 指针
   int stq_commit; // commit 指针
   int stq_tail;   // enq 指针
   int stq_count;
 
   // 2. 显式 LDQ（请求发出后即使被 squash 也要等回包释放）
-  LdqEntry ldq[MAX_INFLIGHT_LOADS];
+  LdqEntry ldq[LDQ_SIZE];
   int ldq_count;
   int ldq_alloc_tail;
 

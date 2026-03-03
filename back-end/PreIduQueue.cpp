@@ -1,5 +1,6 @@
 #include "PreIduQueue.h"
 #include "RISCV.h"
+#include "types.h"
 #include "util.h"
 
 int PreIduQueue::ftq_alloc(const FTQEntry &entry) {
@@ -115,7 +116,17 @@ void PreIduQueue::comb_accept_front() {
     incoming_valid_num += in.front2dec->valid[i] ? 1 : 0;
   }
 
-  out.dec2front->ready = (ftq_count < FTQ_SIZE) && ibuf.can_accept(incoming_valid_num);
+  bool ftq_ok = (ftq_count < FTQ_SIZE);
+  bool ib_ok = ibuf.can_accept(incoming_valid_num);
+  out.dec2front->ready = ftq_ok && ib_ok;
+  if (ctx != nullptr && incoming_valid_num > 0 && !out.dec2front->ready) {
+    if (!ib_ok) {
+      ctx->perf.ib_blocked_cycles++;
+    }
+    if (!ftq_ok) {
+      ctx->perf.ftq_blocked_cycles++;
+    }
+  }
   if (!out.dec2front->ready || incoming_valid_num == 0) {
     return;
   }
@@ -173,6 +184,11 @@ void PreIduQueue::comb_accept_front() {
     e.ftq_idx = ftq_alloc_idx;
     e.ftq_offset = i;
     e.ftq_is_last = (i == last_fire_idx);
+  }
+
+  if (ctx != nullptr && push_count > 0) {
+    ctx->perf.ib_write_cycle_total++;
+    ctx->perf.ib_write_inst_total += static_cast<uint64_t>(push_count);
   }
 }
 

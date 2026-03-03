@@ -220,11 +220,6 @@ int main(int argc, char *argv[]) {
     if (cpu.ctx.exit_reason != ExitReason::NONE) {
       break;
     }
-
-    if (cpu.ctx.perf.commit_num >= MAX_COMMIT_INST) {
-      cpu.ctx.exit_reason = ExitReason::SIMPOINT;
-      break;
-    }
   }
 
   free(p_memory);

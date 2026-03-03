@@ -3,8 +3,8 @@
 #include "RISCV.h"
 #include "SimCpu.h"
 #include "config.h"
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 extern "C" {
@@ -1511,7 +1511,7 @@ void RefCpu::store_data() {
 
   // UART and Interrupt logic follows...
 
-  if (p_addr == UART_BASE) {
+  if (p_addr == UART_ADDR_BASE) {
     char temp;
     temp = wdata & 0x000000ff;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;

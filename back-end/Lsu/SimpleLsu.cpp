@@ -40,7 +40,7 @@ void SimpleLsu::init() {
   mmu->flush();
 
   // 初始化所有 STQ LDQ 条目，防止未初始化内存导致的破坏
-  for (int i = 0; i < STQ_NUM; i++) {
+  for (int i = 0; i < STQ_SIZE; i++) {
     stq[i].valid = false;
     stq[i].addr_valid = false;
     stq[i].data_valid = false;
@@ -53,7 +53,7 @@ void SimpleLsu::init() {
     stq[i].func3 = 0;
   }
 
-  for (int i = 0; i < MAX_INFLIGHT_LOADS; i++) {
+  for (int i = 0; i < LDQ_SIZE; i++) {
     ldq[i].valid = false;
     ldq[i].killed = false;
     ldq[i].sent = false;
@@ -69,25 +69,25 @@ void SimpleLsu::init() {
 
 void SimpleLsu::comb_lsu2dis_info() {
   out.lsu2dis->stq_tail = this->stq_tail;
-  out.lsu2dis->stq_free = STQ_NUM - this->stq_count;
-  out.lsu2dis->ldq_free = MAX_INFLIGHT_LOADS - this->ldq_count;
+  out.lsu2dis->stq_free = STQ_SIZE - this->stq_count;
+  out.lsu2dis->ldq_free = LDQ_SIZE - this->ldq_count;
 
   for (auto &v : out.lsu2dis->ldq_alloc_idx) {
     v = -1;
   }
   int scan_pos = ldq_alloc_tail;
   int produced = 0;
-  for (int n = 0; n < MAX_INFLIGHT_LOADS && produced < MAX_LDQ_DISPATCH_WIDTH;
+  for (int n = 0; n < LDQ_SIZE && produced < MAX_LDQ_DISPATCH_WIDTH;
        n++) {
     if (!ldq[scan_pos].valid) {
       out.lsu2dis->ldq_alloc_idx[produced++] = scan_pos;
     }
-    scan_pos = (scan_pos + 1) % MAX_INFLIGHT_LOADS;
+    scan_pos = (scan_pos + 1) % LDQ_SIZE;
   }
 
   // Populate miss_mask (Phase 4)
   uint64_t mask = 0;
-  for (int i = 0; i < MAX_INFLIGHT_LOADS; i++) {
+  for (int i = 0; i < LDQ_SIZE; i++) {
     const auto &entry = ldq[i];
     if (entry.valid && !entry.killed && entry.uop.is_cache_miss) {
       mask |= (1ULL << entry.uop.rob_idx);
@@ -145,7 +145,7 @@ void SimpleLsu::comb_recv() {
     }
   }
 
-  for (int i = 0; i < MAX_INFLIGHT_LOADS; i++) {
+  for (int i = 0; i < LDQ_SIZE; i++) {
     auto &entry = ldq[i];
     if (!entry.valid || entry.killed || entry.sent || entry.waiting_resp) {
       continue;
@@ -181,7 +181,7 @@ void SimpleLsu::comb_load_res() {
 
   if (in.dcache_resp->valid) {
     int idx = in.dcache_resp->uop.rob_idx;
-    if (idx >= 0 && idx < MAX_INFLIGHT_LOADS) {
+    if (idx >= 0 && idx < LDQ_SIZE) {
       auto &entry = ldq[idx];
       if (entry.valid && entry.sent && entry.waiting_resp) {
         if (!entry.killed) {
@@ -227,7 +227,7 @@ void SimpleLsu::comb_load_res() {
 
 void SimpleLsu::handle_load_req(const MicroOp &inst) {
   int ldq_idx = inst.ldq_idx;
-  Assert(ldq_idx >= 0 && ldq_idx < MAX_INFLIGHT_LOADS);
+  Assert(ldq_idx >= 0 && ldq_idx < LDQ_SIZE);
   if (!ldq[ldq_idx].valid || ldq[ldq_idx].killed) {
     return;
   }
@@ -278,14 +278,14 @@ void SimpleLsu::handle_store_addr(const MicroOp &inst) {
 }
 
 void SimpleLsu::handle_store_data(const MicroOp &inst) {
-  Assert(inst.stq_idx >= 0 && inst.stq_idx < STQ_NUM);
+  Assert(inst.stq_idx >= 0 && inst.stq_idx < STQ_SIZE);
   stq[inst.stq_idx].data = inst.result;
   stq[inst.stq_idx].data_valid = true;
 }
 
 bool SimpleLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
                                   uint32_t rob_flag, uint32_t func3) {
-  if (stq_count >= STQ_NUM) {
+  if (stq_count >= STQ_SIZE) {
     return false;
   }
   stq[stq_tail].valid = true;
@@ -296,7 +296,7 @@ bool SimpleLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
   stq[stq_tail].rob_idx = rob_idx;
   stq[stq_tail].rob_flag = rob_flag;
   stq[stq_tail].func3 = func3;
-  stq_tail = (stq_tail + 1) % STQ_NUM;
+  stq_tail = (stq_tail + 1) % STQ_SIZE;
   return true;
 }
 
@@ -314,7 +314,7 @@ void SimpleLsu::consume_stq_alloc_reqs(int &push_count) {
 
 bool SimpleLsu::reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
                                   uint32_t rob_flag) {
-  Assert(idx >= 0 && idx < MAX_INFLIGHT_LOADS);
+  Assert(idx >= 0 && idx < LDQ_SIZE);
   if (ldq[idx].valid) {
     return false;
   }
@@ -330,7 +330,7 @@ bool SimpleLsu::reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
   ldq[idx].uop.ldq_idx = idx;
   ldq[idx].uop.cplt_time = REQ_WAIT_EXEC;
   ldq_count++;
-  ldq_alloc_tail = (idx + 1) % MAX_INFLIGHT_LOADS;
+  ldq_alloc_tail = (idx + 1) % LDQ_SIZE;
   return true;
 }
 
@@ -393,14 +393,14 @@ void SimpleLsu::drive_store_write_req() {
 void SimpleLsu::handle_global_flush() {
   int old_tail = stq_tail;
   stq_tail = stq_commit;
-  stq_count = (stq_tail - stq_head + STQ_NUM) % STQ_NUM;
+  stq_count = (stq_tail - stq_head + STQ_SIZE) % STQ_SIZE;
 
   int ptr = stq_tail;
   while (ptr != old_tail) {
     stq[ptr].valid = false;
     stq[ptr].addr_valid = false;
     stq[ptr].data_valid = false;
-    ptr = (ptr + 1) % STQ_NUM;
+    ptr = (ptr + 1) % STQ_SIZE;
   }
   pending_sta_addr_reqs.clear();
 }
@@ -408,7 +408,7 @@ void SimpleLsu::handle_global_flush() {
 void SimpleLsu::handle_mispred(mask_t mask) {
   auto is_killed = [&](const MicroOp &u) { return (u.br_mask & mask) != 0; };
 
-  for (int i = 0; i < MAX_INFLIGHT_LOADS; i++) {
+  for (int i = 0; i < LDQ_SIZE; i++) {
     if (!ldq[i].valid) {
       continue;
     }
@@ -457,7 +457,7 @@ void SimpleLsu::handle_mispred(mask_t mask) {
 
   int old_tail = stq_tail;
   stq_tail = recovery_tail;
-  stq_count = (stq_tail - stq_head + STQ_NUM) % STQ_NUM;
+  stq_count = (stq_tail - stq_head + STQ_SIZE) % STQ_SIZE;
   int ptr = stq_tail;
 
   if (old_tail == stq_tail) {
@@ -465,14 +465,14 @@ void SimpleLsu::handle_mispred(mask_t mask) {
       stq[ptr].valid = false;
       stq[ptr].addr_valid = false;
       stq[ptr].data_valid = false;
-      ptr = (ptr + 1) % STQ_NUM;
+      ptr = (ptr + 1) % STQ_SIZE;
     } while (ptr != old_tail);
   } else {
     while (ptr != old_tail) {
       stq[ptr].valid = false;
       stq[ptr].addr_valid = false;
       stq[ptr].data_valid = false;
-      ptr = (ptr + 1) % STQ_NUM;
+      ptr = (ptr + 1) % STQ_SIZE;
     }
   }
 }
@@ -498,7 +498,7 @@ void SimpleLsu::retire_stq_head_if_ready(bool write_fire, int &pop_count) {
   head.data = 0;
   head.br_mask = 0;
 
-  stq_head = (stq_head + 1) % STQ_NUM;
+  stq_head = (stq_head + 1) % STQ_SIZE;
   pop_count++;
 }
 
@@ -509,10 +509,10 @@ void SimpleLsu::commit_stores_from_rob() {
       continue;
     }
     int idx = in.rob_commit->commit_entry[i].uop.stq_idx;
-    Assert(idx >= 0 && idx < STQ_NUM);
+    Assert(idx >= 0 && idx < STQ_SIZE);
     if (idx == stq_commit) {
       stq[idx].committed = true;
-      stq_commit = (stq_commit + 1) % STQ_NUM;
+      stq_commit = (stq_commit + 1) % STQ_SIZE;
     } else {
       Assert(0 && "Store commit out of order?");
     }
@@ -520,7 +520,7 @@ void SimpleLsu::commit_stores_from_rob() {
 }
 
 void SimpleLsu::progress_ldq_entries() {
-  for (int i = 0; i < MAX_INFLIGHT_LOADS; i++) {
+  for (int i = 0; i < LDQ_SIZE; i++) {
     auto &entry = ldq[i];
     if (!entry.valid) {
       continue;
@@ -585,7 +585,7 @@ void SimpleLsu::progress_ldq_entries() {
 
 bool SimpleLsu::finish_store_addr_once(const MicroOp &inst) {
   int idx = inst.stq_idx;
-  Assert(idx >= 0 && idx < STQ_NUM);
+  Assert(idx >= 0 && idx < STQ_SIZE);
   stq[idx].addr = inst.result; // VA
 
   uint32_t pa = inst.result;
@@ -629,7 +629,7 @@ void SimpleLsu::progress_pending_sta_addr() {
 }
 
 void SimpleLsu::free_ldq_entry(int idx) {
-  Assert(idx >= 0 && idx < MAX_INFLIGHT_LOADS);
+  Assert(idx >= 0 && idx < LDQ_SIZE);
   if (ldq[idx].valid) {
 
     ldq[idx].valid = false;
@@ -650,7 +650,7 @@ void SimpleLsu::free_ldq_entry(int idx) {
 void SimpleLsu::comb_flush() {
   if (in.rob_bcast->flush) {
     // 1. LDQ: 已发请求项标记 killed，未发请求项直接释放
-    for (int i = 0; i < MAX_INFLIGHT_LOADS; i++) {
+    for (int i = 0; i < LDQ_SIZE; i++) {
       if (!ldq[i].valid) {
         continue;
       }
@@ -691,10 +691,10 @@ void SimpleLsu::seq() {
   // 清除已解析分支的 br_mask bit（在 flush 之后，只影响存活条目）
   mask_t clear = in.dec_bcast->clear_mask;
   if (clear) {
-    for (int i = 0; i < MAX_INFLIGHT_LOADS; i++) {
+    for (int i = 0; i < LDQ_SIZE; i++) {
       if (ldq[i].valid) ldq[i].uop.br_mask &= ~clear;
     }
-    for (int i = 0; i < STQ_NUM; i++) {
+    for (int i = 0; i < STQ_SIZE; i++) {
       if (stq[i].valid) stq[i].br_mask &= ~clear;
     }
     for (auto &e : finished_sta_reqs) e.br_mask &= ~clear;
@@ -720,7 +720,7 @@ void SimpleLsu::seq() {
   if (stq_count < 0) {
     Assert(0 && "STQ Count Underflow! logic bug!");
   }
-  if (stq_count > STQ_NUM) {
+  if (stq_count > STQ_SIZE) {
     Assert(0 && "STQ Count Overflow! logic bug!");
   }
   progress_ldq_entries();
@@ -740,7 +740,7 @@ int SimpleLsu::find_recovery_tail(mask_t br_mask) {
   // stq_count 追踪总有效条目 (Head -> Tail)。
   // Head -> Commit 之间的条目已提交。
   // Commit -> Tail 之间的条目未提交。
-  int committed_count = (stq_commit - stq_head + STQ_NUM) % STQ_NUM;
+  int committed_count = (stq_commit - stq_head + STQ_SIZE) % STQ_SIZE;
   int uncommitted_count = stq_count - committed_count;
 
   // 安全检查
@@ -755,7 +755,7 @@ int SimpleLsu::find_recovery_tail(mask_t br_mask) {
       // 新的 Tail 应该回滚到这里
       return ptr;
     }
-    ptr = (ptr + 1) % STQ_NUM;
+    ptr = (ptr + 1) % STQ_SIZE;
   }
 
   // 扫描完所有未提交指令都没找到相关依赖 -> 不需要回滚
@@ -783,7 +783,7 @@ SimpleLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
   // The load remembers the tail at dispatch time.
   // We check all stores from Head up to (but not including) that tail snapshot.
   // Wait, if it's a circular buffer, and we stop at stq_idx, we need to be
-  // careful. Dispatch: stq_idx = (tail + alloc) % STQ_NUM. The load sees
+  // careful. Dispatch: stq_idx = (tail + alloc) % STQ_SIZE. The load sees
   // everything BEFORE this stq_idx. So we iterate until ptr ==
   // load_uop.stq_idx.
 
@@ -817,7 +817,7 @@ SimpleLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
                                           entry.p_addr, entry.func3);
       }
     }
-    ptr = (ptr + 1) % STQ_NUM;
+    ptr = (ptr + 1) % STQ_SIZE;
   }
 
   if (!hit_any)
@@ -828,7 +828,7 @@ SimpleLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
 }
 
 StqEntry SimpleLsu::get_stq_entry(int stq_idx) {
-  Assert(stq_idx >= 0 && stq_idx < STQ_NUM);
+  Assert(stq_idx >= 0 && stq_idx < STQ_SIZE);
   return stq[stq_idx];
 }
 
@@ -848,7 +848,7 @@ uint32_t SimpleLsu::coherent_read(uint32_t p_addr) {
         data = merge_data_to_word(data, entry.data, entry.p_addr, entry.func3);
       }
     }
-    ptr = (ptr + 1) % STQ_NUM;
+    ptr = (ptr + 1) % STQ_SIZE;
   }
 
   return data;

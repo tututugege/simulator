@@ -209,7 +209,7 @@ void ICache::comb_pipe2() {
       bool hit = false;
       for (uint32_t way = 0; way < way_cnt; ++way) {
         if (pipe1_to_pipe2.cache_set_valid_r[way] &&
-            pipe1_to_pipe2.cache_set_tag_r[way] == (io.in.ppn & 0xFFFFF)) {
+            pipe1_to_pipe2.cache_set_tag_r[way] == (io.in.ppn & ICACHE_TAG_MASK)) {
           hit = true;
           // Read data from cache
           for (uint32_t word = 0; word < word_num; ++word) {

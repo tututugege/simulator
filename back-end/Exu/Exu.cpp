@@ -224,7 +224,6 @@ void Exu::comb_exec() {
 
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     if (inst_r[i].valid) {
-
       bool is_killed = false;
       if (in.rob_bcast->flush)
         is_killed = true;
@@ -312,7 +311,6 @@ void Exu::comb_exec() {
     if (!u) continue;
 
     bool flushed = in.rob_bcast->flush || is_br_killed(*u, in.dec_bcast);
-
     // A. 立即驱动 ROB (非访存指令在此完成)
     // 注意：LOAD/STA 的完成通报由 LSU 回调阶段处理
     if (!flushed && u->op != UOP_LOAD && u->op != UOP_STA) {

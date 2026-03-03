@@ -107,7 +107,7 @@ constexpr int IDU_INST_BUFFER_SIZE = 64;
 // [3] I-Cache Config
 // ============================================================
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-constexpr int ICACHE_MISS_LATENCY = 60;
+constexpr int ICACHE_MISS_LATENCY = 70;
 constexpr int ICACHE_WAY_NUM = 8;
 constexpr int ICACHE_OFFSET_BITS = clog2(ICACHE_LINE_SIZE);
 constexpr int ICACHE_INDEX_BITS = 12 - ICACHE_OFFSET_BITS;
@@ -121,10 +121,10 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 // ============================================================
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_MISS_LATENCY = 60;
+constexpr int DCACHE_MISS_LATENCY = 70;
 constexpr int DCACHE_WAY_NUM = 4;
 constexpr int DCACHE_OFFSET_BITS = clog2(DCACHE_LINE_SIZE);
-constexpr int DCACHE_INDEX_BITS = 8;
+constexpr int DCACHE_INDEX_BITS = 7;
 constexpr int DCACHE_SET_NUM = 1 << DCACHE_INDEX_BITS;
 constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
 constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;

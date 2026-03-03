@@ -19,6 +19,12 @@ static wire<PRF_IDX_WIDTH> spec_RAT_normal[ARF_NUM + 1];
 static wire<1> busy_table_awake[PRF_NUM];
 
 void Ren::init() {
+  // Busy table must start from all-ready; otherwise random busy bits can
+  // permanently block issue for dependent uops.
+  std::memset(busy_table, 0, sizeof(busy_table));
+  std::memset(busy_table_1, 0, sizeof(busy_table_1));
+  std::memset(busy_table_awake, 0, sizeof(busy_table_awake));
+
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
 
@@ -195,6 +201,7 @@ void Ren::comb_rename() {
     } else {
       out.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
     }
+
   }
 }
 
@@ -331,11 +338,12 @@ void Ren ::comb_pipeline() {
       if (in.rob_bcast->flush) {
         ctx->perf.squash_flush_ren += killed;
         ctx->perf.squash_flush_total += killed;
+        ctx->perf.pending_squash_flush_slots += killed;
       } else {
         ctx->perf.squash_mispred_ren += killed;
         ctx->perf.squash_mispred_total += killed;
+        ctx->perf.pending_squash_mispred_slots += killed;
       }
-      ctx->perf.pending_squash_slots += killed;
     }
 #endif
   }
