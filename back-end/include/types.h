@@ -91,6 +91,7 @@ typedef struct InstInfo {
   wire<CSR_IDX_WIDTH> csr_idx;
   wire<ROB_IDX_WIDTH> rob_idx;
   wire<STQ_IDX_WIDTH> stq_idx;
+  wire<1> stq_flag;
   wire<STQ_IDX_WIDTH> ldq_idx;
 
   // ROB 信息
@@ -149,6 +150,7 @@ typedef struct MicroOp {
   wire<CSR_IDX_WIDTH> csr_idx;
   wire<ROB_IDX_WIDTH> rob_idx;
   wire<STQ_IDX_WIDTH> stq_idx;
+  wire<1> stq_flag;
   wire<STQ_IDX_WIDTH> ldq_idx;
 
   // ROB 信息
@@ -203,6 +205,7 @@ typedef struct MicroOp {
     this->csr_idx = info.csr_idx;
     this->rob_idx = info.rob_idx;
     this->stq_idx = info.stq_idx;
+    this->stq_flag = info.stq_flag;
     this->ldq_idx = info.ldq_idx;
     this->uop_num = info.uop_num;
     this->rob_flag = info.rob_flag;

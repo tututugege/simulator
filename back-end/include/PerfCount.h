@@ -13,6 +13,8 @@ public:
 
   uint64_t dcache_access_num = 0;
   uint64_t dcache_miss_num = 0;
+  uint64_t dcache_l2_access_num = 0;
+  uint64_t dcache_l2_miss_num = 0;
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -38,6 +40,12 @@ public:
   uint64_t idu_br_stall = 0;
   uint64_t ren_reg_stall = 0;
   uint64_t idu_tag_stall = 0;
+  uint64_t stall_br_id_cycles = 0;
+  uint64_t stall_preg_cycles = 0;
+  uint64_t stall_rob_full_cycles = 0;
+  uint64_t stall_iq_full_cycles = 0;
+  uint64_t stall_ldq_full_cycles = 0;
+  uint64_t stall_stq_full_cycles = 0;
 
   uint64_t len_issued_num = 0;
   uint64_t slots_issued = 0;
@@ -115,6 +123,8 @@ public:
     // dcache
     dcache_access_num = 0;
     dcache_miss_num = 0;
+    dcache_l2_access_num = 0;
+    dcache_l2_miss_num = 0;
     icache_access_num = 0;
     icache_miss_num = 0;
 
@@ -135,6 +145,16 @@ public:
 
     ret_dir_mispred = 0;
     ret_addr_mispred = 0;
+    rob_entry_stall = 0;
+    idu_br_stall = 0;
+    ren_reg_stall = 0;
+    idu_tag_stall = 0;
+    stall_br_id_cycles = 0;
+    stall_preg_cycles = 0;
+    stall_rob_full_cycles = 0;
+    stall_iq_full_cycles = 0;
+    stall_ldq_full_cycles = 0;
+    stall_stq_full_cycles = 0;
 
     len_issued_num = 0;
     slots_issued = 0;
@@ -207,6 +227,7 @@ public:
     perf_print_ptw();
     perf_print_branch();
     perf_print_frontend_fetch();
+    perf_print_resource_stall();
     perf_print_tma();
   }
 
@@ -219,6 +240,18 @@ public:
     printf("\033[38;5;34mdcache hit      : %ld\033[0m\n",
            dcache_access_num - dcache_miss_num);
     printf("\033[38;5;34mdcache miss     : %ld\033[0m\n", dcache_miss_num);
+    if (DCACHE_L2_ENABLE) {
+      double l2_acc = (dcache_l2_access_num == 0)
+                          ? 1.0
+                          : 1.0 -
+                                dcache_l2_miss_num /
+                                    static_cast<double>(dcache_l2_access_num);
+      printf("\033[38;5;34mdcache l2 acc   : %f\033[0m\n", l2_acc);
+      printf("\033[38;5;34mdcache l2 access: %ld\033[0m\n",
+             dcache_l2_access_num);
+      printf("\033[38;5;34mdcache l2 miss  : %ld\033[0m\n",
+             dcache_l2_miss_num);
+    }
     printf("\n");
   }
 
@@ -313,6 +346,23 @@ public:
            ib_blocked_cycles);
     printf("\033[38;5;34mftq blocked cycles           : %ld\033[0m\n",
            ftq_blocked_cycles);
+    printf("\n");
+  }
+
+  void perf_print_resource_stall() {
+    printf("\033[38;5;34m*********RESOURCE STALL************\033[0m\n");
+    printf("\033[38;5;34mbr id stall cycles      : %ld\033[0m\n",
+           stall_br_id_cycles);
+    printf("\033[38;5;34mpreg stall cycles       : %ld\033[0m\n",
+           stall_preg_cycles);
+    printf("\033[38;5;34mrob full stall cycles   : %ld\033[0m\n",
+           stall_rob_full_cycles);
+    printf("\033[38;5;34miq full stall cycles    : %ld\033[0m\n",
+           stall_iq_full_cycles);
+    printf("\033[38;5;34mldq full stall cycles   : %ld\033[0m\n",
+           stall_ldq_full_cycles);
+    printf("\033[38;5;34mstq full stall cycles   : %ld\033[0m\n",
+           stall_stq_full_cycles);
     printf("\n");
   }
 

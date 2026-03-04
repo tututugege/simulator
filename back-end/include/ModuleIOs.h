@@ -93,6 +93,7 @@ typedef struct DisIssUop {
   wire<PRF_IDX_WIDTH> dest_preg, src1_preg, src2_preg;
   wire<ROB_IDX_WIDTH> rob_idx;       // ROB 索引
   wire<STQ_IDX_WIDTH> stq_idx;       // LD/ST 队列索引
+  wire<1> stq_flag;                  // STQ 代际位 (ring epoch)
   wire<STQ_IDX_WIDTH> ldq_idx;       // LDQ 索引
   wire<CSR_IDX_WIDTH> csr_idx;       // CSR 索引 (Critical Fix)
   wire<BR_TAG_WIDTH>  tag;           // Branch Tag (Critical Fix)
@@ -111,6 +112,7 @@ typedef struct DisIssUop {
     slim.src2_preg = full.src2_preg;
     slim.rob_idx   = full.rob_idx;
     slim.stq_idx   = full.stq_idx;
+    slim.stq_flag  = full.stq_flag;
     slim.ldq_idx   = full.ldq_idx;
     slim.csr_idx   = full.csr_idx;
     slim.tag       = full.br_id;

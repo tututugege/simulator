@@ -44,7 +44,7 @@ class StressConfig:
 
 LINE_PATTERNS: Dict[str, re.Pattern] = {
     "ic_miss": re.compile(r"^constexpr int ICACHE_MISS_LATENCY = .*?;\s*(?://.*)?$", re.M),
-    "dc_miss": re.compile(r"^constexpr int DCACHE_MISS_LATENCY = .*?;\s*(?://.*)?$", re.M),
+    "dc_miss": re.compile(r"^constexpr int DCACHE_MEM_LATENCY = .*?;\s*(?://.*)?$", re.M),
     "dc_index": re.compile(r"^constexpr int DCACHE_INDEX_BITS = .*?;\s*(?://.*)?$", re.M),
     "dc_way": re.compile(r"^constexpr int DCACHE_WAY_NUM = .*?;\s*(?://.*)?$", re.M),
     "rob_num": re.compile(r"^constexpr int ROB_NUM = .*?;\s*(?://.*)?$", re.M),
@@ -101,7 +101,7 @@ SECTION_POOL = {
 def replace_one(text: str, key: str, value: int) -> str:
     repl = {
         "ic_miss": f"constexpr int ICACHE_MISS_LATENCY = {value};",
-        "dc_miss": f"constexpr int DCACHE_MISS_LATENCY = {value};",
+        "dc_miss": f"constexpr int DCACHE_MEM_LATENCY = {value};",
         "dc_index": f"constexpr int DCACHE_INDEX_BITS = {value};",
         "dc_way": f"constexpr int DCACHE_WAY_NUM = {value};",
         "rob_num": f"constexpr int ROB_NUM = {value};",

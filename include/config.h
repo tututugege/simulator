@@ -73,7 +73,7 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // Feature Flags (Macros used for conditional compilation)
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 // MMU domain feature tags (kept enabled for front/back path visibility)
 #define CONFIG_DTLB
 #define CONFIG_ITLB
@@ -101,7 +101,7 @@ static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
               "DECODE_WIDTH must be <= FETCH_WIDTH");
 constexpr int COMMIT_WIDTH = DECODE_WIDTH;
-constexpr int IDU_INST_BUFFER_SIZE = 64;
+constexpr int IDU_INST_BUFFER_SIZE = 100000;
 
 // ============================================================
 // [3] I-Cache Config
@@ -121,7 +121,10 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 // ============================================================
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_MISS_LATENCY = 20;
+constexpr int DCACHE_L2_HIT_LATENCY = 8;
+constexpr int DCACHE_MEM_LATENCY = 20;
+// Backward-compatible alias; prefer DCACHE_MEM_LATENCY for new code.
+constexpr int DCACHE_MISS_LATENCY = DCACHE_MEM_LATENCY;
 constexpr int DCACHE_WAY_NUM = 4;
 constexpr int DCACHE_OFFSET_BITS = clog2(DCACHE_LINE_SIZE);
 constexpr int DCACHE_INDEX_BITS = 8;
@@ -130,18 +133,28 @@ constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
 constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
 constexpr uint32_t DCACHE_TAG_MASK = (1u << DCACHE_TAG_BITS) - 1u;
 constexpr int DCACHE_MAX_PENDING_REQS = 256;
+constexpr bool DCACHE_L2_ENABLE = true;
+constexpr int DCACHE_L2_LINE_SIZE = DCACHE_LINE_SIZE; // bytes
+constexpr int DCACHE_L2_WAY_NUM = 8;
+constexpr int DCACHE_L2_OFFSET_BITS = clog2(DCACHE_L2_LINE_SIZE);
+constexpr int DCACHE_L2_INDEX_BITS = 10;
+constexpr int DCACHE_L2_SET_NUM = 1 << DCACHE_L2_INDEX_BITS;
+constexpr int DCACHE_L2_WORD_NUM = DCACHE_L2_LINE_SIZE / 4;
+constexpr int DCACHE_L2_TAG_BITS =
+    32 - DCACHE_L2_INDEX_BITS - DCACHE_L2_OFFSET_BITS;
+constexpr uint32_t DCACHE_L2_TAG_MASK = (1u << DCACHE_L2_TAG_BITS) - 1u;
 
 // ============================================================
 // [5] Core Resource Size
 // ============================================================
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 128; // Tuned for 4-wide
+constexpr int PRF_NUM = 512; // Tuned for 4-wide
 constexpr int MAX_BR_NUM = 32;
 constexpr int MAX_BR_PER_CYCLE = 2; // Tuned for 4-wide
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 128;
+constexpr int ROB_NUM = 512;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM; // (ROB_NUM / ROB_BANK_NUM)
 
 // ============================================================
@@ -153,7 +166,7 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // ============================================================
 // [7] FTQ Config
 // ============================================================
-constexpr int FTQ_SIZE = 64;
+constexpr int FTQ_SIZE = 8192;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -294,16 +307,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 // Instruction queue layout per queue type.
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 48, DECODE_WIDTH,
+    {IQ_INT, 96, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 24, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 48, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 24, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 48, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 24, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 48, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 16, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 32, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 // ============================================================
@@ -343,6 +356,11 @@ static_assert((DCACHE_LINE_SIZE % 4) == 0,
               "DCACHE_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
 static_assert(is_power_of_two_u64(DCACHE_LINE_SIZE),
               "DCACHE_LINE_SIZE must be a power of two");
+static_assert(DCACHE_L2_LINE_SIZE > 0, "DCACHE_L2_LINE_SIZE must be positive");
+static_assert((DCACHE_L2_LINE_SIZE % 4) == 0,
+              "DCACHE_L2_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
+static_assert(is_power_of_two_u64(DCACHE_L2_LINE_SIZE),
+              "DCACHE_L2_LINE_SIZE must be a power of two");
 static_assert(DCACHE_WAY_NUM > 0, "DCACHE_WAY_NUM must be positive");
 static_assert(DCACHE_OFFSET_BITS > 0, "DCACHE_OFFSET_BITS must be positive");
 static_assert(DCACHE_INDEX_BITS > 0, "DCACHE_INDEX_BITS must be positive");
@@ -351,6 +369,16 @@ static_assert(DCACHE_WORD_NUM == DCACHE_LINE_SIZE / 4,
 static_assert(DCACHE_TAG_BITS > 0, "DCACHE_TAG_BITS must be positive");
 static_assert(DCACHE_SET_NUM > 0, "DCACHE_SET_NUM must be positive");
 static_assert(DCACHE_TAG_MASK != 0, "DCACHE_TAG_MASK must be non-zero");
+static_assert(DCACHE_L2_WAY_NUM > 0, "DCACHE_L2_WAY_NUM must be positive");
+static_assert(DCACHE_L2_OFFSET_BITS > 0,
+              "DCACHE_L2_OFFSET_BITS must be positive");
+static_assert(DCACHE_L2_INDEX_BITS > 0,
+              "DCACHE_L2_INDEX_BITS must be positive");
+static_assert(DCACHE_L2_WORD_NUM == DCACHE_L2_LINE_SIZE / 4,
+              "DCACHE_L2_WORD_NUM must match DCACHE_L2_LINE_SIZE / 4");
+static_assert(DCACHE_L2_TAG_BITS > 0, "DCACHE_L2_TAG_BITS must be positive");
+static_assert(DCACHE_L2_SET_NUM > 0, "DCACHE_L2_SET_NUM must be positive");
+static_assert(DCACHE_L2_TAG_MASK != 0, "DCACHE_L2_TAG_MASK must be non-zero");
 static_assert(LSU_LDU_COUNT <= LSU_AGU_COUNT,
               "LSU_LDU_COUNT must be <= LSU_AGU_COUNT");
 static_assert(LSU_STA_COUNT <= LSU_AGU_COUNT,

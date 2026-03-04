@@ -75,7 +75,10 @@ void Dispatch::comb_alloc() {
 
     // Load 需要知道之前的 Store
     if (inst_r[i].valid && is_load(inst_r[i].uop)) {
-      inst_alloc[i].uop.stq_idx = (in.lsu2dis->stq_tail + store_alloc_count) % STQ_SIZE;
+      int stop_pos = in.lsu2dis->stq_tail + store_alloc_count;
+      inst_alloc[i].uop.stq_idx = stop_pos % STQ_SIZE;
+      inst_alloc[i].uop.stq_flag =
+          in.lsu2dis->stq_tail_flag ^ ((stop_pos / STQ_SIZE) & 0x1);
 
       // 检查 Load 队列限制和端口限制
       if (load_alloc_count < in.lsu2dis->ldq_free &&
@@ -98,7 +101,10 @@ void Dispatch::comb_alloc() {
         // 计算 STQ Index
         int allocated_idx =
             (in.lsu2dis->stq_tail + store_alloc_count) % STQ_SIZE;
+        int allocated_pos = in.lsu2dis->stq_tail + store_alloc_count;
         inst_alloc[i].uop.stq_idx = allocated_idx;
+        inst_alloc[i].uop.stq_flag =
+            in.lsu2dis->stq_tail_flag ^ ((allocated_pos / STQ_SIZE) & 0x1);
 
         stq_port_owner[store_alloc_count] = i;
 
@@ -292,6 +298,10 @@ void Dispatch::comb_fire() {
   bool is_mem_ext_bound[DECODE_WIDTH] = {false};
   bool is_mem_ldq_full[DECODE_WIDTH] = {false};
   bool is_mem_stq_full[DECODE_WIDTH] = {false};
+  bool any_rob_full_stall = false;
+  bool any_iq_full_stall = false;
+  bool any_ldq_full_stall = false;
+  bool any_stq_full_stall = false;
 
   // Analyze stall reasons for each slot
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -300,6 +310,7 @@ void Dispatch::comb_fire() {
       // Priority: ROB > LSU > IQ
       // If ROB is full/stalled
       if (!in.rob2dis->ready) { // ROB Full
+        any_rob_full_stall = true;
         if (in.rob2dis->head_is_memory && in.rob2dis->head_not_ready) {
           if (in.rob2dis->head_is_miss) {
             is_mem_ext_bound[i] = true;
@@ -317,11 +328,13 @@ void Dispatch::comb_fire() {
           if (in.lsu2dis->ldq_free == 0) {
             lsu_stall = true;
             is_mem_ldq_full[i] = true;
+            any_ldq_full_stall = true;
           }
         } else if (is_store(inst_r[i].uop)) {
           if (in.lsu2dis->stq_free == 0) {
             lsu_stall = true;
             is_mem_stq_full[i] = true;
+            any_stq_full_stall = true;
           }
         }
 
@@ -329,9 +342,23 @@ void Dispatch::comb_fire() {
           is_mem_l1_bound[i] = true;
         } else {
           is_core_bound_iq[i] = true;
+          any_iq_full_stall = true;
         }
       }
     }
+  }
+
+  if (any_rob_full_stall) {
+    ctx->perf.stall_rob_full_cycles++;
+  }
+  if (any_iq_full_stall) {
+    ctx->perf.stall_iq_full_cycles++;
+  }
+  if (any_ldq_full_stall) {
+    ctx->perf.stall_ldq_full_cycles++;
+  }
+  if (any_stq_full_stall) {
+    ctx->perf.stall_stq_full_cycles++;
   }
 
   for (int i = 0; i < DECODE_WIDTH; i++) {

@@ -98,6 +98,7 @@ void Ren::comb_alloc() {
 #ifdef CONFIG_PERF_COUNTER
   if (stall) {
     ctx->perf.ren_reg_stall++;
+    ctx->perf.stall_preg_cycles++;
   }
 #endif
 }

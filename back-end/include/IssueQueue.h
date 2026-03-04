@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "util.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <vector>
@@ -38,6 +39,7 @@ public:
   std::vector<UopEntry> entry;
   std::vector<UopEntry> entry_1;
   int count, count_1;
+  int wake_words_per_row;
 
   // Wakeup Matrix: [Physical Register] -> Bitmask of IQ slots
   std::vector<uint64_t> wake_matrix_src1;
@@ -51,10 +53,12 @@ public:
     entry_1.resize(size);
     count = 0;
     count_1 = 0;
+    wake_words_per_row = (size + 63) / 64;
 
-    // Initialize Wakeup Matrices
-    wake_matrix_src1.resize(PRF_NUM, 0);
-    wake_matrix_src2.resize(PRF_NUM, 0);
+    // Initialize segmented wakeup matrices:
+    // [preg][word_idx], where each word tracks 64 IQ slots.
+    wake_matrix_src1.resize(PRF_NUM * wake_words_per_row, 0);
+    wake_matrix_src2.resize(PRF_NUM * wake_words_per_row, 0);
   }
 
   // 入队 (返回成功入队的个数)
@@ -65,7 +69,8 @@ public:
       if (!entry_1[i].valid) {
         entry_1[i] = inst;
         entry_1[i].valid = true;
-        
+        set_dep_bits_for_slot(entry_1[i], i);
+
         count_1++;
         return 1;
       }
@@ -75,19 +80,36 @@ public:
 
   // 唤醒逻辑 (Matrix-Based)
   void wakeup(const std::vector<uint32_t> &pregs) {
-    // Use full scan to support IQ depth > 64.
     for (uint32_t preg : pregs) {
-      for (int idx = 0; idx < size; idx++) {
-        if (!entry_1[idx].valid)
-          continue;
-        if (entry_1[idx].uop.src1_en && entry_1[idx].uop.src1_busy &&
-            entry_1[idx].uop.src1_preg == preg) {
-          entry_1[idx].uop.src1_busy = false;
+      if (preg >= PRF_NUM) {
+        continue;
+      }
+      size_t row_base = matrix_row_base(preg);
+
+      for (int w = 0; w < wake_words_per_row; w++) {
+        uint64_t mask1 = wake_matrix_src1[row_base + w];
+        while (mask1) {
+          int bit = __builtin_ctzll(mask1);
+          int idx = (w << 6) + bit;
+          if (idx < size && entry_1[idx].valid && entry_1[idx].uop.src1_en &&
+              entry_1[idx].uop.src1_busy && entry_1[idx].uop.src1_preg == preg) {
+            entry_1[idx].uop.src1_busy = false;
+          }
+          mask1 &= (mask1 - 1);
         }
-        if (entry_1[idx].uop.src2_en && entry_1[idx].uop.src2_busy &&
-            entry_1[idx].uop.src2_preg == preg) {
-          entry_1[idx].uop.src2_busy = false;
+        wake_matrix_src1[row_base + w] = 0;
+
+        uint64_t mask2 = wake_matrix_src2[row_base + w];
+        while (mask2) {
+          int bit = __builtin_ctzll(mask2);
+          int idx = (w << 6) + bit;
+          if (idx < size && entry_1[idx].valid && entry_1[idx].uop.src2_en &&
+              entry_1[idx].uop.src2_busy && entry_1[idx].uop.src2_preg == preg) {
+            entry_1[idx].uop.src2_busy = false;
+          }
+          mask2 &= (mask2 - 1);
         }
+        wake_matrix_src2[row_base + w] = 0;
       }
     }
   }
@@ -102,6 +124,7 @@ public:
       }
       bool match_mask = (entry_1[i].uop.br_mask & br_mask) != 0;
       if (match_mask) {
+        clear_dep_bits_for_slot(entry_1[i], i);
         entry_1[i].valid = false;
         count_1--;
       }
@@ -132,6 +155,7 @@ public:
   void commit_issue(const std::vector<int> &indices) {
     for (int idx : indices) {
       if (entry_1[idx].valid) {
+        clear_dep_bits_for_slot(entry_1[idx], idx);
         entry_1[idx].valid = false;
         count_1--;
       }
@@ -196,6 +220,55 @@ public:
   const std::vector<UopEntry> &get_entries_1() const { return entry_1; }
 
 private:
+  size_t matrix_row_base(uint32_t preg) const {
+    return static_cast<size_t>(preg) * static_cast<size_t>(wake_words_per_row);
+  }
+
+  uint64_t slot_bit(int idx) const {
+    return 1ULL << (idx & 63);
+  }
+
+  int slot_word(int idx) const {
+    return idx >> 6;
+  }
+
+  void set_dep_bits_for_slot(const UopEntry &ent, int idx) {
+    int word = slot_word(idx);
+    uint64_t bit = slot_bit(idx);
+
+    if (ent.uop.src1_en && ent.uop.src1_busy) {
+      uint32_t preg = ent.uop.src1_preg;
+      if (preg < PRF_NUM) {
+        wake_matrix_src1[matrix_row_base(preg) + word] |= bit;
+      }
+    }
+    if (ent.uop.src2_en && ent.uop.src2_busy) {
+      uint32_t preg = ent.uop.src2_preg;
+      if (preg < PRF_NUM) {
+        wake_matrix_src2[matrix_row_base(preg) + word] |= bit;
+      }
+    }
+  }
+
+  void clear_dep_bits_for_slot(const UopEntry &ent, int idx) {
+    int word = slot_word(idx);
+    uint64_t bit = slot_bit(idx);
+    uint64_t clear_mask = ~bit;
+
+    if (ent.uop.src1_en) {
+      uint32_t preg = ent.uop.src1_preg;
+      if (preg < PRF_NUM) {
+        wake_matrix_src1[matrix_row_base(preg) + word] &= clear_mask;
+      }
+    }
+    if (ent.uop.src2_en) {
+      uint32_t preg = ent.uop.src2_preg;
+      if (preg < PRF_NUM) {
+        wake_matrix_src2[matrix_row_base(preg) + word] &= clear_mask;
+      }
+    }
+  }
+
   bool is_ready(const UopEntry &ent) {
     const auto &op = ent.uop;
     bool ops_ok =

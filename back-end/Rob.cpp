@@ -75,7 +75,7 @@ void Rob::comb_ready() {
         if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
-          stall_is_miss = (in.lsu2rob->miss_mask >> rob_idx) & 1;
+          stall_is_miss = (rob_idx < ROB_NUM) ? in.lsu2rob->miss_mask.test(rob_idx) : false;
         } else {
           stall_is_mem = false;
           stall_is_miss = false;
