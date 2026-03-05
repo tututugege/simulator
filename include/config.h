@@ -96,7 +96,7 @@ constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 // [2] Frontend / Backend Pipeline Width
 // ============================================================
 constexpr int FETCH_WIDTH = 16;
-constexpr int DECODE_WIDTH = 4;
+constexpr int DECODE_WIDTH = 8;
 static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
               "DECODE_WIDTH must be <= FETCH_WIDTH");
@@ -271,9 +271,11 @@ constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
 constexpr int ITLB_ENTRIES = 32;
 constexpr int DTLB_ENTRIES = 32;
 
+constexpr int FAST_WAKEUP_PORTS = count_ports_with_mask(OP_MASK_ALU);
+constexpr int DELAYED_WAKEUP_PORTS =
+    count_ports_with_mask(OP_MASK_MUL) + count_ports_with_mask(OP_MASK_DIV);
 constexpr int MAX_WAKEUP_PORTS =
-    LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
-    count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
+    LSU_LOAD_WB_WIDTH + FAST_WAKEUP_PORTS + DELAYED_WAKEUP_PORTS;
 
 // ============================================================
 // [13] ISU / IQ / EXU / FU Derived Port Bases
