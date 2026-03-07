@@ -13,6 +13,15 @@
 #include <iostream>
 #include <vector>
 
+static_assert(BPU_BANK_NUM > 0, "BPU_BANK_NUM must be positive");
+static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
+static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
+static_assert(BPU_BANK_NUM == FETCH_WIDTH,
+              "BPU currently assumes one bank per fetch lane");
+static_assert(TN_MAX == 4,
+              "BPU/front-end IO currently assumes TN_MAX == 4 lanes");
+static_assert(Q_DEPTH > 0, "Q_DEPTH must be positive");
+
 class BPU_TOP;             // 前向声明类
 extern BPU_TOP *g_bpu_top; // 再声明全局指针
 
@@ -372,6 +381,7 @@ public:
     TAGE_TOP::ReadData tage_rd[BPU_BANK_NUM];
     BTB_TOP::ReadData btb_rd[BPU_BANK_NUM];
     NlpEntrySnapshot nlp_pred_base_entry_snapshot;
+    uint32_t nlp_s1_req_pc_snapshot;
     NlpEntrySnapshot nlp_s1_entry_snapshot;
     NlpEntrySnapshot nlp_train_entry_snapshot;
   };
@@ -737,11 +747,7 @@ public:
     }
 #endif
 
-    if (rd.state_snapshot == S_IDLE) {
-      rd.pred_base_pc = inp.refetch ? inp.refetch_address : rd.pc_reg_snapshot;
-    } else {
-      rd.pred_base_pc = rd.pred_base_pc_fired_snapshot;
-    }
+    rd.pred_base_pc = inp.refetch ? inp.refetch_address : rd.pc_reg_snapshot;
 
     const uint32_t CACHE_MASK = ~(ICACHE_LINE_SIZE - 1);
     uint32_t pc_plus_width = rd.pred_base_pc + (FETCH_WIDTH * 4);
@@ -811,14 +817,15 @@ public:
       }
     }
 
-    rd.going_to_do_pred = inp.icache_read_ready || inp.refetch;
+    rd.going_to_do_pred =
+        rd.pc_can_send_to_icache_snapshot && (inp.icache_read_ready || inp.refetch);
     rd.going_to_do_upd_any = false;
     for (int i = 0; i < BPU_BANK_NUM; i++) {
       rd.going_to_do_upd[i] = !rd.q_empty[i];
       rd.going_to_do_upd_any |= rd.going_to_do_upd[i];
     }
     rd.trans_ready_to_fire = rd.going_to_do_pred || rd.going_to_do_upd_any;
-    rd.set_submodule_input = (rd.state_snapshot == S_IDLE) && rd.trans_ready_to_fire;
+    rd.set_submodule_input = rd.trans_ready_to_fire;
 
     auto read_nlp_entry = [&](uint32_t pc, ReadData::NlpEntrySnapshot &snapshot) {
       const uint32_t idx = nlp_index_from_pc(pc);
@@ -829,17 +836,32 @@ public:
       snapshot.entry_conf = entry.conf;
     };
     read_nlp_entry(rd.pred_base_pc, rd.nlp_pred_base_entry_snapshot);
-    read_nlp_entry(nlp_s1_pred_next_pc, rd.nlp_s1_entry_snapshot);
-    read_nlp_entry(rd.pred_base_pc_fired_snapshot, rd.nlp_train_entry_snapshot);
+    read_nlp_entry(rd.pred_base_pc, rd.nlp_train_entry_snapshot);
+    rd.nlp_s1_req_pc_snapshot = 0;
+    std::memset(&rd.nlp_s1_entry_snapshot, 0, sizeof(rd.nlp_s1_entry_snapshot));
+#ifdef ENABLE_2AHEAD
+    if (rd.going_to_do_pred && !inp.refetch) {
+      const uint32_t stage1_tag = nlp_tag_from_pc(rd.pred_base_pc);
+      const bool stage1_hit = rd.nlp_pred_base_entry_snapshot.entry_valid &&
+                              (rd.nlp_pred_base_entry_snapshot.entry_tag == stage1_tag);
+      const uint8_t stage1_conf = stage1_hit ? rd.nlp_pred_base_entry_snapshot.entry_conf : 0;
+      const uint32_t stage1_next_pc =
+          (stage1_hit && stage1_conf >= NLP_CONF_THRESHOLD)
+              ? rd.nlp_pred_base_entry_snapshot.entry_target
+              : nlp_fallback_next_pc(rd.pred_base_pc);
+      rd.nlp_s1_req_pc_snapshot = stage1_next_pc;
+      read_nlp_entry(stage1_next_pc, rd.nlp_s1_entry_snapshot);
+    }
+#endif
 
     std::memset(rd.tage_in, 0, sizeof(rd.tage_in));
     std::memset(rd.btb_in, 0, sizeof(rd.btb_in));
 #ifdef SPECULATIVE_ON
-    const bool *ghr_src = Spec_GHR;
-    const uint32_t (*fh_src)[TN_MAX] = Spec_FH;
+    const bool *ghr_src = rd.Spec_GHR_snapshot;
+    const uint32_t (*fh_src)[TN_MAX] = rd.Spec_FH_snapshot;
 #else
-    const bool *ghr_src = Arch_GHR;
-    const uint32_t (*fh_src)[TN_MAX] = Arch_FH;
+    const bool *ghr_src = rd.Arch_GHR_snapshot;
+    const uint32_t (*fh_src)[TN_MAX] = rd.Arch_FH_snapshot;
 #endif
     for (int b = 0; b < BPU_BANK_NUM; b++) {
       for (int k = 0; k < FH_N_MAX; k++) {
@@ -854,16 +876,19 @@ public:
 
     if (rd.set_submodule_input) {
       if (rd.going_to_do_pred) {
+        bool pred_req_sent[BPU_BANK_NUM];
+        std::memset(pred_req_sent, 0, sizeof(pred_req_sent));
         for (int i = 0; i < FETCH_WIDTH; i++) {
           if (!rd.do_pred_on_this_pc[i]) {
             continue;
           }
           int bank_sel = rd.this_pc_bank_sel[i];
-          if (bank_sel >= 0 && bank_sel < BPU_BANK_NUM) {
+          if (bank_sel >= 0 && bank_sel < BPU_BANK_NUM && !pred_req_sent[bank_sel]) {
             rd.tage_in[bank_sel].pred_req = true;
             rd.tage_in[bank_sel].pc_pred_in = bank_pc_from_pc(rd.do_pred_for_this_pc[i]);
             rd.btb_in[bank_sel].pred_req = true;
             rd.btb_in[bank_sel].pred_pc = bank_pc_from_pc(rd.do_pred_for_this_pc[i]);
+            pred_req_sent[bank_sel] = true;
           }
         }
       }
@@ -908,243 +933,13 @@ public:
     UpdateRequest &req = comb_out.update_req;
     std::memset(&out, 0, sizeof(OutputPayload));
     std::memset(&req, 0, sizeof(UpdateRequest));
-
-    for (int i = 0; i < BPU_BANK_NUM; i++) {
-      req.going_to_do_upd[i] = rd.going_to_do_upd[i];
-      req.q_push_en[i] = false;
-      req.q_pop_en[i] = false;
-      req.tage_done_next[i] = rd.tage_done_snapshot[i];
-      req.btb_done_next[i] = rd.btb_done_snapshot[i];
-      req.tage_in[i] = rd.tage_in[i];
-      req.btb_in[i] = rd.btb_in[i];
-    }
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      req.do_pred_on_this_pc[i] = rd.do_pred_on_this_pc[i];
-      req.this_pc_bank_sel[i] = rd.this_pc_bank_sel[i];
-      req.do_pred_for_this_pc[i] = rd.do_pred_for_this_pc[i];
-      req.tage_calc_pred_dir_latch_next[i] = rd.tage_calc_pred_dir_latch_snapshot[i];
-      req.tage_calc_altpred_latch_next[i] = rd.tage_calc_altpred_latch_snapshot[i];
-      req.tage_calc_pcpn_latch_next[i] = rd.tage_calc_pcpn_latch_snapshot[i];
-      req.tage_calc_altpcpn_latch_next[i] = rd.tage_calc_altpcpn_latch_snapshot[i];
-      req.tage_result_valid_latch_next[i] = rd.tage_result_valid_latch_snapshot[i];
-      req.btb_pred_target_latch_next[i] = rd.btb_pred_target_latch_snapshot[i];
-      req.btb_result_valid_latch_next[i] = rd.btb_result_valid_latch_snapshot[i];
-      for (int k = 0; k < TN_MAX; k++) {
-        req.tage_pred_calc_tags_latch_next[i][k] = rd.tage_pred_calc_tags_latch_snapshot[i][k];
-        req.tage_pred_calc_idxs_latch_next[i][k] = rd.tage_pred_calc_idxs_latch_snapshot[i][k];
-      }
-      req.final_pred_dir[i] = false;
-    }
-
+    req.next_state = S_IDLE;
     req.pred_base_pc = rd.pred_base_pc;
     req.going_to_do_pred = rd.going_to_do_pred;
-
-    TAGE_TOP::OutputPayload tage_out[BPU_BANK_NUM];
-    BTB_TOP::OutputPayload btb_out[BPU_BANK_NUM];
-    for (int i = 0; i < BPU_BANK_NUM; i++) {
-      TAGE_TOP::TageCombOut tage_comb_out{};
-      tage_inst[i]->tage_comb(TAGE_TOP::TageCombIn{rd.tage_in[i], rd.tage_rd[i]},
-                              tage_comb_out);
-      tage_out[i] = tage_comb_out.out_regs;
-      req.tage_req[i] = tage_comb_out.req;
-
-      BTB_TOP::BtbCombOut btb_comb_out{};
-      btb_inst[i]->btb_comb(BTB_TOP::BtbCombIn{rd.btb_in[i], rd.btb_rd[i]},
-                            btb_comb_out);
-      btb_out[i] = btb_comb_out.out_regs;
-      req.btb_req[i] = btb_comb_out.req;
-    }
-
-    if (rd.state_snapshot == S_WORKING || rd.state_snapshot == S_REFEATCH) {
-      for (int i = 0; i < BPU_BANK_NUM; i++) {
-        if (!req.tage_done_next[i] && !tage_out[i].busy) {
-          req.tage_done_next[i] = true;
-          for (int j = 0; j < FETCH_WIDTH; j++) {
-            if (rd.do_pred_on_this_pc[j] && rd.this_pc_bank_sel[j] == i &&
-                !req.tage_result_valid_latch_next[j]) {
-              req.tage_calc_pred_dir_latch_next[j] = tage_out[i].pred_out;
-              req.tage_calc_altpred_latch_next[j] = tage_out[i].alt_pred_out;
-              req.tage_calc_pcpn_latch_next[j] = tage_out[i].pcpn_out;
-              req.tage_calc_altpcpn_latch_next[j] = tage_out[i].altpcpn_out;
-              for (int k = 0; k < TN_MAX; k++) {
-                req.tage_pred_calc_tags_latch_next[j][k] = tage_out[i].tage_tag_flat_out[k];
-                req.tage_pred_calc_idxs_latch_next[j][k] = tage_out[i].tage_idx_flat_out[k];
-              }
-              req.tage_result_valid_latch_next[j] = true;
-              break;
-            }
-          }
-        }
-
-        if (!req.btb_done_next[i] && !btb_out[i].busy) {
-          req.btb_done_next[i] = true;
-          for (int j = 0; j < FETCH_WIDTH; j++) {
-            if (rd.do_pred_on_this_pc[j] && rd.this_pc_bank_sel[j] == i &&
-                !req.btb_result_valid_latch_next[j]) {
-              req.btb_pred_target_latch_next[j] = btb_out[i].pred_target;
-              req.btb_result_valid_latch_next[j] = true;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    bool all_tage_ready = true;
-    bool all_btb_ready = true;
-    if (rd.do_pred_latch_snapshot) {
-      for (int i = 0; i < FETCH_WIDTH; i++) {
-        if (!rd.do_pred_on_this_pc[i]) {
-          continue;
-        }
-        int bank_sel = rd.this_pc_bank_sel[i];
-        if (bank_sel >= 0 && bank_sel < BPU_BANK_NUM) {
-          if (!req.tage_result_valid_latch_next[i] || !req.tage_done_next[bank_sel]) {
-            all_tage_ready = false;
-          }
-          if (!req.btb_result_valid_latch_next[i] || !req.btb_done_next[bank_sel]) {
-            all_btb_ready = false;
-          }
-        }
-      }
-    }
-
-    bool all_upd_ready = true;
-    for (int i = 0; i < BPU_BANK_NUM; i++) {
-      if (rd.do_upd_latch_snapshot[i]) {
-        if (!req.tage_done_next[i] || !req.btb_done_next[i]) {
-          all_upd_ready = false;
-        }
-      }
-    }
-
-    bool all_ops_done =
-        (rd.do_pred_latch_snapshot ? (all_tage_ready && all_btb_ready) : true) &&
-        all_upd_ready;
-    req.next_state = rd.state_snapshot;
-    switch (rd.state_snapshot) {
-      case S_IDLE:
-        req.next_state = rd.trans_ready_to_fire ? S_WORKING : S_IDLE;
-        break;
-      case S_WORKING:
-        if (inp.refetch) {
-          req.next_state = all_ops_done ? S_IDLE : S_REFEATCH;
-        } else if (all_ops_done) {
-          req.next_state = S_IDLE;
-        } else {
-          req.next_state = S_WORKING;
-        }
-        break;
-      case S_REFEATCH:
-        req.next_state = all_ops_done ? S_IDLE : S_REFEATCH;
-        break;
-      default:
-        req.next_state = rd.state_snapshot;
-        break;
-    }
-
-    req.next_fetch_addr_calc = rd.boundary_addr;
-    req.final_2_ahead_address = req.next_fetch_addr_calc + (FETCH_WIDTH * 4);
-    req.should_update_spec_hist = false;
-    bool saw_low_conf_fallback = false;
-    (void)saw_low_conf_fallback;
-    bool found_taken_branch = false;
-
-    if ((rd.state_snapshot == S_WORKING) && (req.next_state == S_IDLE) && !inp.refetch) {
-      req.should_update_spec_hist = true;
-      for (int i = 0; i < FETCH_WIDTH; i++) {
-        if (!rd.do_pred_on_this_pc[i]) {
-          continue;
-        }
-        int bank_sel = rd.this_pc_bank_sel[i];
-        if (bank_sel >= 0 && bank_sel < BPU_BANK_NUM) {
-          br_type_t p_type = rd.pred_inst_type_snapshot[i];
-          if (p_type == BR_NONCTL) {
-            req.final_pred_dir[i] = false;
-          } else if (p_type == BR_RET || p_type == BR_CALL || p_type == BR_IDIRECT ||
-                     p_type == BR_JAL) {
-            req.final_pred_dir[i] = true;
-          } else {
-            req.final_pred_dir[i] = req.tage_calc_pred_dir_latch_next[i];
-          }
-
-          if (req.final_pred_dir[i] && !found_taken_branch &&
-              req.btb_result_valid_latch_next[i]) {
-            found_taken_branch = true;
-            uint32_t chosen_target = req.btb_pred_target_latch_next[i];
-            if (p_type == BR_RET && rd.ras_has_entry_snapshot) {
-              chosen_target = rd.ras_top_snapshot;
-            }
-            req.next_fetch_addr_calc = chosen_target;
-          }
-        }
-      }
-      req.final_2_ahead_address = req.next_fetch_addr_calc + (FETCH_WIDTH * 4);
-    }
-
-    for (int i = 0; i < BPU_BANK_NUM; i++) {
-      req.q_pop_en[i] = ((rd.state_snapshot == S_WORKING || rd.state_snapshot == S_REFEATCH) &&
-                         (req.next_state == S_IDLE) && rd.do_upd_latch_snapshot[i]);
-    }
-    for (int i = 0; i < COMMIT_WIDTH; i++) {
-      if (!inp.in_upd_valid[i]) {
-        continue;
-      }
-      int bank_sel = bank_sel_from_pc(inp.in_update_base_pc[i]);
-      req.q_push_en[bank_sel] = !rd.q_full[bank_sel];
-    }
-
-    if ((rd.state_snapshot == S_WORKING) && req.next_state == S_IDLE) {
-      out.PTAB_write_enable = rd.do_pred_latch_snapshot && !inp.refetch;
-    }
-    out.icache_read_valid = rd.pc_can_send_to_icache_snapshot && (rd.state_snapshot == S_IDLE);
-    out.fetch_address = inp.refetch ? inp.refetch_address : rd.pc_reg_snapshot;
-    out.predict_next_fetch_address = req.next_fetch_addr_calc;
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      out.out_pred_dir[i] = req.final_pred_dir[i];
-      out.out_alt_pred[i] = req.tage_calc_altpred_latch_next[i];
-      out.out_pcpn[i] = req.tage_calc_pcpn_latch_next[i];
-      out.out_altpcpn[i] = req.tage_calc_altpcpn_latch_next[i];
-      for (int k = 0; k < TN_MAX; k++) {
-        out.out_tage_tags[i][k] = req.tage_pred_calc_tags_latch_next[i][k];
-        out.out_tage_idxs[i][k] = req.tage_pred_calc_idxs_latch_next[i][k];
-      }
-    }
-    out.out_pred_base_pc = rd.pred_base_pc_fired_snapshot;
-
-    uint32_t refetch_2ahead_target = inp.refetch_address + (FETCH_WIDTH * 4);
-    uint32_t fallback_twoahead_target = out.fetch_address + (FETCH_WIDTH * 4);
-    out.two_ahead_valid = inp.refetch ? false : rd.saved_2ahead_pred_valid_snapshot;
-    out.two_ahead_target =
-        inp.refetch ? refetch_2ahead_target
-                    : (out.two_ahead_valid ? rd.saved_2ahead_prediction_snapshot
-                                           : fallback_twoahead_target);
-    bool need_mini_flush = rd.saved_2ahead_prediction_snapshot != req.next_fetch_addr_calc;
-    out.mini_flush_req = need_mini_flush && out.PTAB_write_enable;
-    out.mini_flush_correct = rd.saved_mini_flush_correct_snapshot && !inp.refetch;
-    out.mini_flush_target = rd.saved_mini_flush_target_snapshot;
-#ifndef ENABLE_2AHEAD
-    out.two_ahead_valid = false;
-    out.mini_flush_req = false;
-    out.mini_flush_correct = false;
-#endif
-
-    bool q_full_any = false;
-    for (int i = 0; i < BPU_BANK_NUM; i++) {
-      int next_q_count = static_cast<int>(rd.q_count_snapshot[i]);
-      if (req.q_push_en[i] && !req.q_pop_en[i]) {
-        next_q_count++;
-      } else if (!req.q_push_en[i] && req.q_pop_en[i]) {
-        next_q_count--;
-      }
-      q_full_any |= (next_q_count == Q_DEPTH);
-    }
-    out.update_queue_full = q_full_any;
-
     req.pc_reg_next = rd.pc_reg_snapshot;
     req.pc_can_send_to_icache_next = rd.pc_can_send_to_icache_snapshot;
-    req.do_pred_latch_next = rd.do_pred_latch_snapshot;
-    req.pred_base_pc_fired_next = rd.pred_base_pc_fired_snapshot;
+    req.do_pred_latch_next = false;
+    req.pred_base_pc_fired_next = rd.pred_base_pc;
     req.saved_2ahead_prediction_next = rd.saved_2ahead_prediction_snapshot;
     req.saved_2ahead_pred_valid_next = rd.saved_2ahead_pred_valid_snapshot;
     req.saved_mini_flush_req_next = rd.saved_mini_flush_req_snapshot;
@@ -1155,16 +950,16 @@ public:
     req.ahead_gate_success_count_next = rd.ahead_gate_success_count_snapshot;
     req.ahead_gate_disable_count_next = rd.ahead_gate_disable_count_snapshot;
     req.ahead_gate_enable_count_next = rd.ahead_gate_enable_count_snapshot;
-    req.nlp_s1_valid_next = nlp_s1_valid;
-    req.nlp_s1_req_pc_next = nlp_s1_req_pc;
-    req.nlp_s1_pred_next_pc_next = nlp_s1_pred_next_pc;
-    req.nlp_s1_hit_next = nlp_s1_hit;
-    req.nlp_s1_conf_next = nlp_s1_conf;
-    req.nlp_s2_valid_next = nlp_s2_valid;
-    req.nlp_s2_req_pc_next = nlp_s2_req_pc;
-    req.nlp_s2_pred_2ahead_pc_next = nlp_s2_pred_2ahead_pc;
-    req.nlp_s2_hit_next = nlp_s2_hit;
-    req.nlp_s2_conf_next = nlp_s2_conf;
+    req.nlp_s1_valid_next = false;
+    req.nlp_s1_req_pc_next = 0;
+    req.nlp_s1_pred_next_pc_next = 0;
+    req.nlp_s1_hit_next = false;
+    req.nlp_s1_conf_next = 0;
+    req.nlp_s2_valid_next = false;
+    req.nlp_s2_req_pc_next = 0;
+    req.nlp_s2_pred_2ahead_pc_next = 0;
+    req.nlp_s2_hit_next = false;
+    req.nlp_s2_conf_next = 0;
     req.nlp_entry_we = false;
     req.nlp_entry_idx = 0;
     req.nlp_entry_valid_next = false;
@@ -1183,7 +978,10 @@ public:
     req.Spec_ras_count_next = rd.Spec_ras_count_snapshot;
 
     for (int i = 0; i < BPU_BANK_NUM; i++) {
-      req.do_upd_latch_next[i] = rd.do_upd_latch_snapshot[i];
+      req.going_to_do_upd[i] = rd.going_to_do_upd[i];
+      req.do_upd_latch_next[i] = false;
+      req.q_push_en[i] = false;
+      req.q_pop_en[i] = false;
       req.q_wr_ptr_next[i] = rd.q_wr_ptr_snapshot[i];
       req.q_rd_ptr_next[i] = rd.q_rd_ptr_snapshot[i];
       req.q_count_next[i] = rd.q_count_snapshot[i];
@@ -1195,6 +993,27 @@ public:
       req.ahead_entry_conf_next[i] = 0;
       req.last_block_valid_next[i] = rd.last_block_valid_snapshot[i];
       req.last_block_pc_next[i] = rd.last_block_pc_snapshot[i];
+      req.tage_done_next[i] = false;
+      req.btb_done_next[i] = false;
+      req.tage_in[i] = rd.tage_in[i];
+      req.btb_in[i] = rd.btb_in[i];
+    }
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      req.do_pred_on_this_pc[i] = rd.do_pred_on_this_pc[i];
+      req.this_pc_bank_sel[i] = rd.this_pc_bank_sel[i];
+      req.do_pred_for_this_pc[i] = rd.do_pred_for_this_pc[i];
+      req.final_pred_dir[i] = false;
+      req.tage_calc_pred_dir_latch_next[i] = false;
+      req.tage_calc_altpred_latch_next[i] = false;
+      req.tage_calc_pcpn_latch_next[i] = 0;
+      req.tage_calc_altpcpn_latch_next[i] = 0;
+      req.tage_result_valid_latch_next[i] = false;
+      req.btb_pred_target_latch_next[i] = 0;
+      req.btb_result_valid_latch_next[i] = false;
+      for (int k = 0; k < TN_MAX; ++k) {
+        req.tage_pred_calc_tags_latch_next[i][k] = 0;
+        req.tage_pred_calc_idxs_latch_next[i][k] = 0;
+      }
     }
     for (int i = 0; i < COMMIT_WIDTH; i++) {
       req.q_entry_we[i] = false;
@@ -1207,138 +1026,172 @@ public:
       req.inst_type_data[i] = BR_NONCTL;
     }
 
-    if (req.out_regs.icache_read_valid && inp.icache_read_ready) {
-      req.pc_can_send_to_icache_next = false;
+    TAGE_TOP::OutputPayload tage_out[BPU_BANK_NUM];
+    BTB_TOP::OutputPayload btb_out[BPU_BANK_NUM];
+    for (int i = 0; i < BPU_BANK_NUM; i++) {
+      TAGE_TOP::TageCombOut tage_comb_out{};
+      tage_inst[i]->tage_comb(TAGE_TOP::TageCombIn{rd.tage_in[i], rd.tage_rd[i]},
+                              tage_comb_out);
+      tage_out[i] = tage_comb_out.out_regs;
+      req.tage_req[i] = tage_comb_out.req;
+
+      BTB_TOP::BtbCombOut btb_comb_out{};
+      btb_inst[i]->btb_comb(BTB_TOP::BtbCombIn{rd.btb_in[i], rd.btb_rd[i]},
+                            btb_comb_out);
+      btb_out[i] = btb_comb_out.out_regs;
+      req.btb_req[i] = btb_comb_out.req;
     }
 
-    const bool idle_to_working =
-        (rd.state_snapshot == S_IDLE && req.next_state == S_WORKING);
-    if (idle_to_working) {
-      req.do_pred_latch_next = req.going_to_do_pred;
-      for (int i = 0; i < BPU_BANK_NUM; i++) {
-        req.do_upd_latch_next[i] = req.going_to_do_upd[i];
-        req.tage_done_next[i] = false;
-        req.btb_done_next[i] = false;
-      }
-      req.pred_base_pc_fired_next = req.pred_base_pc;
-      for (int i = 0; i < FETCH_WIDTH; i++) {
-        req.tage_result_valid_latch_next[i] = false;
-        req.btb_result_valid_latch_next[i] = false;
-      }
-      if (req.going_to_do_pred && !inp.refetch) {
-        const uint32_t stage1_tag = nlp_tag_from_pc(rd.pred_base_pc);
-        const bool stage1_hit = rd.nlp_pred_base_entry_snapshot.entry_valid &&
-                                (rd.nlp_pred_base_entry_snapshot.entry_tag == stage1_tag);
-        const uint32_t stage1_target =
-            stage1_hit ? rd.nlp_pred_base_entry_snapshot.entry_target
-                       : nlp_fallback_next_pc(rd.pred_base_pc);
-        const uint8_t stage1_conf =
-            stage1_hit ? rd.nlp_pred_base_entry_snapshot.entry_conf : 0;
-        req.nlp_s1_valid_next = true;
-        req.nlp_s1_req_pc_next = rd.pred_base_pc;
-        req.nlp_s1_pred_next_pc_next =
-            (stage1_hit && stage1_conf >= NLP_CONF_THRESHOLD)
-                ? stage1_target
-                : nlp_fallback_next_pc(rd.pred_base_pc);
-        req.nlp_s1_hit_next = stage1_hit;
-        req.nlp_s1_conf_next = stage1_conf;
-        req.nlp_s2_valid_next = false;
-        req.nlp_s2_req_pc_next = 0;
-        req.nlp_s2_pred_2ahead_pc_next = 0;
-        req.nlp_s2_hit_next = false;
-        req.nlp_s2_conf_next = 0;
-      } else {
-        req.nlp_s1_valid_next = false;
-        req.nlp_s2_valid_next = false;
+    out.icache_read_valid = rd.pc_can_send_to_icache_snapshot && !inp.refetch;
+    out.fetch_address = rd.pred_base_pc;
+    out.out_pred_base_pc = out.fetch_address;
+    req.next_fetch_addr_calc = rd.boundary_addr;
+    bool found_taken_branch = false;
+    if (req.going_to_do_pred) {
+      for (int i = 0; i < FETCH_WIDTH; ++i) {
+        if (!rd.do_pred_on_this_pc[i]) {
+          continue;
+        }
+        int bank_sel = rd.this_pc_bank_sel[i];
+        if (bank_sel < 0 || bank_sel >= BPU_BANK_NUM) {
+          continue;
+        }
+        const br_type_t p_type = rd.pred_inst_type_snapshot[i];
+        const bool tage_valid = tage_out[bank_sel].tage_pred_out_valid;
+        const bool btb_valid = btb_out[bank_sel].btb_pred_out_valid;
+        bool pred_taken = false;
+        if (p_type == BR_NONCTL) {
+          pred_taken = false;
+        } else if (p_type == BR_RET || p_type == BR_CALL || p_type == BR_IDIRECT ||
+                   p_type == BR_JAL) {
+          pred_taken = true;
+        } else {
+          pred_taken = tage_valid ? tage_out[bank_sel].pred_out : false;
+        }
+        req.final_pred_dir[i] = pred_taken;
+        req.tage_calc_pred_dir_latch_next[i] = pred_taken;
+        req.tage_calc_altpred_latch_next[i] =
+            tage_valid ? tage_out[bank_sel].alt_pred_out : false;
+        req.tage_calc_pcpn_latch_next[i] =
+            tage_valid ? tage_out[bank_sel].pcpn_out : static_cast<pcpn_t>(0);
+        req.tage_calc_altpcpn_latch_next[i] =
+            tage_valid ? tage_out[bank_sel].altpcpn_out : static_cast<pcpn_t>(0);
+        req.tage_result_valid_latch_next[i] = tage_valid;
+        req.btb_pred_target_latch_next[i] =
+            btb_valid ? btb_out[bank_sel].pred_target : rd.do_pred_for_this_pc[i] + 4;
+        req.btb_result_valid_latch_next[i] = btb_valid;
+        for (int k = 0; k < TN_MAX; ++k) {
+          req.tage_pred_calc_tags_latch_next[i][k] = tage_out[bank_sel].tage_tag_flat_out[k];
+          req.tage_pred_calc_idxs_latch_next[i][k] = tage_out[bank_sel].tage_idx_flat_out[k];
+        }
+
+        if (pred_taken && !found_taken_branch && btb_valid) {
+          uint32_t chosen_target = btb_out[bank_sel].pred_target;
+          if (p_type == BR_RET && rd.ras_has_entry_snapshot) {
+            chosen_target = rd.ras_top_snapshot;
+          }
+          req.next_fetch_addr_calc = chosen_target;
+          found_taken_branch = true;
+        }
       }
     }
 
-    bool nlp_s2_valid_eval = req.nlp_s2_valid_next;
-    uint32_t nlp_s2_pred_eval = req.nlp_s2_pred_2ahead_pc_next;
-    bool nlp_s2_hit_eval = req.nlp_s2_hit_next;
-    uint8_t nlp_s2_conf_eval = req.nlp_s2_conf_next;
-    if ((rd.state_snapshot == S_WORKING) && !inp.refetch && nlp_s1_valid) {
-      const uint32_t stage2_tag = nlp_tag_from_pc(nlp_s1_pred_next_pc);
+    out.predict_next_fetch_address = req.next_fetch_addr_calc;
+    out.PTAB_write_enable = req.going_to_do_pred && !inp.refetch;
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      out.out_pred_dir[i] = req.final_pred_dir[i];
+      out.out_alt_pred[i] = req.tage_calc_altpred_latch_next[i];
+      out.out_pcpn[i] = req.tage_calc_pcpn_latch_next[i];
+      out.out_altpcpn[i] = req.tage_calc_altpcpn_latch_next[i];
+      for (int k = 0; k < TN_MAX; k++) {
+        out.out_tage_tags[i][k] = req.tage_pred_calc_tags_latch_next[i][k];
+        out.out_tage_idxs[i][k] = req.tage_pred_calc_idxs_latch_next[i][k];
+      }
+    }
+
+    req.final_2_ahead_address = out.fetch_address + (FETCH_WIDTH * 4);
+    const uint32_t refetch_twoahead_target = inp.refetch_address + (FETCH_WIDTH * 4);
+    const uint32_t fallback_twoahead_target = out.fetch_address + (FETCH_WIDTH * 4);
+    out.two_ahead_valid = inp.refetch ? false : rd.saved_2ahead_pred_valid_snapshot;
+    out.two_ahead_target =
+        inp.refetch ? refetch_twoahead_target
+                    : (out.two_ahead_valid ? rd.saved_2ahead_prediction_snapshot
+                                           : fallback_twoahead_target);
+    out.mini_flush_req = false;
+    out.mini_flush_correct = rd.saved_mini_flush_correct_snapshot && !inp.refetch;
+    out.mini_flush_target = rd.saved_mini_flush_target_snapshot;
+
+#ifdef ENABLE_2AHEAD
+    if (req.going_to_do_pred && !inp.refetch) {
+      const uint32_t stage1_tag = nlp_tag_from_pc(rd.pred_base_pc);
+      const bool stage1_hit = rd.nlp_pred_base_entry_snapshot.entry_valid &&
+                              (rd.nlp_pred_base_entry_snapshot.entry_tag == stage1_tag);
+      const uint8_t stage1_conf = stage1_hit ? rd.nlp_pred_base_entry_snapshot.entry_conf : 0;
+      const uint32_t stage1_next_pc =
+          (stage1_hit && stage1_conf >= NLP_CONF_THRESHOLD)
+              ? rd.nlp_pred_base_entry_snapshot.entry_target
+              : nlp_fallback_next_pc(rd.pred_base_pc);
+
+      const uint32_t stage2_tag = nlp_tag_from_pc(stage1_next_pc);
       const bool stage2_hit = rd.nlp_s1_entry_snapshot.entry_valid &&
                               (rd.nlp_s1_entry_snapshot.entry_tag == stage2_tag);
+      const uint8_t stage2_conf = stage2_hit ? rd.nlp_s1_entry_snapshot.entry_conf : 0;
       const uint32_t stage2_target =
           stage2_hit ? rd.nlp_s1_entry_snapshot.entry_target
-                     : nlp_fallback_next_pc(nlp_s1_pred_next_pc);
-      const uint8_t stage2_conf = stage2_hit ? rd.nlp_s1_entry_snapshot.entry_conf : 0;
-      req.nlp_s2_valid_next = true;
-      req.nlp_s2_req_pc_next = nlp_s1_pred_next_pc;
-      req.nlp_s2_pred_2ahead_pc_next =
-          (stage2_hit && stage2_conf >= NLP_CONF_THRESHOLD)
-              ? stage2_target
-              : nlp_fallback_next_pc(nlp_s1_pred_next_pc);
-      req.nlp_s2_hit_next = stage2_hit;
-      req.nlp_s2_conf_next = stage2_conf;
-      nlp_s2_valid_eval = true;
-      nlp_s2_pred_eval = req.nlp_s2_pred_2ahead_pc_next;
-      nlp_s2_hit_eval = stage2_hit;
-      nlp_s2_conf_eval = stage2_conf;
-    }
+                     : nlp_fallback_next_pc(stage1_next_pc);
+      const bool s1_match = (stage1_next_pc == req.next_fetch_addr_calc);
+      const bool s2_usable = stage2_hit && (stage2_conf >= NLP_CONF_THRESHOLD);
+      const bool emit_two_ahead = s1_match && s2_usable;
+      req.final_2_ahead_address =
+          emit_two_ahead ? stage2_target : (req.next_fetch_addr_calc + (FETCH_WIDTH * 4));
 
-    const bool working_to_idle =
-        (rd.state_snapshot == S_WORKING && req.next_state == S_IDLE);
-    if (working_to_idle) {
-      if (rd.do_pred_latch_snapshot) {
-        const bool s1_match = nlp_s1_valid &&
-                              (nlp_s1_pred_next_pc == req.next_fetch_addr_calc);
-        const bool s2_usable =
-            nlp_s2_valid_eval && nlp_s2_hit_eval && (nlp_s2_conf_eval >= NLP_CONF_THRESHOLD);
-        const bool emit_two_ahead = s1_match && s2_usable;
-        req.final_2_ahead_address = emit_two_ahead
-                                        ? nlp_s2_pred_eval
-                                        : (req.next_fetch_addr_calc + (FETCH_WIDTH * 4));
-        req.saved_mini_flush_req_next =
-            rd.saved_2ahead_prediction_snapshot != req.next_fetch_addr_calc;
-        req.saved_mini_flush_correct_next =
-            rd.saved_2ahead_prediction_snapshot == req.next_fetch_addr_calc;
-        req.saved_mini_flush_target_next = rd.saved_2ahead_prediction_snapshot;
-        req.pc_reg_next = req.next_fetch_addr_calc;
-        req.pc_can_send_to_icache_next = true;
-        req.saved_2ahead_prediction_next = req.final_2_ahead_address;
-        req.saved_2ahead_pred_valid_next = emit_two_ahead;
+      const bool need_mini_flush =
+          (rd.saved_2ahead_prediction_snapshot != req.next_fetch_addr_calc);
+      out.mini_flush_req = need_mini_flush && out.PTAB_write_enable;
+      out.mini_flush_target = rd.saved_mini_flush_target_snapshot;
+      req.saved_2ahead_prediction_next = req.final_2_ahead_address;
+      req.saved_2ahead_pred_valid_next = emit_two_ahead;
+      req.saved_mini_flush_req_next = need_mini_flush;
+      req.saved_mini_flush_correct_next = !need_mini_flush;
+      req.saved_mini_flush_target_next = rd.saved_2ahead_prediction_snapshot;
 
-        const uint32_t train_pc = rd.pred_base_pc_fired_snapshot;
-        const uint32_t train_target = req.next_fetch_addr_calc;
-        const uint32_t train_idx = nlp_index_from_pc(train_pc);
-        const uint32_t train_tag = nlp_tag_from_pc(train_pc);
-        const ReadData::NlpEntrySnapshot &old_entry = rd.nlp_train_entry_snapshot;
-        const bool train_hit = old_entry.entry_valid && (old_entry.entry_tag == train_tag);
-        uint8_t next_conf = NLP_CONF_INIT;
-        if (train_hit) {
-          if (old_entry.entry_target == train_target) {
-            next_conf = (old_entry.entry_conf >= NLP_CONF_MAX)
-                            ? static_cast<uint8_t>(NLP_CONF_MAX)
-                            : static_cast<uint8_t>(old_entry.entry_conf + 1);
-          } else {
-            next_conf = 0;
-          }
+      const uint32_t train_pc = rd.pred_base_pc;
+      const uint32_t train_target = req.next_fetch_addr_calc;
+      const uint32_t train_idx = nlp_index_from_pc(train_pc);
+      const uint32_t train_tag = nlp_tag_from_pc(train_pc);
+      const ReadData::NlpEntrySnapshot &old_entry = rd.nlp_train_entry_snapshot;
+      const bool train_hit = old_entry.entry_valid && (old_entry.entry_tag == train_tag);
+      uint8_t next_conf = NLP_CONF_INIT;
+      if (train_hit) {
+        if (old_entry.entry_target == train_target) {
+          next_conf = (old_entry.entry_conf >= NLP_CONF_MAX)
+                          ? static_cast<uint8_t>(NLP_CONF_MAX)
+                          : static_cast<uint8_t>(old_entry.entry_conf + 1);
+        } else {
+          next_conf = 0;
         }
-        req.nlp_entry_we = true;
-        req.nlp_entry_idx = train_idx;
-        req.nlp_entry_valid_next = true;
-        req.nlp_entry_tag_next = train_tag;
-        req.nlp_entry_target_next = train_target;
-        req.nlp_entry_conf_next = next_conf;
       }
-      req.nlp_s1_valid_next = false;
-      req.nlp_s2_valid_next = false;
-      for (int i = 0; i < FETCH_WIDTH; i++) {
-        req.tage_result_valid_latch_next[i] = false;
-        req.btb_result_valid_latch_next[i] = false;
-      }
-      for (int i = 0; i < BPU_BANK_NUM; i++) {
-        req.tage_done_next[i] = false;
-        req.btb_done_next[i] = false;
-      }
+      req.nlp_entry_we = true;
+      req.nlp_entry_idx = train_idx;
+      req.nlp_entry_valid_next = true;
+      req.nlp_entry_tag_next = train_tag;
+      req.nlp_entry_target_next = train_target;
+      req.nlp_entry_conf_next = next_conf;
     }
+#endif
 
+#ifndef ENABLE_2AHEAD
+    out.two_ahead_valid = false;
+    out.mini_flush_req = false;
+    out.mini_flush_correct = false;
+#endif
+
+    req.should_update_spec_hist = req.going_to_do_pred && !inp.refetch;
+    bool saw_low_conf_fallback = false;
+    (void)saw_low_conf_fallback;
 #if defined(ENABLE_2AHEAD) && ENABLE_2AHEAD_SLOT1_PRED && \
     ENABLE_2AHEAD_SLOT1_ADAPTIVE_GATING
-    const bool has_gate_sample = working_to_idle && rd.do_pred_latch_snapshot && !inp.refetch;
+    const bool has_gate_sample = req.going_to_do_pred && !inp.refetch;
     bool gate_sample_success = false;
     if (has_gate_sample) {
       gate_sample_success =
@@ -1376,16 +1229,19 @@ public:
           continue;
         }
         br_type_t p_type = rd.pred_inst_type_snapshot[i];
-        if (p_type != BR_DIRECT) {
-          continue;
+        const bool pred_taken = req.final_pred_dir[i];
+        if (p_type == BR_DIRECT) {
+          bool next_ghr[GHR_LENGTH];
+          uint32_t next_fh[FH_N_MAX][TN_MAX];
+          tage_ghr_update_apply(spec_ghr_tmp, pred_taken, next_ghr);
+          tage_fh_update_apply(spec_fh_tmp, spec_ghr_tmp, pred_taken, next_fh,
+                               fh_length, ghr_length);
+          std::memcpy(spec_ghr_tmp, next_ghr, sizeof(next_ghr));
+          std::memcpy(spec_fh_tmp, next_fh, sizeof(next_fh));
         }
-        bool next_ghr[GHR_LENGTH];
-        uint32_t next_fh[FH_N_MAX][TN_MAX];
-        tage_ghr_update_apply(spec_ghr_tmp, req.final_pred_dir[i], next_ghr);
-        tage_fh_update_apply(spec_fh_tmp, spec_ghr_tmp, req.final_pred_dir[i], next_fh,
-                             fh_length, ghr_length);
-        std::memcpy(spec_ghr_tmp, next_ghr, sizeof(next_ghr));
-        std::memcpy(spec_fh_tmp, next_fh, sizeof(next_fh));
+        if (pred_taken) {
+          break;
+        }
       }
       std::memcpy(req.Spec_GHR_next, spec_ghr_tmp, sizeof(req.Spec_GHR_next));
       std::memcpy(req.Spec_FH_next, spec_fh_tmp, sizeof(req.Spec_FH_next));
@@ -1472,17 +1328,23 @@ public:
       }
       std::memcpy(req.Arch_ras_stack_next, arch_ras_stack_tmp, sizeof(req.Arch_ras_stack_next));
       req.Arch_ras_count_next = arch_ras_count_tmp;
-      if (inp.refetch) {
-        std::memcpy(req.Spec_ras_stack_next, req.Arch_ras_stack_next,
-                    sizeof(req.Spec_ras_stack_next));
-        req.Spec_ras_count_next = req.Arch_ras_count_next;
-      }
     }
 #endif
 
+    for (int i = 0; i < BPU_BANK_NUM; ++i) {
+      if (rd.going_to_do_upd[i] && req.q_count_next[i] > 0) {
+        req.q_pop_en[i] = true;
+        req.q_rd_ptr_next[i] = (req.q_rd_ptr_next[i] + 1) % Q_DEPTH;
+        req.q_count_next[i]--;
+      }
+    }
     for (int i = 0; i < COMMIT_WIDTH; i++) {
+      if (!inp.in_upd_valid[i]) {
+        continue;
+      }
       int bank_sel = bank_sel_from_pc(inp.in_update_base_pc[i]);
-      if (req.q_push_en[bank_sel] && inp.in_upd_valid[i]) {
+      if (req.q_count_next[bank_sel] < Q_DEPTH) {
+        req.q_push_en[bank_sel] = true;
         req.q_entry_we[i] = true;
         req.q_entry_bank[i] = bank_sel;
         req.q_entry_slot[i] = req.q_wr_ptr_next[bank_sel];
@@ -1500,29 +1362,14 @@ public:
           req.q_entry_data[i].tage_idxs[k] = inp.in_tage_idxs[i][k];
         }
         req.q_wr_ptr_next[bank_sel] = (req.q_wr_ptr_next[bank_sel] + 1) % Q_DEPTH;
+        req.q_count_next[bank_sel]++;
       }
 
-      if (inp.in_upd_valid[i]) {
-        uint32_t addr = inp.in_update_base_pc[i];
-        req.inst_type_we[i] = true;
-        req.inst_type_bank[i] = bank_sel_from_pc(addr);
-        req.inst_type_idx[i] = bank_pc_from_pc(addr) & BPU_TYPE_IDX_MASK;
-        req.inst_type_data[i] = inp.in_actual_br_type[i];
-      }
-    }
-
-    for (int i = 0; i < BPU_BANK_NUM; i++) {
-      if (req.q_pop_en[i]) {
-        req.q_rd_ptr_next[i] = (req.q_rd_ptr_next[i] + 1) % Q_DEPTH;
-      }
-
-      int next_q_count = static_cast<int>(rd.q_count_snapshot[i]);
-      if (req.q_push_en[i] && !req.q_pop_en[i]) {
-        next_q_count++;
-      } else if (!req.q_push_en[i] && req.q_pop_en[i]) {
-        next_q_count--;
-      }
-      req.q_count_next[i] = static_cast<uint32_t>(next_q_count);
+      uint32_t addr = inp.in_update_base_pc[i];
+      req.inst_type_we[i] = true;
+      req.inst_type_bank[i] = bank_sel_from_pc(addr);
+      req.inst_type_idx[i] = bank_pc_from_pc(addr) & BPU_TYPE_IDX_MASK;
+      req.inst_type_data[i] = inp.in_actual_br_type[i];
     }
 
     if (inp.refetch) {
@@ -1532,10 +1379,26 @@ public:
       req.saved_2ahead_pred_valid_next = false;
       req.saved_mini_flush_req_next = false;
       req.saved_mini_flush_correct_next = false;
-      req.nlp_s1_valid_next = false;
-      req.nlp_s2_valid_next = false;
+      req.saved_mini_flush_target_next = 0;
+      std::memcpy(req.Spec_GHR_next, req.Arch_GHR_next, sizeof(req.Spec_GHR_next));
+      std::memcpy(req.Spec_FH_next, req.Arch_FH_next, sizeof(req.Spec_FH_next));
+#ifdef ENABLE_BPU_RAS
+      std::memcpy(req.Spec_ras_stack_next, req.Arch_ras_stack_next,
+                  sizeof(req.Spec_ras_stack_next));
+      req.Spec_ras_count_next = req.Arch_ras_count_next;
+#endif
+    } else if (req.going_to_do_pred) {
+      req.pc_reg_next = req.next_fetch_addr_calc;
+      req.pc_can_send_to_icache_next = true;
     }
 
+    bool q_full_any = false;
+    for (int i = 0; i < BPU_BANK_NUM; i++) {
+      q_full_any |= (req.q_count_next[i] == Q_DEPTH);
+    }
+    out.update_queue_full = q_full_any;
+
+    assert(out.out_pred_base_pc == out.fetch_address);
     req.out_regs = out;
   }
 

@@ -75,6 +75,12 @@ void Idu::comb_decode() {
   }
 
   int br_num = 0;
+#ifdef CONFIG_BPU
+  auto needs_br_tag = [&](InstType t) { return is_branch(t); };
+#else
+  // Oracle mode: disable branch-tag resource pressure.
+  auto needs_br_tag = [&](InstType) { return false; };
+#endif
   // ID 阶段旁路清理：本拍已解析分支的 bit 不应继续传播到新译码指令。
   // clear_mask 来自上拍锁存的 BRU 解析结果（br_latch）。
   mask_t clear = br_latch.clear_mask;
@@ -88,7 +94,7 @@ void Idu::comb_decode() {
       continue;
     }
 
-    if (is_branch(out.dec2ren->uop[i].type)) {
+    if (needs_br_tag(out.dec2ren->uop[i].type)) {
       if (!alloc_valid[br_num]) {
 #ifdef CONFIG_PERF_COUNTER
         ctx->perf.idu_tag_stall++;
@@ -201,9 +207,15 @@ void Idu::comb_fire() {
   }
 
   int br_num = 0;
+#ifdef CONFIG_BPU
+  auto needs_br_tag = [&](InstType t) { return is_branch(t); };
+#else
+  // Oracle mode: no branch-tag allocation in fire path.
+  auto needs_br_tag = [&](InstType) { return false; };
+#endif
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
-    if (fire && is_branch(out.dec2ren->uop[i].type)) {
+    if (fire && needs_br_tag(out.dec2ren->uop[i].type)) {
       tag_t new_tag = alloc_tag[br_num];
       tag_vec_1[new_tag] = false;
       now_br_mask_1 |= (mask_t(1) << new_tag);
@@ -211,6 +223,7 @@ void Idu::comb_fire() {
       br_num++;
     }
   }
+
 }
 
 void Idu::seq() {

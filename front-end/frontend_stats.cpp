@@ -112,7 +112,7 @@ const std::vector<AreaStat> kAreaStats = {
     {"icache", 298835, 0},
 };
 
-void print_trainable_io_stats() {
+[[maybe_unused]] void print_trainable_io_stats() {
   std::printf("=== Trainable Function IO Stats (bit) ===\n");
   std::printf("%-18s %-30s %14s %14s\n", "Module", "Function", "InputBits",
               "OutputBits");
@@ -130,7 +130,7 @@ void print_trainable_io_stats() {
               static_cast<unsigned long long>(total_output_bits));
 }
 
-void print_area_stats() {
+[[maybe_unused]] void print_area_stats() {
   std::printf("=== Front-end Sequential Area Stats (logical width) ===\n");
   std::printf("%-20s %12s %12s %12s %12s %12s\n", "Module", "RegBits",
               "SramBits", "TotalBits", "TotalKbit", "TotalKByte");
@@ -167,7 +167,7 @@ void print_area_stats() {
               bits_to_kbyte(total_bits));
 }
 
-void print_assumption_notes() {
+[[maybe_unused]] void print_assumption_notes() {
   std::printf("=== Notes ===\n");
   std::printf("- IO stats scope: all named trainable *_comb functions.\n");
   std::printf("- Width rule: protocol width via *_BITS aliases (not C++ padding).\n");

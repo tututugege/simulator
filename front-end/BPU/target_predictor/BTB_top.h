@@ -115,6 +115,31 @@ public:
     bool new_read_valid;
     MemReadResult new_read_data;
     uint32_t sram_prng_state;
+
+    bool pred_read_valid;
+    uint32_t pred_btb_idx;
+    uint32_t pred_type_idx;
+    uint32_t pred_bht_idx;
+    uint32_t pred_tc_idx;
+    uint32_t pred_tag;
+    uint8_t pred_type_data;
+    uint32_t pred_bht_data;
+    BtbSetData pred_btb_set;
+    TcSetData pred_tc_set;
+
+    bool upd_read_valid;
+    uint32_t upd_btb_idx;
+    uint32_t upd_type_idx;
+    uint32_t upd_bht_idx;
+    uint32_t upd_tag;
+    uint32_t upd_bht_data;
+    uint32_t upd_next_bht_data;
+    BtbSetData upd_btb_set;
+
+    bool upd_tc_read_valid;
+    uint32_t upd_tc_write_idx;
+    uint32_t upd_tc_write_tag;
+    TcSetData upd_tc_set;
   };
 
   // 组合逻辑计算结果结构体
@@ -825,6 +850,83 @@ public:
 
   void btb_prepare_comb_read(const InputPayload &inp, ReadData &rd) const {
     rd.new_read_valid = false;
+    rd.pred_read_valid = false;
+    rd.pred_btb_idx = 0;
+    rd.pred_type_idx = 0;
+    rd.pred_bht_idx = 0;
+    rd.pred_tc_idx = 0;
+    rd.pred_tag = 0;
+    rd.pred_type_data = 0;
+    rd.pred_bht_data = 0;
+    std::memset(&rd.pred_btb_set, 0, sizeof(rd.pred_btb_set));
+    std::memset(&rd.pred_tc_set, 0, sizeof(rd.pred_tc_set));
+    rd.upd_read_valid = false;
+    rd.upd_btb_idx = 0;
+    rd.upd_type_idx = 0;
+    rd.upd_bht_idx = 0;
+    rd.upd_tag = 0;
+    rd.upd_bht_data = 0;
+    rd.upd_next_bht_data = 0;
+    std::memset(&rd.upd_btb_set, 0, sizeof(rd.upd_btb_set));
+    rd.upd_tc_read_valid = false;
+    rd.upd_tc_write_idx = 0;
+    rd.upd_tc_write_tag = 0;
+    std::memset(&rd.upd_tc_set, 0, sizeof(rd.upd_tc_set));
+
+    if (inp.pred_req) {
+      rd.pred_read_valid = true;
+      rd.pred_btb_idx = btb_get_idx_value(inp.pred_pc);
+      rd.pred_type_idx = btb_get_type_idx_value(inp.pred_pc);
+      rd.pred_bht_idx = bht_get_idx_value(inp.pred_pc);
+      rd.pred_tag = btb_get_tag_value(inp.pred_pc);
+      rd.pred_type_data = mem_type[rd.pred_type_idx];
+      rd.pred_bht_data = mem_bht[rd.pred_bht_idx];
+      rd.pred_tc_idx = tc_get_idx_value(inp.pred_pc, rd.pred_bht_data);
+      for (int w = 0; w < BTB_WAY_NUM; ++w) {
+        rd.pred_btb_set.tag[w] = mem_btb_tag[w][rd.pred_btb_idx];
+        rd.pred_btb_set.bta[w] = mem_btb_bta[w][rd.pred_btb_idx];
+        rd.pred_btb_set.valid[w] = mem_btb_valid[w][rd.pred_btb_idx];
+        rd.pred_btb_set.useful[w] = mem_btb_useful[w][rd.pred_btb_idx];
+      }
+      for (int w = 0; w < TC_WAY_NUM; ++w) {
+        rd.pred_tc_set.target[w] = mem_tc_target[w][rd.pred_tc_idx];
+        rd.pred_tc_set.tag[w] = mem_tc_tag[w][rd.pred_tc_idx];
+        rd.pred_tc_set.valid[w] = mem_tc_valid[w][rd.pred_tc_idx];
+        rd.pred_tc_set.useful[w] = mem_tc_useful[w][rd.pred_tc_idx];
+      }
+    }
+
+    if (inp.upd_valid) {
+      rd.upd_read_valid = true;
+      rd.upd_btb_idx = btb_get_idx_value(inp.upd_pc);
+      rd.upd_type_idx = btb_get_type_idx_value(inp.upd_pc);
+      rd.upd_bht_idx = bht_get_idx_value(inp.upd_pc);
+      rd.upd_tag = btb_get_tag_value(inp.upd_pc);
+      rd.upd_bht_data = mem_bht[rd.upd_bht_idx];
+      rd.upd_next_bht_data =
+          (inp.upd_br_type_in != BR_NONCTL)
+              ? bht_next_state_value(rd.upd_bht_data, inp.upd_br_type_in, inp.upd_actual_dir,
+                                     inp.upd_actual_addr)
+              : rd.upd_bht_data;
+      for (int w = 0; w < BTB_WAY_NUM; ++w) {
+        rd.upd_btb_set.tag[w] = mem_btb_tag[w][rd.upd_btb_idx];
+        rd.upd_btb_set.bta[w] = mem_btb_bta[w][rd.upd_btb_idx];
+        rd.upd_btb_set.valid[w] = mem_btb_valid[w][rd.upd_btb_idx];
+        rd.upd_btb_set.useful[w] = mem_btb_useful[w][rd.upd_btb_idx];
+      }
+
+      if (inp.upd_actual_dir && inp.upd_br_type_in == BR_IDIRECT) {
+        rd.upd_tc_read_valid = true;
+        rd.upd_tc_write_idx = tc_get_idx_value(inp.upd_pc, rd.upd_next_bht_data);
+        rd.upd_tc_write_tag = tc_get_tag_value(inp.upd_pc);
+        for (int w = 0; w < TC_WAY_NUM; ++w) {
+          rd.upd_tc_set.target[w] = mem_tc_target[w][rd.upd_tc_write_idx];
+          rd.upd_tc_set.tag[w] = mem_tc_tag[w][rd.upd_tc_write_idx];
+          rd.upd_tc_set.valid[w] = mem_tc_valid[w][rd.upd_tc_write_idx];
+          rd.upd_tc_set.useful[w] = mem_tc_useful[w][rd.upd_tc_write_idx];
+        }
+      }
+    }
 
     BtbGenIndexPreCombOut idx_pre_out{};
     btb_gen_index_pre_comb(BtbGenIndexPreCombIn{inp, rd.state_in}, idx_pre_out);
@@ -891,50 +993,101 @@ public:
     const ReadData &rd = in.rd;
     OutputPayload &out = out_bundle.out_regs;
     CombResult &req = out_bundle.req;
-    BtbCoreCombOut core_out{};
-    btb_core_comb(BtbCoreCombIn{inp, rd.state_in, rd.idx_2, rd.mem_2}, core_out);
-    req = core_out.result;
-    req.sram_delay_active_next = rd.sram_delay_active;
-    req.sram_delay_counter_next = rd.sram_delay_counter;
+    std::memset(&out, 0, sizeof(OutputPayload));
+    std::memset(&req, 0, sizeof(CombResult));
+
+    req.next_state = S_IDLE;
+    req.sram_delay_active_next = false;
+    req.sram_delay_counter_next = 0;
     req.sram_delayed_data_next = rd.sram_delayed_data;
     req.sram_prng_state_next = rd.sram_prng_state;
 
-#ifdef SRAM_DELAY_ENABLE
-    if (rd.sram_delay_active) {
-      if (rd.sram_delay_counter > 0) {
-        req.sram_delay_counter_next = rd.sram_delay_counter - 1;
-        req.sram_delay_active_next = true;
-      } else {
-        req.sram_delay_counter_next = 0;
-        req.sram_delay_active_next = false;
-      }
-    } else if (rd.new_read_valid) {
-      BtbXorshift32CombOut xorshift_out{};
-      btb_xorshift32_comb(BtbXorshift32CombIn{rd.sram_prng_state}, xorshift_out);
-      uint32_t prng_next = xorshift_out.next_state;
-      req.sram_prng_state_next = prng_next;
-      int delay_range = SRAM_DELAY_MAX - SRAM_DELAY_MIN + 1;
-      int delay_val = SRAM_DELAY_MIN;
-      if (delay_range > 0) {
-        delay_val = SRAM_DELAY_MIN + static_cast<int>(prng_next % delay_range);
-      }
-      req.sram_delay_counter_next = delay_val;
-      req.sram_delay_active_next = true;
-      req.sram_delayed_data_next = rd.new_read_data;
-    } else {
-      req.sram_delay_counter_next = 0;
-      req.sram_delay_active_next = false;
+    if (inp.pred_req && rd.pred_read_valid) {
+      BtbHitCheckCombOut pred_hit_out{};
+      btb_hit_check_comb(BtbHitCheckCombIn{rd.pred_btb_set, rd.pred_tag}, pred_hit_out);
+      BtbPredOutputCombOut pred_out{};
+      btb_pred_output_comb(
+          BtbPredOutputCombIn{inp.pred_pc, rd.pred_type_data, pred_hit_out.hit_info,
+                              rd.pred_btb_set, rd.pred_tc_set},
+          pred_out);
+      out.pred_target = pred_out.pred_target;
+      out.btb_pred_out_valid = true;
     }
-#else
-    req.sram_delay_counter_next = 0;
-    req.sram_delay_active_next = false;
-    if (rd.new_read_valid) {
-      req.sram_delayed_data_next = rd.new_read_data;
-    }
-#endif
 
-    req.out_regs.busy = (req.next_state != S_IDLE);
-    out = req.out_regs;
+    if (inp.upd_valid && rd.upd_read_valid) {
+      req.type_we_commit = true;
+      req.type_wr_idx = rd.upd_type_idx;
+      req.type_wdata_commit = inp.upd_br_type_in;
+
+      if (inp.upd_br_type_in != BR_NONCTL) {
+        req.bht_we_commit = true;
+        req.bht_wr_idx = rd.upd_bht_idx;
+        req.bht_wdata_commit = rd.upd_next_bht_data;
+      }
+
+      BtbHitCheckCombOut upd_hit_out{};
+      btb_hit_check_comb(BtbHitCheckCombIn{rd.upd_btb_set, rd.upd_tag}, upd_hit_out);
+      BtbVictimSelectCombOut victim_out{};
+      btb_victim_select_comb(BtbVictimSelectCombIn{rd.upd_btb_set}, victim_out);
+      const int write_way =
+          upd_hit_out.hit_info.hit ? upd_hit_out.hit_info.hit_way : victim_out.victim_way;
+
+      const bool writes_btb =
+          (inp.upd_br_type_in == BR_DIRECT || inp.upd_br_type_in == BR_CALL ||
+           inp.upd_br_type_in == BR_RET || inp.upd_br_type_in == BR_JAL
+#if ENABLE_INDIRECT_BTB_TRAIN
+           || inp.upd_br_type_in == BR_IDIRECT
+#endif
+          );
+
+      if (inp.upd_actual_dir && writes_btb) {
+        const uint8_t current_useful = rd.upd_btb_set.useful[write_way];
+        const uint32_t current_target_bta = rd.upd_btb_set.bta[write_way];
+        const bool correct_pred = upd_hit_out.hit_info.hit &&
+                                  (current_target_bta == inp.upd_actual_addr);
+        const uint8_t next_useful =
+            upd_hit_out.hit_info.hit ? useful_next_state_value(current_useful, correct_pred) : 1;
+        req.btb_we_commit = true;
+        req.btb_wr_way = write_way;
+        req.btb_wr_idx = rd.upd_btb_idx;
+        req.btb_wr_tag = rd.upd_tag;
+        req.btb_wr_bta = inp.upd_actual_addr;
+        req.btb_wr_valid = true;
+        if (inp.upd_br_type_in == BR_IDIRECT) {
+          req.btb_wr_useful = static_cast<uint8_t>(INDIRECT_BTB_INIT_USEFUL);
+        } else {
+          req.btb_wr_useful = next_useful;
+        }
+      }
+
+      if (rd.upd_tc_read_valid) {
+        TcHitCheckCombOut tc_hit_out{};
+        tc_hit_check_comb(TcHitCheckCombIn{rd.upd_tc_set, rd.upd_tc_write_tag}, tc_hit_out);
+        TcVictimSelectCombOut tc_victim_out{};
+        tc_victim_select_comb(TcVictimSelectCombIn{rd.upd_tc_set}, tc_victim_out);
+        const int tc_write_way =
+            tc_hit_out.hit_info.hit ? tc_hit_out.hit_info.hit_way : tc_victim_out.victim_way;
+        const uint8_t current_tc_useful = rd.upd_tc_set.useful[tc_write_way];
+        const uint32_t current_tc_target = rd.upd_tc_set.target[tc_write_way];
+        const bool tc_correct =
+            tc_hit_out.hit_info.hit && (current_tc_target == inp.upd_actual_addr);
+        const uint8_t next_tc_useful =
+            tc_hit_out.hit_info.hit
+                ? useful_next_state_value(current_tc_useful, tc_correct)
+                : static_cast<uint8_t>(INDIRECT_TC_INIT_USEFUL);
+        req.tc_we_commit = true;
+        req.tc_wr_way = tc_write_way;
+        req.tc_wr_idx = rd.upd_tc_write_idx;
+        req.tc_wdata_commit = inp.upd_actual_addr;
+        req.tc_wtag_commit = rd.upd_tc_write_tag;
+        req.tc_wvalid_commit = true;
+        req.tc_wuseful_commit = next_tc_useful;
+      }
+      out.btb_update_done = true;
+    }
+
+    out.busy = false;
+    req.out_regs = out;
   }
 
   void btb_seq_write(const InputPayload &inp, const CombResult &req, bool reset) {

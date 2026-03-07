@@ -46,11 +46,25 @@ public:
   uint64_t stall_iq_full_cycles = 0;
   uint64_t stall_ldq_full_cycles = 0;
   uint64_t stall_stq_full_cycles = 0;
+  uint64_t dis2ren_not_ready_cycles = 0;
+  uint64_t dis2ren_not_ready_flush_cycles = 0;
+  uint64_t dis2ren_not_ready_rob_cycles = 0;
+  uint64_t dis2ren_not_ready_serialize_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_cycles = 0;
+  uint64_t dis2ren_not_ready_older_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_ldq_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_stq_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_iq_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_iq_detail[IQ_NUM] = {};
+  uint64_t dis2ren_not_ready_dispatch_other_cycles = 0;
 
   uint64_t len_issued_num = 0;
   uint64_t slots_issued = 0;
   uint64_t slots_backend_bound = 0;
   uint64_t slots_frontend_bound = 0;
+  // IB consume-side counters (producer/consumer gap at PreIDU->IDU boundary).
+  uint64_t ib_consume_available_slots = 0;
+  uint64_t ib_consume_consumed_slots = 0;
 
   // Level 2 Counters
   uint64_t slots_fetch_latency = 0;
@@ -155,11 +169,25 @@ public:
     stall_iq_full_cycles = 0;
     stall_ldq_full_cycles = 0;
     stall_stq_full_cycles = 0;
+    dis2ren_not_ready_cycles = 0;
+    dis2ren_not_ready_flush_cycles = 0;
+    dis2ren_not_ready_rob_cycles = 0;
+    dis2ren_not_ready_serialize_cycles = 0;
+    dis2ren_not_ready_dispatch_cycles = 0;
+    dis2ren_not_ready_older_cycles = 0;
+    dis2ren_not_ready_dispatch_ldq_cycles = 0;
+    dis2ren_not_ready_dispatch_stq_cycles = 0;
+    dis2ren_not_ready_dispatch_iq_cycles = 0;
+    dis2ren_not_ready_dispatch_other_cycles = 0;
+    for (auto &v : dis2ren_not_ready_dispatch_iq_detail)
+      v = 0;
 
     len_issued_num = 0;
     slots_issued = 0;
     slots_backend_bound = 0;
     slots_frontend_bound = 0;
+    ib_consume_available_slots = 0;
+    ib_consume_consumed_slots = 0;
 
     slots_fetch_latency = 0;
     slots_fetch_bandwidth = 0;
@@ -363,6 +391,36 @@ public:
            stall_ldq_full_cycles);
     printf("\033[38;5;34mstq full stall cycles   : %ld\033[0m\n",
            stall_stq_full_cycles);
+    printf("\033[38;5;34mdis2ren not ready cycles: %ld\033[0m\n",
+           dis2ren_not_ready_cycles);
+    printf("\033[38;5;34m  - dis2ren flush/stall : %ld\033[0m\n",
+           dis2ren_not_ready_flush_cycles);
+    printf("\033[38;5;34m  - dis2ren rob         : %ld\033[0m\n",
+           dis2ren_not_ready_rob_cycles);
+    printf("\033[38;5;34m  - dis2ren serialize   : %ld\033[0m\n",
+           dis2ren_not_ready_serialize_cycles);
+    printf("\033[38;5;34m  - dis2ren dispatch    : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_cycles);
+    printf("\033[38;5;34m  - dis2ren older       : %ld\033[0m\n",
+           dis2ren_not_ready_older_cycles);
+    printf("\033[38;5;34m    - dispatch ldq      : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_ldq_cycles);
+    printf("\033[38;5;34m    - dispatch stq      : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_stq_cycles);
+    printf("\033[38;5;34m    - dispatch iq total : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_cycles);
+    printf("\033[38;5;34m      - iq int          : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_INT]);
+    printf("\033[38;5;34m      - iq ld           : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_LD]);
+    printf("\033[38;5;34m      - iq sta          : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_STA]);
+    printf("\033[38;5;34m      - iq std          : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_STD]);
+    printf("\033[38;5;34m      - iq br           : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_BR]);
+    printf("\033[38;5;34m    - dispatch other    : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_other_cycles);
     printf("\n");
   }
 
@@ -430,6 +488,51 @@ public:
            bad_speculation_pct * 100.0);
     printf("\033[38;5;34mRetiring         : %.2f%%\033[0m\n",
            retiring_pct * 100.0);
+    printf("\n");
+
+    // Consume-side L1 (4 buckets):
+    // Measure gap between frontend supply capacity and backend acceptance at
+    // the InstBuffer consume end (PreIDU->IDU boundary).
+    // Labels are prefixed with "IDU " to avoid clashing with current parsers.
+    printf(
+        "\033[38;5;34m*********Top-Down Analysis (Level 1 - IDU)************\033[0m\n");
+    uint64_t idu_total_slots = cycle * DECODE_WIDTH;
+    if (idu_total_slots == 0)
+      idu_total_slots = 1;
+
+    uint64_t supplied_slots = ib_consume_available_slots;
+    if (supplied_slots > idu_total_slots)
+      supplied_slots = idu_total_slots;
+
+    uint64_t accepted_slots = ib_consume_consumed_slots;
+    if (accepted_slots > supplied_slots)
+      accepted_slots = supplied_slots;
+
+    uint64_t retiring_slots = commit_num;
+    if (retiring_slots > accepted_slots)
+      retiring_slots = accepted_slots;
+
+    uint64_t idu_frontend_bound_slots = idu_total_slots - supplied_slots;
+    uint64_t idu_backend_bound_slots = supplied_slots - accepted_slots;
+    uint64_t idu_bad_speculation_slots = accepted_slots - retiring_slots;
+
+    double idu_frontend_bound_pct =
+        (double)idu_frontend_bound_slots / idu_total_slots;
+    double idu_backend_bound_pct =
+        (double)idu_backend_bound_slots / idu_total_slots;
+    double idu_bad_speculation_pct =
+        (double)idu_bad_speculation_slots / idu_total_slots;
+    double idu_retiring_pct = (double)retiring_slots / idu_total_slots;
+
+    printf("\033[38;5;34mIDU Total Slots      : %ld\033[0m\n", idu_total_slots);
+    printf("\033[38;5;34mIDU Frontend Bound   : %.2f%%\033[0m\n",
+           idu_frontend_bound_pct * 100.0);
+    printf("\033[38;5;34mIDU Backend Bound    : %.2f%%\033[0m\n",
+           idu_backend_bound_pct * 100.0);
+    printf("\033[38;5;34mIDU Bad Speculation  : %.2f%%\033[0m\n",
+           idu_bad_speculation_pct * 100.0);
+    printf("\033[38;5;34mIDU Retiring         : %.2f%%\033[0m\n",
+           idu_retiring_pct * 100.0);
     printf("\n");
   }
 };

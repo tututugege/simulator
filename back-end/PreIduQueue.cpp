@@ -82,6 +82,11 @@ void PreIduQueue::comb_begin() {
     for (int i = 0; i < n; i++) {
       out.issue->entries[i] = ibuf.peek(i);
     }
+#ifdef CONFIG_PERF_COUNTER
+    if (ctx != nullptr) {
+      ctx->perf.ib_consume_available_slots += static_cast<uint64_t>(n);
+    }
+#endif
   }
 
   if (out.dec2front != nullptr) {
@@ -204,6 +209,11 @@ void PreIduQueue::comb_consume_issue() {
       break;
     }
   }
+#ifdef CONFIG_PERF_COUNTER
+  if (ctx != nullptr) {
+    ctx->perf.ib_consume_consumed_slots += static_cast<uint64_t>(pop_count);
+  }
+#endif
 }
 
 void PreIduQueue::comb_flush_recover() {

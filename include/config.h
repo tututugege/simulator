@@ -73,7 +73,7 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // Feature Flags (Macros used for conditional compilation)
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-// #define CONFIG_BPU
+#define CONFIG_BPU
 // MMU domain feature tags (kept enabled for front/back path visibility)
 #define CONFIG_DTLB
 #define CONFIG_ITLB
@@ -95,19 +95,19 @@ constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 // ============================================================
 // [2] Frontend / Backend Pipeline Width
 // ============================================================
-constexpr int FETCH_WIDTH = 16;
-constexpr int DECODE_WIDTH = 8;
+constexpr int FETCH_WIDTH = 8;
+constexpr int DECODE_WIDTH = 4;
 static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
               "DECODE_WIDTH must be <= FETCH_WIDTH");
 constexpr int COMMIT_WIDTH = DECODE_WIDTH;
-constexpr int IDU_INST_BUFFER_SIZE = 100000;
+constexpr int IDU_INST_BUFFER_SIZE = 256;
 
 // ============================================================
 // [3] I-Cache Config
 // ============================================================
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-constexpr int ICACHE_MISS_LATENCY = 20;
+constexpr int ICACHE_MISS_LATENCY = 50;
 constexpr int ICACHE_WAY_NUM = 8;
 constexpr int ICACHE_OFFSET_BITS = clog2(ICACHE_LINE_SIZE);
 constexpr int ICACHE_INDEX_BITS = 12 - ICACHE_OFFSET_BITS;
@@ -122,7 +122,7 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
 constexpr int DCACHE_L2_HIT_LATENCY = 8;
-constexpr int DCACHE_MEM_LATENCY = 20;
+constexpr int DCACHE_MEM_LATENCY = 50;
 // Backward-compatible alias; prefer DCACHE_MEM_LATENCY for new code.
 constexpr int DCACHE_MISS_LATENCY = DCACHE_MEM_LATENCY;
 constexpr int DCACHE_WAY_NUM = 4;
@@ -137,7 +137,7 @@ constexpr bool DCACHE_L2_ENABLE = true;
 constexpr int DCACHE_L2_LINE_SIZE = DCACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_L2_WAY_NUM = 8;
 constexpr int DCACHE_L2_OFFSET_BITS = clog2(DCACHE_L2_LINE_SIZE);
-constexpr int DCACHE_L2_INDEX_BITS = 10;
+constexpr int DCACHE_L2_INDEX_BITS = 11;
 constexpr int DCACHE_L2_SET_NUM = 1 << DCACHE_L2_INDEX_BITS;
 constexpr int DCACHE_L2_WORD_NUM = DCACHE_L2_LINE_SIZE / 4;
 constexpr int DCACHE_L2_TAG_BITS =
@@ -149,8 +149,10 @@ constexpr uint32_t DCACHE_L2_TAG_MASK = (1u << DCACHE_L2_TAG_BITS) - 1u;
 // ============================================================
 constexpr int ARF_NUM = 32;
 constexpr int PRF_NUM = 512; // Tuned for 4-wide
-constexpr int MAX_BR_NUM = 32;
-constexpr int MAX_BR_PER_CYCLE = 2; // Tuned for 4-wide
+constexpr int MAX_BR_NUM = 64;
+// Branch tag allocation bandwidth per cycle.
+// Keep it aligned with decode width on wide frontend/backend configurations.
+constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
@@ -166,7 +168,7 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // ============================================================
 // [7] FTQ Config
 // ============================================================
-constexpr int FTQ_SIZE = 8192;
+constexpr int FTQ_SIZE = 64;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -199,17 +201,19 @@ enum { ISSUE_PORT_COUNTER_BASE = __COUNTER__ };
 // 属于同类的请挨在一起，IQ会通过base+offset来绑定port
 // CSR 指令目前硬绑定在 Port 0，如果调整配置，请确保 Port 0 包含 OP_MASK_CSR
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
-    PORT_CFG(OP_MASK_ALU | OP_MASK_MUL | OP_MASK_CSR |
-             OP_MASK_DIV), // Port 0: ALU + MUL/DIV + CSR
-    PORT_CFG(OP_MASK_ALU), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_LD),  // Port 2: Load 0
-    PORT_CFG(OP_MASK_LD),  // Port 3: Load 1
-    PORT_CFG(OP_MASK_STA), // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STD), // Port 5: Store Data
-    PORT_CFG(OP_MASK_BR),  // Port 6: Branch 0
-    PORT_CFG(OP_MASK_BR)   // Port 7: Branch 1
+    PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
+             OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
+    PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
+    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
+    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
+    PORT_CFG(OP_MASK_LD),                // Port 2: Load 0
+    PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
+    PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
+    PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
+    PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
+    PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
+    PORT_CFG(OP_MASK_BR),                // Port 6: Branch 0
+    PORT_CFG(OP_MASK_BR)                 // Port 7: Branch 1
 };
 #undef PORT_CFG
 
@@ -248,7 +252,7 @@ constexpr int find_first_port_with_mask(uint64_t mask) {
 // [11] Dispatch / Issue / Queue Width
 // ============================================================
 constexpr int MAX_IQ_DISPATCH_WIDTH = DECODE_WIDTH;
-constexpr int MAX_STQ_DISPATCH_WIDTH = 4;
+constexpr int MAX_STQ_DISPATCH_WIDTH = DECODE_WIDTH;
 constexpr int MAX_LDQ_DISPATCH_WIDTH = DECODE_WIDTH;
 constexpr int MAX_UOPS_PER_INST = 3;
 
@@ -257,8 +261,8 @@ constexpr int MAX_UOPS_PER_INST = 3;
 // ============================================================
 constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
-constexpr int STQ_SIZE = 64;
-constexpr int LDQ_SIZE = 64;
+constexpr int STQ_SIZE = 128;
+constexpr int LDQ_SIZE = 128;
 constexpr int MUL_MAX_LATENCY = 2;
 constexpr int DIV_MAX_LATENCY = 18;
 
@@ -271,11 +275,9 @@ constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
 constexpr int ITLB_ENTRIES = 32;
 constexpr int DTLB_ENTRIES = 32;
 
-constexpr int FAST_WAKEUP_PORTS = count_ports_with_mask(OP_MASK_ALU);
-constexpr int DELAYED_WAKEUP_PORTS =
-    count_ports_with_mask(OP_MASK_MUL) + count_ports_with_mask(OP_MASK_DIV);
 constexpr int MAX_WAKEUP_PORTS =
-    LSU_LOAD_WB_WIDTH + FAST_WAKEUP_PORTS + DELAYED_WAKEUP_PORTS;
+    LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
+    count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
 
 // ============================================================
 // [13] ISU / IQ / EXU / FU Derived Port Bases
@@ -309,16 +311,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 // Instruction queue layout per queue type.
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 96, DECODE_WIDTH,
+    {IQ_INT, 256, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 48, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 64, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 48, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 64, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 48, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 64, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 32, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 64, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 // ============================================================
@@ -326,7 +328,8 @@ constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
 // ============================================================
 // Configuration Sanity Checks
 static_assert(MAX_BR_NUM <= 64, "MAX_BR_NUM exceeds maximum wire width (64)");
-static_assert(STQ_SIZE <= 64, "STQ_SIZE exceeds maximum wire width (64)");
+static_assert(STQ_SIZE > 0, "STQ_SIZE must be positive");
+static_assert(LDQ_SIZE > 0, "LDQ_SIZE must be positive");
 static_assert(ROB_NUM % ROB_BANK_NUM == 0,
               "ROB_NUM must be a multiple of ROB_BANK_NUM");
 static_assert(DECODE_WIDTH == ROB_BANK_NUM,
@@ -403,6 +406,7 @@ constexpr int AREG_IDX_WIDTH = 6;
 constexpr int PRF_IDX_WIDTH = clog2(PRF_NUM);
 constexpr int ROB_IDX_WIDTH = clog2(ROB_NUM);
 constexpr int STQ_IDX_WIDTH = clog2(STQ_SIZE);
+constexpr int LDQ_IDX_WIDTH = clog2(LDQ_SIZE);
 constexpr int BR_TAG_WIDTH = clog2(MAX_BR_NUM);
 constexpr int BR_MASK_WIDTH = MAX_BR_NUM;
 constexpr int CSR_IDX_WIDTH = 12; // Standard RISC-V CSR address width

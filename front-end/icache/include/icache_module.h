@@ -121,6 +121,10 @@ private:
   static uint32_t const set_num = ICACHE_SET_NUM; // Total number of cache sets
   static uint32_t const word_num = ICACHE_WORD_NUM;
   static uint32_t const way_cnt = ICACHE_WAY_NUM;
+  static_assert(word_num == (ICACHE_LINE_SIZE / 4),
+                "ICache word_num must equal ICACHE_LINE_SIZE/4");
+  static_assert(set_num == (1u << ICACHE_INDEX_BITS),
+                "ICache set_num must equal 1<<ICACHE_INDEX_BITS");
   uint32_t cache_data[set_num][way_cnt][word_num]; // Cache data storage
   uint32_t cache_tag[set_num][way_cnt];            // Cache tags
   bool cache_valid[set_num][way_cnt]; // Valid bits for each cache line

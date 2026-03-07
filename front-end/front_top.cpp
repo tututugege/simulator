@@ -341,6 +341,7 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     memset(&fetch_addr_fifo_in, 0, sizeof(fetch_addr_fifo_in));
     memset(&fetch_addr_fifo_out, 0, sizeof(fetch_addr_fifo_out));
     memset(&icache_in, 0, sizeof(icache_in));
+    icache_in.csr_status = in->csr_status;
     memset(&icache_out, 0, sizeof(icache_out));
     memset(&fifo_in, 0, sizeof(fifo_in));
     memset(&fifo_out, 0, sizeof(fifo_out));
@@ -562,7 +563,7 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     // 相对于当周期写入新值，但最早下周期才会消费
     bool normal_write_enable = bpu_out.icache_read_valid && bpu_can_run && !global_reset;
     // 1. 刚好在BPUfire的当拍来了一个refetch，需要写，不然会掉指令
-    // 2. cause BPU takes at least 1 cycle to finish refetch, no 2-write problem
+    // 2. BPU 现已单拍完成预测/回填，仍不会与 normal 写冲突
     // fetch_addr_fifo_in.write_enable = normal_write_enable || refetch_write_enable;
     // fetch_addr_fifo_in.fetch_address = normal_write_enable ? bpu_out.fetch_address : refetch_address;
     

@@ -94,7 +94,7 @@ typedef struct DisIssUop {
   wire<ROB_IDX_WIDTH> rob_idx;       // ROB 索引
   wire<STQ_IDX_WIDTH> stq_idx;       // LD/ST 队列索引
   wire<1> stq_flag;                  // STQ 代际位 (ring epoch)
-  wire<STQ_IDX_WIDTH> ldq_idx;       // LDQ 索引
+  wire<LDQ_IDX_WIDTH> ldq_idx;       // LDQ 索引
   wire<CSR_IDX_WIDTH> csr_idx;       // CSR 索引 (Critical Fix)
   wire<BR_TAG_WIDTH>  tag;           // Branch Tag (Critical Fix)
   wire<3>   func3;         // 辅助功能码 (funct3)
