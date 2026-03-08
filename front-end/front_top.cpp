@@ -4,6 +4,7 @@
 #include "predecode.h"
 #include "predecode_checker.h"
 #include <RISCV.h>
+#include "types.h"
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -25,6 +26,9 @@ static bool ptab_full_latch = false;
 static bool ptab_empty_latch = true;
 static bool front2back_fifo_full_latch = false;
 static bool front2back_fifo_empty_latch = true;
+static SimContext *front_ctx = nullptr;
+
+void front_set_context(SimContext *ctx) { front_ctx = ctx; }
 
 struct FrontRuntimeStats {
   uint64_t cycles = 0;
@@ -393,6 +397,11 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     DEBUG_LOG_SMALL_4("icache_ready: %d, icache_ready_2: %d\n", icache_ready, icache_ready_2);
     bool fetch_addr_fifo_read_enable_slot0 =
         icache_ready && !rd.fetch_addr_fifo_empty_latch_snapshot && !global_reset && !global_refetch;
+    if (front_ctx != nullptr && icache_ready &&
+        rd.fetch_addr_fifo_empty_latch_snapshot && !global_reset &&
+        !global_refetch) {
+        front_ctx->perf.front_icache_wait_bpu_cycle_total++;
+    }
     bool fetch_addr_fifo_read_enable_slot1_candidate = false;
 #if FRONTEND_IDEAL_ICACHE_DUAL_REQ_ACTIVE
     fetch_addr_fifo_read_enable_slot1_candidate =
@@ -520,6 +529,10 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     // BPU 阻塞条件：fetch_address_FIFO 满 或 PTAB 满
     bool bpu_stall = rd.fetch_addr_fifo_full_latch_snapshot || rd.ptab_full_latch_snapshot;
     bool bpu_can_run = !bpu_stall || global_reset || global_refetch;
+    if (front_ctx != nullptr && rd.fetch_addr_fifo_full_latch_snapshot &&
+        !global_reset && !global_refetch) {
+        front_ctx->perf.front_bpu_wait_icache_cycle_total++;
+    }
     if (bpu_can_run) {
         front_stats.bpu_can_run_cycles++;
     }

@@ -18,6 +18,7 @@ void icache_seq_read(struct icache_in *in, struct icache_out *out);
 void icache_comb_calc(struct icache_in *in, struct icache_out *out);
 void icache_seq_write();
 void icache_set_context(SimContext *ctx);
+void front_set_context(SimContext *ctx);
 void icache_set_ptw_mem_port(PtwMemPort *port);
 void icache_set_ptw_walk_port(PtwWalkPort *port);
 

@@ -57,6 +57,14 @@ TMA_LABELS = {
     "retiring": "Retiring",
 }
 
+TMA_IDU_LABELS = {
+    "total_slots": "IDU Total Slots",
+    "frontend_bound": "IDU Frontend Bound",
+    "backend_bound": "IDU Backend Bound",
+    "bad_speculation": "IDU Bad Speculation",
+    "retiring": "IDU Retiring",
+}
+
 def _strip_ansi(s):
     return REGEX_ANSI.sub("", s)
 
@@ -117,6 +125,25 @@ def parse_tma(content):
 
     for k, labels in optional_aliases.items():
         tma[k] = _extract_last_pct_any(content, labels)
+    return tma
+
+def parse_tma_idu(content):
+    total_slots = _extract_last_int(content, TMA_IDU_LABELS["total_slots"])
+    if total_slots is None:
+        return None
+
+    tma = {"total_slots": total_slots}
+    required_aliases = {
+        "frontend_bound": [TMA_IDU_LABELS["frontend_bound"]],
+        "backend_bound": [TMA_IDU_LABELS["backend_bound"]],
+        "bad_speculation": [TMA_IDU_LABELS["bad_speculation"]],
+        "retiring": [TMA_IDU_LABELS["retiring"]],
+    }
+    for k, labels in required_aliases.items():
+        v = _extract_last_pct_any(content, labels)
+        if v is None:
+            return None
+        tma[k] = v
     return tma
 
 def dbg(msg):
@@ -243,6 +270,15 @@ def parse_log_robust(filepath, with_reason=False):
         dis2ren_not_ready_serialize_cycles = _extract_last_int(content, "dis2ren serialize")
         dis2ren_not_ready_dispatch_cycles = _extract_last_int(content, "dis2ren dispatch")
         dis2ren_not_ready_older_cycles = _extract_last_int(content, "dis2ren older")
+        dis2ren_not_ready_dispatch_ldq_cycles = _extract_last_int(content, "dispatch ldq")
+        dis2ren_not_ready_dispatch_stq_cycles = _extract_last_int(content, "dispatch stq")
+        dis2ren_not_ready_dispatch_iq_cycles = _extract_last_int(content, "dispatch iq total")
+        dis2ren_not_ready_dispatch_iq_int_cycles = _extract_last_int(content, "iq int")
+        dis2ren_not_ready_dispatch_iq_ld_cycles = _extract_last_int(content, "iq ld")
+        dis2ren_not_ready_dispatch_iq_sta_cycles = _extract_last_int(content, "iq sta")
+        dis2ren_not_ready_dispatch_iq_std_cycles = _extract_last_int(content, "iq std")
+        dis2ren_not_ready_dispatch_iq_br_cycles = _extract_last_int(content, "iq br")
+        dis2ren_not_ready_dispatch_other_cycles = _extract_last_int(content, "dispatch other")
         ib_blocked_cycles = _extract_last_int(content, "ib blocked cycles")
         ftq_blocked_cycles = _extract_last_int(content, "ftq blocked cycles")
 
@@ -279,6 +315,7 @@ def parse_log_robust(filepath, with_reason=False):
                     br_miss_total += int(m_match.group(1))
 
         tma = parse_tma(content)
+        tma_idu = parse_tma_idu(content)
 
         data = {
             "inst": inst, "cyc": cyc, "cpi": cyc / inst,
@@ -299,9 +336,19 @@ def parse_log_robust(filepath, with_reason=False):
             "dis2ren_not_ready_serialize_cycles": dis2ren_not_ready_serialize_cycles or 0,
             "dis2ren_not_ready_dispatch_cycles": dis2ren_not_ready_dispatch_cycles or 0,
             "dis2ren_not_ready_older_cycles": dis2ren_not_ready_older_cycles or 0,
+            "dis2ren_not_ready_dispatch_ldq_cycles": dis2ren_not_ready_dispatch_ldq_cycles or 0,
+            "dis2ren_not_ready_dispatch_stq_cycles": dis2ren_not_ready_dispatch_stq_cycles or 0,
+            "dis2ren_not_ready_dispatch_iq_cycles": dis2ren_not_ready_dispatch_iq_cycles or 0,
+            "dis2ren_not_ready_dispatch_iq_int_cycles": dis2ren_not_ready_dispatch_iq_int_cycles or 0,
+            "dis2ren_not_ready_dispatch_iq_ld_cycles": dis2ren_not_ready_dispatch_iq_ld_cycles or 0,
+            "dis2ren_not_ready_dispatch_iq_sta_cycles": dis2ren_not_ready_dispatch_iq_sta_cycles or 0,
+            "dis2ren_not_ready_dispatch_iq_std_cycles": dis2ren_not_ready_dispatch_iq_std_cycles or 0,
+            "dis2ren_not_ready_dispatch_iq_br_cycles": dis2ren_not_ready_dispatch_iq_br_cycles or 0,
+            "dis2ren_not_ready_dispatch_other_cycles": dis2ren_not_ready_dispatch_other_cycles or 0,
             "ib_blocked_cycles": ib_blocked_cycles or 0,
             "ftq_blocked_cycles": ftq_blocked_cycles or 0,
             "tma": tma,
+            "tma_idu": tma_idu,
         }
         if with_reason: return data, None
         return data
@@ -416,6 +463,15 @@ def process_benchmark(bench_path):
     w_dis2ren_not_ready_serialize = 0.0
     w_dis2ren_not_ready_dispatch = 0.0
     w_dis2ren_not_ready_older = 0.0
+    w_dis2ren_not_ready_dispatch_ldq = 0.0
+    w_dis2ren_not_ready_dispatch_stq = 0.0
+    w_dis2ren_not_ready_dispatch_iq = 0.0
+    w_dis2ren_not_ready_dispatch_iq_int = 0.0
+    w_dis2ren_not_ready_dispatch_iq_ld = 0.0
+    w_dis2ren_not_ready_dispatch_iq_sta = 0.0
+    w_dis2ren_not_ready_dispatch_iq_std = 0.0
+    w_dis2ren_not_ready_dispatch_iq_br = 0.0
+    w_dis2ren_not_ready_dispatch_other = 0.0
     w_ib_blocked = 0.0; w_ftq_blocked = 0.0
 
     w_tma_slots = 0.0
@@ -441,6 +497,14 @@ def process_benchmark(bench_path):
         "retiring": 0.0,
     }
     tma_slot_denom = {k: 0.0 for k in tma_slot_sums.keys()}
+
+    w_tma_idu_slots = 0.0
+    tma_idu_slot_sums = {
+        "frontend_bound": 0.0,
+        "backend_bound": 0.0,
+        "bad_speculation": 0.0,
+        "retiring": 0.0,
+    }
 
     valid_files = 0
     skipped_bad_log = 0
@@ -503,6 +567,15 @@ def process_benchmark(bench_path):
         w_dis2ren_not_ready_serialize += data["dis2ren_not_ready_serialize_cycles"] * weight
         w_dis2ren_not_ready_dispatch += data["dis2ren_not_ready_dispatch_cycles"] * weight
         w_dis2ren_not_ready_older += data["dis2ren_not_ready_older_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_ldq += data["dis2ren_not_ready_dispatch_ldq_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_stq += data["dis2ren_not_ready_dispatch_stq_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_iq += data["dis2ren_not_ready_dispatch_iq_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_iq_int += data["dis2ren_not_ready_dispatch_iq_int_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_iq_ld += data["dis2ren_not_ready_dispatch_iq_ld_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_iq_sta += data["dis2ren_not_ready_dispatch_iq_sta_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_iq_std += data["dis2ren_not_ready_dispatch_iq_std_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_iq_br += data["dis2ren_not_ready_dispatch_iq_br_cycles"] * weight
+        w_dis2ren_not_ready_dispatch_other += data["dis2ren_not_ready_dispatch_other_cycles"] * weight
         w_ib_blocked += data["ib_blocked_cycles"] * weight
         w_ftq_blocked += data["ftq_blocked_cycles"] * weight
 
@@ -516,6 +589,15 @@ def process_benchmark(bench_path):
                     continue
                 tma_slot_sums[k] += tma_total * (v / 100.0)
                 tma_slot_denom[k] += tma_total
+
+        if data["tma_idu"] and data["tma_idu"]["total_slots"] > 0:
+            tma_idu_total = data["tma_idu"]["total_slots"] * weight
+            w_tma_idu_slots += tma_idu_total
+            for k in tma_idu_slot_sums.keys():
+                v = data["tma_idu"].get(k, None)
+                if v is None:
+                    continue
+                tma_idu_slot_sums[k] += tma_idu_total * (v / 100.0)
 
     if valid_files == 0:
         s("  -> No valid logs found.")
@@ -606,6 +688,15 @@ def process_benchmark(bench_path):
         p(f"    - Serialize:    {w_dis2ren_not_ready_serialize:.2f}")
         p(f"    - Dispatch:     {w_dis2ren_not_ready_dispatch:.2f}")
         p(f"    - Older:        {w_dis2ren_not_ready_older:.2f}")
+        p(f"      - LDQ:        {w_dis2ren_not_ready_dispatch_ldq:.2f}")
+        p(f"      - STQ:        {w_dis2ren_not_ready_dispatch_stq:.2f}")
+        p(f"      - IQ Total:   {w_dis2ren_not_ready_dispatch_iq:.2f}")
+        p(f"        - IQ INT:   {w_dis2ren_not_ready_dispatch_iq_int:.2f}")
+        p(f"        - IQ LD:    {w_dis2ren_not_ready_dispatch_iq_ld:.2f}")
+        p(f"        - IQ STA:   {w_dis2ren_not_ready_dispatch_iq_sta:.2f}")
+        p(f"        - IQ STD:   {w_dis2ren_not_ready_dispatch_iq_std:.2f}")
+        p(f"        - IQ BR:    {w_dis2ren_not_ready_dispatch_iq_br:.2f}")
+        p(f"      - Other:      {w_dis2ren_not_ready_dispatch_other:.2f}")
         p("Frontend Block (Weighted, cycles):")
         p(f"  IB Blocked:       {w_ib_blocked:.2f}")
         p(f"  FTQ Blocked:      {w_ftq_blocked:.2f}")
@@ -652,6 +743,15 @@ def process_benchmark(bench_path):
         p(f"  Retiring:         {tma_slot_sums['retiring'] / w_tma_slots * 100:.2f} %")
     else:
         p("TMA (Weighted):     N/A (Top-Down section not found)")
+
+    if w_tma_idu_slots > 0:
+        p("TMA-IDU (Weighted):")
+        p(f"  Frontend Bound:   {tma_idu_slot_sums['frontend_bound'] / w_tma_idu_slots * 100:.2f} %")
+        p(f"  Backend Bound:    {tma_idu_slot_sums['backend_bound'] / w_tma_idu_slots * 100:.2f} %")
+        p(f"  Bad Speculation:  {tma_idu_slot_sums['bad_speculation'] / w_tma_idu_slots * 100:.2f} %")
+        p(f"  Retiring:         {tma_idu_slot_sums['retiring'] / w_tma_idu_slots * 100:.2f} %")
+    else:
+        p("TMA-IDU (Weighted): N/A (IDU Top-Down section not found)")
 
     p("")
     p("[SPEC]")

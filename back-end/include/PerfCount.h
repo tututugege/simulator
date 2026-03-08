@@ -121,6 +121,11 @@ public:
   uint64_t front_bpu_issue_cycle_total = 0;
   uint64_t front_bpu_can_run_cycle_total = 0;
   uint64_t front_bpu_no_issue_when_can_run_cycle_total = 0;
+  // Frontend handshake imbalance (to locate who is the bottleneck)
+  // - icache_wait_bpu: icache side ready but no fetch address to consume
+  // - bpu_wait_icache: bpu side blocked because fetch-address queue is full
+  uint64_t front_icache_wait_bpu_cycle_total = 0;
+  uint64_t front_bpu_wait_icache_cycle_total = 0;
   uint64_t front_predecode_gate_block_fifo_empty_cycle_total = 0;
   uint64_t front_predecode_gate_block_ptab_empty_cycle_total = 0;
   uint64_t front_predecode_gate_block_reset_refetch_cycle_total = 0;
@@ -235,6 +240,8 @@ public:
     front_bpu_issue_cycle_total = 0;
     front_bpu_can_run_cycle_total = 0;
     front_bpu_no_issue_when_can_run_cycle_total = 0;
+    front_icache_wait_bpu_cycle_total = 0;
+    front_bpu_wait_icache_cycle_total = 0;
     front_predecode_gate_block_fifo_empty_cycle_total = 0;
     front_predecode_gate_block_ptab_empty_cycle_total = 0;
     front_predecode_gate_block_reset_refetch_cycle_total = 0;
@@ -374,6 +381,18 @@ public:
            ib_blocked_cycles);
     printf("\033[38;5;34mftq blocked cycles           : %ld\033[0m\n",
            ftq_blocked_cycles);
+    const double icache_wait_bpu_pct =
+        cycle ? static_cast<double>(front_icache_wait_bpu_cycle_total) * 100.0 /
+                    cycle
+              : 0.0;
+    const double bpu_wait_icache_pct =
+        cycle ? static_cast<double>(front_bpu_wait_icache_cycle_total) * 100.0 /
+                    cycle
+              : 0.0;
+    printf("\033[38;5;34micache wait bpu cycles       : %ld (%.2f%%)\033[0m\n",
+           front_icache_wait_bpu_cycle_total, icache_wait_bpu_pct);
+    printf("\033[38;5;34mbpu wait icache cycles       : %ld (%.2f%%)\033[0m\n",
+           front_bpu_wait_icache_cycle_total, bpu_wait_icache_pct);
     printf("\n");
   }
 

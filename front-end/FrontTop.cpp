@@ -15,6 +15,7 @@ inline void sync_icache_ptw_ports(const FrontTop &front) {
 void FrontTop::init() {
   CsrStatusIO *bound_csr = in.csr_status;
   sync_icache_ptw_ports(*this);
+  front_set_context(ctx);
   icache_set_context(ctx);
   std::memset(&in, 0, sizeof(in));
   std::memset(&out, 0, sizeof(out));
