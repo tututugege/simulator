@@ -101,7 +101,7 @@ static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
               "DECODE_WIDTH must be <= FETCH_WIDTH");
 constexpr int COMMIT_WIDTH = DECODE_WIDTH;
-constexpr int IDU_INST_BUFFER_SIZE = 2048;
+constexpr int IDU_INST_BUFFER_SIZE = 64;
 
 // ============================================================
 // [3] I-Cache Config
@@ -121,8 +121,8 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 // ============================================================
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_L2_HIT_LATENCY = 1;
-constexpr int DCACHE_MEM_LATENCY = 1;
+constexpr int DCACHE_L2_HIT_LATENCY = 8;
+constexpr int DCACHE_MEM_LATENCY = 50;
 // Backward-compatible alias; prefer DCACHE_MEM_LATENCY for new code.
 constexpr int DCACHE_MISS_LATENCY = DCACHE_MEM_LATENCY;
 constexpr int DCACHE_WAY_NUM = 4;
@@ -133,7 +133,7 @@ constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
 constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
 constexpr uint32_t DCACHE_TAG_MASK = (1u << DCACHE_TAG_BITS) - 1u;
 constexpr int DCACHE_MAX_PENDING_REQS = 256;
-constexpr bool DCACHE_L2_ENABLE = true;
+constexpr bool DCACHE_L2_ENABLE = false;
 constexpr int DCACHE_L2_LINE_SIZE = DCACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_L2_WAY_NUM = 8;
 constexpr int DCACHE_L2_OFFSET_BITS = clog2(DCACHE_L2_LINE_SIZE);
@@ -148,7 +148,7 @@ constexpr uint32_t DCACHE_L2_TAG_MASK = (1u << DCACHE_L2_TAG_BITS) - 1u;
 // [5] Core Resource Size
 // ============================================================
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 2048; // Tuned for 4-wide
+constexpr int PRF_NUM = 160; // Tuned for 4-wide
 constexpr int MAX_BR_NUM = 64;
 // Branch tag allocation bandwidth per cycle.
 // Keep it aligned with decode width on wide frontend/backend configurations.
@@ -156,7 +156,7 @@ constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 2048;
+constexpr int ROB_NUM = 128;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM; // (ROB_NUM / ROB_BANK_NUM)
 
 // ============================================================
@@ -168,7 +168,7 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // ============================================================
 // [7] FTQ Config
 // ============================================================
-constexpr int FTQ_SIZE = 1024;
+constexpr int FTQ_SIZE = 64;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -204,26 +204,14 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU | OP_MASK_MUL), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
     PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_LD),                // Port 2: Load 0
-    PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
     PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
     PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
     PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
     PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
-    PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
-    PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
-    PORT_CFG(OP_MASK_BR),                // Port 6: Branch 0
-    PORT_CFG(OP_MASK_BR),                // Port 6: Branch 0
     PORT_CFG(OP_MASK_BR),                // Port 6: Branch 0
     PORT_CFG(OP_MASK_BR)                 // Port 7: Branch 1
 };
@@ -273,10 +261,10 @@ constexpr int MAX_UOPS_PER_INST = 3;
 // ============================================================
 constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
-constexpr int STQ_SIZE = 512;
-constexpr int LDQ_SIZE = 512;
+constexpr int STQ_SIZE = 64;
+constexpr int LDQ_SIZE = 64;
 constexpr int MUL_MAX_LATENCY = 2;
-constexpr int DIV_MAX_LATENCY = 2;
+constexpr int DIV_MAX_LATENCY = 18;
 
 // LSU / TLB config derived from issue port layout.
 constexpr int LSU_STA_COUNT = count_ports_with_mask(OP_MASK_STA);
@@ -290,6 +278,18 @@ constexpr int DTLB_ENTRIES = 32;
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
     count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
+
+// ============================================================
+// [12.1] ISU scheduling policy
+// ============================================================
+enum class IssueSchedulePolicy : int {
+  IQ_SLOT_PRIORITY = 0, // Deterministic slot-index priority
+  ROB_OLDEST_FIRST = 1, // Compare by (rob_flag, rob_idx)
+};
+
+// Default policy.
+constexpr IssueSchedulePolicy ISSUE_SCHEDULE_POLICY =
+    IssueSchedulePolicy::IQ_SLOT_PRIORITY;
 
 // ============================================================
 // [13] ISU / IQ / EXU / FU Derived Port Bases
@@ -323,16 +323,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 // Instruction queue layout per queue type.
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 1024, DECODE_WIDTH,
+    {IQ_INT, 64, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 512, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 32, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 512, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 32, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 512, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 32, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 512, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 32, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 // ============================================================

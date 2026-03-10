@@ -75,7 +75,8 @@ void Rob::comb_ready() {
         if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
-          stall_is_miss = (rob_idx < ROB_NUM) ? in.lsu2rob->miss_mask.test(rob_idx) : false;
+          stall_is_miss =
+              (rob_idx < ROB_NUM) ? in.lsu2rob->miss_mask.test(rob_idx) : false;
         } else {
           stall_is_mem = false;
           stall_is_miss = false;
@@ -252,7 +253,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 10000) {
+  if (stall_cycle > 20000) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 

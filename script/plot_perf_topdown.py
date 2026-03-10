@@ -297,13 +297,212 @@ def plot_report(benches: List[Dict[str, float]], geomean_spec: Optional[float], 
     print(f"Wrote figure: {os.path.abspath(out_png)}")
 
 
+def align_reports_for_compare(
+    reports: List[Dict[str, object]]
+) -> (List[str], List[Dict[str, np.ndarray]]):
+    if not reports:
+        return [], []
+
+    common = {b["bench"] for b in reports[0]["benches"]}
+    for r in reports[1:]:
+        common &= {b["bench"] for b in r["benches"]}
+
+    labels = [b["bench"] for b in reports[0]["benches"] if b["bench"] in common]
+    aligned: List[Dict[str, np.ndarray]] = []
+    for r in reports:
+        mp = {b["bench"]: b for b in r["benches"]}
+        retiring = np.array([mp[k]["retiring"] for k in labels], dtype=float)
+        bad_spec = np.array([mp[k]["bad_spec"] for k in labels], dtype=float)
+        frontend = np.array([mp[k]["frontend"] for k in labels], dtype=float)
+        backend = np.array([mp[k]["backend"] for k in labels], dtype=float)
+        ipc = np.array([mp[k]["ipc"] for k in labels], dtype=float)
+        spec = np.array([mp[k]["spec"] for k in labels], dtype=float)
+        aligned.append(
+            {
+                "retiring": retiring,
+                "bad_spec": bad_spec,
+                "frontend": frontend,
+                "backend": backend,
+                "ipc": ipc,
+                "spec": spec,
+            }
+        )
+    return labels, aligned
+
+
+def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
+    labels, aligned = align_reports_for_compare(reports)
+    if not labels:
+        raise RuntimeError("No common benchmark labels found across compare reports.")
+
+    has_geomean = any(
+        (r.get("geomean_spec", None) is not None and np.isfinite(r.get("geomean_spec", np.nan)))
+        for r in reports
+    )
+    axis_labels = labels.copy()
+    if has_geomean:
+        axis_labels.append("GEOMEAN")
+
+    n_cfg = len(reports)
+    n_bench = len(labels)
+    x = np.arange(len(axis_labels), dtype=float)
+    x_bench = x[:n_bench]
+    x_geomean = x[-1] if has_geomean else None
+    width = min(0.24, 0.78 / max(1, n_cfg))
+    offsets = (np.arange(n_cfg) - (n_cfg - 1) / 2.0) * width
+
+    fig = plt.figure(figsize=(max(13, len(axis_labels) * 0.72), 10), dpi=140)
+    gs = fig.add_gridspec(2, 1, height_ratios=[3.2, 1.8], hspace=0.42)
+    ax = fig.add_subplot(gs[0, 0])
+
+    tma_colors = {
+        "retiring": "#92b558",
+        "bad_spec": "#c0504d",
+        "frontend": "#7030a0",
+        "backend": "#f4b400",
+    }
+    line_colors = ["#2aa7d6", "#1f77b4", "#17becf", "#ff7f0e", "#2ca02c", "#8c564b"]
+
+    first_handles = []
+    for i, r in enumerate(reports):
+        pos = x_bench + offsets[i]
+        dat = aligned[i]
+        b1 = ax.bar(pos, dat["retiring"], width=width, color=tma_colors["retiring"], alpha=0.88, edgecolor="#333333", linewidth=0.25)
+        b2 = ax.bar(pos, dat["bad_spec"], bottom=dat["retiring"], width=width, color=tma_colors["bad_spec"], alpha=0.88, edgecolor="#333333", linewidth=0.25)
+        b3 = ax.bar(
+            pos,
+            dat["frontend"],
+            bottom=dat["retiring"] + dat["bad_spec"],
+            width=width,
+            color=tma_colors["frontend"],
+            alpha=0.88,
+            edgecolor="#333333",
+            linewidth=0.25,
+        )
+        b4 = ax.bar(
+            pos,
+            dat["backend"],
+            bottom=dat["retiring"] + dat["bad_spec"] + dat["frontend"],
+            width=width,
+            color=tma_colors["backend"],
+            alpha=0.88,
+            edgecolor="#333333",
+            linewidth=0.25,
+        )
+        if i == 0:
+            first_handles = [b1, b2, b3, b4]
+
+    ax.set_ylim(0, 1.0)
+    ax.set_yticks(np.linspace(0, 1.0, 11))
+    ax.grid(axis="y", linestyle="--", alpha=0.35)
+    ax.set_ylabel("Top-Down Fraction")
+    ax.set_title("Top-Down (stacked per config) + IPC compare")
+    ax.set_xticks(x)
+    ax.set_xticklabels([])
+
+    ax2 = ax.twinx()
+    line_handles = []
+    for i, r in enumerate(reports):
+        pos = x_bench + offsets[i]
+        dat = aligned[i]
+        line = ax2.plot(
+            pos,
+            dat["ipc"],
+            color=line_colors[i % len(line_colors)],
+            marker="o",
+            linestyle="-",
+            linewidth=1.5,
+            markersize=4.2,
+            label=f'IPC ({r["name"]})',
+        )[0]
+        line_handles.append(line)
+    ax2.set_ylabel("IPC")
+    ax2.set_ylim(0, 8.0)
+    ax2.set_yticks(np.arange(0, 9, 1))
+
+    tma_legend_handles = [h[0] for h in first_handles]
+    tma_legend_labels = ["Retiring", "Bad Speculation", "Frontend Bound", "Backend Bound"]
+    ax.legend(tma_legend_handles + line_handles, tma_legend_labels + [h.get_label() for h in line_handles], ncol=4, loc="upper center", fontsize=8.5)
+
+    axs = fig.add_subplot(gs[1, 0])
+    for i, r in enumerate(reports):
+        pos = x_bench + offsets[i]
+        dat = aligned[i]
+        cfg_color = line_colors[i % len(line_colors)]
+        bars = axs.bar(pos, dat["spec"], width=width, alpha=0.86, color=cfg_color, label=f'SPEC ({r["name"]})')
+        for bar, val in zip(bars, dat["spec"]):
+            if np.isfinite(val):
+                axs.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{val:.2f}", ha="center", va="bottom", fontsize=6.5, rotation=90)
+        g = r.get("geomean_spec", None)
+        if has_geomean and g is not None and np.isfinite(g):
+            g_bar = axs.bar(x_geomean + offsets[i], g, width=width, alpha=0.9, color=cfg_color)
+            axs.text(
+                g_bar[0].get_x() + g_bar[0].get_width() / 2,
+                g_bar[0].get_height(),
+                f"{g:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=7.5,
+                rotation=90,
+                fontweight="bold",
+            )
+
+    axs.set_ylabel("SPEC Ratio")
+    axs.set_title("Per-Benchmark SPEC Ratio compare")
+    axs.grid(axis="y", linestyle="--", alpha=0.35)
+    axs.set_xticks(x)
+    axs.set_xticklabels(axis_labels, rotation=90, ha="right", fontsize=8.5)
+    axs.legend(ncol=3, loc="upper center", fontsize=8.5)
+    if any(np.isfinite(a["spec"]).any() for a in aligned):
+        ymax = max(np.nanmax(a["spec"]) for a in aligned)
+        if has_geomean:
+            gvals = [r.get("geomean_spec", np.nan) for r in reports]
+            ymax = max(ymax, np.nanmax(np.array(gvals, dtype=float)))
+        axs.set_ylim(0, ymax * 1.25)
+
+    fig.tight_layout()
+    fig.savefig(out_png, bbox_inches="tight")
+    print(f"Wrote compare figure: {os.path.abspath(out_png)}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Plot Top-Down/IPC/SPEC from perf_report.txt generated by cal_spec.py"
     )
     parser.add_argument("-i", "--input", default="perf_report.txt", help="input perf report path")
     parser.add_argument("-o", "--output", default="perf_topdown_spec.png", help="output png path")
+    parser.add_argument(
+        "--compare",
+        nargs="+",
+        default=None,
+        help="compare multiple perf reports in one figure, e.g. --compare a.txt b.txt c.txt",
+    )
+    parser.add_argument(
+        "--labels",
+        nargs="+",
+        default=None,
+        help="optional labels for --compare inputs; count should match",
+    )
     args = parser.parse_args()
+
+    if args.compare:
+        names = args.labels if args.labels else [os.path.splitext(os.path.basename(p))[0] for p in args.compare]
+        if len(names) != len(args.compare):
+            raise RuntimeError("--labels count must match --compare input count.")
+
+        reports = []
+        for path, name in zip(args.compare, names):
+            benches, geomean_spec = parse_perf_report(path)
+            calc_geomean = compute_geomean_from_spec(benches)
+            if calc_geomean is not None:
+                geomean_spec = calc_geomean
+                print(f"[INFO] {name}: GEOMEAN computed from per-benchmark SPEC ratios: {geomean_spec:.2f}")
+            else:
+                print(f"[WARN] {name}: Cannot compute GEOMEAN from SPEC ratios.")
+            reports.append({"name": name, "benches": benches, "geomean_spec": geomean_spec})
+
+        plot_compare_reports(reports, args.output)
+        return
 
     benches, geomean_spec = parse_perf_report(args.input)
     calc_geomean = compute_geomean_from_spec(benches)

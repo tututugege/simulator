@@ -176,40 +176,70 @@ public:
     assert(num_ports <= ISSUE_WIDTH &&
            "IssueQueue ports exceed ISSUE_WIDTH capacity");
 
-    // 2. 遍历队列 (Oldest-First Scan)
+    auto try_issue_entry = [&](int entry_idx, int &issued_count) {
+      if (!entry[entry_idx].valid || !is_ready(entry[entry_idx])) {
+        return;
+      }
+
+      UopType op_type = entry[entry_idx].uop.op;
+      uint64_t op_bit = (1ULL << op_type); // 当前指令的特征位
+
+      // 3. 寻找匹配的端口 (First-Fit 策略)
+      int selected_port_idx = -1; // 这是 ports 数组的下标，不是物理端口号
+      for (int p = 0; p < num_ports; p++) {
+        if (!port_busy[p] && (ports[p].capability_mask & op_bit)) {
+          selected_port_idx = p;
+          break;
+        }
+      }
+
+      // 4. 发射成功
+      if (selected_port_idx != -1) {
+        // 记录结果：<IQ中的Index, 物理Port号>
+        result.push_back({entry_idx, ports[selected_port_idx].port_idx});
+        // 标记资源被占用
+        port_busy[selected_port_idx] = true;
+        issued_count++;
+      }
+    };
+
     int issued_count = 0;
+    if (ISSUE_SCHEDULE_POLICY == IssueSchedulePolicy::IQ_SLOT_PRIORITY) {
+      // 固定编号优先：按 IQ 槽位编号从小到大扫描。
+      for (int i = 0; i < size && issued_count < num_ports; i++) {
+        try_issue_entry(i, issued_count);
+      }
+    } else {
+      // ROB oldest-first：按 (rob_flag, rob_idx) 年龄排序后再分配端口。
+      std::vector<int> ready_indices;
+      ready_indices.reserve(size);
+      for (int i = 0; i < size; i++) {
+        if (entry[i].valid && is_ready(entry[i])) {
+          ready_indices.push_back(i);
+        }
+      }
 
-    for (int i = 0; i < size; i++) {
-      // 如果端口都满了，提前退出 (优化)
-      if (issued_count >= num_ports)
-        break;
-
-      if (entry[i].valid && is_ready(entry[i])) {
-        UopType op_type = entry[i].uop.op;
-        uint64_t op_bit = (1ULL << op_type); // 当前指令的特征位
-
-        // 3. 寻找匹配的端口 (First-Fit 策略)
-        int selected_port_idx = -1; // 这是 ports 数组的下标，不是物理端口号
-
-        for (int p = 0; p < num_ports; p++) {
-          if (!port_busy[p]) {
-            // 检查能力匹配
-            if (ports[p].capability_mask & op_bit) {
-              selected_port_idx = p;
-              break;
-            }
+      auto older_than = [&](int lhs, int rhs) {
+        const auto &a = entry[lhs].uop;
+        const auto &b = entry[rhs].uop;
+        if (a.rob_flag == b.rob_flag) {
+          if (a.rob_idx != b.rob_idx) {
+            return a.rob_idx < b.rob_idx;
+          }
+        } else {
+          if (a.rob_idx != b.rob_idx) {
+            return a.rob_idx > b.rob_idx;
           }
         }
+        return lhs < rhs; // Stable tie-breaker.
+      };
+      std::sort(ready_indices.begin(), ready_indices.end(), older_than);
 
-        // 4. 发射成功
-        if (selected_port_idx != -1) {
-          // 记录结果：<IQ中的Index, 物理Port号>
-          result.push_back({i, ports[selected_port_idx].port_idx});
-
-          // 标记资源被占用
-          port_busy[selected_port_idx] = true;
-          issued_count++;
+      for (int idx : ready_indices) {
+        if (issued_count >= num_ports) {
+          break;
         }
+        try_issue_entry(idx, issued_count);
       }
     }
 
