@@ -174,8 +174,10 @@ void SimCpu::init() {
 #endif
 
   // 第四阶段：统一执行各模块复位逻辑
-  front.init();
+  // 先初始化内存子系统，确保 front.init()/front.step_bpu() 期间若访问 icache AXI
+  // 端口时，互连/DDRx/MMIO 后端已经完成 init，不会命中未初始化握手状态。
   mem_subsystem.init();
+  front.init();
   oracle_pending_valid = false;
   oracle_pending_out = {};
 }
