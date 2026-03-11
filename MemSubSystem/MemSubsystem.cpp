@@ -12,7 +12,7 @@
     __has_include("MMIO_Bus_AXI3.h") && \
     __has_include("SimDDR.h") && \
     __has_include("SimDDR_AXI3.h")
-#define QM_HAS_AXI_KIT 1
+#define AXI_KIT_HEADERS_AVAILABLE 1
 #include "UART16550_Device.h"
 #if CONFIG_AXI_PROTOCOL == 4
 #include "AXI_Interconnect.h"
@@ -40,20 +40,20 @@ using MmioImpl = mmio::MMIO_Bus_AXI3;
 #error "Unsupported CONFIG_AXI_PROTOCOL value"
 #endif
 #else
-#define QM_HAS_AXI_KIT 0
+#define AXI_KIT_HEADERS_AVAILABLE 0
 #if CONFIG_ICACHE_USE_AXI_MEM_PORT
 #error "CONFIG_ICACHE_USE_AXI_MEM_PORT requires axi-interconnect-kit"
 #endif
 #endif
 
-#if QM_HAS_AXI_KIT && CONFIG_ICACHE_USE_AXI_MEM_PORT
-#define QM_USE_AXI_ICACHE_BACKEND 1
+#if AXI_KIT_HEADERS_AVAILABLE && CONFIG_ICACHE_USE_AXI_MEM_PORT
+#define AXI_KIT_RUNTIME_ENABLED 1
 #else
-#define QM_USE_AXI_ICACHE_BACKEND 0
+#define AXI_KIT_RUNTIME_ENABLED 0
 #endif
 
-#if QM_USE_AXI_ICACHE_BACKEND
-struct AxiMemBackend {
+#if AXI_KIT_RUNTIME_ENABLED
+struct AxiKitRuntime {
   InterconnectImpl interconnect;
   DdrImpl ddr;
   RouterImpl router;
@@ -61,7 +61,7 @@ struct AxiMemBackend {
   mmio::UART16550_Device uart0{0x10000000u};
 };
 #else
-struct AxiMemBackend {};
+struct AxiKitRuntime {};
 #endif
 
 class MemSubsystemPtwMemPortAdapter : public PtwMemPort {
@@ -161,11 +161,11 @@ void MemSubsystem::ptw_walk_flush(PtwClient client) {
 }
 
 axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
-#if QM_USE_AXI_ICACHE_BACKEND
-  if (axi_backend == nullptr) {
+#if AXI_KIT_RUNTIME_ENABLED
+  if (axi_kit_runtime == nullptr) {
     return nullptr;
   }
-  return &axi_backend->interconnect.read_ports[axi_interconnect::MASTER_ICACHE];
+  return &axi_kit_runtime->interconnect.read_ports[axi_interconnect::MASTER_ICACHE];
 #else
   return nullptr;
 #endif
@@ -173,8 +173,8 @@ axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
 
 MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
   dcache = std::make_unique<SimpleCache>(ctx);
-#if QM_USE_AXI_ICACHE_BACKEND
-  axi_backend = std::make_unique<AxiMemBackend>();
+#if AXI_KIT_RUNTIME_ENABLED
+  axi_kit_runtime = std::make_unique<AxiKitRuntime>();
 #endif
   ptw_block.bind_context(ctx);
   dtlb_ptw_port_inst =
@@ -208,12 +208,12 @@ void MemSubsystem::init() {
   peripheral.memory = memory;
   peripheral.init();
 
-#if QM_USE_AXI_ICACHE_BACKEND
-  axi_backend->interconnect.init();
-  axi_backend->router.init();
-  axi_backend->mmio.init();
-  axi_backend->mmio.add_device(0x10000000u, 0x1000u, &axi_backend->uart0);
-  axi_backend->ddr.init();
+#if AXI_KIT_RUNTIME_ENABLED
+  axi_kit_runtime->interconnect.init();
+  axi_kit_runtime->router.init();
+  axi_kit_runtime->mmio.init();
+  axi_kit_runtime->mmio.add_device(0x10000000u, 0x1000u, &axi_kit_runtime->uart0);
+  axi_kit_runtime->ddr.init();
 #endif
 
   dcache->lsu_req_io = &dcache_req_mux;
@@ -235,9 +235,9 @@ void MemSubsystem::init() {
   *lsu_resp_io = {};
   *lsu_wready_io = {};
 
-#if QM_USE_AXI_ICACHE_BACKEND
+#if AXI_KIT_RUNTIME_ENABLED
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
-    auto &port = axi_backend->interconnect.read_ports[i];
+    auto &port = axi_kit_runtime->interconnect.read_ports[i];
     port.req.valid = false;
     port.req.addr = 0;
     port.req.total_size = 0;
@@ -245,7 +245,7 @@ void MemSubsystem::init() {
     port.resp.ready = false;
   }
   for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; i++) {
-    auto &port = axi_backend->interconnect.write_ports[i];
+    auto &port = axi_kit_runtime->interconnect.write_ports[i];
     port.req.valid = false;
     port.req.addr = 0;
     port.req.wdata.clear();
@@ -264,13 +264,13 @@ void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3)
 }
 
 void MemSubsystem::comb() {
-#if QM_USE_AXI_ICACHE_BACKEND
-  auto &interconnect = axi_backend->interconnect;
-  auto &ddr = axi_backend->ddr;
-  auto &router = axi_backend->router;
-  auto &mmio = axi_backend->mmio;
+#if AXI_KIT_RUNTIME_ENABLED
+  auto &interconnect = axi_kit_runtime->interconnect;
+  auto &ddr = axi_kit_runtime->ddr;
+  auto &router = axi_kit_runtime->router;
+  auto &mmio = axi_kit_runtime->mmio;
 
-  // AXI backend phase-1 combinational outputs.
+  // AXI-kit phase-1 combinational outputs.
   ddr.comb_outputs();
   mmio.comb_outputs();
   router.comb_outputs(interconnect.axi_io, ddr.io, mmio.io);
@@ -332,7 +332,7 @@ void MemSubsystem::comb() {
   (void)resp_route_block.route_resp(dcache_resp_raw, lsu_resp_io, &ptw_block);
 
   // Stage-1 AXI wiring: connect ICache read master, keep all others idle.
-#if QM_USE_AXI_ICACHE_BACKEND
+#if AXI_KIT_RUNTIME_ENABLED
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
     if (i == axi_interconnect::MASTER_ICACHE) {
       continue;
@@ -355,7 +355,7 @@ void MemSubsystem::comb() {
     port.resp.ready = false;
   }
 
-  // AXI backend phase-2 combinational inputs.
+  // AXI-kit phase-2 combinational inputs.
   interconnect.comb_inputs();
   router.comb_inputs(interconnect.axi_io, ddr.io, mmio.io);
   ddr.comb_inputs();
@@ -367,11 +367,11 @@ void MemSubsystem::comb() {
 
 void MemSubsystem::seq() {
   dcache->seq();
-#if QM_USE_AXI_ICACHE_BACKEND
-  axi_backend->ddr.seq();
-  axi_backend->mmio.seq();
-  axi_backend->router.seq(axi_backend->interconnect.axi_io, axi_backend->ddr.io,
-                          axi_backend->mmio.io);
-  axi_backend->interconnect.seq();
+#if AXI_KIT_RUNTIME_ENABLED
+  axi_kit_runtime->ddr.seq();
+  axi_kit_runtime->mmio.seq();
+  axi_kit_runtime->router.seq(axi_kit_runtime->interconnect.axi_io, axi_kit_runtime->ddr.io,
+                          axi_kit_runtime->mmio.io);
+  axi_kit_runtime->interconnect.seq();
 #endif
 }

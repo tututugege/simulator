@@ -121,7 +121,7 @@ struct MemReadView {
   uint32_t resp_data[ICACHE_LINE_SIZE / 4] = {0};
 };
 
-class FixedLatencyReadBackend {
+class FixedLatencyReadPort {
 public:
   static constexpr int kMaxTxId = 16;
 
@@ -194,7 +194,7 @@ private:
   }
 };
 
-class ExternalReadPortBackend {
+class ExternalReadPortAdapter {
 public:
   void bind(axi_interconnect::ReadMasterPort_t *port) { port_ = port; }
 
@@ -241,21 +241,21 @@ private:
   axi_interconnect::ReadMasterPort_t *port_ = nullptr;
 };
 
-template <typename Backend> Backend &backend_runtime() {
-  static Backend backend;
-  return backend;
+template <typename ReadPort> ReadPort &read_port_runtime() {
+  static ReadPort read_port;
+  return read_port;
 }
 
-template <typename HW, typename Backend> struct TrueIcacheRuntime {
+template <typename HW, typename ReadPort> struct TrueIcacheRuntime {
   AbstractMmu *mmu_model = nullptr;
   PtwMemPort *ptw_mem_port = nullptr;
   PtwWalkPort *ptw_walk_port = nullptr;
   axi_interconnect::ReadMasterPort_t *mem_read_port = nullptr;
 };
 
-template <typename HW, typename Backend>
-TrueIcacheRuntime<HW, Backend> &true_icache_runtime() {
-  static TrueIcacheRuntime<HW, Backend> runtime;
+template <typename HW, typename ReadPort>
+TrueIcacheRuntime<HW, ReadPort> &true_icache_runtime() {
+  static TrueIcacheRuntime<HW, ReadPort> runtime;
   return runtime;
 }
 
@@ -311,36 +311,36 @@ void bind_mem_read_port(Runtime &runtime,
   runtime.mem_read_port = port;
 }
 
-template <typename HW, typename Backend>
+template <typename HW, typename ReadPort>
 class TrueICacheTopT : public ICacheTop {
 public:
   explicit TrueICacheTopT(HW &hw) : icache_hw(hw) {}
 
   void set_ptw_mem_port(PtwMemPort *port) override {
-    bind_ptw_mem_port(true_icache_runtime<HW, Backend>(), port);
+    bind_ptw_mem_port(true_icache_runtime<HW, ReadPort>(), port);
   }
 
   void set_ptw_walk_port(PtwWalkPort *port) override {
-    bind_ptw_walk_port(true_icache_runtime<HW, Backend>(), port);
+    bind_ptw_walk_port(true_icache_runtime<HW, ReadPort>(), port);
   }
 
   void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) override {
-    bind_mem_read_port(true_icache_runtime<HW, Backend>(), port);
+    bind_mem_read_port(true_icache_runtime<HW, ReadPort>(), port);
   }
 
   void comb() override {
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
 
-    auto &runtime = true_icache_runtime<HW, Backend>();
-    auto &backend = backend_runtime<Backend>();
+    auto &runtime = true_icache_runtime<HW, ReadPort>();
+    auto &read_port = read_port_runtime<ReadPort>();
     ensure_mmu_model(runtime, ctx);
-    backend.bind(runtime.mem_read_port);
+    read_port.bind(runtime.mem_read_port);
 
     if (in->reset) {
       DEBUG_LOG("[icache] reset\n");
       icache_hw.reset();
-      backend.reset();
+      read_port.reset();
       if (runtime.mmu_model != nullptr) {
         runtime.mmu_model->flush();
       }
@@ -352,7 +352,7 @@ public:
       runtime.mmu_model->flush();
     }
 
-    MemReadView mem = backend.comb_view();
+    MemReadView mem = read_port.comb_view();
     const bool probe_only = in->run_comb_only;
     const bool req_valid = probe_only ? false : in->icache_read_valid;
     const uint32_t req_pc = probe_only ? 0u : in->fetch_address;
@@ -391,10 +391,10 @@ public:
 
     icache_hw.comb();
 
-    backend.comb_accept(icache_hw.io.out.mem_req_valid,
-                        icache_hw.io.out.mem_req_addr,
-                        static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF),
-                        icache_hw.io.out.mem_resp_ready);
+    read_port.comb_accept(
+        icache_hw.io.out.mem_req_valid, icache_hw.io.out.mem_req_addr,
+        static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF),
+        icache_hw.io.out.mem_resp_ready);
 
     out->icache_read_ready = icache_hw.io.out.ifu_req_ready;
 
@@ -430,7 +430,7 @@ public:
         icache_hw.io.in.mem_resp_valid && icache_hw.io.out.mem_resp_ready;
 
     icache_hw.seq();
-    backend_runtime<Backend>().seq(
+    read_port_runtime<ReadPort>().seq(
         mem_req_fire, icache_hw.io.out.mem_req_addr,
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF), mem_resp_fire,
         static_cast<uint8_t>(icache_hw.io.in.mem_resp_id & 0xF), in->refetch);
@@ -667,10 +667,10 @@ ICacheTop *get_icache_instance() {
 #else
 #if CONFIG_ICACHE_USE_AXI_MEM_PORT
     instance = std::make_unique<
-        TrueICacheTopT<icache_module_n::ICache, ExternalReadPortBackend>>(icache);
+        TrueICacheTopT<icache_module_n::ICache, ExternalReadPortAdapter>>(icache);
 #else
     instance = std::make_unique<
-        TrueICacheTopT<icache_module_n::ICache, FixedLatencyReadBackend>>(icache);
+        TrueICacheTopT<icache_module_n::ICache, FixedLatencyReadPort>>(icache);
 #endif
 #endif
   }
