@@ -9,6 +9,7 @@ namespace {
 inline void sync_icache_ptw_ports(const FrontTop &front) {
   icache_ptw_mem_port = front.icache_ptw_mem_port;
   icache_ptw_walk_port = front.icache_ptw_walk_port;
+  icache_mem_read_port = front.icache_mem_read_port;
 }
 } // namespace
 

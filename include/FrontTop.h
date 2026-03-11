@@ -5,6 +5,9 @@
 class PtwMemPort;
 class PtwWalkPort;
 class SimContext;
+namespace axi_interconnect {
+struct ReadMasterPort_t;
+}
 
 class FrontTop {
 public:
@@ -13,6 +16,7 @@ public:
   SimContext *ctx = nullptr;
   PtwMemPort *icache_ptw_mem_port = nullptr;
   PtwWalkPort *icache_ptw_walk_port = nullptr;
+  axi_interconnect::ReadMasterPort_t *icache_mem_read_port = nullptr;
 
   void init();
   void step_bpu();

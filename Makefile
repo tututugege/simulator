@@ -35,7 +35,11 @@ INCLUDES := -I./include/ \
             -I./MemSubSystem/include/ \
             -I./diff/include/ \
             -I./legacy/mmu/include/ \
-            -I$(FRONT_DIR)/
+            -I$(FRONT_DIR)/ \
+            -I./axi-interconnect-kit/include/ \
+            -I./axi-interconnect-kit/axi_interconnect/include/ \
+            -I./axi-interconnect-kit/sim_ddr/include/ \
+            -I./axi-interconnect-kit/mmio/include/
 
 # Source Files
 # (Using find to locate all cpp files)
@@ -45,6 +49,9 @@ CXXSRC := $(shell find ./back-end -name "*.cpp") \
           ./MemSubSystem/PtwWalker.cpp \
           $(shell find $(FRONT_DIR) -name "*.cpp") \
           $(shell find ./diff -name "*.cpp") \
+          $(shell find ./axi-interconnect-kit/axi_interconnect -name "*.cpp" ! -name "*_test.cpp") \
+          $(shell find ./axi-interconnect-kit/sim_ddr -name "*.cpp" ! -name "*_test.cpp") \
+          $(shell find ./axi-interconnect-kit/mmio -name "*.cpp" ! -name "*_test.cpp") \
           ./main.cpp \
           ./rv_simu_mmu_v2.cpp
 

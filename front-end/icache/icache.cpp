@@ -5,15 +5,17 @@
 #include <cassert>
 
 // Define global ICache instance
-ICache icache;
+icache_module_n::ICache icache;
 PtwMemPort *icache_ptw_mem_port = nullptr;
 PtwWalkPort *icache_ptw_walk_port = nullptr;
+axi_interconnect::ReadMasterPort_t *icache_mem_read_port = nullptr;
 static SimContext *icache_ctx = nullptr;
 
 namespace {
 void bind_icache_runtime(ICacheTop *instance) {
   static PtwMemPort *bound_mem_port = nullptr;
   static PtwWalkPort *bound_walk_port = nullptr;
+  static axi_interconnect::ReadMasterPort_t *bound_read_port = nullptr;
   static SimContext *bound_ctx = nullptr;
 
   if (bound_mem_port != icache_ptw_mem_port) {
@@ -23,6 +25,10 @@ void bind_icache_runtime(ICacheTop *instance) {
   if (bound_walk_port != icache_ptw_walk_port) {
     instance->set_ptw_walk_port(icache_ptw_walk_port);
     bound_walk_port = icache_ptw_walk_port;
+  }
+  if (bound_read_port != icache_mem_read_port) {
+    instance->set_mem_read_port(icache_mem_read_port);
+    bound_read_port = icache_mem_read_port;
   }
   if (bound_ctx != icache_ctx) {
     instance->setContext(icache_ctx);
@@ -71,4 +77,9 @@ void icache_set_ptw_mem_port(PtwMemPort *port) {
 void icache_set_ptw_walk_port(PtwWalkPort *port) {
   ICacheTop *instance = get_icache_instance();
   instance->set_ptw_walk_port(port);
+}
+
+void icache_set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) {
+  ICacheTop *instance = get_icache_instance();
+  instance->set_mem_read_port(port);
 }

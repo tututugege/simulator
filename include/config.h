@@ -16,6 +16,21 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
   return n != 0 && ((n & (n - 1)) == 0);
 }
 
+#ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
+#define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
+#endif
+
+#ifndef CONFIG_AXI_PROTOCOL
+// Interconnect backend protocol selector:
+// - 4: AXI4 (default)
+// - 3: AXI3 (compat mode)
+#define CONFIG_AXI_PROTOCOL 4
+#endif
+
+#if (CONFIG_AXI_PROTOCOL != 3) && (CONFIG_AXI_PROTOCOL != 4)
+#error "CONFIG_AXI_PROTOCOL must be 3 or 4"
+#endif
+
 // ============================================================
 // [1] Build Control / Debug / Feature Switches
 // ============================================================
@@ -107,7 +122,11 @@ constexpr int IDU_INST_BUFFER_SIZE = 64;
 // [3] I-Cache Config
 // ============================================================
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
+#ifdef AXI_KIT_DDR_LATENCY
+constexpr int ICACHE_MISS_LATENCY = AXI_KIT_DDR_LATENCY;
+#else
 constexpr int ICACHE_MISS_LATENCY = 50;
+#endif
 constexpr int ICACHE_WAY_NUM = 8;
 constexpr int ICACHE_OFFSET_BITS = clog2(ICACHE_LINE_SIZE);
 constexpr int ICACHE_INDEX_BITS = 12 - ICACHE_OFFSET_BITS;
@@ -133,7 +152,7 @@ constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
 constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
 constexpr uint32_t DCACHE_TAG_MASK = (1u << DCACHE_TAG_BITS) - 1u;
 constexpr int DCACHE_MAX_PENDING_REQS = 256;
-constexpr bool DCACHE_L2_ENABLE = false;
+constexpr bool DCACHE_L2_ENABLE = true;
 constexpr int DCACHE_L2_LINE_SIZE = DCACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_L2_WAY_NUM = 8;
 constexpr int DCACHE_L2_OFFSET_BITS = clog2(DCACHE_L2_LINE_SIZE);
