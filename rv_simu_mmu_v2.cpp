@@ -228,6 +228,23 @@ void SimCpu::cycle() {
 }
 
 void SimCpu::front_cycle() {
+  auto perf_account_front_supply = [&]() {
+    if (front.in.FIFO_read_enable) {
+      ctx.perf.front2back_read_enable_cycle_total++;
+    }
+    if (front.out.FIFO_valid) {
+      ctx.perf.front2back_read_cycle_total++;
+    }
+    if (front.in.FIFO_read_enable && !front.out.FIFO_valid) {
+      ctx.perf.front2back_read_empty_cycle_total++;
+    }
+    for (int j = 0; j < FETCH_WIDTH; j++) {
+      if (back.in.valid[j]) {
+        ctx.perf.front2back_fetched_inst_total++;
+      }
+    }
+  };
+
 #ifdef CONFIG_BPU
   if (!back.out.stall || back.out.mispred || back.out.flush) {
 
@@ -268,6 +285,7 @@ void SimCpu::front_cycle() {
       if (back.in.valid[j] && front.out.predict_dir[j])
         no_taken = false;
     }
+    perf_account_front_supply();
   } else {
 
 #ifdef CONFIG_BPU
@@ -321,6 +339,7 @@ void SimCpu::front_cycle() {
       no_taken = false;
     }
   }
+  perf_account_front_supply();
 #endif
 }
 

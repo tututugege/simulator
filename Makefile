@@ -5,6 +5,7 @@
 BUILD_DIR := build
 SIM_EXE   := $(BUILD_DIR)/simulator
 IMG     := ./baremetal/memory
+AXI_KIT_DIR := ./axi-interconnect-kit
 
 # Compiler & Flags
 CXX      := g++
@@ -12,6 +13,7 @@ CXXFLAGS := -O3 -march=native -funroll-loops -mtune=native
 CXXFLAGS += -MMD -MP 
 CXXFLAGS += -Wall -Wextra -Wno-unused-parameter
 CXXFLAGS += --std=c++2a
+CXXFLAGS += $(EXTRA_CXXFLAGS)
 
 # Libraries
 LIBS := ./libs/softfloat.a
@@ -35,11 +37,18 @@ INCLUDES := -I./include/ \
             -I./MemSubSystem/include/ \
             -I./diff/include/ \
             -I./legacy/mmu/include/ \
-            -I$(FRONT_DIR)/ \
-            -I./axi-interconnect-kit/include/ \
-            -I./axi-interconnect-kit/axi_interconnect/include/ \
-            -I./axi-interconnect-kit/sim_ddr/include/ \
-            -I./axi-interconnect-kit/mmio/include/
+            -I$(FRONT_DIR)/
+
+AXI_KIT_IO_HDR := $(AXI_KIT_DIR)/axi_interconnect/include/AXI_Interconnect_IO.h
+ifneq ($(wildcard $(AXI_KIT_IO_HDR)),)
+INCLUDES += -I$(AXI_KIT_DIR)/include/ \
+            -I$(AXI_KIT_DIR)/axi_interconnect/include/ \
+            -I$(AXI_KIT_DIR)/sim_ddr/include/ \
+            -I$(AXI_KIT_DIR)/mmio/include/
+AXI_KIT_SRC := $(shell find $(AXI_KIT_DIR)/axi_interconnect -name "*.cpp" ! -name "*_test.cpp") \
+               $(shell find $(AXI_KIT_DIR)/sim_ddr -name "*.cpp" ! -name "*_test.cpp") \
+               $(shell find $(AXI_KIT_DIR)/mmio -name "*.cpp" ! -name "*_test.cpp")
+endif
 
 # Source Files
 # (Using find to locate all cpp files)
@@ -49,9 +58,7 @@ CXXSRC := $(shell find ./back-end -name "*.cpp") \
           ./MemSubSystem/PtwWalker.cpp \
           $(shell find $(FRONT_DIR) -name "*.cpp") \
           $(shell find ./diff -name "*.cpp") \
-          $(shell find ./axi-interconnect-kit/axi_interconnect -name "*.cpp" ! -name "*_test.cpp") \
-          $(shell find ./axi-interconnect-kit/sim_ddr -name "*.cpp" ! -name "*_test.cpp") \
-          $(shell find ./axi-interconnect-kit/mmio -name "*.cpp" ! -name "*_test.cpp") \
+          $(AXI_KIT_SRC) \
           ./main.cpp \
           ./rv_simu_mmu_v2.cpp
 
