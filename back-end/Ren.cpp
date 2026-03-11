@@ -19,6 +19,12 @@ static wire<PRF_IDX_WIDTH> spec_RAT_normal[ARF_NUM + 1];
 static wire<1> busy_table_awake[PRF_NUM];
 
 void Ren::init() {
+  // Busy table must start from all-ready; otherwise random busy bits can
+  // permanently block issue for dependent uops.
+  std::memset(busy_table, 0, sizeof(busy_table));
+  std::memset(busy_table_1, 0, sizeof(busy_table_1));
+  std::memset(busy_table_awake, 0, sizeof(busy_table_awake));
+
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
 
@@ -92,6 +98,7 @@ void Ren::comb_alloc() {
 #ifdef CONFIG_PERF_COUNTER
   if (stall) {
     ctx->perf.ren_reg_stall++;
+    ctx->perf.stall_preg_cycles++;
   }
 #endif
 }
@@ -195,6 +202,7 @@ void Ren::comb_rename() {
     } else {
       out.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
     }
+
   }
 }
 
@@ -282,12 +290,14 @@ void Ren ::comb_commit() {
       ctx->perf.commit_num++;
 
       if (ctx->is_ckpt) {
-        if (ctx->perf.commit_num == WARMUP && !ctx->perf.perf_start) {
+        if (!ctx->perf.perf_start &&
+            ctx->perf.commit_num >= ctx->ckpt_warmup_commit_target) {
           ctx->perf.perf_reset();
           ctx->perf.perf_start = true;
         }
 
-        if (ctx->perf.commit_num == SIMPOINT_INTERVAL && ctx->perf.perf_start) {
+        if (ctx->perf.perf_start &&
+            ctx->perf.commit_num >= SIMPOINT_INTERVAL) {
           ctx->exit_reason = ExitReason::SIMPOINT;
         }
       }
@@ -331,11 +341,12 @@ void Ren ::comb_pipeline() {
       if (in.rob_bcast->flush) {
         ctx->perf.squash_flush_ren += killed;
         ctx->perf.squash_flush_total += killed;
+        ctx->perf.pending_squash_flush_slots += killed;
       } else {
         ctx->perf.squash_mispred_ren += killed;
         ctx->perf.squash_mispred_total += killed;
+        ctx->perf.pending_squash_mispred_slots += killed;
       }
-      ctx->perf.pending_squash_slots += killed;
     }
 #endif
   }

@@ -3,6 +3,7 @@
 #include "ModuleIOs.h"
 #include "config.h"
 #include "util.h"
+#include <bitset>
 #include <cstdint>
 #include <sys/types.h>
 
@@ -670,12 +671,14 @@ struct PrfDcacheIO {
 struct LsuDisIO {
 
   int stq_tail;                              // 当前分配指针
+  bool stq_tail_flag;                        // stq_tail 对应 ring 代际位
   int stq_free;                              // 剩余空闲条目数
   int ldq_free;                              // 剩余 Load 队列空闲数
   int ldq_alloc_idx[MAX_LDQ_DISPATCH_WIDTH]; // 本拍可分配的 LDQ 索引序列
 
   LsuDisIO() {
     stq_tail = 0;
+    stq_tail_flag = false;
     stq_free = 0;
     ldq_free = 0;
     for (auto &v : ldq_alloc_idx)
@@ -684,11 +687,11 @@ struct LsuDisIO {
 };
 
 struct LsuRobIO {
-  wire<ROB_NUM> miss_mask;
+  std::bitset<ROB_NUM> miss_mask;
   wire<1> committed_store_pending;
 
   LsuRobIO() {
-    miss_mask = 0;
+    miss_mask.reset();
     committed_store_pending = 0;
   }
 };

@@ -91,7 +91,8 @@ typedef struct InstInfo {
   wire<CSR_IDX_WIDTH> csr_idx;
   wire<ROB_IDX_WIDTH> rob_idx;
   wire<STQ_IDX_WIDTH> stq_idx;
-  wire<STQ_IDX_WIDTH> ldq_idx;
+  wire<1> stq_flag;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
 
   // ROB 信息
   wire<2> uop_num;
@@ -149,7 +150,8 @@ typedef struct MicroOp {
   wire<CSR_IDX_WIDTH> csr_idx;
   wire<ROB_IDX_WIDTH> rob_idx;
   wire<STQ_IDX_WIDTH> stq_idx;
-  wire<STQ_IDX_WIDTH> ldq_idx;
+  wire<1> stq_flag;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
 
   // ROB 信息
   wire<2> uop_num;
@@ -203,6 +205,7 @@ typedef struct MicroOp {
     this->csr_idx = info.csr_idx;
     this->rob_idx = info.rob_idx;
     this->stq_idx = info.stq_idx;
+    this->stq_flag = info.stq_flag;
     this->ldq_idx = info.ldq_idx;
     this->uop_num = info.uop_num;
     this->rob_flag = info.rob_flag;
@@ -243,7 +246,8 @@ class SimContext {
 public:
   PerfCount perf;
   ExitReason exit_reason = ExitReason::NONE;
-  bool is_ckpt;
+  bool is_ckpt = false;
+  uint64_t ckpt_warmup_commit_target = WARMUP;
   SimCpu *cpu = nullptr;
   void run_commit_inst(InstEntry *inst_entry);
   void run_difftest_inst(InstEntry *inst_entry);

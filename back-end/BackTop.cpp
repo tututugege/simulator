@@ -16,7 +16,7 @@
 void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory);
 
 void BackTop::init() {
-  pre_idu_queue = new PreIduQueue();
+  pre_idu_queue = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
   rename = new Ren(ctx);
   dis = new Dispatch(ctx);
@@ -394,7 +394,9 @@ void BackTop::restore_checkpoint(const std::string &filename) {
     Assert(0 && "Error: Could not open checkpoint file");
   }
 
-  typedef struct Old_CPU_state {
+  // 与 SimpleSim/save_checkpoint 写入格式保持一致，确保反序列化对齐。
+  // 注意：reserve_* 当前在本模拟器中暂未使用，但必须读取以避免流错位。
+  typedef struct Ckpt_CPU_state {
     uint32_t gpr[32];
     uint32_t csr[21];
     uint32_t pc;
@@ -403,23 +405,25 @@ void BackTop::restore_checkpoint(const std::string &filename) {
     uint32_t store_data;
     uint32_t store_strb;
     bool store;
-  } Old_CPU_state;
+    bool reserve_valid;
+    uint32_t reserve_addr;
+  } Ckpt_CPU_state;
 
-  Old_CPU_state old_state;
+  Ckpt_CPU_state ckpt_state;
   uint64_t interval_inst_count;
 
   // 1. 恢复状态
-  gz_read_pod(file, old_state);
+  gz_read_pod(file, ckpt_state);
   gz_read_pod(file, interval_inst_count);
 
   CPU_state state;
-  memcpy(state.gpr, old_state.gpr, sizeof(state.gpr));
-  memcpy(state.csr, old_state.csr, sizeof(state.csr));
-  state.pc = old_state.pc;
-  state.store_addr = old_state.store_addr;
-  state.store_data = old_state.store_data;
-  state.store_strb = old_state.store_strb;
-  state.store = old_state.store;
+  memcpy(state.gpr, ckpt_state.gpr, sizeof(state.gpr));
+  memcpy(state.csr, ckpt_state.csr, sizeof(state.csr));
+  state.pc = ckpt_state.pc;
+  state.store_addr = ckpt_state.store_addr;
+  state.store_data = ckpt_state.store_data;
+  state.store_strb = ckpt_state.store_strb;
+  state.store = ckpt_state.store;
 
   // 初始化新字段
   state.instruction = 0;

@@ -38,14 +38,17 @@ private:
   // === 内部状态寄存器 (对应 seq 更新) ===
 
   // 1. Store Queue (简化的环形缓冲区)
-  StqEntry stq[STQ_NUM];
+  StqEntry stq[STQ_SIZE];
   int stq_head;   // deq 指针
+  bool stq_head_flag;
   int stq_commit; // commit 指针
+  bool stq_commit_flag;
   int stq_tail;   // enq 指针
+  bool stq_tail_flag;
   int stq_count;
 
   // 2. 显式 LDQ（请求发出后即使被 squash 也要等回包释放）
-  LdqEntry ldq[MAX_INFLIGHT_LOADS];
+  LdqEntry ldq[LDQ_SIZE];
   int ldq_count;
   int ldq_alloc_tail;
 
@@ -56,6 +59,9 @@ private:
   std::deque<MicroOp> finished_sta_reqs;
   // 5. STA 地址翻译重试队列 (DTLB/PTW miss -> RETRY)
   std::deque<MicroOp> pending_sta_addr_reqs;
+  // 6. LR/SC reservation state
+  bool reserve_valid = false;
+  uint32_t reserve_addr = 0;
 
 public:
   SimpleLsu(SimContext *ctx);
@@ -94,8 +100,7 @@ private:
   void handle_load_req(const MicroOp &uop);
   void handle_store_addr(const MicroOp &uop);
   void handle_store_data(const MicroOp &uop);
-  int find_recovery_tail(mask_t br_mask);
-  bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag);
+  int find_recovery_tail(mask_t br_mask, bool &recovery_tail_flag);
   bool reserve_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag,
                          uint32_t func3);
   void consume_stq_alloc_reqs(int &push_count);

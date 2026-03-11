@@ -1,11 +1,11 @@
+#include "Rob.h"
 #include "IO.h"
 #include "RISCV.h"
-#include "Rob.h"
-#include <cmath>
 #include "config.h"
+#include "util.h"
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
-#include "util.h"
 
 namespace {
 inline uint32_t load_alignment_mask(uint32_t func3) {
@@ -75,7 +75,8 @@ void Rob::comb_ready() {
         if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
-          stall_is_miss = (in.lsu2rob->miss_mask >> rob_idx) & 1;
+          stall_is_miss =
+              (rob_idx < ROB_NUM) ? in.lsu2rob->miss_mask.test(rob_idx) : false;
         } else {
           stall_is_mem = false;
           stall_is_miss = false;
@@ -137,8 +138,8 @@ void Rob::comb_commit() {
         }
         if (entry[i][deq_ptr].uop.type == SFENCE_VMA && in.lsu2rob != nullptr &&
             in.lsu2rob->committed_store_pending) {
-          // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store 未落地时，
-          // 必须阻塞提交，不能退化为组提交吞掉该指令。
+          // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
+          // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
           single_commit = false;
           commit = false;
         }
@@ -158,7 +159,8 @@ void Rob::comb_commit() {
         const auto &uop = entry[i][deq_ptr].uop;
         // 仅在 Load 已完成且非异常语义时检查地址对齐，避免中断单提交/异常路径下
         // 将 diag_val 的其他语义（如指令字、异常地址）误当作物理地址检查。
-        if (is_load(uop) && (uop.cplt_num == uop.uop_num) && !is_page_fault(uop)) {
+        if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+            !is_page_fault(uop)) {
           uint32_t alignment_mask = load_alignment_mask(uop.func3);
           Assert((uop.diag_val & alignment_mask) == 0 &&
                  "DUT: Load address misaligned at commit!");
@@ -185,8 +187,10 @@ void Rob::comb_commit() {
 
     if (entry[single_idx][deq_ptr].valid) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
-      // 中断触发 single_commit 时，首条指令可能尚未完成，diag_val 可能不是地址语义。
-      if (is_load(uop) && (uop.cplt_num == uop.uop_num) && !is_page_fault(uop)) {
+      // 中断触发 single_commit 时，首条指令可能尚未完成，diag_val
+      // 可能不是地址语义。
+      if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+          !is_page_fault(uop)) {
         uint32_t alignment_mask = load_alignment_mask(uop.func3);
         Assert((uop.diag_val & alignment_mask) == 0 &&
                "DUT: Load address misaligned at single commit!");
@@ -235,7 +239,7 @@ void Rob::comb_commit() {
         out.rob_bcast->pc = entry[single_idx][deq_ptr].uop.pc;
       } else {
         if (entry[single_idx][deq_ptr].uop.type != CSR) {
-          Assert(0 && "ERROR: unknown instruction during commit");
+          Assert(0 && "Error: Who is Rem? This pointer is forgotten.");
         }
       }
     }
@@ -249,7 +253,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 1000) {
+  if (stall_cycle > 20000) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -277,7 +281,6 @@ void Rob::comb_commit() {
 
     Assert(0 && "ROB Deadlock detected (stall_cycle > 1000)");
   }
-
 }
 
 void Rob::comb_complete() {
@@ -317,8 +320,8 @@ void Rob::comb_complete() {
         }
       }
 
-      // 同一条指令可能由多个 uop 回写（例如 STA/STD），flush_pipe 需要保持置位，
-      // 不能被后到达的 uop 覆盖为 0。
+      // 同一条指令可能由多个 uop 回写（例如 STA/STD），flush_pipe
+      // 需要保持置位， 不能被后到达的 uop 覆盖为 0。
       entry_1[bank_idx][line_idx].uop.flush_pipe =
           entry_1[bank_idx][line_idx].uop.flush_pipe ||
           in.exu2rob->entry[i].uop.flush_pipe;
@@ -345,6 +348,14 @@ void Rob::comb_branch() {
     if (enq_ptr_1 > enq_ptr) {
       enq_flag_1 = !enq_flag;
     }
+
+    // Fix: Mark the branch that caused misprediction as ftq_is_last.
+    // Since everything after it in the same FTQ block is flushed, it
+    // effectively becomes the 'last' instruction that will ever commit for this
+    // FTQ entry.
+    int redirect_bank = get_rob_bank(in.dec_bcast->redirect_rob_idx);
+    int redirect_line = get_rob_line(in.dec_bcast->redirect_rob_idx);
+    entry_1[redirect_bank][redirect_line].uop.ftq_is_last = true;
 
     // 修正：明确使从重定向点到旧 Tail 的所有条目失效
     // 这可以处理多行回溯并防止“僵尸提交”

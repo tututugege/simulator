@@ -3,8 +3,8 @@
 #include "RISCV.h"
 #include "SimCpu.h"
 #include "config.h"
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 extern "C" {
@@ -141,7 +141,12 @@ uint32_t f32_classify(float32_t f) {
 
 void RefCpu::init(uint32_t reset_pc) {
   state.pc = reset_pc;
+  if (memory != nullptr) {
+    free(memory);
+    memory = nullptr;
+  }
   memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
+  Assert(memory != nullptr && "RefCpu::init: memory allocation failed");
   for (int i = 0; i < 32; i++) {
     state.gpr[i] = 0;
   }
@@ -149,7 +154,7 @@ void RefCpu::init(uint32_t reset_pc) {
   for (int i = 0; i < 21; i++) {
     state.csr[i] = 0;
   }
-  state.csr[csr_misa] = 0x40141101;
+  state.csr[csr_misa] = 0x40141103;
   privilege = 0b11;
 
   state.store = false;
@@ -157,6 +162,20 @@ void RefCpu::init(uint32_t reset_pc) {
   page_fault_inst = false;
   page_fault_load = false;
   page_fault_store = false;
+  dut_pf_check_enable = false;
+  dut_expect_pf_inst = false;
+  dut_expect_pf_load = false;
+  dut_expect_pf_store = false;
+  state.reserve_valid = false;
+  state.reserve_addr = 0;
+}
+
+void RefCpu::set_dut_page_fault_expect(bool enable, bool inst, bool load,
+                                       bool store) {
+  dut_pf_check_enable = enable;
+  dut_expect_pf_inst = inst;
+  dut_expect_pf_load = load;
+  dut_expect_pf_store = store;
 }
 
 void RefCpu::exec() {
@@ -168,7 +187,7 @@ void RefCpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    page_fault_inst = !va2pa(p_addr, state.pc, 0);
+    page_fault_inst = !va2pa_fix(p_addr, state.pc, 0);
 
     if (page_fault_inst) {
       exception(state.pc);
@@ -290,7 +309,7 @@ void RefCpu::exception(uint32_t trap_val) {
 
     // 同步 sstatus (sstatus 是 mstatus 的影子)
     state.csr[csr_mstatus] = mstatus;
-    state.csr[csr_sstatus] = mstatus;
+    state.csr[csr_sstatus] = mstatus & 0x800DE133;
 
     privilege = 3; // Machine Mode
     state.csr[csr_mtval] = trap_val;
@@ -347,7 +366,9 @@ void RefCpu::exception(uint32_t trap_val) {
 
     // 写回
     state.csr[csr_sstatus] = sstatus;
-    state.csr[csr_mstatus] = sstatus;
+    uint32_t mask = 0x800DE133;
+    state.csr[csr_mstatus] =
+        (state.csr[csr_mstatus] & ~mask) | (sstatus & mask);
 
     privilege = 1; // Supervisor Mode
     state.csr[csr_stval] = trap_val;
@@ -369,7 +390,7 @@ void RefCpu::exception(uint32_t trap_val) {
 
     // 同步 sstatus
     state.csr[csr_mstatus] = mstatus;
-    state.csr[csr_sstatus] = mstatus;
+    state.csr[csr_sstatus] = mstatus & 0x800DE133;
 
     next_pc = state.csr[csr_mepc];
 
@@ -389,7 +410,10 @@ void RefCpu::exception(uint32_t trap_val) {
     sstatus &= ~MSTATUS_SPP;
 
     state.csr[csr_sstatus] = sstatus;
-    state.csr[csr_mstatus] = sstatus;
+    // 同步回 mstatus
+    uint32_t mask = 0x800DE133;
+    state.csr[csr_mstatus] =
+        (state.csr[csr_mstatus] & ~mask) | (sstatus & mask);
 
     next_pc = state.csr[csr_sepc];
   }
@@ -783,48 +807,65 @@ void RefCpu::RV32CSR() {
     }
 
     if (we) {
+      uint32_t old_val = state.csr[csr_idx];
       uint32_t csr_wdata = 0;
       if (wcmd == CSR_W) {
         csr_wdata = wdata;
       } else if (wcmd == CSR_S) {
-        csr_wdata = wdata | (~wdata & state.csr[csr_idx]);
+        csr_wdata = old_val | wdata;
       } else if (wcmd == CSR_C) {
-        csr_wdata = (~wdata & state.csr[csr_idx]);
+        csr_wdata = old_val & ~wdata;
       }
 
       if (csr_idx == csr_mie || csr_idx == csr_sie) {
-        if (csr_idx == csr_sie)
-          csr_wdata =
-              (state.csr[csr_mie] & 0xfffffccc) | (csr_wdata & 0x00000333);
-        else
-          csr_wdata =
-              (state.csr[csr_mie] & 0xfffff444) | (csr_wdata & 0x00000bbb);
+        uint32_t mie_mask =
+            0x00000bbb; // MEI(11), SEI(9), MTI(7), STI(5), MSI(3), SSI(1)
+        uint32_t sie_mask =
+            0x00000333; // SEI(9), UEI(8), STI(5), UTI(4), SSI(1), USI(0)
 
-        state.csr[csr_mie] = csr_wdata;
-        state.csr[csr_sie] = csr_wdata;
+        if (csr_idx == csr_sie) {
+          // sie: 0x333 (Include User-Level Interrupt bits)
+          state.csr[csr_mie] =
+              (state.csr[csr_mie] & ~sie_mask) | (csr_wdata & sie_mask);
+        } else {
+          // mie: 0xbbb
+          state.csr[csr_mie] = csr_wdata & mie_mask;
+        }
+        // sie 始终是 mie 的影子 (masked by 0x333)
+        state.csr[csr_sie] = state.csr[csr_mie] & sie_mask;
+
       } else if (csr_idx == number_mip || csr_idx == number_sip) {
+        uint32_t mip_mask =
+            0x00000bbb; // MEIP(11), SEIP(9), MTIP(7), STIP(5), MSIP(3), SSIP(1)
+        uint32_t sip_mask =
+            0x00000333; // SEIP(9), UEIP(8), STIP(5), UTIP(4), SSIP(1), USIP(0)
 
-        if (csr_idx == number_mip)
-          csr_wdata =
-              (state.csr[csr_mip] & 0xfffffccc) | (csr_wdata & 0x00000333);
-        else
-          csr_wdata =
-              (state.csr[csr_mip] & 0xfffff444) | (csr_wdata & 0x00000bbb);
+        if (csr_idx == number_sip) {
+          // sip: 0x333 (Include User-Level Interrupt bits)
+          state.csr[csr_mip] =
+              (state.csr[csr_mip] & ~sip_mask) | (csr_wdata & sip_mask);
+        } else {
+          state.csr[csr_mip] = csr_wdata & mip_mask;
+        }
+        // force_sync = true;
+        // sip 始终是 mip 的影子 (masked by 0x333)
+        state.csr[csr_sip] = state.csr[csr_mip] & sip_mask;
 
-        state.csr[csr_mip] = csr_wdata;
-        state.csr[csr_sip] = csr_wdata;
       } else if (csr_idx == csr_mstatus || csr_idx == csr_sstatus) {
+        uint32_t mstatus_mask = 0x807FF9BB; // ~0x7f800644
+        uint32_t sstatus_mask = 0x800DE133;
 
         if (csr_idx == csr_sstatus) {
-          csr_wdata = (state.csr[csr_sstatus] & 0x7ff21ecc) |
-                      (csr_wdata & (~0x7ff21ecc));
+          // sstatus 写入：仅修改 mstatus 中属于 sstatus 掩码范围内的位
+          state.csr[csr_mstatus] = (state.csr[csr_mstatus] & ~sstatus_mask) |
+                                   (csr_wdata & sstatus_mask);
         } else {
-          csr_wdata = (state.csr[csr_mstatus] & 0x7f800644) |
-                      (csr_wdata & (~0x7f800644));
+          // mstatus 写入：应用 mstatus 写掩码
+          state.csr[csr_mstatus] = (state.csr[csr_mstatus] & ~mstatus_mask) |
+                                   (csr_wdata & mstatus_mask);
         }
-
-        state.csr[csr_mstatus] = csr_wdata;
-        state.csr[csr_sstatus] = csr_wdata;
+        // 同步更新 sstatus 影子值
+        state.csr[csr_sstatus] = state.csr[csr_mstatus] & sstatus_mask;
 
       } else {
         state.csr[csr_idx] = csr_wdata;
@@ -850,17 +891,18 @@ void RefCpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    bool page_fault;
+    bool page_fault_1 = !va2pa_fix(p_addr, v_addr, 1);
+    bool page_fault_2 = !va2pa_fix(p_addr, v_addr, 2);
 
-    if (funct5 == 2) {
-      page_fault = !va2pa(p_addr, v_addr, 1);
-    } else {
-      page_fault = !va2pa(p_addr, v_addr, 2);
-    }
-
-    if (page_fault) {
+    if (page_fault_1 || page_fault_2) {
       if (funct5 == 2) {
-        page_fault_load = true;
+        if (page_fault_1) {
+          page_fault_load = true;
+        }
+      } else if (funct5 == 3) {
+        if (page_fault_2) {
+          page_fault_store = true;
+        }
       } else {
         page_fault_store = true;
       }
@@ -872,11 +914,10 @@ void RefCpu::RV32A() {
     }
   }
 
-  if (p_addr & 0x3) {
-    Assert((p_addr & 3) == 0 && "AMO address misaligned!");
-    illegal_exception = true;
-    exception(v_addr);
-    return;
+  if (p_addr % 4 != 0) {
+    std::cerr << "Misaligned AMO Access! addr: 0x" << std::hex << v_addr
+              << std::endl;
+    exit(-1);
   }
 
   if (funct5 != 2) {
@@ -898,11 +939,20 @@ void RefCpu::RV32A() {
   }
   case 2: { // lr.w
     state.gpr[reg_d_index] = memory[p_addr >> 2];
+    state.reserve_valid = true;
+    state.reserve_addr = p_addr;
     break;
   }
   case 3: { // sc.w
-    state.store_data = reg_rdata2;
-    state.gpr[reg_d_index] = 0;
+    if (state.reserve_valid && state.reserve_addr == p_addr) {
+      state.store_data = reg_rdata2;
+      state.gpr[reg_d_index] = 0; // Success
+    } else {
+      state.gpr[reg_d_index] = 1; // Fail
+      state.store = false;        // Don't perform the write
+    }
+    state.reserve_valid =
+        false; // Regardless of success, invalidate reservation
     break;
   }
   case 4: { // amoxor.w
@@ -1045,7 +1095,7 @@ void RefCpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      page_fault_load = !va2pa(p_addr, v_addr, 1);
+      page_fault_load = !va2pa_fix(p_addr, v_addr, 1);
     }
 
     if (page_fault_load) {
@@ -1103,7 +1153,7 @@ void RefCpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      page_fault_store = !va2pa(p_addr, v_addr, 2);
+      page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
     }
 
     if (page_fault_store) {
@@ -1138,50 +1188,100 @@ void RefCpu::RV32IM() {
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
-                               // srli, srai
+                               // srli, srai, and Zbb/Zbs Immediates
+    uint32_t imm = immI(Instruction);
+    uint32_t shamt = imm & 0x1F;
     switch (funct3) {
     case 0: { // addi
-      state.gpr[reg_d_index] = reg_rdata1 + immI(Instruction);
+      state.gpr[reg_d_index] = reg_rdata1 + imm;
       break;
     }
     case 2: { // slti
-      state.gpr[reg_d_index] =
-          (int32_t)reg_rdata1 < (int32_t)immI(Instruction) ? 1 : 0;
+      state.gpr[reg_d_index] = (int32_t)reg_rdata1 < (int32_t)imm ? 1 : 0;
       break;
     }
     case 3: { // sltiu
-      state.gpr[reg_d_index] =
-          (uint32_t)reg_rdata1 < (uint32_t)immI(Instruction) ? 1 : 0;
+      state.gpr[reg_d_index] = (uint32_t)reg_rdata1 < (uint32_t)imm ? 1 : 0;
       break;
     }
     case 4: { // xori
-      state.gpr[reg_d_index] = reg_rdata1 ^ immI(Instruction);
+      state.gpr[reg_d_index] = reg_rdata1 ^ imm;
       break;
     }
     case 6: { // ori
-      state.gpr[reg_d_index] = reg_rdata1 | immI(Instruction);
+      state.gpr[reg_d_index] = reg_rdata1 | imm;
       break;
     }
     case 7: { // andi
-      state.gpr[reg_d_index] = reg_rdata1 & immI(Instruction);
+      state.gpr[reg_d_index] = reg_rdata1 & imm;
       break;
     }
-    case 1: { // slli
-      state.gpr[reg_d_index] = reg_rdata1 << (immI(Instruction) & 0x1F);
+    case 1: {            // slli, bseti, bclri, binvi, clz, ctz, pcnt, sext
+      if (funct7 == 0) { // slli
+        state.gpr[reg_d_index] = reg_rdata1 << shamt;
+      } else if (funct7 == 0x30) { // Zbb Unary (clz, ctz, pcnt, sext)
+        // For OP-IMM-Unary, rs2 field (shamt) is the differentiator
+        // reg_b_index is extracted from bits 24:20 which IS the shamt field
+        // position So checking reg_b_index is correct.
+        uint32_t sub_op = reg_b_index;
+        if (sub_op == 0) { // clz
+          state.gpr[reg_d_index] =
+              (reg_rdata1 == 0) ? 32 : __builtin_clz(reg_rdata1);
+        } else if (sub_op == 1) { // ctz
+          state.gpr[reg_d_index] =
+              (reg_rdata1 == 0) ? 32 : __builtin_ctz(reg_rdata1);
+        } else if (sub_op == 2) { // pcnt
+          state.gpr[reg_d_index] = __builtin_popcount(reg_rdata1);
+        } else if (sub_op == 4) { // sext.b
+          int32_t byte_val = (int32_t)((int8_t)(reg_rdata1 & 0xFF));
+          state.gpr[reg_d_index] = (uint32_t)byte_val;
+        } else if (sub_op == 5) { // sext.h
+          int32_t half_val = (int32_t)((int16_t)(reg_rdata1 & 0xFFFF));
+          state.gpr[reg_d_index] = (uint32_t)half_val;
+        }
+      } else if (funct7 == 0x14) { // bseti (Zbs)
+        state.gpr[reg_d_index] = reg_rdata1 | (1u << shamt);
+      } else if (funct7 == 0x24) { // bclri (Zbs)
+        state.gpr[reg_d_index] = reg_rdata1 & ~(1u << shamt);
+      } else if (funct7 == 0x34) { // binvi (Zbs)
+        state.gpr[reg_d_index] = reg_rdata1 ^ (1u << shamt);
+      }
       break;
     }
-    case 5: { // srli, srai
-      switch (funct7) {
-      case 0: { // srli
+    case 5: {            // srli, srai, rori, bexti, rev8, orcb
+      if (funct7 == 0) { // srli
+        state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> shamt;
+      } else if (funct7 == 0x20) { // srai
+        state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> shamt;
+      } else if (funct7 == 0x30) { // rori (Zbb)
         state.gpr[reg_d_index] =
-            (uint32_t)reg_rdata1 >> (immI(Instruction) & 0x1F);
-        break;
-      }
-      case 32: { // srai
-        state.gpr[reg_d_index] =
-            (int32_t)reg_rdata1 >> (immI(Instruction) & 0x1F);
-        break;
-      }
+            (reg_rdata1 >> shamt) | (reg_rdata1 << (32 - shamt));
+      } else if (funct7 == 0x24) { // bexti (Zbs)
+        state.gpr[reg_d_index] = (reg_rdata1 >> shamt) & 1;
+      } else if (funct7 == 0x34) { // rev8 (Zbb) - shamt must be 24?
+        // Spec says rev8 encoding is fixed.
+        // But checking sub_op (shamt/rs2) is valid.
+        // rev8: rs2=24 (11000).
+        if (reg_b_index == 24) {
+          uint32_t x = reg_rdata1;
+          state.gpr[reg_d_index] = ((x & 0xFF) << 24) | ((x & 0xFF00) << 8) |
+                                   ((x & 0xFF0000) >> 8) |
+                                   ((x & 0xFF000000) >> 24);
+        }
+      } else if (funct7 == 0x14) { // orcb (Zbb) - shamt must be 7?
+        if (reg_b_index == 7) {
+          uint32_t x = reg_rdata1;
+          uint32_t res = 0;
+          if (x & 0xFF)
+            res |= 0xFF;
+          if (x & 0xFF00)
+            res |= 0xFF00;
+          if (x & 0xFF0000)
+            res |= 0xFF0000;
+          if (x & 0xFF000000)
+            res |= 0xFF000000;
+          state.gpr[reg_d_index] = res;
+        }
       }
       break;
     }
@@ -1261,56 +1361,129 @@ void RefCpu::RV32IM() {
       }
     } else {
       switch (funct3) {
-      case 0: { // add, sub
-        switch (funct7) {
-        case 0: { // add
+      case 0: {            // add, sub
+        if (funct7 == 0) { // add
           state.gpr[reg_d_index] = reg_rdata1 + reg_rdata2;
-          break;
-        }
-        case 32: { // sub
+        } else if (funct7 == 0x20) { // sub
           state.gpr[reg_d_index] = reg_rdata1 - reg_rdata2;
-          break;
-        }
         }
         break;
       }
-      case 1: { // sll
-        state.gpr[reg_d_index] = reg_rdata1 << (reg_rdata2 & 0x1F);
-        break;
-      }
-      case 2: { // slt
-        state.gpr[reg_d_index] =
-            (int32_t)reg_rdata1 < (int32_t)reg_rdata2 ? 1 : 0;
-        break;
-      }
-      case 3: { // sltu
-        state.gpr[reg_d_index] =
-            (uint32_t)reg_rdata1 < (uint32_t)reg_rdata2 ? 1 : 0;
-        break;
-      }
-      case 4: { // xor
-        state.gpr[reg_d_index] = reg_rdata1 ^ reg_rdata2;
-        break;
-      }
-      case 5: { // srl, sra
-        switch (funct7) {
-        case 0: { // srl
-          state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> (reg_rdata2 & 0x1F);
-          break;
-        }
-        case 32: { // sra
-          state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> (reg_rdata2 & 0x1F);
-          break;
-        }
+      case 1: { // sll, rol, bclr, bset, binv, clmul
+        uint32_t shift = reg_rdata2 & 0x1F;
+        if (funct7 == 0) { // sll
+          state.gpr[reg_d_index] = reg_rdata1 << shift;
+        } else if (funct7 == 0x30) { // rol (Zbb)
+          state.gpr[reg_d_index] =
+              (reg_rdata1 << shift) | (reg_rdata1 >> (32 - shift));
+        } else if (funct7 == 0x24) { // bclr (Zbs)
+          state.gpr[reg_d_index] = reg_rdata1 & ~(1u << shift);
+        } else if (funct7 == 0x14) { // bset (Zbs)
+          state.gpr[reg_d_index] = reg_rdata1 | (1u << shift);
+        } else if (funct7 == 0x34) { // binv (Zbs)
+          state.gpr[reg_d_index] = reg_rdata1 ^ (1u << shift);
+        } else if (funct7 == 0x05) { // clmul (Zbc)
+          uint32_t output = 0;
+          for (int i = 0; i < 32; i++) {
+            if ((reg_rdata2 >> i) & 1)
+              output ^= (reg_rdata1 << i);
+          }
+          state.gpr[reg_d_index] = output;
         }
         break;
       }
-      case 6: { // or
-        state.gpr[reg_d_index] = reg_rdata1 | reg_rdata2;
+      case 2: {            // slt, sh1add, clmulr
+        if (funct7 == 0) { // slt
+          state.gpr[reg_d_index] =
+              (int32_t)reg_rdata1 < (int32_t)reg_rdata2 ? 1 : 0;
+        } else if (funct7 == 0x10) { // sh1add (Zba)
+          state.gpr[reg_d_index] = reg_rdata2 + (reg_rdata1 << 1);
+        } else if (funct7 == 0x05) { // clmulr (Zbc)
+          uint32_t output = 0;
+          for (int i = 0; i < 32; i++) {
+            if ((reg_rdata2 >> i) & 1)
+              output ^= (reg_rdata1 >> (31 - i));
+          }
+          state.gpr[reg_d_index] = output;
+        }
         break;
       }
-      case 7: { // and
-        state.gpr[reg_d_index] = reg_rdata1 & reg_rdata2;
+      case 3: {            // sltu, clmulh
+        if (funct7 == 0) { // sltu
+          state.gpr[reg_d_index] =
+              (uint32_t)reg_rdata1 < (uint32_t)reg_rdata2 ? 1 : 0;
+        } else if (funct7 == 0x05) { // clmulh (Zbc)
+          uint32_t output = 0;
+          for (int i = 1; i < 32; i++) {
+            if ((reg_rdata2 >> i) & 1)
+              output ^= (reg_rdata1 >> (32 - i));
+          }
+          state.gpr[reg_d_index] = output;
+        }
+        break;
+      }
+      case 4: {            // xor, xnor, min, pack, sh2add
+        if (funct7 == 0) { // xor
+          state.gpr[reg_d_index] = reg_rdata1 ^ reg_rdata2;
+        } else if (funct7 == 0x20) { // xnor (Zbb)
+          state.gpr[reg_d_index] = ~(reg_rdata1 ^ reg_rdata2);
+        } else if (funct7 == 0x10) { // sh2add (Zba)
+          state.gpr[reg_d_index] = reg_rdata2 + (reg_rdata1 << 2);
+        } else if (funct7 == 0x05) { // min (Zbb)
+          state.gpr[reg_d_index] = ((int32_t)reg_rdata1 < (int32_t)reg_rdata2)
+                                       ? reg_rdata1
+                                       : reg_rdata2;
+        } else if (funct7 == 0x04) { // pack (Zbb)
+          state.gpr[reg_d_index] =
+              (reg_rdata1 & 0x0000FFFF) | (reg_rdata2 << 16);
+        }
+        break;
+      }
+      case 5: { // srl, sra, ror, bext, minu
+        uint32_t shift = reg_rdata2 & 0x1F;
+        if (funct7 == 0) { // srl
+          state.gpr[reg_d_index] = (uint32_t)reg_rdata1 >> shift;
+        } else if (funct7 == 0x20) { // sra
+          state.gpr[reg_d_index] = (int32_t)reg_rdata1 >> shift;
+        } else if (funct7 == 0x30) { // ror (Zbb)
+          state.gpr[reg_d_index] =
+              (reg_rdata1 >> shift) | (reg_rdata1 << (32 - shift));
+        } else if (funct7 == 0x24) { // bext (Zbs)
+          state.gpr[reg_d_index] = (reg_rdata1 >> shift) & 1;
+        } else if (funct7 == 0x05) { // minu (Zbb)
+          state.gpr[reg_d_index] = ((uint32_t)reg_rdata1 < (uint32_t)reg_rdata2)
+                                       ? reg_rdata1
+                                       : reg_rdata2;
+        }
+        break;
+      }
+      case 6: {            // or, orn, max, sh3add
+        if (funct7 == 0) { // or
+          state.gpr[reg_d_index] = reg_rdata1 | reg_rdata2;
+        } else if (funct7 == 0x20) { // orn (Zbb)
+          state.gpr[reg_d_index] = reg_rdata1 | (~reg_rdata2);
+        } else if (funct7 == 0x05) { // max (Zbb)
+          state.gpr[reg_d_index] = ((int32_t)reg_rdata1 > (int32_t)reg_rdata2)
+                                       ? reg_rdata1
+                                       : reg_rdata2;
+        } else if (funct7 == 0x10) { // sh3add (Zba)
+          state.gpr[reg_d_index] = reg_rdata2 + (reg_rdata1 << 3);
+        }
+        break;
+      }
+      case 7: {            // and, andn, maxu, packh
+        if (funct7 == 0) { // and
+          state.gpr[reg_d_index] = reg_rdata1 & reg_rdata2;
+        } else if (funct7 == 0x20) { // andn (Zbb)
+          state.gpr[reg_d_index] = reg_rdata1 & (~reg_rdata2);
+        } else if (funct7 == 0x05) { // maxu (Zbb)
+          state.gpr[reg_d_index] = ((uint32_t)reg_rdata1 > (uint32_t)reg_rdata2)
+                                       ? reg_rdata1
+                                       : reg_rdata2;
+        } else if (funct7 == 0x04) { // packh (Zbb)
+          state.gpr[reg_d_index] =
+              (reg_rdata1 & 0x000000FF) | ((reg_rdata2 & 0x000000FF) << 8);
+        }
         break;
       }
       }
@@ -1331,33 +1504,30 @@ void RefCpu::RV32IM() {
 void RefCpu::store_data() {
 
   uint32_t p_addr = state.store_addr;
+  if (state.store && state.reserve_valid && state.reserve_addr == p_addr) {
+    // Invalidate reservation only when a store hits the reserved address.
+    state.reserve_valid = false;
+  }
   int offset = p_addr & 0x3;
-  uint64_t wstrb = (uint64_t)state.store_strb << offset;
-  uint64_t wdata = (uint64_t)state.store_data << (offset * 8);
+  uint32_t wstrb = state.store_strb << offset;
+  uint32_t wdata = state.store_data << (offset * 8);
+  uint32_t old_data = memory[p_addr / 4];
+  uint32_t mask = 0;
 
-  for (int i = 0; i < 2; i++) {
-    uint32_t current_wstrb = (wstrb >> (i * 4)) & 0xF;
-    uint32_t current_wdata = (wdata >> (i * 32)) & 0xFFFFFFFF;
-    if (current_wstrb == 0)
-      continue;
+  if (wstrb & 0b1)
+    mask |= 0xFF;
+  if (wstrb & 0b10)
+    mask |= 0xFF00;
+  if (wstrb & 0b100)
+    mask |= 0xFF0000;
+  if (wstrb & 0b1000)
+    mask |= 0xFF000000;
 
-    uint32_t mask = 0;
-    if (current_wstrb & 0b1)
-      mask |= 0xFF;
-    if (current_wstrb & 0b10)
-      mask |= 0xFF00;
-    if (current_wstrb & 0b100)
-      mask |= 0xFF0000;
-    if (current_wstrb & 0b1000)
-      mask |= 0xFF000000;
-
-    uint32_t old_data = memory[(p_addr >> 2) + i];
-    memory[(p_addr >> 2) + i] = (mask & current_wdata) | (~mask & old_data);
+  if (state.store) {
+    memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
   }
 
-  // UART and Interrupt logic follows...
-
-  if (p_addr == UART_BASE) {
+  if (p_addr == UART_ADDR_BASE) {
     char temp;
     temp = wdata & 0x000000ff;
     memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
@@ -1511,4 +1681,39 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   return false; // 如果 Level 2 还不是叶子节点，则是非法页表
+}
+
+bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
+  bool ref_fault = !va2pa(p_addr, v_addr, type);
+
+  if (!dut_pf_check_enable) {
+    return !ref_fault;
+  }
+
+  bool dut_fault = false;
+  const char *kind = "unknown";
+  if (type == 0) {
+    dut_fault = dut_expect_pf_inst;
+    kind = "inst";
+  } else if (type == 1) {
+    dut_fault = dut_expect_pf_load;
+    kind = "load";
+  } else if (type == 2) {
+    dut_fault = dut_expect_pf_store;
+    kind = "store";
+  }
+
+  if (dut_fault && !ref_fault) {
+    std::cout << "[Difftest Warning] DUT has " << kind
+              << " page fault while REF does not at cycle " << std::dec
+              << sim_time << ", force REF " << kind << " page fault"
+              << std::endl;
+    return false;
+  }
+
+  if (!dut_fault && ref_fault) {
+    Assert(0 && "DUT has no page fault while REF has page fault.");
+  }
+
+  return !ref_fault;
 }

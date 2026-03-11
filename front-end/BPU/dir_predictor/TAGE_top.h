@@ -308,6 +308,21 @@ public:
     bool new_read_valid;
     TageTableReadData new_read_data;
     uint32_t sram_prng_state;
+
+    bool pred_read_valid;
+    TageIndexTag pred_idx_tag;
+    TageTableReadData pred_read_data;
+    uint8_t pred_sc_ctr;
+
+    bool upd_read_valid;
+    uint32_t upd_base_idx;
+    uint32_t upd_sc_idx;
+    uint8_t upd_sc_ctr;
+    TageTableReadData upd_read_data;
+
+    bool upd_reset_row_valid;
+    uint32_t upd_reset_row_idx;
+    uint8_t upd_reset_row_data[TN_MAX];
   };
 
   // 组合逻辑计算结果结构体
@@ -600,7 +615,7 @@ public:
   void tage_core_comb(const TageCoreCombIn &in, TageCoreCombOut &out) const {
     const InputPayload &inp = in.inp;
     const StateInput &state_in = in.state_in;
-    const IndexResult &idx = in.idx;
+    (void)in.idx;
     const MemReadResult &mem = in.mem;
     CombResult &comb = out.result;
     memset(&comb, 0, sizeof(CombResult));
@@ -908,6 +923,62 @@ public:
     rd.new_read_valid = false;
     rd.useful_reset_row_data_valid = false;
     std::memset(rd.useful_reset_row_data, 0, sizeof(rd.useful_reset_row_data));
+    rd.pred_read_valid = false;
+    std::memset(&rd.pred_idx_tag, 0, sizeof(rd.pred_idx_tag));
+    std::memset(&rd.pred_read_data, 0, sizeof(rd.pred_read_data));
+    rd.pred_sc_ctr = 0;
+    rd.upd_read_valid = false;
+    rd.upd_base_idx = 0;
+    rd.upd_sc_idx = 0;
+    rd.upd_sc_ctr = 0;
+    std::memset(&rd.upd_read_data, 0, sizeof(rd.upd_read_data));
+    rd.upd_reset_row_valid = false;
+    rd.upd_reset_row_idx = 0;
+    std::memset(rd.upd_reset_row_data, 0, sizeof(rd.upd_reset_row_data));
+
+    if (inp.pred_req) {
+      TagePredIndexCombOut pred_index_out{};
+      TagePredIndexCombIn pred_index_in{};
+      pred_index_in.pc = inp.pc_pred_in;
+      std::memcpy(pred_index_in.fh_in, inp.fh_in, sizeof(pred_index_in.fh_in));
+      tage_pred_index_comb(pred_index_in, pred_index_out);
+
+      rd.pred_read_valid = true;
+      rd.pred_idx_tag = pred_index_out.index_tag;
+      rd.pred_read_data.base_cnt =
+          static_cast<uint8_t>(base_counter[pred_index_out.index_tag.base_idx]);
+      for (int i = 0; i < TN_MAX; ++i) {
+        const uint32_t mem_idx =
+            pred_index_out.index_tag.index_info.tage_index[i] & TAGE_IDX_MASK;
+        rd.pred_read_data.tag[i] = tag_table[i][mem_idx];
+        rd.pred_read_data.cnt[i] = cnt_table[i][mem_idx];
+        rd.pred_read_data.useful[i] = useful_table[i][mem_idx];
+      }
+      rd.pred_sc_ctr = sc_ctr_table[tage_sc_idx_from_pc(inp.pc_pred_in)];
+    }
+
+    if (inp.update_en) {
+      rd.upd_read_valid = true;
+      rd.upd_base_idx = (inp.pc_update_in >> 2) & TAGE_BASE_IDX_MASK;
+      rd.upd_sc_idx = tage_sc_idx_from_pc(inp.pc_update_in);
+      rd.upd_sc_ctr = sc_ctr_table[rd.upd_sc_idx];
+      rd.upd_read_data.base_cnt = static_cast<uint8_t>(base_counter[rd.upd_base_idx]);
+      for (int i = 0; i < TN_MAX; ++i) {
+        const uint32_t mem_idx = inp.tage_idx_flat_in[i] & TAGE_IDX_MASK;
+        rd.upd_read_data.tag[i] = tag_table[i][mem_idx];
+        rd.upd_read_data.cnt[i] = cnt_table[i][mem_idx];
+        rd.upd_read_data.useful[i] = useful_table[i][mem_idx];
+      }
+
+      const uint32_t u_cnt = rd.state_in.reset_cnt_reg & 0x7ff;
+      if (u_cnt == 0) {
+        rd.upd_reset_row_valid = true;
+        rd.upd_reset_row_idx = (rd.state_in.reset_cnt_reg >> 11) & TAGE_IDX_MASK;
+        for (int i = 0; i < TN_MAX; ++i) {
+          rd.upd_reset_row_data[i] = useful_table[i][rd.upd_reset_row_idx];
+        }
+      }
+    }
 
     if (rd.state_in.upd_calc_winfo_latch.reset_we) {
       uint32_t row = rd.state_in.upd_calc_winfo_latch.reset_row_idx;
@@ -956,57 +1027,121 @@ public:
     const ReadData &rd = in.rd;
     OutputPayload &out = out_bundle.out_regs;
     CombResult &req = out_bundle.req;
-    TageCoreCombOut core_out{};
-    tage_core_comb(TageCoreCombIn{inp, rd.state_in, rd.idx, rd.mem}, core_out);
-    req = core_out.result;
-    req.sram_delay_active_next = rd.sram_delay_active;
-    req.sram_delay_counter_next = rd.sram_delay_counter;
+    std::memset(&out, 0, sizeof(OutputPayload));
+    std::memset(&req, 0, sizeof(CombResult));
+
+    req.next_state = S_IDLE;
+    req.sram_delay_active_next = false;
+    req.sram_delay_counter_next = 0;
     req.sram_delayed_data_next = rd.sram_delayed_data;
     req.sram_prng_state_next = rd.sram_prng_state;
-    for (int i = 0; i < TN_MAX; i++) {
-      if (req.useful_reset_we_commit[i] && rd.useful_reset_row_data_valid) {
-        uint8_t cur = rd.useful_reset_row_data[i];
-        req.useful_reset_wdata_commit[i] =
-            req.useful_reset_msb_only_commit[i] ? (cur & 0x1) : (cur & 0x2);
-      }
+    req.reset_cnt_reg_next = rd.state_in.reset_cnt_reg;
+    for (int i = 0; i < 4; ++i) {
+      req.LSFR_next[i] = rd.state_in.LSFR[i];
     }
 
-#ifdef SRAM_DELAY_ENABLE
-    if (rd.sram_delay_active) {
-      if (rd.sram_delay_counter > 0) {
-        req.sram_delay_counter_next = rd.sram_delay_counter - 1;
-        req.sram_delay_active_next = true;
-      } else {
-        req.sram_delay_counter_next = 0;
-        req.sram_delay_active_next = false;
-      }
-    } else if (rd.new_read_valid) {
-      TageXorshift32CombOut xorshift_out{};
-      tage_xorshift32_comb(TageXorshift32CombIn{rd.sram_prng_state}, xorshift_out);
-      uint32_t prng_next = xorshift_out.next_state;
-      req.sram_prng_state_next = prng_next;
-      int delay_range = SRAM_DELAY_MAX - SRAM_DELAY_MIN + 1;
-      int delay_val = SRAM_DELAY_MIN;
-      if (delay_range > 0) {
-        delay_val = SRAM_DELAY_MIN + static_cast<int>(prng_next % delay_range);
-      }
-      req.sram_delay_counter_next = delay_val;
-      req.sram_delay_active_next = true;
-      req.sram_delayed_data_next = rd.new_read_data;
-    } else {
-      req.sram_delay_counter_next = 0;
-      req.sram_delay_active_next = false;
-    }
-#else
-    req.sram_delay_counter_next = 0;
-    req.sram_delay_active_next = false;
-    if (rd.new_read_valid) {
-      req.sram_delayed_data_next = rd.new_read_data;
-    }
-#endif
+    if (inp.pred_req && rd.pred_read_valid) {
+      TagePredSelectCombOut pred_sel_out{};
+      tage_pred_select_comb(
+          TagePredSelectCombIn{rd.pred_read_data, rd.pred_idx_tag, rd.pred_sc_ctr},
+          pred_sel_out);
 
-    req.out_regs.busy = (req.next_state != S_IDLE);
-    out = req.out_regs;
+      out.pred_out = pred_sel_out.pred_res.pred;
+      out.alt_pred_out = pred_sel_out.pred_res.alt_pred;
+      out.pcpn_out = static_cast<uint8_t>(pred_sel_out.pred_res.pcpn);
+      out.altpcpn_out = static_cast<uint8_t>(pred_sel_out.pred_res.altpcpn);
+      for (int i = 0; i < TN_MAX; ++i) {
+        out.tage_tag_flat_out[i] = pred_sel_out.pred_res.index_info.tag[i];
+        out.tage_idx_flat_out[i] = pred_sel_out.pred_res.index_info.tage_index[i];
+      }
+      out.tage_pred_out_valid = true;
+    }
+
+    if (inp.update_en && rd.upd_read_valid) {
+
+      PredResult last_pred{};
+      last_pred.pred = inp.pred_in;
+      last_pred.alt_pred = inp.alt_pred_in;
+      last_pred.pcpn = inp.pcpn_in;
+      last_pred.altpcpn = inp.altpcpn_in;
+      for (int i = 0; i < TN_MAX; ++i) {
+        last_pred.index_info.tag[i] = inp.tage_tag_flat_in[i];
+        last_pred.index_info.tage_index[i] = inp.tage_idx_flat_in[i] & TAGE_IDX_MASK;
+      }
+
+      LsfrUpdateCombOut lsfr_out{};
+      LsfrUpdateCombIn lsfr_in{};
+      for (int i = 0; i < 4; ++i) {
+        lsfr_in.current_lsfr[i] = rd.state_in.LSFR[i];
+      }
+      lsfr_update_comb(lsfr_in, lsfr_out);
+      req.lsfr_we = true;
+      for (int i = 0; i < 4; ++i) {
+        req.LSFR_next[i] = lsfr_out.lsfr_out.next_state[i];
+      }
+
+      TageUpdateCombOut update_out{};
+      tage_update_comb(
+          TageUpdateCombIn{inp.real_dir, last_pred, rd.upd_read_data,
+                           lsfr_out.lsfr_out.random_val, rd.upd_sc_ctr,
+                           rd.state_in.reset_cnt_reg},
+          update_out);
+      const UpdateRequest &upd_req = update_out.req;
+
+      req.reset_cnt_reg_we = true;
+      req.reset_cnt_reg_next = rd.state_in.reset_cnt_reg + 1;
+
+      if (upd_req.base_we) {
+        req.base_we_commit = true;
+        req.base_wr_idx = rd.upd_base_idx;
+        req.base_wdata_commit = upd_req.base_wdata;
+      }
+      if (upd_req.sc_we) {
+        req.sc_we_commit = true;
+        req.sc_wr_idx = rd.upd_sc_idx;
+        req.sc_wdata_commit = upd_req.sc_wdata;
+      }
+      for (int i = 0; i < TN_MAX; ++i) {
+        const uint32_t mem_idx = inp.tage_idx_flat_in[i] & TAGE_IDX_MASK;
+        if (upd_req.cnt_we[i]) {
+          req.cnt_we_commit[i] = true;
+          req.cnt_wr_idx[i] = mem_idx;
+          req.cnt_wdata_commit[i] = upd_req.cnt_wdata[i];
+        }
+        if (upd_req.useful_we[i]) {
+          req.useful_we_commit[i] = true;
+          req.useful_wr_idx[i] = mem_idx;
+          req.useful_wdata_commit[i] = upd_req.useful_wdata[i];
+        }
+        if (upd_req.tag_we[i]) {
+          req.tag_we_commit[i] = true;
+          req.tag_wr_idx[i] = mem_idx;
+          req.tag_wdata_commit[i] = upd_req.tag_wdata[i];
+        }
+      }
+
+      if (upd_req.reset_we) {
+        const uint32_t reset_row = upd_req.reset_row_idx & TAGE_IDX_MASK;
+        for (int i = 0; i < TN_MAX; ++i) {
+          const uint32_t mem_idx = inp.tage_idx_flat_in[i] & TAGE_IDX_MASK;
+          const bool useful_update_conflict = upd_req.useful_we[i] && (mem_idx == reset_row);
+          if (useful_update_conflict) {
+            continue;
+          }
+          req.useful_reset_we_commit[i] = true;
+          req.useful_reset_row_commit[i] = reset_row;
+          uint8_t cur = 0;
+          if (rd.upd_reset_row_valid && rd.upd_reset_row_idx == reset_row) {
+            cur = rd.upd_reset_row_data[i];
+          }
+          req.useful_reset_wdata_commit[i] = upd_req.reset_msb_only ? (cur & 0x1) : (cur & 0x2);
+        }
+      }
+      out.tage_update_done = true;
+    }
+
+    out.busy = false;
+    req.out_regs = out;
   }
 
   void tage_seq_write(const InputPayload &inp, const CombResult &req, bool reset) {

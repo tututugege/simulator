@@ -78,11 +78,13 @@ typedef struct CPU_state {
   bool page_fault_load;
   bool page_fault_store;
   uint32_t inst_idx;
+  bool reserve_valid;
+  uint32_t reserve_addr;
 } CPU_state;
 
 class RefCpu {
 public:
-  uint32_t *memory;
+  uint32_t *memory = nullptr;
   uint32_t Instruction;
   CPU_state state;
   uint8_t privilege;
@@ -90,6 +92,10 @@ public:
   bool page_fault_inst;
   bool page_fault_load;
   bool page_fault_store;
+  bool dut_pf_check_enable;
+  bool dut_expect_pf_inst;
+  bool dut_expect_pf_load;
+  bool dut_expect_pf_store;
   bool illegal_exception;
 
   bool M_software_interrupt;
@@ -112,6 +118,8 @@ public:
   void RV32Zfinx();
   void exception(uint32_t trap_val);
   void store_data();
+  void set_dut_page_fault_expect(bool enable, bool inst, bool load, bool store);
+  bool va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
   bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
 
   bool is_br;

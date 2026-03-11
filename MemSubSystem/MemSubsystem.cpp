@@ -46,7 +46,13 @@ using MmioImpl = mmio::MMIO_Bus_AXI3;
 #endif
 #endif
 
-#if QM_HAS_AXI_KIT
+#if QM_HAS_AXI_KIT && CONFIG_ICACHE_USE_AXI_MEM_PORT
+#define QM_USE_AXI_ICACHE_BACKEND 1
+#else
+#define QM_USE_AXI_ICACHE_BACKEND 0
+#endif
+
+#if QM_USE_AXI_ICACHE_BACKEND
 struct AxiMemBackend {
   InterconnectImpl interconnect;
   DdrImpl ddr;
@@ -155,7 +161,7 @@ void MemSubsystem::ptw_walk_flush(PtwClient client) {
 }
 
 axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
-#if QM_HAS_AXI_KIT
+#if QM_USE_AXI_ICACHE_BACKEND
   if (axi_backend == nullptr) {
     return nullptr;
   }
@@ -167,7 +173,7 @@ axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
 
 MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
   dcache = std::make_unique<SimpleCache>(ctx);
-#if QM_HAS_AXI_KIT
+#if QM_USE_AXI_ICACHE_BACKEND
   axi_backend = std::make_unique<AxiMemBackend>();
 #endif
   ptw_block.bind_context(ctx);
@@ -202,7 +208,7 @@ void MemSubsystem::init() {
   peripheral.memory = memory;
   peripheral.init();
 
-#if QM_HAS_AXI_KIT
+#if QM_USE_AXI_ICACHE_BACKEND
   axi_backend->interconnect.init();
   axi_backend->router.init();
   axi_backend->mmio.init();
@@ -229,7 +235,7 @@ void MemSubsystem::init() {
   *lsu_resp_io = {};
   *lsu_wready_io = {};
 
-#if QM_HAS_AXI_KIT
+#if QM_USE_AXI_ICACHE_BACKEND
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
     auto &port = axi_backend->interconnect.read_ports[i];
     port.req.valid = false;
@@ -258,7 +264,7 @@ void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3)
 }
 
 void MemSubsystem::comb() {
-#if QM_HAS_AXI_KIT
+#if QM_USE_AXI_ICACHE_BACKEND
   auto &interconnect = axi_backend->interconnect;
   auto &ddr = axi_backend->ddr;
   auto &router = axi_backend->router;
@@ -326,7 +332,7 @@ void MemSubsystem::comb() {
   (void)resp_route_block.route_resp(dcache_resp_raw, lsu_resp_io, &ptw_block);
 
   // Stage-1 AXI wiring: connect ICache read master, keep all others idle.
-#if QM_HAS_AXI_KIT
+#if QM_USE_AXI_ICACHE_BACKEND
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
     if (i == axi_interconnect::MASTER_ICACHE) {
       continue;
@@ -361,7 +367,7 @@ void MemSubsystem::comb() {
 
 void MemSubsystem::seq() {
   dcache->seq();
-#if QM_HAS_AXI_KIT
+#if QM_USE_AXI_ICACHE_BACKEND
   axi_backend->ddr.seq();
   axi_backend->mmio.seq();
   axi_backend->router.seq(axi_backend->interconnect.axi_io, axi_backend->ddr.io,

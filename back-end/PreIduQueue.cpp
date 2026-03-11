@@ -1,5 +1,6 @@
 #include "PreIduQueue.h"
 #include "RISCV.h"
+#include "types.h"
 #include "util.h"
 
 int PreIduQueue::ftq_alloc(const FTQEntry &entry) {
@@ -28,12 +29,9 @@ void PreIduQueue::ftq_pop(int pop_cnt) {
 
 void PreIduQueue::ftq_recover(int new_tail) {
   int normalized_tail = ((new_tail % FTQ_SIZE) + FTQ_SIZE) % FTQ_SIZE;
+  int discarded = (ftq_tail_1 - normalized_tail + FTQ_SIZE) % FTQ_SIZE;
   ftq_tail_1 = normalized_tail;
-  if (ftq_tail_1 >= ftq_head_1) {
-    ftq_count_1 = ftq_tail_1 - ftq_head_1;
-  } else {
-    ftq_count_1 = FTQ_SIZE - (ftq_head_1 - ftq_tail_1);
-  }
+  ftq_count_1 -= discarded;
 }
 
 void PreIduQueue::ftq_flush() {
@@ -84,6 +82,11 @@ void PreIduQueue::comb_begin() {
     for (int i = 0; i < n; i++) {
       out.issue->entries[i] = ibuf.peek(i);
     }
+#ifdef CONFIG_PERF_COUNTER
+    if (ctx != nullptr) {
+      ctx->perf.ib_consume_available_slots += static_cast<uint64_t>(n);
+    }
+#endif
   }
 
   if (out.dec2front != nullptr) {
@@ -118,7 +121,17 @@ void PreIduQueue::comb_accept_front() {
     incoming_valid_num += in.front2dec->valid[i] ? 1 : 0;
   }
 
-  out.dec2front->ready = (ftq_count < FTQ_SIZE) && ibuf.can_accept(incoming_valid_num);
+  bool ftq_ok = (ftq_count < FTQ_SIZE);
+  bool ib_ok = ibuf.can_accept(incoming_valid_num);
+  out.dec2front->ready = ftq_ok && ib_ok;
+  if (ctx != nullptr && incoming_valid_num > 0 && !out.dec2front->ready) {
+    if (!ib_ok) {
+      ctx->perf.ib_blocked_cycles++;
+    }
+    if (!ftq_ok) {
+      ctx->perf.ftq_blocked_cycles++;
+    }
+  }
   if (!out.dec2front->ready || incoming_valid_num == 0) {
     return;
   }
@@ -177,6 +190,11 @@ void PreIduQueue::comb_accept_front() {
     e.ftq_offset = i;
     e.ftq_is_last = (i == last_fire_idx);
   }
+
+  if (ctx != nullptr && push_count > 0) {
+    ctx->perf.ib_write_cycle_total++;
+    ctx->perf.ib_write_inst_total += static_cast<uint64_t>(push_count);
+  }
 }
 
 void PreIduQueue::comb_consume_issue() {
@@ -191,6 +209,11 @@ void PreIduQueue::comb_consume_issue() {
       break;
     }
   }
+#ifdef CONFIG_PERF_COUNTER
+  if (ctx != nullptr) {
+    ctx->perf.ib_consume_consumed_slots += static_cast<uint64_t>(pop_count);
+  }
+#endif
 }
 
 void PreIduQueue::comb_flush_recover() {

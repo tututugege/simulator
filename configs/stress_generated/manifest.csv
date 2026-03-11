@@ -1,0 +1,11 @@
+name,status,cache_profile,backend_profile,ftq_profile,fu_profile,issue_profile,ic_miss,dc_miss,dc_index,dc_way,rob_num,prf_num,ldq_size,stq_size,ftq_size,int_alu_ports,int_muldiv_ports,alu_simple_ports,ld_ports,sta_ports,std_ports,br_ports
+stress_01,PASS,ic_pressure,compact,large,balanced,branch_dense,100,50,8,4,128,128,32,32,128,4,2,2,2,2,2,3
+stress_02,PASS,slow,base,large,compact,compact,90,90,7,2,256,160,64,64,128,3,1,2,1,1,1,1
+stress_03,PASS,fast,base,large,balanced,base,30,30,9,8,256,160,64,64,128,4,2,2,2,2,2,2
+stress_04,PASS,balanced,memory_heavy,base,balanced,mem_dense,60,60,8,4,256,192,96,64,64,4,2,2,3,2,2,2
+stress_05,PASS,balanced,memory_heavy,base,compact,compact,60,60,8,4,256,192,96,64,64,3,1,2,1,1,1,1
+stress_06,PASS,fast,compact,base,balanced,compact,30,30,9,8,128,128,32,32,64,4,2,2,1,1,1,1
+stress_07,PASS,slow,base,base,wide,mem_dense,90,90,7,2,256,160,64,64,64,6,3,3,3,2,2,2
+stress_08,PASS,slow,base,small,compact,base,90,90,7,2,256,160,64,64,32,3,1,2,2,2,2,2
+stress_09,PASS,ic_pressure,base,base,balanced,mem_dense,100,50,8,4,256,160,64,64,64,4,2,2,3,2,2,2
+stress_10,PASS,dc_pressure,large_window,small,balanced,compact,50,100,7,2,384,224,64,64,32,4,2,2,1,1,1,1

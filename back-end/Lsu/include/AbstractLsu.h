@@ -37,6 +37,7 @@ struct StqEntry {
   bool addr_valid;
   bool data_valid;
   bool committed;
+  bool suppress_write;
 
   uint32_t addr;
   uint32_t p_addr; // Translated Physical Address

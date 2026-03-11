@@ -1,3 +1,4 @@
+#include "config.h"
 #ifndef FRONTEND_FEATURE_CONFIG_H
 #define FRONTEND_FEATURE_CONFIG_H
 
@@ -12,14 +13,14 @@
 
 // BPU top-level switches
 #define SPECULATIVE_ON
-#ifndef COMMIT_WIDTH
-#define COMMIT_WIDTH 4
-#endif
-#ifndef FETCH_WIDTH
-#define FETCH_WIDTH 4
-#endif
+// 统一使用全局 config.h 中的 constexpr 宽度配置，避免前后端不一致。
+static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
+static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #ifndef BPU_BANK_NUM
 #define BPU_BANK_NUM FETCH_WIDTH
+#endif
+#if BPU_BANK_NUM != FETCH_WIDTH
+#error "BPU_BANK_NUM must equal FETCH_WIDTH"
 #endif
 
 // RAS feature switch:
@@ -57,10 +58,10 @@
 #define TAGE_BASE_IDX_WIDTH 11 // log2(2048)
 #endif
 #ifndef TAGE_TAG_WIDTH
-#define TAGE_TAG_WIDTH 8       // 8-bit tag
+#define TAGE_TAG_WIDTH 8 // 8-bit tag
 #endif
 #ifndef TAGE_IDX_WIDTH
-#define TAGE_IDX_WIDTH 12      // log2(4096)
+#define TAGE_IDX_WIDTH 12 // log2(4096)
 #endif
 #ifndef ENABLE_TAGE_USE_ALT_ON_NA
 #define ENABLE_TAGE_USE_ALT_ON_NA 1
@@ -181,6 +182,7 @@
 #endif
 
 // Front-end feature switches
+#define FRONTEND_DISABLE_2AHEAD
 #ifndef FRONTEND_DISABLE_2AHEAD
 #ifndef ENABLE_2AHEAD
 #define ENABLE_2AHEAD
@@ -226,13 +228,7 @@
 #define FRONTEND_IDEAL_ICACHE_DUAL_REQ_ACTIVE 0
 #endif
 
-#ifndef ICACHE_LINE_SIZE
-#define ICACHE_LINE_SIZE 32 // Size of a cache line in bytes
-#endif
-
-#ifndef ICACHE_MISS_LATENCY
-#define ICACHE_MISS_LATENCY 100 // Latency of an icache miss in cycles
-#endif
+// 统一使用全局 config.h 中的 ICACHE_LINE_SIZE / ICACHE_MISS_LATENCY
 
 // FIFO sizes
 #ifndef INSTRUCTION_FIFO_SIZE

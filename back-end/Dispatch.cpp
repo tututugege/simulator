@@ -75,7 +75,10 @@ void Dispatch::comb_alloc() {
 
     // Load 需要知道之前的 Store
     if (inst_r[i].valid && is_load(inst_r[i].uop)) {
-      inst_alloc[i].uop.stq_idx = (in.lsu2dis->stq_tail + store_alloc_count) % STQ_NUM;
+      int stop_pos = in.lsu2dis->stq_tail + store_alloc_count;
+      inst_alloc[i].uop.stq_idx = stop_pos % STQ_SIZE;
+      inst_alloc[i].uop.stq_flag =
+          in.lsu2dis->stq_tail_flag ^ ((stop_pos / STQ_SIZE) & 0x1);
 
       // 检查 Load 队列限制和端口限制
       if (load_alloc_count < in.lsu2dis->ldq_free &&
@@ -97,8 +100,11 @@ void Dispatch::comb_alloc() {
           store_alloc_count < MAX_STQ_DISPATCH_WIDTH) {
         // 计算 STQ Index
         int allocated_idx =
-            (in.lsu2dis->stq_tail + store_alloc_count) % STQ_NUM;
+            (in.lsu2dis->stq_tail + store_alloc_count) % STQ_SIZE;
+        int allocated_pos = in.lsu2dis->stq_tail + store_alloc_count;
         inst_alloc[i].uop.stq_idx = allocated_idx;
+        inst_alloc[i].uop.stq_flag =
+            in.lsu2dis->stq_tail_flag ^ ((allocated_pos / STQ_SIZE) & 0x1);
 
         stq_port_owner[store_alloc_count] = i;
 
@@ -188,14 +194,106 @@ void Dispatch::comb_dispatch() {
 }
 
 void Dispatch::comb_fire() {
+  enum Dis2RenBlockReason {
+    DIS2REN_BLOCK_NONE = 0,
+    DIS2REN_BLOCK_FLUSH_STALL,
+    DIS2REN_BLOCK_ROB,
+    DIS2REN_BLOCK_SERIALIZE,
+    DIS2REN_BLOCK_DISPATCH,
+    DIS2REN_BLOCK_OLDER,
+  };
+  enum Dis2RenDispatchDetail {
+    DIS2REN_DISPATCH_DETAIL_NONE = 0,
+    DIS2REN_DISPATCH_DETAIL_LDQ,
+    DIS2REN_DISPATCH_DETAIL_STQ,
+    DIS2REN_DISPATCH_DETAIL_IQ_INT,
+    DIS2REN_DISPATCH_DETAIL_IQ_LD,
+    DIS2REN_DISPATCH_DETAIL_IQ_STA,
+    DIS2REN_DISPATCH_DETAIL_IQ_STD,
+    DIS2REN_DISPATCH_DETAIL_IQ_BR,
+    DIS2REN_DISPATCH_DETAIL_IQ_UNKNOWN,
+    DIS2REN_DISPATCH_DETAIL_OTHER,
+  };
+
   bool pre_stall = false;
   bool pre_fire = false;
+  bool serializing_barrier = false;
+  int dis2ren_block_reason = DIS2REN_BLOCK_NONE;
+  int dis2ren_dispatch_detail = DIS2REN_DISPATCH_DETAIL_NONE;
   mask_t clear_mask = in.dec_bcast->clear_mask;
   bool global_flush =
       in.rob_bcast->flush || in.dec_bcast->mispred || in.rob2dis->stall;
 
+  auto classify_dispatch_block = [&](int slot_idx) -> int {
+    if (slot_idx < 0 || slot_idx >= DECODE_WIDTH) {
+      return DIS2REN_DISPATCH_DETAIL_OTHER;
+    }
+    if (!inst_r[slot_idx].valid) {
+      return DIS2REN_DISPATCH_DETAIL_OTHER;
+    }
+
+    // LSU allocation reject in comb_alloc.
+    if (!out.dis2rob->valid[slot_idx]) {
+      if (is_load(inst_r[slot_idx].uop)) {
+        return DIS2REN_DISPATCH_DETAIL_LDQ;
+      }
+      if (is_store(inst_r[slot_idx].uop)) {
+        return DIS2REN_DISPATCH_DETAIL_STQ;
+      }
+    }
+
+    // IQ capacity/port reject in comb_dispatch.
+    if (!dispatch_success_flags[slot_idx]) {
+      int iq_used[IQ_NUM] = {0};
+      for (int j = 0; j < slot_idx; j++) {
+        if (!inst_r[j].valid || !dispatch_success_flags[j]) {
+          continue;
+        }
+        int cnt_prev = dispatch_cache[j].count;
+        for (int k = 0; k < cnt_prev; k++) {
+          int iq = dispatch_cache[j].iq_ids[k];
+          if (iq >= 0 && iq < IQ_NUM) {
+            iq_used[iq]++;
+          }
+        }
+      }
+
+      int cnt = dispatch_cache[slot_idx].count;
+      for (int k = 0; k < cnt; k++) {
+        int iq = dispatch_cache[slot_idx].iq_ids[k];
+        if (iq < 0 || iq >= IQ_NUM) {
+          continue;
+        }
+        int port_limit = GLOBAL_IQ_CONFIG[iq].dispatch_width;
+        if (iq_used[iq] >= port_limit || iq_used[iq] >= in.iss2dis->ready_num[iq]) {
+          switch (iq) {
+          case IQ_INT:
+            return DIS2REN_DISPATCH_DETAIL_IQ_INT;
+          case IQ_LD:
+            return DIS2REN_DISPATCH_DETAIL_IQ_LD;
+          case IQ_STA:
+            return DIS2REN_DISPATCH_DETAIL_IQ_STA;
+          case IQ_STD:
+            return DIS2REN_DISPATCH_DETAIL_IQ_STD;
+          case IQ_BR:
+            return DIS2REN_DISPATCH_DETAIL_IQ_BR;
+          default:
+            return DIS2REN_DISPATCH_DETAIL_IQ_UNKNOWN;
+          }
+        }
+      }
+      return DIS2REN_DISPATCH_DETAIL_IQ_UNKNOWN;
+    }
+
+    return DIS2REN_DISPATCH_DETAIL_OTHER;
+  };
+
   // === 步骤 1: 计算 Fire 信号 (确认分派) ===
   for (int i = 0; i < DECODE_WIDTH; i++) {
+    bool older_block = pre_stall;
+    bool is_atomic_inst = inst_r[i].valid && inst_r[i].uop.type == AMO;
+    bool csr_blocked = false;
+    bool atomic_blocked = false;
     bool basic_fire = out.dis2rob->valid[i] &&
                       dispatch_success_flags[i] && // IQ 检查通过
                       in.rob2dis->ready &&         // ROB 有空间
@@ -203,14 +301,44 @@ void Dispatch::comb_fire() {
 
     // 特殊检查：CSR
     if (is_CSR(inst_r[i].uop.type)) {
-      if (!in.rob2dis->empty || pre_fire)
+      if (!in.rob2dis->empty || pre_fire) {
         basic_fire = false;
+        csr_blocked = true;
+      }
+    }
+    // 原子指令串行化：仅允许在 ROB 空且本拍无更早指令发射时进入后端。
+    if (is_atomic_inst) {
+      if (!in.rob2dis->empty || pre_fire) {
+        basic_fire = false;
+        atomic_blocked = true;
+      }
     }
 
     out.dis2rob->dis_fire[i] = basic_fire;
 
-    if (inst_r[i].valid && !basic_fire)
+    if (inst_r[i].valid && !basic_fire) {
+      if (dis2ren_block_reason == DIS2REN_BLOCK_NONE) {
+        if (global_flush) {
+          dis2ren_block_reason = DIS2REN_BLOCK_FLUSH_STALL;
+        } else if (!in.rob2dis->ready) {
+          dis2ren_block_reason = DIS2REN_BLOCK_ROB;
+        } else if (csr_blocked || atomic_blocked || serializing_barrier) {
+          dis2ren_block_reason = DIS2REN_BLOCK_SERIALIZE;
+        } else if (older_block) {
+          dis2ren_block_reason = DIS2REN_BLOCK_OLDER;
+        } else {
+          dis2ren_block_reason = DIS2REN_BLOCK_DISPATCH;
+          dis2ren_dispatch_detail = classify_dispatch_block(i);
+        }
+      }
       pre_stall = true;
+    }
+
+    // 原子指令本拍独占发射，后续槽位全部阻塞。
+    if (basic_fire && is_atomic_inst) {
+      pre_stall = true;
+      serializing_barrier = true;
+    }
 
     if (basic_fire)
       pre_fire = true;
@@ -275,10 +403,77 @@ void Dispatch::comb_fire() {
   }
 
 #ifdef CONFIG_PERF_COUNTER
+  if (!out.dis2ren->ready) {
+    ctx->perf.dis2ren_not_ready_cycles++;
+    switch (dis2ren_block_reason) {
+    case DIS2REN_BLOCK_FLUSH_STALL:
+      ctx->perf.dis2ren_not_ready_flush_cycles++;
+      break;
+    case DIS2REN_BLOCK_ROB:
+      ctx->perf.dis2ren_not_ready_rob_cycles++;
+      break;
+    case DIS2REN_BLOCK_SERIALIZE:
+      ctx->perf.dis2ren_not_ready_serialize_cycles++;
+      break;
+    case DIS2REN_BLOCK_DISPATCH:
+      ctx->perf.dis2ren_not_ready_dispatch_cycles++;
+      switch (dis2ren_dispatch_detail) {
+      case DIS2REN_DISPATCH_DETAIL_LDQ:
+        ctx->perf.dis2ren_not_ready_dispatch_ldq_cycles++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_STQ:
+        ctx->perf.dis2ren_not_ready_dispatch_stq_cycles++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_IQ_INT:
+        ctx->perf.dis2ren_not_ready_dispatch_iq_cycles++;
+        ctx->perf.dis2ren_not_ready_dispatch_iq_detail[IQ_INT]++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_IQ_LD:
+        ctx->perf.dis2ren_not_ready_dispatch_iq_cycles++;
+        ctx->perf.dis2ren_not_ready_dispatch_iq_detail[IQ_LD]++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_IQ_STA:
+        ctx->perf.dis2ren_not_ready_dispatch_iq_cycles++;
+        ctx->perf.dis2ren_not_ready_dispatch_iq_detail[IQ_STA]++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_IQ_STD:
+        ctx->perf.dis2ren_not_ready_dispatch_iq_cycles++;
+        ctx->perf.dis2ren_not_ready_dispatch_iq_detail[IQ_STD]++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_IQ_BR:
+        ctx->perf.dis2ren_not_ready_dispatch_iq_cycles++;
+        ctx->perf.dis2ren_not_ready_dispatch_iq_detail[IQ_BR]++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_IQ_UNKNOWN:
+        ctx->perf.dis2ren_not_ready_dispatch_iq_cycles++;
+        ctx->perf.dis2ren_not_ready_dispatch_other_cycles++;
+        break;
+      case DIS2REN_DISPATCH_DETAIL_OTHER:
+      case DIS2REN_DISPATCH_DETAIL_NONE:
+      default:
+        ctx->perf.dis2ren_not_ready_dispatch_other_cycles++;
+        break;
+      }
+      break;
+    case DIS2REN_BLOCK_OLDER:
+      ctx->perf.dis2ren_not_ready_older_cycles++;
+      break;
+    default:
+      ctx->perf.dis2ren_not_ready_dispatch_cycles++;
+      break;
+    }
+  }
+
   bool is_core_bound_rob[DECODE_WIDTH] = {false};
   bool is_core_bound_iq[DECODE_WIDTH] = {false};
   bool is_mem_l1_bound[DECODE_WIDTH] = {false};
   bool is_mem_ext_bound[DECODE_WIDTH] = {false};
+  bool is_mem_ldq_full[DECODE_WIDTH] = {false};
+  bool is_mem_stq_full[DECODE_WIDTH] = {false};
+  bool any_rob_full_stall = false;
+  bool any_iq_full_stall = false;
+  bool any_ldq_full_stall = false;
+  bool any_stq_full_stall = false;
 
   // Analyze stall reasons for each slot
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -287,6 +482,7 @@ void Dispatch::comb_fire() {
       // Priority: ROB > LSU > IQ
       // If ROB is full/stalled
       if (!in.rob2dis->ready) { // ROB Full
+        any_rob_full_stall = true;
         if (in.rob2dis->head_is_memory && in.rob2dis->head_not_ready) {
           if (in.rob2dis->head_is_miss) {
             is_mem_ext_bound[i] = true;
@@ -301,20 +497,40 @@ void Dispatch::comb_fire() {
       else if (!dispatch_success_flags[i]) {
         bool lsu_stall = false;
         if (is_load(inst_r[i].uop)) {
-          if (in.lsu2dis->ldq_free == 0)
+          if (in.lsu2dis->ldq_free == 0) {
             lsu_stall = true;
+            is_mem_ldq_full[i] = true;
+            any_ldq_full_stall = true;
+          }
         } else if (is_store(inst_r[i].uop)) {
-          if (in.lsu2dis->stq_free == 0)
+          if (in.lsu2dis->stq_free == 0) {
             lsu_stall = true;
+            is_mem_stq_full[i] = true;
+            any_stq_full_stall = true;
+          }
         }
 
         if (lsu_stall) {
           is_mem_l1_bound[i] = true;
         } else {
           is_core_bound_iq[i] = true;
+          any_iq_full_stall = true;
         }
       }
     }
+  }
+
+  if (any_rob_full_stall) {
+    ctx->perf.stall_rob_full_cycles++;
+  }
+  if (any_iq_full_stall) {
+    ctx->perf.stall_iq_full_cycles++;
+  }
+  if (any_ldq_full_stall) {
+    ctx->perf.stall_ldq_full_cycles++;
+  }
+  if (any_stq_full_stall) {
+    ctx->perf.stall_stq_full_cycles++;
   }
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -326,6 +542,12 @@ void Dispatch::comb_fire() {
       if (is_mem_l1_bound[i]) {
         ctx->perf.slots_mem_bound_lsu++;
         ctx->perf.slots_mem_l1_bound++;
+        if (is_mem_ldq_full[i]) {
+          ctx->perf.slots_mem_bound_ldq_full++;
+        }
+        if (is_mem_stq_full[i]) {
+          ctx->perf.slots_mem_bound_stq_full++;
+        }
       } else if (is_mem_ext_bound[i]) {
         ctx->perf.slots_mem_bound_lsu++;
         ctx->perf.slots_mem_ext_bound++;
@@ -338,11 +560,17 @@ void Dispatch::comb_fire() {
         ctx->perf.slots_core_bound_iq++;
       }
     } else {
-      if (ctx->perf.pending_squash_slots > 0) {
+      ctx->perf.slots_frontend_bound++;
+      if (ctx->perf.pending_squash_mispred_slots > 0) {
+        ctx->perf.slots_frontend_recovery_mispred++;
         ctx->perf.slots_squash_waste++;
-        ctx->perf.pending_squash_slots--;
+        ctx->perf.pending_squash_mispred_slots--;
+      } else if (ctx->perf.pending_squash_flush_slots > 0) {
+        ctx->perf.slots_frontend_recovery_flush++;
+        ctx->perf.slots_squash_waste++;
+        ctx->perf.pending_squash_flush_slots--;
       } else {
-        ctx->perf.slots_frontend_bound++;
+        ctx->perf.slots_frontend_pure++;
         if (ctx->perf.icache_busy)
           ctx->perf.slots_fetch_latency++;
         else
@@ -355,6 +583,7 @@ void Dispatch::comb_fire() {
 
 void Dispatch::comb_pipeline() {
   mask_t clear_mask = in.dec_bcast->clear_mask;
+
   if (in.rob_bcast->flush || in.dec_bcast->mispred) {
 #ifdef CONFIG_PERF_COUNTER
     uint64_t killed = 0;
@@ -367,11 +596,12 @@ void Dispatch::comb_pipeline() {
       if (in.rob_bcast->flush) {
         ctx->perf.squash_flush_dis += killed;
         ctx->perf.squash_flush_total += killed;
+        ctx->perf.pending_squash_flush_slots += killed;
       } else {
         ctx->perf.squash_mispred_dis += killed;
         ctx->perf.squash_mispred_total += killed;
+        ctx->perf.pending_squash_mispred_slots += killed;
       }
-      ctx->perf.pending_squash_slots += killed;
     }
 #endif
   }
@@ -518,12 +748,13 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
       out_uops[0].uop.imm = 0;
       out_uops[0].uop.src1_en = false;
       out_uops[0].uop.src2_en = false;
+      out_uops[0].uop.dest_en = false; // SC result must come from LSU, not placeholder INT
 
       out_uops[1].iq_id = IQ_STA;
       out_uops[1].uop = MicroOp(src_uop);
       out_uops[1].uop.op = UOP_STA;
       out_uops[1].uop.src2_en = false;
-      out_uops[1].uop.dest_en = false; // Fix: STA 不写回寄存器
+      out_uops[1].uop.dest_en = true;  // Reuse LSU STA wb port to write SC result (0/1)
 
       out_uops[2].iq_id = IQ_STD;
       out_uops[2].uop = MicroOp(src_uop);

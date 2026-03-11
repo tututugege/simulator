@@ -13,6 +13,8 @@ public:
 
   uint64_t dcache_access_num = 0;
   uint64_t dcache_miss_num = 0;
+  uint64_t dcache_l2_access_num = 0;
+  uint64_t dcache_l2_miss_num = 0;
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -38,24 +40,50 @@ public:
   uint64_t idu_br_stall = 0;
   uint64_t ren_reg_stall = 0;
   uint64_t idu_tag_stall = 0;
+  uint64_t stall_br_id_cycles = 0;
+  uint64_t stall_preg_cycles = 0;
+  uint64_t stall_rob_full_cycles = 0;
+  uint64_t stall_iq_full_cycles = 0;
+  uint64_t stall_ldq_full_cycles = 0;
+  uint64_t stall_stq_full_cycles = 0;
+  uint64_t dis2ren_not_ready_cycles = 0;
+  uint64_t dis2ren_not_ready_flush_cycles = 0;
+  uint64_t dis2ren_not_ready_rob_cycles = 0;
+  uint64_t dis2ren_not_ready_serialize_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_cycles = 0;
+  uint64_t dis2ren_not_ready_older_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_ldq_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_stq_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_iq_cycles = 0;
+  uint64_t dis2ren_not_ready_dispatch_iq_detail[IQ_NUM] = {};
+  uint64_t dis2ren_not_ready_dispatch_other_cycles = 0;
 
   uint64_t len_issued_num = 0;
   uint64_t slots_issued = 0;
   uint64_t slots_backend_bound = 0;
   uint64_t slots_frontend_bound = 0;
+  // IB consume-side counters (producer/consumer gap at PreIDU->IDU boundary).
+  uint64_t ib_consume_available_slots = 0;
+  uint64_t ib_consume_consumed_slots = 0;
 
   // Level 2 Counters
   uint64_t slots_fetch_latency = 0;
   uint64_t slots_fetch_bandwidth = 0;
   uint64_t slots_mem_bound_lsu = 0;
+  uint64_t slots_mem_bound_ldq_full = 0;
+  uint64_t slots_mem_bound_stq_full = 0;
   uint64_t slots_core_bound_iq = 0;
   uint64_t slots_core_bound_rob = 0;
+  uint64_t slots_frontend_recovery_mispred = 0;
+  uint64_t slots_frontend_recovery_flush = 0;
+  uint64_t slots_frontend_pure = 0;
 
   // Level 3 Counters
   uint64_t slots_mem_l1_bound = 0;
   uint64_t slots_mem_ext_bound = 0;
   uint64_t slots_squash_waste = 0;
-  uint64_t pending_squash_slots = 0;
+  uint64_t pending_squash_mispred_slots = 0;
+  uint64_t pending_squash_flush_slots = 0;
 
   // Shared PTW / TLB arbitration counters
   uint64_t ptw_dtlb_req = 0;
@@ -93,9 +121,20 @@ public:
   uint64_t front_bpu_issue_cycle_total = 0;
   uint64_t front_bpu_can_run_cycle_total = 0;
   uint64_t front_bpu_no_issue_when_can_run_cycle_total = 0;
+  // Frontend handshake imbalance (to locate who is the bottleneck)
+  // - icache_wait_bpu: icache side ready but no fetch address to consume
+  // - bpu_wait_icache: bpu side blocked because fetch-address queue is full
+  uint64_t front_icache_wait_bpu_cycle_total = 0;
+  uint64_t front_bpu_wait_icache_cycle_total = 0;
   uint64_t front_predecode_gate_block_fifo_empty_cycle_total = 0;
   uint64_t front_predecode_gate_block_ptab_empty_cycle_total = 0;
   uint64_t front_predecode_gate_block_reset_refetch_cycle_total = 0;
+
+  // Instruction buffer write-side metrics (frontend supply capability)
+  uint64_t ib_write_inst_total = 0;
+  uint64_t ib_write_cycle_total = 0;
+  uint64_t ib_blocked_cycles = 0;
+  uint64_t ftq_blocked_cycles = 0;
 
   void perf_reset() {
     cycle = 0;
@@ -103,6 +142,8 @@ public:
     // dcache
     dcache_access_num = 0;
     dcache_miss_num = 0;
+    dcache_l2_access_num = 0;
+    dcache_l2_miss_num = 0;
     icache_access_num = 0;
     icache_miss_num = 0;
 
@@ -123,22 +164,52 @@ public:
 
     ret_dir_mispred = 0;
     ret_addr_mispred = 0;
+    rob_entry_stall = 0;
+    idu_br_stall = 0;
+    ren_reg_stall = 0;
+    idu_tag_stall = 0;
+    stall_br_id_cycles = 0;
+    stall_preg_cycles = 0;
+    stall_rob_full_cycles = 0;
+    stall_iq_full_cycles = 0;
+    stall_ldq_full_cycles = 0;
+    stall_stq_full_cycles = 0;
+    dis2ren_not_ready_cycles = 0;
+    dis2ren_not_ready_flush_cycles = 0;
+    dis2ren_not_ready_rob_cycles = 0;
+    dis2ren_not_ready_serialize_cycles = 0;
+    dis2ren_not_ready_dispatch_cycles = 0;
+    dis2ren_not_ready_older_cycles = 0;
+    dis2ren_not_ready_dispatch_ldq_cycles = 0;
+    dis2ren_not_ready_dispatch_stq_cycles = 0;
+    dis2ren_not_ready_dispatch_iq_cycles = 0;
+    dis2ren_not_ready_dispatch_other_cycles = 0;
+    for (auto &v : dis2ren_not_ready_dispatch_iq_detail)
+      v = 0;
 
     len_issued_num = 0;
     slots_issued = 0;
     slots_backend_bound = 0;
     slots_frontend_bound = 0;
+    ib_consume_available_slots = 0;
+    ib_consume_consumed_slots = 0;
 
     slots_fetch_latency = 0;
     slots_fetch_bandwidth = 0;
     slots_mem_bound_lsu = 0;
+    slots_mem_bound_ldq_full = 0;
+    slots_mem_bound_stq_full = 0;
     slots_core_bound_iq = 0;
     slots_core_bound_rob = 0;
+    slots_frontend_recovery_mispred = 0;
+    slots_frontend_recovery_flush = 0;
+    slots_frontend_pure = 0;
 
     slots_mem_l1_bound = 0;
     slots_mem_ext_bound = 0;
     slots_squash_waste = 0;
-    pending_squash_slots = 0;
+    pending_squash_mispred_slots = 0;
+    pending_squash_flush_slots = 0;
 
     ptw_dtlb_req = 0;
     ptw_itlb_req = 0;
@@ -169,171 +240,215 @@ public:
     front_bpu_issue_cycle_total = 0;
     front_bpu_can_run_cycle_total = 0;
     front_bpu_no_issue_when_can_run_cycle_total = 0;
+    front_icache_wait_bpu_cycle_total = 0;
+    front_bpu_wait_icache_cycle_total = 0;
     front_predecode_gate_block_fifo_empty_cycle_total = 0;
     front_predecode_gate_block_ptab_empty_cycle_total = 0;
     front_predecode_gate_block_reset_refetch_cycle_total = 0;
+    ib_write_inst_total = 0;
+    ib_write_cycle_total = 0;
+    ib_blocked_cycles = 0;
+    ftq_blocked_cycles = 0;
   }
 
   void perf_print() {
-    printf("\033[1;32minstruction num: %ld\033[0m\n", commit_num);
-    printf("\033[1;32mcycle       num: %ld\033[0m\n", cycle);
-    printf("\033[1;32mipc            : %f\033[0m\n",
+    printf("\033[38;5;34minstruction num: %ld\033[0m\n", commit_num);
+    printf("\033[38;5;34mcycle       num: %ld\033[0m\n", cycle);
+    printf("\033[38;5;34mipc            : %f\033[0m\n",
            (double)commit_num / cycle);
     printf("\n");
     perf_print_dcache();
     perf_print_icache();
     perf_print_ptw();
     perf_print_branch();
-    perf_print_squash();
     perf_print_frontend_fetch();
+    perf_print_resource_stall();
     perf_print_tma();
   }
 
   void perf_print_dcache() {
-    printf("\033[1;32m*********DCACHE COUNTER************\033[0m\n");
+    printf("\033[38;5;34m*********DCACHE COUNTER************\033[0m\n");
 
-    printf("\033[1;32mdcache accuracy : %f\033[0m\n",
+    printf("\033[38;5;34mdcache accuracy : %f\033[0m\n",
            1 - dcache_miss_num / (double)dcache_access_num);
-    printf("\033[1;32mdcache access   : %ld\033[0m\n", dcache_access_num);
-    printf("\033[1;32mdcache hit      : %ld\033[0m\n",
+    printf("\033[38;5;34mdcache access   : %ld\033[0m\n", dcache_access_num);
+    printf("\033[38;5;34mdcache hit      : %ld\033[0m\n",
            dcache_access_num - dcache_miss_num);
-    printf("\033[1;32mdcache miss     : %ld\033[0m\n", dcache_miss_num);
+    printf("\033[38;5;34mdcache miss     : %ld\033[0m\n", dcache_miss_num);
+    if (DCACHE_L2_ENABLE) {
+      double l2_acc = (dcache_l2_access_num == 0)
+                          ? 1.0
+                          : 1.0 -
+                                dcache_l2_miss_num /
+                                    static_cast<double>(dcache_l2_access_num);
+      printf("\033[38;5;34mdcache l2 acc   : %f\033[0m\n", l2_acc);
+      printf("\033[38;5;34mdcache l2 access: %ld\033[0m\n",
+             dcache_l2_access_num);
+      printf("\033[38;5;34mdcache l2 miss  : %ld\033[0m\n",
+             dcache_l2_miss_num);
+    }
     printf("\n");
   }
 
   void perf_print_icache() {
-    printf("\033[1;32m*********ICACHE COUNTER***********\033[0m\n");
+    printf("\033[38;5;34m*********ICACHE COUNTER***********\033[0m\n");
 
-    printf("\033[1;32micache accuracy : %f\033[0m\n",
+    printf("\033[38;5;34micache accuracy : %f\033[0m\n",
            1 - icache_miss_num / (double)icache_access_num);
-    printf("\033[1;32micache access   : %ld\033[0m\n", icache_access_num);
-    printf("\033[1;32micache hit      : %ld\033[0m\n",
+    printf("\033[38;5;34micache access   : %ld\033[0m\n", icache_access_num);
+    printf("\033[38;5;34micache hit      : %ld\033[0m\n",
            icache_access_num - icache_miss_num);
-    printf("\033[1;32micache miss     : %ld\033[0m\n", icache_miss_num);
+    printf("\033[38;5;34micache miss     : %ld\033[0m\n", icache_miss_num);
     printf("\n");
   }
 
   void perf_print_branch() {
-    printf("\033[1;32m*********BPU COUNTER************\033[0m\n");
-    printf("\033[1;32mbpu   accuracy : %f\033[0m\n\n",
+    printf("\033[38;5;34m*********BPU COUNTER************\033[0m\n");
+    printf("\033[38;5;34mbpu   accuracy : %f\033[0m\n\n",
            1 - (cond_mispred_num + jalr_mispred_num + ret_mispred_num) /
                    (double)(cond_br_num + jalr_br_num + ret_br_num));
 
-    printf("\033[1;32mjalr  accuracy : %f\033[0m\n",
+    printf("\033[38;5;34mjalr  accuracy : %f\033[0m\n",
            1 - (jalr_mispred_num) / (double)(jalr_br_num));
-    printf("\033[1;32mnum        : %ld\033[0m\n", jalr_br_num);
-    printf("\033[1;32mmispred    : %ld\033[0m\n", jalr_mispred_num);
-    printf("\033[1;32maddr error : %ld\033[0m\n", jalr_addr_mispred);
-    printf("\033[1;32mdir  error : %ld\033[0m\n", jalr_dir_mispred);
+    printf("\033[38;5;34mnum        : %ld\033[0m\n", jalr_br_num);
+    printf("\033[38;5;34mmispred    : %ld\033[0m\n", jalr_mispred_num);
+    printf("\033[38;5;34maddr error : %ld\033[0m\n", jalr_addr_mispred);
+    printf("\033[38;5;34mdir  error : %ld\033[0m\n", jalr_dir_mispred);
     printf("\n");
 
-    printf("\033[1;32mbr    accuracy : %f\033[0m\n",
+    printf("\033[38;5;34mbr    accuracy : %f\033[0m\n",
            1 - (cond_mispred_num) / (double)(cond_br_num));
-    printf("\033[1;32mnum        : %ld\033[0m\n", cond_br_num);
-    printf("\033[1;32mmispred    : %ld\033[0m\n", cond_mispred_num);
-    printf("\033[1;32maddr error : %ld\033[0m\n", cond_addr_mispred);
-    printf("\033[1;32mdir  error : %ld\033[0m\n", cond_dir_mispred);
+    printf("\033[38;5;34mnum        : %ld\033[0m\n", cond_br_num);
+    printf("\033[38;5;34mmispred    : %ld\033[0m\n", cond_mispred_num);
+    printf("\033[38;5;34maddr error : %ld\033[0m\n", cond_addr_mispred);
+    printf("\033[38;5;34mdir  error : %ld\033[0m\n", cond_dir_mispred);
     printf("\n");
 
-    printf("\033[1;32mret    accuracy : %f\033[0m\n",
+    printf("\033[38;5;34mret    accuracy : %f\033[0m\n",
            1 - (ret_mispred_num) / (double)(ret_br_num));
-    printf("\033[1;32mnum        : %ld\033[0m\n", ret_br_num);
-    printf("\033[1;32mmispred    : %ld\033[0m\n", ret_mispred_num);
-    printf("\033[1;32maddr error : %ld\033[0m\n", ret_addr_mispred);
-    printf("\033[1;32mdir  error : %ld\033[0m\n", ret_dir_mispred);
+    printf("\033[38;5;34mnum        : %ld\033[0m\n", ret_br_num);
+    printf("\033[38;5;34mmispred    : %ld\033[0m\n", ret_mispred_num);
+    printf("\033[38;5;34maddr error : %ld\033[0m\n", ret_addr_mispred);
+    printf("\033[38;5;34mdir  error : %ld\033[0m\n", ret_dir_mispred);
     printf("\n");
-    // printf("\033[1;32m*********STALL COUNTER************\033[0m\n");
-    // printf("\033[1;32mrob     stall : %ld\033[0m\n", rob_entry_stall);
-    // printf("\033[1;32midu br  stall : %ld\033[0m\n", idu_br_stall);
-    printf("\033[1;32midu tag stall : %ld\033[0m\n", idu_tag_stall);
-    // printf("\033[1;32mren reg stall : %ld\033[0m\n", ren_reg_stall);
+    // printf("\033[38;5;34m*********STALL COUNTER************\033[0m\n");
+    // printf("\033[38;5;34mrob     stall : %ld\033[0m\n", rob_entry_stall);
+    // printf("\033[38;5;34midu br  stall : %ld\033[0m\n", idu_br_stall);
+    // idu tag stall print removed on request.
+    // printf("\033[38;5;34mren reg stall : %ld\033[0m\n", ren_reg_stall);
     // printf("\n");
-    // printf("\033[1;32m*********Isu COUNTER************\033[0m\n");
+    // printf("\033[38;5;34m*********Isu COUNTER************\033[0m\n");
     //
     // for (int i = 0; i < IQ_NUM; i++) {
-    //   printf("\033[1;32miss     stall : %ld\033[0m\n", isu_entry_stall[i]);
+    //   printf("\033[38;5;34miss     stall : %ld\033[0m\n", isu_entry_stall[i]);
     // }
     // for (int i = 0; i < IQ_NUM; i++) {
-    //   printf("\033[1;32miq%d ready  num : %f\033[0m\n", i,
+    //   printf("\033[38;5;34miq%d ready  num : %f\033[0m\n", i,
     //          isu_ready_num[i] / (double)cycle);
     // }
     // for (int i = 0; i < IQ_NUM; i++) {
-    //   printf("\033[1;32miq%d raw  num : %ld\033[0m\n", i, isu_raw_stall[i]);
+    //   printf("\033[38;5;34miq%d raw  num : %ld\033[0m\n", i, isu_raw_stall[i]);
     // }
   }
   void perf_print_ptw() {
-    printf("\033[1;32m*********PTW/ARB COUNTER***********\033[0m\n");
-    printf("\033[1;32mDTLB req/grant/resp : %ld / %ld / %ld\033[0m\n",
+    printf("\033[38;5;34m*********PTW/ARB COUNTER***********\033[0m\n");
+    printf("\033[38;5;34mDTLB req/grant/resp : %ld / %ld / %ld\033[0m\n",
            ptw_dtlb_req, ptw_dtlb_grant, ptw_dtlb_resp);
-    printf("\033[1;32mITLB req/grant/resp : %ld / %ld / %ld\033[0m\n",
+    printf("\033[38;5;34mITLB req/grant/resp : %ld / %ld / %ld\033[0m\n",
            ptw_itlb_req, ptw_itlb_grant, ptw_itlb_resp);
-    printf("\033[1;32mDTLB blocked        : %ld\033[0m\n", ptw_dtlb_blocked);
-    printf("\033[1;32mITLB blocked        : %ld\033[0m\n", ptw_itlb_blocked);
-    printf("\033[1;32mDTLB wait cycles    : %ld\033[0m\n", ptw_dtlb_wait_cycle);
-    printf("\033[1;32mITLB wait cycles    : %ld\033[0m\n", ptw_itlb_wait_cycle);
+    printf("\033[38;5;34mDTLB blocked        : %ld\033[0m\n", ptw_dtlb_blocked);
+    printf("\033[38;5;34mITLB blocked        : %ld\033[0m\n", ptw_itlb_blocked);
+    printf("\033[38;5;34mDTLB wait cycles    : %ld\033[0m\n", ptw_dtlb_wait_cycle);
+    printf("\033[38;5;34mITLB wait cycles    : %ld\033[0m\n", ptw_itlb_wait_cycle);
     printf("\n");
   }
 
-  void perf_print_squash() {
-    printf("\033[1;32m*********SQUASH COUNTER************\033[0m\n");
-    printf("\033[1;32mflush total        : %ld\033[0m\n", squash_flush_total);
-    printf("\033[1;32mmispred total      : %ld\033[0m\n",
-           squash_mispred_total);
-    printf("\033[1;32mflush idu/ren/dis  : %ld / %ld / %ld\033[0m\n",
-           squash_flush_idu, squash_flush_ren, squash_flush_dis);
-    printf("\033[1;32mmispred idu/ren/dis: %ld / %ld / %ld\033[0m\n",
-           squash_mispred_idu, squash_mispred_ren, squash_mispred_dis);
-    printf("\n");
-  }
+  void perf_print_squash() {}
 
   void perf_print_frontend_fetch() {
-    printf("\033[1;32m*********FRONTEND FETCH***********\033[0m\n");
-    double avg_per_cycle =
-        cycle ? static_cast<double>(front2back_fetched_inst_total) / cycle : 0.0;
-    double avg_per_read =
-        front2back_read_cycle_total
-            ? static_cast<double>(front2back_fetched_inst_total) /
-                  front2back_read_cycle_total
+    printf("\033[38;5;34m*********FRONTEND FETCH***********\033[0m\n");
+    const double avg_ib_write_per_cycle =
+        cycle ? static_cast<double>(ib_write_inst_total) / cycle : 0.0;
+    const double avg_ib_write_per_write_cycle =
+        ib_write_cycle_total
+            ? static_cast<double>(ib_write_inst_total) / ib_write_cycle_total
             : 0.0;
-    printf("\033[1;32mfront2back fetched inst total : %ld\033[0m\n",
-           front2back_fetched_inst_total);
-    printf("\033[1;32mfront2back read cycles       : %ld\033[0m\n",
-           front2back_read_cycle_total);
-    printf("\033[1;32mfront2back read_enable cycles: %ld\033[0m\n",
-           front2back_read_enable_cycle_total);
-    printf("\033[1;32mread_enable but empty cycles : %ld\033[0m\n",
-           front2back_read_empty_cycle_total);
-    printf("\033[1;32mavg fetch inst / sim cycle   : %.4f\033[0m\n",
-           avg_per_cycle);
-    printf("\033[1;32mavg fetch inst / read cycle  : %.4f\033[0m\n",
-           avg_per_read);
-    printf("\033[1;32mfetch_addr blocked r0e1      : %ld\033[0m\n",
-           front_fetch_addr_block_ready0_empty1_cycle_total);
-    printf("\033[1;32micache req / complete        : %ld / %ld\033[0m\n",
-           front_icache_req_cycle_total, front_icache_complete_cycle_total);
-    printf("\033[1;32mbpu issue cycles             : %ld\033[0m\n",
-           front_bpu_issue_cycle_total);
-    printf("\033[1;32mbpu can_run cycles           : %ld\033[0m\n",
-           front_bpu_can_run_cycle_total);
-    printf("\033[1;32mbpu no-issue when can_run    : %ld\033[0m\n",
-           front_bpu_no_issue_when_can_run_cycle_total);
-    printf("\033[1;32mpredecode gate block fifo_empty : %ld\033[0m\n",
-           front_predecode_gate_block_fifo_empty_cycle_total);
-    printf("\033[1;32mpredecode gate block ptab_empty : %ld\033[0m\n",
-           front_predecode_gate_block_ptab_empty_cycle_total);
-    printf("\033[1;32mpredecode gate block rst/refetch: %ld\033[0m\n",
-           front_predecode_gate_block_reset_refetch_cycle_total);
+    printf("\033[38;5;34mavg inst / sim cycle         : %.4f\033[0m\n",
+           avg_ib_write_per_cycle);
+    printf("\033[38;5;34mavg inst / ib write cycle    : %.4f\033[0m\n",
+           avg_ib_write_per_write_cycle);
+    printf("\033[38;5;34mib blocked cycles            : %ld\033[0m\n",
+           ib_blocked_cycles);
+    printf("\033[38;5;34mftq blocked cycles           : %ld\033[0m\n",
+           ftq_blocked_cycles);
+    const double icache_wait_bpu_pct =
+        cycle ? static_cast<double>(front_icache_wait_bpu_cycle_total) * 100.0 /
+                    cycle
+              : 0.0;
+    const double bpu_wait_icache_pct =
+        cycle ? static_cast<double>(front_bpu_wait_icache_cycle_total) * 100.0 /
+                    cycle
+              : 0.0;
+    printf("\033[38;5;34micache wait bpu cycles       : %ld (%.2f%%)\033[0m\n",
+           front_icache_wait_bpu_cycle_total, icache_wait_bpu_pct);
+    printf("\033[38;5;34mbpu wait icache cycles       : %ld (%.2f%%)\033[0m\n",
+           front_bpu_wait_icache_cycle_total, bpu_wait_icache_pct);
+    printf("\n");
+  }
+
+  void perf_print_resource_stall() {
+    printf("\033[38;5;34m*********RESOURCE STALL************\033[0m\n");
+    printf("\033[38;5;34mbr id stall cycles      : %ld\033[0m\n",
+           stall_br_id_cycles);
+    printf("\033[38;5;34mpreg stall cycles       : %ld\033[0m\n",
+           stall_preg_cycles);
+    printf("\033[38;5;34mrob full stall cycles   : %ld\033[0m\n",
+           stall_rob_full_cycles);
+    printf("\033[38;5;34miq full stall cycles    : %ld\033[0m\n",
+           stall_iq_full_cycles);
+    printf("\033[38;5;34mldq full stall cycles   : %ld\033[0m\n",
+           stall_ldq_full_cycles);
+    printf("\033[38;5;34mstq full stall cycles   : %ld\033[0m\n",
+           stall_stq_full_cycles);
+    printf("\033[38;5;34mdis2ren not ready cycles: %ld\033[0m\n",
+           dis2ren_not_ready_cycles);
+    printf("\033[38;5;34m  - dis2ren flush/stall : %ld\033[0m\n",
+           dis2ren_not_ready_flush_cycles);
+    printf("\033[38;5;34m  - dis2ren rob         : %ld\033[0m\n",
+           dis2ren_not_ready_rob_cycles);
+    printf("\033[38;5;34m  - dis2ren serialize   : %ld\033[0m\n",
+           dis2ren_not_ready_serialize_cycles);
+    printf("\033[38;5;34m  - dis2ren dispatch    : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_cycles);
+    printf("\033[38;5;34m  - dis2ren older       : %ld\033[0m\n",
+           dis2ren_not_ready_older_cycles);
+    printf("\033[38;5;34m    - dispatch ldq      : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_ldq_cycles);
+    printf("\033[38;5;34m    - dispatch stq      : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_stq_cycles);
+    printf("\033[38;5;34m    - dispatch iq total : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_cycles);
+    printf("\033[38;5;34m      - iq int          : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_INT]);
+    printf("\033[38;5;34m      - iq ld           : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_LD]);
+    printf("\033[38;5;34m      - iq sta          : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_STA]);
+    printf("\033[38;5;34m      - iq std          : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_STD]);
+    printf("\033[38;5;34m      - iq br           : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_iq_detail[IQ_BR]);
+    printf("\033[38;5;34m    - dispatch other    : %ld\033[0m\n",
+           dis2ren_not_ready_dispatch_other_cycles);
     printf("\n");
   }
 
   void perf_print_tma() {
     printf(
-        "\033[1;32m*********Top-Down Analysis (Level 1)************\033[0m\n");
+        "\033[38;5;34m*********Top-Down Analysis (Level 1)************\033[0m\n");
 
     // Total slots available
-    uint64_t total_slots =
-        slots_issued + slots_backend_bound + slots_frontend_bound +
-        slots_squash_waste;
+    uint64_t total_slots = slots_issued + slots_backend_bound + slots_frontend_bound;
     if (total_slots == 0)
       total_slots = 1; // Avoid divide by zero
 
@@ -344,9 +459,7 @@ public:
     double backend_bound_pct = (double)slots_backend_bound / total_slots;
 
     // Bad Speculation
-    int64_t bad_speculation_slots =
-        (int64_t)slots_issued - (int64_t)commit_num +
-        (int64_t)slots_squash_waste;
+    int64_t bad_speculation_slots = (int64_t)slots_issued - (int64_t)commit_num;
     if (bad_speculation_slots < 0)
       bad_speculation_slots = 0;
     double bad_speculation_pct = (double)bad_speculation_slots / total_slots;
@@ -354,31 +467,91 @@ public:
     // Retiring
     double retiring_pct = (double)commit_num / total_slots;
 
-    printf("\033[1;32mTotal Slots      : %ld\033[0m\n", total_slots);
-    printf("\033[1;32mFrontend Bound   : %.2f%%\033[0m\n",
+    printf("\033[38;5;34mTotal Slots      : %ld\033[0m\n", total_slots);
+    printf("\033[38;5;34mFrontend Bound   : %.2f%%\033[0m\n",
            frontend_bound_pct * 100.0);
-    printf("\033[1;32m  - Fetch Latency  : %.2f%% (Approx by ICache "
+    printf("\033[38;5;34m  - Recovery Total : %.2f%%\033[0m\n",
+           (double)(slots_frontend_recovery_mispred + slots_frontend_recovery_flush) /
+               total_slots * 100.0);
+    printf("\033[38;5;34m  - Recovery Mispred: %.2f%%\033[0m\n",
+           (double)slots_frontend_recovery_mispred / total_slots * 100.0);
+    printf("\033[38;5;34m  - Recovery Flush  : %.2f%%\033[0m\n",
+           (double)slots_frontend_recovery_flush / total_slots * 100.0);
+    printf("\033[38;5;34m  - Front Pure      : %.2f%%\033[0m\n",
+           (double)slots_frontend_pure / total_slots * 100.0);
+    printf("\033[38;5;34m  - Fetch Latency  : %.2f%% (Approx by ICache "
            "Miss)\033[0m\n",
            (double)slots_fetch_latency / total_slots * 100.0);
-    printf("\033[1;32m  - Fetch Bandwidth: %.2f%%\033[0m\n",
+    printf("\033[38;5;34m  - Fetch Bandwidth: %.2f%%\033[0m\n",
            (double)slots_fetch_bandwidth / total_slots * 100.0);
-    printf("\033[1;32mBackend Bound    : %.2f%%\033[0m\n",
+    printf("\033[38;5;34mBackend Bound    : %.2f%%\033[0m\n",
            backend_bound_pct * 100.0);
-    printf("\033[1;32m  - Memory Bound   : %.2f%% (LSU Stall)\033[0m\n",
+    printf("\033[38;5;34m  - Memory Bound   : %.2f%% (LSU Stall)\033[0m\n",
            (double)slots_mem_bound_lsu / total_slots * 100.0);
-    printf("\033[1;32m    - L1 Bound       : %.2f%%\033[0m\n",
+    printf("\033[38;5;34m    - LDQ Full       : %.2f%%\033[0m\n",
+           (double)slots_mem_bound_ldq_full / total_slots * 100.0);
+    printf("\033[38;5;34m    - STQ Full       : %.2f%%\033[0m\n",
+           (double)slots_mem_bound_stq_full / total_slots * 100.0);
+    printf("\033[38;5;34m    - L1 Bound       : %.2f%%\033[0m\n",
            (double)slots_mem_l1_bound / total_slots * 100.0);
-    printf("\033[1;32m    - Ext Memory Bound: %.2f%%\033[0m\n",
+    printf("\033[38;5;34m    - Ext Memory Bound: %.2f%%\033[0m\n",
            (double)slots_mem_ext_bound / total_slots * 100.0);
-    printf("\033[1;32m  - Core Bound     : %.2f%% (IQ/ROB Stall)\033[0m\n",
+    printf("\033[38;5;34m  - Core Bound     : %.2f%% (IQ/ROB Stall)\033[0m\n",
            (double)(slots_core_bound_iq + slots_core_bound_rob) / total_slots *
                100.0);
-    printf("\033[1;32mBad Speculation  : %.2f%%\033[0m\n",
+    printf("\033[38;5;34m    - IQ Bound       : %.2f%%\033[0m\n",
+           (double)slots_core_bound_iq / total_slots * 100.0);
+    printf("\033[38;5;34m    - ROB Bound      : %.2f%%\033[0m\n",
+           (double)slots_core_bound_rob / total_slots * 100.0);
+    printf("\033[38;5;34mBad Speculation  : %.2f%%\033[0m\n",
            bad_speculation_pct * 100.0);
-    printf("\033[1;32m  - Squash Waste   : %.2f%%\033[0m\n",
-           (double)slots_squash_waste / total_slots * 100.0);
-    printf("\033[1;32mRetiring         : %.2f%%\033[0m\n",
+    printf("\033[38;5;34mRetiring         : %.2f%%\033[0m\n",
            retiring_pct * 100.0);
+    printf("\n");
+
+    // Consume-side L1 (4 buckets):
+    // Measure gap between frontend supply capacity and backend acceptance at
+    // the InstBuffer consume end (PreIDU->IDU boundary).
+    // Labels are prefixed with "IDU " to avoid clashing with current parsers.
+    printf(
+        "\033[38;5;34m*********Top-Down Analysis (Level 1 - IDU)************\033[0m\n");
+    uint64_t idu_total_slots = cycle * DECODE_WIDTH;
+    if (idu_total_slots == 0)
+      idu_total_slots = 1;
+
+    uint64_t supplied_slots = ib_consume_available_slots;
+    if (supplied_slots > idu_total_slots)
+      supplied_slots = idu_total_slots;
+
+    uint64_t accepted_slots = ib_consume_consumed_slots;
+    if (accepted_slots > supplied_slots)
+      accepted_slots = supplied_slots;
+
+    uint64_t retiring_slots = commit_num;
+    if (retiring_slots > accepted_slots)
+      retiring_slots = accepted_slots;
+
+    uint64_t idu_frontend_bound_slots = idu_total_slots - supplied_slots;
+    uint64_t idu_backend_bound_slots = supplied_slots - accepted_slots;
+    uint64_t idu_bad_speculation_slots = accepted_slots - retiring_slots;
+
+    double idu_frontend_bound_pct =
+        (double)idu_frontend_bound_slots / idu_total_slots;
+    double idu_backend_bound_pct =
+        (double)idu_backend_bound_slots / idu_total_slots;
+    double idu_bad_speculation_pct =
+        (double)idu_bad_speculation_slots / idu_total_slots;
+    double idu_retiring_pct = (double)retiring_slots / idu_total_slots;
+
+    printf("\033[38;5;34mIDU Total Slots      : %ld\033[0m\n", idu_total_slots);
+    printf("\033[38;5;34mIDU Frontend Bound   : %.2f%%\033[0m\n",
+           idu_frontend_bound_pct * 100.0);
+    printf("\033[38;5;34mIDU Backend Bound    : %.2f%%\033[0m\n",
+           idu_backend_bound_pct * 100.0);
+    printf("\033[38;5;34mIDU Bad Speculation  : %.2f%%\033[0m\n",
+           idu_bad_speculation_pct * 100.0);
+    printf("\033[38;5;34mIDU Retiring         : %.2f%%\033[0m\n",
+           idu_retiring_pct * 100.0);
     printf("\n");
   }
 };

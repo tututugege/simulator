@@ -449,60 +449,85 @@ private:
 
 class SimpleICacheTop : public ICacheTop {
 public:
-  void set_ptw_mem_port(PtwMemPort *port) override {
-    bind_ptw_mem_port(simple_icache_runtime(), port);
-  }
-
-  void set_ptw_walk_port(PtwWalkPort *port) override {
-    bind_ptw_walk_port(simple_icache_runtime(), port);
-  }
-
-  void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) override {
-    bind_mem_read_port(simple_icache_runtime(), port);
-  }
-
   void comb() override {
-    clear_primary_outputs(out);
-    clear_secondary_outputs(out);
-
-    auto &runtime = simple_icache_runtime();
-    ensure_mmu_model(runtime, ctx);
-
-    if (runtime.mem_read_port != nullptr) {
-      runtime.mem_read_port->req.valid = false;
-      runtime.mem_read_port->req.addr = 0;
-      runtime.mem_read_port->req.total_size = 0;
-      runtime.mem_read_port->req.id = 0;
-      runtime.mem_read_port->resp.ready = false;
+    out->icache_read_ready_2 = false;
+    out->icache_read_complete_2 = false;
+    out->fetch_pc_2 = 0;
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      out->fetch_group_2[i] = INST_NOP;
+      out->page_fault_inst_2[i] = false;
+      out->inst_valid_2[i] = false;
     }
+
+    static IcacheBlockingPtwPort ptw_port;
+    if (mmu_model == nullptr && ctx != nullptr) {
+#ifdef CONFIG_TLB_MMU
+      mmu_model =
+          new TlbMmu(ctx, ptw_mem_port ? ptw_mem_port : &ptw_port, ITLB_ENTRIES);
+      if (ptw_walk_port != nullptr) {
+        mmu_model->set_ptw_walk_port(ptw_walk_port);
+      }
+#else
+      mmu_model = new SimpleMmu(ctx, nullptr);
+#endif
+    }
+
+    pend_on_retry_comb = false;
+    resp_fire_comb = false;
 
     if (in->reset) {
       DEBUG_LOG("[icache] reset\n");
-      if (runtime.mmu_model != nullptr) {
-        runtime.mmu_model->flush();
+      if (mmu_model != nullptr) {
+        mmu_model->flush();
       }
+      satp_seen = false;
+      pending_req_valid = false;
+      pending_fetch_addr = 0;
       out->icache_read_ready = true;
+      out->icache_read_complete = false;
       return;
     }
 
-    if (in->refetch && runtime.mmu_model != nullptr) {
-      runtime.mmu_model->flush();
+    out->icache_read_complete = false;
+    out->icache_read_ready = !pending_req_valid;
+    out->fetch_pc =
+        pending_req_valid ? pending_fetch_addr : in->fetch_address;
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      out->fetch_group[i] = INST_NOP;
+      out->page_fault_inst[i] = false;
+      out->inst_valid[i] = false;
     }
 
-    out->icache_read_ready = true;
-    if (in->run_comb_only || !in->icache_read_valid) {
+    uint32_t cur_satp =
+        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    if (!satp_seen || cur_satp != last_satp || in->refetch) {
+      if (mmu_model != nullptr) {
+        mmu_model->flush();
+      }
+      satp_seen = true;
+      last_satp = cur_satp;
+      pending_req_valid = false;
+      pending_fetch_addr = 0;
+      out->icache_read_ready = true;
+    }
+
+    if (in->run_comb_only) {
       return;
     }
 
-    uint32_t fetch_addr = in->fetch_address;
+    if (!pending_req_valid && !in->icache_read_valid) {
+      return;
+    }
+
+    const uint32_t fetch_addr =
+        pending_req_valid ? pending_fetch_addr : in->fetch_address;
     out->fetch_pc = fetch_addr;
     out->icache_read_complete = true;
-
-    for (int i = 0; i < FETCH_WIDTH; ++i) {
-      uint32_t v_addr = fetch_addr + static_cast<uint32_t>(i * 4);
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      uint32_t v_addr = fetch_addr + (i * 4);
       uint32_t p_addr = 0;
 
-      if (v_addr / ICACHE_LINE_SIZE != fetch_addr / ICACHE_LINE_SIZE) {
+      if (v_addr / ICACHE_LINE_SIZE != (fetch_addr) / ICACHE_LINE_SIZE) {
         out->fetch_group[i] = INST_NOP;
         out->page_fault_inst[i] = false;
         out->inst_valid[i] = false;
@@ -511,17 +536,21 @@ public:
       out->inst_valid[i] = true;
 
       AbstractMmu::Result ret = AbstractMmu::Result::FAULT;
-      if (runtime.mmu_model != nullptr) {
-        ret = runtime.mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
-        for (int spin = 0; spin < 8 && ret == AbstractMmu::Result::RETRY; ++spin) {
-          ret = runtime.mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
+      if (mmu_model != nullptr) {
+        ret = mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
+        for (int spin = 0; spin < 8 && ret == AbstractMmu::Result::RETRY;
+             spin++) {
+          ret = mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
         }
       }
 
       if (ret == AbstractMmu::Result::RETRY) {
         out->icache_read_complete = false;
         out->icache_read_ready = false;
-        for (int j = i; j < FETCH_WIDTH; ++j) {
+        if (!pending_req_valid) {
+          pend_on_retry_comb = true;
+        }
+        for (int j = i; j < FETCH_WIDTH; j++) {
           out->fetch_group[j] = INST_NOP;
           out->page_fault_inst[j] = false;
           out->inst_valid[j] = false;
@@ -532,7 +561,7 @@ public:
       if (ret == AbstractMmu::Result::FAULT) {
         out->page_fault_inst[i] = true;
         out->fetch_group[i] = INST_NOP;
-        for (int j = i + 1; j < FETCH_WIDTH; ++j) {
+        for (int j = i + 1; j < FETCH_WIDTH; j++) {
           out->fetch_group[j] = INST_NOP;
           out->page_fault_inst[j] = false;
           out->inst_valid[j] = false;
@@ -549,20 +578,74 @@ public:
         uint32_t privilege = in->csr_status
                                  ? static_cast<uint32_t>(in->csr_status->privilege)
                                  : 0;
-        std::printf("[icache] vaddr: %08x -> paddr: %08x, inst: %08x, satp: %x, "
-                    "priv: %d\n",
-                    v_addr, p_addr, out->fetch_group[i], satp,
-                    static_cast<int>(privilege));
+        printf("[icache] vaddr: %08x -> paddr: %08x, inst: %08x, satp: %x, "
+               "priv: %d\n",
+               v_addr, p_addr, out->fetch_group[i], satp, privilege);
       }
+    }
+
+    if (out->icache_read_complete) {
+      resp_fire_comb = true;
     }
   }
 
-  void seq() override {
-    if (!in->reset && !in->refetch && in->icache_read_valid &&
-        out->icache_read_ready) {
-      access_delta++;
+  void set_ptw_mem_port(PtwMemPort *port) override {
+    ptw_mem_port = port;
+    if (mmu_model != nullptr) {
+      mmu_model->set_ptw_mem_port(port);
     }
   }
+
+  void set_ptw_walk_port(PtwWalkPort *port) override {
+    ptw_walk_port = port;
+    if (mmu_model != nullptr) {
+      mmu_model->set_ptw_walk_port(port);
+    }
+  }
+
+  void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) override {
+    (void)port;
+  }
+
+  void seq() override {
+    if (in->reset) {
+      pending_req_valid = false;
+      pending_fetch_addr = 0;
+      pend_on_retry_comb = false;
+      resp_fire_comb = false;
+      return;
+    }
+
+    if (in->refetch) {
+      pending_req_valid = false;
+      pending_fetch_addr = 0;
+      pend_on_retry_comb = false;
+      resp_fire_comb = false;
+      return;
+    }
+
+    if (pend_on_retry_comb) {
+      pending_req_valid = true;
+      pending_fetch_addr = in->fetch_address;
+      access_delta++;
+    }
+
+    if (resp_fire_comb) {
+      pending_req_valid = false;
+      pending_fetch_addr = 0;
+    }
+  }
+
+private:
+  AbstractMmu *mmu_model = nullptr;
+  uint32_t last_satp = 0;
+  bool satp_seen = false;
+  bool pending_req_valid = false;
+  uint32_t pending_fetch_addr = 0;
+  bool pend_on_retry_comb = false;
+  bool resp_fire_comb = false;
+  PtwMemPort *ptw_mem_port = nullptr;
+  PtwWalkPort *ptw_walk_port = nullptr;
 };
 
 } // namespace

@@ -75,6 +75,12 @@ void Idu::comb_decode() {
   }
 
   int br_num = 0;
+#ifdef CONFIG_BPU
+  auto needs_br_tag = [&](InstType t) { return is_branch(t); };
+#else
+  // Oracle mode: disable branch-tag resource pressure.
+  auto needs_br_tag = [&](InstType) { return false; };
+#endif
   // ID 阶段旁路清理：本拍已解析分支的 bit 不应继续传播到新译码指令。
   // clear_mask 来自上拍锁存的 BRU 解析结果（br_latch）。
   mask_t clear = br_latch.clear_mask;
@@ -87,11 +93,12 @@ void Idu::comb_decode() {
       out.dec2ren->uop[i].br_mask = running_mask;
       continue;
     }
-    
-    if (is_branch(out.dec2ren->uop[i].type)) {
+
+    if (needs_br_tag(out.dec2ren->uop[i].type)) {
       if (!alloc_valid[br_num]) {
 #ifdef CONFIG_PERF_COUNTER
         ctx->perf.idu_tag_stall++;
+        ctx->perf.stall_br_id_cycles++;
 #endif
         stall = true;
         break;
@@ -146,8 +153,8 @@ void Idu::comb_branch() {
   }
 
   // 1.5. 全局更新 br_mask_cp：已解析分支的 bit 从所有快照中清除
-  //      硬件实现：每个 br_mask_cp 寄存器加一个 AND 门，清除 clear_mask 对应的位
-  //      这防止了 tag 被复用后，旧快照仍然"保护"新指令的问题
+  //      硬件实现：每个 br_mask_cp 寄存器加一个 AND 门，清除 clear_mask
+  //      对应的位 这防止了 tag 被复用后，旧快照仍然"保护"新指令的问题
   if (clear != 0) {
     for (int i = 1; i < MAX_BR_NUM; i++) {
       br_mask_cp_1[i] &= ~clear;
@@ -200,9 +207,15 @@ void Idu::comb_fire() {
   }
 
   int br_num = 0;
+#ifdef CONFIG_BPU
+  auto needs_br_tag = [&](InstType t) { return is_branch(t); };
+#else
+  // Oracle mode: no branch-tag allocation in fire path.
+  auto needs_br_tag = [&](InstType) { return false; };
+#endif
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
-    if (fire && is_branch(out.dec2ren->uop[i].type)) {
+    if (fire && needs_br_tag(out.dec2ren->uop[i].type)) {
       tag_t new_tag = alloc_tag[br_num];
       tag_vec_1[new_tag] = false;
       now_br_mask_1 |= (mask_t(1) << new_tag);
@@ -210,6 +223,7 @@ void Idu::comb_fire() {
       br_num++;
     }
   }
+
 }
 
 void Idu::seq() {
@@ -340,7 +354,8 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
   case number_7_opcode_addi: { // addi, slti, sltiu, xori, ori, andi, slli,
-    // srli, srai
+    // srli, srai, AND Zbb/Zbs imm extensions (clz, ctz, pcnt, sext, bseti,
+    // bclri, binvi)
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = false;
@@ -349,6 +364,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
   case number_8_opcode_add: { // add, sub, sll, slt, sltu, xor, srl, sra, or,
+    // AND Zba/Zbb/Zbc/Zbs extensions (sh1add, clmul, xnor, pack, min, max, etc)
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = true;
