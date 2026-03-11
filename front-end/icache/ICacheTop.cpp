@@ -11,6 +11,8 @@
 #include "config.h"
 #include "include/icache_module.h"
 
+constexpr int kFrontendIcacheMissLatency = ICACHE_MISS_LATENCY;
+
 #if __has_include("AXI_Interconnect_IO.h")
 #include "AXI_Interconnect_IO.h"
 #else
@@ -39,6 +41,10 @@ struct ReadMasterPort_t {
   ReadMasterResp_t resp{};
 };
 } // namespace axi_interconnect
+#endif
+
+#ifdef ICACHE_MISS_LATENCY
+#undef ICACHE_MISS_LATENCY
 #endif
 
 #include <array>
@@ -186,7 +192,7 @@ private:
   int pick_matured_resp_id() const {
     for (int id = 0; id < kMaxTxId; ++id) {
       if (valid_[id] &&
-          age_[id] >= static_cast<uint32_t>(ICACHE_MISS_LATENCY)) {
+          age_[id] >= static_cast<uint32_t>(kFrontendIcacheMissLatency)) {
         return id;
       }
     }

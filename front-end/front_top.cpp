@@ -915,12 +915,11 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
         icache_in.csr_status = in->csr_status;
         icache_comb_calc(&icache_in, &icache_out);
 #else
-        icache_in.reset = false;
-        icache_in.refetch = true;
-        icache_in.icache_read_valid = false;
-        icache_in.fetch_address = predecode_flush_address;
-        icache_in.run_comb_only = true;
-        icache_top(&icache_in, &icache_out);
+        // The true-icache path must not re-run ICacheTop here. Stage 6 has
+        // already driven the external read port for this cycle, and a second
+        // direct icache_top() call would overwrite that request before the
+        // memory subsystem samples it. The actual replay is carried by the
+        // delayed predecode_refetch state below.
 #endif
         front_state_req.next_predecode_refetch = true;
         front_state_req.next_predecode_refetch_address = predecode_flush_address;
