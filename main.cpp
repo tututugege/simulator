@@ -5,6 +5,10 @@
 #include <cstdlib>
 #include <getopt.h>
 
+#ifndef MAX_COMMIT_INST
+#define MAX_COMMIT_INST 15000000000ULL
+#endif
+
 using namespace std;
 extern RefCpu ref_cpu;
 
@@ -293,6 +297,12 @@ int main(int argc, char *argv[]) {
     }
 
     cpu.cycle();
+
+    if (cpu.ctx.perf.commit_num >= static_cast<uint64_t>(MAX_COMMIT_INST)) {
+      cpu.ctx.exit_reason = ExitReason::SIMPOINT;
+      std::cout << "[sim] Reached MAX_COMMIT_INST=" << std::dec
+                << static_cast<uint64_t>(MAX_COMMIT_INST) << std::endl;
+    }
 
     if (cpu.ctx.exit_reason != ExitReason::NONE) {
       break;

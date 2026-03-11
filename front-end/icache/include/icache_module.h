@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <frontend.h>
 #include <iostream>
+#include "icache_genio_types.h"
 
 // -----------------------------------------------------------------------------
 // SRAM lookup latency model (ICache)
@@ -68,6 +69,12 @@
 // -----------------------------------------------------------------------------
 #ifndef ICACHE_V1_WAYS
 #define ICACHE_V1_WAYS 8
+#endif
+// Experimental switch:
+// - 0: keep refill response in SWAP_IN_OKEY (one extra cycle after mem_resp)
+// - 1: return refill data in the mem_resp cycle and skip SWAP_IN_OKEY
+#ifndef ICACHE_V1_DIRECT_REFILL_RESP
+#define ICACHE_V1_DIRECT_REFILL_RESP 0
 #endif
 // Lookup set-view data source (V1):
 // - 0: lookup reads from the internal table state.
@@ -118,11 +125,9 @@ struct ICache_lookup_in_t {
 // Generalized-IO: register state (sequential) excluding perf counters
 // -----------------------------------------------------------------------------
 struct ICache_regs_t {
-  // Pipeline registers (between pipe1 and pipe2)
+  // Request pipeline registers (single-stage request context).
+  // Set data/tag/valid are no longer latched in regs; they are read in comb.
   reg<1> pipe_valid_r = false;
-  reg<32> pipe_cache_set_data_r[ICACHE_V1_WAYS][ICACHE_V1_WORD_NUM] = {{0}};
-  reg<20> pipe_cache_set_tag_r[ICACHE_V1_WAYS] = {0};
-  reg<1> pipe_cache_set_valid_r[ICACHE_V1_WAYS] = {false};
   reg<32> pipe_pc_r = 0;
   reg<7> pipe_index_r = 0;
 
@@ -136,6 +141,10 @@ struct ICache_regs_t {
   // Replacement / translation state
   reg<8> replace_idx = 0;
   reg<20> ppn_r = 0;
+  reg<1> miss_txid_valid_r = false;
+  reg<4> miss_txid_r = 0;
+  reg<1> txid_inflight_r[16] = {false};
+  reg<1> txid_canceled_r[16] = {false};
 
   // Lookup in-flight state (resource state, not SRAM implementation timing).
   reg<1> lookup_pending_r = false;
@@ -198,7 +207,7 @@ struct ICache_out_t {
   // Output to memory
   wire<1> mem_req_valid = false;    // Memory request signal
   wire<32> mem_req_addr = 0;     // Address for memory access
-  wire<4> mem_req_id = 0;        // For compatibility with ICacheV2 (always 0)
+  wire<4> mem_req_id = 0;        // Memory transaction ID
   wire<1> mem_resp_ready = false;
 };
 
@@ -320,6 +329,7 @@ private:
 
   // Comb-only flag: load cache set into pipe1_to_pipe2 registers this cycle
   bool sram_load_fire = false;
+  bool fast_bypass_fire = false;
   bool lookup_pending_next = false;
   uint32_t lookup_index_next = 0;
   uint32_t lookup_pc_next = 0;

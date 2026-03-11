@@ -14,7 +14,7 @@
 class SimContext;
 class MemSubsystemPtwMemPortAdapter;
 class MemSubsystemPtwWalkPortAdapter;
-struct AxiMemBackend;
+struct AxiKitRuntime;
 namespace axi_interconnect {
 struct ReadMasterPort_t;
 }
@@ -53,7 +53,7 @@ public:
 private:
   SimContext *ctx;
   std::unique_ptr<AbstractDcache> dcache;
-  std::unique_ptr<AxiMemBackend> axi_backend;
+  std::unique_ptr<AxiKitRuntime> axi_kit_runtime;
   PeripheralModel peripheral;
   MemPtwBlock ptw_block;
   MemReadArbBlock read_arb_block;

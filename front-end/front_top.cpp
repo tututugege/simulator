@@ -4,7 +4,6 @@
 #include "predecode.h"
 #include "predecode_checker.h"
 #include <RISCV.h>
-#include "types.h"
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -381,7 +380,7 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     
     // fetch_address_FIFO 读使能：icache 准备好接收 且 FIFO 非空
     // 需要先获取 icache 的 ready 状态
-#ifdef USE_TRUE_ICACHE
+#if defined(USE_TRUE_ICACHE) || defined(USE_IDEAL_ICACHE)
     icache_in.reset = global_reset;
     icache_in.refetch = global_refetch;
     icache_in.csr_status = in->csr_status;
@@ -390,10 +389,6 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
 #endif
     bool icache_ready = icache_out.icache_read_ready;
     bool icache_ready_2 = icache_out.icache_read_ready_2;
-#ifdef USE_IDEAL_ICACHE
-    icache_ready = true;
-    icache_ready_2 = true;
-#endif
     DEBUG_LOG_SMALL_4("icache_ready: %d, icache_ready_2: %d\n", icache_ready, icache_ready_2);
     bool fetch_addr_fifo_read_enable_slot0 =
         icache_ready && !rd.fetch_addr_fifo_empty_latch_snapshot && !global_reset && !global_refetch;
@@ -420,6 +415,16 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     bool inst_fifo_read_enable = predecode_can_run_old;
     // bool ptab_read_enable = predecode_can_run;
     bool ptab_read_enable = predecode_can_run_old;
+#ifdef USE_IDEAL_ICACHE
+    bool ideal_ptab_desync_recover =
+        rd.fifo_empty_latch_snapshot &&
+        rd.fetch_addr_fifo_empty_latch_snapshot &&
+        !rd.ptab_empty_latch_snapshot &&
+        !global_reset && !global_refetch;
+    if (ideal_ptab_desync_recover) {
+        ptab_read_enable = true;
+    }
+#endif
     // if(predecode_can_run_old) {
     //     bool ptab_stay_more = ptab_peek_mini_flush();
     //     if(!ptab_stay_more){
@@ -594,6 +599,9 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     bool can_bypass_fetch_to_icache =
         !saved_fetch_addr_fifo_out_0.read_valid && normal_write_enable &&
         !bpu_out.mini_flush_correct && icache_ready && !global_refetch;
+#ifdef USE_IDEAL_ICACHE
+    can_bypass_fetch_to_icache = false;
+#endif
     if (can_bypass_fetch_to_icache) {
         front_stats.bypass_fetch_to_icache_opportunity_cycles++;
     }
@@ -672,9 +680,6 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
 
     bool icache_slot0_data_valid = icache_out.icache_read_complete;
     bool icache_slot1_data_valid = false;
-#ifdef USE_IDEAL_ICACHE
-    icache_slot0_data_valid &= icache_in.icache_read_valid;
-#endif
 #if FRONTEND_IDEAL_ICACHE_DUAL_REQ_ACTIVE
     icache_slot1_data_valid = icache_out.icache_read_complete_2 && icache_in.icache_read_valid_2;
 #endif
@@ -693,6 +698,9 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
         !predecode_can_run && rd.fifo_empty_latch_snapshot && !rd.ptab_empty_latch_snapshot &&
         !rd.front2back_fifo_full_latch_snapshot && !global_reset && !global_refetch &&
         icache_slot0_data_valid;
+#ifdef USE_IDEAL_ICACHE
+    can_bypass_icache_to_predecode = false;
+#endif
     if (can_bypass_icache_to_predecode) {
         front_stats.bypass_icache_to_predecode_opportunity_cycles++;
     }
@@ -900,15 +908,19 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     // ========================================================================
     front_state_req.valid = true;
     if (do_predecode_flush) {
-        // Predecode correction only needs a narrow frontend replay, not a full
-        // icache reset. Use a comb-only refetch to flush the in-flight lookup.
-        icache_in.reset = false;
-        icache_in.refetch = true;
-        icache_in.icache_read_valid = false;
-        icache_in.fetch_address = predecode_flush_address;
-        icache_in.run_comb_only = true;
-        icache_top(&icache_in, &icache_out);
-        
+        // The true icache path can use a narrow refetch here, but the ideal
+        // icache model still expects the historical reset-style replay.
+#ifdef USE_IDEAL_ICACHE
+        icache_in.reset = true;
+        icache_in.csr_status = in->csr_status;
+        icache_comb_calc(&icache_in, &icache_out);
+#else
+        // The true-icache path must not re-run ICacheTop here. Stage 6 has
+        // already driven the external read port for this cycle, and a second
+        // direct icache_top() call would overwrite that request before the
+        // memory subsystem samples it. The actual replay is carried by the
+        // delayed predecode_refetch state below.
+#endif
         front_state_req.next_predecode_refetch = true;
         front_state_req.next_predecode_refetch_address = predecode_flush_address;
         
