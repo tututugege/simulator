@@ -162,8 +162,20 @@ void RefCpu::init(uint32_t reset_pc) {
   page_fault_inst = false;
   page_fault_load = false;
   page_fault_store = false;
+  dut_pf_check_enable = false;
+  dut_expect_pf_inst = false;
+  dut_expect_pf_load = false;
+  dut_expect_pf_store = false;
   state.reserve_valid = false;
   state.reserve_addr = 0;
+}
+
+void RefCpu::set_dut_page_fault_expect(bool enable, bool inst, bool load,
+                                       bool store) {
+  dut_pf_check_enable = enable;
+  dut_expect_pf_inst = inst;
+  dut_expect_pf_load = load;
+  dut_expect_pf_store = store;
 }
 
 void RefCpu::exec() {
@@ -175,7 +187,7 @@ void RefCpu::exec() {
   uint32_t p_addr = state.pc;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    page_fault_inst = !va2pa(p_addr, state.pc, 0);
+    page_fault_inst = !va2pa_fix(p_addr, state.pc, 0);
 
     if (page_fault_inst) {
       exception(state.pc);
@@ -879,8 +891,8 @@ void RefCpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-    bool page_fault_1 = !va2pa(p_addr, v_addr, 1);
-    bool page_fault_2 = !va2pa(p_addr, v_addr, 2);
+    bool page_fault_1 = !va2pa_fix(p_addr, v_addr, 1);
+    bool page_fault_2 = !va2pa_fix(p_addr, v_addr, 2);
 
     if (page_fault_1 || page_fault_2) {
       if (funct5 == 2) {
@@ -1083,7 +1095,7 @@ void RefCpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      page_fault_load = !va2pa(p_addr, v_addr, 1);
+      page_fault_load = !va2pa_fix(p_addr, v_addr, 1);
     }
 
     if (page_fault_load) {
@@ -1141,7 +1153,7 @@ void RefCpu::RV32IM() {
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
     if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
-      page_fault_store = !va2pa(p_addr, v_addr, 2);
+      page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
     }
 
     if (page_fault_store) {
@@ -1669,4 +1681,39 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   return false; // 如果 Level 2 还不是叶子节点，则是非法页表
+}
+
+bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
+  bool ref_fault = !va2pa(p_addr, v_addr, type);
+
+  if (!dut_pf_check_enable) {
+    return !ref_fault;
+  }
+
+  bool dut_fault = false;
+  const char *kind = "unknown";
+  if (type == 0) {
+    dut_fault = dut_expect_pf_inst;
+    kind = "inst";
+  } else if (type == 1) {
+    dut_fault = dut_expect_pf_load;
+    kind = "load";
+  } else if (type == 2) {
+    dut_fault = dut_expect_pf_store;
+    kind = "store";
+  }
+
+  if (dut_fault && !ref_fault) {
+    std::cout << "[Difftest Warning] DUT has " << kind
+              << " page fault while REF does not at cycle " << std::dec
+              << sim_time << ", force REF " << kind << " page fault"
+              << std::endl;
+    return false;
+  }
+
+  if (!dut_fault && ref_fault) {
+    Assert(0 && "DUT has no page fault while REF has page fault.");
+  }
+
+  return !ref_fault;
 }

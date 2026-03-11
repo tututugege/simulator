@@ -53,7 +53,6 @@ static void checkregs() {
   if (!ref_cpu.page_fault_inst && ref_cpu.Instruction != dut_cpu.instruction)
     goto fault;
 
-  // 对比 Page Fault 状态
   if (ref_cpu.page_fault_inst != dut_cpu.page_fault_inst)
     goto fault;
   if (ref_cpu.page_fault_load != dut_cpu.page_fault_load)
@@ -118,6 +117,7 @@ fault:
 }
 
 void difftest_skip() {
+  ref_cpu.set_dut_page_fault_expect(false, false, false, false);
   ref_cpu.exec();
   for (int i = 0; i < 32; i++) {
     ref_cpu.state.gpr[i] = dut_cpu.gpr[i];
@@ -125,6 +125,14 @@ void difftest_skip() {
 }
 
 void difftest_step(bool check) {
+#ifdef CONFIG_BPU
+  ref_cpu.set_dut_page_fault_expect(check, dut_cpu.page_fault_inst,
+                                    dut_cpu.page_fault_load,
+                                    dut_cpu.page_fault_store);
+#else
+  // Non-BPU mode uses oracle-front flow; disable fault injection here.
+  ref_cpu.set_dut_page_fault_expect(false, false, false, false);
+#endif
   ref_cpu.exec();
   if (check)
     checkregs();
