@@ -53,7 +53,7 @@ CFLAGS += -mcmodel=$(RISCV_MCMODEL)  -O2 --specs=nosys.specs  -gdwarf
 
 all: $(ELF)
 	cp $(BINARY) $(MEMORY_BIN)
-	make -C $(COMMON_DIR)/.. run
+	make -C $(COMMON_DIR)/.. run 
 
 $(ELF): $(LINK_OBJS) $(LINK_DEPS) Makefile
 	@mkdir -p $(dir $@)
@@ -71,5 +71,4 @@ $(BUILD_DIR)/%.o: %.c
 
 clean:
 	rm -rf $(CLEAN_DIRS)
-
 

@@ -1,7 +1,11 @@
 #include "MemSubsystem.h"
-#include "SimpleCache.h"
+#include "DeadlockDebug.h"
+#include "RealDcache.h"
 #include "config.h"
 #include <memory>
+#include <cstdio>
+#include <assert.h>
+#include <cstring>
 
 #if __has_include("UART16550_Device.h") && \
     __has_include("AXI_Interconnect.h") && \
@@ -63,6 +67,24 @@ struct AxiKitRuntime {
 #else
 struct AxiKitRuntime {};
 #endif
+
+namespace {
+MemSubsystem *g_deadlock_mem = nullptr;
+
+void deadlock_dump_mem_cb() {
+  if (g_deadlock_mem != nullptr) {
+    g_deadlock_mem->dump_debug_state();
+  }
+}
+
+void print_line_words(const char *prefix, const uint32_t *data) {
+  std::printf("%s[", prefix);
+  for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+    std::printf("%s%08x", (w == 0) ? "" : " ", data[w]);
+  }
+  std::printf("]\n");
+}
+} // namespace
 
 class MemSubsystemPtwMemPortAdapter : public PtwMemPort {
 public:
@@ -172,7 +194,6 @@ axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
 }
 
 MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
-  dcache = std::make_unique<SimpleCache>(ctx);
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime = std::make_unique<AxiKitRuntime>();
 #endif
@@ -189,24 +210,55 @@ MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
   itlb_ptw_port = itlb_ptw_port_inst.get();
   dtlb_walk_port = dtlb_walk_port_inst.get();
   itlb_walk_port = itlb_walk_port_inst.get();
+  g_deadlock_mem = this;
+  deadlock_debug::register_mem_dump_cb(deadlock_dump_mem_cb);
 }
 
-MemSubsystem::~MemSubsystem() = default;
+MemSubsystem::~MemSubsystem() {
+  if (g_deadlock_mem == this) {
+    g_deadlock_mem = nullptr;
+  }
+}
 
 void MemSubsystem::init() {
-  Assert(lsu_req_io != nullptr && "MemSubsystem: lsu_req_io is not connected");
-  Assert(lsu_wreq_io != nullptr &&
-         "MemSubsystem: lsu_wreq_io is not connected");
-  Assert(lsu_resp_io != nullptr &&
-         "MemSubsystem: lsu_resp_io is not connected");
-  Assert(lsu_wready_io != nullptr &&
-         "MemSubsystem: lsu_wready_io is not connected");
-  Assert(csr != nullptr && "MemSubsystem: csr is not connected");
+  Assert(lsu2dcache != nullptr && "MemSubsystem: lsu2dcache is not connected");
+  Assert(dcache2lsu  != nullptr && "MemSubsystem: dcache2lsu is not connected");
+  Assert(peripheral_io != nullptr && "MemSubsystem: peripheral_io is not connected");
+  Assert(csr    != nullptr && "MemSubsystem: csr is not connected");
   Assert(memory != nullptr && "MemSubsystem: memory is not connected");
+  
+  dcache_.lsu2dcache  = lsu2dcache;
+  dcache_.dcache2lsu  = dcache2lsu;
 
-  peripheral.csr = csr;
-  peripheral.memory = memory;
-  peripheral.init();
+  // Internal MSHR ↔ DCache wires: RealDcache reads/writes MSHR IO structs
+  // directly via pointers, keeping the connection zero-copy.
+  dcache_.mshr2dcache = &mshr_.out.mshr2dcache;  // MSHR output → DCache input
+  dcache_.dcache2mshr = &mshr_.in.dcachemshr;    // DCache output → MSHR input
+
+  // Internal WriteBuffer ↔ DCache wires.
+  dcache_.wb2dcache   = &wb_.out.wbdcache;       // WB output → DCache input
+  dcache_.dcache2wb   = &wb_.in.dcachewb;        // DCache output → WB input
+
+  // ── Initialise sub-modules ─────────────────────────────────────────────────
+  mshr_.init();
+  wb_.init();
+  dcache_.init();
+  peripheral_axi_.peripheral_io = peripheral_io;
+  peripheral_axi_.init();
+
+  ptw_block.init();
+  ptw_mem_resp_ios  = {};
+  ptw_walk_resp_ios = {};
+  refresh_ptw_client_outputs();
+
+  mshr_axi_in  = {};
+  mshr_axi_out = {};
+  wb_axi_in    = {};
+  wb_axi_out   = {};
+  peripheral_axi_read_in = {};
+  peripheral_axi_read_out = {};
+  peripheral_axi_write_in = {};
+  peripheral_axi_write_out = {};
 
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime->interconnect.init();
@@ -216,24 +268,7 @@ void MemSubsystem::init() {
   axi_kit_runtime->ddr.init();
 #endif
 
-  dcache->lsu_req_io = &dcache_req_mux;
-  dcache->lsu_wreq_io = &dcache_wreq_mux;
-  dcache->lsu_resp_io = &dcache_resp_raw;
-  dcache->lsu_wready_io = &dcache_wready_raw;
-  dcache->peripheral_model = &peripheral;
 
-  ptw_block.init();
-  resp_route_block.init();
-  ptw_mem_resp_ios = {};
-  ptw_walk_resp_ios = {};
-  refresh_ptw_client_outputs();
-
-  dcache_req_mux = {};
-  dcache_wreq_mux = {};
-  dcache_resp_raw = {};
-  dcache_wready_raw = {};
-  *lsu_resp_io = {};
-  *lsu_wready_io = {};
 
 #if AXI_KIT_RUNTIME_ENABLED
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
@@ -256,11 +291,28 @@ void MemSubsystem::init() {
   }
 #endif
 
-  dcache->init();
 }
 
 void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3) {
-  peripheral.on_commit_store(paddr, data, func3);
+  // if (memory == nullptr) {
+  //   return;
+  // }
+  // const uint32_t word_idx = paddr >> 2;
+  // const uint32_t byte_off = paddr & 0x3u;
+  // uint32_t cur = memory[word_idx];
+
+  // if (func3 == 0b000) { // SB
+  //   const uint32_t mask = 0xFFu << (byte_off * 8);
+  //   const uint32_t val = (data & 0xFFu) << (byte_off * 8);
+  //   memory[word_idx] = (cur & ~mask) | val;
+  // } else if (func3 == 0b001) { // SH
+  //   const uint32_t half_off = (byte_off & 0x2u) * 8;
+  //   const uint32_t mask = 0xFFFFu << half_off;
+  //   const uint32_t val = (data & 0xFFFFu) << half_off;
+  //   memory[word_idx] = (cur & ~mask) | val;
+  // } else { // SW / fallback
+  //   memory[word_idx] = data;
+  // }
 }
 
 void MemSubsystem::comb() {
@@ -277,59 +329,66 @@ void MemSubsystem::comb() {
   interconnect.comb_outputs();
 #endif
 
-  // 子模块按组合逻辑顺序推进。
   ptw_block.comb_select_walk_owner();
-
-  // Default outputs every cycle.
-  *lsu_resp_io = {};
-  dcache_req_mux = {};
-  dcache_wreq_mux = {};
-
-  // Pass write channel (currently only LSU issues writes).
-  dcache_wreq_mux = *lsu_wreq_io;
-
-  uint32_t ptw_walk_read_addr = 0;
-  bool issue_ptw_walk_read = ptw_block.walk_read_req(ptw_walk_read_addr);
-
-  bool has_ptw_dtlb = ptw_block.has_pending_mem_req(MemPtwBlock::Client::DTLB);
-  bool has_ptw_itlb = ptw_block.has_pending_mem_req(MemPtwBlock::Client::ITLB);
-  uint32_t ptw_dtlb_addr = has_ptw_dtlb
-                               ? ptw_block.pending_mem_addr(
-                                     MemPtwBlock::Client::DTLB)
-                               : 0;
-  uint32_t ptw_itlb_addr = has_ptw_itlb
-                               ? ptw_block.pending_mem_addr(
-                                     MemPtwBlock::Client::ITLB)
-                               : 0;
-
-  auto arb_ret = read_arb_block.arbitrate(
-      lsu_req_io, issue_ptw_walk_read, ptw_walk_read_addr, has_ptw_dtlb,
-      ptw_dtlb_addr, has_ptw_itlb, ptw_itlb_addr);
   ptw_block.count_wait_cycles();
 
-  if (arb_ret.granted) {
-    dcache_req_mux = arb_ret.req;
+  // Resolve pending single-address PTW mem reads directly from memory[].
+  // (PTW bypasses RealDcache to keep the interface simple; page-table data
+  //  is always coherent in memory[] because stores go through on_commit_store.)
+  for (int i = 0; i < static_cast<int>(MemPtwBlock::Client::NUM_CLIENTS); i++) {
+    auto client = static_cast<MemPtwBlock::Client>(i);
+    if (ptw_block.has_pending_mem_req(client)) {
+      uint32_t paddr = ptw_block.pending_mem_addr(client);
+      uint32_t data  = memory[paddr >> 2];
+      ptw_block.on_mem_read_granted(client);
+      ptw_block.on_mem_resp_client(client, data);
+    }
   }
 
-  if (arb_ret.owner == MemReadArbBlock::Owner::LSU) {
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::LSU);
-  } else if (arb_ret.owner == MemReadArbBlock::Owner::PTW_WALK) {
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::PTW_WALK);
-    ptw_block.on_walk_read_granted();
-  } else if (arb_ret.owner == MemReadArbBlock::Owner::PTW_DTLB) {
-    ptw_block.on_mem_read_granted(MemPtwBlock::Client::DTLB);
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::PTW_DTLB);
-  } else if (arb_ret.owner == MemReadArbBlock::Owner::PTW_ITLB) {
-    ptw_block.on_mem_read_granted(MemPtwBlock::Client::ITLB);
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::PTW_ITLB);
+  // Resolve PTW walk reads (L1 → optionally L2) directly from memory[].
+  // The loop completes at most two iterations (one per page-table level).
+  {
+    uint32_t walk_addr = 0;
+    while (ptw_block.walk_read_req(walk_addr)) {
+      uint32_t data = memory[walk_addr >> 2];
+      ptw_block.on_walk_read_granted();
+      ptw_block.on_walk_mem_resp(data);
+    }
   }
 
-  dcache->comb();
+  refresh_ptw_client_outputs();
 
-  // Write ready backpressure directly reflects DCache.
-  *lsu_wready_io = dcache_wready_raw;
+  wb_.comb_outputs();
+  mshr_.in.axi_in = mshr_axi_in;
+  mshr_.in.wbmshr = wb_.out.wbmshr;
+  // Phase 2: compute MSHR outputs from cur state so DCache can read them.
+  mshr_.comb_outputs();
+  // Phase 2: RealDcache pipeline (S1 + S2).
+  //   Reads : mshr_.out.mshr2dcache, wb_.out.wbdcache  (via dcache_ pointers)
+  //   Writes: mshr_.in.dcachemshr,   wb_.in.dcachewb   (via dcache_ pointers)
+  dcache_.comb();
+  // Phase 3b: inject AXI write-channel inputs and MSHR eviction, then run
+  //           WriteBuffer comb_inputs (drains evictions onto AXI).
+  wb_.in.axi_in   = wb_axi_in;
+  wb_.in.mshrwb   = mshr_.out.mshrwb;  // eviction push (set in Phase 3a)
+  wb_.comb_inputs();
+  // Export MSHR replay wakeup to LSU. RealDcache::comb() clears resp ports
+  // every cycle, so this must be written after dcache_.comb().
+  dcache2lsu->resp_ports.replay_resp = mshr_.out.replay_resp;
 
-  (void)resp_route_block.route_resp(dcache_resp_raw, lsu_resp_io, &ptw_block);
+  // Phase 3a: run MSHR comb_inputs (may accept AXI R, allocate entries, and
+  // prepare next-cycle registered fill / eviction outputs).
+  mshr_.comb_inputs();
+
+  // Expose updated AXI outputs for the caller.
+  mshr_axi_out = mshr_.out.axi_out;
+  wb_axi_out = wb_.out.axi_out;
+  peripheral_axi_.in.read = peripheral_axi_read_in;
+  peripheral_axi_.in.write = peripheral_axi_write_in;
+  peripheral_axi_.comb_outputs();
+  peripheral_axi_.comb_inputs();
+  peripheral_axi_read_out = peripheral_axi_.out.read;
+  peripheral_axi_write_out = peripheral_axi_.out.write;
 
   // Stage-1 AXI wiring: connect ICache read master, keep all others idle.
 #if AXI_KIT_RUNTIME_ENABLED
@@ -366,7 +425,10 @@ void MemSubsystem::comb() {
 }
 
 void MemSubsystem::seq() {
-  dcache->seq();
+  dcache_.seq();
+  mshr_.seq();
+  wb_.seq();
+  peripheral_axi_.seq();
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime->ddr.seq();
   axi_kit_runtime->mmio.seq();
@@ -374,4 +436,57 @@ void MemSubsystem::seq() {
                           axi_kit_runtime->mmio.io);
   axi_kit_runtime->interconnect.seq();
 #endif
+}
+
+void MemSubsystem::dump_debug_state() const {
+  std::printf(
+      "[DEADLOCK][MEM] mshr_count=%u fill=%d fill_addr=0x%08x wb_count=%u wb_head=%u wb_tail=%u\n",
+      mshr_.cur.mshr_count, static_cast<int>(mshr_.cur.fill), mshr_.cur.fill_addr,
+      wb_.cur.count, wb_.cur.head, wb_.cur.tail);
+  std::printf(
+      "[DEADLOCK][MEM][MSHR_STATE] cur_fill_valid=%d cur_fill_way=%u cur_wb_valid=%d cur_wb_addr=0x%08x nxt_count=%u\n",
+      static_cast<int>(mshr_.cur.fill_valid), mshr_.cur.fill_way,
+      static_cast<int>(mshr_.cur.wb_valid), mshr_.cur.wb_addr,
+      mshr_.nxt.mshr_count);
+
+  for (int i = 0; i < MSHR_ENTRIES; i++) {
+    const MSHREntry &cur_e = mshr_entries[i];
+    const MSHREntry &nxt_e = mshr_entries_nxt[i];
+    std::printf(
+        "[DEADLOCK][MEM][MSHR][%d] cur:{v=%d issue=%d fill=%d set=%u tag=0x%x line=0x%08x} nxt:{v=%d issue=%d fill=%d set=%u tag=0x%x line=0x%08x}\n",
+        i, static_cast<int>(cur_e.valid), static_cast<int>(cur_e.issued),
+        static_cast<int>(cur_e.fill), cur_e.index, cur_e.tag,
+        get_addr(cur_e.index, cur_e.tag, 0), static_cast<int>(nxt_e.valid),
+        static_cast<int>(nxt_e.issued), static_cast<int>(nxt_e.fill), nxt_e.index,
+        nxt_e.tag, get_addr(nxt_e.index, nxt_e.tag, 0));
+  }
+
+  if (mshr_.cur.fill_valid) {
+    print_line_words("[DEADLOCK][MEM][MSHR][FILL_DATA] ",
+                     mshr_.cur.fill_data);
+  }
+  if (mshr_.cur.wb_valid) {
+    print_line_words("[DEADLOCK][MEM][MSHR][WB_DATA]   ", mshr_.cur.wb_data);
+  }
+
+  std::printf(
+      "[DEADLOCK][MEM][WB_STATE] cur_count=%u cur_head=%u cur_tail=%u cur_send=%u cur_issue_pending=%u nxt_count=%u nxt_head=%u nxt_tail=%u nxt_send=%u nxt_issue_pending=%u\n",
+      wb_.cur.count, wb_.cur.head, wb_.cur.tail, wb_.cur.send,
+      wb_.cur.issue_pending, wb_.nxt.count, wb_.nxt.head, wb_.nxt.tail, wb_.nxt.send,
+      wb_.nxt.issue_pending);
+  for (int i = 0; i < WB_ENTRIES; i++) {
+    const WriteBufferEntry &cur_e = write_buffer[i];
+    const WriteBufferEntry &nxt_e = write_buffer_nxt[i];
+    std::printf(
+        "[DEADLOCK][MEM][WB][%d] cur:{v=%d send=%d addr=0x%08x} nxt:{v=%d send=%d addr=0x%08x}\n",
+        i, static_cast<int>(cur_e.valid), static_cast<int>(cur_e.send),
+        cur_e.addr, static_cast<int>(nxt_e.valid), static_cast<int>(nxt_e.send),
+        nxt_e.addr);
+    if (cur_e.valid) {
+      print_line_words("[DEADLOCK][MEM][WB][CUR_DATA] ", cur_e.data);
+    }
+    if (nxt_e.valid) {
+      print_line_words("[DEADLOCK][MEM][WB][NXT_DATA] ", nxt_e.data);
+    }
+  }
 }

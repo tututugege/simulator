@@ -1,5 +1,7 @@
 #include "Rob.h"
 #include "IO.h"
+
+#include "DeadlockDebug.h"
 #include "RISCV.h"
 #include "config.h"
 #include "util.h"
@@ -106,6 +108,30 @@ void Rob::comb_commit() {
   out.rob_bcast->page_fault_inst = out.rob_bcast->page_fault_load =
       out.rob_bcast->page_fault_store = out.rob_bcast->illegal_inst = false;
 
+  // 广播队头行的第一个 valid 项，以及该行里第一个未完成项。
+  // LSU 使用后者决定 MMIO 访存何时可以发射，避免与 ROB 的整行提交
+  // 策略形成循环等待。
+  out.rob_bcast->head_valid = false;
+  out.rob_bcast->head_rob_idx = 0;
+  out.rob_bcast->head_incomplete_valid = false;
+  out.rob_bcast->head_incomplete_rob_idx = 0;
+  if (!is_empty()) {
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid) {
+        out.rob_bcast->head_valid = true;
+        out.rob_bcast->head_rob_idx = make_rob_idx(deq_ptr, i);
+        break;
+      }
+    }
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid &&
+          entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+        out.rob_bcast->head_incomplete_valid = true;
+        out.rob_bcast->head_incomplete_rob_idx = make_rob_idx(deq_ptr, i);
+        break;
+      }
+    }
+  }
   wire<1> commit = (!is_empty() && !in.dec_bcast->mispred);
 
   // 检查 BANK 的同一行是否都已完成
@@ -253,7 +279,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 20000) {
+  if (stall_cycle > 10000) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -278,8 +304,9 @@ void Rob::comb_commit() {
         printf("[Bank %d] INVALID\n", i);
       }
     }
-
-    Assert(0 && "ROB Deadlock detected (stall_cycle > 1000)");
+    
+    deadlock_debug::dump_all();
+    Assert(0 && "ROB Deadlock detected (stall_cycle > 10000)");
   }
 }
 

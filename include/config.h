@@ -82,6 +82,52 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // - undefined : I/D side both use SimpleMmu (ideal va2pa)
 #define CONFIG_TLB_MMU
 
+extern long long sim_time; // Global simulation time
+constexpr int REPLAY_STORE_COUNT_UPPER_BOUND = 32;
+constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
+// Global debug print switch for ad-hoc debug logs in simulator modules.
+// Set to 1 to enable, 0 to disable.
+#ifndef SIM_DEBUG_PRINT
+#define SIM_DEBUG_PRINT 0
+#endif
+
+// Optional cycle window for DBG_PRINTF.
+// Effective only when SIM_DEBUG_PRINT == 1.
+// Default is full-range (all cycles).
+#ifndef SIM_DEBUG_PRINT_CYCLE_BEGIN
+#define SIM_DEBUG_PRINT_CYCLE_BEGIN 0
+#endif
+
+#ifndef SIM_DEBUG_PRINT_CYCLE_END
+#define SIM_DEBUG_PRINT_CYCLE_END ~0ULL
+#endif
+
+#define SIM_DEBUG_PRINT_ACTIVE                                                \
+  (SIM_DEBUG_PRINT &&                                                         \
+   (static_cast<unsigned long long>(sim_time) >=                              \
+    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_BEGIN)) &&          \
+   (static_cast<unsigned long long>(sim_time) <=                              \
+    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_END)))
+
+// Lightweight LSU STQ invariant checks.
+// Set to 1 when debugging queue/pointer consistency issues.
+#ifndef LSU_LIGHT_ASSERT
+#define LSU_LIGHT_ASSERT 0
+#endif
+
+// ROB deadlock watchdog threshold (cycles without commit).
+// Memory-intensive workloads can legitimately exceed 1000 cycles.
+#ifndef ROB_DEADLOCK_STALL_CYCLES
+#define ROB_DEADLOCK_STALL_CYCLES 10000
+#endif
+
+#define DBG_PRINTF(fmt, ...)                                                   \
+  do {                                                                         \
+    if (SIM_DEBUG_PRINT_ACTIVE) {                                              \
+      std::printf(fmt, ##__VA_ARGS__);                                         \
+    }                                                                          \
+  } while (0)
+
 // ============================================================
 // [2] Global Limits
 // ============================================================
@@ -112,7 +158,7 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
 #ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
-#define CONFIG_ICACHE_USE_AXI_MEM_PORT 0
+#define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
 // AXI protocol flavor for the dedicated icache memory path.
@@ -217,7 +263,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
+    PORT_CFG(OP_MASK_ALU | OP_MASK_FP),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1

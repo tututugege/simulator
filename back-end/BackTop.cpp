@@ -1,7 +1,7 @@
 #include "BackTop.h"
 #include "Csr.h"
 #include "IO.h"
-#include "SimpleLsu.h"
+#include "RealLsu.h"
 #include "config.h"
 #include "diff.h"
 #include "oracle.h"
@@ -25,7 +25,7 @@ void BackTop::init() {
   exu = new Exu(ctx, &ftq_lookup);
   csr = new Csr();
   rob = new Rob(ctx);
-  lsu = new SimpleLsu(ctx);
+  lsu = new RealLsu(ctx);
   lsu->set_csr(csr);
 
   pre_idu_queue->out.dec2front = &dec2front;
@@ -129,14 +129,12 @@ void BackTop::init() {
   lsu->in.rob_bcast = &rob_bcast;
   lsu->in.dec_bcast = &dec_bcast;
   lsu->in.rob_commit = &rob_commit;
-  lsu->in.dcache_resp = &dcache2lsu_resp;
-  lsu->in.dcache_wready = &dcache2lsu_wready;
+  lsu->in.dcache2lsu  = &dcache2lsu_io;
 
   lsu->out.lsu2exe = &lsu2exe;
   lsu->out.lsu2dis = &lsu2dis;
   lsu->out.lsu2rob = &lsu2rob;
-  lsu->out.dcache_req = &lsu2dcache_req;
-  lsu->out.dcache_wreq = &lsu2dcache_wreq;
+  lsu->out.lsu2dcache = &lsu2dcache_io;
 
   pre_idu_queue->init();
   idu->init();
