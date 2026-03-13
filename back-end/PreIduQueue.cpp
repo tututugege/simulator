@@ -30,6 +30,10 @@ void PreIduQueue::ftq_pop(int pop_cnt) {
 void PreIduQueue::ftq_recover(int new_tail) {
   int normalized_tail = ((new_tail % FTQ_SIZE) + FTQ_SIZE) % FTQ_SIZE;
   int discarded = (ftq_tail_1 - normalized_tail + FTQ_SIZE) % FTQ_SIZE;
+  for (int i = 0; i < discarded; i++) {
+    int idx = (normalized_tail + i) % FTQ_SIZE;
+    ftq_entries[idx] = FTQEntry();
+  }
   ftq_tail_1 = normalized_tail;
   ftq_count_1 -= discarded;
 }
@@ -73,6 +77,11 @@ void PreIduQueue::comb_begin() {
   ftq_head_1 = ftq_head;
   ftq_tail_1 = ftq_tail;
   ftq_count_1 = ftq_count;
+  if (out.ftq_lookup != nullptr) {
+    for (int i = 0; i < FTQ_SIZE; i++) {
+      out.ftq_lookup->entries[i] = ftq_entries[i];
+    }
+  }
 
   if (out.issue != nullptr) {
     for (auto &e : out.issue->entries) {

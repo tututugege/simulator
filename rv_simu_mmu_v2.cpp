@@ -81,7 +81,10 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   InstInfo *inst = &inst_entry->uop;
 
   for (int i = 0; i < ARF_NUM; i++) {
-    dut_cpu.gpr[i] = back->prf->reg_file[back->rename->arch_RAT_1[i]];
+    // With same-cycle EXU->ROB completion, commit-side architectural mapping
+    // (arch_RAT_1) can point to a preg whose value is produced in this cycle's
+    // comb writeback path. Use reg_file_1 to observe the up-to-date comb state.
+    dut_cpu.gpr[i] = back->prf->reg_file_1[back->rename->arch_RAT_1[i]];
   }
 
   if (is_store(*inst) && !inst->page_fault_store) {

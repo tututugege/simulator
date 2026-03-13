@@ -34,6 +34,10 @@ REGEX_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 REGEX_BPU_NUM = re.compile(r"num\s*:\s*(\d+)")
 REGEX_BPU_MISPRED = re.compile(r"mispred\s*:\s*(\d+)")
 
+# FALCON 正则
+REGEX_FALCON_THROUGHPUT = re.compile(r"throughput.*demand=(\d+)\s+deliver=(\d+)\s+bubble=(\d+)")
+REGEX_FALCON_BUBBLE = re.compile(r"bubble_root_share.*reset=(\d+).*refetch=(\d+).*icache_miss=(\d+).*icache_latency=(\d+).*bpu_stall=(\d+).*fetch_addr_empty=(\d+).*ptab_empty=(\d+).*dummy_ptab=(\d+).*inst_fifo_other=(\d+).*other=(\d+)")
+
 TMA_LABELS = {
     "total_slots": "Total Slots",
     "frontend_bound": "Frontend Bound",
@@ -317,6 +321,51 @@ def parse_log_robust(filepath, with_reason=False):
         tma = parse_tma(content)
         tma_idu = parse_tma_idu(content)
 
+        # FALCON Parsing
+        falcon_demand = 0
+        falcon_deliver = 0
+        falcon_bubble = 0
+        falcon_reset = 0
+        falcon_refetch = 0
+        falcon_icache_miss = 0
+        falcon_icache_latency = 0
+        falcon_bpu_stall = 0
+        falcon_fetch_addr_empty = 0
+        falcon_ptab_empty = 0
+        falcon_dummy_ptab = 0
+        falcon_inst_fifo_other = 0
+        falcon_other = 0
+
+        falcon_start_idx = -1
+        for i in range(len(clean_lines) - 1, -1, -1):
+            if "=== FALCON Front-end Report ===" in clean_lines[i]:
+                falcon_start_idx = i
+                break
+
+        if falcon_start_idx != -1:
+            for i in range(falcon_start_idx + 1, len(clean_lines)):
+                line = clean_lines[i]
+                if "=== End FALCON Report ===" in line:
+                    break
+                m_tp = REGEX_FALCON_THROUGHPUT.search(line)
+                if m_tp:
+                    falcon_demand = int(m_tp.group(1))
+                    falcon_deliver = int(m_tp.group(2))
+                    falcon_bubble = int(m_tp.group(3))
+                
+                m_bub = REGEX_FALCON_BUBBLE.search(line)
+                if m_bub:
+                    falcon_reset = int(m_bub.group(1))
+                    falcon_refetch = int(m_bub.group(2))
+                    falcon_icache_miss = int(m_bub.group(3))
+                    falcon_icache_latency = int(m_bub.group(4))
+                    falcon_bpu_stall = int(m_bub.group(5))
+                    falcon_fetch_addr_empty = int(m_bub.group(6))
+                    falcon_ptab_empty = int(m_bub.group(7))
+                    falcon_dummy_ptab = int(m_bub.group(8))
+                    falcon_inst_fifo_other = int(m_bub.group(9))
+                    falcon_other = int(m_bub.group(10))
+
         data = {
             "inst": inst, "cyc": cyc, "cpi": cyc / inst,
             "dcache_hit": dcache_hit, "dcache_acc": dcache_acc, "dcache_miss": dcache_miss,
@@ -349,6 +398,16 @@ def parse_log_robust(filepath, with_reason=False):
             "ftq_blocked_cycles": ftq_blocked_cycles or 0,
             "tma": tma,
             "tma_idu": tma_idu,
+            "falcon_demand": falcon_demand,
+            "falcon_deliver": falcon_deliver,
+            "falcon_bubble": falcon_bubble,
+            "falcon_bubble_breakdown": {
+                "reset": falcon_reset, "refetch": falcon_refetch,
+                "icache_miss": falcon_icache_miss, "icache_latency": falcon_icache_latency,
+                "bpu_stall": falcon_bpu_stall, "fetch_addr_empty": falcon_fetch_addr_empty,
+                "ptab_empty": falcon_ptab_empty, "dummy_ptab": falcon_dummy_ptab,
+                "inst_fifo_other": falcon_inst_fifo_other, "other": falcon_other
+            }
         }
         if with_reason: return data, None
         return data
@@ -398,7 +457,7 @@ def process_benchmark(bench_path):
     weights_map = load_weights(bench_name)
     if not weights_map:
         s(f"[SKIP] {bench_name}: no usable weight file")
-        return 0.0, status_lines, perf_lines
+        return 0.0, status_lines, perf_lines, None
 
     s("")
     s(f"Processing: {bench_name}")
@@ -406,7 +465,7 @@ def process_benchmark(bench_path):
     s(f"  [INFO] found log files: {len(log_files)}")
     if len(log_files) == 0:
         s("  [WARN] benchmark dir has no .log files")
-        return 0.0, status_lines, perf_lines
+        return 0.0, status_lines, perf_lines, None
 
     # Phase 1: classify logs by filename/weight/success marker
     useful_logs = []
@@ -506,6 +565,15 @@ def process_benchmark(bench_path):
         "retiring": 0.0,
     }
 
+    w_falcon_demand = 0.0
+    w_falcon_deliver = 0.0
+    w_falcon_bubble = 0.0
+    w_falcon_breakdown = {
+        "reset": 0.0, "refetch": 0.0, "icache_miss": 0.0, "icache_latency": 0.0,
+        "bpu_stall": 0.0, "fetch_addr_empty": 0.0, "ptab_empty": 0.0,
+        "dummy_ptab": 0.0, "inst_fifo_other": 0.0, "other": 0.0
+    }
+
     valid_files = 0
     skipped_bad_log = 0
     bad_reasons = {}
@@ -599,6 +667,13 @@ def process_benchmark(bench_path):
                     continue
                 tma_idu_slot_sums[k] += tma_idu_total * (v / 100.0)
 
+        w_falcon_demand += data.get("falcon_demand", 0) * weight
+        w_falcon_deliver += data.get("falcon_deliver", 0) * weight
+        w_falcon_bubble += data.get("falcon_bubble", 0) * weight
+        b = data.get("falcon_bubble_breakdown", {})
+        for k in w_falcon_breakdown.keys():
+            w_falcon_breakdown[k] += b.get(k, 0) * weight
+
     if valid_files == 0:
         s("  -> No valid logs found.")
         s(f"  [DIAG] skip(no sp id in filename): {skipped_no_sp}")
@@ -606,7 +681,7 @@ def process_benchmark(bench_path):
         s(f"  [DIAG] skip(parse failed):         {skipped_bad_log}")
         for reason, cnt in sorted(bad_reasons.items(), key=lambda x: -x[1]):
             s(f"  [DIAG]   - {reason}: {cnt}")
-        return 0.0, status_lines, perf_lines
+        return 0.0, status_lines, perf_lines, None
 
     final_cpi = (w_cpi_sum / w_weight_sum) if w_weight_sum > 0 else 0.0
     final_ipc = 1.0 / final_cpi if final_cpi > 0 else 0
@@ -754,6 +829,18 @@ def process_benchmark(bench_path):
         p("TMA-IDU (Weighted): N/A (IDU Top-Down section not found)")
 
     p("")
+    p("[FALCON Front-end]")
+    if w_falcon_demand > 0:
+        p(f"  Demand:           {w_falcon_demand:.2f}")
+        p(f"  Deliver:          {w_falcon_deliver:.2f} ({(w_falcon_deliver/w_falcon_demand)*100:.2f}%)")
+        p(f"  Bubble:           {w_falcon_bubble:.2f} ({(w_falcon_bubble/w_falcon_demand)*100:.2f}%)")
+        if w_falcon_bubble > 0:
+            for k, v in w_falcon_breakdown.items():
+                p(f"    - {k:17}: {v:.2f} ({(v/w_falcon_bubble)*100:.2f}%)")
+    else:
+        p("  N/A (FALCON report not found)")
+
+    p("")
     p("[SPEC]")
     if total_insts > 0:
         pred_cycles = total_insts * final_cpi
@@ -767,7 +854,13 @@ def process_benchmark(bench_path):
     else:
         p(f"[WARN] SPEC Ratio is 0 because INST_COUNTS[{bench_key}] is missing/0.")
     p("=" * 65)
-    return score, status_lines, perf_lines
+    falcon_stats = {
+        "demand": w_falcon_demand,
+        "deliver": w_falcon_deliver,
+        "bubble": w_falcon_bubble,
+        **w_falcon_breakdown
+    }
+    return score, status_lines, perf_lines, falcon_stats
 
 def main():
     status_report_lines = []
@@ -802,11 +895,17 @@ def main():
         print(f"Wrote status report: {os.path.abspath(LOG_STATUS_REPORT)}")
         return
     scores = []
+    all_falcon_stats = {}
     for d in bench_dirs:
-        s, status_lines, perf_lines = process_benchmark(d)
+        s, status_lines, perf_lines, f_stats = process_benchmark(d)
         status_report_lines.extend(status_lines)
         perf_report_lines.extend(perf_lines)
         if s and s > 0: scores.append(s)
+        
+        bench_name = os.path.basename(d)
+        if f_stats and f_stats["demand"] > 0:
+            all_falcon_stats[bench_name] = f_stats
+            
     if scores:
         import functools, operator
         geomean = (functools.reduce(operator.mul, scores, 1)) ** (1.0 / len(scores))
@@ -820,6 +919,17 @@ def main():
         f.write("\n".join(status_report_lines) + "\n")
     with open(PERF_REPORT, "w") as f:
         f.write("\n".join(perf_report_lines) + "\n")
+
+    # Write FALCON out:
+    FRONTEND_REPORT_CSV = "./falcon_frontend.csv"
+    if all_falcon_stats:
+        with open(FRONTEND_REPORT_CSV, "w") as f:
+            headers = ["benchmark", "demand", "deliver", "bubble", "reset", "refetch", "icache_miss", "icache_latency", "bpu_stall", "fetch_addr_empty", "ptab_empty", "dummy_ptab", "inst_fifo_other", "other"]
+            f.write(",".join(headers) + "\n")
+            for b_name, stats in all_falcon_stats.items():
+                row = [b_name] + [f"{stats.get(h, 0):.2f}" for h in headers[1:]]
+                f.write(",".join(row) + "\n")
+        print(f"Wrote FALCON frontend report: {os.path.abspath(FRONTEND_REPORT_CSV)}")
 
     print(f"Wrote status report: {os.path.abspath(LOG_STATUS_REPORT)}")
     print(f"Wrote perf report:   {os.path.abspath(PERF_REPORT)}")
