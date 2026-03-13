@@ -7,14 +7,14 @@
     {
       "module_name": "icache_data_table_regfile",
       "style": "regfile",
-      "chunks": 128,
-      "chunk_bits": 32
+      "chunks": 8,
+      "chunk_bits": 512
     },
     {
       "module_name": "icache_tag_table_regfile",
       "style": "regfile",
       "chunks": 8,
-      "chunk_bits": 32
+      "chunk_bits": 20
     },
     {
       "module_name": "icache_valid_table_regfile",
@@ -25,8 +25,8 @@
     {
       "module_name": "icache_data_table_sram",
       "style": "sram",
-      "chunks": 128,
-      "chunk_bits": 32,
+      "chunks": 8,
+      "chunk_bits": 512,
       "fixed_latency": 2
     }
   ]

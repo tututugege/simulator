@@ -16,7 +16,10 @@ struct GenericTableTimingConfig {
 };
 
 template <int Chunks, int ChunkBits> struct GenericTablePayload {
-  std::array<wire<ChunkBits>, Chunks> chunks{};
+  static constexpr int kWordBits = 32;
+  static constexpr int kWordsPerChunk =
+      (ChunkBits + kWordBits - 1) / kWordBits;
+  std::array<std::array<uint32_t, kWordsPerChunk>, Chunks> chunks{};
 };
 
 template <int AddrBits> struct GenericTableReadReq {
@@ -52,7 +55,7 @@ public:
   void reset() {
     for (auto &row : storage_) {
       for (auto &chunk : row.chunks) {
-        chunk = 0;
+        chunk.fill(0);
       }
     }
   }
@@ -105,7 +108,7 @@ public:
     seed_ = 1;
     for (auto &row : storage_) {
       for (auto &chunk : row.chunks) {
-        chunk = 0;
+        chunk.fill(0);
       }
     }
   }

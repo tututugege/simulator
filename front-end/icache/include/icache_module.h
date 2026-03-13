@@ -70,12 +70,6 @@
 #ifndef ICACHE_V1_WAYS
 #define ICACHE_V1_WAYS 8
 #endif
-// Experimental switch:
-// - 0: keep refill response in SWAP_IN_OKEY (one extra cycle after mem_resp)
-// - 1: return refill data in the mem_resp cycle and skip SWAP_IN_OKEY
-#ifndef ICACHE_V1_DIRECT_REFILL_RESP
-#define ICACHE_V1_DIRECT_REFILL_RESP 0
-#endif
 namespace icache_module_n {
 // -----------------------------------------------------------------------------
 // ICache V1 derived parameters (for generalized-IO structs)
@@ -92,7 +86,6 @@ static constexpr uint32_t ICACHE_V1_TAG_BITS = 20;
 enum ICacheState {
   IDLE,         // Idle state
   SWAP_IN,      // Swapping in state
-  SWAP_IN_OKEY, // Swapping in successful
   DRAIN         // Draining memory response after refetch
 };
 // AXI Memory Channel State
@@ -156,6 +149,7 @@ using ICache_reg_write_t = ICache_regs_t;
 // -----------------------------------------------------------------------------
 struct ICache_table_write_t {
   wire<1> we = false;
+  wire<1> invalidate_all = false;
   wire<7> index = 0;
   wire<8> way = 0;
   wire<ICACHE_V1_WORD_BITS> data[ICACHE_V1_WORD_NUM] = {0};
@@ -222,17 +216,9 @@ public:
   ICache();
 
   void reset();
-  void invalidate_all();
   void comb();
   void eval_state_machine();
   void seq();
-
-  // Debug/verification helper: export the set view that the lookup stage reads
-  // in the current cycle for the given pc (including SRAM pending selection).
-  void export_lookup_set_for_pc(uint32_t pc,
-                                uint32_t out_data[ICACHE_V1_WAYS][ICACHE_LINE_SIZE / 4],
-                                uint32_t out_tag[ICACHE_V1_WAYS],
-                                bool out_valid[ICACHE_V1_WAYS]) const;
 
   // IO ports
   ICache_IO_t io;
@@ -242,17 +228,7 @@ public:
   void log_tag(uint32_t index);
   void log_valid(uint32_t index);
   void log_pipeline();
-  int valid_line_num() {
-    int count = 0;
-    for (uint32_t i = 0; i < set_num; ++i) {
-      for (uint32_t j = 0; j < way_cnt; ++j) {
-        if (cache_valid[i][j]) {
-          count++;
-        }
-      }
-    }
-    return count;
-  }
+  int valid_line_num() { return -1; }
 
 private:
   /*
@@ -269,12 +245,6 @@ private:
       1 << (offset_bits - 2); // Number of words per cache line (8 words, since
                               // each word is 4 bytes)
   static uint32_t const way_cnt = ICACHE_V1_WAYS; // N-way set associative cache
-
-  // Table state is intentionally kept outside generalized-IO regs so PI/PO
-  // bitvectors do not include the full cache contents.
-  uint32_t cache_data[set_num][way_cnt][word_num] = {{{0}}};
-  uint32_t cache_tag[set_num][way_cnt] = {{0}};
-  bool cache_valid[set_num][way_cnt] = {{false}};
 
   // Current-cycle lookup set view used by the request compare path.
   uint32_t lookup_set_data_w[way_cnt][word_num] = {{0}};

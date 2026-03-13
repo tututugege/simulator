@@ -22,17 +22,6 @@ inline int alloc_free_txid(const ICache_regs_t &regs) {
 ICache::ICache() {
   reset();
 
-  // Initialize cache data, tags, and valid bits
-  for (uint32_t i = 0; i < set_num; ++i) {
-    for (uint32_t j = 0; j < way_cnt; ++j) {
-      cache_valid[i][j] = false;
-      cache_tag[i][j] = 0;
-      for (uint32_t k = 0; k < word_num; ++k) {
-        cache_data[i][j][k] = 0;
-      }
-    }
-  }
-
   // Initialize state variables
   io.regs.state = static_cast<uint8_t>(IDLE);
   state_next = IDLE;
@@ -101,14 +90,6 @@ void ICache::reset() {
   }
 }
 
-void ICache::invalidate_all() {
-  for (uint32_t i = 0; i < set_num; ++i) {
-    for (uint32_t j = 0; j < way_cnt; ++j) {
-      cache_valid[i][j] = false;
-    }
-  }
-}
-
 void ICache::comb() {
   // Initialize generalized outputs at the start of comb().
   io.out = {};
@@ -142,41 +123,7 @@ void ICache::comb() {
 }
 
 void ICache::seq() {
-  if (io.in.flush) {
-    invalidate_all();
-  }
-
-  if (io.table_write.we && !io.in.flush) {
-    uint32_t index = io.table_write.index;
-    uint32_t way = io.table_write.way;
-    if (index < set_num && way < way_cnt) {
-      for (uint32_t word = 0; word < word_num; ++word) {
-        cache_data[index][way][word] = io.table_write.data[word];
-      }
-      cache_tag[index][way] = io.table_write.tag;
-      cache_valid[index][way] = io.table_write.valid;
-    }
-  }
-
   io.regs = io.reg_write;
-}
-
-void ICache::export_lookup_set_for_pc(
-    uint32_t pc, uint32_t out_data[ICACHE_V1_WAYS][ICACHE_LINE_SIZE / 4],
-    uint32_t out_tag[ICACHE_V1_WAYS], bool out_valid[ICACHE_V1_WAYS]) const {
-  uint32_t pc_index = (pc >> offset_bits) & (set_num - 1u);
-  uint32_t rd_index = pc_index;
-  if (lookup_latency_enabled()) {
-    rd_index = io.regs.lookup_pending_r ? io.regs.lookup_index_r : pc_index;
-  }
-
-  for (uint32_t way = 0; way < way_cnt; ++way) {
-    for (uint32_t word = 0; word < word_num; ++word) {
-      out_data[way][word] = cache_data[rd_index][way][word];
-    }
-    out_tag[way] = cache_tag[rd_index][way];
-    out_valid[way] = cache_valid[rd_index][way];
-  }
 }
 
 void ICache::lookup_read_set(uint32_t lookup_index, bool gate_valid_with_req) {
@@ -304,6 +251,7 @@ void ICache::lookup(uint32_t index) {
 
 void ICache::eval_state_machine() {
   io.table_write.we = false;
+  io.table_write.invalidate_all = io.in.flush;
   io.table_write.index = 0;
   io.table_write.way = 0;
   for (uint32_t word = 0; word < word_num; ++word) {
@@ -483,9 +431,10 @@ void ICache::eval_state_machine() {
           mem_resp_data_w[offset] = io.in.mem_resp_data[offset];
         }
 
+        lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
         bool found_invalid = false;
         for (uint32_t way = 0; way < way_cnt; ++way) {
-          if (!cache_valid[io.regs.req_index_r][way]) {
+          if (!lookup_set_valid_w[way]) {
             replace_idx_next = way;
             found_invalid = true;
             break;
@@ -495,7 +444,6 @@ void ICache::eval_state_machine() {
           replace_idx_next = (io.regs.replace_idx + 1) % way_cnt;
         }
 
-#if ICACHE_V1_DIRECT_REFILL_RESP
         mem_axi_state_next = AXI_IDLE;
         state_next = IDLE;
         io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
@@ -521,38 +469,7 @@ void ICache::eval_state_machine() {
         } else {
           req_ready_w = true;
         }
-#else
-        state_next = SWAP_IN_OKEY;
-        mem_axi_state_next = AXI_IDLE;
-        io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
-#endif
       }
-    }
-    break;
-
-  case SWAP_IN_OKEY:
-    state_next = IDLE;
-    io.reg_write.miss_txid_valid_r = false;
-
-    if (!io.in.flush) {
-      io.table_write.we = true;
-      io.table_write.index = io.regs.req_index_r;
-      io.table_write.way = io.regs.replace_idx;
-      for (uint32_t word = 0; word < word_num; ++word) {
-        io.table_write.data[word] = io.regs.mem_resp_data_r[word];
-      }
-      io.table_write.tag = io.regs.ppn_r;
-      io.table_write.valid = true;
-    }
-
-    if (!io.in.refetch && !io.in.flush) {
-      io.out.ifu_resp_valid = true;
-      for (uint32_t word = 0; word < word_num; ++word) {
-        io.out.rd_data[word] = io.regs.mem_resp_data_r[word];
-      }
-      req_ready_w = true;
-    } else {
-      req_ready_w = true;
     }
     break;
 
@@ -622,9 +539,6 @@ void ICache::log_state() {
   case SWAP_IN:
     std::cout << "SWAP_IN";
     break;
-  case SWAP_IN_OKEY:
-    std::cout << "SWAP_IN_OKEY";
-    break;
   case DRAIN:
     std::cout << "DRAIN";
     break;
@@ -639,9 +553,6 @@ void ICache::log_state() {
     break;
   case SWAP_IN:
     std::cout << "SWAP_IN";
-    break;
-  case SWAP_IN_OKEY:
-    std::cout << "SWAP_IN_OKEY";
     break;
   case DRAIN:
     std::cout << "DRAIN";
@@ -659,33 +570,14 @@ void ICache::log_state() {
             << " mem_resp_rdy=" << io.out.mem_resp_ready << std::endl;
 }
 void ICache::log_tag(uint32_t index) {
-  if (index >= set_num) {
-    std::cerr << "Index out of bounds in log_tag: " << index << std::endl;
-    return;
-  }
-  std::cout << "Cache Set Index: " << index << std::endl;
-  for (uint32_t way = 0; way < way_cnt; ++way) {
-    std::cout << "  Way " << way << ": Valid=" << cache_valid[index][way]
-              << ", Tag=0x" << std::hex << cache_tag[index][way] << std::dec
-              << ", Data=[";
-    for (uint32_t word = 0; word < word_num; ++word) {
-      if (word > 0)
-        std::cout << ", ";
-      std::cout << "0x" << std::hex << cache_data[index][way][word] << std::dec;
-    }
-    std::cout << "]" << std::endl;
-  }
+  (void)index;
+  std::cout << "Cache contents are owned by the external lookup tables."
+            << std::endl;
 }
 void ICache::log_valid(uint32_t index) {
-  if (index >= set_num) {
-    std::cerr << "Index out of bounds in log_valid: " << index << std::endl;
-    return;
-  }
-  std::cout << "Cache Set Index: " << index << " Valid Bits: ";
-  for (uint32_t way = 0; way < way_cnt; ++way) {
-    std::cout << cache_valid[index][way] << " ";
-  }
-  std::cout << std::endl;
+  (void)index;
+  std::cout << "Valid bits are owned by the external lookup tables."
+            << std::endl;
 }
 void ICache::log_pipeline() {
   std::cout << "Request Context:" << std::endl;

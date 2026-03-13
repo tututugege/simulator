@@ -22,10 +22,10 @@ using LookupTimingPolicy =
 
 constexpr int kSetAddrBits = icache_module_n::ICACHE_V1_INDEX_BITS;
 constexpr int kRows = icache_module_n::ICACHE_V1_SET_NUM;
-constexpr int kDataChunks = ICACHE_V1_WAYS * icache_module_n::ICACHE_V1_WORD_NUM;
-constexpr int kDataChunkBits = icache_module_n::ICACHE_V1_WORD_BITS;
+constexpr int kDataChunks = ICACHE_V1_WAYS;
+constexpr int kDataChunkBits = ICACHE_LINE_SIZE * 8;
 constexpr int kTagChunks = ICACHE_V1_WAYS;
-constexpr int kTagChunkBits = 32;
+constexpr int kTagChunkBits = icache_module_n::ICACHE_V1_TAG_BITS;
 constexpr int kValidChunks = ICACHE_V1_WAYS;
 constexpr int kValidChunkBits = 1;
 
@@ -78,6 +78,19 @@ void icache_seq_read(struct icache_in *in, struct icache_out *out) {
   assert(out != nullptr);
   (void)in;
   (void)out;
+}
+
+void icache_peek_ready(struct icache_in *in, struct icache_out *out) {
+  assert(in != nullptr);
+  assert(out != nullptr);
+  if (!in->reset) {
+    assert(in->csr_status != nullptr &&
+           "icache_peek_ready requires csr_status when not in reset");
+  }
+  ICacheTop *instance = get_icache_instance();
+  bind_icache_runtime(instance);
+  instance->setIO(in, out);
+  instance->peek_ready();
 }
 
 void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
@@ -134,49 +147,50 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
   icache.io.lookup_in.lookup_resp_valid =
       data_resp.valid && tag_resp.valid && valid_resp.valid;
   for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
-    icache.io.lookup_in.lookup_set_tag[way] = tag_resp.payload.chunks[way];
-    icache.io.lookup_in.lookup_set_valid[way] = valid_resp.payload.chunks[way];
+    icache.io.lookup_in.lookup_set_tag[way] = tag_resp.payload.chunks[way][0];
+    icache.io.lookup_in.lookup_set_valid[way] = valid_resp.payload.chunks[way][0];
     for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
-      uint32_t flat = way * icache_module_n::ICACHE_V1_WORD_NUM + word;
       icache.io.lookup_in.lookup_set_data[way][word] =
-          data_resp.payload.chunks[flat];
+          data_resp.payload.chunks[way][word];
     }
   }
   instance->comb();
-  if (!in->run_comb_only) {
-    instance->seq();
-    data_read.enable = icache.io.regs.lookup_pending_r;
-    tag_read.enable = data_read.enable;
-    valid_read.enable = data_read.enable;
-    data_read.address = icache.io.regs.lookup_index_r;
-    tag_read.address = icache.io.regs.lookup_index_r;
-    valid_read.address = icache.io.regs.lookup_index_r;
+  instance->seq();
+  data_read.enable = icache.io.regs.lookup_pending_r;
+  tag_read.enable = data_read.enable;
+  valid_read.enable = data_read.enable;
+  data_read.address = icache.io.regs.lookup_index_r;
+  tag_read.address = icache.io.regs.lookup_index_r;
+  valid_read.address = icache.io.regs.lookup_index_r;
 
-    DataTable::WriteReq data_write{};
-    TagTable::WriteReq tag_write{};
-    ValidTable::WriteReq valid_write{};
-    if (icache.io.table_write.we) {
-      data_write.enable = true;
-      tag_write.enable = true;
-      valid_write.enable = true;
-      data_write.address = icache.io.table_write.index;
-      tag_write.address = icache.io.table_write.index;
-      valid_write.address = icache.io.table_write.index;
-      tag_write.payload.chunks[icache.io.table_write.way] = icache.io.table_write.tag;
-      tag_write.chunk_enable[icache.io.table_write.way] = true;
-      valid_write.payload.chunks[icache.io.table_write.way] =
-          icache.io.table_write.valid;
-      valid_write.chunk_enable[icache.io.table_write.way] = true;
-      for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
-        uint32_t flat = icache.io.table_write.way * icache_module_n::ICACHE_V1_WORD_NUM + word;
-        data_write.payload.chunks[flat] = icache.io.table_write.data[word];
-        data_write.chunk_enable[flat] = true;
-      }
+  DataTable::WriteReq data_write{};
+  TagTable::WriteReq tag_write{};
+  ValidTable::WriteReq valid_write{};
+  if (icache.io.table_write.we) {
+    data_write.enable = true;
+    tag_write.enable = true;
+    valid_write.enable = true;
+    data_write.address = icache.io.table_write.index;
+    tag_write.address = icache.io.table_write.index;
+    valid_write.address = icache.io.table_write.index;
+    tag_write.payload.chunks[icache.io.table_write.way][0] =
+        icache.io.table_write.tag;
+    tag_write.chunk_enable[icache.io.table_write.way] = true;
+    valid_write.payload.chunks[icache.io.table_write.way][0] =
+        icache.io.table_write.valid;
+    valid_write.chunk_enable[icache.io.table_write.way] = true;
+    for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+      data_write.payload.chunks[icache.io.table_write.way][word] =
+          icache.io.table_write.data[word];
     }
-    data_table.seq(data_read, data_write);
-    tag_table.seq(tag_read, tag_write);
-    valid_table.seq(valid_read, valid_write);
+    data_write.chunk_enable[icache.io.table_write.way] = true;
   }
+  if (icache.io.table_write.invalidate_all) {
+    valid_table.reset();
+  }
+  data_table.seq(data_read, data_write);
+  tag_table.seq(tag_read, tag_write);
+  valid_table.seq(valid_read, valid_write);
   instance->syncPerf();
 }
 

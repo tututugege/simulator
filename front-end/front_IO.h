@@ -97,7 +97,6 @@ struct icache_in {
   bool icache_read_valid_2;
   uint32_t fetch_address_2;
   CsrStatusIO *csr_status;
-  bool run_comb_only;
 };
 
 struct icache_out {
