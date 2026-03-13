@@ -4,7 +4,7 @@
  * - 128 sets
  * - 32 bytes per cache line
  * - Random replacement policy
- * - 2-stage pipeline: comb1 -> seq1 -> comb2
+ * - single registered request context with same-cycle hit bypass
  *
  * Address split:
  * PC[31:12], PC[11:5], PC[4:0]
@@ -14,9 +14,9 @@
  *    - PC[4:2]: 3-bit Word offset within a cache line
  *    - PC[1:0]: 2-bit Byte offset within a word
  *
- * 两级流水线
- * - 第一级流水线(comb1)：取到 IFU 请求 PC 对应 Index 的 cache set
- * - 第二级流水线(comb2)：在该 cache set 中查找 Tag，决定是否命中
+ * 当前实现不再显式拆成 comb1/comb2 两级流水线：
+ * - 组合逻辑在一个请求上下文上完成 lookup / hit / miss 判断
+ * - 时序逻辑只更新请求上下文、ready 状态和 refill 状态
  */
 #ifndef ICACHE_MODULE_H
 #define ICACHE_MODULE_H
@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <frontend.h>
 #include <iostream>
-#include "icache_genio_types.h"
+#include "base_types.h"
 
 // -----------------------------------------------------------------------------
 // SRAM lookup latency model (ICache)
@@ -91,7 +91,9 @@ namespace icache_module_n {
 static constexpr uint32_t ICACHE_V1_OFFSET_BITS = __builtin_ctz(ICACHE_LINE_SIZE);
 static constexpr uint32_t ICACHE_V1_INDEX_BITS = 12 - ICACHE_V1_OFFSET_BITS;
 static constexpr uint32_t ICACHE_V1_SET_NUM = 1u << ICACHE_V1_INDEX_BITS;
-static constexpr uint32_t ICACHE_V1_WORD_NUM = 1u << (ICACHE_V1_OFFSET_BITS - 2);
+static constexpr uint32_t ICACHE_V1_WORD_BITS = 32;
+static constexpr uint32_t ICACHE_V1_WORD_BYTES = ICACHE_V1_WORD_BITS / 8u;
+static constexpr uint32_t ICACHE_V1_WORD_NUM = ICACHE_LINE_SIZE / ICACHE_V1_WORD_BYTES;
 static constexpr uint32_t ICACHE_V1_TAG_BITS = 20;
 
 // i-Cache State
@@ -116,7 +118,7 @@ struct ICache_lookup_in_t {
   // - SRAM-style lookup: asserted only when the read response is ready
   wire<1> lookup_resp_valid = false;
   // Set view (WAYS x LINE_WORDS).
-  wire<32> lookup_set_data[ICACHE_V1_WAYS][ICACHE_V1_WORD_NUM] = {{0}};
+  wire<ICACHE_V1_WORD_BITS> lookup_set_data[ICACHE_V1_WAYS][ICACHE_V1_WORD_NUM] = {{0}};
   wire<20> lookup_set_tag[ICACHE_V1_WAYS] = {0};
   wire<1> lookup_set_valid[ICACHE_V1_WAYS] = {false};
 };
@@ -125,18 +127,19 @@ struct ICache_lookup_in_t {
 // Generalized-IO: register state (sequential) excluding perf counters
 // -----------------------------------------------------------------------------
 struct ICache_regs_t {
-  // Request pipeline registers (single-stage request context).
-  // Set data/tag/valid are no longer latched in regs; they are read in comb.
-  reg<1> pipe_valid_r = false;
-  reg<32> pipe_pc_r = 0;
-  reg<7> pipe_index_r = 0;
+  // Registered request context for the current in-flight lookup/fill.
+  reg<1> req_valid_r = false;
+  reg<32> req_pc_r = 0;
+  reg<7> req_index_r = 0;
+  // Registered frontend acceptance state.
+  reg<1> ifu_req_ready_r = true;
 
   // FSM + memory channel registers
   reg<2> state = static_cast<reg<2>>(IDLE);
   reg<1> mem_axi_state = static_cast<reg<1>>(AXI_IDLE);
 
   // Memory response registers
-  reg<32> mem_resp_data_r[ICACHE_LINE_SIZE / 4] = {0};
+  reg<ICACHE_V1_WORD_BITS> mem_resp_data_r[ICACHE_V1_WORD_NUM] = {0};
 
   // Replacement / translation state
   reg<8> replace_idx = 0;
@@ -163,7 +166,7 @@ struct ICache_table_write_t {
   wire<1> we = false;
   wire<7> index = 0;
   wire<8> way = 0;
-  wire<32> data[ICACHE_LINE_SIZE / 4] = {0};
+  wire<ICACHE_V1_WORD_BITS> data[ICACHE_V1_WORD_NUM] = {0};
   wire<20> tag = 0;
   wire<1> valid = false;
 };
@@ -186,7 +189,7 @@ struct ICache_in_t {
   wire<1> mem_resp_valid = false;
   // For compatibility with ICacheV2 top-level wiring (ignored by V1).
   wire<4> mem_resp_id = 0;
-  wire<32> mem_resp_data[ICACHE_LINE_SIZE / 4] = {0}; // Data from memory (Cache line)
+  wire<ICACHE_V1_WORD_BITS> mem_resp_data[ICACHE_V1_WORD_NUM] = {0}; // Data from memory (Cache line)
 };
 
 struct ICache_out_t {
@@ -195,7 +198,7 @@ struct ICache_out_t {
   wire<1> ifu_resp_valid = false; // Indicates if output data is valid
   wire<1> ifu_req_ready = false;  // Indicates if i-cache is allow to accept next PC
   wire<32> ifu_resp_pc = 0;    // PC corresponding to ifu_resp
-  wire<32> rd_data[ICACHE_LINE_SIZE / 4] = {0}; // Data read from cache
+  wire<ICACHE_V1_WORD_BITS> rd_data[ICACHE_V1_WORD_NUM] = {0}; // Data read from cache
   wire<1> ifu_page_fault = false;                 // page fault exception signal
 
   // Output to MMU (Memory Management Unit)
@@ -229,10 +232,8 @@ public:
   void reset();
   void invalidate_all();
   void comb();
-  void comb_pipe1();
-  void comb_pipe2();
+  void eval_state_machine();
   void seq();
-  void seq_pipe1();
 
   // Debug/verification helper: export the set view that the lookup stage reads
   // in the current cycle for the given pc (including SRAM pending selection).
@@ -283,29 +284,11 @@ private:
   uint32_t cache_tag[set_num][way_cnt] = {{0}};
   bool cache_valid[set_num][way_cnt] = {{false}};
 
-  /*
-   * Icache Inner connections between 2 pipeline stages
-   */
-  struct pipe1_to_pipe2_t {
-    // From pipe1 to pipe2 (combination logic/wire)
-    bool valid; // Indicates if the data is valid
-    uint32_t cache_set_data_w[way_cnt][word_num]; // Data from the cache set
-    uint32_t cache_set_tag_w[way_cnt];            // Tag bits from the cache set
-    bool cache_set_valid_w[way_cnt]; // Valid bits from the cache set
-    uint32_t pc_w;                   // Request PC
-    uint32_t index_w;                // Index extracted from PC, index_bits bit
-    // next-valid for pipe register
-    bool valid_next;
-  };
+  // Current-cycle lookup set view used by the request compare path.
+  uint32_t lookup_set_data_w[way_cnt][word_num] = {{0}};
+  uint32_t lookup_set_tag_w[way_cnt] = {0};
+  bool lookup_set_valid_w[way_cnt] = {false};
 
-  struct pipe2_to_pipe1_t {
-    // control signals
-    bool ready; // Indicates if pipe2 is ready to accept data, set in comb_pipe2
-  };
-
-  // pipeline datapath
-  pipe1_to_pipe2_t pipe1_to_pipe2{};
-  pipe2_to_pipe1_t pipe2_to_pipe1{};
   icache_module_n::ICacheState state_next =
       icache_module_n::IDLE; // Next state of the i-cache
 
@@ -327,9 +310,11 @@ private:
    */
   uint32_t replace_idx_next = 0;
 
-  // Comb-only flag: load cache set into pipe1_to_pipe2 registers this cycle
+  // Lookup / acceptance combinational state
+  bool req_ready_w = true;
   bool sram_load_fire = false;
   bool fast_bypass_fire = false;
+  bool fast_bypass_from_pending = false;
   bool lookup_pending_next = false;
   uint32_t lookup_index_next = 0;
   uint32_t lookup_pc_next = 0;
