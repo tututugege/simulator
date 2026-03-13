@@ -13,6 +13,7 @@ struct front_top_in {
   // from back-end
   bool back2front_valid[COMMIT_WIDTH];
   bool refetch;
+  bool itlb_flush;
   uint32_t refetch_address;
   uint32_t predict_base_pc[COMMIT_WIDTH];
   bool predict_dir[COMMIT_WIDTH];
@@ -91,13 +92,13 @@ struct BPU_out {
 struct icache_in {
   bool reset;
   bool refetch;
+  bool itlb_flush;
   // from BPU
   bool icache_read_valid;
   uint32_t fetch_address;
   bool icache_read_valid_2;
   uint32_t fetch_address_2;
   CsrStatusIO *csr_status;
-  bool run_comb_only;
 };
 
 struct icache_out {

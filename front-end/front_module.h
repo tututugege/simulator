@@ -19,6 +19,7 @@ void BPU_change_pc_reg(uint32_t new_pc);
 
 void icache_top(struct icache_in *in, struct icache_out *out);
 void icache_seq_read(struct icache_in *in, struct icache_out *out);
+void icache_peek_ready(struct icache_in *in, struct icache_out *out);
 void icache_comb_calc(struct icache_in *in, struct icache_out *out);
 void icache_seq_write();
 void icache_set_context(SimContext *ctx);

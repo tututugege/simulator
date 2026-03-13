@@ -22,17 +22,6 @@ inline int alloc_free_txid(const ICache_regs_t &regs) {
 ICache::ICache() {
   reset();
 
-  // Initialize cache data, tags, and valid bits
-  for (uint32_t i = 0; i < set_num; ++i) {
-    for (uint32_t j = 0; j < way_cnt; ++j) {
-      cache_valid[i][j] = false;
-      cache_tag[i][j] = 0;
-      for (uint32_t k = 0; k < word_num; ++k) {
-        cache_data[i][j][k] = 0;
-      }
-    }
-  }
-
   // Initialize state variables
   io.regs.state = static_cast<uint8_t>(IDLE);
   state_next = IDLE;
@@ -41,6 +30,7 @@ ICache::ICache() {
   io.regs.replace_idx = 0;
   replace_idx_next = 0;
   io.regs.ppn_r = 0;
+  io.regs.ifu_req_ready_r = true;
   io.regs.miss_txid_valid_r = false;
   io.regs.miss_txid_r = 0;
   for (int i = 0; i < 16; ++i) {
@@ -48,10 +38,10 @@ ICache::ICache() {
     io.regs.txid_canceled_r[i] = false;
   }
   mem_gnt = 0;
-  io.regs.pipe_valid_r = false;
-  pipe1_to_pipe2.valid_next = false;
-  pipe1_to_pipe2.pc_w = 0;
-  pipe2_to_pipe1.ready = true;
+  io.regs.req_valid_r = false;
+  io.regs.req_pc_r = 0;
+  io.regs.req_index_r = 0;
+  req_ready_w = true;
 
   io.regs.lookup_pending_r = false;
   lookup_pending_next = false;
@@ -70,6 +60,7 @@ void ICache::reset() {
   io.regs.replace_idx = 0;
   replace_idx_next = 0;
   io.regs.ppn_r = 0;
+  io.regs.ifu_req_ready_r = true;
   io.regs.miss_txid_valid_r = false;
   io.regs.miss_txid_r = 0;
   for (int i = 0; i < 16; ++i) {
@@ -77,12 +68,10 @@ void ICache::reset() {
     io.regs.txid_canceled_r[i] = false;
   }
   mem_gnt = 0;
-  io.regs.pipe_valid_r = false;
-  pipe1_to_pipe2.valid_next = false;
-  pipe1_to_pipe2.pc_w = 0;
-  io.regs.pipe_pc_r = 0;
-  io.regs.pipe_index_r = 0;
-  pipe2_to_pipe1.ready = true;
+  io.regs.req_valid_r = false;
+  io.regs.req_pc_r = 0;
+  io.regs.req_index_r = 0;
+  req_ready_w = true;
 
   io.regs.lookup_pending_r = false;
   lookup_pending_next = false;
@@ -101,90 +90,59 @@ void ICache::reset() {
   }
 }
 
-void ICache::invalidate_all() {
-  for (uint32_t i = 0; i < set_num; ++i) {
-    for (uint32_t j = 0; j < way_cnt; ++j) {
-      cache_valid[i][j] = false;
-    }
-  }
-}
-
 void ICache::comb() {
   // Initialize generalized outputs at the start of comb().
   io.out = {};
   io.table_write = {};
   fast_bypass_fire = false;
-  io.out.ifu_resp_pc = io.regs.pipe_pc_r;
+  fast_bypass_from_pending = false;
+  io.out.ifu_req_ready = io.regs.ifu_req_ready_r;
+  io.out.ifu_resp_pc = io.regs.req_pc_r;
   io.out.mem_req_id = io.regs.miss_txid_valid_r ? io.regs.miss_txid_r : 0;
   io.out.mem_req_addr =
-      (io.regs.ppn_r << 12) | (io.regs.pipe_index_r << offset_bits);
+      (io.regs.ppn_r << 12) | (io.regs.req_index_r << offset_bits);
   if (io.regs.lookup_pending_r) {
     io.out.mmu_req_vtag = io.regs.lookup_pc_r >> 12;
-  } else if (io.regs.pipe_valid_r) {
-    io.out.mmu_req_vtag = io.regs.pipe_pc_r >> 12;
+  } else if (io.regs.req_valid_r) {
+    io.out.mmu_req_vtag = io.regs.req_pc_r >> 12;
   } else {
     io.out.mmu_req_vtag = io.in.pc >> 12;
   }
 
   // Default register write-back: hold values unless overwritten by comb logic.
   io.reg_write = io.regs;
+  req_ready_w = io.regs.ifu_req_ready_r;
 
   // Ordered comb interaction:
-  // 1) pipe2 computes ready/state outputs from registered pipeline state.
-  // 2) pipe1 consumes pipe2.ready and computes next lookup/pipe registers.
-  comb_pipe2();
-  comb_pipe1();
+  // 1) state machine computes hit/miss/fill behavior from registered request
+  //    context and current memory/MMU inputs
+  // 2) request side updates next request/lookup state
+  eval_state_machine();
+  uint32_t index = (io.in.pc >> offset_bits) & (set_num - 1u);
+  lookup(index);
 }
 
-void ICache::seq() { seq_pipe1(); }
-
-void ICache::export_lookup_set_for_pc(
-    uint32_t pc, uint32_t out_data[ICACHE_V1_WAYS][ICACHE_LINE_SIZE / 4],
-    uint32_t out_tag[ICACHE_V1_WAYS], bool out_valid[ICACHE_V1_WAYS]) const {
-  uint32_t pc_index = (pc >> offset_bits) & (set_num - 1u);
-  uint32_t rd_index = pc_index;
-  if (lookup_latency_enabled()) {
-    rd_index = io.regs.lookup_pending_r ? io.regs.lookup_index_r : pc_index;
-  }
-
-  for (uint32_t way = 0; way < way_cnt; ++way) {
-    for (uint32_t word = 0; word < word_num; ++word) {
-      out_data[way][word] = cache_data[rd_index][way][word];
-    }
-    out_tag[way] = cache_tag[rd_index][way];
-    out_valid[way] = cache_valid[rd_index][way];
-  }
+void ICache::seq() {
+  io.regs = io.reg_write;
 }
 
 void ICache::lookup_read_set(uint32_t lookup_index, bool gate_valid_with_req) {
-  constexpr bool from_input =
-      (ICACHE_LOOKUP_FROM_INPUT != 0) || (ICACHE_LOOKUP_LATENCY > 0);
-  bool resp_valid = true;
-  if (from_input) {
-    resp_valid = io.lookup_in.lookup_resp_valid;
+  (void)lookup_index;
+  if (!io.lookup_in.lookup_resp_valid) {
+    return;
   }
   for (uint32_t way = 0; way < way_cnt; ++way) {
     for (uint32_t word = 0; word < word_num; ++word) {
-      pipe1_to_pipe2.cache_set_data_w[way][word] =
-          from_input ? io.lookup_in.lookup_set_data[way][word]
-                     : cache_data[lookup_index][way][word];
+      lookup_set_data_w[way][word] =
+          io.lookup_in.lookup_set_data[way][word];
     }
-    pipe1_to_pipe2.cache_set_tag_w[way] =
-        from_input ? io.lookup_in.lookup_set_tag[way]
-                   : cache_tag[lookup_index][way];
-    bool valid_bit = from_input ? io.lookup_in.lookup_set_valid[way]
-                                : cache_valid[lookup_index][way];
-    if (from_input) {
-      // When the lookup response is not transfer-valid, treat all entries as
-      // invalid regardless of their tag/data/valid fields.
-      valid_bit = resp_valid && valid_bit;
-    }
+    lookup_set_tag_w[way] = io.lookup_in.lookup_set_tag[way];
+    bool valid_bit = io.lookup_in.lookup_set_valid[way];
     if (gate_valid_with_req) {
       valid_bit = valid_bit && io.in.ifu_req_valid;
     }
-    pipe1_to_pipe2.cache_set_valid_w[way] = valid_bit;
+    lookup_set_valid_w[way] = valid_bit;
   }
-  pipe1_to_pipe2.index_w = lookup_index;
 }
 
 void ICache::lookup(uint32_t index) {
@@ -195,36 +153,39 @@ void ICache::lookup(uint32_t index) {
   lookup_index_next = io.regs.lookup_index_r;
   lookup_pc_next = io.regs.lookup_pc_r;
   sram_load_fire = false;
+  uint32_t load_pc = io.regs.lookup_pending_r ? io.regs.lookup_pc_r : io.in.pc;
+  uint32_t load_index = index;
+  bool req_valid_next = io.regs.req_valid_r;
 
-  uint32_t lookup_index =
-      io.regs.lookup_pending_r ? io.regs.lookup_index_r : index;
-  lookup_read_set(lookup_index, /*gate_valid_with_req=*/false);
-  pipe1_to_pipe2.valid = io.in.ifu_req_valid;
-  pipe1_to_pipe2.pc_w = io.regs.lookup_pending_r ? io.regs.lookup_pc_r : io.in.pc;
+  if (ICACHE_LOOKUP_LATENCY == 0) {
+    lookup_read_set(index, /*gate_valid_with_req=*/false);
+  } else if (io.regs.lookup_pending_r && io.lookup_in.lookup_resp_valid) {
+    lookup_read_set(io.regs.lookup_index_r, /*gate_valid_with_req=*/false);
+  }
 
   if (kill_pipe) {
-    pipe1_to_pipe2.valid_next = false;
-    io.out.ifu_req_ready = false;
+    req_valid_next = false;
     io.out.mmu_req_valid = false;
-    io.reg_write.pipe_valid_r = pipe1_to_pipe2.valid_next;
+    io.reg_write.req_valid_r = false;
     io.reg_write.lookup_pending_r = false;
     io.reg_write.lookup_index_r = 0;
     io.reg_write.lookup_pc_r = 0;
+    io.reg_write.ifu_req_ready_r = false;
     return;
   }
 
   if (fast_bypass_fire) {
-    pipe1_to_pipe2.valid_next = false;
-    io.reg_write.pipe_valid_r = false;
+    req_valid_next = false;
+    io.reg_write.req_valid_r = false;
     io.reg_write.lookup_pending_r = false;
     io.reg_write.lookup_index_r = 0;
     io.reg_write.lookup_pc_r = 0;
     io.out.mmu_req_valid = false;
-    io.out.ifu_req_ready = true;
+    io.reg_write.ifu_req_ready_r = !fast_bypass_from_pending;
     return;
   }
 
-  bool can_accept = io.in.ifu_req_valid && pipe2_to_pipe1.ready &&
+  bool can_accept = io.in.ifu_req_valid && io.regs.ifu_req_ready_r &&
                     !io.regs.lookup_pending_r;
   if (can_accept) {
     if (!use_external_lookup) {
@@ -248,30 +209,31 @@ void ICache::lookup(uint32_t index) {
 
   if (sram_load_fire) {
     if (io.regs.lookup_pending_r) {
-      pipe1_to_pipe2.pc_w = io.regs.lookup_pc_r;
-      pipe1_to_pipe2.index_w = io.regs.lookup_index_r;
+      load_pc = io.regs.lookup_pc_r;
+      load_index = io.regs.lookup_index_r;
     } else {
-      pipe1_to_pipe2.pc_w = io.in.pc;
-      pipe1_to_pipe2.index_w = index;
+      load_pc = io.in.pc;
+      load_index = index;
     }
+    lookup_read_set(load_index, /*gate_valid_with_req=*/false);
   }
 
   if (sram_load_fire) {
-    pipe1_to_pipe2.valid_next = true;
-  } else if (pipe2_to_pipe1.ready) {
-    pipe1_to_pipe2.valid_next = false;
-  } else {
-    pipe1_to_pipe2.valid_next = io.regs.pipe_valid_r;
+    req_valid_next = true;
+  } else if (req_ready_w) {
+    req_valid_next = false;
   }
 
-  io.reg_write.pipe_valid_r = pipe1_to_pipe2.valid_next;
+  io.reg_write.req_valid_r = req_valid_next;
   io.reg_write.lookup_pending_r = use_external_lookup ? lookup_pending_next : false;
   io.reg_write.lookup_index_r = use_external_lookup ? lookup_index_next : 0;
   io.reg_write.lookup_pc_r = use_external_lookup ? lookup_pc_next : 0;
+  io.reg_write.ifu_req_ready_r =
+      req_ready_w && !lookup_pending_next && !req_valid_next;
 
   if (sram_load_fire && !kill_pipe) {
-    io.reg_write.pipe_pc_r = pipe1_to_pipe2.pc_w;
-    io.reg_write.pipe_index_r = pipe1_to_pipe2.index_w;
+    io.reg_write.req_pc_r = load_pc;
+    io.reg_write.req_index_r = load_index;
   }
 
   io.out.mmu_req_valid = false;
@@ -281,23 +243,15 @@ void ICache::lookup(uint32_t index) {
   } else if (io.regs.lookup_pending_r && !io.in.ppn_valid) {
     io.out.mmu_req_valid = true;
     io.out.mmu_req_vtag = io.regs.lookup_pc_r >> 12;
-  } else if (io.regs.pipe_valid_r && !io.in.ppn_valid) {
+  } else if (io.regs.req_valid_r && !io.in.ppn_valid) {
     io.out.mmu_req_valid = true;
-    io.out.mmu_req_vtag = io.regs.pipe_pc_r >> 12;
+    io.out.mmu_req_vtag = io.regs.req_pc_r >> 12;
   }
-
-  io.out.ifu_req_ready = pipe2_to_pipe1.ready && !io.regs.lookup_pending_r;
 }
 
-void ICache::comb_pipe1() {
-  // Logic for Pipe 1 (IFU Request -> Pipe Register)
-  uint32_t index = (io.in.pc >> offset_bits) & (set_num - 1);
-
-  lookup(index);
-}
-
-void ICache::comb_pipe2() {
+void ICache::eval_state_machine() {
   io.table_write.we = false;
+  io.table_write.invalidate_all = io.in.flush;
   io.table_write.index = 0;
   io.table_write.way = 0;
   for (uint32_t word = 0; word < word_num; ++word) {
@@ -314,12 +268,12 @@ void ICache::comb_pipe2() {
   io.out.mem_resp_ready = false;
   io.out.mem_req_valid = false;
   io.out.ifu_resp_valid = false;
-  io.out.ifu_resp_pc = io.regs.pipe_pc_r;
+  io.out.ifu_resp_pc = io.regs.req_pc_r;
   io.out.ifu_page_fault = false;
   io.out.mem_req_id = io.regs.miss_txid_valid_r ? io.regs.miss_txid_r : 0;
   state_next = state;
   mem_axi_state_next = mem_axi_state;
-  pipe2_to_pipe1.ready = false; // Default blocked
+  req_ready_w = false;
   const bool kill_pipe = io.in.refetch;
   uint8_t resp_id = static_cast<uint8_t>(io.in.mem_resp_id & 0xF);
   bool canceled_resp =
@@ -338,14 +292,13 @@ void ICache::comb_pipe2() {
   case IDLE:
     if (kill_pipe) {
       state_next = IDLE;
-      pipe2_to_pipe1.ready = true;
+      req_ready_w = true;
       break;
     }
 
-    // Fast hit/pagefault bypass for register-lookup mode:
-    // when pipeline is empty and translation is already available, return in
-    // the same cycle without waiting for pipe register transfer.
-    if (!lookup_latency_enabled() && !io.regs.pipe_valid_r && io.in.ifu_req_valid &&
+    // Fast hit/pagefault bypass for the no-latency lookup mode when the
+    // registered request slot is empty.
+    if (!lookup_latency_enabled() && !io.regs.req_valid_r && io.in.ifu_req_valid &&
         io.in.ppn_valid) {
       io.out.ifu_resp_pc = io.in.pc;
       if (io.in.page_fault) {
@@ -354,7 +307,7 @@ void ICache::comb_pipe2() {
         }
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = true;
-        pipe2_to_pipe1.ready = true;
+        req_ready_w = true;
         fast_bypass_fire = true;
         state_next = IDLE;
         break;
@@ -364,11 +317,11 @@ void ICache::comb_pipe2() {
       lookup_read_set(index, /*gate_valid_with_req=*/false);
       bool hit = false;
       for (uint32_t way = 0; way < way_cnt; ++way) {
-        if (pipe1_to_pipe2.cache_set_valid_w[way] &&
-            pipe1_to_pipe2.cache_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
+        if (lookup_set_valid_w[way] &&
+            lookup_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
           hit = true;
           for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = pipe1_to_pipe2.cache_set_data_w[way][word];
+            io.out.rd_data[word] = lookup_set_data_w[way][word];
           }
           break;
         }
@@ -376,41 +329,41 @@ void ICache::comb_pipe2() {
       if (hit) {
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = false;
-        pipe2_to_pipe1.ready = true;
+        req_ready_w = true;
         fast_bypass_fire = true;
         state_next = IDLE;
         break;
       }
-      // miss falls through to the regular two-step lookup/miss pipeline
+      // miss falls through to the registered request path below
     }
 
-    if (io.regs.pipe_valid_r && io.in.ppn_valid) {
+    if (io.regs.req_valid_r && io.in.ppn_valid) {
       if (io.in.page_fault) {
         for (uint32_t word = 0; word < word_num; ++word) {
           io.out.rd_data[word] = 0;
         }
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = true;
-        pipe2_to_pipe1.ready = true;
+        req_ready_w = true;
         state_next = IDLE;
         break;
       }
 
-      lookup_read_set(io.regs.pipe_index_r, /*gate_valid_with_req=*/false);
+      lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
       bool hit = false;
       for (uint32_t way = 0; way < way_cnt; ++way) {
-        if (pipe1_to_pipe2.cache_set_valid_w[way] &&
-            pipe1_to_pipe2.cache_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
+        if (lookup_set_valid_w[way] &&
+            lookup_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
           hit = true;
           for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = pipe1_to_pipe2.cache_set_data_w[way][word];
+            io.out.rd_data[word] = lookup_set_data_w[way][word];
           }
           break;
         }
       }
 
       io.out.ifu_resp_valid = hit;
-      pipe2_to_pipe1.ready = hit;
+      req_ready_w = hit;
       if (hit) {
         state_next = IDLE;
       } else {
@@ -418,7 +371,7 @@ void ICache::comb_pipe2() {
                                              : alloc_free_txid(io.regs);
         if (txid < 0) {
           state_next = IDLE;
-          pipe2_to_pipe1.ready = false;
+          req_ready_w = false;
         } else {
           io.reg_write.miss_txid_valid_r = true;
           io.reg_write.miss_txid_r = static_cast<uint8_t>(txid & 0xF);
@@ -426,22 +379,22 @@ void ICache::comb_pipe2() {
         }
       }
 
-    } else if (io.regs.pipe_valid_r && !io.in.ppn_valid) {
-      pipe2_to_pipe1.ready = false;
+    } else if (io.regs.req_valid_r && !io.in.ppn_valid) {
+      req_ready_w = false;
       state_next = IDLE;
     } else {
-      pipe2_to_pipe1.ready = true;
+      req_ready_w = true;
       state_next = IDLE;
     }
 
-    io.out.ppn_ready = io.regs.pipe_valid_r;
+    io.out.ppn_ready = io.regs.req_valid_r;
     break;
 
   case SWAP_IN:
     if (kill_pipe) {
       if (mem_axi_state != AXI_IDLE && mem_wait_must_drain_on_refetch()) {
         state_next = DRAIN;
-        pipe2_to_pipe1.ready = false;
+        req_ready_w = false;
       } else {
         if (mem_axi_state != AXI_IDLE && io.regs.miss_txid_valid_r) {
           uint8_t txid = io.regs.miss_txid_r & 0xF;
@@ -450,7 +403,7 @@ void ICache::comb_pipe2() {
         state_next = IDLE;
         mem_axi_state_next = AXI_IDLE;
         io.reg_write.miss_txid_valid_r = false;
-        pipe2_to_pipe1.ready = true;
+        req_ready_w = true;
       }
       break;
     }
@@ -458,7 +411,7 @@ void ICache::comb_pipe2() {
     if (mem_axi_state == AXI_IDLE) {
       io.out.mem_req_valid = true;
       io.out.mem_req_addr =
-          (io.regs.ppn_r << 12) | (io.regs.pipe_index_r << offset_bits);
+          (io.regs.ppn_r << 12) | (io.regs.req_index_r << offset_bits);
       io.out.mem_req_id = io.regs.miss_txid_r;
       state_next = SWAP_IN;
       if (io.out.mem_req_valid && io.in.mem_req_ready) {
@@ -478,9 +431,10 @@ void ICache::comb_pipe2() {
           mem_resp_data_w[offset] = io.in.mem_resp_data[offset];
         }
 
+        lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
         bool found_invalid = false;
         for (uint32_t way = 0; way < way_cnt; ++way) {
-          if (!cache_valid[io.regs.pipe_index_r][way]) {
+          if (!lookup_set_valid_w[way]) {
             replace_idx_next = way;
             found_invalid = true;
             break;
@@ -490,7 +444,6 @@ void ICache::comb_pipe2() {
           replace_idx_next = (io.regs.replace_idx + 1) % way_cnt;
         }
 
-#if ICACHE_V1_DIRECT_REFILL_RESP
         mem_axi_state_next = AXI_IDLE;
         state_next = IDLE;
         io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
@@ -498,7 +451,7 @@ void ICache::comb_pipe2() {
 
         if (!io.in.flush) {
           io.table_write.we = true;
-          io.table_write.index = io.regs.pipe_index_r;
+          io.table_write.index = io.regs.req_index_r;
           io.table_write.way = replace_idx_next;
           for (uint32_t word = 0; word < word_num; ++word) {
             io.table_write.data[word] = mem_resp_data_w[word];
@@ -512,42 +465,11 @@ void ICache::comb_pipe2() {
           for (uint32_t word = 0; word < word_num; ++word) {
             io.out.rd_data[word] = mem_resp_data_w[word];
           }
-          pipe2_to_pipe1.ready = true;
+          req_ready_w = true;
         } else {
-          pipe2_to_pipe1.ready = true;
+          req_ready_w = true;
         }
-#else
-        state_next = SWAP_IN_OKEY;
-        mem_axi_state_next = AXI_IDLE;
-        io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
-#endif
       }
-    }
-    break;
-
-  case SWAP_IN_OKEY:
-    state_next = IDLE;
-    io.reg_write.miss_txid_valid_r = false;
-
-    if (!io.in.flush) {
-      io.table_write.we = true;
-      io.table_write.index = io.regs.pipe_index_r;
-      io.table_write.way = io.regs.replace_idx;
-      for (uint32_t word = 0; word < word_num; ++word) {
-        io.table_write.data[word] = io.regs.mem_resp_data_r[word];
-      }
-      io.table_write.tag = io.regs.ppn_r;
-      io.table_write.valid = true;
-    }
-
-    if (!io.in.refetch && !io.in.flush) {
-      io.out.ifu_resp_valid = true;
-      for (uint32_t word = 0; word < word_num; ++word) {
-        io.out.rd_data[word] = io.regs.mem_resp_data_r[word];
-      }
-      pipe2_to_pipe1.ready = true;
-    } else {
-      pipe2_to_pipe1.ready = true;
     }
     break;
 
@@ -556,7 +478,7 @@ void ICache::comb_pipe2() {
       state_next = IDLE;
       mem_axi_state_next = AXI_IDLE;
       io.reg_write.miss_txid_valid_r = false;
-      pipe2_to_pipe1.ready = true;
+      req_ready_w = true;
       break;
     }
     io.out.mem_resp_ready = true;
@@ -571,15 +493,16 @@ void ICache::comb_pipe2() {
         io.reg_write.txid_canceled_r[txid] = false;
         io.reg_write.miss_txid_valid_r = false;
       }
-      pipe2_to_pipe1.ready = true;
+      req_ready_w = true;
     } else {
       state_next = DRAIN;
-      pipe2_to_pipe1.ready = false;
+      req_ready_w = false;
     }
     break;
 
   default:
-    std::cerr << "Error: Invalid state in ICache::comb_pipe2()" << std::endl;
+    std::cerr << "Error: Invalid state in ICache::eval_state_machine()"
+              << std::endl;
     exit(1);
     break;
   }
@@ -592,6 +515,7 @@ void ICache::comb_pipe2() {
   if (io.in.ppn_valid && io.out.ppn_ready) {
     io.reg_write.ppn_r = io.in.ppn;
   }
+  io.reg_write.ifu_req_ready_r = req_ready_w;
 
   // Latch memory response data + replacement index when the response arrives.
   if (state == SWAP_IN && mem_gnt) {
@@ -601,29 +525,6 @@ void ICache::comb_pipe2() {
     io.reg_write.replace_idx = replace_idx_next;
   }
 
-}
-
-void ICache::seq_pipe1() {
-  if (io.in.flush) {
-    // fence.i visibility point: invalidate cache lines at seq boundary.
-    invalidate_all();
-  }
-
-  // Apply table write (register-based table backend).
-  if (io.table_write.we && !io.in.flush) {
-    uint32_t index = io.table_write.index;
-    uint32_t way = io.table_write.way;
-    if (index < set_num && way < way_cnt) {
-      for (uint32_t word = 0; word < word_num; ++word) {
-        cache_data[index][way][word] = io.table_write.data[word];
-      }
-      cache_tag[index][way] = io.table_write.tag;
-      cache_valid[index][way] = io.table_write.valid;
-    }
-  }
-
-  // Apply register write-back (unconditional in seq).
-  io.regs = io.reg_write;
 }
 
 void ICache::log_state() {
@@ -637,9 +538,6 @@ void ICache::log_state() {
     break;
   case SWAP_IN:
     std::cout << "SWAP_IN";
-    break;
-  case SWAP_IN_OKEY:
-    std::cout << "SWAP_IN_OKEY";
     break;
   case DRAIN:
     std::cout << "DRAIN";
@@ -655,9 +553,6 @@ void ICache::log_state() {
     break;
   case SWAP_IN:
     std::cout << "SWAP_IN";
-    break;
-  case SWAP_IN_OKEY:
-    std::cout << "SWAP_IN_OKEY";
     break;
   case DRAIN:
     std::cout << "DRAIN";
@@ -675,41 +570,19 @@ void ICache::log_state() {
             << " mem_resp_rdy=" << io.out.mem_resp_ready << std::endl;
 }
 void ICache::log_tag(uint32_t index) {
-  if (index >= set_num) {
-    std::cerr << "Index out of bounds in log_tag: " << index << std::endl;
-    return;
-  }
-  std::cout << "Cache Set Index: " << index << std::endl;
-  for (uint32_t way = 0; way < way_cnt; ++way) {
-    std::cout << "  Way " << way << ": Valid=" << cache_valid[index][way]
-              << ", Tag=0x" << std::hex << cache_tag[index][way] << std::dec
-              << ", Data=[";
-    for (uint32_t word = 0; word < word_num; ++word) {
-      if (word > 0)
-        std::cout << ", ";
-      std::cout << "0x" << std::hex << cache_data[index][way][word] << std::dec;
-    }
-    std::cout << "]" << std::endl;
-  }
+  (void)index;
+  std::cout << "Cache contents are owned by the external lookup tables."
+            << std::endl;
 }
 void ICache::log_valid(uint32_t index) {
-  if (index >= set_num) {
-    std::cerr << "Index out of bounds in log_valid: " << index << std::endl;
-    return;
-  }
-  std::cout << "Cache Set Index: " << index << " Valid Bits: ";
-  for (uint32_t way = 0; way < way_cnt; ++way) {
-    std::cout << cache_valid[index][way] << " ";
-  }
-  std::cout << std::endl;
+  (void)index;
+  std::cout << "Valid bits are owned by the external lookup tables."
+            << std::endl;
 }
 void ICache::log_pipeline() {
-  std::cout << "Pipeline Registers:" << std::endl;
-  std::cout << "  pipe1_to_pipe2.valid_r: " << io.regs.pipe_valid_r
-            << std::endl;
-  std::cout << "  pipe1_to_pipe2.index_r: " << io.regs.pipe_index_r
-            << std::endl;
+  std::cout << "Request Context:" << std::endl;
+  std::cout << "  req_valid_r: " << io.regs.req_valid_r << std::endl;
+  std::cout << "  req_index_r: " << io.regs.req_index_r << std::endl;
   std::cout << "  ppn_r: 0x" << std::hex << io.regs.ppn_r << std::dec << std::endl;
-  std::cout << "  set-data latch: removed (single-stage lookup compare)"
-            << std::endl;
+  std::cout << "  ifu_req_ready_r: " << io.regs.ifu_req_ready_r << std::endl;
 }
