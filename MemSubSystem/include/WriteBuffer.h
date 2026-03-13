@@ -20,6 +20,21 @@ struct WBState {
     bool mergevalid[LSU_STA_COUNT];
 };
 
+struct WbDeferredCheck {
+    bool valid = false;
+    uint32_t addr = 0;
+    uint32_t data[DCACHE_LINE_WORDS] = {};
+    uint64_t resp_cycle = 0;
+};
+
+struct WbIssueTrace {
+    bool valid = false;
+    uint32_t addr = 0;
+    uint32_t head = 0;
+    uint32_t data[DCACHE_LINE_WORDS] = {};
+    uint64_t issue_cycle = 0;
+};
+
 // AXI write-channel interface signals (IC's write_ports[MASTER_DCACHE_W]).
 // axi_in  — inputs from IC to WriteBuffer (driven by RealDcache bridge).
 // axi_out — outputs from WriteBuffer to IC (consumed by RealDcache bridge).
@@ -90,4 +105,6 @@ public:
     WBOut out;
 
     WBState cur, nxt;
+    WbDeferredCheck cur_check, nxt_check;
+    WbIssueTrace cur_issue, nxt_issue;
 };

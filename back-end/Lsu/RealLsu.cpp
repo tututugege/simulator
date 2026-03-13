@@ -14,6 +14,8 @@ static constexpr int64_t REQ_WAIT_RETRY = 0x7FFFFFFFFFFFFFFF;
 static constexpr int64_t REQ_WAIT_SEND = 0x7FFFFFFFFFFFFFFD;
 static constexpr int64_t REQ_WAIT_RESP = 0x7FFFFFFFFFFFFFFE;
 static constexpr int64_t REQ_WAIT_EXEC = 0x7FFFFFFFFFFFFFFC;
+static constexpr uint64_t LD_RESP_STUCK_RETRY_CYCLES = 512;
+static constexpr uint64_t LD_KILLED_GC_CYCLES = 512;
 static inline bool is_amo_lr_uop(const MicroOp &uop) {
   return ((uop.instruction & 0x7Fu) == 0x2Fu) &&
          ((uop.func7 >> 2) == AmoOp::LR);
@@ -145,6 +147,7 @@ void RealLsu::init()
         ldq[i].killed = false;
         ldq[i].sent = false;
         ldq[i].waiting_resp = false;
+        ldq[i].wait_resp_since = 0;
         ldq[i].tlb_retry = false;
         ldq[i].is_mmio_wait = false;
         ldq[i].uop = {};
@@ -278,6 +281,65 @@ void RealLsu::comb_recv()
     for (int i = 0; i < LSU_STA_COUNT; i++)
     {
         out.lsu2dcache->req_ports.store_ports[i].valid = false;
+    }
+
+    // Lost-response recovery:
+    // 1) non-killed load waits too long -> retry
+    // 2) killed load waits too long -> drop the slot to avoid LDQ leak/deadlock
+    for (int i = 0; i < LDQ_SIZE; i++)
+    {
+        auto &entry = ldq[i];
+        if (!entry.valid || !entry.sent || !entry.waiting_resp)
+        {
+            continue;
+        }
+        if (entry.uop.cplt_time != REQ_WAIT_RESP)
+        {
+            continue;
+        }
+        if (sim_time < 0)
+        {
+            continue;
+        }
+        const uint64_t sim_time_u64 = static_cast<uint64_t>(sim_time);
+        if (sim_time_u64 < entry.wait_resp_since)
+        {
+            continue;
+        }
+        const uint64_t wait_cycles = sim_time_u64 - entry.wait_resp_since;
+        if (entry.killed)
+        {
+            if (wait_cycles >= LD_KILLED_GC_CYCLES)
+            {
+                DBG_PRINTF("[LSU][KILLED LDQ GC] cyc=%lld ldq=%d rob=%u flag=%u pc=0x%08x paddr=0x%08x inst_idx=%lld wait=%llu\n",
+                           (long long)sim_time, i, (unsigned)entry.uop.rob_idx,
+                           (unsigned)entry.uop.rob_flag, entry.uop.pc,
+                           entry.uop.diag_val, (long long)entry.uop.inst_idx,
+                           (unsigned long long)wait_cycles);
+                entry.sent = false;
+                entry.waiting_resp = false;
+                entry.wait_resp_since = 0;
+                entry.uop.cplt_time = sim_time;
+                entry.replay_priority = 0;
+            }
+            continue;
+        }
+        if (is_mmio_addr(entry.uop.diag_val))
+        {
+            continue;
+        }
+        if (wait_cycles >= LD_RESP_STUCK_RETRY_CYCLES)
+        {
+            DBG_PRINTF("[LSU][LD RESP TIMEOUT] cyc=%lld ldq=%d rob=%u pc=0x%08x paddr=0x%08x wait=%llu -> retry\n",
+                       (long long)sim_time, i, (unsigned)entry.uop.rob_idx,
+                       entry.uop.pc, entry.uop.diag_val,
+                       (unsigned long long)wait_cycles);
+            entry.sent = false;
+            entry.waiting_resp = false;
+            entry.wait_resp_since = 0;
+            entry.uop.cplt_time = REQ_WAIT_SEND;
+            entry.replay_priority = 3;
+        }
     }
 
     replay_count_ldq = 0;
@@ -469,6 +531,7 @@ void RealLsu::comb_recv()
                 entry.is_mmio_wait = false; // 已发出请求，重置等待标志
                 entry.sent = true;
                 entry.waiting_resp = true;
+                entry.wait_resp_since = sim_time;
                 entry.uop.cplt_time = REQ_WAIT_RESP;
                 break;
                 // 这里直接调用外设接口，绕过正常的 Cache 请求流程
@@ -511,6 +574,7 @@ void RealLsu::comb_recv()
             // }
             ldq[max_idx].sent = true;
             ldq[max_idx].waiting_resp = true;
+            ldq[max_idx].wait_resp_since = sim_time;
             ldq[max_idx].uop.cplt_time = REQ_WAIT_RESP;
             if (ldq[max_idx].replay_priority >= 4)
             {
@@ -651,6 +715,22 @@ void RealLsu::comb_load_res()
                 auto &entry = ldq[idx];
                 if (entry.valid && entry.sent && entry.waiting_resp)
                 {
+                    const auto &resp_uop = in.dcache2lsu->resp_ports.load_resps[i].uop;
+                    const bool same_token =
+                        (entry.uop.inst_idx == resp_uop.inst_idx) &&
+                        (entry.uop.rob_flag == resp_uop.rob_flag);
+                    if (!same_token)
+                    {
+                        DBG_PRINTF("[LSU][LD RESP STALE] cyc=%lld port=%d ldq=%d replay=%u resp_inst=%lld cur_inst=%lld resp_flag=%u cur_flag=%u resp_pc=0x%08x cur_pc=0x%08x\n",
+                                   (long long)sim_time, i, idx,
+                                   (unsigned)in.dcache2lsu->resp_ports.load_resps[i].replay,
+                                   (long long)resp_uop.inst_idx,
+                                   (long long)entry.uop.inst_idx,
+                                   (unsigned)resp_uop.rob_flag,
+                                   (unsigned)entry.uop.rob_flag, resp_uop.pc,
+                                   entry.uop.pc);
+                        continue;
+                    }
                     if (!entry.killed)
                     {
                         if (in.dcache2lsu->resp_ports.load_resps[i].replay == 0)
@@ -688,6 +768,7 @@ void RealLsu::comb_load_res()
                             // replay=2(mshr_hit) waits for matching line fill wakeup.
                             entry.sent = false;
                             entry.waiting_resp = false;
+                            entry.wait_resp_since = 0;
                             entry.uop.cplt_time = REQ_WAIT_SEND;
                         }
                     }
@@ -948,6 +1029,7 @@ bool RealLsu::reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
     ldq[idx].killed = false;
     ldq[idx].sent = false;
     ldq[idx].waiting_resp = false;
+    ldq[idx].wait_resp_since = 0;
     ldq[idx].tlb_retry = false;
     ldq[idx].is_mmio_wait = false;
     ldq[idx].replay_priority = 0;
@@ -1410,6 +1492,7 @@ void RealLsu::free_ldq_entry(int idx)
         ldq[idx].killed = false;
         ldq[idx].sent = false;
         ldq[idx].waiting_resp = false;
+        ldq[idx].wait_resp_since = 0;
         ldq[idx].tlb_retry = false;
         ldq[idx].is_mmio_wait = false;
         ldq[idx].uop = {};
@@ -1684,7 +1767,9 @@ RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop)
             else if (overlap_start < overlap_end)
             {
                 hit_any = true;
-                return {StoreForwardState::Retry, 0}; // Data unknown -> Stall (Retry)
+                // Partial overlap is intentionally conservative: keep the load in
+                // retry until the older store fully retires from STQ.
+                return {StoreForwardState::Retry, 0};
             }
         }
         ptr = (ptr + 1) % STQ_SIZE;
@@ -1772,9 +1857,15 @@ void RealLsu::dump_debug_state() const
             continue;
         }
         const char *state_name = ldq_wait_state_name(e.uop.cplt_time);
-        std::printf("[DEADLOCK][LSU][LDQ %02d] valid=%d killed=%d sent=%d waiting=%d tlb_retry=%d mmio_wait=%d replay_pri=%u cplt_state=%s cplt_time=%lld rob=%u flag=%u pc=0x%08x paddr=0x%08x result=0x%08x func3=0x%x stq_idx=%u inst_idx=%lld\n",
+        const unsigned long long wait_age =
+            (e.waiting_resp && sim_time >= 0 &&
+             static_cast<uint64_t>(sim_time) >= e.wait_resp_since)
+                ? (unsigned long long)(static_cast<uint64_t>(sim_time) -
+                                       e.wait_resp_since)
+                : 0ull;
+        std::printf("[DEADLOCK][LSU][LDQ %02d] valid=%d killed=%d sent=%d waiting=%d wait_age=%llu tlb_retry=%d mmio_wait=%d replay_pri=%u cplt_state=%s cplt_time=%lld rob=%u flag=%u pc=0x%08x paddr=0x%08x result=0x%08x func3=0x%x stq_idx=%u inst_idx=%lld\n",
                     i, (int)e.valid, (int)e.killed, (int)e.sent, (int)e.waiting_resp,
-                    (int)e.tlb_retry, (int)e.is_mmio_wait,
+                    wait_age, (int)e.tlb_retry, (int)e.is_mmio_wait,
                     (unsigned)e.replay_priority, state_name,
                     (long long)e.uop.cplt_time, (unsigned)e.uop.rob_idx,
                     (unsigned)e.uop.rob_flag, e.uop.pc, e.uop.diag_val, e.uop.result,

@@ -4,6 +4,8 @@
 #include "MSHR.h"
 #include "MemPtwBlock.h"
 #include "PeripheralAxi.h"
+#include "MemReadArbBlock.h"
+#include "MemRespRouteBlock.h"
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
 #include "RealDcache.h"
@@ -75,6 +77,10 @@ private:
   WriteBuffer   wb_;
   PeripheralAxi peripheral_axi_;
   MemPtwBlock   ptw_block;
+  MemReadArbBlock read_arb_block;
+  MemRespRouteBlock resp_route_block;
+  LsuDcacheIO dcache_req_mux_{};
+  DcacheLsuIO dcache_resp_raw_{};
 
   std::unique_ptr<AxiKitRuntime> axi_kit_runtime;
 
@@ -103,4 +109,5 @@ private:
   std::unique_ptr<PtwMemPort>  itlb_ptw_port_inst;
   std::unique_ptr<PtwWalkPort> dtlb_walk_port_inst;
   std::unique_ptr<PtwWalkPort> itlb_walk_port_inst;
+  uint32_t ptw_walk_wait_cycles_ = 0;
 };

@@ -144,6 +144,7 @@ void Rob::comb_commit() {
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
+  bool progress_single_commit = false;
 
   if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -168,6 +169,26 @@ void Rob::comb_commit() {
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
           single_commit = false;
           commit = false;
+        }
+        break;
+      }
+    }
+
+    // Forward-progress fallback:
+    // If group commit is blocked by younger banks in the same ROB line, allow
+    // committing the oldest ready non-flush instruction so older stores can
+    // still commit/retire and unblock younger loads that are waiting on them.
+    if (!commit && !single_commit && !out.rob_bcast->interrupt) {
+      for (int i = 0; i < ROB_BANK_NUM; i++) {
+        if (!entry[i][deq_ptr].valid) {
+          continue;
+        }
+        const auto &uop = entry[i][deq_ptr].uop;
+        const bool ready = (uop.cplt_num == uop.uop_num);
+        if (ready && !is_flush_inst(uop)) {
+          single_commit = true;
+          single_idx = i;
+          progress_single_commit = true;
         }
         break;
       }
@@ -224,6 +245,13 @@ void Rob::comb_commit() {
     }
 
     entry_1[single_idx][deq_ptr].valid = false;
+    if (progress_single_commit) {
+      DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u rob_idx=%u pc=0x%08x type=%u\n",
+                 (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
+                 (unsigned)single_idx, (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
+                 entry[single_idx][deq_ptr].uop.pc,
+                 (unsigned)entry[single_idx][deq_ptr].uop.type);
+    }
     if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
       out.rob_bcast->flush = true;

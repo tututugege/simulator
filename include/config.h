@@ -128,6 +128,9 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
     }                                                                          \
   } while (0)
 
+#ifndef PTW_WALK_WAIT_RETRY_CYCLES
+#define PTW_WALK_WAIT_RETRY_CYCLES 256
+#endif
 // ============================================================
 // [2] Global Limits
 // ============================================================
