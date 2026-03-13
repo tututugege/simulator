@@ -5,52 +5,65 @@ from pathlib import Path
 from typing import Any
 
 
-def gen_header(module_name: str, rows: int, chunks: int, chunk_bits: int) -> str:
+def flat_bits(chunks: int, chunk_bits: int) -> int:
+    return chunks * chunk_bits
+
+
+def gen_header(module_name: str, rows: int, chunks: int, chunk_bits: int, fixed_latency: int | None) -> str:
+    params = [
+        f"    parameter integer ROWS = {rows}",
+        f"    parameter integer CHUNKS = {chunks}",
+        f"    parameter integer CHUNK_BITS = {chunk_bits}",
+        "    parameter integer ADDR_BITS = $clog2(ROWS)",
+        "    parameter integer TOTAL_BITS = CHUNKS * CHUNK_BITS",
+    ]
+    if fixed_latency is not None:
+        params.append(f"    parameter integer FIXED_LATENCY = {fixed_latency}")
+    param_block = ',\n'.join(params)
     return f'''module {module_name} #(
-    parameter integer ROWS = {rows},
-    parameter integer CHUNKS = {chunks},
-    parameter integer CHUNK_BITS = {chunk_bits},
-    parameter integer ADDR_BITS = $clog2(ROWS)
+{param_block}
 ) (
-    input  wire                             clk,
-    input  wire                             rst,
-    input  wire                             rd_req_valid,
-    input  wire [ADDR_BITS-1:0]             rd_req_addr,
-    output wire                             rd_resp_valid,
-    output wire [CHUNK_BITS-1:0]            rd_resp_chunks [0:CHUNKS-1],
-    input  wire                             wr_req_valid,
-    input  wire [ADDR_BITS-1:0]             wr_req_addr,
-    input  wire [CHUNK_BITS-1:0]            wr_req_chunks [0:CHUNKS-1],
-    input  wire [CHUNKS-1:0]                wr_chunk_enable
+    input  wire                         clk,
+    input  wire                         rst,
+    input  wire                         rd_req_valid,
+    input  wire [ADDR_BITS-1:0]         rd_req_addr,
+    output wire                         rd_resp_valid,
+    output wire [TOTAL_BITS-1:0]        rd_resp_flat,
+    input  wire                         wr_req_valid,
+    input  wire [ADDR_BITS-1:0]         wr_req_addr,
+    input  wire [TOTAL_BITS-1:0]        wr_req_flat,
+    input  wire [CHUNKS-1:0]            wr_chunk_enable
 );
 
 '''
 
 
-def gen_regfile_module(module_name: str, rows: int, chunks: int, chunk_bits: int) -> str:
-    lines = [gen_header(module_name, rows, chunks, chunk_bits)]
-    lines.append("  reg [CHUNK_BITS-1:0] storage [0:ROWS-1][0:CHUNKS-1];\n")
+def gen_common_storage() -> list[str]:
+    lines: list[str] = []
+    lines.append("  reg  [TOTAL_BITS-1:0] storage [0:ROWS-1];\n")
+    lines.append("  wire [TOTAL_BITS-1:0] wr_req_mask;\n")
     lines.append("  genvar c;\n")
     lines.append("  generate\n")
-    lines.append("    for (c = 0; c < CHUNKS; c = c + 1) begin : gen_rd_chunk\n")
-    lines.append("      assign rd_resp_chunks[c] = storage[rd_req_addr][c];\n")
+    lines.append("    for (c = 0; c < CHUNKS; c = c + 1) begin : gen_chunk_mask\n")
+    lines.append("      assign wr_req_mask[(c+1)*CHUNK_BITS-1:c*CHUNK_BITS] = {CHUNK_BITS{wr_chunk_enable[c]}};\n")
     lines.append("    end\n")
     lines.append("  endgenerate\n\n")
-    lines.append("  assign rd_resp_valid = rd_req_valid;\n\n")
-    lines.append("  integer i, j;\n")
+    return lines
+
+
+def gen_regfile_module(module_name: str, rows: int, chunks: int, chunk_bits: int) -> str:
+    lines = [gen_header(module_name, rows, chunks, chunk_bits, None)]
+    lines.extend(gen_common_storage())
+    lines.append("  assign rd_resp_valid = rd_req_valid;\n")
+    lines.append("  assign rd_resp_flat = storage[rd_req_addr];\n\n")
+    lines.append("  integer i;\n")
     lines.append("  always @(posedge clk) begin\n")
     lines.append("    if (rst) begin\n")
     lines.append("      for (i = 0; i < ROWS; i = i + 1) begin\n")
-    lines.append("        for (j = 0; j < CHUNKS; j = j + 1) begin\n")
-    lines.append("          storage[i][j] <= {CHUNK_BITS{1'b0}};\n")
-    lines.append("        end\n")
+    lines.append("        storage[i] <= {TOTAL_BITS{1'b0}};\n")
     lines.append("      end\n")
     lines.append("    end else if (wr_req_valid) begin\n")
-    lines.append("      for (j = 0; j < CHUNKS; j = j + 1) begin\n")
-    lines.append("        if (wr_chunk_enable[j]) begin\n")
-    lines.append("          storage[wr_req_addr][j] <= wr_req_chunks[j];\n")
-    lines.append("        end\n")
-    lines.append("      end\n")
+    lines.append("      storage[wr_req_addr] <= (storage[wr_req_addr] & ~wr_req_mask) | (wr_req_flat & wr_req_mask);\n")
     lines.append("    end\n")
     lines.append("  end\n")
     lines.append("endmodule\n")
@@ -58,31 +71,23 @@ def gen_regfile_module(module_name: str, rows: int, chunks: int, chunk_bits: int
 
 
 def gen_sram_module(module_name: str, rows: int, chunks: int, chunk_bits: int, fixed_latency: int) -> str:
-    lines = [gen_header(module_name, rows, chunks, chunk_bits)]
-    lines.append(f"  parameter integer FIXED_LATENCY = {fixed_latency};\n")
+    lines = [gen_header(module_name, rows, chunks, chunk_bits, fixed_latency)]
     lines.append("  // Template for a synchronous-read generic table.\n")
     lines.append("  // Replace storage with SRAM macros or generated wrappers as needed.\n")
-    lines.append("  reg [CHUNK_BITS-1:0] storage [0:ROWS-1][0:CHUNKS-1];\n")
+    lines.extend(gen_common_storage())
     lines.append("  reg [ADDR_BITS-1:0] rd_addr_q;\n")
     lines.append("  reg                 rd_valid_q;\n")
     lines.append("  integer             rd_latency_q;\n\n")
-    lines.append("  genvar c;\n")
-    lines.append("  generate\n")
-    lines.append("    for (c = 0; c < CHUNKS; c = c + 1) begin : gen_rd_chunk\n")
-    lines.append("      assign rd_resp_chunks[c] = storage[rd_addr_q][c];\n")
-    lines.append("    end\n")
-    lines.append("  endgenerate\n\n")
-    lines.append("  assign rd_resp_valid = rd_valid_q && (rd_latency_q == 0);\n\n")
-    lines.append("  integer i, j;\n")
+    lines.append("  assign rd_resp_valid = rd_valid_q && (rd_latency_q == 0);\n")
+    lines.append("  assign rd_resp_flat = storage[rd_addr_q];\n\n")
+    lines.append("  integer i;\n")
     lines.append("  always @(posedge clk) begin\n")
     lines.append("    if (rst) begin\n")
     lines.append("      rd_addr_q <= {ADDR_BITS{1'b0}};\n")
     lines.append("      rd_valid_q <= 1'b0;\n")
     lines.append("      rd_latency_q <= 0;\n")
     lines.append("      for (i = 0; i < ROWS; i = i + 1) begin\n")
-    lines.append("        for (j = 0; j < CHUNKS; j = j + 1) begin\n")
-    lines.append("          storage[i][j] <= {CHUNK_BITS{1'b0}};\n")
-    lines.append("        end\n")
+    lines.append("        storage[i] <= {TOTAL_BITS{1'b0}};\n")
     lines.append("      end\n")
     lines.append("    end else begin\n")
     lines.append("      if (rd_req_valid && !rd_valid_q) begin\n")
@@ -95,11 +100,7 @@ def gen_sram_module(module_name: str, rows: int, chunks: int, chunk_bits: int, f
     lines.append("        rd_valid_q <= 1'b0;\n")
     lines.append("      end\n")
     lines.append("      if (wr_req_valid) begin\n")
-    lines.append("        for (j = 0; j < CHUNKS; j = j + 1) begin\n")
-    lines.append("          if (wr_chunk_enable[j]) begin\n")
-    lines.append("            storage[wr_req_addr][j] <= wr_req_chunks[j];\n")
-    lines.append("          end\n")
-    lines.append("        end\n")
+    lines.append("        storage[wr_req_addr] <= (storage[wr_req_addr] & ~wr_req_mask) | (wr_req_flat & wr_req_mask);\n")
     lines.append("      end\n")
     lines.append("    end\n")
     lines.append("  end\n")
