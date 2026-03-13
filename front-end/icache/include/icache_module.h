@@ -76,14 +76,6 @@
 #ifndef ICACHE_V1_DIRECT_REFILL_RESP
 #define ICACHE_V1_DIRECT_REFILL_RESP 0
 #endif
-// Lookup set-view data source (V1):
-// - 0: lookup reads from the internal table state.
-// - 1: lookup reads from io.lookup_in (external-fed set view).
-// Note: kept as a build-time knob so it is not part of generalized PI/PO.
-#ifndef ICACHE_LOOKUP_FROM_INPUT
-#define ICACHE_LOOKUP_FROM_INPUT 0
-#endif
-
 namespace icache_module_n {
 // -----------------------------------------------------------------------------
 // ICache V1 derived parameters (for generalized-IO structs)

@@ -180,22 +180,17 @@ void ICache::export_lookup_set_for_pc(
 }
 
 void ICache::lookup_read_set(uint32_t lookup_index, bool gate_valid_with_req) {
-  constexpr bool from_input =
-      (ICACHE_LOOKUP_FROM_INPUT != 0) || (ICACHE_LOOKUP_LATENCY > 0);
-  if (from_input && !io.lookup_in.lookup_resp_valid) {
+  (void)lookup_index;
+  if (!io.lookup_in.lookup_resp_valid) {
     return;
   }
   for (uint32_t way = 0; way < way_cnt; ++way) {
     for (uint32_t word = 0; word < word_num; ++word) {
       lookup_set_data_w[way][word] =
-          from_input ? io.lookup_in.lookup_set_data[way][word]
-                     : cache_data[lookup_index][way][word];
+          io.lookup_in.lookup_set_data[way][word];
     }
-    lookup_set_tag_w[way] =
-        from_input ? io.lookup_in.lookup_set_tag[way]
-                   : cache_tag[lookup_index][way];
-    bool valid_bit = from_input ? io.lookup_in.lookup_set_valid[way]
-                                : cache_valid[lookup_index][way];
+    lookup_set_tag_w[way] = io.lookup_in.lookup_set_tag[way];
+    bool valid_bit = io.lookup_in.lookup_set_valid[way];
     if (gate_valid_with_req) {
       valid_bit = valid_bit && io.in.ifu_req_valid;
     }
@@ -215,7 +210,7 @@ void ICache::lookup(uint32_t index) {
   uint32_t load_index = index;
   bool req_valid_next = io.regs.req_valid_r;
 
-  if (!use_external_lookup) {
+  if (ICACHE_LOOKUP_LATENCY == 0) {
     lookup_read_set(index, /*gate_valid_with_req=*/false);
   } else if (io.regs.lookup_pending_r && io.lookup_in.lookup_resp_valid) {
     lookup_read_set(io.regs.lookup_index_r, /*gate_valid_with_req=*/false);
