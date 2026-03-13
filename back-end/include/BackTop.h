@@ -35,6 +35,7 @@ typedef struct {
   bool stall;
   bool flush;
   bool fence_i;
+  bool itlb_flush;
   bool fire[FETCH_WIDTH];
   uint32_t redirect_pc;
   InstEntry commit_entry[COMMIT_WIDTH];

@@ -383,6 +383,7 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
 #if defined(USE_TRUE_ICACHE) || defined(USE_IDEAL_ICACHE)
     icache_in.reset = global_reset;
     icache_in.refetch = global_refetch;
+    icache_in.itlb_flush = in->itlb_flush;
     icache_in.csr_status = in->csr_status;
     icache_peek_ready(&icache_in, &icache_out);
 #endif
@@ -631,6 +632,7 @@ static void front_comb_calc_impl(const FrontReadData &rd, struct front_top_in *i
     // ========================================================================
     icache_in.reset = global_reset;
     icache_in.refetch = global_refetch;
+    icache_in.itlb_flush = in->itlb_flush;
     icache_in.csr_status = in->csr_status;
     
     // icache 从 fetch_address_FIFO 获取地址

@@ -228,6 +228,7 @@ void BackTop::comb() {
   // 修正pc_next 以及difftest对应的pc_next
   out.flush = rob->out.rob_bcast->flush;
   out.fence_i = rob->out.rob_bcast->fence_i;
+  out.itlb_flush = rob->out.rob_bcast->fence;
 
   // 1. Normal case (No Rob flush)
   if (!rob->out.rob_bcast->flush) {

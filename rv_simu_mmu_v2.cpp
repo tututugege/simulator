@@ -250,6 +250,7 @@ void SimCpu::front_cycle() {
 
     front.in.FIFO_read_enable = true;
     front.in.refetch = (back.out.mispred || back.out.flush);
+    front.in.itlb_flush = back.out.itlb_flush;
     if (front.in.refetch) {
       front.in.refetch_address =
           back.out.redirect_pc; // 再次确保赋值，防止时序错位
@@ -291,6 +292,7 @@ void SimCpu::front_cycle() {
 #ifdef CONFIG_BPU
     front.in.FIFO_read_enable = false;
     front.in.refetch = false;
+    front.in.itlb_flush = back.out.itlb_flush;
     front.step_bpu();
 #else
 #endif
@@ -299,6 +301,7 @@ void SimCpu::front_cycle() {
   // Oracle 模式：每拍都执行握手，利用 1-entry pending 防止“当拍后端阻塞”丢指令。
   front.in.FIFO_read_enable = true;
   front.in.refetch = (back.out.mispred || back.out.flush);
+  front.in.itlb_flush = back.out.itlb_flush;
   if (front.in.refetch) {
     front.in.refetch_address = back.out.redirect_pc;
   }
@@ -346,6 +349,7 @@ void SimCpu::front_cycle() {
 void SimCpu::back2front_comb() {
   front.in.FIFO_read_enable = false;
   front.in.csr_status = back.csr->out.csr_status;
+  front.in.itlb_flush = back.out.itlb_flush;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     InstInfo *inst = &back.out.commit_entry[i].uop;
     front.in.back2front_valid[i] = back.out.commit_entry[i].valid;

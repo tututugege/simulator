@@ -17,6 +17,7 @@ public:
   Result translate(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
                    CsrStatusIO *status) override;
   void flush() override;
+  void cancel_pending_walk() override;
   void set_ptw_mem_port(PtwMemPort *port) override;
   void set_ptw_walk_port(PtwWalkPort *port) override;
 

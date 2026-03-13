@@ -337,7 +337,14 @@ public:
   void peek_ready() override {
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
-    out->icache_read_ready = in->reset ? true : icache_hw.io.regs.ifu_req_ready_r;
+    uint32_t cur_satp =
+        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    bool satp_changed = !satp_seen || cur_satp != last_satp;
+    bool hold_for_translation_flush = in->itlb_flush || satp_changed;
+    out->icache_read_ready =
+        in->reset ? true
+                  : (hold_for_translation_flush ? false
+                                                : icache_hw.io.regs.ifu_req_ready_r);
   }
 
   void comb() override {
@@ -356,13 +363,24 @@ public:
       if (runtime.mmu_model != nullptr) {
         runtime.mmu_model->flush();
       }
+      satp_seen = false;
       out->icache_read_ready = true;
       return;
     }
 
     if (in->refetch && runtime.mmu_model != nullptr) {
+      runtime.mmu_model->cancel_pending_walk();
+    }
+
+    uint32_t cur_satp =
+        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    bool satp_changed = !satp_seen || cur_satp != last_satp;
+    bool translation_context_flush = in->itlb_flush || satp_changed;
+    if (translation_context_flush && runtime.mmu_model != nullptr) {
       runtime.mmu_model->flush();
     }
+    satp_seen = true;
+    last_satp = cur_satp;
 
     MemReadView mem = read_port.comb_view();
     const bool req_valid = in->icache_read_valid;
@@ -385,7 +403,8 @@ public:
 
     icache_hw.comb();
 
-    if (!in->refetch && runtime.mmu_model != nullptr &&
+    if (!in->refetch &&
+        runtime.mmu_model != nullptr &&
         icache_hw.io.out.mmu_req_valid) {
       uint32_t p_addr = 0;
       uint32_t v_addr = icache_hw.io.out.mmu_req_vtag << 12;
@@ -453,6 +472,8 @@ public:
 
 private:
   HW &icache_hw;
+  uint32_t last_satp = 0;
+  bool satp_seen = false;
 };
 
 class SimpleICacheTop : public ICacheTop {
@@ -503,6 +524,10 @@ public:
       return;
     }
 
+    if (in->refetch && mmu_model != nullptr) {
+      mmu_model->cancel_pending_walk();
+    }
+
     out->icache_read_complete = false;
     out->icache_read_ready = !pending_req_valid;
     out->fetch_pc =
@@ -515,7 +540,7 @@ public:
 
     uint32_t cur_satp =
         in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
-    if (!satp_seen || cur_satp != last_satp || in->refetch) {
+    if (!satp_seen || cur_satp != last_satp || in->itlb_flush) {
       if (mmu_model != nullptr) {
         mmu_model->flush();
       }
