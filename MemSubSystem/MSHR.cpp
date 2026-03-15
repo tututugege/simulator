@@ -16,6 +16,10 @@ void MSHR::init()
     std::memset(&cur, 0, sizeof(cur));
     std::memset(&nxt, 0, sizeof(nxt));
     std::memset(mshr_entries_nxt, 0, sizeof(mshr_entries_nxt));
+    std::memset(miss_alloc_cycle, 0, sizeof(miss_alloc_cycle));
+    std::memset(miss_alloc_cycle_valid, 0, sizeof(miss_alloc_cycle_valid));
+    std::memset(axi_issue_cycle, 0, sizeof(axi_issue_cycle));
+    std::memset(axi_issue_cycle_valid, 0, sizeof(axi_issue_cycle_valid));
 
     std::memset(&out, 0, sizeof(out));
 }
@@ -104,6 +108,10 @@ int MSHR::entries_add(int set_idx, int tag)
     mshr_entries_nxt[alloc_idx].index = set_idx;
     mshr_entries_nxt[alloc_idx].tag = tag;
     nxt.mshr_count++;
+    miss_alloc_cycle[alloc_idx] = static_cast<uint64_t>(sim_time);
+    miss_alloc_cycle_valid[alloc_idx] = true;
+    axi_issue_cycle[alloc_idx] = 0;
+    axi_issue_cycle_valid[alloc_idx] = false;
     DBG_PRINTF("[MSHR ALLOC] cyc=%lld idx=%d line=0x%08x count=%u\n",
                (long long)sim_time, alloc_idx,
                get_addr(set_idx, tag, 0), nxt.mshr_count);
@@ -200,6 +208,24 @@ void MSHR::comb_inputs()
                                    nxt.wb_data[0], nxt.wb_data[1], nxt.wb_data[2], nxt.wb_data[3],
                                    nxt.wb_data[4], nxt.wb_data[5], nxt.wb_data[6], nxt.wb_data[7]);
                     }
+                    if (ctx != nullptr)
+                    {
+                        const uint64_t now = static_cast<uint64_t>(sim_time);
+                        if (miss_alloc_cycle_valid[resp_id] && now >= miss_alloc_cycle[resp_id])
+                        {
+                            ctx->perf.l1d_miss_penalty_total_cycles +=
+                                (now - miss_alloc_cycle[resp_id]);
+                            ctx->perf.l1d_miss_penalty_samples++;
+                        }
+                        if (axi_issue_cycle_valid[resp_id] && now >= axi_issue_cycle[resp_id])
+                        {
+                            ctx->perf.l1d_axi_read_total_cycles +=
+                                (now - axi_issue_cycle[resp_id]);
+                            ctx->perf.l1d_axi_read_samples++;
+                        }
+                    }
+                    miss_alloc_cycle_valid[resp_id] = false;
+                    axi_issue_cycle_valid[resp_id] = false;
                     nxt.fill_valid = true;
                     nxt.fill_way = lru_idx;
                     nxt.fill_addr = fill_line_addr;
@@ -275,6 +301,8 @@ void MSHR::comb_inputs()
             continue;
         if (in.axi_in.req_ready){
             mshr_entries_nxt[i].issued = true;
+            axi_issue_cycle[i] = static_cast<uint64_t>(sim_time);
+            axi_issue_cycle_valid[i] = true;
         }
         else{
 

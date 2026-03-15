@@ -1,4 +1,5 @@
 #include "WriteBuffer.h"
+#include "types.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -236,6 +237,14 @@ void WriteBuffer::comb_inputs() {
             nxt_check.addr = head_e.addr;
             nxt_check.resp_cycle = (uint64_t)sim_time;
             std::memcpy(nxt_check.data, head_e.data, sizeof(head_e.data));
+            if (ctx != nullptr && cur_issue.valid) {
+                const uint64_t now = static_cast<uint64_t>(sim_time);
+                if (now >= cur_issue.issue_cycle) {
+                    ctx->perf.l1d_axi_write_total_cycles +=
+                        (now - cur_issue.issue_cycle);
+                    ctx->perf.l1d_axi_write_samples++;
+                }
+            }
             write_buffer_nxt[cur.head].valid = false;
             write_buffer_nxt[cur.head].send = false;
             int new_head = (cur.head + 1) % WB_ENTRIES;

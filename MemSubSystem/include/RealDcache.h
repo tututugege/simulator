@@ -84,6 +84,7 @@ struct S1S2Reg {
 // ─────────────────────────────────────────────────────────────────────────────
 class RealDcache : public AbstractDcache {
 public:
+    void bind_context(SimContext *c) { ctx = c; }
     void init() override;
     void comb() override;
     void seq()  override;
@@ -102,6 +103,19 @@ public:
     // Stage 2: evaluate S1S2 pipeline register, generate responses.
     void stage2_comb();
 private:
+    SimContext *ctx = nullptr;
+
+    struct ReqTrack {
+        bool valid = false;
+        bool is_store = false;
+        size_t req_id = 0;
+        uint32_t rob_idx = 0;
+        uint32_t rob_flag = 0;
+        uint64_t first_cycle = 0;
+    };
+    static constexpr int kReqTrackSize = 256;
+    ReqTrack req_track_[kReqTrackSize]{};
+    int req_track_rr_ = 0;
 
 
     // // Sub-modules
@@ -129,4 +143,8 @@ private:
 
 
     bool special_load_addr(uint32_t addr,uint32_t& mem_val,MicroOp &uop);
+    bool begin_req_track(bool is_store, size_t req_id, uint32_t rob_idx,
+                         uint32_t rob_flag);
+    void end_req_track(bool is_store, size_t req_id, uint32_t rob_idx,
+                       uint32_t rob_flag);
 };

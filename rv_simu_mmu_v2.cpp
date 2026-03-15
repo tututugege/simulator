@@ -347,6 +347,7 @@ void SimCpu::cycle() {
   axi_router.seq(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
   axi_ddr.seq();
   axi_mmio.seq();
+  ctx.perf.perf_maybe_capture_simtime_snapshot();
 
   if (ctx.exit_reason != ExitReason::NONE) {
     printf("Simulation Exited with Reason: %d\n", (int)ctx.exit_reason);

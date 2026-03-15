@@ -8,12 +8,19 @@
 #include "MemRespRouteBlock.h"
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
+#if CONFIG_MEM_DCACHE_USE_SIMPLE
+#include "SimpleCache.h"
+using MemDcacheImpl = SimpleCache;
+#else
 #include "RealDcache.h"
+using MemDcacheImpl = RealDcache;
+#endif
 #include "WriteBuffer.h"
 #include <array>
 #include <memory>
 
 class SimContext;
+class Csr;
 class MemSubsystemPtwMemPortAdapter;
 class MemSubsystemPtwWalkPortAdapter;
 struct AxiKitRuntime;
@@ -62,7 +69,7 @@ public:
   axi_interconnect::ReadMasterPort_t *icache_read_port();
 
   // Accessors for sub-modules (e.g., for debug/stats).
-  RealDcache  &get_dcache()  { return dcache_; }
+  MemDcacheImpl  &get_dcache()  { return dcache_; }
   MSHR        &get_mshr()    { return mshr_; }
   WriteBuffer &get_wb()      { return wb_; }
   PeripheralAxi &get_peripheral_axi() { return peripheral_axi_; }
@@ -72,7 +79,7 @@ private:
   SimContext *ctx;
 
   // Sub-modules
-  RealDcache    dcache_;
+  MemDcacheImpl dcache_;
   MSHR          mshr_;
   WriteBuffer   wb_;
   PeripheralAxi peripheral_axi_;

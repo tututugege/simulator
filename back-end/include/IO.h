@@ -596,8 +596,9 @@ struct StoreResp {
     wire<1> valid;
     wire<2> replay;         
     size_t req_id;
+    wire<1> is_cache_miss;
 
-    StoreResp() : valid(false), replay(0), req_id(0) {}
+    StoreResp() : valid(false), replay(0), req_id(0), is_cache_miss(false) {}
 };
 
 // 请求端口集合（支持4个Load + 4个Store）
@@ -636,6 +637,7 @@ struct DCacheRespPorts {
         for (int i = 0; i < LSU_STA_COUNT; i++) {
             store_resps[i].valid = false;
             store_resps[i].replay = 0;
+            store_resps[i].is_cache_miss = false;
         }
         replay_resp = ReplayResp();
     }

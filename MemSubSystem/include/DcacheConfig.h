@@ -16,7 +16,7 @@
 #define MSHR_ENTRIES 8
 #define WB_ENTRIES 8
 
-#define DCACHE_BANKS 4
+#define DCACHE_BANKS 16
 
 extern uint32_t tag_array  [DCACHE_SETS][DCACHE_WAYS];
 extern uint32_t data_array [DCACHE_SETS][DCACHE_WAYS][DCACHE_LINE_WORDS];

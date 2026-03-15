@@ -13,6 +13,12 @@ static constexpr int64_t REQ_WAIT_SEND = 0x7FFFFFFFFFFFFFFD;
 static constexpr int64_t REQ_WAIT_RESP = 0x7FFFFFFFFFFFFFFE;
 static constexpr int64_t REQ_WAIT_EXEC = 0x7FFFFFFFFFFFFFFC;
 
+namespace {
+inline bool stq_entry_matches_uop(const StqEntry &entry, const MicroOp &uop) {
+  return entry.valid && entry.rob_idx == uop.rob_idx &&
+         entry.rob_flag == uop.rob_flag;
+}
+} // namespace
 
 SimpleLsu::SimpleLsu(SimContext *ctx) : AbstractLsu(ctx) {
   // Initialize MMU
@@ -25,6 +31,11 @@ SimpleLsu::SimpleLsu(SimContext *ctx) : AbstractLsu(ctx) {
   init();
 }
 
+void SimpleLsu::set_csr(Csr *c) {
+  csr_module = c;
+  peripheral_model.csr = c;
+}
+
 void SimpleLsu::init() {
   stq_head = 0;
   stq_tail = 0;
@@ -32,10 +43,17 @@ void SimpleLsu::init() {
   stq_count = 0;
   ldq_count = 0;
   ldq_alloc_tail = 0;
+  ldq_seq_counter = 0;
+  stq_seq_counter = 0;
   finished_loads.clear();
   finished_sta_reqs.clear();
   pending_sta_addr_reqs.clear();
   mmu->flush();
+  peripheral_model.init();
+  peripheral_model.csr = csr_module;
+  peripheral_model.memory = pmem_ptr();
+  memset(ldq_trace_seq, 0, sizeof(ldq_trace_seq));
+  memset(stq_trace_seq, 0, sizeof(stq_trace_seq));
 
   // 初始化所有 STQ LDQ 条目，防止未初始化内存导致的破坏
   for (int i = 0; i < STQ_SIZE; i++) {
@@ -43,7 +61,13 @@ void SimpleLsu::init() {
     stq[i].addr_valid = false;
     stq[i].data_valid = false;
     stq[i].committed = false;
+    stq[i].done = false;
+    stq[i].is_mmio = false;
+    stq[i].send = false;
+    stq[i].replay = 0;
     stq[i].addr = 0;
+    stq[i].p_addr = 0;
+    stq[i].suppress_write = 0;
     stq[i].data = 0;
     stq[i].br_mask = 0;
     stq[i].rob_idx = 0;
@@ -140,23 +164,35 @@ void SimpleLsu::comb_recv() {
     }
   }
 
-  for (int i = 0; i < LDQ_SIZE; i++) {
-    auto &entry = ldq[i];
-    if (!entry.valid || entry.killed || entry.sent || entry.waiting_resp) {
+  for (int p = 0; p < LSU_LDU_COUNT; p++) {
+    int selected = -1;
+    for (int i = 0; i < LDQ_SIZE; i++) {
+      auto &entry = ldq[i];
+      if (!entry.valid || entry.killed || entry.sent || entry.waiting_resp) {
+        continue;
+      }
+      if (entry.uop.cplt_time == REQ_WAIT_SEND) {
+        selected = i;
+        break;
+      }
+    }
+    if (selected < 0) {
       continue;
     }
-    if (entry.uop.cplt_time == REQ_WAIT_SEND) {
-      MicroOp req_uop = entry.uop;
-      req_uop.rob_idx = i; // Local token: LDQ index
-      auto &lp = out.lsu2dcache->req_ports.load_ports[0];
-      lp.valid = true;
-      lp.addr  = entry.uop.diag_val;
-      lp.uop   = req_uop;
-      entry.sent = true;
-      entry.waiting_resp = true;
-      entry.uop.cplt_time = REQ_WAIT_RESP;
 
-      break;
+    auto &entry = ldq[selected];
+    MicroOp req_uop = entry.uop;
+    req_uop.rob_idx = selected; // Local token: LDQ index
+    auto &lp = out.lsu2dcache->req_ports.load_ports[p];
+    lp.valid = true;
+    lp.addr = entry.uop.diag_val;
+    lp.req_id = selected;
+    lp.uop = req_uop;
+    entry.sent = true;
+    entry.waiting_resp = true;
+    entry.uop.cplt_time = REQ_WAIT_RESP;
+    if (ctx != nullptr) {
+      ctx->perf.trace_load_on_issue(ldq_trace_seq[selected], sim_time);
     }
   }
 
@@ -172,26 +208,67 @@ void SimpleLsu::comb_load_res() {
     out.lsu2exe->wb_req[i].valid = false;
   }
 
-  const auto &lr = in.dcache2lsu->resp_ports.load_resps[0];
-  if (lr.valid) {
-    int idx = lr.uop.rob_idx;
-    if (idx >= 0 && idx < LDQ_SIZE) {
-      auto &entry = ldq[idx];
-      if (entry.valid && entry.sent && entry.waiting_resp) {
-        if (!entry.killed) {
-          uint32_t raw = lr.data;
-          uint32_t res =
-              extract_data(raw, entry.uop.diag_val, entry.uop.func3);
-          entry.uop.result = res;
-          entry.uop.difftest_skip = lr.uop.difftest_skip;
-          entry.uop.cplt_time = sim_time;
-          entry.uop.is_cache_miss = lr.uop.is_cache_miss;
-          finished_loads.push_back(entry.uop);
-        } else {
-
+  for (int i = 0; i < LSU_LDU_COUNT; i++) {
+    const auto &lr = in.dcache2lsu->resp_ports.load_resps[i];
+    if (!lr.valid) {
+      continue;
+    }
+    int idx = static_cast<int>(lr.req_id);
+    if (idx < 0 || idx >= LDQ_SIZE) {
+      continue;
+    }
+    auto &entry = ldq[idx];
+    if (!(entry.valid && entry.sent && entry.waiting_resp)) {
+      continue;
+    }
+    if (lr.replay == 0) {
+      if (!entry.killed) {
+        uint32_t raw = lr.data;
+        uint32_t res = extract_data(raw, entry.uop.diag_val, entry.uop.func3);
+        entry.uop.result = res;
+        entry.uop.difftest_skip = lr.uop.difftest_skip;
+        entry.uop.cplt_time = sim_time;
+        entry.uop.is_cache_miss = lr.uop.is_cache_miss;
+        if (ctx != nullptr) {
+          ctx->perf.trace_load_on_result(ldq_trace_seq[idx], sim_time);
+          ctx->perf.trace_load_set_dcache_hit(ldq_trace_seq[idx],
+                                              !lr.uop.is_cache_miss);
         }
-        free_ldq_entry(idx);
+        finished_loads.push_back(entry.uop);
       }
+      free_ldq_entry(idx);
+    } else {
+      entry.sent = false;
+      entry.waiting_resp = false;
+      entry.uop.cplt_time = REQ_WAIT_SEND;
+    }
+  }
+
+  for (int i = 0; i < LSU_STA_COUNT; i++) {
+    const auto &sr = in.dcache2lsu->resp_ports.store_resps[i];
+    if (!sr.valid) {
+      continue;
+    }
+    int idx = static_cast<int>(sr.req_id);
+    if (idx < 0 || idx >= STQ_SIZE) {
+      continue;
+    }
+    auto &entry = stq[idx];
+    if (!(entry.valid && entry.send && !entry.done)) {
+      continue;
+    }
+    if (sr.replay == 0) {
+      entry.done = true;
+      entry.send = false;
+      entry.replay = 0;
+      if (ctx != nullptr) {
+        ctx->perf.trace_store_on_result(stq_trace_seq[idx], sim_time);
+        ctx->perf.trace_store_set_dcache_hit(stq_trace_seq[idx],
+                                             !sr.is_cache_miss);
+      }
+    } else {
+      entry.send = false;
+      entry.replay = sr.replay;
     }
   }
 
@@ -225,6 +302,9 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
   if (!ldq[ldq_idx].valid || ldq[ldq_idx].killed) {
     return;
   }
+  if (ctx != nullptr) {
+    ctx->perf.trace_load_set_inst_idx(ldq_trace_seq[ldq_idx], inst.inst_idx);
+  }
 
   MicroOp task = inst;
   task.is_cache_miss = false; // Initialize to false
@@ -248,15 +328,32 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
     // [Fix] Disable Store-to-Load Forwarding for MMIO ranges
     // These addresses involve side effects and must read from consistent memory
     bool is_mmio = is_mmio_addr(p_addr);
+    if (ctx != nullptr) {
+      ctx->perf.trace_load_set_mmio(ldq_trace_seq[ldq_idx], is_mmio);
+    }
     task.flush_pipe = is_mmio;
+    if (is_mmio && finish_mmio_load(task, ldq_idx, p_addr)) {
+      ldq[ldq_idx].tlb_retry = false;
+      ldq[ldq_idx].uop = task;
+      return;
+    }
     auto fwd_res = is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, inst);
 
     if (fwd_res.state == StoreForwardState::Hit) {
+      if (!is_mmio && ctx != nullptr) {
+        ctx->perf.trace_load_set_stlf(ldq_trace_seq[ldq_idx], true);
+      }
       task.result = fwd_res.data;
       task.cplt_time = sim_time + 0; // 这一拍直接完成！
     } else if (fwd_res.state == StoreForwardState::NoHit) {
+      if (!is_mmio && ctx != nullptr) {
+        ctx->perf.trace_load_set_stlf(ldq_trace_seq[ldq_idx], false);
+      }
       task.cplt_time = REQ_WAIT_SEND;
     } else {
+      if (!is_mmio && ctx != nullptr) {
+        ctx->perf.trace_load_set_stlf(ldq_trace_seq[ldq_idx], false);
+      }
       task.cplt_time = REQ_WAIT_RETRY;
     }
   }
@@ -266,6 +363,10 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
 }
 
 void SimpleLsu::handle_store_addr(const MicroOp &inst) {
+  Assert(inst.stq_idx >= 0 && inst.stq_idx < STQ_SIZE);
+  if (stq_entry_matches_uop(stq[inst.stq_idx], inst) && ctx != nullptr) {
+    ctx->perf.trace_store_set_inst_idx(stq_trace_seq[inst.stq_idx], inst.inst_idx);
+  }
   if (!finish_store_addr_once(inst)) {
     pending_sta_addr_reqs.push_back(inst);
   }
@@ -273,6 +374,9 @@ void SimpleLsu::handle_store_addr(const MicroOp &inst) {
 
 void SimpleLsu::handle_store_data(const MicroOp &inst) {
   Assert(inst.stq_idx >= 0 && inst.stq_idx < STQ_SIZE);
+  if (stq_entry_matches_uop(stq[inst.stq_idx], inst) && ctx != nullptr) {
+    ctx->perf.trace_store_set_inst_idx(stq_trace_seq[inst.stq_idx], inst.inst_idx);
+  }
   stq[inst.stq_idx].data = inst.result;
   stq[inst.stq_idx].data_valid = true;
 }
@@ -282,14 +386,28 @@ bool SimpleLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
   if (stq_count >= STQ_SIZE) {
     return false;
   }
-  stq[stq_tail].valid = true;
-  stq[stq_tail].addr_valid = false;
-  stq[stq_tail].data_valid = false;
-  stq[stq_tail].committed = false;
-  stq[stq_tail].br_mask = br_mask;
-  stq[stq_tail].rob_idx = rob_idx;
-  stq[stq_tail].rob_flag = rob_flag;
-  stq[stq_tail].func3 = func3;
+  const int alloc_idx = stq_tail;
+  stq[alloc_idx].valid = true;
+  stq[alloc_idx].addr_valid = false;
+  stq[alloc_idx].data_valid = false;
+  stq[alloc_idx].committed = false;
+  stq[alloc_idx].done = false;
+  stq[alloc_idx].is_mmio = false;
+  stq[alloc_idx].send = false;
+  stq[alloc_idx].replay = 0;
+  stq[alloc_idx].addr = 0;
+  stq[alloc_idx].p_addr = 0;
+  stq[alloc_idx].suppress_write = 0;
+  stq[alloc_idx].data = 0;
+  stq[alloc_idx].br_mask = br_mask;
+  stq[alloc_idx].rob_idx = rob_idx;
+  stq[alloc_idx].rob_flag = rob_flag;
+  stq[alloc_idx].func3 = func3;
+  stq_seq_counter++;
+  stq_trace_seq[alloc_idx] = stq_seq_counter;
+  if (ctx != nullptr) {
+    ctx->perf.trace_store_on_stq_enter(stq_trace_seq[alloc_idx], sim_time);
+  }
   stq_tail = (stq_tail + 1) % STQ_SIZE;
   return true;
 }
@@ -323,6 +441,11 @@ bool SimpleLsu::reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
   ldq[idx].uop.rob_flag = rob_flag;
   ldq[idx].uop.ldq_idx = idx;
   ldq[idx].uop.cplt_time = REQ_WAIT_EXEC;
+  ldq_seq_counter++;
+  ldq_trace_seq[idx] = ldq_seq_counter;
+  if (ctx != nullptr) {
+    ctx->perf.trace_load_on_ldq_enter(ldq_trace_seq[idx], sim_time);
+  }
   ldq_count++;
   ldq_alloc_tail = (idx + 1) % LDQ_SIZE;
   return true;
@@ -345,43 +468,72 @@ bool SimpleLsu::is_mmio_addr(uint32_t paddr) const {
 }
 
 void SimpleLsu::drive_store_write_req() {
-  if (stq_head == stq_commit) {
-    return;
-  }
-  StqEntry &head = stq[stq_head];
-  if (!(head.valid && head.addr_valid && head.data_valid)) {
-    return;
-  }
+  int issued = 0;
+  for (int i = 0; i < stq_count && issued < LSU_STA_COUNT; i++) {
+    int stq_idx = (stq_head + i) % STQ_SIZE;
+    auto &entry = stq[stq_idx];
 
-  uint32_t alignment_mask = (head.func3 & 0x3) == 0   ? 0
-                            : (head.func3 & 0x3) == 1 ? 1
-                                                      : 3;
-  Assert((head.p_addr & alignment_mask) == 0 &&
-         "DUT: Store address misaligned at commit!");
+    if (!(entry.valid && entry.addr_valid && entry.data_valid &&
+          entry.committed)) {
+      break;
+    }
+    if (entry.done || entry.send) {
+      continue;
+    }
 
-  uint32_t byte_off = head.p_addr & 0x3;
-  uint32_t wstrb = 0;
-  uint32_t wdata = 0;
-  switch (head.func3 & 0x3) {
-  case 0:
-    wstrb = (1u << byte_off);
-    wdata = (head.data & 0xFFu) << (byte_off * 8);
-    break;
-  case 1:
-    wstrb = (0x3u << byte_off);
-    wdata = (head.data & 0xFFFFu) << (byte_off * 8);
-    break;
-  default:
-    wstrb = 0xFu;
-    wdata = head.data;
-    break;
+    uint32_t alignment_mask = (entry.func3 & 0x3) == 0   ? 0
+                              : (entry.func3 & 0x3) == 1 ? 1
+                                                          : 3;
+    Assert((entry.p_addr & alignment_mask) == 0 &&
+           "DUT: Store address misaligned at commit!");
+
+    if (entry.is_mmio) {
+      if (ctx != nullptr) {
+        ctx->perf.trace_store_on_issue(stq_trace_seq[stq_idx], sim_time);
+      }
+      peripheral_model.on_commit_store(entry.p_addr, entry.data,
+                                       static_cast<uint8_t>(entry.func3));
+      entry.done = true;
+      entry.send = false;
+      entry.replay = 0;
+      if (ctx != nullptr) {
+        ctx->perf.trace_store_on_result(stq_trace_seq[stq_idx], sim_time);
+      }
+      // Keep MMIO side effects serialized.
+      break;
+    }
+
+    uint32_t byte_off = entry.p_addr & 0x3;
+    uint32_t wstrb = 0;
+    uint32_t wdata = 0;
+    switch (entry.func3 & 0x3) {
+    case 0:
+      wstrb = (1u << byte_off);
+      wdata = (entry.data & 0xFFu) << (byte_off * 8);
+      break;
+    case 1:
+      wstrb = (0x3u << byte_off);
+      wdata = (entry.data & 0xFFFFu) << (byte_off * 8);
+      break;
+    default:
+      wstrb = 0xFu;
+      wdata = entry.data;
+      break;
+    }
+
+    auto &sp = out.lsu2dcache->req_ports.store_ports[issued];
+    sp.valid = true;
+    sp.addr = entry.p_addr;
+    sp.data = wdata;
+    sp.strb = wstrb;
+    sp.uop = entry;
+    sp.req_id = stq_idx;
+    entry.send = true;
+    if (ctx != nullptr) {
+      ctx->perf.trace_store_on_issue(stq_trace_seq[stq_idx], sim_time);
+    }
+    issued++;
   }
-
-  auto &sp = out.lsu2dcache->req_ports.store_ports[0];
-  sp.valid = true;
-  sp.addr  = head.p_addr;
-  sp.data  = wdata;
-  sp.strb  = wstrb;
 }
 
 void SimpleLsu::handle_global_flush() {
@@ -394,6 +546,11 @@ void SimpleLsu::handle_global_flush() {
     stq[ptr].valid = false;
     stq[ptr].addr_valid = false;
     stq[ptr].data_valid = false;
+    stq[ptr].committed = false;
+    stq[ptr].done = false;
+    stq[ptr].send = false;
+    stq[ptr].replay = 0;
+    stq[ptr].suppress_write = 0;
     ptr = (ptr + 1) % STQ_SIZE;
   }
   pending_sta_addr_reqs.clear();
@@ -459,6 +616,11 @@ void SimpleLsu::handle_mispred(mask_t mask) {
       stq[ptr].valid = false;
       stq[ptr].addr_valid = false;
       stq[ptr].data_valid = false;
+      stq[ptr].committed = false;
+      stq[ptr].done = false;
+      stq[ptr].send = false;
+      stq[ptr].replay = 0;
+      stq[ptr].suppress_write = 0;
       ptr = (ptr + 1) % STQ_SIZE;
     } while (ptr != old_tail);
   } else {
@@ -466,31 +628,43 @@ void SimpleLsu::handle_mispred(mask_t mask) {
       stq[ptr].valid = false;
       stq[ptr].addr_valid = false;
       stq[ptr].data_valid = false;
+      stq[ptr].committed = false;
+      stq[ptr].done = false;
+      stq[ptr].send = false;
+      stq[ptr].replay = 0;
+      stq[ptr].suppress_write = 0;
       ptr = (ptr + 1) % STQ_SIZE;
     }
   }
 }
 
-void SimpleLsu::retire_stq_head_if_ready(bool write_fire, int &pop_count) {
-  if (!write_fire) {
+void SimpleLsu::retire_stq_head_if_ready(int &pop_count) {
+  const int retire_idx = stq_head;
+  StqEntry &head = stq[retire_idx];
+  if (!(head.valid && head.addr_valid && head.data_valid && head.committed)) {
     return;
   }
-  if (stq_head == stq_commit) {
-    return;
-  }
-  StqEntry &head = stq[stq_head];
-  if (!(head.valid && head.addr_valid && head.data_valid)) {
+  if (!head.done) {
     return;
   }
 
-  // Store write handshake succeeded in comb stage.
+  // Store completed and acknowledged by dcache response path.
+  if (ctx != nullptr) {
+    ctx->perf.trace_store_on_stq_exit(stq_trace_seq[retire_idx], sim_time);
+  }
   head.valid = false;
   head.committed = false;
   head.addr_valid = false;
   head.data_valid = false;
+  head.done = false;
+  head.send = false;
+  head.replay = 0;
+  head.suppress_write = 0;
   head.addr = 0;
+  head.p_addr = 0;
   head.data = 0;
   head.br_mask = 0;
+  stq_trace_seq[retire_idx] = 0;
 
   stq_head = (stq_head + 1) % STQ_SIZE;
   pop_count++;
@@ -498,11 +672,17 @@ void SimpleLsu::retire_stq_head_if_ready(bool write_fire, int &pop_count) {
 
 void SimpleLsu::commit_stores_from_rob() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (!(in.rob_commit->commit_entry[i].valid &&
-          is_store(in.rob_commit->commit_entry[i].uop))) {
+    if (!in.rob_commit->commit_entry[i].valid) {
       continue;
     }
-    int idx = in.rob_commit->commit_entry[i].uop.stq_idx;
+    const auto &commit_uop = in.rob_commit->commit_entry[i].uop;
+    if (ctx != nullptr && is_load(commit_uop)) {
+      ctx->perf.trace_load_on_rob_exit(commit_uop.inst_idx, sim_time);
+    }
+    if (!is_store(commit_uop)) {
+      continue;
+    }
+    int idx = commit_uop.stq_idx;
     Assert(idx >= 0 && idx < STQ_SIZE);
     if (idx == stq_commit) {
       stq[idx].committed = true;
@@ -543,16 +723,32 @@ void SimpleLsu::progress_ldq_entries() {
       } else {
         entry.uop.diag_val = p_addr;
         bool is_mmio = is_mmio_addr(p_addr);
+        if (ctx != nullptr) {
+          ctx->perf.trace_load_set_mmio(ldq_trace_seq[i], is_mmio);
+        }
         entry.uop.flush_pipe = is_mmio;
-        auto fwd_res =
-            is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, entry.uop);
-        if (fwd_res.state == StoreForwardState::Hit) {
-          entry.uop.result = fwd_res.data;
-          entry.uop.cplt_time = sim_time;
-        } else if (fwd_res.state == StoreForwardState::NoHit) {
-          entry.uop.cplt_time = REQ_WAIT_SEND;
+        if (!is_mmio || !finish_mmio_load(entry.uop, i, p_addr)) {
+          auto fwd_res = is_mmio ? StoreForwardResult{}
+                                 : check_store_forward(p_addr, entry.uop);
+          if (fwd_res.state == StoreForwardState::Hit) {
+            if (!is_mmio && ctx != nullptr) {
+              ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], true);
+            }
+            entry.uop.result = fwd_res.data;
+            entry.uop.cplt_time = sim_time;
+          } else if (fwd_res.state == StoreForwardState::NoHit) {
+            if (!is_mmio && ctx != nullptr) {
+              ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], false);
+            }
+            entry.uop.cplt_time = REQ_WAIT_SEND;
+          } else {
+            if (!is_mmio && ctx != nullptr) {
+              ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], false);
+            }
+            entry.uop.cplt_time = REQ_WAIT_RETRY;
+          }
         } else {
-          entry.uop.cplt_time = REQ_WAIT_RETRY;
+          entry.uop.cplt_time = sim_time;
         }
       }
       continue;
@@ -561,15 +757,24 @@ void SimpleLsu::progress_ldq_entries() {
     if (entry.uop.cplt_time == REQ_WAIT_RETRY) {
       auto fwd_res = check_store_forward(entry.uop.diag_val, entry.uop);
       if (fwd_res.state == StoreForwardState::Hit) {
+        if (ctx != nullptr) {
+          ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], true);
+        }
         entry.uop.result = fwd_res.data;
         entry.uop.cplt_time = sim_time;
       } else if (fwd_res.state == StoreForwardState::NoHit) {
+        if (ctx != nullptr) {
+          ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], false);
+        }
         entry.uop.cplt_time = REQ_WAIT_SEND;
       }
     }
 
     if (entry.uop.cplt_time <= sim_time) {
       if (!entry.killed) {
+        if (ctx != nullptr) {
+          ctx->perf.trace_load_on_result(ldq_trace_seq[i], sim_time);
+        }
         finished_loads.push_back(entry.uop);
       }
       free_ldq_entry(i);
@@ -595,16 +800,38 @@ bool SimpleLsu::finish_store_addr_once(const MicroOp &inst) {
     finished_sta_reqs.push_back(fault_op);
     stq[idx].p_addr = pa;
     stq[idx].addr_valid = false;
+    stq[idx].is_mmio = false;
     return true;
   }
 
   MicroOp success_op = inst;
   success_op.cplt_time = sim_time;
   bool is_mmio = is_mmio_addr(pa);
+  if (is_mmio && ctx != nullptr) {
+    ctx->perf.mmio_inst_count++;
+    ctx->perf.mmio_store_count++;
+  }
   success_op.flush_pipe = is_mmio;
   finished_sta_reqs.push_back(success_op);
   stq[idx].p_addr = pa;
   stq[idx].addr_valid = true;
+  stq[idx].is_mmio = is_mmio;
+  return true;
+}
+
+bool SimpleLsu::finish_mmio_load(MicroOp &task, int ldq_idx, uint32_t p_addr) {
+  (void)ldq_idx;
+  if (ctx != nullptr) {
+    ctx->perf.mmio_inst_count++;
+    ctx->perf.mmio_load_count++;
+  }
+  if (peripheral_model.memory == nullptr) {
+    return false;
+  }
+  const uint32_t raw = peripheral_model.memory[p_addr >> 2];
+  task.result = extract_data(raw, p_addr, task.func3);
+  task.is_cache_miss = false;
+  task.cplt_time = sim_time;
   return true;
 }
 
@@ -625,6 +852,9 @@ void SimpleLsu::progress_pending_sta_addr() {
 void SimpleLsu::free_ldq_entry(int idx) {
   Assert(idx >= 0 && idx < LDQ_SIZE);
   if (ldq[idx].valid) {
+    if (ctx != nullptr) {
+      ctx->perf.trace_load_on_ldq_exit(ldq_trace_seq[idx], sim_time);
+    }
 
     ldq[idx].valid = false;
     ldq[idx].killed = false;
@@ -632,6 +862,7 @@ void SimpleLsu::free_ldq_entry(int idx) {
     ldq[idx].waiting_resp = false;
     ldq[idx].tlb_retry = false;
     ldq[idx].uop = {};
+    ldq_trace_seq[idx] = 0;
     ldq_count--;
     Assert(ldq_count >= 0);
   }
@@ -706,9 +937,9 @@ void SimpleLsu::seq() {
 
   consume_stq_alloc_reqs(push_count);
   consume_ldq_alloc_reqs();
-  bool write_fire = out.lsu2dcache->req_ports.store_ports[0].valid;
-  retire_stq_head_if_ready(write_fire, pop_count);
   commit_stores_from_rob();
+  progress_ldq_entries();
+  retire_stq_head_if_ready(pop_count);
 
   stq_count = stq_count + push_count - pop_count;
   if (stq_count < 0) {
@@ -717,7 +948,6 @@ void SimpleLsu::seq() {
   if (stq_count > STQ_SIZE) {
     Assert(0 && "STQ Count Overflow! logic bug!");
   }
-  progress_ldq_entries();
 }
 
 // =========================================================

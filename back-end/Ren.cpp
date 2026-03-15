@@ -288,6 +288,12 @@ void Ren ::comb_commit() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (in.rob_commit->commit_entry[i].valid) {
       ctx->perf.commit_num++;
+      if (is_load(in.rob_commit->commit_entry[i].uop)) {
+        ctx->perf.commit_load_num++;
+      }
+      if (is_store(in.rob_commit->commit_entry[i].uop)) {
+        ctx->perf.commit_store_num++;
+      }
 
       if (ctx->is_ckpt) {
         if (!ctx->perf.perf_start &&

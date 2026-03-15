@@ -74,6 +74,44 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
+// LSU implementation selector in BackTop:
+// 0 = RealLsu (default), 1 = SimpleLsu
+#define CONFIG_BACKEND_USE_SIMPLE_LSU 0
+
+
+// ============================================================
+// [4] D-Cache (SimpleCache) Config
+// ============================================================
+// DCache implementation selector in MemSubsystem:
+// 0 = RealDcache (default), 1 = SimpleCache
+#define CONFIG_MEM_DCACHE_USE_SIMPLE 1
+// Targeted LSU trace (1-based sequence id):
+// 0 = disabled, N = trace the Nth load/store entering LDQ/STQ.
+#ifndef CONFIG_PERF_TRACE_LOAD_N
+#define CONFIG_PERF_TRACE_LOAD_N 1000
+#endif
+#ifndef CONFIG_PERF_TRACE_STORE_N
+#define CONFIG_PERF_TRACE_STORE_N 1000
+#endif
+// Perf snapshot at a specific sim-time(cycle):
+// 0 = disabled, N > 0 = capture committed(total/load/store) at cycle N.
+#define CONFIG_PERF_SNAPSHOT_SIM_TIME 10000
+// Periodic perf snapshots:
+// - INTERVAL=0: disabled
+// - BEGIN/END: capture window (inclusive)
+// - MAX: max snapshot records kept (avoid huge logs)
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL 200
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN 26000
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_END
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_END 35000
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_MAX
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_MAX 256
+#endif
 // MMU domain feature tags (kept enabled for front/back path visibility)
 #define CONFIG_DTLB
 #define CONFIG_ITLB
@@ -178,9 +216,7 @@ constexpr int ICACHE_WORD_NUM = ICACHE_LINE_SIZE / 4;
 constexpr int ICACHE_TAG_BITS = 32 - ICACHE_INDEX_BITS - ICACHE_OFFSET_BITS;
 constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
-// ============================================================
-// [4] D-Cache (SimpleCache) Config
-// ============================================================
+
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
 constexpr int DCACHE_L2_HIT_LATENCY = 8;

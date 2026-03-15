@@ -1,5 +1,6 @@
 #pragma once
 #include "AbstractLsu.h"
+#include "PeripheralModel.h"
 #include "SimpleMmu.h" // Added MMU include
 #include "config.h"
 #include <cstdint>
@@ -34,6 +35,7 @@ private:
 
   // MMU Instance (Composition)
   std::unique_ptr<AbstractMmu> mmu;
+  PeripheralModel peripheral_model;
 
   // === 内部状态寄存器 (对应 seq 更新) ===
 
@@ -48,6 +50,10 @@ private:
   LdqEntry ldq[LDQ_SIZE];
   int ldq_count;
   int ldq_alloc_tail;
+  uint64_t ldq_seq_counter;
+  uint64_t stq_seq_counter;
+  uint64_t ldq_trace_seq[LDQ_SIZE];
+  uint64_t stq_trace_seq[STQ_SIZE];
 
   // 3. 完成的 Load 队列 (等待写回)
   std::deque<MicroOp> finished_loads;
@@ -72,7 +78,7 @@ public:
 
   StqEntry get_stq_entry(int stq_idx) override;
 
-  void set_csr(Csr *c) override { this->csr_module = c; }
+  void set_csr(Csr *c) override;
   void set_ptw_mem_port(PtwMemPort *port) override {
     ptw_mem_port = port;
     mmu->set_ptw_mem_port(port);
@@ -107,11 +113,12 @@ private:
   void drive_store_write_req();
   void handle_global_flush();
   void handle_mispred(mask_t mask);
-  void retire_stq_head_if_ready(bool write_fire, int &pop_count);
+  void retire_stq_head_if_ready(int &pop_count);
   void commit_stores_from_rob();
   void progress_ldq_entries();
   void progress_pending_sta_addr();
   bool finish_store_addr_once(const MicroOp &inst);
+  bool finish_mmio_load(MicroOp &task, int ldq_idx, uint32_t p_addr);
 
   StoreForwardResult check_store_forward(uint32_t p_addr,
                                          const MicroOp &load_uop);

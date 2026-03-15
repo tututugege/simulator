@@ -71,6 +71,7 @@ struct MSHROUTIO{
 class MSHR {
 public:
     MSHR() = default;
+    void bind_context(SimContext *c) { ctx = c; }
 
     MSHR_StateMachine state = MSHR_IDLE;
 
@@ -96,6 +97,11 @@ public:
     MSHROUTIO out;
 
     MSHR_STATE cur,nxt;
+    SimContext *ctx = nullptr;
+    uint64_t miss_alloc_cycle[MSHR_ENTRIES] = {};
+    bool miss_alloc_cycle_valid[MSHR_ENTRIES] = {};
+    uint64_t axi_issue_cycle[MSHR_ENTRIES] = {};
+    bool axi_issue_cycle_valid[MSHR_ENTRIES] = {};
 
     // AXI channel signals — set by the RealDcache bridge before/after comb_inputs().
 

@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 
+class SimContext;
+
 extern WriteBufferEntry write_buffer_nxt[WB_ENTRIES];
 
 struct WBState {
@@ -86,6 +88,7 @@ struct WBOut {
 class WriteBuffer {
 public:
     WriteBuffer() = default;
+    void bind_context(SimContext *c) { ctx = c; }
     int find_wb_entry(uint32_t addr);
 
     void init();
@@ -107,4 +110,5 @@ public:
     WBState cur, nxt;
     WbDeferredCheck cur_check, nxt_check;
     WbIssueTrace cur_issue, nxt_issue;
+    SimContext *ctx = nullptr;
 };

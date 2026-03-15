@@ -2,20 +2,19 @@
 
 #include "AbstractDcache.h"
 #include "IO.h"
-#include "PeripheralModel.h"
 #include "types.h"
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
 #include <algorithm>
 #include <deque>
-using namespace std;
-
-#define PLRU_EVICT
+#include "config.h"
 
 class SimpleCache : public AbstractDcache {
-  struct PendingReq {
-    MemReqIO req;
+  struct PendingLoadReq {
+    uint32_t addr = 0;
+    MicroOp uop = {};
+    size_t req_id = 0;
     int64_t complete_time;
   };
 
@@ -26,55 +25,37 @@ class SimpleCache : public AbstractDcache {
   uint32_t cache_tag[WAY_NUM][1 << INDEX_WIDTH];
   bool cache_valid[WAY_NUM][1 << INDEX_WIDTH];
   uint8_t plru_tree[1 << INDEX_WIDTH][(WAY_NUM - 1 + 7) / 8];
-  std::deque<PendingReq> pending_reqs;
+  std::deque<PendingLoadReq> pending_load_reqs[LSU_LDU_COUNT];
   static constexpr size_t MAX_PENDING_REQS = 256;
-  MemRespIO pending_resp;
-  bool stress_mode;
-  int write_ready_pct;
+  SimContext *ctx = nullptr;
 
   int get_tag(uint32_t addr) { return (addr >> (OFFSET_WIDTH + INDEX_WIDTH)); }
-
   int get_index(uint32_t addr) {
     return ((addr >> OFFSET_WIDTH) & ((1 << INDEX_WIDTH) - 1));
   }
 
 public:
-  SimpleCache(SimContext *ctx) {
-    this->ctx = ctx;
+  void bind_context(SimContext *c) { ctx = c; }
+  LsuDcacheIO *lsu2dcache = nullptr;
+  DcacheLsuIO *dcache2lsu = nullptr;
+
+  SimpleCache() {
     memset(cache_valid, 0, sizeof(cache_valid));
     memset(plru_tree, 0, sizeof(plru_tree));
-    HIT_LATENCY = 1;
-    MISS_LATENCY = 50;
-
-    stress_mode = false;
-    write_ready_pct = 100;
-    if (const char *stress_env = std::getenv("SIM_DCACHE_STRESS")) {
-      stress_mode = (std::atoi(stress_env) != 0);
-    }
-    if (const char *wready_env = std::getenv("SIM_DCACHE_WREADY_PCT")) {
-      write_ready_pct = std::clamp(std::atoi(wready_env), 1, 100);
-    }
+    HIT_LATENCY = 2;
+    MISS_LATENCY = 140;
   }
+
   int HIT_LATENCY;
   int MISS_LATENCY;
-
-  SimContext *ctx;
-  MemReqIO *lsu_req_io = nullptr;
-  MemReqIO *lsu_wreq_io = nullptr;
-  MemRespIO *lsu_resp_io = nullptr;
-  MemReadyIO *lsu_wready_io = nullptr;
-
-  
-  PeripheralModel *peripheral_model = nullptr;
   int cache_select_evict(uint32_t addr);
   void cache_evict(uint32_t addr);
-  int cache_access(uint32_t addr);
-  int get_data_magic(uint32_t p_addr);
+  int cache_access(uint32_t addr, bool &is_miss);
   void update_plru(uint32_t index, int accessed_way);
-  bool should_write_ready() const;
-  void handle_write_req(const MemReqIO &req);
-  void accept_req(const MemReqIO &req);
-  void drive_resp(MemRespIO &resp) const;
+  void handle_store_req(const StoreReq &req, StoreResp &resp);
+  void accept_load_req(int port, const LoadReq &req);
+  void drive_load_resp(int port, LoadResp &resp);
+
   void init() override;
   void comb() override;
   void seq() override;

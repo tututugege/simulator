@@ -60,6 +60,15 @@ private:
   int replay_count_stq; // 统计重试次数
   int mshr_replay_count_ldq; // 统计 MSHR 重试次数
   int mshr_replay_count_stq; // 统计 MSHR 重试次数
+  uint64_t ldq_seq_counter;
+  uint64_t stq_seq_counter;
+  uint64_t ldq_trace_seq[LDQ_SIZE];
+  uint64_t stq_trace_seq[STQ_SIZE];
+  bool ldq_cache_wait_replay[LDQ_SIZE];
+  bool stq_cache_wait_replay[STQ_SIZE];
+
+  bool stq_head_flag; // 用于区分环形缓冲区中的两轮
+
   bool replay_type; // 0 = LDQ, 1 = STQ
 
   

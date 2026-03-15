@@ -2,6 +2,7 @@
 #include "Csr.h"
 #include "IO.h"
 #include "RealLsu.h"
+#include "SimpleLsu.h"
 #include "config.h"
 #include "diff.h"
 #include "oracle.h"
@@ -25,7 +26,11 @@ void BackTop::init() {
   exu = new Exu(ctx, &ftq_lookup);
   csr = new Csr();
   rob = new Rob(ctx);
+#if CONFIG_BACKEND_USE_SIMPLE_LSU
+  lsu = new SimpleLsu(ctx);
+#else
   lsu = new RealLsu(ctx);
+#endif
   lsu->set_csr(csr);
 
   pre_idu_queue->out.dec2front = &dec2front;
