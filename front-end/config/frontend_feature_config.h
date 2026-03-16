@@ -17,10 +17,7 @@
 static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
 static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #ifndef BPU_BANK_NUM
-#define BPU_BANK_NUM FETCH_WIDTH
-#endif
-#if BPU_BANK_NUM != FETCH_WIDTH
-#error "BPU_BANK_NUM must equal FETCH_WIDTH"
+#define BPU_BANK_NUM 16
 #endif
 
 // RAS feature switch:
@@ -93,6 +90,76 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #ifndef TAGE_SC_PROVIDER_WEAK_HIGH
 #define TAGE_SC_PROVIDER_WEAK_HIGH 4
 #endif
+
+// ----------------------------------------------------------------------------
+// TAGE-SC-L upgrade switches (new; default disabled to preserve baseline)
+// ----------------------------------------------------------------------------
+#ifndef ENABLE_TAGE_SC_L
+#define ENABLE_TAGE_SC_L 1
+#endif
+
+#ifndef ENABLE_TAGE_SC_PATH
+#define ENABLE_TAGE_SC_PATH 1
+#endif
+
+#ifndef TAGE_SC_PATH_BITS
+#define TAGE_SC_PATH_BITS 16
+#endif
+
+#ifndef ENABLE_TAGE_LOOP_PRED
+#define ENABLE_TAGE_LOOP_PRED 1
+#endif
+
+#ifndef TAGE_LOOP_ENTRY_NUM
+#define TAGE_LOOP_ENTRY_NUM 1024
+#endif
+
+#ifndef TAGE_LOOP_TAG_BITS
+#define TAGE_LOOP_TAG_BITS 12
+#endif
+
+#ifndef TAGE_LOOP_CONF_BITS
+#define TAGE_LOOP_CONF_BITS 3
+#endif
+
+#ifndef TAGE_LOOP_AGE_BITS
+#define TAGE_LOOP_AGE_BITS 3
+#endif
+
+#ifndef TAGE_LOOP_ITER_BITS
+#define TAGE_LOOP_ITER_BITS 12
+#endif
+
+#ifndef TAGE_LOOP_CONF_THRESHOLD
+#define TAGE_LOOP_CONF_THRESHOLD 5
+#endif
+
+#ifndef TAGE_SC_L_ENTRY_NUM
+#define TAGE_SC_L_ENTRY_NUM 1024
+#endif
+
+#ifndef TAGE_SC_L_CTR_BITS
+#define TAGE_SC_L_CTR_BITS 6
+#endif
+
+#ifndef TAGE_SC_L_THETA_INIT
+#define TAGE_SC_L_THETA_INIT 18
+#endif
+
+#ifndef TAGE_SC_L_THETA_MIN
+#define TAGE_SC_L_THETA_MIN 6
+#endif
+
+#ifndef TAGE_SC_L_THETA_MAX
+#define TAGE_SC_L_THETA_MAX 64
+#endif
+
+#ifndef TAGE_SC_L_OVERRIDE_MARGIN
+#define TAGE_SC_L_OVERRIDE_MARGIN 4
+#endif
+
+// NOTE: metadata plumbing sizes are defined in `include/config.h` as
+// `BPU_SCL_META_*` / `BPU_LOOP_META_*` to keep front/back consistent.
 
 // BTB configs
 #ifndef BTB_ENTRY_NUM
