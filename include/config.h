@@ -121,7 +121,7 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
 #ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
-#define CONFIG_ICACHE_USE_AXI_MEM_PORT 0
+#define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
 // AXI protocol flavor for the dedicated icache memory path.
