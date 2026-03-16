@@ -12,18 +12,22 @@ TlbMmu::TlbMmu(SimContext *ctx, PtwMemPort *port, int tlb_entries)
 void TlbMmu::set_ptw_mem_port(PtwMemPort *port) { walker.set_mem_port(port); }
 void TlbMmu::set_ptw_walk_port(PtwWalkPort *port) { walk_port = port; }
 
-void TlbMmu::flush() {
-  for (auto &e : dtlb) {
-    e = {};
-    e.valid = false;
-  }
-  repl_ptr = 0;
+void TlbMmu::cancel_pending_walk() {
   walker.flush();
   walk_active = false;
   walk_req_sent = false;
   if (walk_port != nullptr) {
     walk_port->flush_client();
   }
+}
+
+void TlbMmu::flush() {
+  for (auto &e : dtlb) {
+    e = {};
+    e.valid = false;
+  }
+  repl_ptr = 0;
+  cancel_pending_walk();
 }
 
 bool TlbMmu::lookup(uint32_t v_addr, uint8_t asid, TlbEntry &hit) const {

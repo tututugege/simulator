@@ -30,6 +30,10 @@ void PreIduQueue::ftq_pop(int pop_cnt) {
 void PreIduQueue::ftq_recover(int new_tail) {
   int normalized_tail = ((new_tail % FTQ_SIZE) + FTQ_SIZE) % FTQ_SIZE;
   int discarded = (ftq_tail_1 - normalized_tail + FTQ_SIZE) % FTQ_SIZE;
+  for (int i = 0; i < discarded; i++) {
+    int idx = (normalized_tail + i) % FTQ_SIZE;
+    ftq_entries[idx] = FTQEntry();
+  }
   ftq_tail_1 = normalized_tail;
   ftq_count_1 -= discarded;
 }
@@ -73,6 +77,11 @@ void PreIduQueue::comb_begin() {
   ftq_head_1 = ftq_head;
   ftq_tail_1 = ftq_tail;
   ftq_count_1 = ftq_count;
+  if (out.ftq_lookup != nullptr) {
+    for (int i = 0; i < FTQ_SIZE; i++) {
+      out.ftq_lookup->entries[i] = ftq_entries[i];
+    }
+  }
 
   if (out.issue != nullptr) {
     for (auto &e : out.issue->entries) {
@@ -144,6 +153,17 @@ void PreIduQueue::comb_accept_front() {
     ftq_entry.alt_pred[i] = in.front2dec->alt_pred[i];
     ftq_entry.altpcpn[i] = in.front2dec->altpcpn[i];
     ftq_entry.pcpn[i] = in.front2dec->pcpn[i];
+    ftq_entry.sc_used[i] = in.front2dec->sc_used[i];
+    ftq_entry.sc_pred[i] = in.front2dec->sc_pred[i];
+    ftq_entry.sc_sum[i] = in.front2dec->sc_sum[i];
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      ftq_entry.sc_idx[i][t] = in.front2dec->sc_idx[i][t];
+    }
+    ftq_entry.loop_used[i] = in.front2dec->loop_used[i];
+    ftq_entry.loop_hit[i] = in.front2dec->loop_hit[i];
+    ftq_entry.loop_pred[i] = in.front2dec->loop_pred[i];
+    ftq_entry.loop_idx[i] = in.front2dec->loop_idx[i];
+    ftq_entry.loop_tag[i] = in.front2dec->loop_tag[i];
     for (int j = 0; j < 4; j++) {
       ftq_entry.tage_idx[i][j] = in.front2dec->tage_idx[i][j];
       ftq_entry.tage_tag[i][j] = in.front2dec->tage_tag[i][j];

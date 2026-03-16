@@ -334,6 +334,19 @@ public:
     bind_mem_read_port(true_icache_runtime<HW, ReadPort>(), port);
   }
 
+  void peek_ready() override {
+    clear_primary_outputs(out);
+    clear_secondary_outputs(out);
+    uint32_t cur_satp =
+        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    bool satp_changed = !satp_seen || cur_satp != last_satp;
+    bool hold_for_translation_flush = in->itlb_flush || satp_changed;
+    out->icache_read_ready =
+        in->reset ? true
+                  : (hold_for_translation_flush ? false
+                                                : icache_hw.io.regs.ifu_req_ready_r);
+  }
+
   void comb() override {
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
@@ -350,18 +363,28 @@ public:
       if (runtime.mmu_model != nullptr) {
         runtime.mmu_model->flush();
       }
+      satp_seen = false;
       out->icache_read_ready = true;
       return;
     }
 
     if (in->refetch && runtime.mmu_model != nullptr) {
-      runtime.mmu_model->flush();
+      runtime.mmu_model->cancel_pending_walk();
     }
 
+    uint32_t cur_satp =
+        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    bool satp_changed = !satp_seen || cur_satp != last_satp;
+    bool translation_context_flush = in->itlb_flush || satp_changed;
+    if (translation_context_flush && runtime.mmu_model != nullptr) {
+      runtime.mmu_model->flush();
+    }
+    satp_seen = true;
+    last_satp = cur_satp;
+
     MemReadView mem = read_port.comb_view();
-    const bool probe_only = in->run_comb_only;
-    const bool req_valid = probe_only ? false : in->icache_read_valid;
-    const uint32_t req_pc = probe_only ? 0u : in->fetch_address;
+    const bool req_valid = in->icache_read_valid;
+    const uint32_t req_pc = in->fetch_address;
 
     icache_hw.io.in.refetch = in->refetch;
     icache_hw.io.in.flush = false;
@@ -380,7 +403,8 @@ public:
 
     icache_hw.comb();
 
-    if (!probe_only && !in->refetch && runtime.mmu_model != nullptr &&
+    if (!in->refetch &&
+        runtime.mmu_model != nullptr &&
         icache_hw.io.out.mmu_req_valid) {
       uint32_t p_addr = 0;
       uint32_t v_addr = icache_hw.io.out.mmu_req_vtag << 12;
@@ -419,9 +443,6 @@ public:
                        out->page_fault_inst, out->inst_valid);
     }
 
-    if (probe_only) {
-      out->icache_read_complete = false;
-    }
   }
 
   void seq() override {
@@ -451,10 +472,19 @@ public:
 
 private:
   HW &icache_hw;
+  uint32_t last_satp = 0;
+  bool satp_seen = false;
 };
 
 class SimpleICacheTop : public ICacheTop {
 public:
+  void peek_ready() override {
+    out->icache_read_ready_2 = false;
+    out->icache_read_complete_2 = false;
+    out->icache_read_ready = in->reset || in->refetch || !pending_req_valid;
+    out->icache_read_complete = false;
+  }
+
   void comb() override {
     out->icache_read_ready_2 = false;
     out->icache_read_complete_2 = false;
@@ -494,6 +524,10 @@ public:
       return;
     }
 
+    if (in->refetch && mmu_model != nullptr) {
+      mmu_model->cancel_pending_walk();
+    }
+
     out->icache_read_complete = false;
     out->icache_read_ready = !pending_req_valid;
     out->fetch_pc =
@@ -506,7 +540,7 @@ public:
 
     uint32_t cur_satp =
         in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
-    if (!satp_seen || cur_satp != last_satp || in->refetch) {
+    if (!satp_seen || cur_satp != last_satp || in->itlb_flush) {
       if (mmu_model != nullptr) {
         mmu_model->flush();
       }
@@ -515,10 +549,6 @@ public:
       pending_req_valid = false;
       pending_fetch_addr = 0;
       out->icache_read_ready = true;
-    }
-
-    if (in->run_comb_only) {
-      return;
     }
 
     if (!pending_req_valid && !in->icache_read_valid) {

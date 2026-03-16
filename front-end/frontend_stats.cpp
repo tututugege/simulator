@@ -41,7 +41,6 @@ constexpr uint64_t bits_for_count(uint64_t count) {
 
 constexpr uint64_t kNlpIndexBits = bits_for_count(NLP_TABLE_SIZE);
 constexpr uint64_t kNlpTagBits = 30; // pc >> 2
-constexpr uint64_t kAheadGateCounterBits = bits_for_count(AHEAD_GATE_WINDOW + 1);
 constexpr uint64_t kTcWayBits = bits_for_count(TC_WAY_NUM);
 constexpr uint64_t kTcSetBits = static_cast<uint64_t>(TC_WAY_NUM) *
                                 (32 + TC_TAG_LEN + 1 + 3);
@@ -49,9 +48,6 @@ constexpr uint64_t kTcSetBits = static_cast<uint64_t>(TC_WAY_NUM) *
 const std::vector<TrainableIoStat> kTrainableIoStats = {
     {"BPU", "bank_sel_comb", 32, 2},
     {"BPU", "bank_pc_comb", 32, 32},
-    {"BPU", "ahead_slot1_predict_comb", 1 + 1 + AHEAD_SLOT1_CONF_BITS + 32 + 32, 1 + 1 + 32},
-    {"BPU", "ahead_slot1_conf_update_comb", AHEAD_SLOT1_CONF_BITS + 1, AHEAD_SLOT1_CONF_BITS},
-    {"BPU", "ahead_gate_update_comb", 1 + kAheadGateCounterBits + kAheadGateCounterBits + 1 + 1, 1 + kAheadGateCounterBits + kAheadGateCounterBits + 1 + 1},
     {"BPU", "nlp_index_comb", 32, kNlpIndexBits},
     {"BPU", "nlp_tag_comb", 32, kNlpTagBits},
     {"TAGE", "sat_inc_3bit_comb", 3, 3},
@@ -87,17 +83,14 @@ const std::vector<TrainableIoStat> kTrainableIoStats = {
     {"BTB", "btb_gen_index_post_comb", 900, 161},
 
     {"Predecode", "predecode_comb", 64, 34},
-    {"PredecodeChecker", "checker_comb", 204, 37},
+    {"PredecodeChecker", "predecode_checker_comb", 204, 37},
     {"FetchAddrFIFO", "fetch_addr_comb", 77, 70},
     {"InstructionFIFO", "instruction_fifo_comb", 925, 918},
     {"PTAB", "ptab_comb", 2528, 3779},
     {"Front2BackFIFO", "front2back_comb", 2797, 2790},
 
-    {"TAGE", "tage_core_comb", 2264, 1147},
     {"TAGE", "tage_comb", 2538, 1328},
-    {"BTB", "btb_core_comb", 900, 1384},
     {"BTB", "btb_comb", 2222, 1419},
-    {"BPU", "bpu_comb", 22668, 16868},
 };
 
 const std::vector<AreaStat> kAreaStats = {

@@ -131,6 +131,15 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 #ifndef PTW_WALK_WAIT_RETRY_CYCLES
 #define PTW_WALK_WAIT_RETRY_CYCLES 256
 #endif
+// Diagnostic switch:
+// When enabled, clear backend internal stage IO structs at the beginning of
+// BackTop::comb() before any comb_* runs. This helps detect hidden dependence
+// on previous-cycle IO values (latch-like behavior in combinational paths).
+// Keep disabled for normal runs.
+#ifndef CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
+#define CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN 1
+#endif
+
 // ============================================================
 // [2] Global Limits
 // ============================================================
@@ -151,6 +160,15 @@ static_assert(DECODE_WIDTH <= FETCH_WIDTH,
               "DECODE_WIDTH must be <= FETCH_WIDTH");
 constexpr int COMMIT_WIDTH = DECODE_WIDTH;
 constexpr int IDU_INST_BUFFER_SIZE = 64;
+
+// ============================================================
+// [2.1] Frontend/Backend Shared Branch-Predictor Metadata Sizes
+// ============================================================
+// Metadata plumbing sizes for predict -> commit roundtrip.
+constexpr int BPU_SCL_META_NTABLE = 8;
+constexpr int BPU_SCL_META_IDX_BITS = 16;
+constexpr int BPU_LOOP_META_IDX_BITS = 16;
+constexpr int BPU_LOOP_META_TAG_BITS = 16;
 
 // ============================================================
 // [3] I-Cache Config
