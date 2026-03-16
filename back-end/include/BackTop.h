@@ -25,6 +25,15 @@ typedef struct {
   uint8_t pcpn[FETCH_WIDTH];
   uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
   uint32_t tage_tag[FETCH_WIDTH][4]; // TN_MAX = 4
+  bool sc_used[FETCH_WIDTH];
+  bool sc_pred[FETCH_WIDTH];
+  int16_t sc_sum[FETCH_WIDTH];
+  uint16_t sc_idx[FETCH_WIDTH][BPU_SCL_META_NTABLE];
+  bool loop_used[FETCH_WIDTH];
+  bool loop_hit[FETCH_WIDTH];
+  bool loop_pred[FETCH_WIDTH];
+  uint16_t loop_idx[FETCH_WIDTH];
+  uint16_t loop_tag[FETCH_WIDTH];
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
 } Back_in;

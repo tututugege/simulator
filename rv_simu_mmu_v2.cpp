@@ -337,6 +337,17 @@ void SimCpu::front_cycle() {
     back.in.alt_pred[j] = front.out.alt_pred[j];
     back.in.altpcpn[j] = front.out.altpcpn[j];
     back.in.pcpn[j] = front.out.pcpn[j];
+    back.in.sc_used[j] = front.out.sc_used[j];
+    back.in.sc_pred[j] = front.out.sc_pred[j];
+    back.in.sc_sum[j] = front.out.sc_sum[j];
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      back.in.sc_idx[j][t] = front.out.sc_idx[j][t];
+    }
+    back.in.loop_used[j] = front.out.loop_used[j];
+    back.in.loop_hit[j] = front.out.loop_hit[j];
+    back.in.loop_pred[j] = front.out.loop_pred[j];
+    back.in.loop_idx[j] = front.out.loop_idx[j];
+    back.in.loop_tag[j] = front.out.loop_tag[j];
     for (int k = 0; k < 4; k++) {
       back.in.tage_idx[j][k] = front.out.tage_idx[j][k];
       back.in.tage_tag[j][k] = front.out.tage_tag[j][k];
@@ -359,6 +370,17 @@ void SimCpu::back2front_comb() {
     for (int j = 0; j < 4; j++) {
       front.in.tage_tag[i][j] = 0;
     }
+    front.in.sc_used[i] = false;
+    front.in.sc_pred[i] = false;
+    front.in.sc_sum[i] = 0;
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      front.in.sc_idx[i][t] = 0;
+    }
+    front.in.loop_used[i] = false;
+    front.in.loop_hit[i] = false;
+    front.in.loop_pred[i] = false;
+    front.in.loop_idx[i] = 0;
+    front.in.loop_tag[i] = 0;
 
     if (front.in.back2front_valid[i]) {
 
@@ -368,6 +390,15 @@ void SimCpu::back2front_comb() {
       uint8_t pcpn = 0;
       uint32_t tage_idx[4] = {0};
       uint32_t tage_tag[4] = {0};
+      bool sc_used = false;
+      bool sc_pred = false;
+      int16_t sc_sum = 0;
+      uint16_t sc_idx[BPU_SCL_META_NTABLE] = {0};
+      bool loop_used = false;
+      bool loop_hit = false;
+      bool loop_pred = false;
+      uint16_t loop_idx = 0;
+      uint16_t loop_tag = 0;
 
       FTQEntry &entry = back.idu->out.ftq_lookup->entries[inst->ftq_idx];
       if (entry.valid) {
@@ -375,6 +406,17 @@ void SimCpu::back2front_comb() {
         alt_pred = entry.alt_pred[inst->ftq_offset];
         altpcpn = entry.altpcpn[inst->ftq_offset];
         pcpn = entry.pcpn[inst->ftq_offset];
+        sc_used = entry.sc_used[inst->ftq_offset];
+        sc_pred = entry.sc_pred[inst->ftq_offset];
+        sc_sum = entry.sc_sum[inst->ftq_offset];
+        for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+          sc_idx[t] = entry.sc_idx[inst->ftq_offset][t];
+        }
+        loop_used = entry.loop_used[inst->ftq_offset];
+        loop_hit = entry.loop_hit[inst->ftq_offset];
+        loop_pred = entry.loop_pred[inst->ftq_offset];
+        loop_idx = entry.loop_idx[inst->ftq_offset];
+        loop_tag = entry.loop_tag[inst->ftq_offset];
         for (int k = 0; k < 4; k++) {
           tage_idx[k] = entry.tage_idx[inst->ftq_offset][k];
           tage_tag[k] = entry.tage_tag[inst->ftq_offset][k];
@@ -409,6 +451,17 @@ void SimCpu::back2front_comb() {
       front.in.alt_pred[i] = alt_pred;
       front.in.altpcpn[i] = altpcpn;
       front.in.pcpn[i] = pcpn;
+      front.in.sc_used[i] = sc_used;
+      front.in.sc_pred[i] = sc_pred;
+      front.in.sc_sum[i] = sc_sum;
+      for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+        front.in.sc_idx[i][t] = sc_idx[t];
+      }
+      front.in.loop_used[i] = loop_used;
+      front.in.loop_hit[i] = loop_hit;
+      front.in.loop_pred[i] = loop_pred;
+      front.in.loop_idx[i] = loop_idx;
+      front.in.loop_tag[i] = loop_tag;
       for (int j = 0; j < 4; j++) { // TN_MAX = 4 (分支预测相关索引)
         front.in.tage_idx[i][j] = tage_idx[j];
         front.in.tage_tag[i][j] = tage_tag[j];

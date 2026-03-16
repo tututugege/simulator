@@ -219,6 +219,17 @@ void BackTop::comb() {
     pre_idu_queue->in.front2dec->alt_pred[i] = in.alt_pred[i];
     pre_idu_queue->in.front2dec->altpcpn[i] = in.altpcpn[i];
     pre_idu_queue->in.front2dec->pcpn[i] = in.pcpn[i];
+    pre_idu_queue->in.front2dec->sc_used[i] = in.sc_used[i];
+    pre_idu_queue->in.front2dec->sc_pred[i] = in.sc_pred[i];
+    pre_idu_queue->in.front2dec->sc_sum[i] = in.sc_sum[i];
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      pre_idu_queue->in.front2dec->sc_idx[i][t] = in.sc_idx[i][t];
+    }
+    pre_idu_queue->in.front2dec->loop_used[i] = in.loop_used[i];
+    pre_idu_queue->in.front2dec->loop_hit[i] = in.loop_hit[i];
+    pre_idu_queue->in.front2dec->loop_pred[i] = in.loop_pred[i];
+    pre_idu_queue->in.front2dec->loop_idx[i] = in.loop_idx[i];
+    pre_idu_queue->in.front2dec->loop_tag[i] = in.loop_tag[i];
     pre_idu_queue->in.front2dec->predict_next_fetch_address[i] =
         in.predict_next_fetch_address[i];
     pre_idu_queue->in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];

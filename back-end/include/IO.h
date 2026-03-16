@@ -51,6 +51,15 @@ struct FrontDecIO {
   wire<32> predict_next_fetch_address[FETCH_WIDTH];
   wire<32> tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
   wire<32> tage_tag[FETCH_WIDTH][4]; // TN_MAX = 4
+  wire<1> sc_used[FETCH_WIDTH];
+  wire<1> sc_pred[FETCH_WIDTH];
+  wire<16> sc_sum[FETCH_WIDTH];
+  wire<16> sc_idx[FETCH_WIDTH][BPU_SCL_META_NTABLE];
+  wire<1> loop_used[FETCH_WIDTH];
+  wire<1> loop_hit[FETCH_WIDTH];
+  wire<1> loop_pred[FETCH_WIDTH];
+  wire<16> loop_idx[FETCH_WIDTH];
+  wire<16> loop_tag[FETCH_WIDTH];
   wire<1> page_fault_inst[FETCH_WIDTH];
 
   FrontDecIO() {
@@ -76,6 +85,26 @@ struct FrontDecIO {
     for (auto &tage_tag_0 : tage_tag)
       for (auto &tag : tage_tag_0)
         tag = {};
+
+    for (auto &v : sc_used)
+      v = {};
+    for (auto &v : sc_pred)
+      v = {};
+    for (auto &v : sc_sum)
+      v = {};
+    for (auto &sc_idx_0 : sc_idx)
+      for (auto &idx : sc_idx_0)
+        idx = {};
+    for (auto &v : loop_used)
+      v = {};
+    for (auto &v : loop_hit)
+      v = {};
+    for (auto &v : loop_pred)
+      v = {};
+    for (auto &v : loop_idx)
+      v = {};
+    for (auto &v : loop_tag)
+      v = {};
 
     for (auto &v : page_fault_inst)
       v = {};

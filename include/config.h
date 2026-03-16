@@ -113,6 +113,15 @@ constexpr int COMMIT_WIDTH = DECODE_WIDTH;
 constexpr int IDU_INST_BUFFER_SIZE = 64;
 
 // ============================================================
+// [2.1] Frontend/Backend Shared Branch-Predictor Metadata Sizes
+// ============================================================
+// Metadata plumbing sizes for predict -> commit roundtrip.
+constexpr int BPU_SCL_META_NTABLE = 8;
+constexpr int BPU_SCL_META_IDX_BITS = 16;
+constexpr int BPU_LOOP_META_IDX_BITS = 16;
+constexpr int BPU_LOOP_META_TAG_BITS = 16;
+
+// ============================================================
 // [3] I-Cache Config
 // ============================================================
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
