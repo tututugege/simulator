@@ -5,6 +5,25 @@
 
 #define BPU_TYPE_IDX_MASK (BPU_TYPE_ENTRY_NUM - 1)
 
+#if TYPE_PRED_WAY_NUM <= 0
+#error "TYPE_PRED_WAY_NUM must be > 0"
+#endif
+
+#if (TYPE_PRED_ENTRY_NUM % TYPE_PRED_WAY_NUM) != 0
+#error "TYPE_PRED_ENTRY_NUM must be divisible by TYPE_PRED_WAY_NUM"
+#endif
+
+#define TYPE_PRED_SET_NUM (TYPE_PRED_ENTRY_NUM / TYPE_PRED_WAY_NUM)
+
+#if (TYPE_PRED_SET_NUM & (TYPE_PRED_SET_NUM - 1)) != 0
+#error "TYPE_PRED_SET_NUM must be power of two"
+#endif
+
+#define TYPE_PRED_SET_MASK (TYPE_PRED_SET_NUM - 1)
+#define TYPE_PRED_CONF_MAX ((1 << TYPE_PRED_CONF_BITS) - 1)
+#define TYPE_PRED_AGE_MAX ((1 << TYPE_PRED_AGE_BITS) - 1)
+#define TYPE_PRED_TAG_MASK ((1 << TYPE_PRED_TAG_WIDTH) - 1)
+
 #if (TAGE_SC_ENTRY_NUM & (TAGE_SC_ENTRY_NUM - 1)) != 0
 #error "TAGE_SC_ENTRY_NUM must be power of two"
 #endif

@@ -31,6 +31,21 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #ifndef BPU_TYPE_ENTRY_NUM
 #define BPU_TYPE_ENTRY_NUM 4096
 #endif
+#ifndef TYPE_PRED_ENTRY_NUM
+#define TYPE_PRED_ENTRY_NUM BPU_TYPE_ENTRY_NUM
+#endif
+#ifndef TYPE_PRED_WAY_NUM
+#define TYPE_PRED_WAY_NUM 2
+#endif
+#ifndef TYPE_PRED_TAG_WIDTH
+#define TYPE_PRED_TAG_WIDTH 12
+#endif
+#ifndef TYPE_PRED_CONF_BITS
+#define TYPE_PRED_CONF_BITS 2
+#endif
+#ifndef TYPE_PRED_AGE_BITS
+#define TYPE_PRED_AGE_BITS 2
+#endif
 #ifndef Q_DEPTH
 #define Q_DEPTH 5000 // UQ depth
 #endif

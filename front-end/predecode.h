@@ -3,27 +3,32 @@
 
 #include "front_IO.h"
 #include <cstdint>
-#include "RISCV.h"
-#include "util.h"
+#include <RISCV.h>
 
-enum PredecodeType {
-  PREDECODE_NON_BRANCH,
-  PREDECODE_DIRECT_JUMP_NO_JAL, // PC_relative
-  PREDECODE_JALR, //jalr
-  PREDECODE_JAL // jal
-};
-
-// enum Predecode_FIFO_TYPE{
-//   PREDECODE_TAKEN,
-//   PREDECODE_NOT_TAKEN,
-//   PREDECODE_NOT_SURE
-// };
+static constexpr predecode_type_t PREDECODE_NON_BRANCH = 0;
+static constexpr predecode_type_t PREDECODE_DIRECT_JUMP_NO_JAL = 1;
+static constexpr predecode_type_t PREDECODE_JALR = 2;
+static constexpr predecode_type_t PREDECODE_JAL = 3;
 
 struct PredecodeResult {
-  PredecodeType type;
-  uint32_t target_address; // target address (only valid for direct jump)
+  predecode_type_t type;
+  target_addr_t target_address;
 };
 
-PredecodeResult predecode_instruction(uint32_t inst, uint32_t pc);
+struct predecode_in {
+  inst_word_t inst;
+  pc_t pc;
+};
 
-#endif // PREDECODE_H
+struct predecode_read_data {
+  inst_word_t inst;
+  pc_t pc;
+};
+
+void predecode_seq_read(const struct predecode_in *in,
+                        struct predecode_read_data *rd);
+void predecode_comb(const struct predecode_read_data *rd,
+                    struct PredecodeResult *out);
+void predecode_seq_write();
+
+#endif
