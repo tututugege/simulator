@@ -139,24 +139,27 @@ struct RobCommitIO {
 };
 
 struct RobDisIO {
+  struct TmaMeta {
+    wire<1> head_is_memory;
+    wire<1> head_is_miss;
+    wire<1> head_not_ready;
+  } tma;
 
   wire<1> ready;
   wire<1> empty;
   wire<1> stall;
   wire<ROB_IDX_WIDTH> enq_idx;
   wire<1> rob_flag;
-  wire<1> head_is_memory;
-  wire<1> head_is_miss;
-  wire<1> head_not_ready;
 
   RobDisIO() {
+    tma.head_is_memory = {};
+    tma.head_is_miss = {};
+    tma.head_not_ready = {};
     ready = {};
     empty = {};
     stall = {};
     enq_idx = {};
     rob_flag = {};
-    head_is_memory = {};
-    head_not_ready = {};
   }
 };
 
@@ -716,11 +719,13 @@ struct LsuDisIO {
 };
 
 struct LsuRobIO {
-  std::bitset<ROB_NUM> miss_mask;
+  struct TmaMeta {
+    std::bitset<ROB_NUM> miss_mask;
+  } tma;
   wire<1> committed_store_pending;
 
   LsuRobIO() {
-    miss_mask.reset();
+    tma.miss_mask.reset();
     committed_store_pending = 0;
   }
 };

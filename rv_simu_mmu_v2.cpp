@@ -111,12 +111,12 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
                 back->rob->out.rob_bcast->flush)
                    ? inst_entry->uop.diag_val
                    : inst->pc + 4;
-  dut_cpu.instruction = inst->instruction;
+  dut_cpu.instruction = inst->dbg.instruction;
   dut_cpu.page_fault_inst = inst->page_fault_inst;
   dut_cpu.page_fault_load = inst->page_fault_load;
   dut_cpu.page_fault_store = inst->page_fault_store;
-  dut_cpu.inst_idx = inst->inst_idx;
-  *skip = inst->difftest_skip;
+  dut_cpu.inst_idx = inst->dbg.inst_idx;
+  *skip = inst->dbg.difftest_skip;
 }
 
 void SimContext::run_commit_inst(InstEntry *inst_entry) {

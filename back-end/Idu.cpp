@@ -63,7 +63,7 @@ void Idu::comb_decode() {
       out.dec2ren->uop[i].src1_en = false;
       out.dec2ren->uop[i].src2_en = false;
       out.dec2ren->uop[i].dest_en = false;
-      out.dec2ren->uop[i].instruction = entry.inst;
+      out.dec2ren->uop[i].dbg.instruction = entry.inst;
     } else {
       decode(out.dec2ren->uop[i], entry.inst);
     }
@@ -253,7 +253,8 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   // 操作数来源以及type
   // uint32_t imm;
   int uop_num = 1;
-  uop.difftest_skip = false;
+  uop.dbg.instruction = inst;
+  uop.dbg.difftest_skip = false;
 
   uint32_t opcode = BITS(inst, 6, 0);
   uint32_t number_funct3_unsigned = BITS(inst, 14, 12);
@@ -264,7 +265,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   uint32_t csr_idx = inst >> 20;
 
   // 准备立即数
-  uop.instruction = inst;
   uop.diag_val = inst;
   uop.dest_areg = reg_d_index;
   uop.src1_areg = reg_a_index;
@@ -280,7 +280,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   uop.illegal_inst = false;
   uop.type = NOP;
   static uint64_t global_inst_idx = 0;
-  uop.inst_idx = global_inst_idx++;
+  uop.dbg.inst_idx = global_inst_idx++;
 
   switch (opcode) {
   case number_0_opcode_lui: { // lui

@@ -76,7 +76,7 @@ void Rob::comb_ready() {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
           stall_is_miss =
-              (rob_idx < ROB_NUM) ? in.lsu2rob->miss_mask.test(rob_idx) : false;
+              (rob_idx < ROB_NUM) ? in.lsu2rob->tma.miss_mask.test(rob_idx) : false;
         } else {
           stall_is_mem = false;
           stall_is_miss = false;
@@ -88,9 +88,9 @@ void Rob::comb_ready() {
     }
   }
 
-  out.rob2dis->head_not_ready = found_stall;
-  out.rob2dis->head_is_memory = (found_stall && stall_is_mem);
-  out.rob2dis->head_is_miss = (found_stall && stall_is_miss);
+  out.rob2dis->tma.head_not_ready = found_stall;
+  out.rob2dis->tma.head_is_memory = (found_stall && stall_is_mem);
+  out.rob2dis->tma.head_is_miss = (found_stall && stall_is_miss);
 
   out.rob2dis->empty = is_empty();
   out.rob2dis->ready = !is_full();
@@ -272,7 +272,7 @@ void Rob::comb_commit() {
                entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
                (i + (deq_ptr * ROB_BANK_NUM)),
                is_page_fault(entry[i][deq_ptr].uop),
-               (long long)entry[i][deq_ptr].uop.inst_idx,
+               (long long)entry[i][deq_ptr].uop.dbg.inst_idx,
                entry[i][deq_ptr].uop.type);
       } else {
         printf("[Bank %d] INVALID\n", i);
@@ -325,8 +325,8 @@ void Rob::comb_complete() {
       entry_1[bank_idx][line_idx].uop.flush_pipe =
           entry_1[bank_idx][line_idx].uop.flush_pipe ||
           in.exu2rob->entry[i].uop.flush_pipe;
-      entry_1[bank_idx][line_idx].uop.difftest_skip =
-          in.exu2rob->entry[i].uop.difftest_skip;
+      entry_1[bank_idx][line_idx].uop.dbg.difftest_skip =
+          in.exu2rob->entry[i].uop.dbg.difftest_skip;
       if (is_branch_uop(in.exu2rob->entry[i].uop.op)) {
         entry_1[bank_idx][line_idx].uop.diag_val =
             in.exu2rob->entry[i].uop.diag_val;

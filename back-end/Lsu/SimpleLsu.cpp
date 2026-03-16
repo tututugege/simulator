@@ -17,12 +17,12 @@ static constexpr int64_t REQ_WAIT_RESP = 0x7FFFFFFFFFFFFFFE;
 static constexpr int64_t REQ_WAIT_EXEC = 0x7FFFFFFFFFFFFFFC;
 
 static inline bool is_amo_lr_uop(const MicroOp &uop) {
-  return ((uop.instruction & 0x7Fu) == 0x2Fu) &&
+  return ((uop.dbg.instruction & 0x7Fu) == 0x2Fu) &&
          ((uop.func7 >> 2) == AmoOp::LR);
 }
 
 static inline bool is_amo_sc_uop(const MicroOp &uop) {
-  return ((uop.instruction & 0x7Fu) == 0x2Fu) &&
+  return ((uop.dbg.instruction & 0x7Fu) == 0x2Fu) &&
          ((uop.func7 >> 2) == AmoOp::SC);
 }
 
@@ -108,14 +108,14 @@ void SimpleLsu::comb_lsu2dis_info() {
   mask.reset();
   for (int i = 0; i < LDQ_SIZE; i++) {
     const auto &entry = ldq[i];
-    if (entry.valid && !entry.killed && entry.uop.is_cache_miss) {
+    if (entry.valid && !entry.killed && entry.uop.tma.is_cache_miss) {
       const uint32_t rob_idx = entry.uop.rob_idx;
       if (rob_idx < ROB_NUM) {
         mask.set(rob_idx);
       }
     }
   }
-  out.lsu2rob->miss_mask = mask;
+  out.lsu2rob->tma.miss_mask = mask;
   out.lsu2rob->committed_store_pending = has_committed_store_pending();
 }
 
@@ -215,9 +215,9 @@ void SimpleLsu::comb_load_res() {
             reserve_valid = true;
             reserve_addr = entry.uop.diag_val;
           }
-          entry.uop.difftest_skip = in.dcache_resp->uop.difftest_skip;
+          entry.uop.dbg.difftest_skip = in.dcache_resp->uop.dbg.difftest_skip;
           entry.uop.cplt_time = sim_time;
-          entry.uop.is_cache_miss = in.dcache_resp->uop.is_cache_miss;
+          entry.uop.tma.is_cache_miss = in.dcache_resp->uop.tma.is_cache_miss;
           finished_loads.push_back(entry.uop);
         } else {
 
@@ -259,7 +259,7 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
   }
 
   MicroOp task = inst;
-  task.is_cache_miss = false; // Initialize to false
+  task.tma.is_cache_miss = false; // Initialize to false
   uint32_t p_addr;
   auto mmu_ret = mmu->translate(p_addr, task.result, 1, in.csr_status);
 

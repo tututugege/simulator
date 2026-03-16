@@ -203,7 +203,7 @@ void SimpleCache::accept_req(const MemReqIO &req) {
   int latency = cache_access(req.addr);
   PendingReq pending{};
   pending.req = req;
-  pending.req.uop.is_cache_miss = (latency >= DCACHE_MEM_LATENCY);
+  pending.req.uop.tma.is_cache_miss = (latency >= DCACHE_MEM_LATENCY);
   pending.complete_time = sim_time + latency;
   pending_reqs.push_back(pending);
 }
@@ -255,12 +255,12 @@ void SimpleCache::comb() {
 #else
     mem_val = get_oracle_timer();
 #endif
-    pending_resp.uop.difftest_skip = true;
+    pending_resp.uop.dbg.difftest_skip = true;
   } else if (p_addr == 0x1fd0e004) {
     mem_val = 0;
-    pending_resp.uop.difftest_skip = true;
+    pending_resp.uop.dbg.difftest_skip = true;
   } else {
-    pending_resp.uop.difftest_skip = false;
+    pending_resp.uop.dbg.difftest_skip = false;
   }
   pending_resp.data = mem_val;
 

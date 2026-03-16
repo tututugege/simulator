@@ -483,8 +483,8 @@ void Dispatch::comb_fire() {
       // If ROB is full/stalled
       if (!in.rob2dis->ready) { // ROB Full
         any_rob_full_stall = true;
-        if (in.rob2dis->head_is_memory && in.rob2dis->head_not_ready) {
-          if (in.rob2dis->head_is_miss) {
+        if (in.rob2dis->tma.head_is_memory && in.rob2dis->tma.head_not_ready) {
+          if (in.rob2dis->tma.head_is_miss) {
             is_mem_ext_bound[i] = true;
           } else {
             is_mem_l1_bound[i] = true;

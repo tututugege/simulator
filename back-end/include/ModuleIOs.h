@@ -213,7 +213,7 @@ typedef struct RobUop {
     RobUop slim;
     slim.type            = full.type;
     slim.pc              = full.pc;
-    slim.instruction     = full.instruction;
+    slim.instruction     = full.dbg.instruction;
     slim.dest_preg       = full.dest_preg;
     slim.old_dest_preg   = full.old_dest_preg;
     slim.dest_areg       = full.dest_areg;

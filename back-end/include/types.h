@@ -61,9 +61,29 @@ constexpr uint8_t MAXU = 0b11100;
 // [Structs & Classes]
 // ==========================================
 
+// Debug sideband for InstInfo. Keep diag_val in hardware path.
+typedef struct InstDebugMeta {
+  wire<32> instruction;
+  bool difftest_skip;
+  int64_t inst_idx;
+} InstDebugMeta;
+
+// Debug sideband for MicroOp. Keep diag_val in hardware path.
+typedef struct UopDebugMeta {
+  wire<32> instruction;
+  bool difftest_skip;
+  int64_t inst_idx;
+} UopDebugMeta;
+
+typedef struct InstTmaMeta {
+  bool is_cache_miss;
+} InstTmaMeta;
+
+typedef struct UopTmaMeta {
+  bool is_cache_miss;
+} UopTmaMeta;
+
 typedef struct InstInfo {
-  wire<32>
-      instruction; // Debug only: raw instruction bits (not for hardware logic)
   wire<32> diag_val; // Hardware: Shared field for instruction or pc_next
 
   wire<AREG_IDX_WIDTH> dest_areg, src1_areg, src2_areg;
@@ -107,19 +127,16 @@ typedef struct InstInfo {
   wire<1> is_atomic;
 
   InstType type;
-  bool is_cache_miss;
+  InstTmaMeta tma;
 
   // Debug
-  bool difftest_skip;
+  InstDebugMeta dbg;
   bool flush_pipe;
-  int64_t inst_idx;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
 } InstInfo;
 
 typedef struct MicroOp {
-  wire<32>
-      instruction; // Debug only: raw instruction bits (not for hardware logic)
   wire<32> diag_val; // Hardware: Shared field for instruction or pc_next
 
   wire<AREG_IDX_WIDTH> dest_areg, src1_areg;
@@ -164,12 +181,11 @@ typedef struct MicroOp {
   wire<1> illegal_inst;
 
   UopType op;
-  bool is_cache_miss;
+  UopTmaMeta tma;
 
   // Debug
-  bool difftest_skip;
+  UopDebugMeta dbg;
   bool flush_pipe;
-  int64_t inst_idx;
   int64_t cplt_time;
 
   MicroOp() { std::memset(this, 0, sizeof(MicroOp)); }
@@ -177,7 +193,6 @@ typedef struct MicroOp {
   // Explicit conversion from InstInfo
   MicroOp(const InstInfo &info) {
     std::memset(this, 0, sizeof(MicroOp));
-    this->instruction = info.instruction;
     this->diag_val = info.diag_val;
     this->dest_areg = info.dest_areg;
     this->src1_areg = info.src1_areg;
@@ -213,11 +228,12 @@ typedef struct MicroOp {
     this->page_fault_load = info.page_fault_load;
     this->page_fault_store = info.page_fault_store;
     this->illegal_inst = info.illegal_inst;
-    this->is_cache_miss = info.is_cache_miss;
+    this->tma.is_cache_miss = info.tma.is_cache_miss;
     this->is_atomic = info.is_atomic;
-    this->difftest_skip = info.difftest_skip;
+    this->dbg.instruction = info.dbg.instruction;
+    this->dbg.difftest_skip = info.dbg.difftest_skip;
+    this->dbg.inst_idx = info.dbg.inst_idx;
     this->flush_pipe = info.flush_pipe;
-    this->inst_idx = info.inst_idx;
   }
 } MicroOp;
 
