@@ -54,8 +54,6 @@ public:
   // 时序逻辑
   void seq();
 
-  ExuIO get_hardware_io(); // Hardware Reference
-
   ExuIn in;
   ExuOut out;
 

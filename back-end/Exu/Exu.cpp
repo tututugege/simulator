@@ -202,7 +202,8 @@ void Exu::comb_pipeline() {
     if (inst_r[i].valid && issue_stall[i]) {
       inst_r_1[i] = inst_r[i];
     } else if (in.prf2exe->iss_entry[i].valid) {
-      inst_r_1[i] = in.prf2exe->iss_entry[i];
+      inst_r_1[i].valid = true;
+      inst_r_1[i].uop = in.prf2exe->iss_entry[i].uop.to_micro_op();
     } else {
       inst_r_1[i].valid = false;
     }
@@ -280,7 +281,8 @@ void Exu::comb_exec() {
 
     if (res) {
       // ✅ 无论是否能写回，先广播出去给 Bypass 用！
-      out.exe2prf->bypass[fu_global_idx].uop = *res;
+      out.exe2prf->bypass[fu_global_idx].uop =
+          ExePrfIO::ExePrfWbUop::from_micro_op(*res);
       out.exe2prf->bypass[fu_global_idx].valid = true;
     }
 
@@ -315,7 +317,7 @@ void Exu::comb_exec() {
     // 注意：LOAD/STA 的完成通报由 LSU 回调阶段处理
     if (!flushed && u->op != UOP_LOAD && u->op != UOP_STA) {
       out.exu2rob->entry[p_idx].valid = true;
-      out.exu2rob->entry[p_idx].uop = *u;
+      out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(*u);
     }
 
     // B. 立即外发 LSU 请求
@@ -323,10 +325,12 @@ void Exu::comb_exec() {
       int lsu_idx = winner_fu->get_lsu_port_id();
       if (u->op == UOP_STA || u->op == UOP_LOAD) {
         out.exe2lsu->agu_req[lsu_idx].valid = true;
-        out.exe2lsu->agu_req[lsu_idx].uop = *u;
+        out.exe2lsu->agu_req[lsu_idx].uop =
+            ExeLsuIO::ExeLsuReqUop::from_micro_op(*u);
       } else if (u->op == UOP_STD) {
         out.exe2lsu->sdu_req[lsu_idx].valid = true;
-        out.exe2lsu->sdu_req[lsu_idx].uop = *u;
+        out.exe2lsu->sdu_req[lsu_idx].uop =
+            ExeLsuIO::ExeLsuReqUop::from_micro_op(*u);
       }
     }
 
@@ -356,7 +360,8 @@ void Exu::comb_exec() {
     if (int_res[i].valid) {
       int p_idx = IQ_ALU_PORT_BASE + i;
       out.exe2prf->entry[p_idx].valid = true;
-      out.exe2prf->entry[p_idx].uop = int_res[i].uop;
+      out.exe2prf->entry[p_idx].uop =
+          ExePrfIO::ExePrfWbUop::from_micro_op(int_res[i].uop);
     }
   }
 
@@ -365,14 +370,14 @@ void Exu::comb_exec() {
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
     if (in.lsu2exe->wb_req[i].valid) {
       int p_idx = IQ_LD_PORT_BASE + i;
-      MicroOp &u = in.lsu2exe->wb_req[i].uop;
+      MicroOp u = in.lsu2exe->wb_req[i].uop.to_micro_op();
       bool flushed = in.rob_bcast->flush || is_br_killed(u, in.dec_bcast);
       Assert(!out.exe2prf->entry[p_idx].valid);
       out.exe2prf->entry[p_idx].valid = true;
-      out.exe2prf->entry[p_idx].uop = u;
+      out.exe2prf->entry[p_idx].uop = ExePrfIO::ExePrfWbUop::from_micro_op(u);
       if (!flushed) {
         out.exu2rob->entry[p_idx].valid = true;
-        out.exu2rob->entry[p_idx].uop = u;
+        out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(u);
       }
     }
   }
@@ -380,14 +385,14 @@ void Exu::comb_exec() {
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     if (in.lsu2exe->sta_wb_req[i].valid) {
       int p_idx = IQ_STA_PORT_BASE + i;
-      MicroOp &u = in.lsu2exe->sta_wb_req[i].uop;
+      MicroOp u = in.lsu2exe->sta_wb_req[i].uop.to_micro_op();
       bool flushed = in.rob_bcast->flush || is_br_killed(u, in.dec_bcast);
       Assert(!out.exe2prf->entry[p_idx].valid);
       out.exe2prf->entry[p_idx].valid = true;
-      out.exe2prf->entry[p_idx].uop = u;
+      out.exe2prf->entry[p_idx].uop = ExePrfIO::ExePrfWbUop::from_micro_op(u);
       if (!flushed) {
         out.exu2rob->entry[p_idx].valid = true;
-        out.exu2rob->entry[p_idx].uop = u;
+        out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(u);
       }
     }
   }
@@ -442,25 +447,4 @@ void Exu::seq() {
   for (auto fu : units) {
     fu->tick();
   }
-}
-
-ExuIO Exu::get_hardware_io() {
-  ExuIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.from_iss.valid[i] = in.prf2exe->iss_entry[i].valid;
-    hardware.from_iss.uop[i]   = IssExeUop::filter(in.prf2exe->iss_entry[i].uop);
-    hardware.from_iss.src1_data[i] = in.prf2exe->iss_entry[i].uop.src1_rdata;
-    hardware.from_iss.src2_data[i] = in.prf2exe->iss_entry[i].uop.src2_rdata;
-  }
-  hardware.from_back.flush = in.rob_bcast->flush;
-
-  // --- Outputs ---
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.to_back.valid[i] = out.exe2prf->entry[i].valid;
-    hardware.to_back.uop[i]   = ExeWbUop::filter(out.exe2prf->entry[i].uop);
-  }
-
-  return hardware;
 }

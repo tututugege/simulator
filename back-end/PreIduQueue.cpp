@@ -257,7 +257,8 @@ void PreIduQueue::comb_commit_reclaim() {
   }
   int pop_cnt = 0;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (in.rob_commit->commit_entry[i].valid && in.rob_commit->commit_entry[i].uop.ftq_is_last) {
+    if (in.rob_commit->commit_entry[i].valid &&
+        in.rob_commit->commit_entry[i].uop.ftq_is_last) {
       pop_cnt++;
     }
   }

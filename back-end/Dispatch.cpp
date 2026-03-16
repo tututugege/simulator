@@ -145,7 +145,7 @@ void Dispatch::comb_alloc() {
       }
     }
 
-    out.dis2rob->uop[i] = inst_alloc[i].uop;
+    out.dis2rob->uop[i] = DisRobIO::DisRobInst::from_inst_info(inst_alloc[i].uop);
   }
 }
 
@@ -209,7 +209,8 @@ void Dispatch::comb_dispatch() {
         int slot = iq_usage[target];
 
         out.dis2iss->req[target][slot].valid = true;
-        out.dis2iss->req[target][slot].uop = temp_uops[k].uop;
+        out.dis2iss->req[target][slot].uop =
+            DisIssIO::DisIssUop::from_micro_op(temp_uops[k].uop);
 
         iq_usage[target]++;
       }
@@ -661,9 +662,9 @@ void Dispatch::comb_pipeline() {
       continue;
     }
     if (out.dis2ren->ready) {
-      inst_r_1[i].uop = in.ren2dis->uop[i];
-      inst_r_1[i].uop.br_mask &= ~clear_mask;
       inst_r_1[i].valid = in.ren2dis->valid[i];
+      inst_r_1[i].uop = in.ren2dis->uop[i].to_inst_info();
+      inst_r_1[i].uop.br_mask &= ~clear_mask;
       continue;
     }
 
@@ -885,35 +886,4 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
     break;
   }
   return count;
-}
-
-DispatchIO Dispatch::get_hardware_io() {
-  DispatchIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.from_ren.valid[i] = in.ren2dis->valid[i];
-    hardware.from_ren.uop[i] = RenDisUop::filter(in.ren2dis->uop[i]);
-  }
-  hardware.from_rob.ready = in.rob2dis->ready;
-  hardware.from_rob.full = in.rob2dis->stall;
-  for (int j = 0; j < IQ_NUM; j++) {
-    hardware.from_iss.ready_num[j] = in.iss2dis->ready_num[j];
-  }
-  hardware.from_back.flush = in.rob_bcast->flush;
-
-  // --- Outputs ---
-  hardware.to_ren.ready = out.dis2ren->ready;
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.to_rob.valid[i] = out.dis2rob->valid[i];
-    hardware.to_rob.uop[i] = RobUop::filter(out.dis2rob->uop[i]);
-  }
-  for (int j = 0; j < IQ_NUM; j++) {
-    for (int k = 0; k < MAX_IQ_DISPATCH_WIDTH; k++) {
-      hardware.to_iss.valid[j][k] = out.dis2iss->req[j][k].valid;
-      hardware.to_iss.uop[j][k] = DisIssUop::filter(out.dis2iss->req[j][k].uop);
-    }
-  }
-
-  return hardware;
 }

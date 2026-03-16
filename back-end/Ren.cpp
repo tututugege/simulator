@@ -75,7 +75,7 @@ void Ren::comb_alloc() {
   // 一条指令stall，后面的也stall
   wire<1> stall = false;
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    out.ren2dis->uop[i] = inst_r[i].uop;
+    out.ren2dis->uop[i] = RenDisIO::RenDisInst::from_inst_info(inst_r[i].uop);
     out.ren2dis->uop[i].dest_preg = alloc_reg[i];
     // 分配寄存器
     if (inst_r[i].valid && inst_r[i].uop.dest_en && !stall) {
@@ -269,7 +269,8 @@ void Ren ::comb_commit() {
         }
       }
 
-      InstInfo *inst = &in.rob_commit->commit_entry[i].uop;
+      InstInfo commit_inst = in.rob_commit->commit_entry[i].uop.to_inst_info();
+      InstInfo *inst = &commit_inst;
 
       // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
       // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
@@ -286,9 +287,12 @@ void Ren ::comb_commit() {
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
-      ctx->run_commit_inst(&in.rob_commit->commit_entry[i]);
+      InstEntry commit_entry =
+          in.rob_commit->commit_entry[i].uop.to_inst_entry(
+              in.rob_commit->commit_entry[i].valid);
+      ctx->run_commit_inst(&commit_entry);
 #ifdef CONFIG_DIFFTEST
-      ctx->run_difftest_inst(&in.rob_commit->commit_entry[i]);
+      ctx->run_difftest_inst(&commit_entry);
 #endif
     }
   }
@@ -322,9 +326,9 @@ void Ren ::comb_pipeline() {
     if (in.rob_bcast->flush || in.dec_bcast->mispred) {
       inst_r_1[i].valid = false;
     } else if (out.ren2dec->ready) {
-      inst_r_1[i].uop = in.dec2ren->uop[i];
-      inst_r_1[i].uop.br_mask &= ~clear_mask;
       inst_r_1[i].valid = in.dec2ren->valid[i];
+      inst_r_1[i].uop = in.dec2ren->uop[i].to_inst_info();
+      inst_r_1[i].uop.br_mask &= ~clear_mask;
     } else {
       inst_r_1[i].valid = inst_r[i].valid && !fire[i];
     }
@@ -383,36 +387,4 @@ void Ren ::seq() {
   // memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) *
   // sizeof(reg<PRF_IDX_WIDTH>)); memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM +
   // 1) * sizeof(reg<PRF_IDX_WIDTH>));
-}
-
-RenIO Ren::get_hardware_io() {
-  RenIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.from_dec.valid[i] = in.dec2ren->valid[i];
-    // Reconstruct DecRenUop from full InstUop
-    hardware.from_dec.uop[i] = DecRenUop::filter(in.dec2ren->uop[i]);
-  }
-  hardware.from_dis.ready = in.dis2ren->ready;
-
-  hardware.from_rob.flush = in.rob_bcast->flush;
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    hardware.from_rob.commit_valid[i] = in.rob_commit->commit_entry[i].valid;
-    hardware.from_rob.commit_areg[i] =
-        in.rob_commit->commit_entry[i].uop.dest_areg;
-    hardware.from_rob.commit_preg[i] =
-        in.rob_commit->commit_entry[i].uop.dest_preg;
-    hardware.from_rob.commit_dest_en[i] =
-        in.rob_commit->commit_entry[i].uop.dest_en;
-  }
-
-  // --- Outputs ---
-  hardware.to_dec.ready = out.ren2dec->ready;
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.to_dis.valid[i] = out.ren2dis->valid[i];
-    hardware.to_dis.uop[i] = RenDisUop::filter(out.ren2dis->uop[i]);
-  }
-
-  return hardware;
 }

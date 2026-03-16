@@ -65,8 +65,6 @@ public:
   // 时序逻辑
   void seq();
 
-  IssueIO get_hardware_io(); // Hardware Reference
-
 private:
   void add_iq(const IssueQueueConfig &cfg);
   int get_latency(UopType uop_type);

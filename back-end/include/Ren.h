@@ -37,8 +37,6 @@ public:
   void comb_flush();
   void seq();
 
-  RenIO get_hardware_io(); // 获取硬件级别 IO (Hardware Reference)
-
   // register
   InstEntry inst_r[DECODE_WIDTH];
   reg<PRF_IDX_WIDTH> arch_RAT[ARF_NUM + 1];

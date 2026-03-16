@@ -54,24 +54,26 @@ void Idu::comb_decode() {
       continue;
 
     out.dec2ren->valid[i] = true;
+    InstInfo decoded = {};
     if (entry.page_fault_inst) {
-      out.dec2ren->uop[i].uop_num = 1;
-      out.dec2ren->uop[i].page_fault_inst = true;
-      out.dec2ren->uop[i].page_fault_load = false;
-      out.dec2ren->uop[i].page_fault_store = false;
-      out.dec2ren->uop[i].type = NOP;
-      out.dec2ren->uop[i].src1_en = false;
-      out.dec2ren->uop[i].src2_en = false;
-      out.dec2ren->uop[i].dest_en = false;
-      out.dec2ren->uop[i].dbg.instruction = entry.inst;
+      decoded.diag_val = entry.inst;
+      decoded.uop_num = 1;
+      decoded.page_fault_inst = true;
+      decoded.page_fault_load = false;
+      decoded.page_fault_store = false;
+      decoded.type = NOP;
+      decoded.src1_en = false;
+      decoded.src2_en = false;
+      decoded.dest_en = false;
+      decoded.dbg.instruction = entry.inst;
     } else {
-      decode(out.dec2ren->uop[i], entry.inst);
+      decode(decoded, entry.inst);
     }
-
-    out.dec2ren->uop[i].pc = entry.pc;
-    out.dec2ren->uop[i].ftq_idx = entry.ftq_idx;
-    out.dec2ren->uop[i].ftq_offset = entry.ftq_offset;
-    out.dec2ren->uop[i].ftq_is_last = entry.ftq_is_last;
+    decoded.pc = entry.pc;
+    decoded.ftq_idx = entry.ftq_idx;
+    decoded.ftq_offset = entry.ftq_offset;
+    decoded.ftq_is_last = entry.ftq_is_last;
+    out.dec2ren->uop[i] = DecRenIO::DecRenInst::from_inst_info(decoded);
   }
 
   int br_num = 0;
@@ -500,36 +502,4 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
 
   if (uop.dest_areg == 0)
     uop.dest_en = false;
-}
-
-IduIO Idu::get_hardware_io() {
-  IduIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.from_front.valid[i] = in.issue->entries[i].valid;
-    hardware.from_front.inst[i] = in.issue->entries[i].inst;
-  }
-  hardware.from_ren.ready = in.ren2dec->ready;
-
-  hardware.from_back.flush = in.rob_bcast->flush;
-  hardware.from_back.mispred = br_latch.mispred;
-  hardware.from_back.br_id = br_latch.br_id;
-
-  // --- Outputs ---
-  hardware.to_front.ready = false;
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    hardware.to_front.fire[i] = false;
-  }
-
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.to_ren.valid[i] = out.dec2ren->valid[i];
-    hardware.to_ren.uop[i] = DecRenUop::filter(out.dec2ren->uop[i]);
-  }
-
-  hardware.to_back.mispred = out.dec_bcast->mispred;
-  hardware.to_back.br_mask = out.dec_bcast->br_mask;
-  hardware.to_back.br_id = out.dec_bcast->br_id;
-
-  return hardware;
 }

@@ -245,7 +245,8 @@ protected:
     // 效应
     if (agu_port_idx < LSU_AGU_COUNT) {
       exe2lsu->agu_req[agu_port_idx].valid = true;
-      exe2lsu->agu_req[agu_port_idx].uop = inst;
+      exe2lsu->agu_req[agu_port_idx].uop =
+          ExeLsuIO::ExeLsuReqUop::from_micro_op(inst);
       // 这里的 inst 已经包含了刚刚计算好的 result (vaddr)
     }
   }
@@ -322,7 +323,8 @@ protected:
     // === 2. 驱动 LSU IO 接口 ===
     if (sdu_port_idx < LSU_SDU_COUNT) {
       exe2lsu->sdu_req[sdu_port_idx].valid = true;
-      exe2lsu->sdu_req[sdu_port_idx].uop = inst;
+      exe2lsu->sdu_req[sdu_port_idx].uop =
+          ExeLsuIO::ExeLsuReqUop::from_micro_op(inst);
     }
   }
 };

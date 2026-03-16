@@ -68,8 +68,6 @@ public:
   void comb_fire();
   void comb_pipeline();
   void seq();
-
-  DispatchIO get_hardware_io(); // Hardware Reference
   InstEntry inst_r[DECODE_WIDTH];
   InstEntry inst_r_1[DECODE_WIDTH];
 };

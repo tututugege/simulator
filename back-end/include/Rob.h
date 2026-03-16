@@ -32,8 +32,6 @@ public:
   void comb_branch();
   void comb_flush();
 
-  RobIO get_hardware_io(); // Hardware Reference
-
   RobIn in;
   RobOut out;
 

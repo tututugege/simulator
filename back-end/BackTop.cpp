@@ -305,7 +305,8 @@ void BackTop::comb() {
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    out.commit_entry[i] = rob->out.rob_commit->commit_entry[i];
+    out.commit_entry[i] = rob->out.rob_commit->commit_entry[i].uop.to_inst_entry(
+        rob->out.rob_commit->commit_entry[i].valid);
     if (out.commit_entry[i].valid && out.flush) {
       // Flush: override extra_data.pc_next with redirect_pc for ALL
       // instructions so Difftest can read the correct next-PC (trap vector,

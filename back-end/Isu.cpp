@@ -105,7 +105,7 @@ void Isu::comb_enq() {
     for (int w = 0; w < max_w; w++) {
       // 使用新接口结构 req[i][w]
       if (in.dis2iss->req[i][w].valid) {
-        MicroOp uop = in.dis2iss->req[i][w].uop;
+        MicroOp uop = in.dis2iss->req[i][w].uop.to_micro_op();
         // 本拍入队前叠加唤醒总线，避免把“可读源”误标成 busy。
         apply_wakeup_to_uop(uop);
 
@@ -151,7 +151,9 @@ void Isu::comb_issue() {
           !in.rob_bcast->flush && !in.dec_bcast->mispred) {
 
         // 发射到指定的物理端口
-        out.iss2prf->iss_entry[phys_port] = q.entry[entry_idx];
+        out.iss2prf->iss_entry[phys_port].valid = true;
+        out.iss2prf->iss_entry[phys_port].uop =
+            IssPrfIO::IssPrfUop::from_micro_op(q.entry[entry_idx].uop);
 
         // 记录成功发射的索引
         committed_indices.push_back(entry_idx);
@@ -298,32 +300,4 @@ void Isu::seq() {
   }
 
   latency_pipe = latency_pipe_1;
-}
-
-IssueIO Isu::get_hardware_io() {
-  IssueIO hardware;
-
-  // --- Inputs ---
-  for (int j = 0; j < IQ_NUM; j++) {
-    for (int k = 0; k < MAX_IQ_DISPATCH_WIDTH; k++) {
-      hardware.from_dis.valid[j][k] = in.dis2iss->req[j][k].valid;
-      hardware.from_dis.uop[j][k]   = DisIssUop::filter(in.dis2iss->req[j][k].uop);
-    }
-  }
-  hardware.from_back.flush = in.rob_bcast->flush;
-
-  // --- Outputs ---
-  for (int j = 0; j < IQ_NUM; j++) {
-    hardware.to_dis.ready_num[j] = out.iss2dis->ready_num[j];
-  }
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.to_exe.valid[i] = out.iss2prf->iss_entry[i].valid;
-    hardware.to_exe.uop[i]   = IssExeUop::filter(out.iss2prf->iss_entry[i].uop);
-  }
-  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
-    hardware.awake_bus.wake_valid[i] = out.iss_awake->wake[i].valid;
-    hardware.awake_bus.wake_preg[i]  = out.iss_awake->wake[i].preg;
-  }
-
-  return hardware;
 }

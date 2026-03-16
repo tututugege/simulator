@@ -39,8 +39,6 @@ public:
   void comb_flush(); // flush处理
   void seq();              // 时钟跳变，状态更新
 
-  IduIO get_hardware_io(); // 获取硬件级别 IO (Hardware Reference)
-
   // 状态
   reg<BR_MASK_WIDTH> now_br_mask;
   reg<BR_MASK_WIDTH> br_mask_cp[MAX_BR_NUM];

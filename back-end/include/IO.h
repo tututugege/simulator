@@ -1,15 +1,113 @@
 #pragma once
 
-#include "ModuleIOs.h"
 #include "config.h"
 #include "util.h"
 #include <bitset>
+#include <cstring>
 #include <cstdint>
 #include <sys/types.h>
 
 struct DecRenIO {
+  struct DecRenInst {
+    wire<32> diag_val;
+    wire<AREG_IDX_WIDTH> dest_areg;
+    wire<AREG_IDX_WIDTH> src1_areg;
+    wire<AREG_IDX_WIDTH> src2_areg;
 
-  InstInfo uop[DECODE_WIDTH];
+    wire<FTQ_IDX_WIDTH> ftq_idx;
+    wire<FTQ_OFFSET_WIDTH> ftq_offset;
+    wire<1> ftq_is_last;
+
+    wire<1> dest_en;
+    wire<1> src1_en;
+    wire<1> src2_en;
+    wire<1> src1_is_pc;
+    wire<1> src2_is_imm;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<32> pc;
+    wire<BR_TAG_WIDTH> br_id;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<CSR_IDX_WIDTH> csr_idx;
+
+    wire<2> uop_num;
+
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    wire<1> illegal_inst;
+
+    InstType type;
+    InstDebugMeta dbg;
+
+    DecRenInst() { std::memset(this, 0, sizeof(DecRenInst)); }
+
+    static DecRenInst from_inst_info(const InstInfo &src) {
+      DecRenInst dst;
+      dst.diag_val = src.diag_val;
+      dst.dest_areg = src.dest_areg;
+      dst.src1_areg = src.src1_areg;
+      dst.src2_areg = src.src2_areg;
+      dst.ftq_idx = src.ftq_idx;
+      dst.ftq_offset = src.ftq_offset;
+      dst.ftq_is_last = src.ftq_is_last;
+      dst.dest_en = src.dest_en;
+      dst.src1_en = src.src1_en;
+      dst.src2_en = src.src2_en;
+      dst.src1_is_pc = src.src1_is_pc;
+      dst.src2_is_imm = src.src2_is_imm;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.pc = src.pc;
+      dst.br_id = src.br_id;
+      dst.br_mask = src.br_mask;
+      dst.csr_idx = src.csr_idx;
+      dst.uop_num = src.uop_num;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.illegal_inst = src.illegal_inst;
+      dst.type = src.type;
+      dst.dbg = src.dbg;
+      return dst;
+    }
+
+    InstInfo to_inst_info() const {
+      InstInfo dst;
+      dst.diag_val = diag_val;
+      dst.dest_areg = dest_areg;
+      dst.src1_areg = src1_areg;
+      dst.src2_areg = src2_areg;
+      dst.ftq_idx = ftq_idx;
+      dst.ftq_offset = ftq_offset;
+      dst.ftq_is_last = ftq_is_last;
+      dst.dest_en = dest_en;
+      dst.src1_en = src1_en;
+      dst.src2_en = src2_en;
+      dst.src1_is_pc = src1_is_pc;
+      dst.src2_is_imm = src2_is_imm;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.pc = pc;
+      dst.br_id = br_id;
+      dst.br_mask = br_mask;
+      dst.csr_idx = csr_idx;
+      dst.uop_num = uop_num;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.illegal_inst = illegal_inst;
+      dst.type = type;
+      dst.dbg = dbg;
+      return dst;
+    }
+
+  };
+
+  DecRenInst uop[DECODE_WIDTH];
   wire<1> valid[DECODE_WIDTH];
   DecRenIO() {
     for (auto &v : uop)
@@ -129,8 +227,118 @@ struct DecBroadcastIO {
 };
 
 struct RobCommitIO {
+  struct RobCommitInst {
+    wire<32> diag_val;
+    wire<AREG_IDX_WIDTH> dest_areg;
+    wire<AREG_IDX_WIDTH> src1_areg;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<PRF_IDX_WIDTH> old_dest_preg;
 
-  InstEntry commit_entry[COMMIT_WIDTH];
+    wire<FTQ_IDX_WIDTH> ftq_idx;
+    wire<FTQ_OFFSET_WIDTH> ftq_offset;
+    wire<1> ftq_is_last;
+
+    wire<1> mispred;
+    wire<1> br_taken;
+
+    wire<1> dest_en;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<32> pc;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<STQ_IDX_WIDTH> stq_idx;
+
+    wire<2> uop_num;
+    wire<2> cplt_num;
+
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    wire<1> illegal_inst;
+
+    InstType type;
+    InstDebugMeta dbg;
+    bool flush_pipe;
+
+    RobCommitInst() { std::memset(this, 0, sizeof(RobCommitInst)); }
+
+    static RobCommitInst from_inst_info(const InstInfo &src) {
+      RobCommitInst dst;
+      dst.diag_val = src.diag_val;
+      dst.dest_areg = src.dest_areg;
+      dst.src1_areg = src.src1_areg;
+      dst.dest_preg = src.dest_preg;
+      dst.old_dest_preg = src.old_dest_preg;
+      dst.ftq_idx = src.ftq_idx;
+      dst.ftq_offset = src.ftq_offset;
+      dst.ftq_is_last = src.ftq_is_last;
+      dst.mispred = src.mispred;
+      dst.br_taken = src.br_taken;
+      dst.dest_en = src.dest_en;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.pc = src.pc;
+      dst.rob_idx = src.rob_idx;
+      dst.stq_idx = src.stq_idx;
+      dst.uop_num = src.uop_num;
+      dst.cplt_num = src.cplt_num;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.illegal_inst = src.illegal_inst;
+      dst.type = src.type;
+      dst.dbg = src.dbg;
+      dst.flush_pipe = src.flush_pipe;
+      return dst;
+    }
+
+    InstInfo to_inst_info() const {
+      InstInfo dst;
+      dst.diag_val = diag_val;
+      dst.dest_areg = dest_areg;
+      dst.src1_areg = src1_areg;
+      dst.dest_preg = dest_preg;
+      dst.old_dest_preg = old_dest_preg;
+      dst.ftq_idx = ftq_idx;
+      dst.ftq_offset = ftq_offset;
+      dst.ftq_is_last = ftq_is_last;
+      dst.mispred = mispred;
+      dst.br_taken = br_taken;
+      dst.dest_en = dest_en;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.pc = pc;
+      dst.rob_idx = rob_idx;
+      dst.stq_idx = stq_idx;
+      dst.uop_num = uop_num;
+      dst.cplt_num = cplt_num;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.illegal_inst = illegal_inst;
+      dst.type = type;
+      dst.dbg = dbg;
+      dst.flush_pipe = flush_pipe;
+      return dst;
+    }
+
+    InstEntry to_inst_entry(wire<1> valid) const {
+      InstEntry dst;
+      dst.valid = valid;
+      dst.uop = to_inst_info();
+      return dst;
+    }
+  };
+
+  struct RobCommitEntry {
+    wire<1> valid;
+    RobCommitInst uop;
+  };
+
+  RobCommitEntry commit_entry[COMMIT_WIDTH];
 
   RobCommitIO() {
     for (auto &v : commit_entry)
@@ -164,8 +372,118 @@ struct RobDisIO {
 };
 
 struct DisRobIO {
+  struct DisRobInst {
+    wire<32> diag_val;
+    wire<AREG_IDX_WIDTH> dest_areg;
+    wire<AREG_IDX_WIDTH> src1_areg;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<PRF_IDX_WIDTH> old_dest_preg;
 
-  InstInfo uop[DECODE_WIDTH];
+    wire<FTQ_IDX_WIDTH> ftq_idx;
+    wire<FTQ_OFFSET_WIDTH> ftq_offset;
+    wire<1> ftq_is_last;
+
+    wire<1> mispred;
+    wire<1> br_taken;
+
+    wire<1> dest_en;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<32> pc;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<STQ_IDX_WIDTH> stq_idx;
+    wire<1> stq_flag;
+    wire<LDQ_IDX_WIDTH> ldq_idx;
+
+    wire<2> uop_num;
+    wire<2> cplt_num;
+    wire<1> rob_flag;
+
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    wire<1> illegal_inst;
+
+    InstType type;
+    InstDebugMeta dbg;
+    bool flush_pipe;
+
+    DisRobInst() { std::memset(this, 0, sizeof(DisRobInst)); }
+
+    static DisRobInst from_inst_info(const InstInfo &src) {
+      DisRobInst dst;
+      dst.diag_val = src.diag_val;
+      dst.dest_areg = src.dest_areg;
+      dst.src1_areg = src.src1_areg;
+      dst.dest_preg = src.dest_preg;
+      dst.old_dest_preg = src.old_dest_preg;
+      dst.ftq_idx = src.ftq_idx;
+      dst.ftq_offset = src.ftq_offset;
+      dst.ftq_is_last = src.ftq_is_last;
+      dst.mispred = src.mispred;
+      dst.br_taken = src.br_taken;
+      dst.dest_en = src.dest_en;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.pc = src.pc;
+      dst.br_mask = src.br_mask;
+      dst.rob_idx = src.rob_idx;
+      dst.stq_idx = src.stq_idx;
+      dst.stq_flag = src.stq_flag;
+      dst.ldq_idx = src.ldq_idx;
+      dst.uop_num = src.uop_num;
+      dst.cplt_num = src.cplt_num;
+      dst.rob_flag = src.rob_flag;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.illegal_inst = src.illegal_inst;
+      dst.type = src.type;
+      dst.dbg = src.dbg;
+      dst.flush_pipe = src.flush_pipe;
+      return dst;
+    }
+
+    InstInfo to_inst_info() const {
+      InstInfo dst;
+      dst.diag_val = diag_val;
+      dst.dest_areg = dest_areg;
+      dst.src1_areg = src1_areg;
+      dst.dest_preg = dest_preg;
+      dst.old_dest_preg = old_dest_preg;
+      dst.ftq_idx = ftq_idx;
+      dst.ftq_offset = ftq_offset;
+      dst.ftq_is_last = ftq_is_last;
+      dst.mispred = mispred;
+      dst.br_taken = br_taken;
+      dst.dest_en = dest_en;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.pc = pc;
+      dst.br_mask = br_mask;
+      dst.rob_idx = rob_idx;
+      dst.stq_idx = stq_idx;
+      dst.stq_flag = stq_flag;
+      dst.ldq_idx = ldq_idx;
+      dst.uop_num = uop_num;
+      dst.cplt_num = cplt_num;
+      dst.rob_flag = rob_flag;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.illegal_inst = illegal_inst;
+      dst.type = type;
+      dst.dbg = dbg;
+      dst.flush_pipe = flush_pipe;
+      return dst;
+    }
+  };
+
+  DisRobInst uop[DECODE_WIDTH];
   wire<1> valid[DECODE_WIDTH];
   wire<1> dis_fire[DECODE_WIDTH];
 
@@ -180,8 +498,124 @@ struct DisRobIO {
 };
 
 struct RenDisIO {
+  struct RenDisInst {
+    wire<32> diag_val;
+    wire<AREG_IDX_WIDTH> dest_areg;
+    wire<AREG_IDX_WIDTH> src1_areg;
+    wire<AREG_IDX_WIDTH> src2_areg;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<PRF_IDX_WIDTH> src1_preg;
+    wire<PRF_IDX_WIDTH> src2_preg;
+    wire<PRF_IDX_WIDTH> old_dest_preg;
 
-  InstInfo uop[DECODE_WIDTH];
+    wire<FTQ_IDX_WIDTH> ftq_idx;
+    wire<FTQ_OFFSET_WIDTH> ftq_offset;
+    wire<1> ftq_is_last;
+
+    wire<1> dest_en;
+    wire<1> src1_en;
+    wire<1> src2_en;
+    wire<1> src1_busy;
+    wire<1> src2_busy;
+    wire<1> src1_is_pc;
+    wire<1> src2_is_imm;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<32> pc;
+    wire<BR_TAG_WIDTH> br_id;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<CSR_IDX_WIDTH> csr_idx;
+
+    wire<2> uop_num;
+
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    wire<1> illegal_inst;
+
+    InstType type;
+    InstDebugMeta dbg;
+
+    RenDisInst() { std::memset(this, 0, sizeof(RenDisInst)); }
+
+    static RenDisInst from_inst_info(const InstInfo &src) {
+      RenDisInst dst;
+      dst.diag_val = src.diag_val;
+      dst.dest_areg = src.dest_areg;
+      dst.src1_areg = src.src1_areg;
+      dst.src2_areg = src.src2_areg;
+      dst.dest_preg = src.dest_preg;
+      dst.src1_preg = src.src1_preg;
+      dst.src2_preg = src.src2_preg;
+      dst.old_dest_preg = src.old_dest_preg;
+      dst.ftq_idx = src.ftq_idx;
+      dst.ftq_offset = src.ftq_offset;
+      dst.ftq_is_last = src.ftq_is_last;
+      dst.dest_en = src.dest_en;
+      dst.src1_en = src.src1_en;
+      dst.src2_en = src.src2_en;
+      dst.src1_busy = src.src1_busy;
+      dst.src2_busy = src.src2_busy;
+      dst.src1_is_pc = src.src1_is_pc;
+      dst.src2_is_imm = src.src2_is_imm;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.pc = src.pc;
+      dst.br_id = src.br_id;
+      dst.br_mask = src.br_mask;
+      dst.csr_idx = src.csr_idx;
+      dst.uop_num = src.uop_num;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.illegal_inst = src.illegal_inst;
+      dst.type = src.type;
+      dst.dbg = src.dbg;
+      return dst;
+    }
+
+    InstInfo to_inst_info() const {
+      InstInfo dst;
+      dst.diag_val = diag_val;
+      dst.dest_areg = dest_areg;
+      dst.src1_areg = src1_areg;
+      dst.src2_areg = src2_areg;
+      dst.dest_preg = dest_preg;
+      dst.src1_preg = src1_preg;
+      dst.src2_preg = src2_preg;
+      dst.old_dest_preg = old_dest_preg;
+      dst.ftq_idx = ftq_idx;
+      dst.ftq_offset = ftq_offset;
+      dst.ftq_is_last = ftq_is_last;
+      dst.dest_en = dest_en;
+      dst.src1_en = src1_en;
+      dst.src2_en = src2_en;
+      dst.src1_busy = src1_busy;
+      dst.src2_busy = src2_busy;
+      dst.src1_is_pc = src1_is_pc;
+      dst.src2_is_imm = src2_is_imm;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.pc = pc;
+      dst.br_id = br_id;
+      dst.br_mask = br_mask;
+      dst.csr_idx = csr_idx;
+      dst.uop_num = uop_num;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.illegal_inst = illegal_inst;
+      dst.type = type;
+      dst.dbg = dbg;
+      return dst;
+    }
+
+  };
+
+  RenDisInst uop[DECODE_WIDTH];
   wire<1> valid[DECODE_WIDTH];
 
   RenDisIO() {
@@ -210,8 +644,135 @@ struct PrfAwakeIO {
 };
 
 struct DisIssIO {
+  struct DisIssUop {
+    wire<32> diag_val;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<PRF_IDX_WIDTH> src1_preg;
+    wire<PRF_IDX_WIDTH> src2_preg;
 
-  UopEntry req[IQ_NUM][MAX_IQ_DISPATCH_WIDTH];
+    wire<FTQ_IDX_WIDTH> ftq_idx;
+    wire<FTQ_OFFSET_WIDTH> ftq_offset;
+    wire<1> ftq_is_last;
+
+    wire<1> is_atomic;
+
+    wire<1> dest_en;
+    wire<1> src1_en;
+    wire<1> src2_en;
+    wire<1> src1_busy;
+    wire<1> src2_busy;
+    wire<1> src1_is_pc;
+    wire<1> src2_is_imm;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<32> pc;
+    wire<BR_TAG_WIDTH> br_id;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<CSR_IDX_WIDTH> csr_idx;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<STQ_IDX_WIDTH> stq_idx;
+    wire<1> stq_flag;
+    wire<LDQ_IDX_WIDTH> ldq_idx;
+
+    wire<2> uop_num;
+    wire<1> rob_flag;
+
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    wire<1> illegal_inst;
+
+    UopType op;
+    UopDebugMeta dbg;
+
+    DisIssUop() { std::memset(this, 0, sizeof(DisIssUop)); }
+
+    static DisIssUop from_micro_op(const MicroOp &src) {
+      DisIssUop dst;
+      dst.diag_val = src.diag_val;
+      dst.dest_preg = src.dest_preg;
+      dst.src1_preg = src.src1_preg;
+      dst.src2_preg = src.src2_preg;
+      dst.ftq_idx = src.ftq_idx;
+      dst.ftq_offset = src.ftq_offset;
+      dst.ftq_is_last = src.ftq_is_last;
+      dst.is_atomic = src.is_atomic;
+      dst.dest_en = src.dest_en;
+      dst.src1_en = src.src1_en;
+      dst.src2_en = src.src2_en;
+      dst.src1_busy = src.src1_busy;
+      dst.src2_busy = src.src2_busy;
+      dst.src1_is_pc = src.src1_is_pc;
+      dst.src2_is_imm = src.src2_is_imm;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.pc = src.pc;
+      dst.br_id = src.br_id;
+      dst.br_mask = src.br_mask;
+      dst.csr_idx = src.csr_idx;
+      dst.rob_idx = src.rob_idx;
+      dst.stq_idx = src.stq_idx;
+      dst.stq_flag = src.stq_flag;
+      dst.ldq_idx = src.ldq_idx;
+      dst.uop_num = src.uop_num;
+      dst.rob_flag = src.rob_flag;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.illegal_inst = src.illegal_inst;
+      dst.op = src.op;
+      dst.dbg = src.dbg;
+      return dst;
+    }
+
+    MicroOp to_micro_op() const {
+      MicroOp dst;
+      dst.diag_val = diag_val;
+      dst.dest_preg = dest_preg;
+      dst.src1_preg = src1_preg;
+      dst.src2_preg = src2_preg;
+      dst.ftq_idx = ftq_idx;
+      dst.ftq_offset = ftq_offset;
+      dst.ftq_is_last = ftq_is_last;
+      dst.is_atomic = is_atomic;
+      dst.dest_en = dest_en;
+      dst.src1_en = src1_en;
+      dst.src2_en = src2_en;
+      dst.src1_busy = src1_busy;
+      dst.src2_busy = src2_busy;
+      dst.src1_is_pc = src1_is_pc;
+      dst.src2_is_imm = src2_is_imm;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.pc = pc;
+      dst.br_id = br_id;
+      dst.br_mask = br_mask;
+      dst.csr_idx = csr_idx;
+      dst.rob_idx = rob_idx;
+      dst.stq_idx = stq_idx;
+      dst.stq_flag = stq_flag;
+      dst.ldq_idx = ldq_idx;
+      dst.uop_num = uop_num;
+      dst.rob_flag = rob_flag;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.illegal_inst = illegal_inst;
+      dst.op = op;
+      dst.dbg = dbg;
+      return dst;
+    }
+  };
+
+  struct DisIssReq {
+    wire<1> valid;
+    DisIssUop uop;
+  };
+
+  DisIssReq req[IQ_NUM][MAX_IQ_DISPATCH_WIDTH];
   DisIssIO() {
     for (auto &iq_req : req)
       for (auto &r : iq_req)
@@ -276,8 +837,134 @@ struct RobBroadcastIO {
 };
 
 struct IssPrfIO {
+  struct IssPrfUop {
+    wire<32> diag_val;
+    wire<AREG_IDX_WIDTH> dest_areg;
+    wire<AREG_IDX_WIDTH> src1_areg;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<PRF_IDX_WIDTH> src1_preg;
+    wire<PRF_IDX_WIDTH> src2_preg;
 
-  UopEntry iss_entry[ISSUE_WIDTH];
+    wire<FTQ_IDX_WIDTH> ftq_idx;
+    wire<FTQ_OFFSET_WIDTH> ftq_offset;
+    wire<1> ftq_is_last;
+
+    wire<1> is_atomic;
+    wire<1> dest_en;
+    wire<1> src1_en;
+    wire<1> src2_en;
+    wire<1> src1_is_pc;
+    wire<1> src2_is_imm;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<32> pc;
+    wire<BR_TAG_WIDTH> br_id;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<CSR_IDX_WIDTH> csr_idx;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<STQ_IDX_WIDTH> stq_idx;
+    wire<1> stq_flag;
+    wire<LDQ_IDX_WIDTH> ldq_idx;
+
+    wire<2> uop_num;
+    wire<1> rob_flag;
+
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    wire<1> illegal_inst;
+
+    UopType op;
+    UopDebugMeta dbg;
+
+    IssPrfUop() { std::memset(this, 0, sizeof(IssPrfUop)); }
+
+    static IssPrfUop from_micro_op(const MicroOp &src) {
+      IssPrfUop dst;
+      dst.diag_val = src.diag_val;
+      dst.dest_areg = src.dest_areg;
+      dst.src1_areg = src.src1_areg;
+      dst.dest_preg = src.dest_preg;
+      dst.src1_preg = src.src1_preg;
+      dst.src2_preg = src.src2_preg;
+      dst.ftq_idx = src.ftq_idx;
+      dst.ftq_offset = src.ftq_offset;
+      dst.ftq_is_last = src.ftq_is_last;
+      dst.is_atomic = src.is_atomic;
+      dst.dest_en = src.dest_en;
+      dst.src1_en = src.src1_en;
+      dst.src2_en = src.src2_en;
+      dst.src1_is_pc = src.src1_is_pc;
+      dst.src2_is_imm = src.src2_is_imm;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.pc = src.pc;
+      dst.br_id = src.br_id;
+      dst.br_mask = src.br_mask;
+      dst.csr_idx = src.csr_idx;
+      dst.rob_idx = src.rob_idx;
+      dst.stq_idx = src.stq_idx;
+      dst.stq_flag = src.stq_flag;
+      dst.ldq_idx = src.ldq_idx;
+      dst.uop_num = src.uop_num;
+      dst.rob_flag = src.rob_flag;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.illegal_inst = src.illegal_inst;
+      dst.op = src.op;
+      dst.dbg = src.dbg;
+      return dst;
+    }
+
+    MicroOp to_micro_op() const {
+      MicroOp dst;
+      dst.diag_val = diag_val;
+      dst.dest_areg = dest_areg;
+      dst.src1_areg = src1_areg;
+      dst.dest_preg = dest_preg;
+      dst.src1_preg = src1_preg;
+      dst.src2_preg = src2_preg;
+      dst.ftq_idx = ftq_idx;
+      dst.ftq_offset = ftq_offset;
+      dst.ftq_is_last = ftq_is_last;
+      dst.is_atomic = is_atomic;
+      dst.dest_en = dest_en;
+      dst.src1_en = src1_en;
+      dst.src2_en = src2_en;
+      dst.src1_is_pc = src1_is_pc;
+      dst.src2_is_imm = src2_is_imm;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.pc = pc;
+      dst.br_id = br_id;
+      dst.br_mask = br_mask;
+      dst.csr_idx = csr_idx;
+      dst.rob_idx = rob_idx;
+      dst.stq_idx = stq_idx;
+      dst.stq_flag = stq_flag;
+      dst.ldq_idx = ldq_idx;
+      dst.uop_num = uop_num;
+      dst.rob_flag = rob_flag;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.illegal_inst = illegal_inst;
+      dst.op = op;
+      dst.dbg = dbg;
+      return dst;
+    }
+  };
+
+  struct IssPrfEntry {
+    wire<1> valid;
+    IssPrfUop uop;
+  };
+
+  IssPrfEntry iss_entry[ISSUE_WIDTH];
 
   IssPrfIO() {
     for (auto &v : iss_entry)
@@ -286,8 +973,138 @@ struct IssPrfIO {
 };
 
 struct PrfExeIO {
+  struct PrfExeUop {
+    wire<32> diag_val;
+    wire<AREG_IDX_WIDTH> dest_areg;
+    wire<AREG_IDX_WIDTH> src1_areg;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<PRF_IDX_WIDTH> src1_preg;
+    wire<PRF_IDX_WIDTH> src2_preg;
+    wire<32> src1_rdata;
+    wire<32> src2_rdata;
 
-  UopEntry iss_entry[ISSUE_WIDTH];
+    wire<FTQ_IDX_WIDTH> ftq_idx;
+    wire<FTQ_OFFSET_WIDTH> ftq_offset;
+    wire<1> ftq_is_last;
+
+    wire<1> is_atomic;
+    wire<1> dest_en;
+    wire<1> src1_en;
+    wire<1> src2_en;
+    wire<1> src1_is_pc;
+    wire<1> src2_is_imm;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<32> pc;
+    wire<BR_TAG_WIDTH> br_id;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<CSR_IDX_WIDTH> csr_idx;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<STQ_IDX_WIDTH> stq_idx;
+    wire<1> stq_flag;
+    wire<LDQ_IDX_WIDTH> ldq_idx;
+
+    wire<2> uop_num;
+    wire<1> rob_flag;
+
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    wire<1> illegal_inst;
+
+    UopType op;
+    UopDebugMeta dbg;
+
+    PrfExeUop() { std::memset(this, 0, sizeof(PrfExeUop)); }
+
+    static PrfExeUop from_iss_prf_uop(const IssPrfIO::IssPrfUop &src) {
+      PrfExeUop dst;
+      dst.diag_val = src.diag_val;
+      dst.dest_areg = src.dest_areg;
+      dst.src1_areg = src.src1_areg;
+      dst.dest_preg = src.dest_preg;
+      dst.src1_preg = src.src1_preg;
+      dst.src2_preg = src.src2_preg;
+      dst.ftq_idx = src.ftq_idx;
+      dst.ftq_offset = src.ftq_offset;
+      dst.ftq_is_last = src.ftq_is_last;
+      dst.is_atomic = src.is_atomic;
+      dst.dest_en = src.dest_en;
+      dst.src1_en = src.src1_en;
+      dst.src2_en = src.src2_en;
+      dst.src1_is_pc = src.src1_is_pc;
+      dst.src2_is_imm = src.src2_is_imm;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.pc = src.pc;
+      dst.br_id = src.br_id;
+      dst.br_mask = src.br_mask;
+      dst.csr_idx = src.csr_idx;
+      dst.rob_idx = src.rob_idx;
+      dst.stq_idx = src.stq_idx;
+      dst.stq_flag = src.stq_flag;
+      dst.ldq_idx = src.ldq_idx;
+      dst.uop_num = src.uop_num;
+      dst.rob_flag = src.rob_flag;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.illegal_inst = src.illegal_inst;
+      dst.op = src.op;
+      dst.dbg = src.dbg;
+      return dst;
+    }
+
+    MicroOp to_micro_op() const {
+      MicroOp dst;
+      dst.diag_val = diag_val;
+      dst.dest_areg = dest_areg;
+      dst.src1_areg = src1_areg;
+      dst.dest_preg = dest_preg;
+      dst.src1_preg = src1_preg;
+      dst.src2_preg = src2_preg;
+      dst.src1_rdata = src1_rdata;
+      dst.src2_rdata = src2_rdata;
+      dst.ftq_idx = ftq_idx;
+      dst.ftq_offset = ftq_offset;
+      dst.ftq_is_last = ftq_is_last;
+      dst.is_atomic = is_atomic;
+      dst.dest_en = dest_en;
+      dst.src1_en = src1_en;
+      dst.src2_en = src2_en;
+      dst.src1_is_pc = src1_is_pc;
+      dst.src2_is_imm = src2_is_imm;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.pc = pc;
+      dst.br_id = br_id;
+      dst.br_mask = br_mask;
+      dst.csr_idx = csr_idx;
+      dst.rob_idx = rob_idx;
+      dst.stq_idx = stq_idx;
+      dst.stq_flag = stq_flag;
+      dst.ldq_idx = ldq_idx;
+      dst.uop_num = uop_num;
+      dst.rob_flag = rob_flag;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.illegal_inst = illegal_inst;
+      dst.op = op;
+      dst.dbg = dbg;
+      return dst;
+    }
+  };
+
+  struct PrfExeEntry {
+    wire<1> valid;
+    PrfExeUop uop;
+  };
+
+  PrfExeEntry iss_entry[ISSUE_WIDTH];
 
   PrfExeIO() {
     for (auto &v : iss_entry)
@@ -296,9 +1113,43 @@ struct PrfExeIO {
 };
 
 struct ExePrfIO {
+  struct ExePrfWbUop {
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<32> result;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<1> dest_en;
+    UopType op;
 
-  UopEntry entry[ISSUE_WIDTH];
-  UopEntry bypass[TOTAL_FU_COUNT];
+    ExePrfWbUop() { std::memset(this, 0, sizeof(ExePrfWbUop)); }
+
+    static ExePrfWbUop from_micro_op(const MicroOp &src) {
+      ExePrfWbUop dst;
+      dst.dest_preg = src.dest_preg;
+      dst.result = src.result;
+      dst.br_mask = src.br_mask;
+      dst.dest_en = src.dest_en;
+      dst.op = src.op;
+      return dst;
+    }
+
+    MicroOp to_micro_op() const {
+      MicroOp dst;
+      dst.dest_preg = dest_preg;
+      dst.result = result;
+      dst.br_mask = br_mask;
+      dst.dest_en = dest_en;
+      dst.op = op;
+      return dst;
+    }
+  };
+
+  struct ExePrfEntry {
+    wire<1> valid;
+    ExePrfWbUop uop;
+  };
+
+  ExePrfEntry entry[ISSUE_WIDTH];
+  ExePrfEntry bypass[TOTAL_FU_COUNT];
 
   ExePrfIO() {
     for (auto &v : entry)
@@ -323,7 +1174,60 @@ struct ExeIssIO {
 };
 
 struct ExuRobIO {
-  UopEntry entry[ISSUE_WIDTH];
+  struct ExuRobUop {
+    wire<32> diag_val;
+    wire<32> result;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<1> mispred;
+    wire<1> br_taken;
+    wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    UopType op;
+    UopDebugMeta dbg;
+    bool flush_pipe;
+
+    ExuRobUop() { std::memset(this, 0, sizeof(ExuRobUop)); }
+
+    static ExuRobUop from_micro_op(const MicroOp &src) {
+      ExuRobUop dst;
+      dst.diag_val = src.diag_val;
+      dst.result = src.result;
+      dst.rob_idx = src.rob_idx;
+      dst.mispred = src.mispred;
+      dst.br_taken = src.br_taken;
+      dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.op = src.op;
+      dst.dbg = src.dbg;
+      dst.flush_pipe = src.flush_pipe;
+      return dst;
+    }
+
+    MicroOp to_micro_op() const {
+      MicroOp dst;
+      dst.diag_val = diag_val;
+      dst.result = result;
+      dst.rob_idx = rob_idx;
+      dst.mispred = mispred;
+      dst.br_taken = br_taken;
+      dst.page_fault_inst = page_fault_inst;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.op = op;
+      dst.dbg = dbg;
+      dst.flush_pipe = flush_pipe;
+      return dst;
+    }
+  };
+
+  struct ExuRobEntry {
+    wire<1> valid;
+    ExuRobUop uop;
+  };
+
+  ExuRobEntry entry[ISSUE_WIDTH];
 
   ExuRobIO() {
     for (auto &v : entry)
@@ -731,9 +1635,61 @@ struct LsuRobIO {
 };
 
 struct LsuExeIO {
+  struct LsuExeRespUop {
+    wire<32> diag_val;
+    wire<32> result;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<1> dest_en;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
+    UopType op;
+    UopDebugMeta dbg;
+    bool flush_pipe;
 
-  UopEntry wb_req[LSU_LOAD_WB_WIDTH];
-  UopEntry sta_wb_req[LSU_STA_COUNT];
+    LsuExeRespUop() { std::memset(this, 0, sizeof(LsuExeRespUop)); }
+
+    static LsuExeRespUop from_micro_op(const MicroOp &src) {
+      LsuExeRespUop dst;
+      dst.diag_val = src.diag_val;
+      dst.result = src.result;
+      dst.dest_preg = src.dest_preg;
+      dst.br_mask = src.br_mask;
+      dst.rob_idx = src.rob_idx;
+      dst.dest_en = src.dest_en;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
+      dst.op = src.op;
+      dst.dbg = src.dbg;
+      dst.flush_pipe = src.flush_pipe;
+      return dst;
+    }
+
+    MicroOp to_micro_op() const {
+      MicroOp dst;
+      dst.diag_val = diag_val;
+      dst.result = result;
+      dst.dest_preg = dest_preg;
+      dst.br_mask = br_mask;
+      dst.rob_idx = rob_idx;
+      dst.dest_en = dest_en;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
+      dst.op = op;
+      dst.dbg = dbg;
+      dst.flush_pipe = flush_pipe;
+      return dst;
+    }
+  };
+
+  struct LsuExeRespEntry {
+    wire<1> valid;
+    LsuExeRespUop uop;
+  };
+
+  LsuExeRespEntry wb_req[LSU_LOAD_WB_WIDTH];
+  LsuExeRespEntry sta_wb_req[LSU_STA_COUNT];
 
   LsuExeIO() {
     for (auto &v : wb_req)
@@ -782,9 +1738,67 @@ struct DisLsuIO {
 };
 
 struct ExeLsuIO {
+  struct ExeLsuReqUop {
+    wire<32> result;
+    wire<PRF_IDX_WIDTH> dest_preg;
+    wire<3> func3;
+    wire<7> func7;
+    wire<BR_MASK_WIDTH> br_mask;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<STQ_IDX_WIDTH> stq_idx;
+    wire<1> stq_flag;
+    wire<LDQ_IDX_WIDTH> ldq_idx;
+    wire<1> rob_flag;
+    wire<1> dest_en;
+    UopType op;
+    UopDebugMeta dbg;
 
-  UopEntry agu_req[LSU_AGU_COUNT];
-  UopEntry sdu_req[LSU_SDU_COUNT];
+    ExeLsuReqUop() { std::memset(this, 0, sizeof(ExeLsuReqUop)); }
+
+    static ExeLsuReqUop from_micro_op(const MicroOp &src) {
+      ExeLsuReqUop dst;
+      dst.result = src.result;
+      dst.dest_preg = src.dest_preg;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.br_mask = src.br_mask;
+      dst.rob_idx = src.rob_idx;
+      dst.stq_idx = src.stq_idx;
+      dst.stq_flag = src.stq_flag;
+      dst.ldq_idx = src.ldq_idx;
+      dst.rob_flag = src.rob_flag;
+      dst.dest_en = src.dest_en;
+      dst.op = src.op;
+      dst.dbg = src.dbg;
+      return dst;
+    }
+
+    MicroOp to_micro_op() const {
+      MicroOp dst;
+      dst.result = result;
+      dst.dest_preg = dest_preg;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.br_mask = br_mask;
+      dst.rob_idx = rob_idx;
+      dst.stq_idx = stq_idx;
+      dst.stq_flag = stq_flag;
+      dst.ldq_idx = ldq_idx;
+      dst.rob_flag = rob_flag;
+      dst.dest_en = dest_en;
+      dst.op = op;
+      dst.dbg = dbg;
+      return dst;
+    }
+  };
+
+  struct ExeLsuReqEntry {
+    wire<1> valid;
+    ExeLsuReqUop uop;
+  };
+
+  ExeLsuReqEntry agu_req[LSU_AGU_COUNT];
+  ExeLsuReqEntry sdu_req[LSU_SDU_COUNT];
 
   ExeLsuIO() {
     for (auto &v : agu_req)

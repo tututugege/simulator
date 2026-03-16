@@ -137,7 +137,7 @@ void SimpleLsu::comb_recv() {
   // 确保在消费者检查之前数据就绪
   for (int i = 0; i < LSU_SDU_COUNT; i++) {
     if (in.exe2lsu->sdu_req[i].valid) {
-      handle_store_data(in.exe2lsu->sdu_req[i].uop);
+      handle_store_data(in.exe2lsu->sdu_req[i].uop.to_micro_op());
     }
   }
 
@@ -145,7 +145,7 @@ void SimpleLsu::comb_recv() {
   // 确保地址对于别名检查有效
   for (int i = 0; i < LSU_AGU_COUNT; i++) {
     if (in.exe2lsu->agu_req[i].valid) {
-      const auto &uop = in.exe2lsu->agu_req[i].uop;
+      MicroOp uop = in.exe2lsu->agu_req[i].uop.to_micro_op();
       if (uop.op == UOP_STA) {
         handle_store_addr(uop);
       }
@@ -156,7 +156,7 @@ void SimpleLsu::comb_recv() {
   // 最后处理 Load，使其能看到本周期最新的 Store (STLF)
   for (int i = 0; i < LSU_AGU_COUNT; i++) {
     if (in.exe2lsu->agu_req[i].valid) {
-      const auto &uop = in.exe2lsu->agu_req[i].uop;
+      MicroOp uop = in.exe2lsu->agu_req[i].uop.to_micro_op();
       if (uop.op == UOP_LOAD) {
         handle_load_req(uop);
       }
@@ -223,7 +223,8 @@ void SimpleLsu::comb_load_res() {
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
     if (!finished_loads.empty()) {
       out.lsu2exe->wb_req[i].valid = true;
-      out.lsu2exe->wb_req[i].uop = finished_loads.front();
+      out.lsu2exe->wb_req[i].uop =
+          LsuExeIO::LsuExeRespUop::from_micro_op(finished_loads.front());
 
       finished_loads.pop_front();
     } else {
@@ -235,7 +236,8 @@ void SimpleLsu::comb_load_res() {
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     if (!finished_sta_reqs.empty()) {
       out.lsu2exe->sta_wb_req[i].valid = true;
-      out.lsu2exe->sta_wb_req[i].uop = finished_sta_reqs.front();
+      out.lsu2exe->sta_wb_req[i].uop =
+          LsuExeIO::LsuExeRespUop::from_micro_op(finished_sta_reqs.front());
       finished_sta_reqs.pop_front();
     } else {
       out.lsu2exe->sta_wb_req[i].valid = false;
@@ -548,11 +550,14 @@ void SimpleLsu::retire_stq_head_if_ready(bool write_fire, int &pop_count) {
 
 void SimpleLsu::commit_stores_from_rob() {
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (!(in.rob_commit->commit_entry[i].valid &&
-          is_store(in.rob_commit->commit_entry[i].uop))) {
+    if (!in.rob_commit->commit_entry[i].valid) {
       continue;
     }
-    int idx = in.rob_commit->commit_entry[i].uop.stq_idx;
+    InstInfo inst = in.rob_commit->commit_entry[i].uop.to_inst_info();
+    if (!is_store(inst)) {
+      continue;
+    }
+    int idx = inst.stq_idx;
     Assert(idx >= 0 && idx < STQ_SIZE);
     if (idx == stq_commit) {
       stq[idx].committed = true;

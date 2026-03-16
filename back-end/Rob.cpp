@@ -149,7 +149,8 @@ void Rob::comb_commit() {
   }
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop;
+    out.rob_commit->commit_entry[i].uop =
+        RobCommitIO::RobCommitInst::from_inst_info(entry[i][deq_ptr].uop);
   }
 
   // 一组提交
@@ -287,8 +288,11 @@ void Rob::comb_complete() {
   //  执行完毕的标记 (Early Completion Phase 2)
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     if (in.exu2rob->entry[i].valid) {
-      int bank_idx = get_rob_bank(in.exu2rob->entry[i].uop.rob_idx);
-      int line_idx = get_rob_line(in.exu2rob->entry[i].uop.rob_idx);
+      const auto &wb = in.exu2rob->entry[i].uop;
+      bool wb_has_page_fault =
+          wb.page_fault_inst || wb.page_fault_load || wb.page_fault_store;
+      int bank_idx = get_rob_bank(wb.rob_idx);
+      int line_idx = get_rob_line(wb.rob_idx);
 
       entry_1[bank_idx][line_idx].uop.cplt_num++;
       if (entry_1[bank_idx][line_idx].uop.cplt_num >
@@ -299,12 +303,10 @@ void Rob::comb_complete() {
       for (int k = 0; k < LSU_LDU_COUNT; k++) {
         if (i == IQ_LD_PORT_BASE + k) {
           // 保存物理地址，用于 Commit 时的对齐检查
-          entry_1[bank_idx][line_idx].uop.diag_val =
-              in.exu2rob->entry[i].uop.diag_val;
+          entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
 
-          if (is_page_fault(in.exu2rob->entry[i].uop)) {
-            entry_1[bank_idx][line_idx].uop.diag_val =
-                in.exu2rob->entry[i].uop.result;
+          if (wb_has_page_fault) {
+            entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
             entry_1[bank_idx][line_idx].uop.page_fault_load = true;
           }
         }
@@ -312,9 +314,8 @@ void Rob::comb_complete() {
 
       for (int k = 0; k < LSU_STA_COUNT; k++) {
         if (i == IQ_STA_PORT_BASE + k) {
-          if (is_page_fault(in.exu2rob->entry[i].uop)) {
-            entry_1[bank_idx][line_idx].uop.diag_val =
-                in.exu2rob->entry[i].uop.result;
+          if (wb_has_page_fault) {
+            entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
             entry_1[bank_idx][line_idx].uop.page_fault_store = true;
           }
         }
@@ -323,17 +324,12 @@ void Rob::comb_complete() {
       // 同一条指令可能由多个 uop 回写（例如 STA/STD），flush_pipe
       // 需要保持置位， 不能被后到达的 uop 覆盖为 0。
       entry_1[bank_idx][line_idx].uop.flush_pipe =
-          entry_1[bank_idx][line_idx].uop.flush_pipe ||
-          in.exu2rob->entry[i].uop.flush_pipe;
-      entry_1[bank_idx][line_idx].uop.dbg.difftest_skip =
-          in.exu2rob->entry[i].uop.dbg.difftest_skip;
-      if (is_branch_uop(in.exu2rob->entry[i].uop.op)) {
-        entry_1[bank_idx][line_idx].uop.diag_val =
-            in.exu2rob->entry[i].uop.diag_val;
-        entry_1[bank_idx][line_idx].uop.mispred =
-            in.exu2rob->entry[i].uop.mispred;
-        entry_1[bank_idx][line_idx].uop.br_taken =
-            in.exu2rob->entry[i].uop.br_taken;
+          entry_1[bank_idx][line_idx].uop.flush_pipe || wb.flush_pipe;
+      entry_1[bank_idx][line_idx].uop.dbg.difftest_skip = wb.dbg.difftest_skip;
+      if (is_branch_uop(wb.op)) {
+        entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
+        entry_1[bank_idx][line_idx].uop.mispred = wb.mispred;
+        entry_1[bank_idx][line_idx].uop.br_taken = wb.br_taken;
       }
     }
   }
@@ -393,7 +389,7 @@ void Rob::comb_fire() {
     for (int i = 0; i < DECODE_WIDTH; i++) {
       if (in.dis2rob->dis_fire[i]) {
         entry_1[i][enq_ptr].valid = true;
-        entry_1[i][enq_ptr].uop = in.dis2rob->uop[i];
+        entry_1[i][enq_ptr].uop = in.dis2rob->uop[i].to_inst_info();
         entry_1[i][enq_ptr].uop.cplt_num = 0;
         enq = true;
       }
@@ -434,33 +430,4 @@ void Rob::seq() {
   enq_ptr = enq_ptr_1;
   enq_flag = enq_flag_1;
   deq_flag = deq_flag_1;
-}
-
-RobIO Rob::get_hardware_io() {
-  RobIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.from_dis.valid[i] = in.dis2rob->valid[i];
-    hardware.from_dis.uop[i] = RobUop::filter(in.dis2rob->uop[i]);
-  }
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.from_exe.valid[i] = in.exu2rob->entry[i].valid;
-    hardware.from_exe.uop[i] = ExeWbUop::filter(in.exu2rob->entry[i].uop);
-  }
-
-  // --- Outputs ---
-  hardware.to_dis.stall = out.rob2dis->stall;
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    hardware.to_ren.commit_valid[i] = out.rob_commit->commit_entry[i].valid;
-    hardware.to_ren.commit_areg[i] =
-        out.rob_commit->commit_entry[i].uop.dest_areg;
-    hardware.to_ren.commit_preg[i] =
-        out.rob_commit->commit_entry[i].uop.dest_preg;
-    hardware.to_ren.commit_dest_en[i] =
-        out.rob_commit->commit_entry[i].uop.dest_en;
-  }
-  hardware.to_all.flush = out.rob_bcast->flush;
-
-  return hardware;
 }
