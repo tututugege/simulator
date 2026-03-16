@@ -160,6 +160,55 @@ void BackTop::comb_csr_status() {
 
 void BackTop::comb() {
   // CSR 状态由 SimCpu::cycle() 在进入 front/back 组合逻辑前统一刷新。
+#if CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
+  // Diagnostic mode: clear backend internal stage IOs to expose hidden
+  // dependence on previous-cycle combinational values.
+  dec2front = {};
+  pre_idu_issue = {};
+  ftq_lookup = {};
+
+  dec2ren = {};
+  dec_bcast = {};
+
+  ren2dec = {};
+  ren2dis = {};
+
+  dis2ren = {};
+  dis2iss = {};
+  dis2rob = {};
+  dis2lsu = {};
+
+  iss_awake = {};
+  iss2prf = {};
+  iss2dis = {};
+
+  prf2exe = {};
+  prf_awake = {};
+
+  exu2id = {};
+  // Known issue path: ROB consumes exu2rob before EXU refreshes it in current
+  // comb order. Keep it out of global clear for now and handle EXU separately.
+  exe2prf = {};
+  exe2iss = {};
+  exe2lsu = {};
+  exe2csr = {};
+
+  rob2dis = {};
+  rob2csr = {};
+  rob_bcast = {};
+  rob_commit = {};
+
+  csr2exe = {};
+  csr2rob = {};
+  csr2front = {};
+
+  lsu2exe = {};
+  lsu2dis = {};
+  lsu2rob = {};
+  lsu2dcache_req = {};
+  lsu2dcache_wreq = {};
+#endif
+
   pre_idu_queue->comb_begin();
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -202,7 +251,6 @@ void BackTop::comb() {
   lsu->comb_lsu2dis_info();
 
   idu->comb_branch();
-  rob->comb_complete();
 
   rob->comb_ready();
   rob->comb_commit();
@@ -213,6 +261,7 @@ void BackTop::comb() {
   exu->comb_to_csr();
   csr->comb_csr_read();
   exu->comb_exec();
+  rob->comb_complete();
 
   exu->comb_ready();
   isu->comb_issue();

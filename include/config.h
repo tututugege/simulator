@@ -82,6 +82,15 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // - undefined : I/D side both use SimpleMmu (ideal va2pa)
 #define CONFIG_TLB_MMU
 
+// Diagnostic switch:
+// When enabled, clear backend internal stage IO structs at the beginning of
+// BackTop::comb() before any comb_* runs. This helps detect hidden dependence
+// on previous-cycle IO values (latch-like behavior in combinational paths).
+// Keep disabled for normal runs.
+#ifndef CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
+#define CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN 1
+#endif
+
 // ============================================================
 // [2] Global Limits
 // ============================================================
@@ -121,7 +130,7 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
 #ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
-#define CONFIG_ICACHE_USE_AXI_MEM_PORT 0
+#define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
 // AXI protocol flavor for the dedicated icache memory path.
