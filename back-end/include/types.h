@@ -186,7 +186,6 @@ typedef struct MicroOp {
   // Debug
   UopDebugMeta dbg;
   bool flush_pipe;
-  int64_t cplt_time;
 
   MicroOp() { std::memset(this, 0, sizeof(MicroOp)); }
 

@@ -12,12 +12,20 @@ class PtwWalkPort;
 
 class SimpleLsu : public AbstractLsu {
 private:
+  enum class LoadState : uint8_t {
+    WaitExec = 0,
+    WaitSend = 1,
+    WaitResp = 2,
+    WaitRetry = 3,
+    Ready = 4,
+  };
+
   struct LdqEntry {
     bool valid;
     bool killed;
-    bool sent;
-    bool waiting_resp;
     bool tlb_retry;
+    LoadState state;
+    int64_t ready_cycle;
     MicroOp uop;
   };
 

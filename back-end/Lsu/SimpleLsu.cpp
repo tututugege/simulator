@@ -11,10 +11,6 @@
 
 // 外部辅助函数声明
 extern uint32_t *p_memory;
-static constexpr int64_t REQ_WAIT_RETRY = 0x7FFFFFFFFFFFFFFF;
-static constexpr int64_t REQ_WAIT_SEND = 0x7FFFFFFFFFFFFFFD;
-static constexpr int64_t REQ_WAIT_RESP = 0x7FFFFFFFFFFFFFFE;
-static constexpr int64_t REQ_WAIT_EXEC = 0x7FFFFFFFFFFFFFFC;
 
 static inline bool is_amo_lr_uop(const MicroOp &uop) {
   return ((uop.dbg.instruction & 0x7Fu) == 0x2Fu) &&
@@ -73,9 +69,9 @@ void SimpleLsu::init() {
   for (int i = 0; i < LDQ_SIZE; i++) {
     ldq[i].valid = false;
     ldq[i].killed = false;
-    ldq[i].sent = false;
-    ldq[i].waiting_resp = false;
     ldq[i].tlb_retry = false;
+    ldq[i].state = LoadState::WaitExec;
+    ldq[i].ready_cycle = 0;
     ldq[i].uop = {};
   }
 }
@@ -169,24 +165,21 @@ void SimpleLsu::comb_recv() {
 
   for (int i = 0; i < LDQ_SIZE; i++) {
     auto &entry = ldq[i];
-    if (!entry.valid || entry.killed || entry.sent || entry.waiting_resp) {
+    if (!entry.valid || entry.killed || entry.state != LoadState::WaitSend) {
       continue;
     }
-    if (entry.uop.cplt_time == REQ_WAIT_SEND) {
-      MicroOp req_uop = entry.uop;
-      req_uop.rob_idx = i; // Local token: LDQ index
-      out.dcache_req->en = true;
-      out.dcache_req->wen = false;
-      out.dcache_req->addr = entry.uop.diag_val;
-      out.dcache_req->wdata = 0;
-      out.dcache_req->wstrb = 0;
-      out.dcache_req->uop = req_uop;
-      entry.sent = true;
-      entry.waiting_resp = true;
-      entry.uop.cplt_time = REQ_WAIT_RESP;
 
-      break;
-    }
+    MicroOp req_uop = entry.uop;
+    req_uop.rob_idx = i; // Local token: LDQ index
+    out.dcache_req->en = true;
+    out.dcache_req->wen = false;
+    out.dcache_req->addr = entry.uop.diag_val;
+    out.dcache_req->wdata = 0;
+    out.dcache_req->wstrb = 0;
+    out.dcache_req->uop = req_uop;
+    entry.state = LoadState::WaitResp;
+
+    break;
   }
 
   drive_store_write_req();
@@ -205,7 +198,7 @@ void SimpleLsu::comb_load_res() {
     int idx = in.dcache_resp->uop.rob_idx;
     if (idx >= 0 && idx < LDQ_SIZE) {
       auto &entry = ldq[idx];
-      if (entry.valid && entry.sent && entry.waiting_resp) {
+      if (entry.valid && entry.state == LoadState::WaitResp) {
         if (!entry.killed) {
           uint32_t raw = in.dcache_resp->data;
           uint32_t res =
@@ -216,7 +209,6 @@ void SimpleLsu::comb_load_res() {
             reserve_addr = entry.uop.diag_val;
           }
           entry.uop.dbg.difftest_skip = in.dcache_resp->uop.dbg.difftest_skip;
-          entry.uop.cplt_time = sim_time;
           entry.uop.tma.is_cache_miss = in.dcache_resp->uop.tma.is_cache_miss;
           finished_loads.push_back(entry.uop);
         } else {
@@ -264,8 +256,9 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
   auto mmu_ret = mmu->translate(p_addr, task.result, 1, in.csr_status);
 
   if (mmu_ret == AbstractMmu::Result::RETRY) {
-    task.cplt_time = REQ_WAIT_EXEC;
     ldq[ldq_idx].tlb_retry = true;
+    ldq[ldq_idx].state = LoadState::WaitExec;
+    ldq[ldq_idx].ready_cycle = 0;
     ldq[ldq_idx].uop = task;
     return;
   }
@@ -273,7 +266,8 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
   if (mmu_ret == AbstractMmu::Result::FAULT) {
     task.page_fault_load = true;
     task.diag_val = task.result; // Store faulting virtual address
-    task.cplt_time = sim_time + 1;
+    ldq[ldq_idx].state = LoadState::Ready;
+    ldq[ldq_idx].ready_cycle = sim_time + 1;
   } else {
     task.diag_val = p_addr;
 
@@ -285,11 +279,14 @@ void SimpleLsu::handle_load_req(const MicroOp &inst) {
 
     if (fwd_res.state == StoreForwardState::Hit) {
       task.result = fwd_res.data;
-      task.cplt_time = sim_time + 0; // 这一拍直接完成！
+      ldq[ldq_idx].state = LoadState::Ready;
+      ldq[ldq_idx].ready_cycle = sim_time;
     } else if (fwd_res.state == StoreForwardState::NoHit) {
-      task.cplt_time = REQ_WAIT_SEND;
+      ldq[ldq_idx].state = LoadState::WaitSend;
+      ldq[ldq_idx].ready_cycle = 0;
     } else {
-      task.cplt_time = REQ_WAIT_RETRY;
+      ldq[ldq_idx].state = LoadState::WaitRetry;
+      ldq[ldq_idx].ready_cycle = 0;
     }
   }
 
@@ -351,15 +348,14 @@ bool SimpleLsu::reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
   }
   ldq[idx].valid = true;
   ldq[idx].killed = false;
-  ldq[idx].sent = false;
-  ldq[idx].waiting_resp = false;
   ldq[idx].tlb_retry = false;
+  ldq[idx].state = LoadState::WaitExec;
+  ldq[idx].ready_cycle = 0;
   ldq[idx].uop = {};
   ldq[idx].uop.br_mask = br_mask;
   ldq[idx].uop.rob_idx = rob_idx;
   ldq[idx].uop.rob_flag = rob_flag;
   ldq[idx].uop.ldq_idx = idx;
-  ldq[idx].uop.cplt_time = REQ_WAIT_EXEC;
   ldq_count++;
   ldq_alloc_tail = (idx + 1) % LDQ_SIZE;
   return true;
@@ -451,7 +447,7 @@ void SimpleLsu::handle_mispred(mask_t mask) {
       continue;
     }
     if (is_killed(ldq[i].uop)) {
-      if (ldq[i].sent) {
+      if (ldq[i].state == LoadState::WaitResp) {
 
         ldq[i].killed = true;
       } else {
@@ -578,13 +574,17 @@ void SimpleLsu::progress_ldq_entries() {
       continue;
     }
 
-    if (entry.killed && !entry.sent) {
+    if (entry.killed && entry.state != LoadState::WaitResp) {
 
       free_ldq_entry(i);
       continue;
     }
 
-    if (entry.waiting_resp || entry.uop.cplt_time == REQ_WAIT_EXEC) {
+    if (entry.state == LoadState::WaitResp) {
+      continue;
+    }
+
+    if (entry.state == LoadState::WaitExec) {
       if (!entry.tlb_retry) {
         continue;
       }
@@ -597,7 +597,8 @@ void SimpleLsu::progress_ldq_entries() {
       if (mmu_ret == AbstractMmu::Result::FAULT) {
         entry.uop.page_fault_load = true;
         entry.uop.diag_val = entry.uop.result;
-        entry.uop.cplt_time = sim_time + 1;
+        entry.state = LoadState::Ready;
+        entry.ready_cycle = sim_time + 1;
       } else {
         entry.uop.diag_val = p_addr;
         bool is_mmio = is_mmio_addr(p_addr);
@@ -606,27 +607,32 @@ void SimpleLsu::progress_ldq_entries() {
             is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, entry.uop);
         if (fwd_res.state == StoreForwardState::Hit) {
           entry.uop.result = fwd_res.data;
-          entry.uop.cplt_time = sim_time;
+          entry.state = LoadState::Ready;
+          entry.ready_cycle = sim_time;
         } else if (fwd_res.state == StoreForwardState::NoHit) {
-          entry.uop.cplt_time = REQ_WAIT_SEND;
+          entry.state = LoadState::WaitSend;
+          entry.ready_cycle = 0;
         } else {
-          entry.uop.cplt_time = REQ_WAIT_RETRY;
+          entry.state = LoadState::WaitRetry;
+          entry.ready_cycle = 0;
         }
       }
       continue;
     }
 
-    if (entry.uop.cplt_time == REQ_WAIT_RETRY) {
+    if (entry.state == LoadState::WaitRetry) {
       auto fwd_res = check_store_forward(entry.uop.diag_val, entry.uop);
       if (fwd_res.state == StoreForwardState::Hit) {
         entry.uop.result = fwd_res.data;
-        entry.uop.cplt_time = sim_time;
+        entry.state = LoadState::Ready;
+        entry.ready_cycle = sim_time;
       } else if (fwd_res.state == StoreForwardState::NoHit) {
-        entry.uop.cplt_time = REQ_WAIT_SEND;
+        entry.state = LoadState::WaitSend;
+        entry.ready_cycle = 0;
       }
     }
 
-    if (entry.uop.cplt_time <= sim_time) {
+    if (entry.state == LoadState::Ready && entry.ready_cycle <= sim_time) {
       if (!entry.killed) {
         if (is_amo_lr_uop(entry.uop)) {
           reserve_valid = true;
@@ -653,7 +659,6 @@ bool SimpleLsu::finish_store_addr_once(const MicroOp &inst) {
   if (mmu_ret == AbstractMmu::Result::FAULT) {
     MicroOp fault_op = inst;
     fault_op.page_fault_store = true;
-    fault_op.cplt_time = sim_time;
     if (is_amo_sc_uop(inst)) {
       reserve_valid = false;
     }
@@ -664,7 +669,6 @@ bool SimpleLsu::finish_store_addr_once(const MicroOp &inst) {
   }
 
   MicroOp success_op = inst;
-  success_op.cplt_time = sim_time;
   if (is_amo_sc_uop(inst)) {
     bool sc_success = reserve_valid && (reserve_addr == pa);
     // SC clears reservation regardless of success/failure.
@@ -706,9 +710,9 @@ void SimpleLsu::free_ldq_entry(int idx) {
 
     ldq[idx].valid = false;
     ldq[idx].killed = false;
-    ldq[idx].sent = false;
-    ldq[idx].waiting_resp = false;
     ldq[idx].tlb_retry = false;
+    ldq[idx].state = LoadState::WaitExec;
+    ldq[idx].ready_cycle = 0;
     ldq[idx].uop = {};
     ldq_count--;
     Assert(ldq_count >= 0);
@@ -726,7 +730,7 @@ void SimpleLsu::comb_flush() {
       if (!ldq[i].valid) {
         continue;
       }
-      if (ldq[i].sent) {
+      if (ldq[i].state == LoadState::WaitResp) {
 
         ldq[i].killed = true;
       } else {

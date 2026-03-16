@@ -1,158 +1,182 @@
-# Perf/Debug Decouple Plan (diag remains hardware)
+# cplt_time Refactor Plan
 
-## 1. Goal and constraints
-- Keep `diag_val` on the hardware data path.
-- Decouple `perf` and `debug` concerns from hardware interface structs.
-- Refactor in small steps with compile-stable transitions.
-- No functional behavior change.
+## 0. Status
+- Completed.
+- `cplt_time` has been removed from shared `MicroOp` interface semantics.
+- LSU now keeps request phase and ready timing locally.
+- FU now keeps completion timing locally.
+- Regression check passed with:
+  - `instruction num = 3325303`
+  - `cycle num = 1014161`
+  - `ipc = 3.278871`
 
-## 2. Scope
-- Backend type definitions and context:
+## 1. Goal
+- Remove `cplt_time` from shared `MicroOp` interface semantics.
+- Keep simulator timing behavior unchanged.
+- Make completion-time bookkeeping local to the execution structure that owns it.
+- Preserve hardware-simulator coding style: flat data, explicit state, no extra abstraction layers.
+
+## 2. Original situation
+- `cplt_time` was stored in `MicroOp`.
+- In `AbstractFU` / `FixedLatencyFU` / `IterativeFU`, it was used as an internal completion timestamp.
+- In `SimpleLsu`, it was used for two different meanings:
+  - real completion cycle
+  - internal state markers such as `REQ_WAIT_SEND`, `REQ_WAIT_RESP`, `REQ_WAIT_RETRY`, `REQ_WAIT_EXEC`
+- That meant the field was not really a hardware-visible uop field. It was simulator scheduling state leaking into shared interfaces.
+- A direct FU-side extraction was tried first and changed timing behavior under `dhrystone.bin`.
+- Final conclusion: `cplt_time` had to be removed in dependency order, not by mechanical substitution.
+
+## 3. Refactor direction
+
+### 3.1 LSU side
+- `SimpleLsu` currently uses `cplt_time` as mixed scheduler state; this should be split explicitly.
+- Replace it with local LSU entry state, for example:
+  - `enum class LoadState { WAIT_EXEC, WAIT_SEND, WAIT_RESP, WAIT_RETRY, READY }`
+  - `int64_t ready_cycle`
+- Rule:
+  - state controls what phase the request is in
+  - `ready_cycle` is used only when state depends on time
+- Avoid magic sentinel integers once the split is done.
+
+### 3.2 FU side
+- Move completion-time tracking into each FU's internal queue/state.
+- `MicroOp` stays as payload only.
+- Example direction:
+  - `FixedLatencyFU` pipeline stores `{uop, done_cycle}`
+  - `IterativeFU` stores `{current_uop, done_cycle}` or `{busy, remaining_cycles}`
+- External interface remains:
+  - `accept(uop)`
+  - `get_finished_uop()`
+- Important constraint:
+  - do this only after LSU no longer depends on incoming `uop.cplt_time`
+  - preserve the exact current completion cycle semantics when converting
+
+### 3.3 Shared interface boundary
+- `MicroOp` should no longer contain `cplt_time` after migration is complete.
+- If some module still needs internal timing, that timing must live in the owner structure, not the shared payload.
+
+## 4. Scope
+- In scope:
   - `back-end/include/types.h`
-  - `back-end/include/PerfCount.h`
-- Modules with direct debug/perf touching on hot path (migrate gradually):
-  - `back-end/{Idu,Ren,Dispatch,Isu,Exu,Rob,...}`
+  - `back-end/Exu/include/AbstractFU.h`
+  - `back-end/Exu/include/Fu.h`
+  - `back-end/Exu/include/FPU.h`
+  - `back-end/Exu/Exu.cpp`
+  - `back-end/Lsu/SimpleLsu.cpp`
+  - related local entry/state definitions
+- Out of scope:
+  - changing architectural behavior
+  - changing throughput/latency model
+  - changing `dbg` / `tma` structure naming
 
-Out of scope for phase-1:
-- Renaming `diag_val`
-- Re-architecting all logs/macros
-- Changing perf formulas
-- Any `front-end` file changes
-
-## 3. Current pain points
-- `InstInfo/MicroOp` mix hardware and debug metadata (e.g. `instruction`, `inst_idx`, `cplt_time`, etc.).
-- Perf counters are globally reachable; update points are scattered.
-
-## 4. Target structure
-
-### 4.1 Hardware path (must stay in main structs)
-- Keep hardware-valid fields in `InstInfo/MicroOp` and stage IO structs.
-- `diag_val` stays in hardware structs.
-- `flush_pipe` stays in hardware structs.
-- `cplt_time` stays in hardware structs for now.
-
-### 4.2 Debug sideband
-- Introduce dedicated debug metadata container(s), for example:
-  - `InstDebugMeta`
-  - `UopDebugMeta`
-- Debug fields move here first:
-  - `instruction`
-  - `difftest_skip`
-  - `inst_idx`
-
-### 4.3 Perf access boundary
-- Keep storage in `SimContext::perf`.
-- Add a light wrapper entry (e.g. helper/hook methods) to centralize updates.
-- Modules should prefer wrapper calls over direct arbitrary field writes.
-- Perf-related metadata may still travel across module boundaries temporarily, but
-  should be treated as perf-side sideband rather than hardware functionality.
-
-### 4.4 Confirmed perf-side metadata candidates
-- `is_cache_miss` in `InstInfo/MicroOp`
-  - Current role: classify memory stall as `mem_l1_bound` vs `mem_ext_bound`.
-  - Not required for ISA-visible correctness.
-- `LsuRobIO::miss_mask`
-  - Current role: carry per-ROB miss state for ROB/Dispatch TMA classification.
-  - Not required for correctness.
-- `RobDisIO::head_is_memory`
-  - Current role: tell Dispatch the oldest blocker is memory-related for TMA.
-  - Not required for correctness.
-- `RobDisIO::head_is_miss`
-  - Current role: distinguish external-memory miss from L1-bound stall for TMA.
-  - Not required for correctness.
-- `RobDisIO::head_not_ready`
-  - Current role: qualify the blocker classification used by Dispatch perf logic.
-  - Not required for correctness.
-
-### 4.5 IO audit result
-- Keep as hardware/functional IO:
-  - `committed_store_pending`
-  - `IssDisIO::ready_num`
-  - `RobDisIO::stall`
-  - `LsuDisIO::{stq_free, ldq_free, ldq_alloc_idx, stq_tail, stq_tail_flag}`
-  - `WbArbiterDcacheIO::{stall_ld, stall_st}`
-  - `WritebufferDcacheIO::stall`
-- Treat as perf-side candidates:
-  - `LsuRobIO::miss_mask`
-  - `RobDisIO::{head_is_memory, head_is_miss, head_not_ready}`
-- Do not move yet:
-  - `committed_store_pending` is used by ROB to block `SFENCE.VMA` commit, so it
-    is functional rather than perf-only.
-
-## 5. Step-by-step implementation
+## 5. Execution record
 
 ### Step 0: Baseline freeze
-- Build and run current smoke flow once.
-- Save baseline outputs/log snippets used for comparison.
+- Rebuild and run `./build/simulator ./dhrystone.bin`.
+- Record:
+  - success/fail
+  - instruction count
+  - cycle count
+  - IPC
 
 Exit criteria:
-- Current branch is reproducible before refactor.
+- Current behavior is reproducible before touching `cplt_time`.
 
-### Step 1: Introduce debug sideband types (no behavior change)
-- Add debug meta structs in `types.h` (or a new `debug_meta.h` included by `types.h`).
-- Do not remove old fields yet.
-- Add conversion helpers between old mixed structs and new sideband representation.
+Result:
+- Done.
+- Baseline confirmed with `3325303 / 1014161 / 3.278871`.
+
+### Step 1: LSU state split
+- Refactor `SimpleLsu.cpp` first.
+- Add explicit LSU-local scheduling state to LDQ/STQ entries.
+- Replace the mixed `cplt_time + sentinel` scheme with:
+  - phase/state field
+  - optional `ready_cycle`
+- Keep the logic flat and local to `SimpleLsu.cpp`; avoid introducing class hierarchies.
+- During this step, keep `MicroOp::cplt_time` only as a compatibility field if some LSU output path still mirrors it.
 
 Exit criteria:
+- `SimpleLsu.cpp` no longer relies on magic `REQ_WAIT_*` values stored in `uop.cplt_time`.
 - Build passes.
-- No call-site behavior change.
+- `dhrystone.bin` result unchanged.
 
-### Step 2: Backend debug field migration (gradual)
-- Migrate one module at a time to read/write debug sideband instead of mixed fields.
-- Suggested order:
-  1. `Idu`
-  2. `Dispatch`
-  3. `Exu`
-  4. `Rob`
-- Keep compatibility adapters until all users migrate.
+Result:
+- Done.
+- `LdqEntry` now keeps `LoadState + ready_cycle`.
+- `REQ_WAIT_*`, `sent`, and `waiting_resp` were removed from `SimpleLsu`.
 
-Exit criteria:
-- Each module migration compiles and passes smoke before moving on.
-
-### Step 3: Perf update boundary
-- Keep `PerfCount` fields unchanged.
-- Add wrapper/hook API for frequently updated counters.
-- Move hot-path direct writes to wrappers incrementally.
-- Start by isolating perf-side metadata flow:
-  - `is_cache_miss`
-  - `miss_mask`
-  - `head_is_memory`
-  - `head_is_miss`
-  - `head_not_ready`
+### Step 2: FU-local timing state
+- Refactor `AbstractFU` hierarchy after LSU is decoupled.
+- Introduce explicit internal pipeline entries, for example:
+  - `struct FuPipeEntry { MicroOp uop; int64_t done_cycle; };`
+- Replace FU-internal uses of `uop.cplt_time` with local `done_cycle`.
+- Do not change external FU interfaces.
+- Validate carefully for off-by-one timing behavior.
 
 Exit criteria:
-- Perf numbers match baseline within expected run variance.
-- No direct writes in newly touched modules except through wrappers.
+- No FU code reads/writes `uop.cplt_time`.
+- Build passes.
+- `dhrystone.bin` result unchanged.
 
-### Step 4: Remove temporary compatibility fields
-- After all call sites migrate, delete old duplicated debug fields from hardware structs.
-- Keep `diag_val` untouched.
+Result:
+- Done.
+- `AbstractFU` now keeps local `done_cycle` state.
+- Shared `MicroOp` payload is no longer used for FU timing.
 
-Exit criteria:
-- Full build pass.
-- No stale adapter usage.
-
-### Step 5: Cleanup and docs
-- Update related docs with explicit HW/DEBUG/PERF boundaries.
-- Add short contribution rule: new interface fields must be tagged as HW or DEBUG.
+### Step 3: Remove shared-field dependency
+- After FU and LSU are both migrated, remove `cplt_time` from `MicroOp`.
+- Fix remaining construction/copy sites.
 
 Exit criteria:
-- Docs and code are aligned.
+- `rg "cplt_time" back-end` only shows local FU/LSU state names or comments, not `MicroOp::cplt_time`.
+- Build passes.
+- `dhrystone.bin` result unchanged.
 
-## 6. Validation checklist per step
-- `make -j` build success.
-- No new warnings from changed files.
-- Smoke tests execute successfully.
-- Diff of critical output/perf summary checked.
+Result:
+- Done.
+- `MicroOp::cplt_time` was removed from `types.h`.
+- Code search no longer finds `cplt_time` in backend code.
 
-## 7. Risk and rollback
-- Main risk: hidden dependency on debug fields in functional decisions.
-- Mitigation: keep adapters during migration and switch module-by-module.
-- Rollback: each step should be independently reversible without touching unrelated modules.
+### Step 4: Cleanup
+- Rename any temporary local state names if needed.
+- Update comments to state clearly:
+  - completion timing is simulator-local execution state
+  - it is not a shared hardware interface field
 
-## 8. First concrete execution batch
-1. Add debug sideband structs and adapters.
-2. Migrate `Idu` debug reads/writes to sideband.
-3. Migrate `Dispatch/Exu/Rob` debug reads/writes to sideband (one-by-one).
-4. Add perf wrapper entry points and migrate touched hot paths.
-5. Build + smoke check.
+Exit criteria:
+- Code and comments agree on ownership of timing state.
+
+Result:
+- Mostly done.
+- The remaining work is only optional comment cleanup if needed later.
+
+## 6. Actual implementation order
+1. `SimpleLsu.cpp`
+2. local LSU entry/state definitions
+3. `AbstractFU.h`
+4. `types.h` cleanup
+
+## 7. Risks
+- LSU refactor risk:
+  - conflating "ready now" with "waiting on response"
+  - losing special retry behavior
+- FU refactor risk:
+  - off-by-one timing change (`sim_time`, `latency`, writeback cycle)
+  - hidden compatibility dependency from downstream modules that still observe `uop.cplt_time`
+- Main mitigation:
+  - decouple LSU first, then FU
+  - rerun `dhrystone.bin` after each step
+
+Observed outcome:
+- This mitigation worked.
+- After LSU was decoupled first, the FU-local timing migration no longer changed benchmark results.
+
+## 8. Acceptance criteria
+- `cplt_time` is no longer part of shared uop interface semantics.
+- FU completion timing is private to FU internals.
+- LSU request scheduling state is private to LSU internals.
+- `./build/simulator ./dhrystone.bin` still reports:
+  - `Success!!!!`
+  - instruction num `3325303`
+  - cycle num `1014161`
+  - ipc `3.278871`
