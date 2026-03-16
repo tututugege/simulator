@@ -1,6 +1,5 @@
 #pragma once
 #include "AbstractLsu.h"
-#include "PeripheralModel.h"
 #include "SimpleMmu.h" // Added MMU include
 #include "config.h"
 #include <cstdint>
@@ -11,14 +10,18 @@ class Csr;
 class PtwMemPort;
 class PtwWalkPort;
 
-class SimpleLsu : public AbstractLsu {
+
+class RealLsu : public AbstractLsu {
 private:
   struct LdqEntry {
     bool valid;
     bool killed;
     bool sent;
     bool waiting_resp;
+    uint64_t wait_resp_since;
     bool tlb_retry;
+    bool is_mmio_wait;  // 地址已翻译为 MMIO，等待到达 ROB 队头后再发送
+    uint8_t replay_priority;
     MicroOp uop;
   };
 
@@ -35,7 +38,6 @@ private:
 
   // MMU Instance (Composition)
   std::unique_ptr<AbstractMmu> mmu;
-  PeripheralModel peripheral_model;
 
   // === 内部状态寄存器 (对应 seq 更新) ===
 
@@ -50,11 +52,30 @@ private:
   LdqEntry ldq[LDQ_SIZE];
   int ldq_count;
   int ldq_alloc_tail;
+  
+  bool reserve_valid;
+  int reserve_addr;
+
+  int replay_count_ldq; // 统计重试次数
+  int replay_count_stq; // 统计重试次数
+  int mshr_replay_count_ldq; // 统计 MSHR 重试次数
+  int mshr_replay_count_stq; // 统计 MSHR 重试次数
   uint64_t ldq_seq_counter;
   uint64_t stq_seq_counter;
   uint64_t ldq_trace_seq[LDQ_SIZE];
   uint64_t stq_trace_seq[STQ_SIZE];
+  bool ldq_cache_wait_replay[LDQ_SIZE];
+  bool stq_cache_wait_replay[STQ_SIZE];
 
+  bool stq_head_flag; // 用于区分环形缓冲区中的两轮
+
+  bool replay_type; // 0 = LDQ, 1 = STQ
+
+  
+  uint32_t issued_stq_addr[LSU_STA_COUNT] = {};
+  uint32_t issued_stq_addr_nxt[LSU_STA_COUNT] = {}; // 每周期已发出的 Store 地址，用于 Store Forward 检测
+  bool issued_stq_addr_valid[LSU_STA_COUNT] = {}; // 标记 issued_stq_addr 中哪些地址是有效的
+  bool issued_stq_addr_valid_nxt[LSU_STA_COUNT] = {}; // 下一周期的有效地址标记
   // 3. 完成的 Load 队列 (等待写回)
   std::deque<MicroOp> finished_loads;
 
@@ -62,9 +83,11 @@ private:
   std::deque<MicroOp> finished_sta_reqs;
   // 5. STA 地址翻译重试队列 (DTLB/PTW miss -> RETRY)
   std::deque<MicroOp> pending_sta_addr_reqs;
+  bool pending_mmio_valid = false;
+  PeripheralInIO pending_mmio_req{};
 
 public:
-  SimpleLsu(SimContext *ctx);
+  RealLsu(SimContext *ctx);
 
   // 组合逻辑实现
   void init() override;
@@ -77,8 +100,9 @@ public:
   void seq() override;
 
   StqEntry get_stq_entry(int stq_idx) override;
+  void dump_debug_state() const;
 
-  void set_csr(Csr *c) override;
+  void set_csr(Csr *c) override { this->csr_module = c; }
   void set_ptw_mem_port(PtwMemPort *port) override {
     ptw_mem_port = port;
     mmu->set_ptw_mem_port(port);
@@ -91,7 +115,17 @@ public:
   // 一致性访存接口 (供 MMU 使用)
   uint32_t coherent_read(uint32_t p_addr) override;
   bool has_committed_store_pending() const override {
-    return stq_head != stq_commit;
+    int ptr = stq_head;
+    int remain = stq_count;
+    while (remain > 0) {
+      const StqEntry &e = stq[ptr];
+      if (e.valid && e.committed && !e.done) {
+        return true;
+      }
+      ptr = (ptr + 1) % STQ_SIZE;
+      remain--;
+    }
+    return false;
   }
 
 private:
@@ -110,7 +144,7 @@ private:
   void consume_ldq_alloc_reqs();
   void free_ldq_entry(int idx);
   bool is_mmio_addr(uint32_t paddr) const;
-  void drive_store_write_req();
+  void change_store_info(StqEntry &entry, int port_idx, int stq_idx);
   void handle_global_flush();
   void handle_mispred(mask_t mask);
   void retire_stq_head_if_ready(int &pop_count);
@@ -118,7 +152,6 @@ private:
   void progress_ldq_entries();
   void progress_pending_sta_addr();
   bool finish_store_addr_once(const MicroOp &inst);
-  bool finish_mmio_load(MicroOp &task, int ldq_idx, uint32_t p_addr);
 
   StoreForwardResult check_store_forward(uint32_t p_addr,
                                          const MicroOp &load_uop);

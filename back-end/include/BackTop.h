@@ -90,10 +90,8 @@ private:
   LsuExeIO lsu2exe;
   LsuDisIO lsu2dis;
   LsuRobIO lsu2rob;
-  MemReqIO lsu2dcache_req;
-  MemReqIO lsu2dcache_wreq;
-  MemRespIO dcache2lsu_resp;
-  MemReadyIO dcache2lsu_wready;
+  LsuDcacheIO lsu2dcache_io;   // LSU → DCache multi-port request bus
+  DcacheLsuIO dcache2lsu_io;   // DCache → LSU multi-port response bus
 
   RobDisIO rob2dis;
   RobCsrIO rob2csr;
@@ -124,10 +122,8 @@ public:
 
   Back_in in;
   Back_out out;
-  MemReqIO *lsu_dcache_req_io;
-  MemReqIO *lsu_dcache_wreq_io;
-  MemRespIO *lsu_dcache_resp_io;
-  MemReadyIO *lsu_dcache_wready_io;
+  LsuDcacheIO *lsu_dcache_req_io;   // → &lsu2dcache_io  (for MemSubsystem)
+  DcacheLsuIO *lsu_dcache_resp_io;  // → &dcache2lsu_io  (for MemSubsystem)
   void init();
   void comb_csr_status();
   void comb();
@@ -136,10 +132,9 @@ public:
   BackTop(SimContext *ctx) {
     this->ctx = ctx;
     pre_idu_queue = nullptr;
-    lsu_dcache_req_io = &lsu2dcache_req;
-    lsu_dcache_wreq_io = &lsu2dcache_wreq;
-    lsu_dcache_resp_io = &dcache2lsu_resp;
-    lsu_dcache_wready_io = &dcache2lsu_wready;
+    
+    lsu_dcache_req_io  = &lsu2dcache_io;
+    lsu_dcache_resp_io = &dcache2lsu_io;
   };
   ~BackTop() {
     delete pre_idu_queue;

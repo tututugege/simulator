@@ -56,6 +56,11 @@ CXXSRC := $(shell find ./back-end -name "*.cpp") \
           ./MemSubSystem/MemSubsystem.cpp \
           ./MemSubSystem/SimpleCache.cpp \
           ./MemSubSystem/PtwWalker.cpp \
+          ./MemSubSystem/PeripheralAxi.cpp \
+          ./MemSubSystem/RealDcache.cpp \
+          ./MemSubSystem/MSHR.cpp \
+          ./MemSubSystem/WriteBuffer.cpp \
+          ./MemSubSystem/DcacheConfig.cpp \
           $(shell find $(FRONT_DIR) -name "*.cpp") \
           $(shell find ./diff -name "*.cpp") \
           $(AXI_KIT_SRC) \
@@ -70,7 +75,7 @@ DEPS := $(OBJS:.o=.d)
 # Rules
 # ==========================================
 
-.PHONY: all clean run gdb coverage help gdb_linux
+.PHONY: all clean run gdb coverage help gdb_linux linux
 
 all: $(SIM_EXE)
 
@@ -88,6 +93,9 @@ $(BUILD_DIR)/%.o: %.cpp
 # Run
 run: $(SIM_EXE)
 	./$(SIM_EXE) $(IMG)
+
+linux: $(SIM_EXE)
+	./$(SIM_EXE) ./baremetal/linux.bin  
 
 # Debug with GDB
 gdb: CXXFLAGS += -g -O0

@@ -22,6 +22,17 @@ public:
 
   explicit MemPtwBlock(SimContext *ctx = nullptr) : ctx(ctx) {}
 
+  struct DebugState {
+    bool walk_active = false;
+    uint8_t walk_state = 0;
+    uint8_t walk_owner = 0;
+    bool walk_req_pending[2] = {false, false};
+    bool walk_req_inflight[2] = {false, false};
+    bool walk_resp_valid[2] = {false, false};
+    bool mem_req_pending[2] = {false, false};
+    bool mem_req_inflight[2] = {false, false};
+  };
+
   void bind_context(SimContext *c) { ctx = c; }
   void init() {
     ptw_clients = {};
@@ -246,6 +257,15 @@ public:
     ptw_clients[client_idx(client)].resp_valid = false;
   }
 
+  void retry_mem_req(Client client) {
+    auto &s = ptw_clients[client_idx(client)];
+    if (!s.req_inflight) {
+      return;
+    }
+    s.req_inflight = false;
+    s.req_pending = true;
+  }
+
   bool walk_client_send_req(Client client, const PtwWalkReq &req) {
     auto &s = walk_clients[client_idx(client)];
     if (ctx != nullptr) {
@@ -297,6 +317,32 @@ public:
       walk_state = WalkState::IDLE;
       walk_l1_pte = 0;
     }
+  }
+
+  void retry_active_walk() {
+    if (!walk_active) {
+      return;
+    }
+    if (walk_state == WalkState::L1_WAIT_RESP) {
+      walk_state = WalkState::L1_REQ;
+    } else if (walk_state == WalkState::L2_WAIT_RESP) {
+      walk_state = WalkState::L2_REQ;
+    }
+  }
+
+  DebugState debug_state() const {
+    DebugState d{};
+    d.walk_active = walk_active;
+    d.walk_state = static_cast<uint8_t>(walk_state);
+    d.walk_owner = static_cast<uint8_t>(walk_owner);
+    for (size_t i = 0; i < kClientCount; i++) {
+      d.walk_req_pending[i] = walk_clients[i].req_pending;
+      d.walk_req_inflight[i] = walk_clients[i].req_inflight;
+      d.walk_resp_valid[i] = walk_clients[i].resp_valid;
+      d.mem_req_pending[i] = ptw_clients[i].req_pending;
+      d.mem_req_inflight[i] = ptw_clients[i].req_inflight;
+    }
+    return d;
   }
 
 private:

@@ -74,6 +74,44 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
+// LSU implementation selector in BackTop:
+// 0 = RealLsu (default), 1 = SimpleLsu
+#define CONFIG_BACKEND_USE_SIMPLE_LSU 0
+
+
+// ============================================================
+// [4] D-Cache (SimpleCache) Config
+// ============================================================
+// DCache implementation selector in MemSubsystem:
+// 0 = RealDcache (default), 1 = SimpleCache
+#define CONFIG_MEM_DCACHE_USE_SIMPLE 1
+// Targeted LSU trace (1-based sequence id):
+// 0 = disabled, N = trace the Nth load/store entering LDQ/STQ.
+#ifndef CONFIG_PERF_TRACE_LOAD_N
+#define CONFIG_PERF_TRACE_LOAD_N 1000
+#endif
+#ifndef CONFIG_PERF_TRACE_STORE_N
+#define CONFIG_PERF_TRACE_STORE_N 1000
+#endif
+// Perf snapshot at a specific sim-time(cycle):
+// 0 = disabled, N > 0 = capture committed(total/load/store) at cycle N.
+#define CONFIG_PERF_SNAPSHOT_SIM_TIME 10000
+// Periodic perf snapshots:
+// - INTERVAL=0: disabled
+// - BEGIN/END: capture window (inclusive)
+// - MAX: max snapshot records kept (avoid huge logs)
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL 200
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN 26000
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_END
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_END 35000
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_MAX
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_MAX 256
+#endif
 // MMU domain feature tags (kept enabled for front/back path visibility)
 #define CONFIG_DTLB
 #define CONFIG_ITLB
@@ -82,6 +120,55 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // - undefined : I/D side both use SimpleMmu (ideal va2pa)
 #define CONFIG_TLB_MMU
 
+extern long long sim_time; // Global simulation time
+constexpr int REPLAY_STORE_COUNT_UPPER_BOUND = 32;
+constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
+// Global debug print switch for ad-hoc debug logs in simulator modules.
+// Set to 1 to enable, 0 to disable.
+#ifndef SIM_DEBUG_PRINT
+#define SIM_DEBUG_PRINT 0
+#endif
+
+// Optional cycle window for DBG_PRINTF.
+// Effective only when SIM_DEBUG_PRINT == 1.
+// Default is full-range (all cycles).
+#ifndef SIM_DEBUG_PRINT_CYCLE_BEGIN
+#define SIM_DEBUG_PRINT_CYCLE_BEGIN 0
+#endif
+
+#ifndef SIM_DEBUG_PRINT_CYCLE_END
+#define SIM_DEBUG_PRINT_CYCLE_END ~0ULL
+#endif
+
+#define SIM_DEBUG_PRINT_ACTIVE                                                \
+  (SIM_DEBUG_PRINT &&                                                         \
+   (static_cast<unsigned long long>(sim_time) >=                              \
+    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_BEGIN)) &&          \
+   (static_cast<unsigned long long>(sim_time) <=                              \
+    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_END)))
+
+// Lightweight LSU STQ invariant checks.
+// Set to 1 when debugging queue/pointer consistency issues.
+#ifndef LSU_LIGHT_ASSERT
+#define LSU_LIGHT_ASSERT 0
+#endif
+
+// ROB deadlock watchdog threshold (cycles without commit).
+// Memory-intensive workloads can legitimately exceed 1000 cycles.
+#ifndef ROB_DEADLOCK_STALL_CYCLES
+#define ROB_DEADLOCK_STALL_CYCLES 10000
+#endif
+
+#define DBG_PRINTF(fmt, ...)                                                   \
+  do {                                                                         \
+    if (SIM_DEBUG_PRINT_ACTIVE) {                                              \
+      std::printf(fmt, ##__VA_ARGS__);                                         \
+    }                                                                          \
+  } while (0)
+
+#ifndef PTW_WALK_WAIT_RETRY_CYCLES
+#define PTW_WALK_WAIT_RETRY_CYCLES 256
+#endif
 // ============================================================
 // [2] Global Limits
 // ============================================================
@@ -112,7 +199,7 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
 #ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
-#define CONFIG_ICACHE_USE_AXI_MEM_PORT 0
+#define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
 // AXI protocol flavor for the dedicated icache memory path.
@@ -129,9 +216,7 @@ constexpr int ICACHE_WORD_NUM = ICACHE_LINE_SIZE / 4;
 constexpr int ICACHE_TAG_BITS = 32 - ICACHE_INDEX_BITS - ICACHE_OFFSET_BITS;
 constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
-// ============================================================
-// [4] D-Cache (SimpleCache) Config
-// ============================================================
+
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
 constexpr int DCACHE_L2_HIT_LATENCY = 8;
@@ -217,7 +302,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
+    PORT_CFG(OP_MASK_ALU | OP_MASK_FP),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
