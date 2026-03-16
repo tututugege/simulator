@@ -102,6 +102,7 @@ struct Front2BackCombOut;
 void BPU_top(struct BPU_in *in, struct BPU_out *out);
 void icache_top(struct icache_in *in, struct icache_out *out);
 void icache_seq_read(struct icache_in *in, struct icache_out *out);
+void icache_peek_ready(struct icache_in *in, struct icache_out *out);
 void icache_comb_calc(struct icache_in *in, struct icache_out *out);
 void icache_seq_write();
 void icache_set_context(SimContext *ctx);

@@ -863,8 +863,7 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
     icache_in.reset = global_reset;
     icache_in.refetch = global_refetch;
     icache_in.csr_status = in->csr_status;
-    icache_in.run_comb_only = true;
-    icache_comb_calc(&icache_in, &icache_out);
+    icache_peek_ready(&icache_in, &icache_out);
 #endif
     bool icache_ready = icache_out.icache_read_ready;
     bool icache_ready_2 = icache_out.icache_read_ready_2;

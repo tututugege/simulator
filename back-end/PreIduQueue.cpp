@@ -144,6 +144,17 @@ void PreIduQueue::comb_accept_front() {
     ftq_entry.alt_pred[i] = in.front2dec->alt_pred[i];
     ftq_entry.altpcpn[i] = in.front2dec->altpcpn[i];
     ftq_entry.pcpn[i] = in.front2dec->pcpn[i];
+    ftq_entry.sc_used[i] = in.front2dec->sc_used[i];
+    ftq_entry.sc_pred[i] = in.front2dec->sc_pred[i];
+    ftq_entry.sc_sum[i] = in.front2dec->sc_sum[i];
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      ftq_entry.sc_idx[i][t] = in.front2dec->sc_idx[i][t];
+    }
+    ftq_entry.loop_used[i] = in.front2dec->loop_used[i];
+    ftq_entry.loop_hit[i] = in.front2dec->loop_hit[i];
+    ftq_entry.loop_pred[i] = in.front2dec->loop_pred[i];
+    ftq_entry.loop_idx[i] = in.front2dec->loop_idx[i];
+    ftq_entry.loop_tag[i] = in.front2dec->loop_tag[i];
     for (int j = 0; j < 4; j++) {
       ftq_entry.tage_idx[i][j] = in.front2dec->tage_idx[i][j];
       ftq_entry.tage_tag[i][j] = in.front2dec->tage_tag[i][j];
