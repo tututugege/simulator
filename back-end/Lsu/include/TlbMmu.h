@@ -11,6 +11,14 @@ class PtwMemPort;
 
 class TlbMmu : public AbstractMmu {
 public:
+  enum class RetryReason : uint8_t {
+    NONE = 0,
+    OTHER_WALK_ACTIVE = 1,
+    WALK_REQ_BLOCKED = 2,
+    WAIT_WALK_RESP = 3,
+    LOCAL_WALKER_BUSY = 4,
+  };
+
   TlbMmu(SimContext *ctx, PtwMemPort *port = nullptr,
          int tlb_entries = DTLB_ENTRIES);
 
@@ -20,6 +28,7 @@ public:
   void cancel_pending_walk() override;
   void set_ptw_mem_port(PtwMemPort *port) override;
   void set_ptw_walk_port(PtwWalkPort *port) override;
+  RetryReason last_retry_reason() const { return last_retry_reason_; }
 
 private:
   struct TlbEntry {
@@ -47,6 +56,7 @@ private:
   bool walk_mxr = false;
   bool walk_sum = false;
   bool walk_req_sent = false;
+  RetryReason last_retry_reason_ = RetryReason::NONE;
 
   bool lookup(uint32_t v_addr, uint8_t asid, TlbEntry &hit) const;
   uint32_t compose_paddr(uint32_t v_addr, const TlbEntry &e) const;

@@ -86,6 +86,23 @@ void clear_primary_outputs(struct icache_out *out) {
   }
 }
 
+void clear_perf_outputs(struct icache_out *out) {
+  out->perf_req_fire = false;
+  out->perf_req_blocked = false;
+  out->perf_resp_fire = false;
+  out->perf_miss_event = false;
+  out->perf_miss_busy = false;
+  out->perf_outstanding_req = false;
+  out->perf_itlb_hit = false;
+  out->perf_itlb_miss = false;
+  out->perf_itlb_fault = false;
+  out->perf_itlb_retry = false;
+  out->perf_itlb_retry_other_walk = false;
+  out->perf_itlb_retry_walk_req_blocked = false;
+  out->perf_itlb_retry_wait_walk_resp = false;
+  out->perf_itlb_retry_local_walker_busy = false;
+}
+
 void fill_fetch_group(uint32_t fetch_pc, const uint32_t *line_words,
                       bool page_fault, uint32_t *fetch_group,
                       bool *page_fault_inst, bool *inst_valid) {
@@ -337,6 +354,7 @@ public:
   void peek_ready() override {
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
+    clear_perf_outputs(out);
     uint32_t cur_satp =
         in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
     bool satp_changed = !satp_seen || cur_satp != last_satp;
@@ -350,6 +368,7 @@ public:
   void comb() override {
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
+    clear_perf_outputs(out);
 
     auto &runtime = true_icache_runtime<HW, ReadPort>();
     auto &read_port = read_port_runtime<ReadPort>();
@@ -385,6 +404,8 @@ public:
     MemReadView mem = read_port.comb_view();
     const bool req_valid = in->icache_read_valid;
     const uint32_t req_pc = in->fetch_address;
+    bool itlb_translate_invoked = false;
+    AbstractMmu::Result itlb_translate_ret = AbstractMmu::Result::OK;
 
     icache_hw.io.in.refetch = in->refetch;
     icache_hw.io.in.flush = false;
@@ -406,10 +427,12 @@ public:
     if (!in->refetch &&
         runtime.mmu_model != nullptr &&
         icache_hw.io.out.mmu_req_valid) {
+      itlb_translate_invoked = true;
       uint32_t p_addr = 0;
       uint32_t v_addr = icache_hw.io.out.mmu_req_vtag << 12;
       AbstractMmu::Result ret =
           runtime.mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
+      itlb_translate_ret = ret;
       if (ret == AbstractMmu::Result::OK) {
         icache_hw.io.in.ppn = p_addr >> 12;
         icache_hw.io.in.ppn_valid = true;
@@ -427,9 +450,12 @@ public:
         icache_hw.io.out.mem_resp_ready);
 
     out->icache_read_ready = icache_hw.io.out.ifu_req_ready;
+    out->perf_req_fire = req_valid && out->icache_read_ready;
+    out->perf_req_blocked = req_valid && !out->icache_read_ready;
 
     bool resp_fire =
         icache_hw.io.out.ifu_resp_valid && icache_hw.io.in.ifu_resp_ready;
+    out->perf_resp_fire = resp_fire;
     if (resp_fire) {
       if (icache_hw.io.out.miss) {
         std::cout << "[icache_top] WARNING: miss is true when ifu_resp is valid"
@@ -441,6 +467,51 @@ public:
       fill_fetch_group(icache_hw.io.out.ifu_resp_pc, icache_hw.io.out.rd_data,
                        icache_hw.io.out.ifu_page_fault, out->fetch_group,
                        out->page_fault_inst, out->inst_valid);
+    }
+
+    bool mem_req_fire =
+        icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_ready;
+    out->perf_miss_event = mem_req_fire;
+    const auto icache_state =
+        static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
+    out->perf_miss_busy =
+        (icache_state == icache_module_n::SWAP_IN ||
+         icache_state == icache_module_n::DRAIN);
+    out->perf_outstanding_req =
+        out->perf_miss_busy || icache_hw.io.regs.req_valid_r ||
+        icache_hw.io.regs.lookup_pending_r;
+
+    if (itlb_translate_invoked) {
+      if (itlb_translate_ret == AbstractMmu::Result::OK) {
+        out->perf_itlb_hit = true;
+      } else if (itlb_translate_ret == AbstractMmu::Result::FAULT) {
+        out->perf_itlb_fault = true;
+      } else {
+        out->perf_itlb_miss = true;
+        out->perf_itlb_retry = true;
+        TlbMmu::RetryReason reason = TlbMmu::RetryReason::LOCAL_WALKER_BUSY;
+        if (auto *tlb = dynamic_cast<TlbMmu *>(runtime.mmu_model); tlb != nullptr) {
+          reason = tlb->last_retry_reason();
+        }
+        switch (reason) {
+        case TlbMmu::RetryReason::OTHER_WALK_ACTIVE:
+          out->perf_itlb_retry_other_walk = true;
+          break;
+        case TlbMmu::RetryReason::WALK_REQ_BLOCKED:
+          out->perf_itlb_retry_walk_req_blocked = true;
+          break;
+        case TlbMmu::RetryReason::WAIT_WALK_RESP:
+          out->perf_itlb_retry_wait_walk_resp = true;
+          break;
+        case TlbMmu::RetryReason::LOCAL_WALKER_BUSY:
+          out->perf_itlb_retry_local_walker_busy = true;
+          break;
+        case TlbMmu::RetryReason::NONE:
+        default:
+          out->perf_itlb_retry_local_walker_busy = true;
+          break;
+        }
+      }
     }
 
   }
@@ -479,6 +550,7 @@ private:
 class SimpleICacheTop : public ICacheTop {
 public:
   void peek_ready() override {
+    clear_perf_outputs(out);
     out->icache_read_ready_2 = false;
     out->icache_read_complete_2 = false;
     out->icache_read_ready = in->reset || in->refetch || !pending_req_valid;
@@ -486,6 +558,7 @@ public:
   }
 
   void comb() override {
+    clear_perf_outputs(out);
     out->icache_read_ready_2 = false;
     out->icache_read_complete_2 = false;
     out->fetch_pc_2 = 0;
@@ -521,6 +594,7 @@ public:
       pending_fetch_addr = 0;
       out->icache_read_ready = true;
       out->icache_read_complete = false;
+      out->perf_req_blocked = in->icache_read_valid;
       return;
     }
 
@@ -530,6 +604,9 @@ public:
 
     out->icache_read_complete = false;
     out->icache_read_ready = !pending_req_valid;
+    out->perf_req_fire = in->icache_read_valid && out->icache_read_ready;
+    out->perf_req_blocked = in->icache_read_valid && !out->icache_read_ready;
+    out->perf_outstanding_req = pending_req_valid;
     out->fetch_pc =
         pending_req_valid ? pending_fetch_addr : in->fetch_address;
     for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -549,6 +626,9 @@ public:
       pending_req_valid = false;
       pending_fetch_addr = 0;
       out->icache_read_ready = true;
+      out->perf_req_fire = in->icache_read_valid;
+      out->perf_req_blocked = false;
+      out->perf_outstanding_req = false;
     }
 
     if (!pending_req_valid && !in->icache_read_valid) {
@@ -581,6 +661,9 @@ public:
       }
 
       if (ret == AbstractMmu::Result::RETRY) {
+        out->perf_itlb_miss = true;
+        out->perf_itlb_retry = true;
+        out->perf_itlb_retry_local_walker_busy = true;
         out->icache_read_complete = false;
         out->icache_read_ready = false;
         if (!pending_req_valid) {
@@ -595,6 +678,7 @@ public:
       }
 
       if (ret == AbstractMmu::Result::FAULT) {
+        out->perf_itlb_fault = true;
         out->page_fault_inst[i] = true;
         out->fetch_group[i] = INST_NOP;
         for (int j = i + 1; j < FETCH_WIDTH; j++) {
@@ -606,6 +690,7 @@ public:
       }
 
       out->page_fault_inst[i] = false;
+      out->perf_itlb_hit = true;
       out->fetch_group[i] = p_memory[p_addr / 4];
 
       if (DEBUG_PRINT) {
@@ -623,6 +708,11 @@ public:
     if (out->icache_read_complete) {
       resp_fire_comb = true;
     }
+    out->perf_resp_fire = out->icache_read_complete;
+    out->perf_miss_event = pend_on_retry_comb;
+    out->perf_miss_busy = pending_req_valid;
+    out->perf_outstanding_req =
+        out->perf_outstanding_req || pending_req_valid || pend_on_retry_comb;
   }
 
   void set_ptw_mem_port(PtwMemPort *port) override {

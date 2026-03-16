@@ -16,6 +16,7 @@ void TlbMmu::cancel_pending_walk() {
   walker.flush();
   walk_active = false;
   walk_req_sent = false;
+  last_retry_reason_ = RetryReason::NONE;
   if (walk_port != nullptr) {
     walk_port->flush_client();
   }
@@ -123,6 +124,7 @@ AbstractMmu::Result TlbMmu::walk_and_refill(uint32_t &p_addr, uint32_t v_addr,
 
   if (!walk_active) {
     if (!walker.start(v_addr, satp)) {
+      last_retry_reason_ = RetryReason::LOCAL_WALKER_BUSY;
       return Result::RETRY;
     }
     walk_active = true;
@@ -135,6 +137,7 @@ AbstractMmu::Result TlbMmu::walk_and_refill(uint32_t &p_addr, uint32_t v_addr,
   } else {
     // Single walker only. Different request must wait.
     if (walk_v_addr != v_addr || walk_type != type || walk_satp != satp) {
+      last_retry_reason_ = RetryReason::LOCAL_WALKER_BUSY;
       return Result::RETRY;
     }
   }
@@ -144,8 +147,10 @@ AbstractMmu::Result TlbMmu::walk_and_refill(uint32_t &p_addr, uint32_t v_addr,
     if (st == PtwWalker::State::FAULT) {
       walker.flush();
       walk_active = false;
+      last_retry_reason_ = RetryReason::NONE;
       return Result::FAULT;
     }
+    last_retry_reason_ = RetryReason::WAIT_WALK_RESP;
     return Result::RETRY;
   }
 
@@ -155,6 +160,7 @@ AbstractMmu::Result TlbMmu::walk_and_refill(uint32_t &p_addr, uint32_t v_addr,
   if (!check_perm(perm, walk_type, walk_eff_priv, walk_sum, walk_mxr)) {
     walker.flush();
     walk_active = false;
+    last_retry_reason_ = RetryReason::NONE;
     return Result::FAULT;
   }
 
@@ -164,6 +170,7 @@ AbstractMmu::Result TlbMmu::walk_and_refill(uint32_t &p_addr, uint32_t v_addr,
   p_addr = compose_paddr(walk_v_addr, e);
   walker.flush();
   walk_active = false;
+  last_retry_reason_ = RetryReason::NONE;
   return Result::OK;
 }
 
@@ -191,6 +198,7 @@ TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
     walk_sum = sum;
   } else {
     if (walk_v_addr != v_addr || walk_type != type || walk_satp != satp) {
+      last_retry_reason_ = RetryReason::OTHER_WALK_ACTIVE;
       return Result::RETRY;
     }
   }
@@ -201,12 +209,14 @@ TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
     req.satp = walk_satp;
     req.access_type = walk_type;
     if (!walk_port->send_walk_req(req)) {
+      last_retry_reason_ = RetryReason::WALK_REQ_BLOCKED;
       return Result::RETRY;
     }
     walk_req_sent = true;
   }
 
   if (!walk_port->resp_valid()) {
+    last_retry_reason_ = RetryReason::WAIT_WALK_RESP;
     return Result::RETRY;
   }
 
@@ -216,11 +226,13 @@ TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
   walk_req_sent = false;
 
   if (wr.fault) {
+    last_retry_reason_ = RetryReason::NONE;
     return Result::FAULT;
   }
 
   uint8_t perm = wr.leaf_pte & 0xFF;
   if (!check_perm(perm, walk_type, walk_eff_priv, walk_sum, walk_mxr)) {
+    last_retry_reason_ = RetryReason::NONE;
     return Result::FAULT;
   }
 
@@ -228,11 +240,13 @@ TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
   refill(walk_v_addr, asid, wr.leaf_level, wr.leaf_pte);
   const TlbEntry &e = dtlb[(repl_ptr + tlb_entries - 1) % tlb_entries];
   p_addr = compose_paddr(walk_v_addr, e);
+  last_retry_reason_ = RetryReason::NONE;
   return Result::OK;
 }
 
 AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
                                       uint32_t type, CsrStatusIO *status) {
+  last_retry_reason_ = RetryReason::NONE;
   uint32_t mstatus = status->mstatus;
   uint32_t satp = status->satp;
   int eff_priv = status->privilege;

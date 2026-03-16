@@ -262,6 +262,27 @@ static void falcon_print_summary() {
       static_cast<unsigned long long>(front_stats.bubble_icache_latency_other_cycles),
       front_stats_pct(front_stats.bubble_icache_latency_other_cycles, icache_latency_total));
 
+  const char *icache_latency_top1_name = "tlb_retry";
+  uint64_t icache_latency_top1_cycles = front_stats.bubble_icache_tlb_retry_cycles;
+  if (front_stats.bubble_icache_tlb_fault_cycles > icache_latency_top1_cycles) {
+    icache_latency_top1_name = "tlb_fault";
+    icache_latency_top1_cycles = front_stats.bubble_icache_tlb_fault_cycles;
+  }
+  if (front_stats.bubble_icache_cache_backpressure_cycles >
+      icache_latency_top1_cycles) {
+    icache_latency_top1_name = "cache_backpressure";
+    icache_latency_top1_cycles = front_stats.bubble_icache_cache_backpressure_cycles;
+  }
+  if (front_stats.bubble_icache_latency_other_cycles > icache_latency_top1_cycles) {
+    icache_latency_top1_name = "other";
+    icache_latency_top1_cycles = front_stats.bubble_icache_latency_other_cycles;
+  }
+  std::printf(
+      "icache_latency_top1: reason=%s cycles=%llu share_in_icache_latency=%.2f%%\n",
+      icache_latency_top1_name,
+      static_cast<unsigned long long>(icache_latency_top1_cycles),
+      front_stats_pct(icache_latency_top1_cycles, icache_latency_total));
+
   std::printf(
       "itlb_retry_detail(on tlb_retry bubbles): other_walk_active=%llu(%.2f%%) walk_req_blocked=%llu(%.2f%%) wait_walk_resp=%llu(%.2f%%) local_walker_busy=%llu(%.2f%%)\n",
       static_cast<unsigned long long>(front_stats.bubble_icache_tlb_retry_other_walk_cycles),
@@ -273,40 +294,43 @@ static void falcon_print_summary() {
       static_cast<unsigned long long>(front_stats.bubble_icache_tlb_retry_local_walker_cycles),
       front_stats_pct(front_stats.bubble_icache_tlb_retry_local_walker_cycles, itlb_retry_total));
 
+  const char *itlb_retry_top1_name = "other_walk_active";
+  uint64_t itlb_retry_top1_cycles =
+      front_stats.bubble_icache_tlb_retry_other_walk_cycles;
+  if (front_stats.bubble_icache_tlb_retry_walk_req_blocked_cycles >
+      itlb_retry_top1_cycles) {
+    itlb_retry_top1_name = "walk_req_blocked";
+    itlb_retry_top1_cycles =
+        front_stats.bubble_icache_tlb_retry_walk_req_blocked_cycles;
+  }
+  if (front_stats.bubble_icache_tlb_retry_wait_walk_resp_cycles >
+      itlb_retry_top1_cycles) {
+    itlb_retry_top1_name = "wait_walk_resp";
+    itlb_retry_top1_cycles =
+        front_stats.bubble_icache_tlb_retry_wait_walk_resp_cycles;
+  }
+  if (front_stats.bubble_icache_tlb_retry_local_walker_cycles >
+      itlb_retry_top1_cycles) {
+    itlb_retry_top1_name = "local_walker_busy";
+    itlb_retry_top1_cycles = front_stats.bubble_icache_tlb_retry_local_walker_cycles;
+  }
+  std::printf(
+      "itlb_retry_top1: reason=%s cycles=%llu share_in_itlb_retry=%.2f%%\n",
+      itlb_retry_top1_name,
+      static_cast<unsigned long long>(itlb_retry_top1_cycles),
+      front_stats_pct(itlb_retry_top1_cycles, itlb_retry_total));
+
   if (front_ctx != nullptr) {
     const auto &perf = front_ctx->perf;
     std::printf(
-        "itlb_translate_stats: req=%llu bare=%llu hit=%llu miss=%llu fault=%llu retry=%llu walk_start=%llu walk_done=%llu leaf_l1=%llu leaf_l2=%llu\n",
-        static_cast<unsigned long long>(perf.itlb_translate_req),
-        static_cast<unsigned long long>(perf.itlb_translate_bare_ok),
-        static_cast<unsigned long long>(perf.itlb_tlb_hit),
-        static_cast<unsigned long long>(perf.itlb_tlb_miss),
-        static_cast<unsigned long long>(perf.itlb_translate_fault),
-        static_cast<unsigned long long>(perf.itlb_retry),
-        static_cast<unsigned long long>(perf.itlb_walk_start),
-        static_cast<unsigned long long>(perf.itlb_walk_done),
-        static_cast<unsigned long long>(perf.itlb_walk_leaf_l1),
-        static_cast<unsigned long long>(perf.itlb_walk_leaf_l2));
-
-    std::printf(
-        "itlb_retry_stats: other_walk_active=%llu walk_req_blocked=%llu wait_walk_resp=%llu local_walker_busy=%llu\n",
-        static_cast<unsigned long long>(perf.itlb_retry_other_walk_active),
-        static_cast<unsigned long long>(perf.itlb_retry_walk_req_blocked),
-        static_cast<unsigned long long>(perf.itlb_retry_wait_walk_resp),
-        static_cast<unsigned long long>(perf.itlb_retry_local_walker_busy));
-
-    std::printf(
-        "shared_ptw_itlb_stats: req=%llu grant=%llu resp=%llu blocked=%llu wait=%llu owner_wait=%llu read_arb_lsu=%llu read_arb_dtlb=%llu l1_wait=%llu l2_wait=%llu\n",
+        "shared_ptw_itlb_stats: req=%llu grant=%llu resp=%llu blocked=%llu wait=%llu grant_rate=%.2f%% blocked_per_req=%.2f%%\n",
         static_cast<unsigned long long>(perf.ptw_itlb_req),
         static_cast<unsigned long long>(perf.ptw_itlb_grant),
         static_cast<unsigned long long>(perf.ptw_itlb_resp),
         static_cast<unsigned long long>(perf.ptw_itlb_blocked),
         static_cast<unsigned long long>(perf.ptw_itlb_wait_cycle),
-        static_cast<unsigned long long>(perf.ptw_itlb_wait_owner_cycle),
-        static_cast<unsigned long long>(perf.ptw_itlb_read_arb_lsu_cycle),
-        static_cast<unsigned long long>(perf.ptw_itlb_read_arb_dtlb_cycle),
-        static_cast<unsigned long long>(perf.ptw_itlb_walk_l1_wait_cycle),
-        static_cast<unsigned long long>(perf.ptw_itlb_walk_l2_wait_cycle));
+        front_stats_pct(perf.ptw_itlb_grant, perf.ptw_itlb_req),
+        front_stats_pct(perf.ptw_itlb_blocked, perf.ptw_itlb_req));
   }
 
   std::printf(
