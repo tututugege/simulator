@@ -29,45 +29,18 @@ do
     
     echo "=================================================="
     echo "开始第 $i 次循环，配置 SIM_TIME = $SIM_TIME"
-    
-    # ----------------------------------------------------
-    # 1. 第一次执行 (R_S 配置: LSU=0, DCACHE=0)
-    # ----------------------------------------------------
-    LOG_RS="R_S_${SIM_TIME}.txt"
-    echo "[1/2] 正在修改配置文件为 R_S 模式..."
-    
-    # 使用 sed 正则替换整行内容 (针对 #define 格式)
-    # 如果你的文件是 KEY=VALUE 格式，请将后面的替换字符串改为 CONFIG_...=0
-    sed -i "s/^.*CONFIG_BACKEND_USE_SIMPLE_LSU.*$/#define CONFIG_BACKEND_USE_SIMPLE_LSU 0/" "$CONFIG_FILE"
+
+    LOG_RUN="R_${SIM_TIME}.txt"
     sed -i "s/^.*CONFIG_PERF_SNAPSHOT_SIM_TIME.*$/#define CONFIG_PERF_SNAPSHOT_SIM_TIME $SIM_TIME/" "$CONFIG_FILE"
 
-    echo "[1/2] 清理并编译运行，日志保存至: $LOG_RS"
+    echo "[1/1] 清理并编译运行，日志保存至: $LOG_RUN"
     
     # 必须执行 make clean，否则修改了宏定义文件也不会触发重新编译
     make clean
-    make -j8 > "$LOG_RS" 2>&1
+    make -j8 > "$LOG_RUN" 2>&1
         
     if [ $? -ne 0 ]; then
-        echo "错误: R_S 配置执行失败，请检查日志 $LOG_RS"
-        exit 1
-    fi
-
-    # ----------------------------------------------------
-    # 2. 第二次执行 (S_S 配置: LSU=1, DCACHE=1)
-    # ----------------------------------------------------
-    LOG_SS="S_S_${SIM_TIME}.txt"
-    echo "[2/2] 正在修改配置文件为 S_S 模式..."
-    
-    sed -i "s/^.*CONFIG_BACKEND_USE_SIMPLE_LSU.*$/#define CONFIG_BACKEND_USE_SIMPLE_LSU 1/" "$CONFIG_FILE"
-    sed -i "s/^.*CONFIG_PERF_SNAPSHOT_SIM_TIME.*$/#define CONFIG_PERF_SNAPSHOT_SIM_TIME $SIM_TIME/" "$CONFIG_FILE"
-
-    echo "[2/2] 清理并编译运行，日志保存至: $LOG_SS"
-    
-    make clean
-    make -j8 > "$LOG_SS" 2>&1
-        
-    if [ $? -ne 0 ]; then
-        echo "错误: S_S 配置执行失败，请检查日志 $LOG_SS"
+        echo "错误: 执行失败，请检查日志 $LOG_RUN"
         exit 1
     fi
 

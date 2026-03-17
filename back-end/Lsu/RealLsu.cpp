@@ -1,5 +1,6 @@
 #include "RealLsu.h"
 #include "AbstractLsu.h"
+#include "DeadlockReplayTrace.h"
 #include "DeadlockDebug.h"
 #include "DcacheConfig.h"
 #include "PhysMemory.h"
@@ -63,6 +64,27 @@ namespace
             return "WAIT_RETRY";
         }
         return "READY_AT";
+    }
+
+    uint8_t ldq_wait_state_code(int64_t cplt_time)
+    {
+        if (cplt_time == REQ_WAIT_EXEC)
+        {
+            return 0;
+        }
+        if (cplt_time == REQ_WAIT_SEND)
+        {
+            return 1;
+        }
+        if (cplt_time == REQ_WAIT_RESP)
+        {
+            return 2;
+        }
+        if (cplt_time == REQ_WAIT_RETRY)
+        {
+            return 3;
+        }
+        return 4;
     }
 
     void deadlock_dump_lsu_cb()
@@ -171,7 +193,12 @@ void RealLsu::init()
 
 void RealLsu::comb_lsu2dis_info()
 {
+    const bool stq_tail_flag =
+        (stq_count == STQ_SIZE || (stq_count > 0 && stq_tail < stq_head))
+            ? !stq_head_flag
+            : stq_head_flag;
     out.lsu2dis->stq_tail = this->stq_tail;
+    out.lsu2dis->stq_tail_flag = stq_tail_flag;
     out.lsu2dis->stq_free = STQ_SIZE - this->stq_count;
     out.lsu2dis->ldq_free = LDQ_SIZE - this->ldq_count;
 
@@ -434,6 +461,18 @@ void RealLsu::comb_recv()
 
     if (fill_wakeup || mshr_has_free)
     {
+        if (fill_wakeup)
+        {
+            deadlock_replay_trace::record(
+                DeadlockReplayTraceKind::LsuBroadcast, 0,
+                static_cast<uint8_t>(fill_wakeup), 0,
+                static_cast<uint8_t>(replay_type), 0, 0, 0,
+                static_cast<uint32_t>(
+                    in.dcache2lsu->resp_ports.replay_resp.replay_addr),
+                static_cast<uint32_t>(
+                    in.dcache2lsu->resp_ports.replay_resp.free_slots),
+                0);
+        }
         for (int i = 0; i < LDQ_SIZE; i++)
         {
             auto &entry = ldq[i];
@@ -441,10 +480,36 @@ void RealLsu::comb_recv()
             {
                 continue;
             }
+            if (fill_wakeup && entry.replay_priority == 2)
+            {
+                const bool line_match = cache_line_match(
+                    entry.uop.diag_val,
+                    in.dcache2lsu->resp_ports.replay_resp.replay_addr);
+                deadlock_replay_trace::record(
+                    DeadlockReplayTraceKind::LsuLdqCheck, static_cast<uint16_t>(i),
+                    static_cast<uint8_t>(entry.replay_priority),
+                    ldq_wait_state_code(entry.uop.cplt_time),
+                    static_cast<uint8_t>(line_match),
+                    static_cast<uint8_t>(entry.waiting_resp), entry.uop.pc,
+                    entry.uop.diag_val,
+                    static_cast<uint32_t>(
+                        in.dcache2lsu->resp_ports.replay_resp.replay_addr),
+                    static_cast<uint32_t>(entry.uop.rob_idx),
+                    static_cast<uint32_t>(entry.uop.inst_idx));
+            }
             if (fill_wakeup && entry.replay_priority == 2 &&
                 cache_line_match(entry.uop.diag_val,
                                  in.dcache2lsu->resp_ports.replay_resp.replay_addr))
             {
+                deadlock_replay_trace::record(
+                    DeadlockReplayTraceKind::LsuLdqWake, static_cast<uint16_t>(i),
+                    static_cast<uint8_t>(entry.replay_priority),
+                    ldq_wait_state_code(entry.uop.cplt_time), 1, 0,
+                    entry.uop.pc, entry.uop.diag_val,
+                    static_cast<uint32_t>(
+                        in.dcache2lsu->resp_ports.replay_resp.replay_addr),
+                    static_cast<uint32_t>(entry.uop.rob_idx),
+                    static_cast<uint32_t>(entry.uop.inst_idx));
                 entry.replay_priority = 5;
             }
             if (mshr_has_free && entry.replay_priority == 1 && replay_type == 0 &&
@@ -652,14 +717,16 @@ void RealLsu::comb_recv()
         {
             int older_stq_idx = (stq_head + j) % STQ_SIZE;
             auto &older_entry = stq[older_stq_idx];
-            if (!older_entry.valid || !older_entry.addr_valid || !older_entry.data_valid || !older_entry.committed || older_entry.done)
+            if (!older_entry.valid || !older_entry.addr_valid ||
+                !older_entry.data_valid || !older_entry.committed ||
+                older_entry.done || older_entry.suppress_write)
             {
                 continue;
             }
-            if (older_entry.send && older_entry.replay == 0)//宽松条件
-            {
-                continue;
-            }
+            // Preserve program order for same-address stores until the older
+            // store is fully acknowledged. Otherwise a bank-conflict replay can
+            // let an older store reissue after a younger one and overwrite the
+            // newer value.
             if (older_entry.p_addr == entry.p_addr)
             {
                 continue_flag = true;
@@ -815,6 +882,27 @@ void RealLsu::comb_load_res()
                         else
                         {
                             // Handle load replay if needed (e.g., due to MSHR eviction)
+                            const uint8_t replay_code =
+                                in.dcache2lsu->resp_ports.load_resps[i].replay;
+                            const bool line_match_cur_bcast =
+                                in.dcache2lsu->resp_ports.replay_resp.replay &&
+                                cache_line_match(
+                                    entry.uop.diag_val,
+                                    in.dcache2lsu->resp_ports.replay_resp.replay_addr);
+                            deadlock_replay_trace::record(
+                                DeadlockReplayTraceKind::LsuLoadReplayLatch,
+                                static_cast<uint16_t>(idx),
+                                static_cast<uint8_t>(replay_code),
+                                ldq_wait_state_code(entry.uop.cplt_time),
+                                static_cast<uint8_t>(
+                                    in.dcache2lsu->resp_ports.replay_resp.replay),
+                                static_cast<uint8_t>(line_match_cur_bcast),
+                                entry.uop.pc, entry.uop.diag_val,
+                                static_cast<uint32_t>(
+                                    in.dcache2lsu->resp_ports.replay_resp.replay_addr),
+                                static_cast<uint32_t>(
+                                    in.dcache2lsu->resp_ports.replay_resp.free_slots),
+                                static_cast<uint32_t>(entry.uop.rob_idx));
                             entry.replay_priority = in.dcache2lsu->resp_ports.load_resps[i].replay;
                             if (entry.replay_priority == 1 ||
                                 entry.replay_priority == 2)
@@ -1895,140 +1983,74 @@ bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag)
 // =========================================================
 // 🛡️ [Nanako Implementation] 完整的 STLF 模拟逻辑
 // =========================================================
-#if !CONFIG_MEM_DCACHE_USE_SIMPLE
 
 RealLsu::StoreForwardResult
 RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop)
 {
-    uint32_t current_word = 0; // 用于合并数据的临时变量
-    bool hit_any = false;
-    // 遍历所有有效 STQ 项，并通过 ROB 年龄判断其是否是 load 的“更老 store”。
-    // 这样不会受到 load_uop.stq_idx 快照边界的影响。
-    int ptr = this->stq_head;
-    int remain = this->stq_count;
-    while (remain > 0)
-    {
-        StqEntry &entry = stq[ptr];
-        remain--;
+      uint32_t current_word = p_memory[p_addr >> 2];
+  bool hit_any = false;
+  int ptr_idx = stq_head;
+  bool ptr_flag = stq_head_flag;
+  const int stop_idx = load_uop.stq_idx;
+  const bool stop_flag = load_uop.stq_flag;
+  int guard = 0;
 
-        // Important: We only care if the entry is valid.
-        // If it's valid, it's an older store that this load must respect.
-        // Committed stores are guaranteed older than any in-flight load.
-        bool older_store = entry.valid &&
-                           !entry.suppress_write &&
-                           (entry.committed ||
-                            is_store_older(static_cast<int>(entry.rob_idx),
-                                           static_cast<int>(entry.rob_flag),
-                                           static_cast<int>(load_uop.rob_idx),
-                                           static_cast<int>(load_uop.rob_flag)));
-        if (older_store)
+  // Scan [head, load.stop) in ring age order, where stop is (idx,flag).
+  while (!(ptr_idx == stop_idx && ptr_flag == stop_flag)) {
+    guard++;
+    Assert(guard <= STQ_SIZE + 1);
+
+    StqEntry &entry = stq[ptr_idx];
+    if (entry.valid && !entry.suppress_write) {
+      if (!entry.addr_valid) {
+        return {StoreForwardState::Retry, 0};
+      }
+
+      int store_width = get_mem_width(entry.func3);
+      int load_width = get_mem_width(load_uop.func3);
+      uint32_t s_start = entry.p_addr;
+      uint32_t s_end = s_start + store_width;
+      uint32_t l_start = p_addr;
+      uint32_t l_end = l_start + load_width;
+      uint32_t overlap_start = std::max(s_start, l_start);
+      uint32_t overlap_end = std::min(s_end, l_end);
+
+      if (s_start <= l_start && s_end >= l_end)
         {
-            if (!entry.addr_valid || !entry.data_valid)
-                return {StoreForwardState::Retry, 0}; // Unknown address or data -> Stall (Retry)
-
-            // Address is valid, check overlap
-            int store_width = get_mem_width(entry.func3);
-            int load_width = get_mem_width(load_uop.func3);
-            uint32_t s_start = entry.p_addr;
-            uint32_t s_end = s_start + store_width;
-            uint32_t l_start = p_addr;
-            uint32_t l_end = l_start + load_width;
-
-            uint32_t overlap_start = std::max(s_start, l_start);
-            uint32_t overlap_end = std::min(s_end, l_end);
-
-            if (s_start <= l_start && s_end >= l_end)
+            // Store fully covers load bytes; merge by byte-lane so
+            // sb/sh at non-zero byte offsets can still forward correctly.
+            hit_any = true;
+            if(!entry.data_valid)
             {
-                // Store fully covers load bytes; merge by byte-lane so
-                // sb/sh at non-zero byte offsets can still forward correctly.
-                hit_any = true;
-                current_word = merge_data_to_word(current_word, entry.data,
-                                                  entry.p_addr, entry.func3);
-            }
-            else if (overlap_start < overlap_end)
-            {
-                hit_any = true;
-                // Partial overlap is intentionally conservative: keep the load in
-                // retry until the older store fully retires from STQ.
                 return {StoreForwardState::Retry, 0};
             }
+            current_word = merge_data_to_word(current_word, entry.data,
+                                                entry.p_addr, entry.func3);
         }
-        ptr = (ptr + 1) % STQ_SIZE;
-    }
-
-    if (!hit_any)
-    {
-        return {StoreForwardState::NoHit, 0};
-    }
-
-    uint32_t final_data = extract_data(current_word, p_addr, load_uop.func3);
-    return {StoreForwardState::Hit, final_data};
-}
-#else
-RealLsu::StoreForwardResult
-RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop)
-{
-    uint32_t current_word = p_memory[p_addr >> 2];
-    bool hit_any = false;
-    // 遍历所有有效 STQ 项，并通过 ROB 年龄判断其是否是 load 的“更老 store”。
-    // 这样不会受到 load_uop.stq_idx 快照边界的影响。
-    int ptr = this->stq_head;
-    int remain = this->stq_count;
-    while (remain > 0)
-    {
-        StqEntry &entry = stq[ptr];
-        remain--;
-
-        // Important: We only care if the entry is valid.
-        // If it's valid, it's an older store that this load must respect.
-        // Committed stores are guaranteed older than any in-flight load.
-        bool older_store = entry.valid &&
-                           !entry.suppress_write &&
-                           (entry.committed ||
-                            is_store_older(static_cast<int>(entry.rob_idx),
-                                           static_cast<int>(entry.rob_flag),
-                                           static_cast<int>(load_uop.rob_idx),
-                                           static_cast<int>(load_uop.rob_flag)));
-        if (older_store)
+        else if (overlap_start < overlap_end)
         {
-            if (!entry.addr_valid || !entry.data_valid)
-                return {StoreForwardState::Retry, 0}; // Unknown address or data -> Stall (Retry)
-
-            // Address is valid, check overlap
-            int store_width = get_mem_width(entry.func3);
-            int load_width = get_mem_width(load_uop.func3);
-            uint32_t s_start = entry.p_addr;
-            uint32_t s_end = s_start + store_width;
-            uint32_t l_start = p_addr;
-            uint32_t l_end = l_start + load_width;
-
-            uint32_t overlap_start = std::max(s_start, l_start);
-            uint32_t overlap_end = std::min(s_end, l_end);
-
-            if (overlap_start < overlap_end)
-            {
-                hit_any = true;
-                if (!entry.data_valid)
-                {
-                    return {StoreForwardState::Retry, 0};
-                }
-                current_word =
-                    merge_data_to_word(current_word, entry.data, entry.p_addr, entry.func3);
-            }
+            hit_any = true;
+            // Partial overlap is intentionally conservative: keep the load in
+            // retry until the older store fully retires from STQ.
+            return {StoreForwardState::Retry, 0};
         }
-        ptr = (ptr + 1) % STQ_SIZE;
     }
 
-    if (!hit_any)
-    {
-        return {StoreForwardState::NoHit, 0};
+    ptr_idx++;
+    if (ptr_idx == STQ_SIZE) {
+      ptr_idx = 0;
+      ptr_flag = !ptr_flag;
     }
+  }
 
-    uint32_t final_data = extract_data(current_word, p_addr, load_uop.func3);
-    return {StoreForwardState::Hit, final_data};
+  if (!hit_any) {
+    return {StoreForwardState::NoHit, 0};
+  }
+  return {StoreForwardState::Hit, extract_data(current_word, p_addr, load_uop.func3)};
+    
+
+            
 }
-
-#endif
 StqEntry RealLsu::get_stq_entry(int stq_idx)
 {
     Assert(stq_idx >= 0 && stq_idx < STQ_SIZE);
@@ -2064,8 +2086,13 @@ uint32_t RealLsu::coherent_read(uint32_t p_addr)
 
 void RealLsu::dump_debug_state() const
 {
-    std::printf("[DEADLOCK][LSU] stq_head=%d stq_commit=%d stq_tail=%d stq_count=%d ldq_count=%d ldq_alloc_tail=%d pending_sta_addr=%zu finished_ld=%zu finished_sta=%zu replay_type=%d replay_ldq=%d replay_stq=%d mshr_replay_ldq=%d mshr_replay_stq=%d\n",
-                stq_head, stq_commit, stq_tail, stq_count, ldq_count,
+    const bool stq_tail_flag =
+        (stq_count == STQ_SIZE || (stq_count > 0 && stq_tail < stq_head))
+            ? !stq_head_flag
+            : stq_head_flag;
+    std::printf("[DEADLOCK][LSU] stq_head=%d stq_head_flag=%d stq_commit=%d stq_tail=%d stq_tail_flag=%d stq_count=%d ldq_count=%d ldq_alloc_tail=%d pending_sta_addr=%zu finished_ld=%zu finished_sta=%zu replay_type=%d replay_ldq=%d replay_stq=%d mshr_replay_ldq=%d mshr_replay_stq=%d\n",
+                stq_head, (int)stq_head_flag, stq_commit, stq_tail,
+                (int)stq_tail_flag, stq_count, ldq_count,
                 ldq_alloc_tail, pending_sta_addr_reqs.size(), finished_loads.size(),
                 finished_sta_reqs.size(), (int)replay_type, replay_count_ldq,
                 replay_count_stq, mshr_replay_count_ldq, mshr_replay_count_stq);
@@ -2098,13 +2125,14 @@ void RealLsu::dump_debug_state() const
                 ? (unsigned long long)(static_cast<uint64_t>(sim_time) -
                                        e.wait_resp_since)
                 : 0ull;
-        std::printf("[DEADLOCK][LSU][LDQ %02d] valid=%d killed=%d sent=%d waiting=%d wait_age=%llu tlb_retry=%d mmio_wait=%d replay_pri=%u cplt_state=%s cplt_time=%lld rob=%u flag=%u pc=0x%08x paddr=0x%08x result=0x%08x func3=0x%x stq_idx=%u inst_idx=%lld\n",
+        std::printf("[DEADLOCK][LSU][LDQ %02d] valid=%d killed=%d sent=%d waiting=%d wait_age=%llu tlb_retry=%d mmio_wait=%d replay_pri=%u cplt_state=%s cplt_time=%lld rob=%u flag=%u pc=0x%08x paddr=0x%08x result=0x%08x func3=0x%x stq_idx=%u stq_flag=%u inst_idx=%lld\n",
                     i, (int)e.valid, (int)e.killed, (int)e.sent, (int)e.waiting_resp,
                     wait_age, (int)e.tlb_retry, (int)e.is_mmio_wait,
                     (unsigned)e.replay_priority, state_name,
                     (long long)e.uop.cplt_time, (unsigned)e.uop.rob_idx,
                     (unsigned)e.uop.rob_flag, e.uop.pc, e.uop.diag_val, e.uop.result,
                     e.uop.func3, (unsigned)e.uop.stq_idx,
+                    (unsigned)e.uop.stq_flag,
                     (long long)e.uop.inst_idx);
     }
 

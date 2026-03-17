@@ -16,18 +16,56 @@ static inline void dump_line_words(const char *tag, const uint32_t *data) {
     }
     std::printf("]\n");
 }
+
+static int find_wb_entry_in_view(const WriteBufferEntry *entries, uint32_t head,
+                                 uint32_t count, uint32_t addr) {
+    int best_match = -1;
+    const uint32_t line_addr = (addr & ~(DCACHE_LINE_BYTES - 1));
+    for (uint32_t i = head, cnt = 0; cnt < count;
+         i = (i + 1) % WB_ENTRIES, cnt++) {
+        if (entries[i].valid && entries[i].addr == line_addr) {
+            best_match = static_cast<int>(i);
+        }
+    }
+    return best_match;
+}
+
+static void clear_axi_req(WBOut &out) {
+    out.axi_out.req_valid = false;
+    out.axi_out.req_addr = 0;
+    out.axi_out.req_total_size = 0;
+    out.axi_out.req_id = 0;
+    out.axi_out.req_wstrb = 0;
+    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+        out.axi_out.req_wdata[w] = 0;
+    }
+}
+
+static void drive_axi_req_from_head(WBOut &out, uint32_t send, uint32_t head,
+                                    const WriteBufferEntry *entries) {
+    clear_axi_req(out);
+    out.axi_out.resp_ready = true;
+    if (send != 0) {
+        return;
+    }
+    const WriteBufferEntry &head_e = entries[head];
+    if (!head_e.valid || head_e.send) {
+        return;
+    }
+    out.axi_out.req_valid = true;
+    out.axi_out.req_addr = head_e.addr;
+    out.axi_out.req_total_size = 31;
+    out.axi_out.req_id = 0;
+    out.axi_out.req_wstrb = 0xffffffffu;
+    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+        out.axi_out.req_wdata[w] = head_e.data[w];
+    }
+}
 } // namespace
 
 int WriteBuffer::find_wb_entry(uint32_t addr)
 {
-    int best_match = -1;
-    const uint32_t line_addr = (addr & ~(DCACHE_LINE_BYTES - 1));
-    for(int i = cur.head, cnt = 0; cnt < cur.count; i = (i + 1) % WB_ENTRIES, cnt++){
-        if(write_buffer[i].valid && (write_buffer[i].addr == line_addr)){
-            best_match = i;
-        }
-    }
-    return best_match; // Not found => -1
+    return find_wb_entry_in_view(write_buffer, cur.head, cur.count, addr);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // init
@@ -59,22 +97,11 @@ void WriteBuffer::comb_outputs() {
 
     for(int i=0;i<LSU_STA_COUNT;i++){
         out.wbdcache.merge_resp[i].valid = nxt.mergevalid[i];
+        out.wbdcache.merge_resp[i].busy = nxt.mergebusy[i];
     }
-    out.axi_out.req_valid  = false;
-    out.axi_out.resp_ready = true;
-    if(cur.send == 0){
-        // Use nxt view so same-cycle merge updates are visible to the issued beat.
-        const WriteBufferEntry &ne_check = write_buffer[cur.head];
-        if (ne_check.valid && !ne_check.send){
-            out.axi_out.req_valid      = true;
-            out.axi_out.req_addr       = ne_check.addr;
-            out.axi_out.req_total_size = 31; // 32B cacheline
-            out.axi_out.req_id         = 0;
-            out.axi_out.req_wstrb      = 0xffffffffu;
-            for (int w = 0; w < DCACHE_LINE_WORDS; w++)
-                out.axi_out.req_wdata[w] = ne_check.data[w];
-        }
-    }
+    // Drive the request from nxt view so previously accumulated merges are
+    // visible to the write beat snapshot.
+    drive_axi_req_from_head(out, cur.send, cur.head, write_buffer_nxt);
 
 }
 
@@ -138,69 +165,31 @@ void WriteBuffer::comb_inputs() {
     nxt_check = {};
     nxt_issue = cur_issue;
 
-    // AXI interconnect uses ready-first handshake:
-    // if req.ready is observed while req.valid is held, treat it as accepted.
-    if (cur.send == 0) {
-        const WriteBufferEntry &head_e = write_buffer[cur.head];
-        const bool can_issue_head = head_e.valid && !head_e.send;
-        if (can_issue_head && in.axi_in.req_ready) {
-            if (!out.axi_out.req_valid) {
-                std::printf(
-                    "[AXI WRITE ISSUE WARN] cyc=%lld req_ready=1 while req_valid=0 head=%u addr=0x%08x\n",
-                    (long long)sim_time, cur.head, head_e.addr);
-            }
-            write_buffer_nxt[cur.head].send = true;
-            nxt.send = 1;
-            nxt.issue_pending = 1;
-            nxt_issue.valid = true;
-            nxt_issue.addr = head_e.addr;
-            nxt_issue.head = cur.head;
-            nxt_issue.issue_cycle = (uint64_t)sim_time;
-            if (out.axi_out.req_valid) {
-                std::memcpy(nxt_issue.data, out.axi_out.req_wdata, sizeof(nxt_issue.data));
-            } else {
-                std::memcpy(nxt_issue.data, head_e.data, sizeof(nxt_issue.data));
-            }
-        } else if (can_issue_head) {
-            nxt.send = 0;
-            nxt.issue_pending = 0;
-        } else {
-            nxt.issue_pending = 0;
-        }
-    } else {
-        nxt.issue_pending = 0;
-    }
-
     // Default outputs: nothing to send, always ready to accept a write response.
     for(int i=0;i<LSU_LDU_COUNT;i++){
         nxt.bypassvalid[i] = false;
         nxt.bypassdata[i] = 0; // Or some default value if not found in the write buffer
-        if(in.dcachewb.bypass_req[i].valid){
-            int wb_idx = find_wb_entry(in.dcachewb.bypass_req[i].addr);
-            if(wb_idx != -1){
-                nxt.bypassvalid[i] = true;
-                nxt.bypassdata[i] = write_buffer[wb_idx].data[decode(in.dcachewb.bypass_req[i].addr).word_off]; // For simplicity, we only support bypassing the first word in the cache line. Extend as needed.
-            }
-            else if(cache_line_match(in.dcachewb.bypass_req[i].addr,in.mshrwb.addr)&&in.mshrwb.valid){
-                // Bypass from the MSHR fill data if the requested line matches the line being filled by the MSHR.
-                nxt.bypassvalid[i] = true;
-                nxt.bypassdata[i] = in.mshrwb.data[decode(in.dcachewb.bypass_req[i].addr).word_off];
-            }
-        }
     }
 
     
     
     for(int i=0;i<LSU_STA_COUNT;i++){
         nxt.mergevalid[i] = false;
+        nxt.mergebusy[i] = false;
          if(in.dcachewb.merge_req[i].valid){
-            int wb_idx = find_wb_entry(in.dcachewb.merge_req[i].addr);
-            if(wb_idx != -1 && !write_buffer_nxt[wb_idx].send){ // Only merge unsent WB entry
-                nxt.mergevalid[i] = true;
+            int wb_idx = find_wb_entry_in_view(write_buffer_nxt, nxt.head,
+                                               nxt.count,
+                                               in.dcachewb.merge_req[i].addr);
+            if(wb_idx != -1){
                 WriteBufferEntry &e = write_buffer_nxt[wb_idx];
-                uint32_t word_off = decode(in.dcachewb.merge_req[i].addr).word_off;
-                uint32_t strb = in.dcachewb.merge_req[i].strb;
-                apply_strobe(e.data[word_off], in.dcachewb.merge_req[i].data, strb);
+                if (e.send) {
+                    nxt.mergebusy[i] = true;
+                } else {
+                    nxt.mergevalid[i] = true;
+                    uint32_t word_off = decode(in.dcachewb.merge_req[i].addr).word_off;
+                    uint32_t strb = in.dcachewb.merge_req[i].strb;
+                    apply_strobe(e.data[word_off], in.dcachewb.merge_req[i].data, strb);
+                }
             }
             else if(cache_line_match(in.dcachewb.merge_req[i].addr,in.mshrwb.addr)&&in.mshrwb.valid){
                 nxt.mergevalid[i] = true;
@@ -226,6 +215,59 @@ void WriteBuffer::comb_inputs() {
         else{
             assert(false && "WriteBuffer overflow: MSHR is producing evictions faster than WriteBuffer can drain them");
         }
+    }
+
+    for(int i=0;i<LSU_LDU_COUNT;i++){
+        if(in.dcachewb.bypass_req[i].valid){
+            int wb_idx = find_wb_entry_in_view(write_buffer_nxt, nxt.head,
+                                               nxt.count,
+                                               in.dcachewb.bypass_req[i].addr);
+            if(wb_idx != -1){
+                nxt.bypassvalid[i] = true;
+                nxt.bypassdata[i] = write_buffer_nxt[wb_idx].data[decode(in.dcachewb.bypass_req[i].addr).word_off];
+            }
+            else if(cache_line_match(in.dcachewb.bypass_req[i].addr,in.mshrwb.addr)&&in.mshrwb.valid){
+                // Bypass from the MSHR fill data if the requested line matches the line being filled by the MSHR.
+                nxt.bypassvalid[i] = true;
+                nxt.bypassdata[i] = in.mshrwb.data[decode(in.dcachewb.bypass_req[i].addr).word_off];
+            }
+        }
+    }
+
+    // Rebuild current-cycle AXI request after same-cycle merges / pushes.
+    drive_axi_req_from_head(out, cur.send, cur.head, write_buffer_nxt);
+
+    // AXI interconnect uses ready-first handshake:
+    // if req.ready is observed while req.valid is held, treat it as accepted.
+    if (cur.send == 0) {
+        WriteBufferEntry &head_e = write_buffer_nxt[cur.head];
+        const bool can_issue_head = head_e.valid && !head_e.send;
+        if (can_issue_head && in.axi_in.req_ready) {
+            if (!out.axi_out.req_valid) {
+                std::printf(
+                    "[AXI WRITE ISSUE WARN] cyc=%lld req_ready=1 while req_valid=0 head=%u addr=0x%08x\n",
+                    (long long)sim_time, cur.head, head_e.addr);
+            }
+            head_e.send = true;
+            nxt.send = 1;
+            nxt.issue_pending = 1;
+            nxt_issue.valid = true;
+            nxt_issue.addr = head_e.addr;
+            nxt_issue.head = cur.head;
+            nxt_issue.issue_cycle = (uint64_t)sim_time;
+            if (out.axi_out.req_valid) {
+                std::memcpy(nxt_issue.data, out.axi_out.req_wdata, sizeof(nxt_issue.data));
+            } else {
+                std::memcpy(nxt_issue.data, head_e.data, sizeof(nxt_issue.data));
+            }
+        } else if (can_issue_head) {
+            nxt.send = 0;
+            nxt.issue_pending = 0;
+        } else {
+            nxt.issue_pending = 0;
+        }
+    } else {
+        nxt.issue_pending = 0;
     }
 
     // ── Accept write response (B channel) ────────────────────────────────────

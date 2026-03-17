@@ -1,4 +1,5 @@
 #include "RealDcache.h"
+#include "DiffMemTrace.h"
 
 #include <cassert>
 #include <cstdio>
@@ -25,6 +26,41 @@ inline bool is_coremark_focus_line(uint32_t addr) {
            (kCoremarkFocusAddrBegin1 & ~(DCACHE_LINE_BYTES - 1u)) ||
            (addr & ~(DCACHE_LINE_BYTES - 1u)) ==
            (kCoremarkFocusAddrBegin2 & ~(DCACHE_LINE_BYTES - 1u));
+}
+
+struct PendingMissLine {
+    bool valid = false;
+    uint32_t set_idx = 0;
+    uint32_t tag = 0;
+};
+
+bool pending_miss_contains(const PendingMissLine *pending_miss_lines,
+                           int pending_miss_count, uint32_t set_idx,
+                           uint32_t tag) {
+    for (int idx = 0; idx < pending_miss_count; idx++) {
+        if (!pending_miss_lines[idx].valid) {
+            continue;
+        }
+        if (pending_miss_lines[idx].set_idx == set_idx &&
+            pending_miss_lines[idx].tag == tag) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void pending_miss_add(PendingMissLine *pending_miss_lines,
+                      int &pending_miss_count, int pending_miss_capacity,
+                      uint32_t set_idx, uint32_t tag) {
+    if (pending_miss_contains(pending_miss_lines, pending_miss_count, set_idx,
+                              tag)) {
+        return;
+    }
+    Assert(pending_miss_count < pending_miss_capacity);
+    pending_miss_lines[pending_miss_count].valid = true;
+    pending_miss_lines[pending_miss_count].set_idx = set_idx;
+    pending_miss_lines[pending_miss_count].tag = tag;
+    pending_miss_count++;
 }
 
 void print_focus_line_words(const char *tag, long long cyc, uint32_t set_idx, int way) {
@@ -159,6 +195,11 @@ void RealDcache::stage1_comb() {
         if (req.valid) {
             DBG_PRINTF("%s[DCACHE LOAD REQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x reg_idx=%d%s\n",
                    kColorLoadReq, (long long)sim_time, i, req.req_id, req.uop.rob_idx, req.addr, req.uop.dest_preg, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Req,
+                                   DiffMemTraceDetail::Req, static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(req.uop.func3), req.req_id,
+                                   req.uop.rob_idx, req.uop.rob_flag, req.addr, 0,
+                                   static_cast<uint32_t>(req.uop.dest_preg), 0);
             
             // if (is_coremark_focus_addr(req.addr)) {
             //     std::printf("[FOCUS][DCACHE][LD REQ] cyc=%lld port=%d req_id=%zu rob=%u pc=0x%08x addr=0x%08x\n",
@@ -177,6 +218,11 @@ void RealDcache::stage1_comb() {
         if (req.valid) {
             DBG_PRINTF("%s[DCACHE STORE REQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x data=0x%08x strb=0x%x%s\n",
                    kColorStoreReq, (long long)sim_time, i, req.req_id, req.uop.rob_idx, req.addr, req.data, req.strb, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Req,
+                                   DiffMemTraceDetail::Req, static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(req.uop.func3), req.req_id,
+                                   req.uop.rob_idx, req.uop.rob_flag, req.addr,
+                                   req.data, req.strb, 0);
             // if (is_coremark_focus_addr(req.addr)) {
             //     std::printf("[FOCUS][DCACHE][ST REQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x data=0x%08x strb=0x%x\n",
             //                 (long long)sim_time, i, req.req_id, req.uop.rob_idx,
@@ -187,15 +233,15 @@ void RealDcache::stage1_comb() {
 
     // ① Inter-request conflicts: each request loses to the first earlier
     //   request on the same bank (priority: lower index wins).
-    // for (int i = 1; i < LSU_LDU_COUNT + LSU_STA_COUNT; i++) {
-    //     if (!reqs[i].valid) continue;
-    //     for (int j = 0; j < i; j++) {
-    //         if (reqs[j].valid && reqs[j].f.bank == reqs[i].f.bank) {
-    //             reqs[i].conflict = true;
-    //             break;
-    //         }
-    //     }
-    // }
+    for (int i = 1; i < LSU_LDU_COUNT + LSU_STA_COUNT; i++) {
+        if (!reqs[i].valid) continue;
+        for (int j = 0; j < i; j++) {
+            if (reqs[j].valid && reqs[j].f.bank == reqs[i].f.bank) {
+                reqs[i].conflict = true;
+                break;
+            }
+        }
+    }
 
 
     // ② Fill bank conflict: the MSHR fill write occupies one SRAM bank this
@@ -209,19 +255,10 @@ void RealDcache::stage1_comb() {
 
     for (int i = 0; i < LSU_LDU_COUNT + LSU_STA_COUNT; i++) {
         if (!reqs[i].valid || reqs[i].conflict) continue;
-        bool mshr_hit = find_mshr_entry(reqs[i].f.set_idx, reqs[i].f.tag);
-        if (!mshr_hit) {
-            for (int j = 0; j < i; j++) {
-                if (reqs[j].valid && !reqs[j].conflict) {
-                    if (reqs[j].f.set_idx == reqs[i].f.set_idx &&
-                        reqs[j].f.tag == reqs[i].f.tag) {
-                        mshr_hit = true;
-                        break;
-                    }
-                }
-            }
-        }
-        reqs[i].mshr_hit = mshr_hit;
+        // Only snapshot true MSHR ownership here.
+        // Same-cycle miss allocations are tracked later in stage2 after the
+        // older request is proven to be a real miss rather than a hit/bypass.
+        reqs[i].mshr_hit = find_mshr_entry(reqs[i].f.set_idx, reqs[i].f.tag);
     }
 
     for(int i = 0;i<LSU_STA_COUNT;i++){
@@ -307,6 +344,8 @@ void RealDcache::stage2_comb() {
 
     uint32_t mshr_free_entries = mshr2dcache->free;
     AddrFields mshr_f = decode(mshr2dcache->fill.addr);
+    PendingMissLine pending_miss_lines[LSU_LDU_COUNT + LSU_STA_COUNT] = {};
+    int pending_miss_count = 0;
 
     // ── Load ports ────────────────────────────────────────────────────────────
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
@@ -343,6 +382,12 @@ void RealDcache::stage2_comb() {
             }
             DBG_PRINTF("%s[DCACHE LOAD RESP] cyc=%lld port=%d replay=3(bank_conflict) req_id=%zu slot.uop.rob_idx=%u addr=0x%08x reg=%d %s\n",
                    kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, slot.uop.dest_preg, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                   DiffMemTraceDetail::ReplayBankConflict,
+                                   static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                   slot.uop.rob_idx, slot.uop.rob_flag, slot.addr, 0,
+                                   static_cast<uint32_t>(slot.uop.dest_preg), 0);
             continue;
         }
 
@@ -371,6 +416,12 @@ void RealDcache::stage2_comb() {
             end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
             DBG_PRINTF("%s[DCACHE LOAD RESP OK] cyc=%lld port=%d src=special req_id=%zu rob=%u addr=0x%08x data=0x%08x%s\n",
                    kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, resp.data, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                   DiffMemTraceDetail::OkSpecial,
+                                   static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                   slot.uop.rob_idx, slot.uop.rob_flag, slot.addr,
+                                   resp.data, 0, 0);
         }
         else if (hit_way >= 0 ) {
             // ── Cache Hit ────────────────────────────────────────────────────
@@ -383,6 +434,13 @@ void RealDcache::stage2_comb() {
             lru_updates_[i] = {true, slot.set_idx, hit_way};
             DBG_PRINTF("%s[DCACHE LOAD RESP OK] cyc=%lld port=%d src=dcache_hit set_idx=%d way=%d req_id=%zu rob=%u addr=0x%08x data=0x%08x%s\n",
                    kColorLoadResp, (long long)sim_time, i, slot.set_idx, hit_way, slot.req_id, slot.uop.rob_idx, slot.addr, resp.data, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                   DiffMemTraceDetail::OkDcacheHit,
+                                   static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                   slot.uop.rob_idx, slot.uop.rob_flag, slot.addr,
+                                   resp.data, slot.set_idx,
+                                   static_cast<uint32_t>(hit_way));
             // if (is_coremark_focus_addr(slot.addr)) {
             //     std::printf("[FOCUS][DCACHE][LD HIT] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x set=%u way=%d word_off=%u data=0x%08x\n",
             //                 (long long)sim_time, i, slot.req_id, slot.uop.rob_idx,
@@ -396,6 +454,8 @@ void RealDcache::stage2_comb() {
                 mshr2dcache->fill.valid && mshr_f.set_idx == slot.set_idx &&
                 mshr_f.tag == tag_expected;
             const bool mshr_pending_line =
+                pending_miss_contains(pending_miss_lines, pending_miss_count,
+                                      slot.set_idx, tag_expected) ||
                 slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected);
 
             // Do not consume WB bypass while this line is owned by MSHR.
@@ -410,6 +470,12 @@ void RealDcache::stage2_comb() {
                 end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
                 DBG_PRINTF("%s[DCACHE LOAD RESP OK] cyc=%lld port=%d src=wb_bypass req_id=%zu rob=%u addr=0x%08x data=0x%08x%s\n",
                        kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, resp.data, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::OkWbBypass,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, resp.data, 0, 0);
                 // if (is_coremark_focus_addr(slot.addr)) {
                 //     std::printf("[FOCUS][DCACHE][LD WB BYPASS] cyc=%lld port=%d req_id=%zu addr=0x%08x data=0x%08x\n",
                 //                 (long long)sim_time, i, slot.req_id, slot.addr,
@@ -425,6 +491,13 @@ void RealDcache::stage2_comb() {
                 end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
                 DBG_PRINTF("%s[DCACHE LOAD RESP OK] cyc=%lld port=%d src=mshr_fill req_id=%zu rob=%u addr=0x%08x data=0x%08x fill_line=0x%08x%s\n",
                        kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, resp.data, mshr2dcache->fill.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::OkMshrFill,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, resp.data, mshr2dcache->fill.addr,
+                                       0);
                 // if (is_coremark_focus_addr(slot.addr)) {
                 //     std::printf("[FOCUS][DCACHE][LD FILL BYPASS] cyc=%lld port=%d req_id=%zu addr=0x%08x data=0x%08x fill_line=0x%08x\n",
                 //                 (long long)sim_time, i, slot.req_id, slot.addr,
@@ -446,6 +519,12 @@ void RealDcache::stage2_comb() {
                 }
                 DBG_PRINTF("%s[DCACHE LOAD RESP] cyc=%lld port=%d replay=2(mshr_hit) req_id=%zu slot.uop.rob_idx=%u addr=0x%08x%s\n",
                        kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayMshrHit,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, 0, 0, 0);
             }
             else if(mshr_free_entries == 0){
                     resp.valid = true;
@@ -461,12 +540,21 @@ void RealDcache::stage2_comb() {
                     }
                     DBG_PRINTF("%s[DCACHE LOAD RESP] cyc=%lld port=%d replay=1(mshr_full) req_id=%zu slot.uop.rob_idx=%u addr=0x%08x%s\n",
                            kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                    diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                           DiffMemTraceDetail::ReplayMshrFull,
+                                           static_cast<uint8_t>(i),
+                                           static_cast<uint8_t>(slot.uop.func3),
+                                           slot.req_id, slot.uop.rob_idx,
+                                           slot.uop.rob_flag, slot.addr, 0, 0, 0);
             }
             else{
                 dcache2mshr->load_reqs[i].valid = true;
                 dcache2mshr->load_reqs[i].addr  = slot.addr;
                 dcache2mshr->load_reqs[i].uop   = slot.uop;
                 dcache2mshr->load_reqs[i].req_id = slot.req_id;
+                pending_miss_add(pending_miss_lines, pending_miss_count,
+                                 LSU_LDU_COUNT + LSU_STA_COUNT, slot.set_idx,
+                                 tag_expected);
                 // First miss allocation must still return a replay response,
                 // otherwise LSU keeps waiting forever for a one-shot request.
                 resp.valid = true;
@@ -485,6 +573,12 @@ void RealDcache::stage2_comb() {
                 }
                 DBG_PRINTF("%s[DCACHE LOAD RESP] cyc=%lld port=%d replay=2(first_mshr_alloc) req_id=%zu slot.uop.rob_idx=%u addr=0x%08x%s\n",
                        kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayFirstAlloc,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, 0, 0, 0);
                 mshr_free_entries = mshr_free_entries - 1;
             }
         } 
@@ -526,6 +620,12 @@ void RealDcache::stage2_comb() {
             }
             DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=3(bank_conflict) req_id=%zu rob=%u addr=0x%08x%s\n",
                    kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                   DiffMemTraceDetail::ReplayBankConflict,
+                                   static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                   slot.uop.rob_idx, slot.uop.rob_flag, slot.addr,
+                                   slot.data, slot.strb, 0);
             continue;
         }
 
@@ -564,6 +664,14 @@ void RealDcache::stage2_comb() {
                        kColorStoreResp, (long long)sim_time, i, slot.req_id,
                        slot.uop.rob_idx, slot.addr, mshr2dcache->fill.addr,
                        mshr2dcache->fill.way, hit_way, kColorReset);
+                diff_mem_trace::record(
+                    DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                    DiffMemTraceDetail::ReplayFillReplaceConflict,
+                    static_cast<uint8_t>(i), static_cast<uint8_t>(slot.uop.func3),
+                    slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag, slot.addr,
+                    slot.data, mshr2dcache->fill.addr,
+                    (static_cast<uint32_t>(mshr2dcache->fill.way) << 16) |
+                        static_cast<uint32_t>(hit_way & 0xFFFF));
             }else {
                 resp.valid  = true;
                 resp.replay = 0;
@@ -571,6 +679,13 @@ void RealDcache::stage2_comb() {
                 end_req_track(true, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
                 DBG_PRINTF("%s[DCACHE STORE RESP OK] cyc=%lld port=%d src=dcache_hit set_idx=%d way=%d req_id=%zu rob=%u addr=0x%08x%s\n",
                     kColorStoreResp, (long long)sim_time, i, slot.set_idx, hit_way, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::OkDcacheHit,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, slot.set_idx,
+                                       static_cast<uint32_t>(hit_way));
 
                 pending_writes_[i] = {
                     true,
@@ -606,6 +721,32 @@ void RealDcache::stage2_comb() {
                 end_req_track(true, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
                 DBG_PRINTF("%s[DCACHE STORE RESP OK] cyc=%lld port=%d src=wb_merge req_id=%zu rob=%u addr=0x%08x%s\n",
                        kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::OkWbMerge,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, slot.strb, 0);
+            }
+            else if (wb2dcache->merge_resp[i].busy) {
+                // The matching writeback line has already been issued to AXI.
+                // Do not ack the store and do not allocate a fresh MSHR for the
+                // same line; simply retry after the in-flight WB drains.
+                resp.valid = true;
+                resp.replay = 3;
+                resp.req_id = slot.req_id;
+                if (ctx != nullptr && is_replay_req) {
+                    ctx->perf.l1d_replay_squash_abort++;
+                }
+                DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=3(wb_busy) req_id=%zu rob=%u addr=0x%08x%s\n",
+                       kColorStoreResp, (long long)sim_time, i, slot.req_id,
+                       slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayWbBusy,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, 0, 0);
             }
             else if(mshr2dcache->fill.valid && mshr_f.set_idx == slot.set_idx && mshr_f.tag == tag_expected){
                 resp.valid = true;
@@ -621,8 +762,17 @@ void RealDcache::stage2_comb() {
                 }
                 DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=2(fill_wait) req_id=%zu rob=%u addr=0x%08x%s\n",
                        kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayFillWait,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, 0, 0);
             }
-            else if (slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected)) {
+            else if (pending_miss_contains(pending_miss_lines,
+                                           pending_miss_count, slot.set_idx,
+                                           tag_expected) ||
+                     slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected)) {
                 resp.valid = true;
                 resp.replay = 2; // MSHR full, replay later
                 resp.req_id = slot.req_id;
@@ -636,6 +786,12 @@ void RealDcache::stage2_comb() {
                 }
                 DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=2(mshr_hit) req_id=%zu rob=%u addr=0x%08x%s\n",
                        kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayMshrHit,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, 0, 0);
             }
             else if(mshr_free_entries == 0){
                 resp.valid = true;
@@ -650,6 +806,12 @@ void RealDcache::stage2_comb() {
                 }
                 DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=1(mshr_full) req_id=%zu rob=%u addr=0x%08x%s\n",
                        kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayMshrFull,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, 0, 0);
             }
             else {
                 dcache2mshr->store_reqs[i].valid = true;
@@ -658,6 +820,9 @@ void RealDcache::stage2_comb() {
                 dcache2mshr->store_reqs[i].strb  = slot.strb;
                 dcache2mshr->store_reqs[i].uop   = slot.uop;
                 dcache2mshr->store_reqs[i].req_id = slot.req_id;
+                pending_miss_add(pending_miss_lines, pending_miss_count,
+                                 LSU_LDU_COUNT + LSU_STA_COUNT, slot.set_idx,
+                                 tag_expected);
                 // First miss allocation must still return replay to LSU,
                 // otherwise LSU keeps `send=1` and cannot reissue this store.
                 resp.valid = true;
@@ -675,6 +840,12 @@ void RealDcache::stage2_comb() {
                 }
                 DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=2(first_mshr_alloc) req_id=%zu rob=%u addr=0x%08x%s\n",
                        kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayFirstAlloc,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, 0, 0);
                 mshr_free_entries = mshr_free_entries - 1;
             }
         }

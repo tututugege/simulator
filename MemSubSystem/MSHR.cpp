@@ -1,4 +1,5 @@
 #include "MSHR.h"
+#include "DeadlockReplayTrace.h"
 
 #include <cassert>
 #include <cstdio>
@@ -36,6 +37,17 @@ void MSHR::comb_outputs()
     out.replay_resp.replay = cur.fill; // MSHR full replay code
     out.replay_resp.replay_addr = cur.fill_addr;
     out.replay_resp.free_slots = out.mshr2dcache.free;
+    if (out.replay_resp.replay)
+    {
+        deadlock_replay_trace::record(
+            DeadlockReplayTraceKind::MshrBroadcast, 0,
+            static_cast<uint8_t>(out.replay_resp.replay), 0,
+            static_cast<uint8_t>(cur.fill_valid),
+            static_cast<uint8_t>(cur.fill_way),
+            0, 0, static_cast<uint32_t>(out.replay_resp.replay_addr),
+            static_cast<uint32_t>(out.replay_resp.free_slots),
+            static_cast<uint32_t>(cur.mshr_count));
+    }
 
     // Registered fill output (from previous cycle comb_inputs()).
     out.mshr2dcache.fill.valid = cur.fill_valid;

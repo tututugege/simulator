@@ -1,5 +1,6 @@
 #include "MemSubsystem.h"
 #include "DeadlockDebug.h"
+#include "DeadlockReplayTrace.h"
 #include "config.h"
 #include <memory>
 #include <cstdio>
@@ -251,7 +252,6 @@ void MemSubsystem::init() {
   dcache_.lsu2dcache  = &dcache_req_mux_;
   dcache_.dcache2lsu  = &dcache_resp_raw_;
 
-#if !CONFIG_MEM_DCACHE_USE_SIMPLE
   // Internal MSHR ↔ DCache wires: RealDcache reads/writes MSHR IO structs
   // directly via pointers, keeping the connection zero-copy.
   dcache_.mshr2dcache = &mshr_.out.mshr2dcache;  // MSHR output → DCache input
@@ -260,7 +260,6 @@ void MemSubsystem::init() {
   // Internal WriteBuffer ↔ DCache wires.
   dcache_.wb2dcache   = &wb_.out.wbdcache;       // WB output → DCache input
   dcache_.dcache2wb   = &wb_.in.dcachewb;        // DCache output → WB input
-#endif
   dcache_.bind_context(ctx);
   mshr_.bind_context(ctx);
   wb_.bind_context(ctx);
@@ -324,7 +323,6 @@ void MemSubsystem::init() {
 }
 
 void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3) {
-#if CONFIG_BACKEND_USE_SIMPLE_LSU
   if (memory == nullptr) {
     return;
   }
@@ -365,19 +363,11 @@ void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3)
   const uint32_t new_val = (old_val & ~wmask) | (wdata & wmask);
   memory[word_idx] = new_val;
 
-  // UART THR (0x1000_0000 + 0): committed byte write prints one char.
+  // Keep UART THR backing memory coherent for difftest / software polling.
+  // Host-side character output is produced by the MMIO UART device itself.
   if (paddr == UART_ADDR_BASE) {
-    const unsigned char ch = static_cast<unsigned char>(data & 0xFFu);
-    std::putchar(static_cast<int>(ch));
-    std::fflush(stdout);
-    // Keep legacy behavior: TX register low byte reads back as 0 after write.
     memory[UART_ADDR_BASE / 4] &= 0xFFFFFF00u;
   }
-#else
-  (void)paddr;
-  (void)data;
-  (void)func3;
-#endif
 }
 
 void MemSubsystem::comb() {
@@ -402,9 +392,19 @@ void MemSubsystem::comb() {
   mshr_.comb_outputs();
   // Phase 2: DCache pipeline.
   //   RealDcache reads/writes MSHR/WB sideband pointers.
-  //   SimpleCache only uses LSU<->DCache request/response ports.
 
   const auto replay_bcast = replay_resp::from_io(mshr_.out.replay_resp);
+  if (replay_bcast.replay) {
+    const auto route_dbg = resp_route_block.debug_state();
+    deadlock_replay_trace::record(
+        DeadlockReplayTraceKind::MemBroadcast, 0,
+        static_cast<uint8_t>(replay_bcast.replay), 0,
+        static_cast<uint8_t>(route_dbg.dtlb.blocked),
+        static_cast<uint8_t>(route_dbg.itlb.blocked), 0, 0,
+        replay_bcast.replay_addr,
+        static_cast<uint32_t>(mshr_.out.replay_resp.free_slots),
+        static_cast<uint32_t>(route_dbg.walk.blocked));
+  }
   const auto ptw_wakeup = resp_route_block.peek_wakeup(replay_bcast);
   if (ptw_wakeup.dtlb) {
     ptw_block.retry_mem_req(MemPtwBlock::Client::DTLB);
@@ -520,6 +520,15 @@ void MemSubsystem::comb() {
   // every cycle, so this must be written after dcache_.comb().
   if (dcache2lsu != nullptr) {
     dcache2lsu->resp_ports.replay_resp = mshr_.out.replay_resp;
+    if (mshr_.out.replay_resp.replay) {
+      deadlock_replay_trace::record(
+          DeadlockReplayTraceKind::MemToLsu, 0,
+          static_cast<uint8_t>(mshr_.out.replay_resp.replay), 0,
+          static_cast<uint8_t>(dcache2lsu->resp_ports.load_resps[0].valid),
+          static_cast<uint8_t>(dcache2lsu->resp_ports.load_resps[1].valid),
+          0, 0, static_cast<uint32_t>(mshr_.out.replay_resp.replay_addr),
+          static_cast<uint32_t>(mshr_.out.replay_resp.free_slots), 0);
+    }
   }
 
   // Phase 3a: run MSHR comb_inputs (may accept AXI R, allocate entries, and

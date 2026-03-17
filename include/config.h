@@ -74,17 +74,11 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
 #define CONFIG_BPU
-// LSU implementation selector in BackTop:
-// 0 = RealLsu (default), 1 = SimpleLsu
-#define CONFIG_BACKEND_USE_SIMPLE_LSU 0
 
 
 // ============================================================
-// [4] D-Cache (SimpleCache) Config
+// [4] D-Cache Config
 // ============================================================
-// DCache implementation selector in MemSubsystem:
-// 0 = RealDcache (default), 1 = SimpleCache
-#define CONFIG_MEM_DCACHE_USE_SIMPLE 1
 // Targeted LSU trace (1-based sequence id):
 // 0 = disabled, N = trace the Nth load/store entering LDQ/STQ.
 #ifndef CONFIG_PERF_TRACE_LOAD_N
@@ -101,7 +95,7 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // - BEGIN/END: capture window (inclusive)
 // - MAX: max snapshot records kept (avoid huge logs)
 #ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL
-#define CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL 200
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL 0
 #endif
 #ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN
 #define CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN 26000
@@ -126,18 +120,34 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 // Global debug print switch for ad-hoc debug logs in simulator modules.
 // Set to 1 to enable, 0 to disable.
 #ifndef SIM_DEBUG_PRINT
-#define SIM_DEBUG_PRINT 0
+#define SIM_DEBUG_PRINT 1
 #endif
 
 // Optional cycle window for DBG_PRINTF.
 // Effective only when SIM_DEBUG_PRINT == 1.
 // Default is full-range (all cycles).
 #ifndef SIM_DEBUG_PRINT_CYCLE_BEGIN
-#define SIM_DEBUG_PRINT_CYCLE_BEGIN 0
+#define SIM_DEBUG_PRINT_CYCLE_BEGIN 9758088
 #endif
 
 #ifndef SIM_DEBUG_PRINT_CYCLE_END
-#define SIM_DEBUG_PRINT_CYCLE_END ~0ULL
+#define SIM_DEBUG_PRINT_CYCLE_END 9758088
+#endif
+
+#ifndef CONFIG_DIFF_DEBUG_MEMTRACE_DUMP_COUNT
+#define CONFIG_DIFF_DEBUG_MEMTRACE_DUMP_COUNT 5000
+#endif
+
+#ifndef CONFIG_DIFF_DEBUG_MEMTRACE_BUFFER_SIZE
+#define CONFIG_DIFF_DEBUG_MEMTRACE_BUFFER_SIZE 262144
+#endif
+
+#ifndef CONFIG_DEADLOCK_REPLAY_TRACE_DUMP_COUNT
+#define CONFIG_DEADLOCK_REPLAY_TRACE_DUMP_COUNT 5000
+#endif
+
+#ifndef CONFIG_DEADLOCK_REPLAY_TRACE_BUFFER_SIZE
+#define CONFIG_DEADLOCK_REPLAY_TRACE_BUFFER_SIZE 131072
 #endif
 
 #define SIM_DEBUG_PRINT_ACTIVE                                                \
@@ -246,7 +256,7 @@ constexpr uint32_t DCACHE_L2_TAG_MASK = (1u << DCACHE_L2_TAG_BITS) - 1u;
 // [5] Core Resource Size
 // ============================================================
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 160; // Tuned for 4-wide
+constexpr int PRF_NUM = 256; // Tuned for 4-wide
 constexpr int MAX_BR_NUM = 64;
 // Branch tag allocation bandwidth per cycle.
 // Keep it aligned with decode width on wide frontend/backend configurations.
@@ -254,7 +264,7 @@ constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 128;
+constexpr int ROB_NUM = 256;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM; // (ROB_NUM / ROB_BANK_NUM)
 
 // ============================================================

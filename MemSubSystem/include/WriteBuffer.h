@@ -20,6 +20,7 @@ struct WBState {
     bool bypassvalid[LSU_LDU_COUNT];
 
     bool mergevalid[LSU_STA_COUNT];
+    bool mergebusy[LSU_STA_COUNT];
 };
 
 struct WbDeferredCheck {

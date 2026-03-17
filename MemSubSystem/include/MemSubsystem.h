@@ -8,13 +8,8 @@
 #include "MemRespRouteBlock.h"
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
-#if CONFIG_MEM_DCACHE_USE_SIMPLE
-#include "SimpleCache.h"
-using MemDcacheImpl = SimpleCache;
-#else
 #include "RealDcache.h"
 using MemDcacheImpl = RealDcache;
-#endif
 #include "WriteBuffer.h"
 #include <array>
 #include <memory>

@@ -1,4 +1,6 @@
 #include "DeadlockDebug.h"
+#include "DeadlockReplayTrace.h"
+#include "DiffMemTrace.h"
 
 #include <cstdio>
 
@@ -32,6 +34,8 @@ void dump_all() {
   } else {
     std::printf("[DEADLOCK] SoC dump callback is not registered.\n");
   }
+  deadlock_replay_trace::dump_recent();
+  diff_mem_trace::dump_recent();
   std::printf("[DEADLOCK] ===== LSU/MEM State Dump End =====\n");
 }
 } // namespace deadlock_debug

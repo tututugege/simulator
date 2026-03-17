@@ -173,10 +173,10 @@ void SimCpu::commit_sync(InstInfo *inst) {
     }
   }
 
-  if (is_store(*inst) && !inst->page_fault_store) {
-    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-    this->mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
-  }
+  // if (is_store(*inst) && !inst->page_fault_store) {
+  //   StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
+  //   this->mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
+  // }
 }
 
 void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
@@ -218,6 +218,7 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   dut_cpu.page_fault_load = inst->page_fault_load;
   dut_cpu.page_fault_store = inst->page_fault_store;
   dut_cpu.inst_idx = inst->inst_idx;
+  dut_cpu.commit_pc = inst->pc;
   *skip = inst->difftest_skip;
 }
 

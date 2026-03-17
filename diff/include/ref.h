@@ -78,6 +78,7 @@ typedef struct CPU_state {
   bool page_fault_load;
   bool page_fault_store;
   uint32_t inst_idx;
+  uint32_t commit_pc;
   bool reserve_valid;
   uint32_t reserve_addr;
 } CPU_state;

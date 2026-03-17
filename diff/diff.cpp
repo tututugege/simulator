@@ -1,5 +1,6 @@
 #include "diff.h"
 #include "RISCV.h"
+#include "DiffMemTrace.h"
 #include "DcacheConfig.h"
 #include "config.h"
 #include "util.h"
@@ -45,6 +46,25 @@ void dump_mem_subsystem_snapshot() {
     std::printf("[DIFF][WB] idx=%d v=%d send=%d addr=0x%08x data0=0x%08x\n", i,
                 static_cast<int>(e.valid), static_cast<int>(e.send), e.addr,
                 e.data[0]);
+  }
+}
+
+void dump_code_line_snapshot(const char *tag, uint32_t pc) {
+  const uint32_t line_base = pc & ~(static_cast<uint32_t>(ICACHE_LINE_SIZE) - 1u);
+  const uint32_t start_idx = line_base >> 2;
+  const uint32_t word_off = (pc - line_base) >> 2;
+  std::printf("[DIFF][ICACHE_LINE][%s] pc=0x%08x line_base=0x%08x word_off=%u\n",
+              tag, pc, line_base, word_off);
+  for (int row = 0; row < ICACHE_WORD_NUM; row += 4) {
+    std::printf(
+        "[DIFF][ICACHE_LINE][%s][DUT] +0x%02x: %08x %08x %08x %08x\n", tag,
+        row * 4, p_memory[start_idx + row + 0], p_memory[start_idx + row + 1],
+        p_memory[start_idx + row + 2], p_memory[start_idx + row + 3]);
+    std::printf(
+        "[DIFF][ICACHE_LINE][%s][REF] +0x%02x: %08x %08x %08x %08x\n", tag,
+        row * 4, ref_cpu.memory[start_idx + row + 0],
+        ref_cpu.memory[start_idx + row + 1], ref_cpu.memory[start_idx + row + 2],
+        ref_cpu.memory[start_idx + row + 3]);
   }
 }
 
@@ -171,9 +191,13 @@ fault:
 
   printf("Ref Inst: %08x\tDUT Inst: %08x\n", ref_cpu.Instruction,
          dut_cpu.instruction);
+  std::printf("Commit PC: 0x%08x\tDUT next PC: 0x%08x\tREF next PC: 0x%08x\n",
+              dut_cpu.commit_pc, dut_cpu.pc, ref_cpu.state.pc);
   std::printf("[DIFF] p_memory@a5(0x%08x)=0x%08x ref=0x%08x\n", dut_cpu.gpr[15],
               p_memory[dut_cpu.gpr[15] >> 2], ref_cpu.memory[dut_cpu.gpr[15] >> 2]);
+  dump_code_line_snapshot("commit_pc", dut_cpu.commit_pc);
   dump_inst_related_snapshot(dut_cpu.instruction);
+  diff_mem_trace::dump_recent();
   dump_mem_subsystem_snapshot();
 
   Assert(0 && "Difftest: Register or Memory mismatch detected.");

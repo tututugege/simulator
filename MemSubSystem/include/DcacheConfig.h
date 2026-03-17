@@ -90,8 +90,9 @@ struct MergeReq {
 
 struct MergeResp {
     bool valid;
+    bool busy;
 
-    MergeResp() : valid(false) {}
+    MergeResp() : valid(false), busy(false) {}
 };
 
 struct DcacheWBIO{
