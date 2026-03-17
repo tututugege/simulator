@@ -32,9 +32,13 @@ struct UopPacket {
 class Dispatch {
 private:
   int decompose_inst(const InstEntry &original_inst, UopPacket *out_uops);
+  bool is_preg_woken(wire<PRF_IDX_WIDTH> preg) const;
   void apply_wakeup_to_uop(InstInfo &uop) const;
+  void refresh_source_busy();
 
   InstEntry inst_alloc[DECODE_WIDTH];
+  reg<1> busy_table[PRF_NUM];
+  wire<1> busy_table_1[PRF_NUM];
 
   // 记录每条指令 Dispatch 是否成功 (comb_dispatch -> comb_fire)
   bool dispatch_success_flags[DECODE_WIDTH];

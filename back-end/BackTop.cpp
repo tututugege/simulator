@@ -48,8 +48,6 @@ void BackTop::init() {
 
   rename->in.dec2ren = &dec2ren;
   rename->in.dis2ren = &dis2ren;
-  rename->in.iss_awake = &iss_awake;
-  rename->in.prf_awake = &prf_awake;
   rename->in.dec_bcast = &dec_bcast;
   rename->in.rob_bcast = &rob_bcast;
   rename->in.rob_commit = &rob_commit;
@@ -272,7 +270,6 @@ void BackTop::comb() {
   csr->comb_exception();
   csr->comb_csr_write();
   prf->comb_read();
-  rename->comb_wake();
   dis->comb_wake();
   rename->comb_rename();
 

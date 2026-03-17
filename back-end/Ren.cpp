@@ -16,15 +16,8 @@ static wire<1> free_vec_normal[PRF_NUM];
 static wire<PRF_IDX_WIDTH> spec_RAT_flush[ARF_NUM + 1];
 static wire<PRF_IDX_WIDTH> spec_RAT_mispred[ARF_NUM + 1];
 static wire<PRF_IDX_WIDTH> spec_RAT_normal[ARF_NUM + 1];
-static wire<1> busy_table_awake[PRF_NUM];
 
 void Ren::init() {
-  // Busy table must start from all-ready; otherwise random busy bits can
-  // permanently block issue for dependent uops.
-  std::memset(busy_table, 0, sizeof(busy_table));
-  std::memset(busy_table_1, 0, sizeof(busy_table_1));
-  std::memset(busy_table_awake, 0, sizeof(busy_table_awake));
-
   for (int i = 0; i < PRF_NUM; i++) {
     spec_alloc[i] = false;
 
@@ -103,30 +96,13 @@ void Ren::comb_alloc() {
 #endif
 }
 
-void Ren::comb_wake() {
-  // busy_table wake up
-  for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
-    if (in.prf_awake->wake[i].valid) {
-      busy_table_awake[in.prf_awake->wake[i].preg] = false;
-    }
-  }
-
-  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
-    if (in.iss_awake->wake[i].valid) {
-      busy_table_awake[in.iss_awake->wake[i].preg] = false;
-    }
-  }
-}
-
 void Ren::comb_rename() {
 
   wire<PRF_IDX_WIDTH> src1_preg_normal[DECODE_WIDTH];
-  wire<1> src1_busy_normal[DECODE_WIDTH];
   wire<PRF_IDX_WIDTH> src1_preg_bypass[DECODE_WIDTH];
   wire<1> src1_bypass_hit[DECODE_WIDTH];
 
   wire<PRF_IDX_WIDTH> src2_preg_normal[DECODE_WIDTH];
-  wire<1> src2_busy_normal[DECODE_WIDTH];
   wire<PRF_IDX_WIDTH> src2_preg_bypass[DECODE_WIDTH];
   wire<1> src2_bypass_hit[DECODE_WIDTH];
 
@@ -134,17 +110,14 @@ void Ren::comb_rename() {
   wire<PRF_IDX_WIDTH> old_dest_preg_bypass[DECODE_WIDTH];
   wire<1> old_dest_bypass_hit[DECODE_WIDTH];
 
-  // 无waw raw的输出 读spec_RAT和busy_table
+  // 无waw raw的输出 读spec_RAT
   for (int i = 0; i < DECODE_WIDTH; i++) {
     old_dest_preg_normal[i] = spec_RAT[inst_r[i].uop.dest_areg];
     src1_preg_normal[i] = spec_RAT[inst_r[i].uop.src1_areg];
     src2_preg_normal[i] = spec_RAT[inst_r[i].uop.src2_areg];
-    // 用busy_table_awake  存在隐藏的唤醒的bypass
-    src1_busy_normal[i] = busy_table_awake[src1_preg_normal[i]];
-    src2_busy_normal[i] = busy_table_awake[src2_preg_normal[i]];
   }
 
-  // 针对RAT 和busy_table的raw的bypass
+  // 针对RAT的raw bypass
   src1_bypass_hit[0] = false;
   src2_bypass_hit[0] = false;
   old_dest_bypass_hit[0] = false;
@@ -183,18 +156,14 @@ void Ren::comb_rename() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (src1_bypass_hit[i]) {
       out.ren2dis->uop[i].src1_preg = src1_preg_bypass[i];
-      out.ren2dis->uop[i].src1_busy = true;
     } else {
       out.ren2dis->uop[i].src1_preg = src1_preg_normal[i];
-      out.ren2dis->uop[i].src1_busy = src1_busy_normal[i];
     }
 
     if (src2_bypass_hit[i]) {
       out.ren2dis->uop[i].src2_preg = src2_preg_bypass[i];
-      out.ren2dis->uop[i].src2_busy = true;
     } else {
       out.ren2dis->uop[i].src2_preg = src2_preg_normal[i];
-      out.ren2dis->uop[i].src2_busy = src2_busy_normal[i];
     }
 
     if (old_dest_bypass_hit[i]) {
@@ -207,7 +176,6 @@ void Ren::comb_rename() {
 }
 
 void Ren::comb_fire() {
-  memcpy(busy_table_1, busy_table_awake, sizeof(wire<1>) * PRF_NUM);
   for (int i = 0; i < DECODE_WIDTH; i++) {
     fire[i] = out.ren2dis->valid[i] && in.dis2ren->ready;
   }
@@ -218,7 +186,6 @@ void Ren::comb_fire() {
       spec_alloc_normal[dest_preg] = true;
       free_vec_normal[dest_preg] = false;
       spec_RAT_normal[inst_r[i].uop.dest_areg] = dest_preg;
-      busy_table_1[dest_preg] = true;
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][dest_preg] = true;
     }
@@ -397,7 +364,6 @@ void Ren ::seq() {
   memcpy(arch_RAT, arch_RAT_1, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
 
   memcpy(free_vec, free_vec_1, PRF_NUM);
-  memcpy(busy_table, busy_table_1, PRF_NUM);
   memcpy(spec_alloc, spec_alloc_1, PRF_NUM);
 
   memcpy(RAT_checkpoint, RAT_checkpoint_1,
@@ -417,7 +383,6 @@ void Ren ::seq() {
   // memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) *
   // sizeof(reg<PRF_IDX_WIDTH>)); memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM +
   // 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(busy_table_awake, busy_table, PRF_NUM * sizeof(wire<1>));
 }
 
 RenIO Ren::get_hardware_io() {
@@ -440,11 +405,6 @@ RenIO Ren::get_hardware_io() {
         in.rob_commit->commit_entry[i].uop.dest_preg;
     hardware.from_rob.commit_dest_en[i] =
         in.rob_commit->commit_entry[i].uop.dest_en;
-  }
-
-  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
-    hardware.from_back.wake_valid[i] = in.iss_awake->wake[i].valid;
-    hardware.from_back.wake_preg[i] = in.iss_awake->wake[i].preg;
   }
 
   // --- Outputs ---
