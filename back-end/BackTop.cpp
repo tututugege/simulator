@@ -24,7 +24,7 @@ void BackTop::init() {
   prf = new Prf(ctx);
   exu = new Exu(ctx, &ftq_lookup);
   csr = new Csr();
-  rob = new Rob(ctx);
+  rob = new Rob(ctx, &ftq_lookup);
   lsu = new SimpleLsu(ctx);
   lsu->set_csr(csr);
 

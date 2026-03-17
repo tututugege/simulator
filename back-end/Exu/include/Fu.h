@@ -19,15 +19,18 @@ class AluUnit : public FixedLatencyFU {
   static constexpr int OR = 0b110;
   static constexpr int AND = 0b111;
 
+  FTQLookupIO *ftq_lookup;
+
 public:
-  AluUnit(std::string name = "ALU", int port_idx = 0)
-      : FixedLatencyFU(name, port_idx, 1) {}
+  AluUnit(std::string name = "ALU", int port_idx = 0,
+          FTQLookupIO *ftq_lookup = nullptr)
+      : FixedLatencyFU(name, port_idx, 1), ftq_lookup(ftq_lookup) {}
 
 protected:
   void impl_compute(MicroOp &inst) override {
     uint32_t operand1, operand2;
     if (inst.src1_is_pc)
-      operand1 = inst.pc;
+      operand1 = ftq_lookup_pc(ftq_lookup, inst.ftq_idx, inst.ftq_offset);
     else
       operand1 = inst.src1_rdata;
 
@@ -384,7 +387,8 @@ protected:
   void impl_compute(MicroOp &inst) override {
     uint32_t operand1 = inst.src1_rdata;
     uint32_t operand2 = inst.src2_rdata;
-    uint32_t pc_br = inst.pc + inst.imm;
+    uint32_t inst_pc = ftq_lookup_pc(ftq_lookup, inst.ftq_idx, inst.ftq_offset);
+    uint32_t pc_br = inst_pc + inst.imm;
     bool br_taken = true;
 
     if (inst.op == UOP_BR) {
@@ -433,7 +437,7 @@ protected:
         // FTQ stores next_pc of the fetch block.
         pred_target = ftq_entry.next_pc;
       } else {
-        pred_target = inst.pc + 4;
+        pred_target = inst_pc + 4;
       }
     }
 
@@ -446,7 +450,7 @@ protected:
     }
 
     inst.br_taken = br_taken;
-    inst.diag_val = br_taken ? pc_br : (inst.pc + 4);
+    inst.diag_val = br_taken ? pc_br : (inst_pc + 4);
   }
 };
 

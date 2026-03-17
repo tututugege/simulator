@@ -282,8 +282,9 @@ void Ren ::comb_commit() {
         }
       }
 
-      BE_LOG("ROB commit PC=0x%08x Inst=0x%08x rob_idx=%d idx=%ld", inst->pc,
-             inst->dbg.instruction, inst->rob_idx, inst->dbg.inst_idx);
+      BE_LOG("ROB commit PC=0x%08x Inst=0x%08x rob_idx=%d idx=%ld",
+             inst->dbg.pc, inst->dbg.instruction, inst->rob_idx,
+             inst->dbg.inst_idx);
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }

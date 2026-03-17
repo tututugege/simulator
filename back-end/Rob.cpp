@@ -1,4 +1,5 @@
 #include "Rob.h"
+#include "FTQ.h"
 #include "IO.h"
 #include "RISCV.h"
 #include "config.h"
@@ -201,45 +202,47 @@ void Rob::comb_commit() {
     entry_1[single_idx][deq_ptr].valid = false;
     if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
+      const auto &uop = entry[single_idx][deq_ptr].uop;
+      uint32_t single_pc =
+          ftq_lookup_pc(ftq_lookup, uop.ftq_idx, uop.ftq_offset);
       out.rob_bcast->flush = true;
-      out.rob_bcast->exception = is_exception(entry[single_idx][deq_ptr].uop) ||
-                                 out.rob2csr->interrupt_resp;
-      out.rob_bcast->pc = out.rob_commit->commit_entry[single_idx].uop.pc;
+      out.rob_bcast->exception = is_exception(uop) || out.rob2csr->interrupt_resp;
+      out.rob_bcast->pc = single_pc;
 
       if (out.rob2csr->interrupt_resp) {
         // interrupt拥有最高优先级
-      } else if (entry[single_idx][deq_ptr].uop.type == ECALL) {
+      } else if (uop.type == ECALL) {
         out.rob_bcast->ecall = true;
-        out.rob_bcast->pc = out.rob_commit->commit_entry[single_idx].uop.pc;
-      } else if (entry[single_idx][deq_ptr].uop.type == MRET) {
+        out.rob_bcast->pc = single_pc;
+      } else if (uop.type == MRET) {
         out.rob_bcast->mret = true;
-      } else if (entry[single_idx][deq_ptr].uop.type == SRET) {
+      } else if (uop.type == SRET) {
         out.rob_bcast->sret = true;
-      } else if (entry[single_idx][deq_ptr].uop.page_fault_store) {
+      } else if (uop.page_fault_store) {
         out.rob_bcast->page_fault_store = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
-      } else if (entry[single_idx][deq_ptr].uop.page_fault_load) {
+        out.rob_bcast->trap_val = uop.diag_val;
+      } else if (uop.page_fault_load) {
         out.rob_bcast->page_fault_load = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
-      } else if (entry[single_idx][deq_ptr].uop.page_fault_inst) {
+        out.rob_bcast->trap_val = uop.diag_val;
+      } else if (uop.page_fault_inst) {
         out.rob_bcast->page_fault_inst = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.pc;
-      } else if (entry[single_idx][deq_ptr].uop.illegal_inst) {
+        out.rob_bcast->trap_val = single_pc;
+      } else if (uop.illegal_inst) {
         out.rob_bcast->illegal_inst = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
-      } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
+        out.rob_bcast->trap_val = uop.diag_val;
+      } else if (uop.type == EBREAK) {
         ctx->exit_reason = ExitReason::EBREAK;
-      } else if (entry[single_idx][deq_ptr].uop.type == WFI) {
+      } else if (uop.type == WFI) {
         ctx->exit_reason = ExitReason::WFI;
-      } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
+      } else if (uop.type == CSR) {
         out.rob2csr->commit = true;
-      } else if (entry[single_idx][deq_ptr].uop.type == SFENCE_VMA) {
+      } else if (uop.type == SFENCE_VMA) {
         out.rob_bcast->fence = true;
-      } else if (entry[single_idx][deq_ptr].uop.flush_pipe) {
+      } else if (uop.flush_pipe) {
         // MMIO-triggered flush, no extra CSR/MMU actions needed here
-        out.rob_bcast->pc = entry[single_idx][deq_ptr].uop.pc;
+        out.rob_bcast->pc = single_pc;
       } else {
-        if (entry[single_idx][deq_ptr].uop.type != CSR) {
+        if (uop.type != CSR) {
           Assert(0 && "Error: Who is Rem? This pointer is forgotten.");
         }
       }
@@ -269,7 +272,7 @@ void Rob::comb_commit() {
       if (entry[i][deq_ptr].valid) {
         printf("0x%08x: 0x%08x cplt_num: %d  uop_num: %d rob_idx:%d "
                "is_page_fault: %d inst_idx: %lld type: %d\n",
-               entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].uop.diag_val,
+               entry[i][deq_ptr].uop.dbg.pc, entry[i][deq_ptr].uop.diag_val,
                entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
                (i + (deq_ptr * ROB_BANK_NUM)),
                is_page_fault(entry[i][deq_ptr].uop),

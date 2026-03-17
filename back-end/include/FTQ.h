@@ -60,3 +60,11 @@ class FTQLookupIO {
 public:
   FTQEntry entries[FTQ_SIZE];
 };
+
+inline uint32_t ftq_lookup_pc(const FTQLookupIO *lookup, uint32_t ftq_idx,
+                              uint32_t ftq_offset) {
+  if (lookup == nullptr) {
+    return 0;
+  }
+  return lookup->entries[ftq_idx].start_pc + (ftq_offset << 2);
+}

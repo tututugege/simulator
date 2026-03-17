@@ -2,6 +2,8 @@
 #include "IO.h"
 #include "config.h"
 
+class FTQLookupIO;
+
 class RobOut {
 public:
   RobDisIO *rob2dis;
@@ -21,8 +23,12 @@ public:
 
 class Rob {
 public:
-  Rob(SimContext *ctx) { this->ctx = ctx; }
+  Rob(SimContext *ctx, FTQLookupIO *ftq_lookup) {
+    this->ctx = ctx;
+    this->ftq_lookup = ftq_lookup;
+  }
   SimContext *ctx;
+  FTQLookupIO *ftq_lookup;
   void init();
   void seq();
   void comb_ready();

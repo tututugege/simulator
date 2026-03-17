@@ -64,6 +64,7 @@ constexpr uint8_t MAXU = 0b11100;
 // Debug sideband for InstInfo. Keep diag_val in hardware path.
 typedef struct InstDebugMeta {
   wire<32> instruction;
+  wire<32> pc;
   bool difftest_skip;
   int64_t inst_idx;
 } InstDebugMeta;
@@ -71,6 +72,7 @@ typedef struct InstDebugMeta {
 // Debug sideband for MicroOp. Keep diag_val in hardware path.
 typedef struct UopDebugMeta {
   wire<32> instruction;
+  wire<32> pc;
   bool difftest_skip;
   int64_t inst_idx;
 } UopDebugMeta;
@@ -105,7 +107,6 @@ typedef struct InstInfo {
   wire<3> func3;
   wire<7> func7;
   wire<32> imm;
-  wire<32> pc;
   wire<BR_TAG_WIDTH> br_id;
   wire<BR_MASK_WIDTH> br_mask;
   wire<CSR_IDX_WIDTH> csr_idx;
@@ -161,7 +162,6 @@ typedef struct MicroOp {
   wire<3> func3;
   wire<7> func7;
   wire<32> imm;
-  wire<32> pc;
   wire<BR_TAG_WIDTH> br_id;
   wire<BR_MASK_WIDTH> br_mask;
   wire<CSR_IDX_WIDTH> csr_idx;
@@ -213,7 +213,6 @@ typedef struct MicroOp {
     this->func3 = info.func3;
     this->func7 = info.func7;
     this->imm = info.imm;
-    this->pc = info.pc;
     this->br_id = info.br_id;
     this->br_mask = info.br_mask;
     this->csr_idx = info.csr_idx;
@@ -230,6 +229,7 @@ typedef struct MicroOp {
     this->tma.is_cache_miss = info.tma.is_cache_miss;
     this->is_atomic = info.is_atomic;
     this->dbg.instruction = info.dbg.instruction;
+    this->dbg.pc = info.dbg.pc;
     this->dbg.difftest_skip = info.dbg.difftest_skip;
     this->dbg.inst_idx = info.dbg.inst_idx;
     this->flush_pipe = info.flush_pipe;

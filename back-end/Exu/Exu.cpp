@@ -73,7 +73,7 @@ void Exu::init() {
     // 7. ALU
     if (mask & OP_MASK_ALU) {
       std::string alu_name = "ALU" + std::to_string(alu_cnt++);
-      auto alu = new AluUnit(alu_name, i);
+      auto alu = new AluUnit(alu_name, i, ftq_lookup);
       units.push_back(alu);
       port_mappings[i].entries.push_back({alu, OP_MASK_ALU});
     }

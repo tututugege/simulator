@@ -26,7 +26,6 @@ struct DecRenIO {
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
-    wire<32> pc;
     wire<BR_TAG_WIDTH> br_id;
     wire<BR_MASK_WIDTH> br_mask;
     wire<CSR_IDX_WIDTH> csr_idx;
@@ -34,8 +33,6 @@ struct DecRenIO {
     wire<2> uop_num;
 
     wire<1> page_fault_inst;
-    wire<1> page_fault_load;
-    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
     InstType type;
@@ -60,14 +57,11 @@ struct DecRenIO {
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
-      dst.pc = src.pc;
       dst.br_id = src.br_id;
       dst.br_mask = src.br_mask;
       dst.csr_idx = src.csr_idx;
       dst.uop_num = src.uop_num;
       dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.type = src.type;
       dst.dbg = src.dbg;
@@ -91,14 +85,13 @@ struct DecRenIO {
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
-      dst.pc = pc;
       dst.br_id = br_id;
       dst.br_mask = br_mask;
       dst.csr_idx = csr_idx;
       dst.uop_num = uop_num;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
+      dst.page_fault_load = false;
+      dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = type;
       dst.dbg = dbg;
@@ -245,7 +238,6 @@ struct RobCommitIO {
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
-    wire<32> pc;
     wire<ROB_IDX_WIDTH> rob_idx;
     wire<STQ_IDX_WIDTH> stq_idx;
 
@@ -253,8 +245,6 @@ struct RobCommitIO {
     wire<2> cplt_num;
 
     wire<1> page_fault_inst;
-    wire<1> page_fault_load;
-    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
     InstType type;
@@ -279,14 +269,11 @@ struct RobCommitIO {
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
-      dst.pc = src.pc;
       dst.rob_idx = src.rob_idx;
       dst.stq_idx = src.stq_idx;
       dst.uop_num = src.uop_num;
       dst.cplt_num = src.cplt_num;
       dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.type = src.type;
       dst.dbg = src.dbg;
@@ -310,14 +297,13 @@ struct RobCommitIO {
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
-      dst.pc = pc;
       dst.rob_idx = rob_idx;
       dst.stq_idx = stq_idx;
       dst.uop_num = uop_num;
       dst.cplt_num = cplt_num;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
+      dst.page_fault_load = false;
+      dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = type;
       dst.dbg = dbg;
@@ -390,7 +376,6 @@ struct DisRobIO {
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
-    wire<32> pc;
     wire<BR_MASK_WIDTH> br_mask;
     wire<ROB_IDX_WIDTH> rob_idx;
     wire<STQ_IDX_WIDTH> stq_idx;
@@ -402,8 +387,6 @@ struct DisRobIO {
     wire<1> rob_flag;
 
     wire<1> page_fault_inst;
-    wire<1> page_fault_load;
-    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
     InstType type;
@@ -428,7 +411,6 @@ struct DisRobIO {
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
-      dst.pc = src.pc;
       dst.br_mask = src.br_mask;
       dst.rob_idx = src.rob_idx;
       dst.stq_idx = src.stq_idx;
@@ -438,8 +420,6 @@ struct DisRobIO {
       dst.cplt_num = src.cplt_num;
       dst.rob_flag = src.rob_flag;
       dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.type = src.type;
       dst.dbg = src.dbg;
@@ -463,7 +443,6 @@ struct DisRobIO {
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
-      dst.pc = pc;
       dst.br_mask = br_mask;
       dst.rob_idx = rob_idx;
       dst.stq_idx = stq_idx;
@@ -473,8 +452,8 @@ struct DisRobIO {
       dst.cplt_num = cplt_num;
       dst.rob_flag = rob_flag;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
+      dst.page_fault_load = false;
+      dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = type;
       dst.dbg = dbg;
@@ -522,7 +501,6 @@ struct RenDisIO {
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
-    wire<32> pc;
     wire<BR_TAG_WIDTH> br_id;
     wire<BR_MASK_WIDTH> br_mask;
     wire<CSR_IDX_WIDTH> csr_idx;
@@ -530,8 +508,6 @@ struct RenDisIO {
     wire<2> uop_num;
 
     wire<1> page_fault_inst;
-    wire<1> page_fault_load;
-    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
     InstType type;
@@ -562,14 +538,11 @@ struct RenDisIO {
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
-      dst.pc = src.pc;
       dst.br_id = src.br_id;
       dst.br_mask = src.br_mask;
       dst.csr_idx = src.csr_idx;
       dst.uop_num = src.uop_num;
       dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.type = src.type;
       dst.dbg = src.dbg;
@@ -599,14 +572,13 @@ struct RenDisIO {
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
-      dst.pc = pc;
       dst.br_id = br_id;
       dst.br_mask = br_mask;
       dst.csr_idx = csr_idx;
       dst.uop_num = uop_num;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
+      dst.page_fault_load = false;
+      dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = type;
       dst.dbg = dbg;
@@ -666,7 +638,6 @@ struct DisIssIO {
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
-    wire<32> pc;
     wire<BR_TAG_WIDTH> br_id;
     wire<BR_MASK_WIDTH> br_mask;
     wire<CSR_IDX_WIDTH> csr_idx;
@@ -679,8 +650,6 @@ struct DisIssIO {
     wire<1> rob_flag;
 
     wire<1> page_fault_inst;
-    wire<1> page_fault_load;
-    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
     UopType op;
@@ -708,7 +677,6 @@ struct DisIssIO {
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
-      dst.pc = src.pc;
       dst.br_id = src.br_id;
       dst.br_mask = src.br_mask;
       dst.csr_idx = src.csr_idx;
@@ -719,8 +687,6 @@ struct DisIssIO {
       dst.uop_num = src.uop_num;
       dst.rob_flag = src.rob_flag;
       dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.op = src.op;
       dst.dbg = src.dbg;
@@ -747,7 +713,6 @@ struct DisIssIO {
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
-      dst.pc = pc;
       dst.br_id = br_id;
       dst.br_mask = br_mask;
       dst.csr_idx = csr_idx;
@@ -758,8 +723,8 @@ struct DisIssIO {
       dst.uop_num = uop_num;
       dst.rob_flag = rob_flag;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
+      dst.page_fault_load = false;
+      dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.op = op;
       dst.dbg = dbg;
@@ -858,7 +823,6 @@ struct IssPrfIO {
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
-    wire<32> pc;
     wire<BR_TAG_WIDTH> br_id;
     wire<BR_MASK_WIDTH> br_mask;
     wire<CSR_IDX_WIDTH> csr_idx;
@@ -871,8 +835,6 @@ struct IssPrfIO {
     wire<1> rob_flag;
 
     wire<1> page_fault_inst;
-    wire<1> page_fault_load;
-    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
     UopType op;
@@ -900,7 +862,6 @@ struct IssPrfIO {
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
-      dst.pc = src.pc;
       dst.br_id = src.br_id;
       dst.br_mask = src.br_mask;
       dst.csr_idx = src.csr_idx;
@@ -911,8 +872,6 @@ struct IssPrfIO {
       dst.uop_num = src.uop_num;
       dst.rob_flag = src.rob_flag;
       dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.op = src.op;
       dst.dbg = src.dbg;
@@ -939,7 +898,6 @@ struct IssPrfIO {
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
-      dst.pc = pc;
       dst.br_id = br_id;
       dst.br_mask = br_mask;
       dst.csr_idx = csr_idx;
@@ -950,8 +908,8 @@ struct IssPrfIO {
       dst.uop_num = uop_num;
       dst.rob_flag = rob_flag;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
+      dst.page_fault_load = false;
+      dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.op = op;
       dst.dbg = dbg;
@@ -996,7 +954,6 @@ struct PrfExeIO {
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
-    wire<32> pc;
     wire<BR_TAG_WIDTH> br_id;
     wire<BR_MASK_WIDTH> br_mask;
     wire<CSR_IDX_WIDTH> csr_idx;
@@ -1009,8 +966,6 @@ struct PrfExeIO {
     wire<1> rob_flag;
 
     wire<1> page_fault_inst;
-    wire<1> page_fault_load;
-    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
     UopType op;
@@ -1038,7 +993,6 @@ struct PrfExeIO {
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
-      dst.pc = src.pc;
       dst.br_id = src.br_id;
       dst.br_mask = src.br_mask;
       dst.csr_idx = src.csr_idx;
@@ -1049,8 +1003,6 @@ struct PrfExeIO {
       dst.uop_num = src.uop_num;
       dst.rob_flag = src.rob_flag;
       dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.op = src.op;
       dst.dbg = src.dbg;
@@ -1079,7 +1031,6 @@ struct PrfExeIO {
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
-      dst.pc = pc;
       dst.br_id = br_id;
       dst.br_mask = br_mask;
       dst.csr_idx = csr_idx;
@@ -1090,8 +1041,8 @@ struct PrfExeIO {
       dst.uop_num = uop_num;
       dst.rob_flag = rob_flag;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
+      dst.page_fault_load = false;
+      dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.op = op;
       dst.dbg = dbg;

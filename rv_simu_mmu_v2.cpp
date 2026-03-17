@@ -110,7 +110,7 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL ||
                 back->rob->out.rob_bcast->flush)
                    ? inst_entry->uop.diag_val
-                   : inst->pc + 4;
+                   : inst->dbg.pc + 4;
   dut_cpu.instruction = inst->dbg.instruction;
   dut_cpu.page_fault_inst = inst->page_fault_inst;
   dut_cpu.page_fault_load = inst->page_fault_load;
@@ -424,13 +424,13 @@ void SimCpu::back2front_comb() {
       }
 
       front.in.predict_dir[i] = pred_taken;
-      front.in.predict_base_pc[i] = inst->pc;
+      front.in.predict_base_pc[i] = inst->dbg.pc;
       front.in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
       front.in.actual_target[i] =
           (is_branch(inst->type) || inst->type == JAL || inst->type == JALR)
               ? back.out.commit_entry[i].uop.diag_val
-              : inst->pc + 4;
+              : inst->dbg.pc + 4;
       int br_type = BR_NONCTL;
       if (is_branch(inst->type)) {
         br_type = BR_DIRECT;
