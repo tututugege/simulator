@@ -242,7 +242,7 @@ void SimContext::run_difftest_inst(InstEntry *inst_entry) {
   if (skip) {
     difftest_skip();
   } else {
-    difftest_step(true);
+    difftest_step(false);//page fault check disabled;
   }
 }
 

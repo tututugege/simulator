@@ -12,6 +12,7 @@
 using MemDcacheImpl = RealDcache;
 #include "WriteBuffer.h"
 #include <array>
+#include <cstdint>
 #include <memory>
 
 class SimContext;
@@ -71,6 +72,31 @@ public:
   const PeripheralAxi &get_peripheral_axi() const { return peripheral_axi_; }
 
 private:
+  enum class DebugEventKind : uint8_t {
+    PTW_MEM_REQ = 0,
+    PTW_MEM_GRANT,
+    PTW_MEM_RESP,
+    PTW_WALK_REQ,
+    PTW_WALK_GRANT,
+    PTW_WALK_RESP,
+    REPLAY_WAKEUP,
+    LSU_PORT0_PREEMPT,
+    LSU_LOAD_RESP,
+    PTW_ROUTE_EVENT,
+  };
+
+  struct DebugEvent {
+    uint64_t cycle = 0;
+    DebugEventKind kind = DebugEventKind::PTW_MEM_REQ;
+    uint8_t owner = 0;
+    uint8_t port = 0;
+    uint8_t replay = 0;
+    uint8_t extra = 0;
+    uint32_t addr = 0;
+    uint32_t data = 0;
+    size_t req_id = 0;
+  };
+
   SimContext *ctx;
 
   // Sub-modules
@@ -103,6 +129,10 @@ private:
 
   std::array<PtwMemRespIO, kPtwClientCount>  ptw_mem_resp_ios{};
   std::array<PtwWalkRespIO, kPtwClientCount> ptw_walk_resp_ios{};
+  static constexpr size_t kDebugEventCapacity = 64;
+  std::array<DebugEvent, kDebugEventCapacity> debug_events_{};
+  size_t debug_event_head_ = 0;
+  size_t debug_event_count_ = 0;
 
   friend class MemSubsystemPtwMemPortAdapter;
   friend class MemSubsystemPtwWalkPortAdapter;
@@ -112,4 +142,13 @@ private:
   std::unique_ptr<PtwWalkPort> dtlb_walk_port_inst;
   std::unique_ptr<PtwWalkPort> itlb_walk_port_inst;
   uint32_t ptw_walk_wait_cycles_ = 0;
+
+  void record_debug_event(DebugEventKind kind, uint8_t owner, uint32_t addr,
+                          uint32_t data = 0, uint8_t replay = 0,
+                          uint8_t extra = 0, size_t req_id = 0,
+                          uint8_t port = 0);
+  void dump_recent_debug_events() const;
+  void dump_failure_analysis() const;
+  void dump_key_cache_lines() const;
+  void dump_cache_line_for_addr(const char *reason, uint32_t addr) const;
 };

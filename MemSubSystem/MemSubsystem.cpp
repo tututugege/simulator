@@ -2,6 +2,8 @@
 #include "DeadlockDebug.h"
 #include "DeadlockReplayTrace.h"
 #include "config.h"
+#include "diff.h"
+#include <cinttypes>
 #include <memory>
 #include <cstdio>
 #include <assert.h>
@@ -82,6 +84,36 @@ const char *ptw_client_name(MemPtwBlock::Client c) {
   }
 }
 
+const char *mem_owner_name(uint8_t owner) {
+  switch (static_cast<MemReadArbBlock::Owner>(owner)) {
+  case MemReadArbBlock::Owner::LSU:
+    return "LSU";
+  case MemReadArbBlock::Owner::PTW_DTLB:
+    return "PTW_DTLB";
+  case MemReadArbBlock::Owner::PTW_ITLB:
+    return "PTW_ITLB";
+  case MemReadArbBlock::Owner::PTW_WALK:
+    return "PTW_WALK";
+  default:
+    return "NONE";
+  }
+}
+
+const char *replay_reason_name(uint8_t reason) {
+  switch (reason) {
+  case 0:
+    return "none";
+  case 1:
+    return "mshr_full";
+  case 2:
+    return "wait_fill";
+  case 3:
+    return "struct_replay";
+  default:
+    return "unknown";
+  }
+}
+
 void deadlock_dump_mem_cb() {
   if (g_deadlock_mem != nullptr) {
     g_deadlock_mem->dump_debug_state();
@@ -153,6 +185,10 @@ void MemSubsystem::refresh_ptw_client_outputs() {
 bool MemSubsystem::ptw_mem_send_read_req(PtwClient client, uint32_t paddr) {
   auto block_client = to_block_client(client);
   bool fire = ptw_block.client_send_read_req(block_client, paddr);
+  record_debug_event(DebugEventKind::PTW_MEM_REQ,
+                     static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB) +
+                         static_cast<uint8_t>(ptw_client_idx(client)),
+                     paddr, 0, static_cast<uint8_t>(!fire));
   DBG_PRINTF("[MEM][PTW][MEM REQ] cyc=%lld client=%s fire=%d paddr=0x%08x\n",
              (long long)sim_time, ptw_client_name(block_client),
              static_cast<int>(fire), paddr);
@@ -176,6 +212,11 @@ void MemSubsystem::ptw_mem_consume_resp(PtwClient client) {
 bool MemSubsystem::ptw_walk_send_req(PtwClient client, const PtwWalkReq &req) {
   auto block_client = to_block_client(client);
   bool fire = ptw_block.walk_client_send_req(block_client, req);
+  record_debug_event(DebugEventKind::PTW_WALK_REQ,
+                     static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB) +
+                         static_cast<uint8_t>(ptw_client_idx(client)),
+                     req.vaddr, req.satp, static_cast<uint8_t>(!fire),
+                     req.access_type);
   DBG_PRINTF(
       "[MEM][PTW][WALK REQ] cyc=%lld client=%s fire=%d vaddr=0x%08x satp=0x%08x type=%u\n",
       (long long)sim_time, ptw_client_name(block_client), static_cast<int>(fire),
@@ -276,6 +317,9 @@ void MemSubsystem::init() {
   resp_route_block.init();
   ptw_mem_resp_ios  = {};
   ptw_walk_resp_ios = {};
+  debug_events_ = {};
+  debug_event_head_ = 0;
+  debug_event_count_ = 0;
   refresh_ptw_client_outputs();
 
   dcache_req_mux_ = {};
@@ -395,6 +439,9 @@ void MemSubsystem::comb() {
 
   const auto replay_bcast = replay_resp::from_io(mshr_.out.replay_resp);
   if (replay_bcast.replay) {
+    record_debug_event(DebugEventKind::REPLAY_WAKEUP, 0, replay_bcast.replay_addr,
+                       static_cast<uint32_t>(mshr_.out.replay_resp.free_slots),
+                       static_cast<uint8_t>(replay_bcast.replay));
     const auto route_dbg = resp_route_block.debug_state();
     deadlock_replay_trace::record(
         DeadlockReplayTraceKind::MemBroadcast, 0,
@@ -454,12 +501,43 @@ void MemSubsystem::comb() {
   resp_route_block.eval_comb(&dcache_resp_raw_,
                              read_arb_block.comb_result().issued_tags,
                              replay_bcast);
+  const auto &ptw_evt = resp_route_block.comb_outputs().ptw_event;
+  if (ptw_evt.valid) {
+    record_debug_event(DebugEventKind::PTW_ROUTE_EVENT,
+                       static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
+                       ptw_evt.data, ptw_evt.replay);
+    if (ptw_evt.owner == MemReadArbBlock::Owner::PTW_WALK) {
+      record_debug_event(DebugEventKind::PTW_WALK_RESP,
+                         static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
+                         ptw_evt.data, ptw_evt.replay);
+    } else {
+      record_debug_event(DebugEventKind::PTW_MEM_RESP,
+                         static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
+                         ptw_evt.data, ptw_evt.replay);
+    }
+  }
   resp_route_block.apply_ptw_event(&ptw_block);
 
   if (dcache2lsu != nullptr) {
     *dcache2lsu = resp_route_block.comb_outputs().lsu_resp;
 
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      const auto &resp = dcache2lsu->resp_ports.load_resps[i];
+      if (!resp.valid) {
+        continue;
+      }
+      record_debug_event(DebugEventKind::LSU_LOAD_RESP,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::LSU), 0,
+                         resp.data, resp.replay, 0, resp.req_id,
+                         static_cast<uint8_t>(i));
+    }
+
     if (read_arb_block.comb_result().lsu_port0_preempted) {
+      record_debug_event(DebugEventKind::LSU_PORT0_PREEMPT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::LSU),
+                         read_arb_block.comb_result().preempted_lsu_tag.req_addr,
+                         0, 0, 0,
+                         read_arb_block.comb_result().preempted_lsu_tag.req_id, 0);
       if (ctx != nullptr) {
         ctx->perf.ptw_port0_replay_count++;
       }
@@ -490,12 +568,21 @@ void MemSubsystem::comb() {
   if (read_arb_block.comb_result().granted) {
     switch (read_arb_block.comb_result().granted_owner) {
     case MemReadArbBlock::Owner::PTW_DTLB:
+      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB),
+                         ptw_dtlb_addr);
       ptw_block.on_mem_read_granted(MemPtwBlock::Client::DTLB);
       break;
     case MemReadArbBlock::Owner::PTW_ITLB:
+      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_ITLB),
+                         ptw_itlb_addr);
       ptw_block.on_mem_read_granted(MemPtwBlock::Client::ITLB);
       break;
     case MemReadArbBlock::Owner::PTW_WALK:
+      record_debug_event(DebugEventKind::PTW_WALK_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
+                         ptw_walk_read_addr);
       ptw_block.on_walk_read_granted();
       break;
     default:
@@ -690,4 +777,250 @@ void MemSubsystem::dump_debug_state() const {
       static_cast<unsigned>(route_dbg.itlb.reason), route_dbg.itlb.req_addr,
       static_cast<int>(route_dbg.walk.blocked),
       static_cast<unsigned>(route_dbg.walk.reason), route_dbg.walk.req_addr);
+  dump_key_cache_lines();
+  dump_recent_debug_events();
+  dump_failure_analysis();
+}
+
+void MemSubsystem::record_debug_event(DebugEventKind kind, uint8_t owner,
+                                      uint32_t addr, uint32_t data,
+                                      uint8_t replay, uint8_t extra,
+                                      size_t req_id, uint8_t port) {
+  DebugEvent &slot = debug_events_[debug_event_head_];
+  slot.cycle = static_cast<uint64_t>(sim_time);
+  slot.kind = kind;
+  slot.owner = owner;
+  slot.port = port;
+  slot.replay = replay;
+  slot.extra = extra;
+  slot.addr = addr;
+  slot.data = data;
+  slot.req_id = req_id;
+  debug_event_head_ = (debug_event_head_ + 1) % kDebugEventCapacity;
+  if (debug_event_count_ < kDebugEventCapacity) {
+    debug_event_count_++;
+  }
+}
+
+void MemSubsystem::dump_recent_debug_events() const {
+  const size_t recent_count =
+      (debug_event_count_ < 20) ? debug_event_count_ : static_cast<size_t>(20);
+  if (recent_count == 0) {
+    std::printf("[DEADLOCK][MEM][EVENTS] no recent MemSubsystem events recorded.\n");
+    return;
+  }
+
+  auto event_name = [](DebugEventKind kind) {
+    switch (kind) {
+    case DebugEventKind::PTW_MEM_REQ:
+      return "ptw_mem_req";
+    case DebugEventKind::PTW_MEM_GRANT:
+      return "ptw_mem_grant";
+    case DebugEventKind::PTW_MEM_RESP:
+      return "ptw_mem_resp";
+    case DebugEventKind::PTW_WALK_REQ:
+      return "ptw_walk_req";
+    case DebugEventKind::PTW_WALK_GRANT:
+      return "ptw_walk_grant";
+    case DebugEventKind::PTW_WALK_RESP:
+      return "ptw_walk_resp";
+    case DebugEventKind::REPLAY_WAKEUP:
+      return "replay_wakeup";
+    case DebugEventKind::LSU_PORT0_PREEMPT:
+      return "lsu_port0_preempt";
+    case DebugEventKind::LSU_LOAD_RESP:
+      return "lsu_load_resp";
+    case DebugEventKind::PTW_ROUTE_EVENT:
+      return "ptw_route";
+    default:
+      return "unknown";
+    }
+  };
+
+  const size_t start =
+      (debug_event_head_ + kDebugEventCapacity - recent_count) %
+      kDebugEventCapacity;
+  std::printf("[DEADLOCK][MEM][EVENTS] showing last %zu events\n", recent_count);
+  for (size_t i = 0; i < recent_count; i++) {
+    const DebugEvent &e = debug_events_[(start + i) % kDebugEventCapacity];
+    std::printf(
+        "[DEADLOCK][MEM][EVENT %02zu] cyc=%" PRIu64
+        " kind=%s owner=%s port=%u replay=%u extra=%u addr=0x%08x data=0x%08x req_id=%zu\n",
+        i, e.cycle, event_name(e.kind), mem_owner_name(e.owner),
+        static_cast<unsigned>(e.port), static_cast<unsigned>(e.replay),
+        static_cast<unsigned>(e.extra), e.addr, e.data, e.req_id);
+  }
+}
+
+void MemSubsystem::dump_failure_analysis() const {
+  const auto ptw_dbg = ptw_block.debug_state();
+  const auto route_dbg = resp_route_block.debug_state();
+  const auto pf_warn = difftest_get_last_pf_warning();
+
+  if (pf_warn.valid) {
+    const char *kind = "inst";
+    if (pf_warn.access_type == 1) {
+      kind = "load";
+    } else if (pf_warn.access_type == 2) {
+      kind = "store";
+    }
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] last_difftest_pf_mismatch cycle=%" PRIu64
+        " kind=%s dut_pc=0x%08x commit_pc=0x%08x inst=0x%08x\n",
+        pf_warn.cycle, kind, pf_warn.dut_pc, pf_warn.dut_commit_pc,
+        pf_warn.dut_inst);
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] likely_root_cause=The DUT raised a %s page fault that REF did not see. For Linux bring-up this usually means PTW walk data, DCache fill data, or PTW response routing/replay corrupted a kernel pointer before the later panic became visible.\n",
+        kind);
+  } else {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] no difftest-only page-fault mismatch has been recorded yet.\n");
+  }
+
+  if (route_dbg.dtlb.blocked || route_dbg.itlb.blocked || route_dbg.walk.blocked) {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] blocked_trackers dtlb=%s itlb=%s walk=%s\n",
+        replay_reason_name(route_dbg.dtlb.reason),
+        replay_reason_name(route_dbg.itlb.reason),
+        replay_reason_name(route_dbg.walk.reason));
+  }
+
+  if (ptw_dbg.walk_active || ptw_dbg.mem_req_pending[0] || ptw_dbg.mem_req_pending[1] ||
+      ptw_dbg.mem_req_inflight[0] || ptw_dbg.mem_req_inflight[1] ||
+      ptw_dbg.walk_req_pending[0] || ptw_dbg.walk_req_pending[1] ||
+      ptw_dbg.walk_req_inflight[0] || ptw_dbg.walk_req_inflight[1]) {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] outstanding_ptw walk_active=%d walk_state=%u dtlb_mem{pending=%d inflight=%d} itlb_mem{pending=%d inflight=%d} dtlb_walk{pending=%d inflight=%d} itlb_walk{pending=%d inflight=%d}\n",
+        static_cast<int>(ptw_dbg.walk_active),
+        static_cast<unsigned>(ptw_dbg.walk_state),
+        static_cast<int>(ptw_dbg.mem_req_pending[0]),
+        static_cast<int>(ptw_dbg.mem_req_inflight[0]),
+        static_cast<int>(ptw_dbg.mem_req_pending[1]),
+        static_cast<int>(ptw_dbg.mem_req_inflight[1]),
+        static_cast<int>(ptw_dbg.walk_req_pending[0]),
+        static_cast<int>(ptw_dbg.walk_req_inflight[0]),
+        static_cast<int>(ptw_dbg.walk_req_pending[1]),
+        static_cast<int>(ptw_dbg.walk_req_inflight[1]));
+  }
+
+  if (route_dbg.lsu_port0_replayed || route_dbg.ptw_occupies_port0) {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] arbitration_notice ptw_occupies_port0=%d lsu_port0_replayed=%d; if a later crash shows a bogus kernel pointer (for example 0xcfxxxxxx in kstrdup_const), prioritize PTW/LSU arbitration and response routing over SLUB itself.\n",
+        static_cast<int>(route_dbg.ptw_occupies_port0),
+        static_cast<int>(route_dbg.lsu_port0_replayed));
+  } else {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] kernel_hint=If Linux later crashes in kstrdup_const/__kernfs_new_node with a bogus kernel pointer, the allocator is usually the victim. Check earlier PTW walk results, DCache fills, and replay handling first.\n");
+  }
+}
+
+void MemSubsystem::dump_key_cache_lines() const {
+  uint32_t line_bases[32] = {};
+  const char *reasons[32] = {};
+  size_t line_count = 0;
+
+  auto add_line = [&](const char *reason, uint32_t addr) {
+    if (addr == 0) {
+      return;
+    }
+    const uint32_t line_base = addr & ~(static_cast<uint32_t>(DCACHE_LINE_BYTES) - 1u);
+    for (size_t i = 0; i < line_count; i++) {
+      if (line_bases[i] == line_base) {
+        return;
+      }
+    }
+    if (line_count < (sizeof(line_bases) / sizeof(line_bases[0]))) {
+      line_bases[line_count] = line_base;
+      reasons[line_count] = reason;
+      line_count++;
+    }
+  };
+
+  if (mshr_.cur.fill_addr != 0) {
+    add_line("mshr_fill_addr", mshr_.cur.fill_addr);
+  }
+  if (mshr_.cur.wb_addr != 0) {
+    add_line("mshr_wb_addr", mshr_.cur.wb_addr);
+  }
+
+  for (int i = 0; i < MSHR_ENTRIES; i++) {
+    const MSHREntry &cur_e = mshr_entries[i];
+    const MSHREntry &nxt_e = mshr_entries_nxt[i];
+    if (cur_e.valid) {
+      add_line("mshr_cur", get_addr(cur_e.index, cur_e.tag, 0));
+    }
+    if (nxt_e.valid) {
+      add_line("mshr_nxt", get_addr(nxt_e.index, nxt_e.tag, 0));
+    }
+  }
+
+  for (int i = 0; i < WB_ENTRIES; i++) {
+    const WriteBufferEntry &cur_e = write_buffer[i];
+    const WriteBufferEntry &nxt_e = write_buffer_nxt[i];
+    if (cur_e.valid) {
+      add_line("wb_cur", cur_e.addr);
+    }
+    if (nxt_e.valid) {
+      add_line("wb_nxt", nxt_e.addr);
+    }
+  }
+
+  const auto route_dbg = resp_route_block.debug_state();
+  if (route_dbg.dtlb.req_addr != 0) {
+    add_line("route_dtlb", route_dbg.dtlb.req_addr);
+  }
+  if (route_dbg.itlb.req_addr != 0) {
+    add_line("route_itlb", route_dbg.itlb.req_addr);
+  }
+  if (route_dbg.walk.req_addr != 0) {
+    add_line("route_walk", route_dbg.walk.req_addr);
+  }
+  if (route_dbg.ptw_event.req_addr != 0) {
+    add_line("ptw_event", route_dbg.ptw_event.req_addr);
+  }
+
+  const size_t recent_count =
+      (debug_event_count_ < 16) ? debug_event_count_ : static_cast<size_t>(16);
+  const size_t start =
+      (debug_event_head_ + kDebugEventCapacity - recent_count) %
+      kDebugEventCapacity;
+  for (size_t i = 0; i < recent_count; i++) {
+    const DebugEvent &e = debug_events_[(start + i) % kDebugEventCapacity];
+    if (e.addr != 0) {
+      add_line("recent_event", e.addr);
+    }
+  }
+
+  if (line_count == 0) {
+    std::printf("[DEADLOCK][MEM][CACHE_LINE] no key cache lines selected.\n");
+    return;
+  }
+
+  std::printf("[DEADLOCK][MEM][CACHE_LINE] dumping %zu key cache lines\n", line_count);
+  for (size_t i = 0; i < line_count; i++) {
+    dump_cache_line_for_addr(reasons[i], line_bases[i]);
+  }
+}
+
+void MemSubsystem::dump_cache_line_for_addr(const char *reason, uint32_t addr) const {
+  const AddrFields f = decode(addr);
+  const uint32_t line_base =
+      addr & ~(static_cast<uint32_t>(DCACHE_LINE_BYTES) - 1u);
+
+  std::printf(
+      "[DEADLOCK][MEM][CACHE_LINE][%s] line=0x%08x set=%u tag=0x%x bank=%u word_off=%u\n",
+      reason, line_base, f.set_idx, f.tag, f.bank, f.word_off);
+
+  for (int w = 0; w < DCACHE_WAYS; w++) {
+    const bool match = valid_array[f.set_idx][w] && tag_array[f.set_idx][w] == f.tag;
+    std::printf(
+        "[DEADLOCK][MEM][CACHE_LINE][%s][WAY %d] match=%d valid=%d dirty=%d tag=0x%x words=[",
+        reason, w, static_cast<int>(match), static_cast<int>(valid_array[f.set_idx][w]),
+        static_cast<int>(dirty_array[f.set_idx][w]), tag_array[f.set_idx][w]);
+    for (int word = 0; word < DCACHE_LINE_WORDS; word++) {
+      std::printf("%s%08x", (word == 0) ? "" : " ",
+                  data_array[f.set_idx][w][word]);
+    }
+    std::printf("]\n");
+  }
 }

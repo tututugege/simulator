@@ -1,9 +1,12 @@
 #include "diff.h"
+#include "DeadlockDebug.h"
 #include "SimCpu.h"
 #include "config.h"
+#include <csignal>
 #include <cstdint>
 #include <cstdlib>
 #include <getopt.h>
+#include <unistd.h>
 
 #ifndef MAX_COMMIT_INST
 #define MAX_COMMIT_INST 15000000000ULL
@@ -57,6 +60,48 @@ void print_help(char *argv[]) {
 long long sim_time = 0;
 SimCpu cpu;
 
+namespace {
+volatile std::sig_atomic_t g_sigint_requested = 0;
+
+void handle_sigint(int signo) {
+  if (signo != SIGINT) {
+    return;
+  }
+
+  if (g_sigint_requested != 0) {
+    const char msg[] =
+        "\n[sim] SIGINT received again, waiting for pending dump to finish...\n";
+    (void)write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    return;
+  }
+
+  g_sigint_requested = 1;
+  const char msg[] =
+      "\n[sim] SIGINT received, dumping LSU/MemSubsystem state before exit...\n";
+  (void)write(STDERR_FILENO, msg, sizeof(msg) - 1);
+}
+
+void install_signal_handlers() {
+  struct sigaction sa {};
+  sa.sa_handler = handle_sigint;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGINT, &sa, nullptr);
+}
+
+bool handle_pending_sigint() {
+  if (g_sigint_requested == 0) {
+    return false;
+  }
+
+  std::cout << "[sim] SIGINT observed at cycle " << std::dec << sim_time
+            << ", printing debug dump." << std::endl;
+  deadlock_debug::dump_all();
+  cpu.ctx.perf.perf_print();
+  return true;
+}
+} // namespace
+
 void exit_handler() {
   if (cpu.ctx.exit_reason == ExitReason::NONE) {
     return;
@@ -69,6 +114,7 @@ void exit_handler() {
 
 int main(int argc, char *argv[]) {
   atexit(exit_handler);
+  install_signal_handlers();
 
   SimConfig config;
 
@@ -271,6 +317,10 @@ int main(int argc, char *argv[]) {
     while (sim_time < (long long)MAX_SIM_TIME) { // Or a large limit
       difftest_step(false);
       sim_time++;
+      if (handle_pending_sigint()) {
+        free(p_memory);
+        return 130;
+      }
       if (ref_cpu.sim_end) {
         cpu.ctx.exit_reason = ExitReason::EBREAK;
         break;
@@ -297,6 +347,11 @@ int main(int argc, char *argv[]) {
     }
 
     cpu.cycle();
+
+    if (handle_pending_sigint()) {
+      free(p_memory);
+      return 130;
+    }
 
     if (cpu.ctx.perf.commit_num >= static_cast<uint64_t>(MAX_COMMIT_INST)) {
       cpu.ctx.exit_reason = ExitReason::SIMPOINT;
