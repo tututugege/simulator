@@ -17,7 +17,7 @@ uint32_t *p_memory;
 void SimCpu::commit_sync(InstInfo *inst) {
   BackTop *back = &this->back;
   if (inst->type == JALR) {
-    if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+    if (inst->tma.is_ret) {
       this->ctx.perf.ret_br_num++;
     } else {
       this->ctx.perf.jalr_br_num++;
@@ -28,7 +28,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
 
   if (inst->mispred) {
     if (inst->type == JALR) {
-      if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+      if (inst->tma.is_ret) {
         this->ctx.perf.ret_mispred_num++;
         bool pred_taken = false;
         const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
@@ -441,7 +441,7 @@ void SimCpu::back2front_comb() {
       if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
         br_type = BR_CALL;
       } else if (inst->type == JALR) {
-        if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
+        if (inst->tma.is_ret)
           br_type = BR_RET;
         else
           br_type = BR_IDIRECT;

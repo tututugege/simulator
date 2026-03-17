@@ -37,6 +37,7 @@ struct DecRenIO {
     wire<1> illegal_inst;
 
     inst_type_bits_t type;
+    InstTmaMeta tma;
     InstDebugMeta dbg;
 
     DecRenInst() { std::memset(this, 0, sizeof(DecRenInst)); }
@@ -66,6 +67,7 @@ struct DecRenIO {
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
       dst.type = encode_inst_type(src.type);
+      dst.tma = src.tma;
       dst.dbg = src.dbg;
       return dst;
     }
@@ -97,6 +99,7 @@ struct DecRenIO {
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = decode_inst_type(type);
+      dst.tma = tma;
       dst.dbg = dbg;
       return dst;
     }
@@ -290,7 +293,6 @@ struct RobCommitIO {
   struct RobCommitInst {
     wire<32> diag_val;
     wire<AREG_IDX_WIDTH> dest_areg;
-    wire<AREG_IDX_WIDTH> src1_areg;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> old_dest_preg;
 
@@ -302,20 +304,13 @@ struct RobCommitIO {
     wire<1> br_taken;
 
     wire<1> dest_en;
-    wire<1> is_atomic;
-    wire<3> func3;
-    wire<7> func7;
-    wire<32> imm;
-    wire<ROB_IDX_WIDTH> rob_idx;
     wire<STQ_IDX_WIDTH> stq_idx;
-
-    wire<2> uop_num;
-    wire<2> cplt_num;
 
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
     inst_type_bits_t type;
+    InstTmaMeta tma;
     InstDebugMeta dbg;
     wire<1> flush_pipe;
 
@@ -325,7 +320,6 @@ struct RobCommitIO {
       RobCommitInst dst;
       dst.diag_val = src.diag_val;
       dst.dest_areg = src.dest_areg;
-      dst.src1_areg = src.src1_areg;
       dst.dest_preg = src.dest_preg;
       dst.old_dest_preg = src.old_dest_preg;
       dst.ftq_idx = src.ftq_idx;
@@ -334,17 +328,11 @@ struct RobCommitIO {
       dst.mispred = src.mispred;
       dst.br_taken = src.br_taken;
       dst.dest_en = src.dest_en;
-      dst.is_atomic = src.is_atomic;
-      dst.func3 = src.func3;
-      dst.func7 = src.func7;
-      dst.imm = src.imm;
-      dst.rob_idx = src.rob_idx;
       dst.stq_idx = src.stq_idx;
-      dst.uop_num = src.uop_num;
-      dst.cplt_num = src.cplt_num;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
       dst.type = encode_inst_type(src.type);
+      dst.tma = src.tma;
       dst.dbg = src.dbg;
       dst.flush_pipe = src.flush_pipe;
       return dst;
@@ -354,7 +342,6 @@ struct RobCommitIO {
       InstInfo dst;
       dst.diag_val = diag_val;
       dst.dest_areg = dest_areg;
-      dst.src1_areg = src1_areg;
       dst.dest_preg = dest_preg;
       dst.old_dest_preg = old_dest_preg;
       dst.ftq_idx = ftq_idx;
@@ -363,19 +350,13 @@ struct RobCommitIO {
       dst.mispred = mispred;
       dst.br_taken = br_taken;
       dst.dest_en = dest_en;
-      dst.is_atomic = is_atomic;
-      dst.func3 = func3;
-      dst.func7 = func7;
-      dst.imm = imm;
-      dst.rob_idx = rob_idx;
       dst.stq_idx = stq_idx;
-      dst.uop_num = uop_num;
-      dst.cplt_num = cplt_num;
       dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = decode_inst_type(type);
+      dst.tma = tma;
       dst.dbg = dbg;
       dst.flush_pipe = flush_pipe;
       return dst;
@@ -461,6 +442,7 @@ struct DisRobIO {
     wire<1> illegal_inst;
 
     inst_type_bits_t type;
+    InstTmaMeta tma;
     InstDebugMeta dbg;
     wire<1> flush_pipe;
 
@@ -494,6 +476,7 @@ struct DisRobIO {
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
       dst.type = encode_inst_type(src.type);
+      dst.tma = src.tma;
       dst.dbg = src.dbg;
       dst.flush_pipe = src.flush_pipe;
       return dst;
@@ -529,6 +512,7 @@ struct DisRobIO {
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = decode_inst_type(type);
+      dst.tma = tma;
       dst.dbg = dbg;
       dst.flush_pipe = flush_pipe;
       return dst;
@@ -585,6 +569,7 @@ struct RenDisIO {
     wire<1> illegal_inst;
 
     inst_type_bits_t type;
+    InstTmaMeta tma;
     InstDebugMeta dbg;
 
     RenDisInst() { std::memset(this, 0, sizeof(RenDisInst)); }
@@ -620,6 +605,7 @@ struct RenDisIO {
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
       dst.type = encode_inst_type(src.type);
+      dst.tma = src.tma;
       dst.dbg = src.dbg;
       return dst;
     }
@@ -657,6 +643,7 @@ struct RenDisIO {
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
       dst.type = decode_inst_type(type);
+      dst.tma = tma;
       dst.dbg = dbg;
       return dst;
     }

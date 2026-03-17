@@ -279,6 +279,11 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   uop.page_fault_store = false;
   uop.illegal_inst = false;
   uop.type = NOP;
+  uop.tma.is_cache_miss = false;
+  uop.tma.is_ret = false;
+  uop.tma.mem_commit_is_load = false;
+  uop.tma.mem_commit_is_store = false;
+  uop.dbg.mem_align_mask = 0;
   static uint64_t global_inst_idx = 0;
   uop.dbg.inst_idx = global_inst_idx++;
 
@@ -493,6 +498,19 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   }
 
   uop.uop_num = uop_num;
+  uop.tma.is_ret =
+      (uop.type == JALR && uop.src1_areg == 1 && uop.dest_areg == 0 &&
+       uop.imm == 0);
+  uop.tma.mem_commit_is_load =
+      (uop.type == LOAD || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::SC));
+  uop.tma.mem_commit_is_store =
+      (uop.type == STORE || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR));
+  if (uop.tma.mem_commit_is_load) {
+    uop.dbg.mem_align_mask =
+        (uop.func3 & 0x3) == 0   ? 0
+        : (uop.func3 & 0x3) == 1 ? 1
+                                 : 3;
+  }
 
   if (uop.type == AMO && uop.dest_areg == 0 && (uop.func7 >> 2) != AmoOp::LR &&
       (uop.func7 >> 2) != AmoOp::SC) {

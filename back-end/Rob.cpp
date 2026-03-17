@@ -8,15 +8,28 @@
 #include <iostream>
 
 namespace {
-inline uint32_t load_alignment_mask(uint32_t func3) {
-  switch (func3 & 0x3) {
-  case 0:
-    return 0;
-  case 1:
-    return 1;
-  default:
-    return 3;
-  }
+inline bool rob_is_store(const RobStoredInst &uop) {
+  return uop.tma.mem_commit_is_store;
+}
+
+inline bool rob_is_load(const RobStoredInst &uop) {
+  return uop.tma.mem_commit_is_load;
+}
+
+inline bool rob_is_page_fault(const RobStoredInst &uop) {
+  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;
+}
+
+inline bool rob_is_exception(const RobStoredInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return rob_is_page_fault(uop) || uop.illegal_inst || type == ECALL;
+}
+
+inline bool rob_is_flush_inst(const RobStoredInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return type == CSR || type == ECALL || type == MRET || type == SRET ||
+         type == SFENCE_VMA || rob_is_exception(uop) || type == EBREAK ||
+         uop.flush_pipe;
 }
 } // namespace
 
@@ -41,7 +54,7 @@ void Rob::comb_ready() {
   out.rob2csr->interrupt_resp = false;
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop)) {
+    if (entry[i][deq_ptr].valid && rob_is_flush_inst(entry[i][deq_ptr].uop)) {
       out.rob2dis->stall = true;
       break;
     }
@@ -72,7 +85,8 @@ void Rob::comb_ready() {
       if (!is_ready) {
         // This is the oldest incomplete instruction. It is the bottleneck.
         found_stall = true;
-        if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {
+        if (rob_is_load(entry[i][deq_ptr].uop) ||
+            rob_is_store(entry[i][deq_ptr].uop)) {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
           stall_is_miss =
@@ -138,7 +152,8 @@ void Rob::comb_commit() {
 
   if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
-      if ((entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop)) ||
+      if ((entry[i][deq_ptr].valid &&
+           rob_is_flush_inst(entry[i][deq_ptr].uop)) ||
           out.rob2csr->interrupt_resp) {
         single_commit = true;
         break;
@@ -153,7 +168,8 @@ void Rob::comb_commit() {
             entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
           single_commit = false;
         }
-        if (entry[i][deq_ptr].uop.type == SFENCE_VMA && in.lsu2rob != nullptr &&
+        if (decode_inst_type(entry[i][deq_ptr].uop.type) == SFENCE_VMA &&
+            in.lsu2rob != nullptr &&
             in.lsu2rob->committed_store_pending) {
           // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
@@ -166,8 +182,7 @@ void Rob::comb_commit() {
   }
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    out.rob_commit->commit_entry[i].uop =
-        RobCommitIO::RobCommitInst::from_inst_info(entry[i][deq_ptr].uop);
+    out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop.to_commit_inst();
   }
 
   // 一组提交
@@ -177,9 +192,9 @@ void Rob::comb_commit() {
         const auto &uop = entry[i][deq_ptr].uop;
         // 仅在 Load 已完成且非异常语义时检查地址对齐，避免中断单提交/异常路径下
         // 将 diag_val 的其他语义（如指令字、异常地址）误当作物理地址检查。
-        if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
-            !is_page_fault(uop)) {
-          uint32_t alignment_mask = load_alignment_mask(uop.func3);
+        if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+            !rob_is_page_fault(uop)) {
+          uint32_t alignment_mask = uop.dbg.mem_align_mask;
           Assert((uop.diag_val & alignment_mask) == 0 &&
                  "DUT: Load address misaligned at commit!");
         }
@@ -207,32 +222,33 @@ void Rob::comb_commit() {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       // 中断触发 single_commit 时，首条指令可能尚未完成，diag_val
       // 可能不是地址语义。
-      if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
-          !is_page_fault(uop)) {
-        uint32_t alignment_mask = load_alignment_mask(uop.func3);
+      if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+          !rob_is_page_fault(uop)) {
+        uint32_t alignment_mask = uop.dbg.mem_align_mask;
         Assert((uop.diag_val & alignment_mask) == 0 &&
                "DUT: Load address misaligned at single commit!");
       }
     }
 
     entry_1[single_idx][deq_ptr].valid = false;
-    if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
+    if (rob_is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       Assert(in.ftq_pc_resp->resp[0].valid);
       uint32_t single_pc = in.ftq_pc_resp->resp[0].pc;
       out.rob_bcast->flush = true;
-      out.rob_bcast->exception = is_exception(uop) || out.rob2csr->interrupt_resp;
+      out.rob_bcast->exception =
+          rob_is_exception(uop) || out.rob2csr->interrupt_resp;
       out.rob_bcast->pc = single_pc;
 
       if (out.rob2csr->interrupt_resp) {
         // interrupt拥有最高优先级
-      } else if (uop.type == ECALL) {
+      } else if (decode_inst_type(uop.type) == ECALL) {
         out.rob_bcast->ecall = true;
         out.rob_bcast->pc = single_pc;
-      } else if (uop.type == MRET) {
+      } else if (decode_inst_type(uop.type) == MRET) {
         out.rob_bcast->mret = true;
-      } else if (uop.type == SRET) {
+      } else if (decode_inst_type(uop.type) == SRET) {
         out.rob_bcast->sret = true;
       } else if (uop.page_fault_store) {
         out.rob_bcast->page_fault_store = true;
@@ -246,19 +262,19 @@ void Rob::comb_commit() {
       } else if (uop.illegal_inst) {
         out.rob_bcast->illegal_inst = true;
         out.rob_bcast->trap_val = uop.diag_val;
-      } else if (uop.type == EBREAK) {
+      } else if (decode_inst_type(uop.type) == EBREAK) {
         ctx->exit_reason = ExitReason::EBREAK;
-      } else if (uop.type == WFI) {
+      } else if (decode_inst_type(uop.type) == WFI) {
         ctx->exit_reason = ExitReason::WFI;
-      } else if (uop.type == CSR) {
+      } else if (decode_inst_type(uop.type) == CSR) {
         out.rob2csr->commit = true;
-      } else if (uop.type == SFENCE_VMA) {
+      } else if (decode_inst_type(uop.type) == SFENCE_VMA) {
         out.rob_bcast->fence = true;
       } else if (uop.flush_pipe) {
         // MMIO-triggered flush, no extra CSR/MMU actions needed here
         out.rob_bcast->pc = single_pc;
       } else {
-        if (uop.type != CSR) {
+        if (decode_inst_type(uop.type) != CSR) {
           Assert(0 && "Error: Who is Rem? This pointer is forgotten.");
         }
       }
@@ -291,9 +307,9 @@ void Rob::comb_commit() {
                entry[i][deq_ptr].uop.dbg.pc, entry[i][deq_ptr].uop.diag_val,
                entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
                (i + (deq_ptr * ROB_BANK_NUM)),
-               is_page_fault(entry[i][deq_ptr].uop),
+               rob_is_page_fault(entry[i][deq_ptr].uop),
                (long long)entry[i][deq_ptr].uop.dbg.inst_idx,
-               entry[i][deq_ptr].uop.type);
+               decode_inst_type(entry[i][deq_ptr].uop.type));
       } else {
         printf("[Bank %d] INVALID\n", i);
       }
@@ -408,7 +424,8 @@ void Rob::comb_fire() {
     for (int i = 0; i < DECODE_WIDTH; i++) {
       if (in.dis2rob->dis_fire[i]) {
         entry_1[i][enq_ptr].valid = true;
-        entry_1[i][enq_ptr].uop = in.dis2rob->uop[i].to_inst_info();
+        entry_1[i][enq_ptr].uop =
+            RobStoredInst::from_dis_rob_inst(in.dis2rob->uop[i]);
         entry_1[i][enq_ptr].uop.cplt_num = 0;
         enq = true;
       }
