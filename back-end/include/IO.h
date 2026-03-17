@@ -21,6 +21,7 @@ struct DecRenIO {
     wire<1> dest_en;
     wire<1> src1_en;
     wire<1> src2_en;
+    wire<1> is_atomic;
     wire<1> src1_is_pc;
     wire<1> src2_is_imm;
     wire<3> func3;
@@ -52,6 +53,7 @@ struct DecRenIO {
       dst.dest_en = src.dest_en;
       dst.src1_en = src.src1_en;
       dst.src2_en = src.src2_en;
+      dst.is_atomic = src.is_atomic;
       dst.src1_is_pc = src.src1_is_pc;
       dst.src2_is_imm = src.src2_is_imm;
       dst.func3 = src.func3;
@@ -80,6 +82,7 @@ struct DecRenIO {
       dst.dest_en = dest_en;
       dst.src1_en = src1_en;
       dst.src2_en = src2_en;
+      dst.is_atomic = is_atomic;
       dst.src1_is_pc = src1_is_pc;
       dst.src2_is_imm = src2_is_imm;
       dst.func3 = func3;
@@ -299,6 +302,7 @@ struct RobCommitIO {
     wire<1> br_taken;
 
     wire<1> dest_en;
+    wire<1> is_atomic;
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
@@ -330,6 +334,7 @@ struct RobCommitIO {
       dst.mispred = src.mispred;
       dst.br_taken = src.br_taken;
       dst.dest_en = src.dest_en;
+      dst.is_atomic = src.is_atomic;
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
@@ -358,6 +363,7 @@ struct RobCommitIO {
       dst.mispred = mispred;
       dst.br_taken = br_taken;
       dst.dest_en = dest_en;
+      dst.is_atomic = is_atomic;
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
@@ -437,6 +443,7 @@ struct DisRobIO {
     wire<1> br_taken;
 
     wire<1> dest_en;
+    wire<1> is_atomic;
     wire<3> func3;
     wire<7> func7;
     wire<32> imm;
@@ -472,6 +479,7 @@ struct DisRobIO {
       dst.mispred = src.mispred;
       dst.br_taken = src.br_taken;
       dst.dest_en = src.dest_en;
+      dst.is_atomic = src.is_atomic;
       dst.func3 = src.func3;
       dst.func7 = src.func7;
       dst.imm = src.imm;
@@ -504,6 +512,7 @@ struct DisRobIO {
       dst.mispred = mispred;
       dst.br_taken = br_taken;
       dst.dest_en = dest_en;
+      dst.is_atomic = is_atomic;
       dst.func3 = func3;
       dst.func7 = func7;
       dst.imm = imm;
@@ -558,6 +567,7 @@ struct RenDisIO {
     wire<1> dest_en;
     wire<1> src1_en;
     wire<1> src2_en;
+    wire<1> is_atomic;
     wire<1> src1_busy;
     wire<1> src2_busy;
     wire<1> src1_is_pc;
@@ -595,6 +605,7 @@ struct RenDisIO {
       dst.dest_en = src.dest_en;
       dst.src1_en = src.src1_en;
       dst.src2_en = src.src2_en;
+      dst.is_atomic = src.is_atomic;
       dst.src1_busy = src.src1_busy;
       dst.src2_busy = src.src2_busy;
       dst.src1_is_pc = src.src1_is_pc;
@@ -629,6 +640,7 @@ struct RenDisIO {
       dst.dest_en = dest_en;
       dst.src1_en = src1_en;
       dst.src2_en = src2_en;
+      dst.is_atomic = is_atomic;
       dst.src1_busy = src1_busy;
       dst.src2_busy = src2_busy;
       dst.src1_is_pc = src1_is_pc;
@@ -1746,6 +1758,7 @@ struct ExeLsuIO {
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<3> func3;
     wire<7> func7;
+    wire<1> is_atomic;
     wire<BR_MASK_WIDTH> br_mask;
     wire<ROB_IDX_WIDTH> rob_idx;
     wire<STQ_IDX_WIDTH> stq_idx;
@@ -1764,6 +1777,7 @@ struct ExeLsuIO {
       dst.dest_preg = src.dest_preg;
       dst.func3 = src.func3;
       dst.func7 = src.func7;
+      dst.is_atomic = src.is_atomic;
       dst.br_mask = src.br_mask;
       dst.rob_idx = src.rob_idx;
       dst.stq_idx = src.stq_idx;
@@ -1782,6 +1796,7 @@ struct ExeLsuIO {
       dst.dest_preg = dest_preg;
       dst.func3 = func3;
       dst.func7 = func7;
+      dst.is_atomic = is_atomic;
       dst.br_mask = br_mask;
       dst.rob_idx = rob_idx;
       dst.stq_idx = stq_idx;

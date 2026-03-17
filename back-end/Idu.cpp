@@ -465,6 +465,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src2_en = true;
     uop.imm = 0;
     uop.type = AMO;
+    uop.is_atomic = true;
 
     if ((number_funct7_unsigned >> 2) == AmoOp::LR) {
       uop_num = 1;
