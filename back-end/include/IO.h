@@ -219,6 +219,70 @@ struct DecBroadcastIO {
   }
 };
 
+struct FtqPcReadReq {
+  wire<1> valid;
+  wire<FTQ_IDX_WIDTH> ftq_idx;
+  wire<FTQ_OFFSET_WIDTH> ftq_offset;
+
+  FtqPcReadReq() {
+    valid = {};
+    ftq_idx = {};
+    ftq_offset = {};
+  }
+};
+
+struct FtqPcReadResp {
+  wire<1> valid;
+  wire<1> entry_valid;
+  wire<32> pc;
+  wire<1> pred_taken;
+  wire<32> next_pc;
+
+  FtqPcReadResp() {
+    valid = {};
+    entry_valid = {};
+    pc = {};
+    pred_taken = {};
+    next_pc = {};
+  }
+};
+
+struct FtqExuPcReqIO {
+  FtqPcReadReq req[FTQ_EXU_PC_PORT_NUM];
+
+  FtqExuPcReqIO() {
+    for (auto &v : req)
+      v = {};
+  }
+};
+
+struct FtqExuPcRespIO {
+  FtqPcReadResp resp[FTQ_EXU_PC_PORT_NUM];
+
+  FtqExuPcRespIO() {
+    for (auto &v : resp)
+      v = {};
+  }
+};
+
+struct FtqRobPcReqIO {
+  FtqPcReadReq req[FTQ_ROB_PC_PORT_NUM];
+
+  FtqRobPcReqIO() {
+    for (auto &v : req)
+      v = {};
+  }
+};
+
+struct FtqRobPcRespIO {
+  FtqPcReadResp resp[FTQ_ROB_PC_PORT_NUM];
+
+  FtqRobPcRespIO() {
+    for (auto &v : resp)
+      v = {};
+  }
+};
+
 struct RobCommitIO {
   struct RobCommitInst {
     wire<32> diag_val;

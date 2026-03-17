@@ -1,6 +1,5 @@
 #pragma once
 #include "AbstractFU.h" // for __builtin_clz
-#include "FTQ.h"
 #include "IO.h"
 #include "config.h"
 // #include <cassert>
@@ -19,19 +18,23 @@ class AluUnit : public FixedLatencyFU {
   static constexpr int OR = 0b110;
   static constexpr int AND = 0b111;
 
-  FTQLookupIO *ftq_lookup;
+  FtqExuPcRespIO *ftq_pc_resp;
+  int ftq_pc_port;
 
 public:
   AluUnit(std::string name = "ALU", int port_idx = 0,
-          FTQLookupIO *ftq_lookup = nullptr)
-      : FixedLatencyFU(name, port_idx, 1), ftq_lookup(ftq_lookup) {}
+          FtqExuPcRespIO *ftq_pc_resp = nullptr, int ftq_pc_port = 0)
+      : FixedLatencyFU(name, port_idx, 1), ftq_pc_resp(ftq_pc_resp),
+        ftq_pc_port(ftq_pc_port) {}
 
 protected:
   void impl_compute(MicroOp &inst) override {
     uint32_t operand1, operand2;
-    if (inst.src1_is_pc)
-      operand1 = ftq_lookup_pc(ftq_lookup, inst.ftq_idx, inst.ftq_offset);
-    else
+    if (inst.src1_is_pc) {
+      Assert(ftq_pc_resp != nullptr);
+      Assert(ftq_pc_resp->resp[ftq_pc_port].valid);
+      operand1 = ftq_pc_resp->resp[ftq_pc_port].pc;
+    } else
       operand1 = inst.src1_rdata;
 
     if (inst.src2_is_imm) {
@@ -377,17 +380,22 @@ class BruUnit : public FixedLatencyFU {
   static constexpr int BGE = 0b101;
   static constexpr int BLTU = 0b110;
   static constexpr int BGEU = 0b111;
-  FTQLookupIO *ftq_lookup;
+  FtqExuPcRespIO *ftq_pc_resp;
+  int ftq_pc_port;
 
 public:
-  BruUnit(std::string name, int port_idx, FTQLookupIO *ftq_lookup)
-      : FixedLatencyFU(name, port_idx, 1), ftq_lookup(ftq_lookup) {}
+  BruUnit(std::string name, int port_idx, FtqExuPcRespIO *ftq_pc_resp,
+          int ftq_pc_port)
+      : FixedLatencyFU(name, port_idx, 1), ftq_pc_resp(ftq_pc_resp),
+        ftq_pc_port(ftq_pc_port) {}
 
 protected:
   void impl_compute(MicroOp &inst) override {
     uint32_t operand1 = inst.src1_rdata;
     uint32_t operand2 = inst.src2_rdata;
-    uint32_t inst_pc = ftq_lookup_pc(ftq_lookup, inst.ftq_idx, inst.ftq_offset);
+    Assert(ftq_pc_resp != nullptr);
+    Assert(ftq_pc_resp->resp[ftq_pc_port].valid);
+    uint32_t inst_pc = ftq_pc_resp->resp[ftq_pc_port].pc;
     uint32_t pc_br = inst_pc + inst.imm;
     bool br_taken = true;
 
@@ -430,12 +438,12 @@ protected:
     bool pred_taken = false;
     uint32_t pred_target = 0;
 
-    FTQEntry &ftq_entry = ftq_lookup->entries[inst.ftq_idx];
-    if (ftq_entry.valid) {
-      pred_taken = ftq_entry.pred_taken_mask[inst.ftq_offset];
+    const auto &ftq_resp = ftq_pc_resp->resp[ftq_pc_port];
+    if (ftq_resp.entry_valid) {
+      pred_taken = ftq_resp.pred_taken;
       if (pred_taken) {
         // FTQ stores next_pc of the fetch block.
-        pred_target = ftq_entry.next_pc;
+        pred_target = ftq_resp.next_pc;
       } else {
         pred_target = inst_pc + 4;
       }

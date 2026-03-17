@@ -1,5 +1,4 @@
 #include "Rob.h"
-#include "FTQ.h"
 #include "IO.h"
 #include "RISCV.h"
 #include "config.h"
@@ -95,6 +94,23 @@ void Rob::comb_ready() {
 
   out.rob2dis->empty = is_empty();
   out.rob2dis->ready = !is_full();
+}
+
+void Rob::comb_ftq_pc_req() {
+  out.ftq_pc_req->req[0] = {};
+
+  if (is_empty()) {
+    return;
+  }
+
+  for (int i = 0; i < ROB_BANK_NUM; i++) {
+    if (entry[i][deq_ptr].valid) {
+      out.ftq_pc_req->req[0].valid = true;
+      out.ftq_pc_req->req[0].ftq_idx = entry[i][deq_ptr].uop.ftq_idx;
+      out.ftq_pc_req->req[0].ftq_offset = entry[i][deq_ptr].uop.ftq_offset;
+      break;
+    }
+  }
 }
 
 void Rob::comb_commit() {
@@ -203,8 +219,8 @@ void Rob::comb_commit() {
     if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
-      uint32_t single_pc =
-          ftq_lookup_pc(ftq_lookup, uop.ftq_idx, uop.ftq_offset);
+      Assert(in.ftq_pc_resp->resp[0].valid);
+      uint32_t single_pc = in.ftq_pc_resp->resp[0].pc;
       out.rob_bcast->flush = true;
       out.rob_bcast->exception = is_exception(uop) || out.rob2csr->interrupt_resp;
       out.rob_bcast->pc = single_pc;

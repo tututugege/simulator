@@ -22,9 +22,9 @@ void BackTop::init() {
   dis = new Dispatch(ctx);
   isu = new Isu(ctx);
   prf = new Prf(ctx);
-  exu = new Exu(ctx, &ftq_lookup);
+  exu = new Exu(ctx);
   csr = new Csr();
-  rob = new Rob(ctx, &ftq_lookup);
+  rob = new Rob(ctx);
   lsu = new SimpleLsu(ctx);
   lsu->set_csr(csr);
 
@@ -92,6 +92,7 @@ void BackTop::init() {
   exu->in.rob_bcast = &rob_bcast;
   exu->in.lsu2exe = &lsu2exe;
   exu->in.csr2exe = &csr2exe;
+  exu->in.ftq_pc_resp = &ftq_exu_pc_resp;
 
   exu->out.exe2prf = &exe2prf;
   exu->out.exe2iss = &exe2iss;
@@ -100,17 +101,20 @@ void BackTop::init() {
   exu->out.exe2csr = &exe2csr;
   exu->out.exu2id = &exu2id;
   exu->out.exu2rob = &exu2rob;
+  exu->out.ftq_pc_req = &ftq_exu_pc_req;
 
   rob->in.dis2rob = &dis2rob;
   rob->in.dec_bcast = &dec_bcast;
   rob->in.lsu2rob = &lsu2rob;
   rob->in.csr2rob = &csr2rob;
   rob->in.exu2rob = &exu2rob;
+  rob->in.ftq_pc_resp = &ftq_rob_pc_resp;
 
   rob->out.rob_bcast = &rob_bcast;
   rob->out.rob_commit = &rob_commit;
   rob->out.rob2dis = &rob2dis;
   rob->out.rob2csr = &rob2csr;
+  rob->out.ftq_pc_req = &ftq_rob_pc_req;
 
   csr->in.exe2csr = &exe2csr;
   csr->in.rob2csr = &rob2csr;
@@ -164,6 +168,10 @@ void BackTop::comb() {
   dec2front = {};
   pre_idu_issue = {};
   ftq_lookup = {};
+  ftq_exu_pc_req = {};
+  ftq_exu_pc_resp = {};
+  ftq_rob_pc_req = {};
+  ftq_rob_pc_resp = {};
 
   dec2ren = {};
   dec_bcast = {};
@@ -251,11 +259,39 @@ void BackTop::comb() {
   idu->comb_branch();
 
   rob->comb_ready();
+  rob->comb_ftq_pc_req();
+  for (int i = 0; i < FTQ_ROB_PC_PORT_NUM; i++) {
+    ftq_rob_pc_resp.resp[i] = {};
+    if (ftq_rob_pc_req.req[i].valid) {
+      const auto &entry = ftq_lookup.entries[ftq_rob_pc_req.req[i].ftq_idx];
+      ftq_rob_pc_resp.resp[i].valid = true;
+      ftq_rob_pc_resp.resp[i].entry_valid = entry.valid;
+      ftq_rob_pc_resp.resp[i].pc =
+          entry.start_pc + (ftq_rob_pc_req.req[i].ftq_offset << 2);
+      ftq_rob_pc_resp.resp[i].pred_taken =
+          entry.pred_taken_mask[ftq_rob_pc_req.req[i].ftq_offset];
+      ftq_rob_pc_resp.resp[i].next_pc = entry.next_pc;
+    }
+  }
   rob->comb_commit();
 
   dis->comb_alloc();
   lsu->comb_load_res();
 
+  exu->comb_ftq_pc_req();
+  for (int i = 0; i < FTQ_EXU_PC_PORT_NUM; i++) {
+    ftq_exu_pc_resp.resp[i] = {};
+    if (ftq_exu_pc_req.req[i].valid) {
+      const auto &entry = ftq_lookup.entries[ftq_exu_pc_req.req[i].ftq_idx];
+      ftq_exu_pc_resp.resp[i].valid = true;
+      ftq_exu_pc_resp.resp[i].entry_valid = entry.valid;
+      ftq_exu_pc_resp.resp[i].pc =
+          entry.start_pc + (ftq_exu_pc_req.req[i].ftq_offset << 2);
+      ftq_exu_pc_resp.resp[i].pred_taken =
+          entry.pred_taken_mask[ftq_exu_pc_req.req[i].ftq_offset];
+      ftq_exu_pc_resp.resp[i].next_pc = entry.next_pc;
+    }
+  }
   exu->comb_to_csr();
   csr->comb_csr_read();
   exu->comb_exec();

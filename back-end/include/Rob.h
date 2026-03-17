@@ -2,14 +2,13 @@
 #include "IO.h"
 #include "config.h"
 
-class FTQLookupIO;
-
 class RobOut {
 public:
   RobDisIO *rob2dis;
   RobCsrIO *rob2csr;
   RobCommitIO *rob_commit;
   RobBroadcastIO *rob_bcast;
+  FtqRobPcReqIO *ftq_pc_req;
 };
 
 class RobIn {
@@ -19,19 +18,17 @@ public:
   LsuRobIO *lsu2rob;
   DecBroadcastIO *dec_bcast;
   ExuRobIO *exu2rob;
+  FtqRobPcRespIO *ftq_pc_resp;
 };
 
 class Rob {
 public:
-  Rob(SimContext *ctx, FTQLookupIO *ftq_lookup) {
-    this->ctx = ctx;
-    this->ftq_lookup = ftq_lookup;
-  }
+  Rob(SimContext *ctx) { this->ctx = ctx; }
   SimContext *ctx;
-  FTQLookupIO *ftq_lookup;
   void init();
   void seq();
   void comb_ready();
+  void comb_ftq_pc_req();
   void comb_commit();
   void comb_complete();
   void comb_fire();

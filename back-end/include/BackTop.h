@@ -91,6 +91,8 @@ private:
   PrfAwakeIO prf_awake;
   ExuIdIO exu2id;
   ExuRobIO exu2rob;
+  FtqExuPcReqIO ftq_exu_pc_req;
+  FtqExuPcRespIO ftq_exu_pc_resp;
 
   ExePrfIO exe2prf;
   ExeIssIO exe2iss;
@@ -108,6 +110,8 @@ private:
   RobCsrIO rob2csr;
   RobBroadcastIO rob_bcast;
   RobCommitIO rob_commit;
+  FtqRobPcReqIO ftq_rob_pc_req;
+  FtqRobPcRespIO ftq_rob_pc_resp;
 
   CsrExeIO csr2exe;
   CsrRobIO csr2rob;

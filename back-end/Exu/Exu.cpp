@@ -7,8 +7,7 @@ static inline bool is_br_killed(const MicroOp &uop, const DecBroadcastIO *db) {
   return (uop.br_mask & db->br_mask) != 0;
 }
 
-Exu::Exu(SimContext *ctx, FTQLookupIO *ftq_lookup)
-    : ctx(ctx), ftq_lookup(ftq_lookup) {
+Exu::Exu(SimContext *ctx) : ctx(ctx) {
   // 可以在这里或 init 创建 backend
 }
 
@@ -20,6 +19,7 @@ Exu::~Exu() {
 
 void Exu::init() {
   int alu_cnt = 0;
+  int bru_cnt = 0;
   int agu_cnt = 0;
   int sdu_cnt = 0;
 
@@ -65,7 +65,7 @@ void Exu::init() {
 
     // 6. BRU
     if (mask & OP_MASK_BR) {
-      auto bru = new BruUnit("BRU", i, ftq_lookup);
+      auto bru = new BruUnit("BRU", i, in.ftq_pc_resp, ALU_NUM + bru_cnt++);
       units.push_back(bru);
       port_mappings[i].entries.push_back({bru, OP_MASK_BR});
     }
@@ -73,7 +73,7 @@ void Exu::init() {
     // 7. ALU
     if (mask & OP_MASK_ALU) {
       std::string alu_name = "ALU" + std::to_string(alu_cnt++);
-      auto alu = new AluUnit(alu_name, i, ftq_lookup);
+      auto alu = new AluUnit(alu_name, i, in.ftq_pc_resp, alu_cnt - 1);
       units.push_back(alu);
       port_mappings[i].entries.push_back({alu, OP_MASK_ALU});
     }
@@ -100,6 +100,38 @@ void Exu::init() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     inst_r[i].valid = false;
     inst_r_1[i].valid = false;
+  }
+}
+
+void Exu::comb_ftq_pc_req() {
+  for (auto &req : out.ftq_pc_req->req) {
+    req = {};
+  }
+
+  for (int p_idx = 0; p_idx < ISSUE_WIDTH; p_idx++) {
+    if (!inst_r[p_idx].valid) {
+      continue;
+    }
+
+    const MicroOp &uop = inst_r[p_idx].uop;
+    if (in.rob_bcast->flush || is_br_killed(uop, in.dec_bcast)) {
+      continue;
+    }
+
+    uint64_t req_bit = (1ULL << uop.op);
+    if (p_idx >= IQ_ALU_PORT_BASE && p_idx < IQ_ALU_PORT_BASE + ALU_NUM &&
+        (req_bit & OP_MASK_ALU) && uop.src1_is_pc) {
+      int slot = p_idx - IQ_ALU_PORT_BASE;
+      out.ftq_pc_req->req[slot].valid = true;
+      out.ftq_pc_req->req[slot].ftq_idx = uop.ftq_idx;
+      out.ftq_pc_req->req[slot].ftq_offset = uop.ftq_offset;
+    } else if (p_idx >= IQ_BR_PORT_BASE &&
+               p_idx < IQ_BR_PORT_BASE + BRU_NUM && (req_bit & OP_MASK_BR)) {
+      int slot = ALU_NUM + (p_idx - IQ_BR_PORT_BASE);
+      out.ftq_pc_req->req[slot].valid = true;
+      out.ftq_pc_req->req[slot].ftq_idx = uop.ftq_idx;
+      out.ftq_pc_req->req[slot].ftq_offset = uop.ftq_offset;
+    }
   }
 }
 
@@ -144,15 +176,20 @@ void Exu::comb_to_csr() {
   out.exe2csr->re = false;
 
   if (inst_r[0].valid && inst_r[0].uop.op == UOP_CSR && !in.rob_bcast->flush) {
-    out.exe2csr->we = inst_r[0].uop.func3 == 1 || inst_r[0].uop.src1_areg != 0;
-    out.exe2csr->re = inst_r[0].uop.func3 != 1 || inst_r[0].uop.dest_areg != 0;
+    const auto &uop = inst_r[0].uop;
+    bool is_csrrw_family = (uop.func3 == 0b001) || (uop.func3 == 0b101);
+    bool src_is_zero = (uop.imm == 0);
+    bool rd_is_zero = (uop.dest_preg == 0);
 
-    out.exe2csr->idx = inst_r[0].uop.csr_idx;
-    out.exe2csr->wcmd = inst_r[0].uop.func3 & 0b11;
-    if (inst_r[0].uop.src2_is_imm) {
-      out.exe2csr->wdata = inst_r[0].uop.imm;
+    out.exe2csr->we = is_csrrw_family || !src_is_zero;
+    out.exe2csr->re = !is_csrrw_family || !rd_is_zero;
+
+    out.exe2csr->idx = uop.csr_idx;
+    out.exe2csr->wcmd = uop.func3 & 0b11;
+    if (uop.src2_is_imm) {
+      out.exe2csr->wdata = uop.imm;
     } else {
-      out.exe2csr->wdata = inst_r[0].uop.src1_rdata;
+      out.exe2csr->wdata = uop.src1_rdata;
     }
   }
 }
