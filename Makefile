@@ -12,7 +12,7 @@ CXX      := g++
 CXXFLAGS := -O3 -march=native -funroll-loops -mtune=native
 CXXFLAGS += -MMD -MP 
 CXXFLAGS += -Wall -Wextra -Wno-unused-parameter
-CXXFLAGS += --std=c++17
+CXXFLAGS += --std=c++20
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 
 # Libraries
