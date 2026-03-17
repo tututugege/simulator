@@ -868,8 +868,6 @@ struct RobBroadcastIO {
 struct IssPrfIO {
   struct IssPrfUop {
     wire<32> diag_val;
-    wire<AREG_IDX_WIDTH> dest_areg;
-    wire<AREG_IDX_WIDTH> src1_areg;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> src1_preg;
     wire<PRF_IDX_WIDTH> src2_preg;
@@ -909,8 +907,6 @@ struct IssPrfIO {
     static IssPrfUop from_micro_op(const MicroOp &src) {
       IssPrfUop dst;
       dst.diag_val = src.diag_val;
-      dst.dest_areg = src.dest_areg;
-      dst.src1_areg = src.src1_areg;
       dst.dest_preg = src.dest_preg;
       dst.src1_preg = src.src1_preg;
       dst.src2_preg = src.src2_preg;
@@ -945,8 +941,6 @@ struct IssPrfIO {
     MicroOp to_micro_op() const {
       MicroOp dst;
       dst.diag_val = diag_val;
-      dst.dest_areg = dest_areg;
-      dst.src1_areg = src1_areg;
       dst.dest_preg = dest_preg;
       dst.src1_preg = src1_preg;
       dst.src2_preg = src2_preg;
@@ -997,8 +991,6 @@ struct IssPrfIO {
 struct PrfExeIO {
   struct PrfExeUop {
     wire<32> diag_val;
-    wire<AREG_IDX_WIDTH> dest_areg;
-    wire<AREG_IDX_WIDTH> src1_areg;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> src1_preg;
     wire<PRF_IDX_WIDTH> src2_preg;
@@ -1040,8 +1032,6 @@ struct PrfExeIO {
     static PrfExeUop from_iss_prf_uop(const IssPrfIO::IssPrfUop &src) {
       PrfExeUop dst;
       dst.diag_val = src.diag_val;
-      dst.dest_areg = src.dest_areg;
-      dst.src1_areg = src.src1_areg;
       dst.dest_preg = src.dest_preg;
       dst.src1_preg = src.src1_preg;
       dst.src2_preg = src.src2_preg;
@@ -1076,8 +1066,6 @@ struct PrfExeIO {
     MicroOp to_micro_op() const {
       MicroOp dst;
       dst.diag_val = diag_val;
-      dst.dest_areg = dest_areg;
-      dst.src1_areg = src1_areg;
       dst.dest_preg = dest_preg;
       dst.src1_preg = src1_preg;
       dst.src2_preg = src2_preg;

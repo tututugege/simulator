@@ -30,17 +30,19 @@ void BackTop::init() {
 
   pre_idu_queue->out.dec2front = &dec2front;
   pre_idu_queue->out.issue = &pre_idu_issue;
-  pre_idu_queue->out.ftq_lookup = &ftq_lookup;
+  pre_idu_queue->out.ftq_exu_pc_resp = &ftq_exu_pc_resp;
+  pre_idu_queue->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
   pre_idu_queue->in.front2dec = &front2dec;
   pre_idu_queue->in.ren2dec = &ren2dec;
   pre_idu_queue->in.idu_dec2ren = &dec2ren;
   pre_idu_queue->in.rob_bcast = &rob_bcast;
   pre_idu_queue->in.rob_commit = &rob_commit;
   pre_idu_queue->in.exu2id = &exu2id;
+  pre_idu_queue->in.ftq_exu_pc_req = &ftq_exu_pc_req;
+  pre_idu_queue->in.ftq_rob_pc_req = &ftq_rob_pc_req;
 
   idu->out.dec2ren = &dec2ren;
   idu->out.dec_bcast = &dec_bcast;
-  idu->out.ftq_lookup = &ftq_lookup;
   idu->in.issue = &pre_idu_issue;
   idu->in.ren2dec = &ren2dec;
   idu->in.rob_bcast = &rob_bcast;
@@ -167,7 +169,6 @@ void BackTop::comb() {
   // dependence on previous-cycle combinational values.
   dec2front = {};
   pre_idu_issue = {};
-  ftq_lookup = {};
   ftq_exu_pc_req = {};
   ftq_exu_pc_resp = {};
   ftq_rob_pc_req = {};
@@ -260,38 +261,13 @@ void BackTop::comb() {
 
   rob->comb_ready();
   rob->comb_ftq_pc_req();
-  for (int i = 0; i < FTQ_ROB_PC_PORT_NUM; i++) {
-    ftq_rob_pc_resp.resp[i] = {};
-    if (ftq_rob_pc_req.req[i].valid) {
-      const auto &entry = ftq_lookup.entries[ftq_rob_pc_req.req[i].ftq_idx];
-      ftq_rob_pc_resp.resp[i].valid = true;
-      ftq_rob_pc_resp.resp[i].entry_valid = entry.valid;
-      ftq_rob_pc_resp.resp[i].pc =
-          entry.start_pc + (ftq_rob_pc_req.req[i].ftq_offset << 2);
-      ftq_rob_pc_resp.resp[i].pred_taken =
-          entry.pred_taken_mask[ftq_rob_pc_req.req[i].ftq_offset];
-      ftq_rob_pc_resp.resp[i].next_pc = entry.next_pc;
-    }
-  }
+  exu->comb_ftq_pc_req();
+  pre_idu_queue->comb_ftq_lookup();
   rob->comb_commit();
 
   dis->comb_alloc();
   lsu->comb_load_res();
 
-  exu->comb_ftq_pc_req();
-  for (int i = 0; i < FTQ_EXU_PC_PORT_NUM; i++) {
-    ftq_exu_pc_resp.resp[i] = {};
-    if (ftq_exu_pc_req.req[i].valid) {
-      const auto &entry = ftq_lookup.entries[ftq_exu_pc_req.req[i].ftq_idx];
-      ftq_exu_pc_resp.resp[i].valid = true;
-      ftq_exu_pc_resp.resp[i].entry_valid = entry.valid;
-      ftq_exu_pc_resp.resp[i].pc =
-          entry.start_pc + (ftq_exu_pc_req.req[i].ftq_offset << 2);
-      ftq_exu_pc_resp.resp[i].pred_taken =
-          entry.pred_taken_mask[ftq_exu_pc_req.req[i].ftq_offset];
-      ftq_exu_pc_resp.resp[i].next_pc = entry.next_pc;
-    }
-  }
   exu->comb_to_csr();
   csr->comb_csr_read();
   exu->comb_exec();

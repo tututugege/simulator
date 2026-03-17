@@ -16,7 +16,6 @@ class IduOut {
 public:
   DecRenIO *dec2ren;
   DecBroadcastIO *dec_bcast;
-  FTQLookupIO *ftq_lookup;
 };
 
 class Idu {
@@ -24,7 +23,6 @@ public:
   Idu(SimContext *ctx, int max_br = 1) {
     this->ctx = ctx;
     this->max_br_per_cycle = max_br;
-    out.ftq_lookup = nullptr;
   }
   SimContext *ctx;
   int max_br_per_cycle;

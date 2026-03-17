@@ -119,7 +119,6 @@ private:
   CsrStatusIO csr_status;
   ExeCsrIO exe2csr;
   PreIduIssueIO pre_idu_issue;
-  FTQLookupIO ftq_lookup;
 
 public:
   SimContext *ctx;
