@@ -187,7 +187,8 @@ void Isu::comb_calc_latency_next() {
     const auto &inst = out.iss2prf->iss_entry[i];
 
     if (inst.valid && inst.uop.dest_en) {
-      int lat = get_latency(inst.uop.op);
+      UopType op = decode_uop_type(inst.uop.op);
+      int lat = get_latency(op);
 
       if (lat > 1) {
         LatencyEntry new_entry;
@@ -229,8 +230,9 @@ void Isu::comb_awake() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     const auto &entry = out.iss2prf->iss_entry[i];
     if (entry.valid && entry.uop.dest_en) {
-      int lat = get_latency(entry.uop.op);
-      if (lat <= 1 && entry.uop.op != UOP_LOAD && entry.uop.op != UOP_STA) {
+      UopType op = decode_uop_type(entry.uop.op);
+      int lat = get_latency(op);
+      if (lat <= 1 && op != UOP_LOAD && op != UOP_STA) {
         pregs.push_back(entry.uop.dest_preg);
       }
     }

@@ -115,7 +115,7 @@ void Dispatch::comb_alloc() {
       if (load_alloc_count < in.lsu2dis->ldq_free &&
           load_alloc_count < GLOBAL_IQ_CONFIG[IQ_LD].dispatch_width &&
           load_alloc_count < MAX_LDQ_DISPATCH_WIDTH &&
-          in.lsu2dis->ldq_alloc_idx[load_alloc_count] >= 0) {
+          in.lsu2dis->ldq_alloc_valid[load_alloc_count]) {
         inst_alloc[i].uop.ldq_idx = in.lsu2dis->ldq_alloc_idx[load_alloc_count];
         ldq_port_owner[load_alloc_count] = i;
         load_alloc_count++;

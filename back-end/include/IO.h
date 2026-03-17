@@ -36,7 +36,7 @@ struct DecRenIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    InstType type;
+    inst_type_bits_t type;
     InstDebugMeta dbg;
 
     DecRenInst() { std::memset(this, 0, sizeof(DecRenInst)); }
@@ -65,7 +65,7 @@ struct DecRenIO {
       dst.uop_num = src.uop_num;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
-      dst.type = src.type;
+      dst.type = encode_inst_type(src.type);
       dst.dbg = src.dbg;
       return dst;
     }
@@ -96,7 +96,7 @@ struct DecRenIO {
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
-      dst.type = type;
+      dst.type = decode_inst_type(type);
       dst.dbg = dbg;
       return dst;
     }
@@ -315,9 +315,9 @@ struct RobCommitIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    InstType type;
+    inst_type_bits_t type;
     InstDebugMeta dbg;
-    bool flush_pipe;
+    wire<1> flush_pipe;
 
     RobCommitInst() { std::memset(this, 0, sizeof(RobCommitInst)); }
 
@@ -344,7 +344,7 @@ struct RobCommitIO {
       dst.cplt_num = src.cplt_num;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
-      dst.type = src.type;
+      dst.type = encode_inst_type(src.type);
       dst.dbg = src.dbg;
       dst.flush_pipe = src.flush_pipe;
       return dst;
@@ -375,7 +375,7 @@ struct RobCommitIO {
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
-      dst.type = type;
+      dst.type = decode_inst_type(type);
       dst.dbg = dbg;
       dst.flush_pipe = flush_pipe;
       return dst;
@@ -460,9 +460,9 @@ struct DisRobIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    InstType type;
+    inst_type_bits_t type;
     InstDebugMeta dbg;
-    bool flush_pipe;
+    wire<1> flush_pipe;
 
     DisRobInst() { std::memset(this, 0, sizeof(DisRobInst)); }
 
@@ -493,7 +493,7 @@ struct DisRobIO {
       dst.rob_flag = src.rob_flag;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
-      dst.type = src.type;
+      dst.type = encode_inst_type(src.type);
       dst.dbg = src.dbg;
       dst.flush_pipe = src.flush_pipe;
       return dst;
@@ -528,7 +528,7 @@ struct DisRobIO {
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
-      dst.type = type;
+      dst.type = decode_inst_type(type);
       dst.dbg = dbg;
       dst.flush_pipe = flush_pipe;
       return dst;
@@ -584,7 +584,7 @@ struct RenDisIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    InstType type;
+    inst_type_bits_t type;
     InstDebugMeta dbg;
 
     RenDisInst() { std::memset(this, 0, sizeof(RenDisInst)); }
@@ -619,7 +619,7 @@ struct RenDisIO {
       dst.uop_num = src.uop_num;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
-      dst.type = src.type;
+      dst.type = encode_inst_type(src.type);
       dst.dbg = src.dbg;
       return dst;
     }
@@ -656,7 +656,7 @@ struct RenDisIO {
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
-      dst.type = type;
+      dst.type = decode_inst_type(type);
       dst.dbg = dbg;
       return dst;
     }
@@ -728,7 +728,7 @@ struct DisIssIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    UopType op;
+    uop_type_bits_t op;
     UopDebugMeta dbg;
 
     DisIssUop() { std::memset(this, 0, sizeof(DisIssUop)); }
@@ -802,7 +802,7 @@ struct DisIssIO {
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
-      dst.op = op;
+      dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       return dst;
     }
@@ -823,7 +823,7 @@ struct DisIssIO {
 
 struct IssDisIO {
 
-  int ready_num[IQ_NUM];
+  wire<IQ_READY_NUM_WIDTH> ready_num[IQ_NUM];
 
   IssDisIO() {
     for (auto &v : ready_num)
@@ -911,7 +911,7 @@ struct IssPrfIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    UopType op;
+    uop_type_bits_t op;
     UopDebugMeta dbg;
 
     IssPrfUop() { std::memset(this, 0, sizeof(IssPrfUop)); }
@@ -981,7 +981,7 @@ struct IssPrfIO {
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
-      dst.op = op;
+      dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       return dst;
     }
@@ -1036,7 +1036,7 @@ struct PrfExeIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    UopType op;
+    uop_type_bits_t op;
     UopDebugMeta dbg;
 
     PrfExeUop() { std::memset(this, 0, sizeof(PrfExeUop)); }
@@ -1108,7 +1108,7 @@ struct PrfExeIO {
       dst.page_fault_load = false;
       dst.page_fault_store = false;
       dst.illegal_inst = illegal_inst;
-      dst.op = op;
+      dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       return dst;
     }
@@ -1133,7 +1133,7 @@ struct ExePrfIO {
     wire<32> result;
     wire<BR_MASK_WIDTH> br_mask;
     wire<1> dest_en;
-    UopType op;
+    uop_type_bits_t op;
 
     ExePrfWbUop() { std::memset(this, 0, sizeof(ExePrfWbUop)); }
 
@@ -1143,7 +1143,7 @@ struct ExePrfIO {
       dst.result = src.result;
       dst.br_mask = src.br_mask;
       dst.dest_en = src.dest_en;
-      dst.op = src.op;
+      dst.op = encode_uop_type(src.op);
       return dst;
     }
 
@@ -1153,7 +1153,7 @@ struct ExePrfIO {
       dst.result = result;
       dst.br_mask = br_mask;
       dst.dest_en = dest_en;
-      dst.op = op;
+      dst.op = decode_uop_type(op);
       return dst;
     }
   };
@@ -1178,7 +1178,7 @@ struct ExePrfIO {
 struct ExeIssIO {
 
   wire<1> ready[ISSUE_WIDTH];
-  int64_t fu_ready_mask[ISSUE_WIDTH];
+  wire<MAX_UOP_TYPE> fu_ready_mask[ISSUE_WIDTH];
 
   ExeIssIO() {
     for (auto &v : ready)
@@ -1198,9 +1198,9 @@ struct ExuRobIO {
     wire<1> page_fault_inst;
     wire<1> page_fault_load;
     wire<1> page_fault_store;
-    UopType op;
+    uop_type_bits_t op;
     UopDebugMeta dbg;
-    bool flush_pipe;
+    wire<1> flush_pipe;
 
     ExuRobUop() { std::memset(this, 0, sizeof(ExuRobUop)); }
 
@@ -1214,7 +1214,7 @@ struct ExuRobIO {
       dst.page_fault_inst = src.page_fault_inst;
       dst.page_fault_load = src.page_fault_load;
       dst.page_fault_store = src.page_fault_store;
-      dst.op = src.op;
+      dst.op = encode_uop_type(src.op);
       dst.dbg = src.dbg;
       dst.flush_pipe = src.flush_pipe;
       return dst;
@@ -1230,7 +1230,7 @@ struct ExuRobIO {
       dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = page_fault_load;
       dst.page_fault_store = page_fault_store;
-      dst.op = op;
+      dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       dst.flush_pipe = flush_pipe;
       return dst;
@@ -1256,7 +1256,7 @@ struct ExuIdIO {
   wire<32> redirect_pc;
   wire<ROB_IDX_WIDTH> redirect_rob_idx;
   wire<BR_TAG_WIDTH> br_id;
-  int ftq_idx; // FTQ index of mispredicting branch, for tail recovery
+  wire<FTQ_IDX_WIDTH> ftq_idx; // FTQ index of mispredicting branch, for tail recovery
   mask_t clear_mask; // OR of all resolved branches' (1 << br_id) this cycle
 
   ExuIdIO() {
@@ -1361,16 +1361,6 @@ struct PtwWalkResp {
   }
 };
 
-struct PtwMemReqIO {
-  wire<1> en;
-  wire<32> paddr;
-
-  PtwMemReqIO() {
-    en = {};
-    paddr = {};
-  }
-};
-
 struct PtwMemRespIO {
   wire<1> valid;
   wire<32> data;
@@ -1378,16 +1368,6 @@ struct PtwMemRespIO {
   PtwMemRespIO() {
     valid = {};
     data = {};
-  }
-};
-
-struct PtwWalkReqIO {
-  wire<1> en;
-  PtwWalkReq req;
-
-  PtwWalkReqIO() {
-    en = {};
-    req = {};
   }
 };
 
@@ -1446,194 +1426,24 @@ struct MemRespIO {
   }
 };
 
-struct DcacheControlIO {
-
-  wire<1> flush;
-  wire<1> mispred;
-  wire<BR_MASK_WIDTH> br_mask;
-
-  DcacheControlIO() {
-    flush = {};
-    mispred = {};
-    br_mask = {};
-  }
-};
-
-struct DcacheMshrIO {
-
-  wire<1> valid;
-  wire<1> wen;
-  wire<32> addr;
-  wire<32> wstrb;
-  wire<32> wdata;
-
-  MicroOp uop;
-
-  DcacheMshrIO() {
-    valid = {};
-    wen = {};
-    addr = {};
-    wstrb = {};
-    wdata = {};
-    uop = {};
-  }
-};
-
-struct WbArbiterDcacheIO {
-
-  wire<1> stall_ld;
-  wire<1> stall_st;
-
-  WbArbiterDcacheIO() {
-    stall_ld = {};
-    stall_st = {};
-  }
-};
-
-struct DcacheWritebufferIO {
-
-  wire<1> valid;
-  wire<32> wdata;
-
-  wire<1> flush;
-  wire<1> mispred;
-  wire<BR_MASK_WIDTH> br_mask;
-
-  MicroOp uop;
-
-  DcacheWritebufferIO() {
-    valid = {};
-    wdata = {};
-    flush = {};
-    mispred = {};
-    br_mask = {};
-    uop = {};
-  }
-};
-
-struct WritebufferDcacheIO {
-
-  wire<1> stall;
-
-  WritebufferDcacheIO() { stall = {}; }
-};
-
-struct ExmemControlIO {
-
-  wire<1> en;
-  wire<1> wen;
-  wire<8> sel;
-  wire<8> len;
-  wire<1> done;
-  wire<1> last;
-  wire<2> size;
-  wire<32> addr;
-  wire<32> wdata;
-
-  ExmemControlIO() {
-    en = {};
-    wen = {};
-    sel = {};
-    len = {};
-    done = {};
-    last = {};
-    size = {};
-    addr = {};
-    wdata = {};
-  }
-};
-struct ExmemDataIO {
-
-  wire<32> data;
-  wire<1> last;
-  wire<1> done;
-
-  ExmemDataIO() {
-    data = {};
-    last = {};
-    done = {};
-  }
-};
-struct ExmemIO {
-
-  ExmemControlIO control;
-  ExmemDataIO data;
-
-  ExmemIO() {
-    control = {};
-    data = {};
-  }
-};
-
-struct MshrWbIO {
-
-  wire<1> valid;
-  wire<32> addr;
-  wire<32> data[4];
-
-  MshrWbIO() {
-    valid = {};
-    addr = {};
-    for (auto &v : data)
-      v = {};
-  }
-};
-
-struct WbMshrIO {
-
-  wire<1> ready;
-
-  WbMshrIO() { ready = {}; }
-};
-struct WbArbiterIO {
-
-  wire<1> arbiter_priority;
-
-  WbArbiterIO() { arbiter_priority = {}; }
-};
-
-struct MshrFwdIO {
-
-  wire<1> valid;
-  wire<32> addr;
-  wire<32> rdata;
-
-  MshrFwdIO() {
-    valid = {};
-    addr = {};
-    rdata = {};
-  }
-};
-
-struct MshrArbiterIO {
-
-  bool prority;
-
-  MshrArbiterIO() { prority = false; }
-};
-
-struct PrfDcacheIO {
-
-  bool stall;
-
-  PrfDcacheIO() { stall = false; }
-};
-
 struct LsuDisIO {
 
-  int stq_tail;                              // 当前分配指针
-  bool stq_tail_flag;                        // stq_tail 对应 ring 代际位
-  int stq_free;                              // 剩余空闲条目数
-  int ldq_free;                              // 剩余 Load 队列空闲数
-  int ldq_alloc_idx[MAX_LDQ_DISPATCH_WIDTH]; // 本拍可分配的 LDQ 索引序列
+  wire<STQ_IDX_WIDTH> stq_tail; // 当前分配指针
+  wire<1> stq_tail_flag;        // stq_tail 对应 ring 代际位
+  wire<bit_width_for_count(STQ_SIZE + 1)> stq_free; // 剩余空闲条目数
+  wire<bit_width_for_count(LDQ_SIZE + 1)> ldq_free; // 剩余 Load 队列空闲数
+  wire<LDQ_IDX_WIDTH> ldq_alloc_idx[MAX_LDQ_DISPATCH_WIDTH];
+  wire<1> ldq_alloc_valid[MAX_LDQ_DISPATCH_WIDTH];
 
   LsuDisIO() {
     stq_tail = 0;
-    stq_tail_flag = false;
+    stq_tail_flag = 0;
     stq_free = 0;
     ldq_free = 0;
     for (auto &v : ldq_alloc_idx)
-      v = -1;
+      v = 0;
+    for (auto &v : ldq_alloc_valid)
+      v = 0;
   }
 };
 
@@ -1659,9 +1469,9 @@ struct LsuExeIO {
     wire<1> dest_en;
     wire<1> page_fault_load;
     wire<1> page_fault_store;
-    UopType op;
+    uop_type_bits_t op;
     UopDebugMeta dbg;
-    bool flush_pipe;
+    wire<1> flush_pipe;
 
     LsuExeRespUop() { std::memset(this, 0, sizeof(LsuExeRespUop)); }
 
@@ -1675,7 +1485,7 @@ struct LsuExeIO {
       dst.dest_en = src.dest_en;
       dst.page_fault_load = src.page_fault_load;
       dst.page_fault_store = src.page_fault_store;
-      dst.op = src.op;
+      dst.op = encode_uop_type(src.op);
       dst.dbg = src.dbg;
       dst.flush_pipe = src.flush_pipe;
       return dst;
@@ -1691,7 +1501,7 @@ struct LsuExeIO {
       dst.dest_en = dest_en;
       dst.page_fault_load = page_fault_load;
       dst.page_fault_store = page_fault_store;
-      dst.op = op;
+      dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       dst.flush_pipe = flush_pipe;
       return dst;
@@ -1716,21 +1526,21 @@ struct LsuExeIO {
 
 struct DisLsuIO {
 
-  bool alloc_req[MAX_STQ_DISPATCH_WIDTH];
+  wire<1> alloc_req[MAX_STQ_DISPATCH_WIDTH];
   mask_t br_mask[MAX_STQ_DISPATCH_WIDTH];
-  uint32_t func3[MAX_STQ_DISPATCH_WIDTH];
-  uint32_t rob_idx[MAX_STQ_DISPATCH_WIDTH];
-  uint32_t rob_flag[MAX_STQ_DISPATCH_WIDTH];
+  wire<3> func3[MAX_STQ_DISPATCH_WIDTH];
+  wire<ROB_IDX_WIDTH> rob_idx[MAX_STQ_DISPATCH_WIDTH];
+  wire<1> rob_flag[MAX_STQ_DISPATCH_WIDTH];
 
-  bool ldq_alloc_req[MAX_LDQ_DISPATCH_WIDTH];
-  uint32_t ldq_idx[MAX_LDQ_DISPATCH_WIDTH];
+  wire<1> ldq_alloc_req[MAX_LDQ_DISPATCH_WIDTH];
+  wire<LDQ_IDX_WIDTH> ldq_idx[MAX_LDQ_DISPATCH_WIDTH];
   mask_t ldq_br_mask[MAX_LDQ_DISPATCH_WIDTH];
-  uint32_t ldq_rob_idx[MAX_LDQ_DISPATCH_WIDTH];
-  uint32_t ldq_rob_flag[MAX_LDQ_DISPATCH_WIDTH];
+  wire<ROB_IDX_WIDTH> ldq_rob_idx[MAX_LDQ_DISPATCH_WIDTH];
+  wire<1> ldq_rob_flag[MAX_LDQ_DISPATCH_WIDTH];
 
   DisLsuIO() {
     for (auto &v : alloc_req)
-      v = false;
+      v = 0;
     for (auto &v : br_mask)
       v = 0;
     for (auto &v : func3)
@@ -1740,7 +1550,7 @@ struct DisLsuIO {
     for (auto &v : rob_flag)
       v = 0;
     for (auto &v : ldq_alloc_req)
-      v = false;
+      v = 0;
     for (auto &v : ldq_idx)
       v = 0;
     for (auto &v : ldq_br_mask)
@@ -1766,7 +1576,7 @@ struct ExeLsuIO {
     wire<LDQ_IDX_WIDTH> ldq_idx;
     wire<1> rob_flag;
     wire<1> dest_en;
-    UopType op;
+    uop_type_bits_t op;
     UopDebugMeta dbg;
 
     ExeLsuReqUop() { std::memset(this, 0, sizeof(ExeLsuReqUop)); }
@@ -1785,7 +1595,7 @@ struct ExeLsuIO {
       dst.ldq_idx = src.ldq_idx;
       dst.rob_flag = src.rob_flag;
       dst.dest_en = src.dest_en;
-      dst.op = src.op;
+      dst.op = encode_uop_type(src.op);
       dst.dbg = src.dbg;
       return dst;
     }
@@ -1804,7 +1614,7 @@ struct ExeLsuIO {
       dst.ldq_idx = ldq_idx;
       dst.rob_flag = rob_flag;
       dst.dest_en = dest_en;
-      dst.op = op;
+      dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       return dst;
     }

@@ -18,6 +18,16 @@ using AutoType = typename std::conditional<
 template <int N> using wire = AutoType<N>;
 template <int N> using reg = AutoType<N>;
 
+constexpr int bit_width_for_count(uint32_t count) {
+  int width = 0;
+  uint32_t max_value = count > 0 ? (count - 1) : 0;
+  do {
+    width++;
+    max_value >>= 1;
+  } while (max_value != 0);
+  return width;
+}
+
 enum UopType {
   UOP_JUMP,
   UOP_ADD,
@@ -38,6 +48,9 @@ enum UopType {
   UOP_FP,
   MAX_UOP_TYPE
 };
+
+constexpr int UOP_TYPE_WIDTH = bit_width_for_count(MAX_UOP_TYPE);
+using uop_type_bits_t = wire<UOP_TYPE_WIDTH>;
 
 enum IQType {
   IQ_INT,

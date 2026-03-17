@@ -85,14 +85,19 @@ void SimpleLsu::comb_lsu2dis_info() {
   out.lsu2dis->ldq_free = LDQ_SIZE - this->ldq_count;
 
   for (auto &v : out.lsu2dis->ldq_alloc_idx) {
-    v = -1;
+    v = 0;
+  }
+  for (auto &v : out.lsu2dis->ldq_alloc_valid) {
+    v = 0;
   }
   int scan_pos = ldq_alloc_tail;
   int produced = 0;
   for (int n = 0; n < LDQ_SIZE && produced < MAX_LDQ_DISPATCH_WIDTH;
        n++) {
     if (!ldq[scan_pos].valid) {
-      out.lsu2dis->ldq_alloc_idx[produced++] = scan_pos;
+      out.lsu2dis->ldq_alloc_idx[produced] = scan_pos;
+      out.lsu2dis->ldq_alloc_valid[produced] = 1;
+      produced++;
     }
     scan_pos = (scan_pos + 1) % LDQ_SIZE;
   }

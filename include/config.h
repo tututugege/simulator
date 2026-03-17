@@ -368,6 +368,19 @@ constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
     {IQ_BR, 32, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
+constexpr int calculate_max_iq_size() {
+  int max_size = 0;
+  for (const auto &cfg : GLOBAL_IQ_CONFIG) {
+    if (cfg.size > max_size) {
+      max_size = cfg.size;
+    }
+  }
+  return max_size;
+}
+
+constexpr int MAX_IQ_SIZE = calculate_max_iq_size();
+constexpr int IQ_READY_NUM_WIDTH = bit_width_for_count(MAX_IQ_SIZE + 1);
+
 // ============================================================
 // [16] Global Sanity Checks
 // ============================================================

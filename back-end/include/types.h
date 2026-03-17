@@ -42,6 +42,10 @@ enum InstType {
   FP
 };
 
+constexpr int INST_TYPE_COUNT = FP + 1;
+constexpr int INST_TYPE_WIDTH = bit_width_for_count(INST_TYPE_COUNT);
+using inst_type_bits_t = wire<INST_TYPE_WIDTH>;
+
 // AMO Operations (funct7[6:2])
 namespace AmoOp {
 constexpr uint8_t ADD = 0b00000;
@@ -132,7 +136,7 @@ typedef struct InstInfo {
 
   // Debug
   InstDebugMeta dbg;
-  bool flush_pipe;
+  wire<1> flush_pipe;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
 } InstInfo;
@@ -185,7 +189,7 @@ typedef struct MicroOp {
 
   // Debug
   UopDebugMeta dbg;
-  bool flush_pipe;
+  wire<1> flush_pipe;
 
   MicroOp() { std::memset(this, 0, sizeof(MicroOp)); }
 

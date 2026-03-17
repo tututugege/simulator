@@ -59,6 +59,24 @@ inline uint32_t make_rob_idx(uint32_t line, uint32_t bank) {
 
 inline bool is_branch(InstType type) { return type == BR || type == JALR; }
 
+constexpr inst_type_bits_t encode_inst_type(InstType type) {
+  return static_cast<inst_type_bits_t>(type);
+}
+
+inline InstType decode_inst_type(inst_type_bits_t bits) {
+  Assert((uint32_t)bits < INST_TYPE_COUNT);
+  return static_cast<InstType>((uint32_t)bits);
+}
+
+constexpr uop_type_bits_t encode_uop_type(UopType op) {
+  return static_cast<uop_type_bits_t>(op);
+}
+
+inline UopType decode_uop_type(uop_type_bits_t bits) {
+  Assert((uint32_t)bits < MAX_UOP_TYPE);
+  return static_cast<UopType>((uint32_t)bits);
+}
+
 inline bool is_store(InstInfo uop) {
   return uop.type == STORE ||
          (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR);
@@ -79,12 +97,24 @@ inline bool is_load(MicroOp uop) {
 inline bool is_CSR(InstType type) {
   return (type == CSR || type == MRET || type == ECALL || type == EBREAK);
 }
+inline bool is_branch(inst_type_bits_t type) {
+  return is_branch(decode_inst_type(type));
+}
+inline bool is_CSR(inst_type_bits_t type) {
+  return is_CSR(decode_inst_type(type));
+}
 
 inline bool is_branch_uop(UopType op) { return op == UOP_BR || op == UOP_JUMP; }
+inline bool is_branch_uop(uop_type_bits_t op) {
+  return is_branch_uop(decode_uop_type(op));
+}
 
 inline bool is_CSR_uop(UopType op) {
   return (op == UOP_CSR || op == UOP_MRET || op == UOP_ECALL ||
           op == UOP_EBREAK);
+}
+inline bool is_CSR_uop(uop_type_bits_t op) {
+  return is_CSR_uop(decode_uop_type(op));
 }
 
 inline bool cmp_inst_age(InstInfo inst1, InstInfo inst2) {
@@ -104,10 +134,15 @@ inline bool cmp_inst_age(MicroOp inst1, MicroOp inst2) {
 }
 
 inline bool is_sta_uop(UopType op) { return op == UOP_STA; }
+inline bool is_sta_uop(uop_type_bits_t op) { return is_sta_uop(decode_uop_type(op)); }
 
 inline bool is_std_uop(UopType op) { return op == UOP_STD; }
+inline bool is_std_uop(uop_type_bits_t op) { return is_std_uop(decode_uop_type(op)); }
 
 inline bool is_load_uop(UopType op) { return op == UOP_LOAD; }
+inline bool is_load_uop(uop_type_bits_t op) {
+  return is_load_uop(decode_uop_type(op));
+}
 
 inline bool is_page_fault(InstInfo uop) {
   return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;
