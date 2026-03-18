@@ -2,6 +2,7 @@
 
 #include "Csr.h"
 #include "config.h"
+#include "IO.h"
 #include <cstdint>
 #include <iostream>
 
@@ -12,7 +13,44 @@ public:
   Csr *csr = nullptr;
   uint32_t *memory = nullptr;
 
+  PeripheralIO io; // 供外设访问的 IO 端口
+  MicroOp uop_cur;
+  MicroOp uop_nxt;
+  bool done_cur;
+  bool done_nxt;
+
   void init() {}
+  void comb() {
+    if(io.in.is_mmio){
+      if(io.in.wen){
+        on_commit_store(io.in.mmio_addr, io.in.mmio_wdata, io.in.mmio_wstrb);
+        done_cur = true;
+        uop_cur = io.in.uop;
+      }else{
+
+      }
+    }
+    else {
+      done_cur = false;
+      uop_cur = {};
+    }
+
+    if(done_nxt){
+      io.out.is_mmio = 1;
+      io.out.mmio_rdata = memory[io.in.mmio_addr >> 2];
+      io.out.uop = uop_cur;
+    }else{
+      io.out.is_mmio = 0;
+      io.out.mmio_rdata = 0;
+      io.out.uop = {};
+    }
+  }
+  void seq(){
+    done_cur = done_cur;
+    done_nxt = false;
+    uop_cur = uop_cur;
+    uop_nxt = {};
+  }
 
   uint32_t apply_store_word(uint32_t paddr, uint32_t data, uint8_t func3) {
     uint32_t byte_off = paddr & 0x3u;

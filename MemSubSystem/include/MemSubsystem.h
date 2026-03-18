@@ -1,13 +1,15 @@
 #pragma once
 
-#include "AbstractDcache.h"
 #include "IO.h"
+#include "MSHR.h"
 #include "MemPtwBlock.h"
+#include "PeripheralAxi.h"
 #include "MemReadArbBlock.h"
 #include "MemRespRouteBlock.h"
-#include "PeripheralModel.h"
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
+#include "RealDcache.h"
+#include "WriteBuffer.h"
 #include <array>
 #include <memory>
 
@@ -18,7 +20,6 @@ struct AxiKitRuntime;
 namespace axi_interconnect {
 struct ReadMasterPort_t;
 }
-
 class MemSubsystem {
 public:
   enum class PtwClient : uint8_t {
@@ -30,40 +31,59 @@ public:
   explicit MemSubsystem(SimContext *ctx);
   ~MemSubsystem();
 
-  // External ports (current stage: LSU <-> DCache)
-  MemReqIO *lsu_req_io = nullptr;
-  MemReqIO *lsu_wreq_io = nullptr;
-  MemRespIO *lsu_resp_io = nullptr;
-  MemReadyIO *lsu_wready_io = nullptr;
+  // External ports — LSU <-> DCache (RealDcache multi-port interface)
+  LsuDcacheIO  *lsu2dcache  = nullptr;  // LSU → DCache requests
+  DcacheLsuIO  *dcache2lsu  = nullptr;  // DCache → LSU responses
 
-  // PTW 端口连线（对外直接赋值/读取，避免 getter 包装）
-  PtwMemPort *dtlb_ptw_port = nullptr;
-  PtwMemPort *itlb_ptw_port = nullptr;
+  // AXI interfaces exposed for the memory interconnect to drive/read each cycle.
+  MshrAxiIn   mshr_axi_in{};   // IC read-channel  → MSHR  (set by caller)
+  MshrAxiOut  mshr_axi_out{};  // MSHR → IC read-channel   (read by caller)
+  WbAxiIn     wb_axi_in{};     // IC write-channel → WB    (set by caller)
+  WbAxiOut    wb_axi_out{};    // WB → IC write-channel    (read by caller)
+  PeripheralAxiReadIn peripheral_axi_read_in{};
+  PeripheralAxiReadOut peripheral_axi_read_out{};
+  PeripheralAxiWriteIn peripheral_axi_write_in{};
+  PeripheralAxiWriteOut peripheral_axi_write_out{};
+
+  // PTW 端口连线（对外直接赋值/读取）
+  PtwMemPort  *dtlb_ptw_port  = nullptr;
+  PtwMemPort  *itlb_ptw_port  = nullptr;
   PtwWalkPort *dtlb_walk_port = nullptr;
   PtwWalkPort *itlb_walk_port = nullptr;
-  Csr *csr = nullptr;
-  uint32_t *memory = nullptr;
+  PeripheralIO *peripheral_io = nullptr;
+  Csr         *csr            = nullptr;
+  uint32_t    *memory         = nullptr;
 
   void init();
   void comb();
   void seq();
+  void dump_debug_state() const;
+  void dump_icache_axi_debug() const;
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   axi_interconnect::ReadMasterPort_t *icache_read_port();
 
+  // Accessors for sub-modules (e.g., for debug/stats).
+  RealDcache  &get_dcache()  { return dcache_; }
+  MSHR        &get_mshr()    { return mshr_; }
+  WriteBuffer &get_wb()      { return wb_; }
+  PeripheralAxi &get_peripheral_axi() { return peripheral_axi_; }
+  const PeripheralAxi &get_peripheral_axi() const { return peripheral_axi_; }
+
 private:
   SimContext *ctx;
-  std::unique_ptr<AbstractDcache> dcache;
-  std::unique_ptr<AxiKitRuntime> axi_kit_runtime;
-  PeripheralModel peripheral;
-  MemPtwBlock ptw_block;
+
+  // Sub-modules
+  RealDcache    dcache_;
+  MSHR          mshr_;
+  WriteBuffer   wb_;
+  PeripheralAxi peripheral_axi_;
+  MemPtwBlock   ptw_block;
   MemReadArbBlock read_arb_block;
   MemRespRouteBlock resp_route_block;
+  LsuDcacheIO dcache_req_mux_{};
+  DcacheLsuIO dcache_resp_raw_{};
 
-  // Internal ports: MemSubsystem arbitrates LSU/PTW then drives DCache.
-  MemReqIO dcache_req_mux;
-  MemReqIO dcache_wreq_mux;
-  MemRespIO dcache_resp_raw;
-  MemReadyIO dcache_wready_raw;
+  std::unique_ptr<AxiKitRuntime> axi_kit_runtime;
 
   static constexpr size_t kPtwClientCount =
       static_cast<size_t>(PtwClient::NUM_CLIENTS);
@@ -80,16 +100,15 @@ private:
   void ptw_walk_consume_resp(PtwClient client);
   void ptw_walk_flush(PtwClient client);
 
-  // PTW 对外端口显式 IO（定义在 IO.h）。
-  std::array<PtwMemRespIO, kPtwClientCount> ptw_mem_resp_ios{};
+  std::array<PtwMemRespIO, kPtwClientCount>  ptw_mem_resp_ios{};
   std::array<PtwWalkRespIO, kPtwClientCount> ptw_walk_resp_ios{};
 
   friend class MemSubsystemPtwMemPortAdapter;
   friend class MemSubsystemPtwWalkPortAdapter;
 
-  // Dedicated PTW client ports for DTLB/ITLB shared PTW access.
-  std::unique_ptr<PtwMemPort> dtlb_ptw_port_inst;
-  std::unique_ptr<PtwMemPort> itlb_ptw_port_inst;
+  std::unique_ptr<PtwMemPort>  dtlb_ptw_port_inst;
+  std::unique_ptr<PtwMemPort>  itlb_ptw_port_inst;
   std::unique_ptr<PtwWalkPort> dtlb_walk_port_inst;
   std::unique_ptr<PtwWalkPort> itlb_walk_port_inst;
+  uint32_t ptw_walk_wait_cycles_ = 0;
 };

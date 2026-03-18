@@ -1,5 +1,7 @@
 #include "Rob.h"
 #include "IO.h"
+
+#include "DeadlockDebug.h"
 #include "RISCV.h"
 #include "config.h"
 #include "util.h"
@@ -106,6 +108,30 @@ void Rob::comb_commit() {
   out.rob_bcast->page_fault_inst = out.rob_bcast->page_fault_load =
       out.rob_bcast->page_fault_store = out.rob_bcast->illegal_inst = false;
 
+  // 广播队头行的第一个 valid 项，以及该行里第一个未完成项。
+  // LSU 使用后者决定 MMIO 访存何时可以发射，避免与 ROB 的整行提交
+  // 策略形成循环等待。
+  out.rob_bcast->head_valid = false;
+  out.rob_bcast->head_rob_idx = 0;
+  out.rob_bcast->head_incomplete_valid = false;
+  out.rob_bcast->head_incomplete_rob_idx = 0;
+  if (!is_empty()) {
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid) {
+        out.rob_bcast->head_valid = true;
+        out.rob_bcast->head_rob_idx = make_rob_idx(deq_ptr, i);
+        break;
+      }
+    }
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid &&
+          entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+        out.rob_bcast->head_incomplete_valid = true;
+        out.rob_bcast->head_incomplete_rob_idx = make_rob_idx(deq_ptr, i);
+        break;
+      }
+    }
+  }
   wire<1> commit = (!is_empty() && !in.dec_bcast->mispred);
 
   // 检查 BANK 的同一行是否都已完成
@@ -118,6 +144,7 @@ void Rob::comb_commit() {
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
+  bool progress_single_commit = false;
 
   if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -142,6 +169,26 @@ void Rob::comb_commit() {
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
           single_commit = false;
           commit = false;
+        }
+        break;
+      }
+    }
+
+    // Forward-progress fallback:
+    // If group commit is blocked by younger banks in the same ROB line, allow
+    // committing the oldest ready non-flush instruction so older stores can
+    // still commit/retire and unblock younger loads that are waiting on them.
+    if (!commit && !single_commit && !out.rob_bcast->interrupt) {
+      for (int i = 0; i < ROB_BANK_NUM; i++) {
+        if (!entry[i][deq_ptr].valid) {
+          continue;
+        }
+        const auto &uop = entry[i][deq_ptr].uop;
+        const bool ready = (uop.cplt_num == uop.uop_num);
+        if (ready && !is_flush_inst(uop)) {
+          single_commit = true;
+          single_idx = i;
+          progress_single_commit = true;
         }
         break;
       }
@@ -198,6 +245,13 @@ void Rob::comb_commit() {
     }
 
     entry_1[single_idx][deq_ptr].valid = false;
+    if (progress_single_commit) {
+      DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u rob_idx=%u pc=0x%08x type=%u\n",
+                 (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
+                 (unsigned)single_idx, (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
+                 entry[single_idx][deq_ptr].uop.pc,
+                 (unsigned)entry[single_idx][deq_ptr].uop.type);
+    }
     if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
       out.rob_bcast->flush = true;
@@ -253,7 +307,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 20000) {
+  if (stall_cycle > 10000) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -278,8 +332,9 @@ void Rob::comb_commit() {
         printf("[Bank %d] INVALID\n", i);
       }
     }
-
-    Assert(0 && "ROB Deadlock detected (stall_cycle > 1000)");
+    
+    deadlock_debug::dump_all();
+    Assert(0 && "ROB Deadlock detected (stall_cycle > 10000)");
   }
 }
 

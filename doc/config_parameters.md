@@ -122,11 +122,11 @@
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `STQ_NUM` | 64 | 16~64 | Store Queue 容量 |
-| `MAX_INFLIGHT_LOADS` | 64 | 16~64 | 最大同时在飞 Load 数 |
+| `STQ_SIZE` | 64 | 16~64 | Store Queue 容量 |
+| `LDQ_SIZE` | 64 | 16~64 | 最大同时在飞 Load 数 |
 
 > [!WARNING]
-> `STQ_NUM` 不能超过 **64**（受限于位掩码宽度），`MAX_INFLIGHT_LOADS` 不应超过 `STQ_NUM`。
+> `STQ_SIZE` 不能超过 **64**（受限于位掩码宽度），`LDQ_SIZE` 不应超过 `STQ_SIZE`。
 
 ### 3.3 执行延迟
 
@@ -188,8 +188,8 @@ constexpr int PRF_NUM = 96;
 constexpr int ROB_NUM = 64;
 constexpr int ROB_BANK_NUM = 4;
 constexpr int MAX_BR_NUM = 16;
-constexpr int STQ_NUM = 16;
-constexpr int MAX_INFLIGHT_LOADS = 16;
+constexpr int STQ_SIZE = 16;
+constexpr int LDQ_SIZE = 16;
 
 // 发射端口配置 (8 ports)
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
@@ -231,8 +231,8 @@ constexpr int PRF_NUM = 160;
 constexpr int ROB_NUM = 128;
 constexpr int ROB_BANK_NUM = 8;
 constexpr int MAX_BR_NUM = 32;
-constexpr int STQ_NUM = 32;
-constexpr int MAX_INFLIGHT_LOADS = 32;
+constexpr int STQ_SIZE = 32;
+constexpr int LDQ_SIZE = 32;
 
 // 发射端口配置 (12 ports)
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
@@ -278,8 +278,8 @@ constexpr int PRF_NUM = 256;
 constexpr int ROB_NUM = 256;
 constexpr int ROB_BANK_NUM = 16;
 constexpr int MAX_BR_NUM = 64;
-constexpr int STQ_NUM = 64;
-constexpr int MAX_INFLIGHT_LOADS = 64;
+constexpr int STQ_SIZE = 64;
+constexpr int LDQ_SIZE = 64;
 
 // 发射端口配置 (16 ports)
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
@@ -330,7 +330,7 @@ constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
 |------|--------|--------|----------|
 | PRF_NUM | 96 | 160 | 256 |
 | ROB_NUM | 64 | 128 | 256 |
-| STQ_NUM | 16 | 32 | 64 |
+| STQ_SIZE | 16 | 32 | 64 |
 | IQ_INT Size | 24 | 48 | 64 |
 | IQ_LD Size | 16 | 24 | 32 |
 
@@ -338,5 +338,5 @@ constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
 
 1. **编译时断言**：配置错误会在编译阶段被 `static_assert` 捕获
 2. **Port 0 特殊性**：CSR 指令必须在 Port 0 执行
-3. **位宽限制**：`MAX_BR_NUM` 和 `STQ_NUM` 不能超过 64
+3. **位宽限制**：`MAX_BR_NUM` 和 `STQ_SIZE` 不能超过 64
 4. **性能权衡**：更多的发射端口带来更高的 IPC，但也增加面积和功耗

@@ -9,11 +9,164 @@
 #include "oracle.h"
 #include "util.h"
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include "DeadlockDebug.h"
 
 uint32_t *p_memory;
+namespace {
+SimCpu *g_deadlock_cpu = nullptr;
 
+void deadlock_dump_soc_cb() {
+  if (g_deadlock_cpu == nullptr) {
+    return;
+  }
+  auto &cpu = *g_deadlock_cpu;
+
+  int front_valid_cnt = 0;
+  int back_valid_cnt = 0;
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (cpu.front.out.inst_valid[i]) {
+      front_valid_cnt++;
+    }
+    if (cpu.back.in.valid[i]) {
+      back_valid_cnt++;
+    }
+  }
+
+  std::printf(
+      "[DEADLOCK][FRONT] fifo_read_en=%d fifo_valid=%d inst_valid_cnt=%d refetch=%d refetch_addr=0x%08x\n",
+      static_cast<int>(cpu.front.in.FIFO_read_enable),
+      static_cast<int>(cpu.front.out.FIFO_valid), front_valid_cnt,
+      static_cast<int>(cpu.front.in.refetch), cpu.front.in.refetch_address);
+  std::printf(
+      "[DEADLOCK][FRONT->BACK] back_stall=%d flush=%d mispred=%d redirect=0x%08x back_in_valid_cnt=%d oracle_pending=%d\n",
+      static_cast<int>(cpu.back.out.stall), static_cast<int>(cpu.back.out.flush),
+      static_cast<int>(cpu.back.out.mispred), cpu.back.out.redirect_pc,
+      back_valid_cnt, static_cast<int>(cpu.oracle_pending_valid));
+  if (cpu.front.out.FIFO_valid) {
+    std::printf(
+        "[DEADLOCK][FRONT][SLOT0] pc=0x%08x inst=0x%08x inst_valid=%d page_fault=%d pred_dir=%d next=0x%08x\n",
+        cpu.front.out.pc[0], cpu.front.out.instructions[0],
+        static_cast<int>(cpu.front.out.inst_valid[0]),
+        static_cast<int>(cpu.front.out.page_fault_inst[0]),
+        static_cast<int>(cpu.front.out.predict_dir[0]),
+        cpu.front.out.predict_next_fetch_address);
+  }
+
+  auto *ic_port = cpu.mem_subsystem.icache_read_port();
+  if (ic_port != nullptr) {
+    std::printf(
+        "[DEADLOCK][FRONT][ICACHE_PORT] req{v=%d r=%d addr=0x%08x size=%u id=%u} resp{v=%d r=%d id=%u}\n",
+        static_cast<int>(ic_port->req.valid),
+        static_cast<int>(ic_port->req.ready), ic_port->req.addr,
+        static_cast<unsigned>(ic_port->req.total_size),
+        static_cast<unsigned>(ic_port->req.id), static_cast<int>(ic_port->resp.valid),
+        static_cast<int>(ic_port->resp.ready),
+        static_cast<unsigned>(ic_port->resp.id));
+  } else {
+    std::printf("[DEADLOCK][FRONT][ICACHE_PORT] null\n");
+  }
+
+  g_deadlock_cpu->axi_interconnect.debug_print();
+  g_deadlock_cpu->axi_ddr.print_state();
+}
+
+void clear_axi_master_inputs(axi_interconnect::AXI_Interconnect_AXI3 &interconnect) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
+    auto &port = interconnect.read_ports[i];
+    port.req.valid = false;
+    port.req.addr = 0;
+    port.req.total_size = 0;
+    port.req.id = 0;
+    port.resp.ready = false;
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; i++) {
+    auto &port = interconnect.write_ports[i];
+    port.req.valid = false;
+    port.req.addr = 0;
+    port.req.wdata.clear();
+    port.req.wstrb = 0;
+    port.req.total_size = 0;
+    port.req.id = 0;
+    port.resp.ready = false;
+  }
+}
+
+void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
+  const auto &rport =
+      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_DCACHE_R];
+  cpu.mem_subsystem.mshr_axi_in.req_ready = rport.req.ready;
+  cpu.mem_subsystem.mshr_axi_in.resp_valid = rport.resp.valid;
+  cpu.mem_subsystem.mshr_axi_in.resp_id = rport.resp.id;
+  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+    cpu.mem_subsystem.mshr_axi_in.resp_data[i] = rport.resp.data[i];
+  }
+
+  const auto &wport =
+      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_DCACHE_W];
+  cpu.mem_subsystem.wb_axi_in.req_ready = wport.req.ready;
+  cpu.mem_subsystem.wb_axi_in.resp_valid = wport.resp.valid;
+
+  const auto &peri_rport =
+      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_EXTRA_R];
+  cpu.mem_subsystem.peripheral_axi_read_in.req_ready = peri_rport.req.ready;
+  cpu.mem_subsystem.peripheral_axi_read_in.resp_valid = peri_rport.resp.valid;
+  cpu.mem_subsystem.peripheral_axi_read_in.resp_id = peri_rport.resp.id;
+  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+    cpu.mem_subsystem.peripheral_axi_read_in.resp_data[i] = peri_rport.resp.data[i];
+  }
+
+  const auto &peri_wport =
+      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_EXTRA_W];
+  cpu.mem_subsystem.peripheral_axi_write_in.req_ready = peri_wport.req.ready;
+  cpu.mem_subsystem.peripheral_axi_write_in.resp_valid = peri_wport.resp.valid;
+  cpu.mem_subsystem.peripheral_axi_write_in.resp_id = peri_wport.resp.id;
+}
+
+void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
+  auto &rport =
+      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_DCACHE_R];
+  rport.req.valid = cpu.mem_subsystem.mshr_axi_out.req_valid;
+  rport.req.addr = cpu.mem_subsystem.mshr_axi_out.req_addr;
+  rport.req.total_size = cpu.mem_subsystem.mshr_axi_out.req_total_size;
+  rport.req.id = cpu.mem_subsystem.mshr_axi_out.req_id;
+  rport.resp.ready = cpu.mem_subsystem.mshr_axi_out.resp_ready;
+
+  auto &wport =
+      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_DCACHE_W];
+  wport.req.valid = cpu.mem_subsystem.wb_axi_out.req_valid;
+  wport.req.addr = cpu.mem_subsystem.wb_axi_out.req_addr;
+  wport.req.total_size = cpu.mem_subsystem.wb_axi_out.req_total_size;
+  wport.req.id = cpu.mem_subsystem.wb_axi_out.req_id;
+  wport.req.wstrb = cpu.mem_subsystem.wb_axi_out.req_wstrb;
+  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+    wport.req.wdata[i] = cpu.mem_subsystem.wb_axi_out.req_wdata[i];
+  }
+  wport.resp.ready = cpu.mem_subsystem.wb_axi_out.resp_ready;
+
+  auto &peri_rport =
+      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_EXTRA_R];
+  peri_rport.req.valid = cpu.mem_subsystem.peripheral_axi_read_out.req_valid;
+  peri_rport.req.addr = cpu.mem_subsystem.peripheral_axi_read_out.req_addr;
+  peri_rport.req.total_size = cpu.mem_subsystem.peripheral_axi_read_out.req_total_size;
+  peri_rport.req.id = cpu.mem_subsystem.peripheral_axi_read_out.req_id;
+  peri_rport.resp.ready = cpu.mem_subsystem.peripheral_axi_read_out.resp_ready;
+
+  auto &peri_wport =
+      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_EXTRA_W];
+  peri_wport.req.valid = cpu.mem_subsystem.peripheral_axi_write_out.req_valid;
+  peri_wport.req.addr = cpu.mem_subsystem.peripheral_axi_write_out.req_addr;
+  peri_wport.req.total_size = cpu.mem_subsystem.peripheral_axi_write_out.req_total_size;
+  peri_wport.req.id = cpu.mem_subsystem.peripheral_axi_write_out.req_id;
+  peri_wport.req.wstrb = cpu.mem_subsystem.peripheral_axi_write_out.req_wstrb;
+  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+    peri_wport.req.wdata[i] = cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
+  }
+  peri_wport.resp.ready = cpu.mem_subsystem.peripheral_axi_write_out.resp_ready;
+}
+} // namespace
 void SimCpu::commit_sync(InstInfo *inst) {
   BackTop *back = &this->back;
   if (inst->type == JALR) {
@@ -147,6 +300,8 @@ void SimContext::run_difftest_inst(InstEntry *inst_entry) {
 void SimCpu::init() {
   // 第一阶段：绑定顶层上下文
   ctx.cpu = this;
+  g_deadlock_cpu = this;
+  deadlock_debug::register_soc_dump_cb(deadlock_dump_soc_cb);
 
   // 第二阶段：构建模块对象（生成内部子模块实例）
   back.init();
@@ -154,6 +309,7 @@ void SimCpu::init() {
   // 第三阶段：集中完成跨模块连线
   mem_subsystem.csr = back.csr;
   mem_subsystem.memory = p_memory;
+  mem_subsystem.peripheral_io = &back.lsu->peripheral_io;
 
   front.in.csr_status = back.csr->out.csr_status;
   front.ctx = &ctx;
@@ -161,10 +317,8 @@ void SimCpu::init() {
   back.lsu->ptw_walk_port = mem_subsystem.dtlb_walk_port;
   back.lsu->ptw_mem_port = mem_subsystem.dtlb_ptw_port;
 
-  mem_subsystem.lsu_req_io = back.lsu_dcache_req_io;
-  mem_subsystem.lsu_wreq_io = back.lsu_dcache_wreq_io;
-  mem_subsystem.lsu_resp_io = back.lsu_dcache_resp_io;
-  mem_subsystem.lsu_wready_io = back.lsu_dcache_wready_io;
+  mem_subsystem.lsu2dcache = back.lsu_dcache_req_io;
+  mem_subsystem.dcache2lsu  = back.lsu_dcache_resp_io;
 
   front.icache_ptw_walk_port = mem_subsystem.itlb_walk_port;
   front.icache_ptw_mem_port = mem_subsystem.itlb_ptw_port;
@@ -181,6 +335,11 @@ void SimCpu::init() {
   // 端口时，互连/DDRx/MMIO 后端已经完成 init，不会命中未初始化握手状态。
   mem_subsystem.init();
   front.init();
+  axi_interconnect.init();
+  axi_router.init();
+  axi_ddr.init();
+  axi_mmio.init();
+  axi_mmio.add_device(MMIO_RANGE_BASE, MMIO_RANGE_SIZE, &axi_uart);
   oracle_pending_valid = false;
   oracle_pending_out = {};
 }
@@ -208,12 +367,37 @@ void SimCpu::cycle() {
 
   front_cycle();
   back.comb();
+
+  clear_axi_master_inputs(axi_interconnect);
+
+  // AXI phase-1: slave outputs -> router outputs -> interconnect outputs.
+  // Interconnect outputs (req.ready/resp.valid) are then bridged into
+  // MemSubsystem in the same cycle, so MSHR/WB can consume fresh feedback.
+  axi_ddr.comb_outputs();
+  axi_mmio.comb_outputs();
+  axi_router.comb_outputs(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
+  axi_interconnect.comb_outputs();
+  bridge_axi_to_mem_subsystem(*this);
+
+
   mem_subsystem.comb();
+
+  bridge_mem_subsystem_to_axi(*this);
+
+  // AXI phase-2: master requests -> interconnect -> router -> slave inputs.
+  axi_interconnect.comb_inputs();
+  axi_router.comb_inputs(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
+  axi_ddr.comb_inputs();
+  axi_mmio.comb_inputs();
 
   // 步骤 2：反馈给前端
   back2front_comb();
   back.seq();
   mem_subsystem.seq();
+  axi_interconnect.seq();
+  axi_router.seq(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
+  axi_ddr.seq();
+  axi_mmio.seq();
 
   if (ctx.exit_reason != ExitReason::NONE) {
     printf("Simulation Exited with Reason: %d\n", (int)ctx.exit_reason);
@@ -360,6 +544,18 @@ void SimCpu::front_cycle() {
 #endif
 }
 
+bool SimCpu::ready_to_exit() const {
+  if (back.lsu->has_committed_store_pending()) {
+    return false;
+  }
+
+  const auto &peri = mem_subsystem.get_peripheral_axi().cur;
+  if (peri.busy || peri.req_accepted || peri.resp_valid) {
+    return false;
+  }
+
+  return true;
+}
 void SimCpu::back2front_comb() {
   front.in.FIFO_read_enable = false;
   front.in.csr_status = back.csr->out.csr_status;
