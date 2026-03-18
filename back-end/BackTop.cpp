@@ -203,8 +203,8 @@ void BackTop::comb() {
   lsu2exe = {};
   lsu2dis = {};
   lsu2rob = {};
-  lsu2dcache_req = {};
-  lsu2dcache_wreq = {};
+  // lsu2dcache_req = {};
+  // lsu2dcache_wreq = {};
 #endif
 
   pre_idu_queue->comb_begin();

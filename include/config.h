@@ -73,7 +73,7 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // Feature Flags (Macros used for conditional compilation)
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 // MMU domain feature tags (kept enabled for front/back path visibility)
 #define CONFIG_DTLB
 #define CONFIG_ITLB

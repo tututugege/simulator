@@ -934,7 +934,7 @@ void RealLsu::handle_load_req(const MicroOp &inst)
         // [Fix] Disable Store-to-Load Forwarding for MMIO ranges
         // These addresses involve side effects and must read from consistent memory
         bool is_mmio = is_mmio_addr(p_addr);
-        task.flush_pipe = is_mmio;
+        // task.flush_pipe = is_mmio;
         ldq[ldq_idx].is_mmio_wait = is_mmio; // 延迟发送：等待到达 ROB 队头后再发出
         auto fwd_res = is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, inst);
 
@@ -1356,7 +1356,7 @@ void RealLsu::progress_ldq_entries()
             {
                 entry.uop.diag_val = p_addr;
                 bool is_mmio = is_mmio_addr(p_addr);
-                entry.uop.flush_pipe = is_mmio;
+                // entry.uop.flush_pipe = is_mmio;
                 entry.is_mmio_wait = is_mmio; // 延迟发送：等待到达 ROB 队头后再发出
                 auto fwd_res =
                     is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, entry.uop);

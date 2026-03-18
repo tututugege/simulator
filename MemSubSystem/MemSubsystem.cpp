@@ -213,6 +213,39 @@ axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
 #endif
 }
 
+void MemSubsystem::dump_icache_axi_debug() const {
+#if AXI_KIT_RUNTIME_ENABLED
+  if (axi_kit_runtime == nullptr) {
+    std::printf("[DEADLOCK][ICACHE_AXI] runtime=null\n");
+    return;
+  }
+
+  const auto &port =
+      axi_kit_runtime->interconnect.read_ports[axi_interconnect::MASTER_ICACHE];
+  std::printf(
+      "[DEADLOCK][ICACHE_AXI][MASTER] req{v=%d r=%d addr=0x%08x size=%u id=%u} resp{v=%d r=%d id=%u}\n",
+      static_cast<int>(port.req.valid), static_cast<int>(port.req.ready),
+      port.req.addr, static_cast<unsigned>(port.req.total_size),
+      static_cast<unsigned>(port.req.id), static_cast<int>(port.resp.valid),
+      static_cast<int>(port.resp.ready), static_cast<unsigned>(port.resp.id));
+
+  const auto &axi = axi_kit_runtime->interconnect.axi_io;
+  std::printf(
+      "[DEADLOCK][ICACHE_AXI][LINK] AR{v=%d r=%d addr=0x%08x len=%u id=0x%x} R{v=%d r=%d last=%d id=0x%x} AW{v=%d r=%d} W{v=%d r=%d last=%d} B{v=%d r=%d id=0x%x}\n",
+      static_cast<int>(axi.ar.arvalid), static_cast<int>(axi.ar.arready),
+      axi.ar.araddr, static_cast<unsigned>(axi.ar.arlen),
+      static_cast<unsigned>(axi.ar.arid), static_cast<int>(axi.r.rvalid),
+      static_cast<int>(axi.r.rready), static_cast<int>(axi.r.rlast),
+      static_cast<unsigned>(axi.r.rid), static_cast<int>(axi.aw.awvalid),
+      static_cast<int>(axi.aw.awready), static_cast<int>(axi.w.wvalid),
+      static_cast<int>(axi.w.wready), static_cast<int>(axi.w.wlast),
+      static_cast<int>(axi.b.bvalid), static_cast<int>(axi.b.bready),
+      static_cast<unsigned>(axi.b.bid));
+#else
+  std::printf("[DEADLOCK][ICACHE_AXI] disabled\n");
+#endif
+}
+
 MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime = std::make_unique<AxiKitRuntime>();
@@ -620,4 +653,6 @@ void MemSubsystem::dump_debug_state() const {
       static_cast<unsigned>(route_dbg.itlb.reason), route_dbg.itlb.req_addr,
       static_cast<int>(route_dbg.walk.blocked),
       static_cast<unsigned>(route_dbg.walk.reason), route_dbg.walk.req_addr);
+
+  dump_icache_axi_debug();
 }

@@ -9,6 +9,7 @@
 #include "oracle.h"
 #include "util.h"
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include "DeadlockDebug.h"
@@ -21,6 +22,53 @@ void deadlock_dump_soc_cb() {
   if (g_deadlock_cpu == nullptr) {
     return;
   }
+  auto &cpu = *g_deadlock_cpu;
+
+  int front_valid_cnt = 0;
+  int back_valid_cnt = 0;
+  for (int i = 0; i < FETCH_WIDTH; i++) {
+    if (cpu.front.out.inst_valid[i]) {
+      front_valid_cnt++;
+    }
+    if (cpu.back.in.valid[i]) {
+      back_valid_cnt++;
+    }
+  }
+
+  std::printf(
+      "[DEADLOCK][FRONT] fifo_read_en=%d fifo_valid=%d inst_valid_cnt=%d refetch=%d refetch_addr=0x%08x\n",
+      static_cast<int>(cpu.front.in.FIFO_read_enable),
+      static_cast<int>(cpu.front.out.FIFO_valid), front_valid_cnt,
+      static_cast<int>(cpu.front.in.refetch), cpu.front.in.refetch_address);
+  std::printf(
+      "[DEADLOCK][FRONT->BACK] back_stall=%d flush=%d mispred=%d redirect=0x%08x back_in_valid_cnt=%d oracle_pending=%d\n",
+      static_cast<int>(cpu.back.out.stall), static_cast<int>(cpu.back.out.flush),
+      static_cast<int>(cpu.back.out.mispred), cpu.back.out.redirect_pc,
+      back_valid_cnt, static_cast<int>(cpu.oracle_pending_valid));
+  if (cpu.front.out.FIFO_valid) {
+    std::printf(
+        "[DEADLOCK][FRONT][SLOT0] pc=0x%08x inst=0x%08x inst_valid=%d page_fault=%d pred_dir=%d next=0x%08x\n",
+        cpu.front.out.pc[0], cpu.front.out.instructions[0],
+        static_cast<int>(cpu.front.out.inst_valid[0]),
+        static_cast<int>(cpu.front.out.page_fault_inst[0]),
+        static_cast<int>(cpu.front.out.predict_dir[0]),
+        cpu.front.out.predict_next_fetch_address);
+  }
+
+  auto *ic_port = cpu.mem_subsystem.icache_read_port();
+  if (ic_port != nullptr) {
+    std::printf(
+        "[DEADLOCK][FRONT][ICACHE_PORT] req{v=%d r=%d addr=0x%08x size=%u id=%u} resp{v=%d r=%d id=%u}\n",
+        static_cast<int>(ic_port->req.valid),
+        static_cast<int>(ic_port->req.ready), ic_port->req.addr,
+        static_cast<unsigned>(ic_port->req.total_size),
+        static_cast<unsigned>(ic_port->req.id), static_cast<int>(ic_port->resp.valid),
+        static_cast<int>(ic_port->resp.ready),
+        static_cast<unsigned>(ic_port->resp.id));
+  } else {
+    std::printf("[DEADLOCK][FRONT][ICACHE_PORT] null\n");
+  }
+
   g_deadlock_cpu->axi_interconnect.debug_print();
   g_deadlock_cpu->axi_ddr.print_state();
 }

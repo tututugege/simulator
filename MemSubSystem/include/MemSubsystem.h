@@ -58,6 +58,7 @@ public:
   void comb();
   void seq();
   void dump_debug_state() const;
+  void dump_icache_axi_debug() const;
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   axi_interconnect::ReadMasterPort_t *icache_read_port();
 
