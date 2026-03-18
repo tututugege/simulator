@@ -4,16 +4,14 @@
 #include "config.h"
 class SimContext;
 
-class IduIn {
-public:
+struct IduIn {
   PreIduIssueIO *issue;
   RenDecIO *ren2dec;
   RobBroadcastIO *rob_bcast;
   ExuIdIO *exu2id; // [New] From Exu
 };
 
-class IduOut {
-public:
+struct IduOut {
   DecRenIO *dec2ren;
   DecBroadcastIO *dec_bcast;
 };

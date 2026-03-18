@@ -8,7 +8,7 @@
 #include <cstdlib>
 
 // 中间信号
-static tag_t alloc_tag[DECODE_WIDTH]; // 分配的新 Tag
+static wire<BR_TAG_WIDTH> alloc_tag[DECODE_WIDTH]; // 分配的新 Tag
 
 void Idu::init() {
   for (int i = 0; i < MAX_BR_NUM; i++) {
@@ -69,7 +69,7 @@ void Idu::comb_decode() {
     } else {
       decode(decoded, entry.inst);
     }
-    decoded.dbg.pc = entry.pc;
+    decoded.dbg.pc = in.issue->pc[i];
     decoded.ftq_idx = entry.ftq_idx;
     decoded.ftq_offset = entry.ftq_offset;
     decoded.ftq_is_last = entry.ftq_is_last;
@@ -84,8 +84,8 @@ void Idu::comb_decode() {
 #endif
   // ID 阶段旁路清理：本拍已解析分支的 bit 不应继续传播到新译码指令。
   // clear_mask 来自上拍锁存的 BRU 解析结果（br_latch）。
-  mask_t clear = br_latch.clear_mask;
-  mask_t running_mask = now_br_mask & ~clear;
+  wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
+  wire<BR_MASK_WIDTH> running_mask = now_br_mask & ~clear;
   bool stall = false;
   int i = 0;
   for (; i < DECODE_WIDTH; i++) {
@@ -104,11 +104,11 @@ void Idu::comb_decode() {
         stall = true;
         break;
       }
-      tag_t new_tag = alloc_tag[br_num];
+      wire<BR_TAG_WIDTH> new_tag = alloc_tag[br_num];
       out.dec2ren->uop[i].br_id = new_tag;
       // 分支自身不依赖自己；self bit 只作用于后续更年轻指令。
       out.dec2ren->uop[i].br_mask = running_mask;
-      running_mask |= (mask_t(1) << new_tag);
+      running_mask |= (wire<BR_MASK_WIDTH>(1) << new_tag);
       br_num++;
     } else {
       out.dec2ren->uop[i].br_id = 0;
@@ -135,21 +135,21 @@ void Idu::comb_branch() {
   pending_free_mask_1 = pending_free_mask;
 
   // 0. 先应用上拍累积的释放请求（延迟一拍生效）
-  mask_t matured_free = pending_free_mask;
+  wire<BR_MASK_WIDTH> matured_free = pending_free_mask;
   for (int i = 1; i < MAX_BR_NUM; i++) {
     if ((matured_free >> i) & 1) {
       tag_vec_1[i] = true;
-      pending_free_mask_1 &= ~(mask_t(1) << i);
+      pending_free_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
     }
   }
 
   // 1. 处理 clear_mask: 所有已解析的 branch 立即释放 (IDU 本地状态)
-  mask_t clear = br_latch.clear_mask;
+  wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
   for (int i = 1; i < MAX_BR_NUM; i++) {
     if ((clear >> i) & 1) {
       // 延迟到下一拍再真正释放 tag_vec，避免同拍复用
-      pending_free_mask_1 |= (mask_t(1) << i);
-      now_br_mask_1 &= ~(mask_t(1) << i);
+      pending_free_mask_1 |= (wire<BR_MASK_WIDTH>(1) << i);
+      now_br_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
     }
   }
 
@@ -170,7 +170,7 @@ void Idu::comb_branch() {
     out.dec_bcast->br_mask = 1ULL << br_latch.br_id;
 
     // 释放误预测分支之后分配的更年轻的 tag
-    mask_t tags_to_free = now_br_mask & ~br_mask_cp[br_latch.br_id];
+    wire<BR_MASK_WIDTH> tags_to_free = now_br_mask & ~br_mask_cp[br_latch.br_id];
     now_br_mask_1 &= ~tags_to_free;
     // 同样延迟到下一拍释放空闲位图
     pending_free_mask_1 |= tags_to_free;
@@ -216,9 +216,9 @@ void Idu::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
     if (fire && is_branch(out.dec2ren->uop[i].type)) {
-      tag_t new_tag = alloc_tag[br_num];
+      wire<BR_TAG_WIDTH> new_tag = alloc_tag[br_num];
       tag_vec_1[new_tag] = false;
-      now_br_mask_1 |= (mask_t(1) << new_tag);
+      now_br_mask_1 |= (wire<BR_MASK_WIDTH>(1) << new_tag);
       br_mask_cp_1[new_tag] = now_br_mask_1;
       br_num++;
     }

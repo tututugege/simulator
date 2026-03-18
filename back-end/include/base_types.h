@@ -50,7 +50,6 @@ enum UopType {
 };
 
 constexpr int UOP_TYPE_WIDTH = bit_width_for_count(MAX_UOP_TYPE);
-using uop_type_bits_t = wire<UOP_TYPE_WIDTH>;
 
 enum IQType {
   IQ_INT,

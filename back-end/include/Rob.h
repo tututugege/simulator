@@ -96,7 +96,6 @@ struct RobStoredInst {
     RobCommitIO::RobCommitInst dst;
     dst.diag_val = diag_val;
     dst.dest_areg = dest_areg;
-    dst.src1_areg = src1_areg;
     dst.dest_preg = dest_preg;
     dst.old_dest_preg = old_dest_preg;
     dst.ftq_idx = ftq_idx;
@@ -105,15 +104,8 @@ struct RobStoredInst {
     dst.mispred = mispred;
     dst.br_taken = br_taken;
     dst.dest_en = dest_en;
-    dst.is_atomic = is_atomic;
-    dst.func3 = func3;
     dst.func7 = func7;
-    dst.imm = imm;
-    dst.rob_idx = rob_idx;
     dst.stq_idx = stq_idx;
-    dst.stq_flag = stq_flag;
-    dst.uop_num = uop_num;
-    dst.cplt_num = cplt_num;
     dst.page_fault_inst = page_fault_inst;
     dst.page_fault_load = page_fault_load;
     dst.page_fault_store = page_fault_store;

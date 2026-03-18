@@ -79,7 +79,7 @@ void Dispatch::init() {
 void Dispatch::comb_alloc() {
   int store_alloc_count = 0; // 当前周期已分配的 store 数量
   int load_alloc_count = 0;  // 当前周期已分配的 load 数量
-  mask_t clear_mask = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
 
   // 初始化输出
   for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
@@ -247,7 +247,7 @@ void Dispatch::comb_fire() {
   bool serializing_barrier = false;
   int dis2ren_block_reason = DIS2REN_BLOCK_NONE;
   int dis2ren_dispatch_detail = DIS2REN_DISPATCH_DETAIL_NONE;
-  mask_t clear_mask = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
   bool global_flush =
       in.rob_bcast->flush || in.dec_bcast->mispred || in.rob2dis->stall;
 
@@ -627,7 +627,7 @@ void Dispatch::comb_fire() {
 }
 
 void Dispatch::comb_pipeline() {
-  mask_t clear_mask = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
 
   if (in.rob_bcast->flush || in.dec_bcast->mispred) {
 #ifdef CONFIG_PERF_COUNTER

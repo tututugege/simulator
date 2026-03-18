@@ -299,7 +299,7 @@ void Ren ::comb_commit() {
 }
 
 void Ren ::comb_pipeline() {
-  mask_t clear_mask = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
   if (in.rob_bcast->flush || in.dec_bcast->mispred) {
 #ifdef CONFIG_PERF_COUNTER
     uint64_t killed = 0;

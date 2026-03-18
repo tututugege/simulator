@@ -308,7 +308,6 @@ struct RobCommitIO {
   struct RobCommitInst {
     wire<32> diag_val;
     wire<AREG_IDX_WIDTH> dest_areg;
-    wire<AREG_IDX_WIDTH> src1_areg;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> old_dest_preg;
 
@@ -320,16 +319,8 @@ struct RobCommitIO {
     wire<1> br_taken;
 
     wire<1> dest_en;
-    wire<1> is_atomic;
-    wire<3> func3;
     wire<7> func7;
-    wire<32> imm;
-    wire<ROB_IDX_WIDTH> rob_idx;
     wire<STQ_IDX_WIDTH> stq_idx;
-    wire<1> stq_flag;
-
-    wire<2> uop_num;
-    wire<2> cplt_num;
 
     wire<1> page_fault_inst;
     wire<1> page_fault_load;
@@ -347,7 +338,6 @@ struct RobCommitIO {
       RobCommitInst dst;
       dst.diag_val = src.diag_val;
       dst.dest_areg = src.dest_areg;
-      dst.src1_areg = src.src1_areg;
       dst.dest_preg = src.dest_preg;
       dst.old_dest_preg = src.old_dest_preg;
       dst.ftq_idx = src.ftq_idx;
@@ -356,15 +346,8 @@ struct RobCommitIO {
       dst.mispred = src.mispred;
       dst.br_taken = src.br_taken;
       dst.dest_en = src.dest_en;
-      dst.is_atomic = src.is_atomic;
-      dst.func3 = src.func3;
       dst.func7 = src.func7;
-      dst.imm = src.imm;
-      dst.rob_idx = src.rob_idx;
       dst.stq_idx = src.stq_idx;
-      dst.stq_flag = src.stq_flag;
-      dst.uop_num = src.uop_num;
-      dst.cplt_num = src.cplt_num;
       dst.page_fault_inst = src.page_fault_inst;
       dst.page_fault_load = src.page_fault_load;
       dst.page_fault_store = src.page_fault_store;
@@ -380,7 +363,6 @@ struct RobCommitIO {
       InstInfo dst;
       dst.diag_val = diag_val;
       dst.dest_areg = dest_areg;
-      dst.src1_areg = src1_areg;
       dst.dest_preg = dest_preg;
       dst.old_dest_preg = old_dest_preg;
       dst.ftq_idx = ftq_idx;
@@ -389,15 +371,8 @@ struct RobCommitIO {
       dst.mispred = mispred;
       dst.br_taken = br_taken;
       dst.dest_en = dest_en;
-      dst.is_atomic = is_atomic;
-      dst.func3 = func3;
       dst.func7 = func7;
-      dst.imm = imm;
-      dst.rob_idx = rob_idx;
       dst.stq_idx = stq_idx;
-      dst.stq_flag = stq_flag;
-      dst.uop_num = uop_num;
-      dst.cplt_num = cplt_num;
       dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = page_fault_load;
       dst.page_fault_store = page_fault_store;

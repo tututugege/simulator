@@ -26,7 +26,7 @@ struct LatencyEntry {
   bool valid;
   int countdown; // 剩余周期数
   uint32_t dest_preg;
-  mask_t br_mask;
+  wire<BR_MASK_WIDTH> br_mask;
   uint32_t rob_idx;
   uint32_t rob_flag;
 };

@@ -4,10 +4,6 @@
 #include <iostream>
 #include <string>
 
-typedef wire<PRF_IDX_WIDTH> preg_t;
-typedef wire<BR_TAG_WIDTH> tag_t;
-typedef wire<BR_MASK_WIDTH> mask_t;
-
 // Standard library usings (kept for compatibility)
 using std::cin;
 using std::cout;
@@ -44,7 +40,6 @@ enum InstType {
 
 constexpr int INST_TYPE_COUNT = FP + 1;
 constexpr int INST_TYPE_WIDTH = bit_width_for_count(INST_TYPE_COUNT);
-using inst_type_bits_t = wire<INST_TYPE_WIDTH>;
 
 // AMO Operations (funct7[6:2])
 namespace AmoOp {

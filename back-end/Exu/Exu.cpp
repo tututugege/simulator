@@ -205,15 +205,15 @@ void Exu::comb_pipeline() {
       inst_r_1[i].valid = false;
     }
     for (auto fu : units)
-      fu->flush((mask_t)-1);
+      fu->flush(static_cast<wire<BR_MASK_WIDTH>>(-1));
     return;
   }
 
-  mask_t clear = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear = in.dec_bcast->clear_mask;
 
   // 2. 分支误预测选择性冲刷（先 flush，再 clear）
   if (in.dec_bcast->mispred) {
-    mask_t mask = in.dec_bcast->br_mask;
+    wire<BR_MASK_WIDTH> mask = in.dec_bcast->br_mask;
     for (auto fu : units)
       fu->flush(mask);
   }
@@ -439,12 +439,12 @@ void Exu::comb_exec() {
   // ==========================================
   bool mispred = false;
   MicroOp *mispred_uop = nullptr;
-  mask_t clear_mask = 0;
+  wire<BR_MASK_WIDTH> clear_mask = 0;
 
   for (int i = 0; i < BRU_NUM; i++) {
     if (br_res[i].valid) {
       // 所有已解析的 branch 贡献 clear_mask
-      clear_mask |= (mask_t(1) << br_res[i].uop.br_id);
+      clear_mask |= (wire<BR_MASK_WIDTH>(1) << br_res[i].uop.br_id);
 
       if (br_res[i].uop.mispred) {
         if (!mispred) {

@@ -44,7 +44,7 @@ struct StqEntry {
   uint32_t data;
 
   uint32_t func3;
-  mask_t br_mask;
+  wire<BR_MASK_WIDTH> br_mask;
   uint32_t rob_idx;
   uint32_t rob_flag;
 };

@@ -108,18 +108,18 @@ private:
   void handle_load_req(const MicroOp &uop);
   void handle_store_addr(const MicroOp &uop);
   void handle_store_data(const MicroOp &uop);
-  int find_recovery_tail(mask_t br_mask, bool &recovery_tail_flag);
-  bool reserve_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag,
+  int find_recovery_tail(wire<BR_MASK_WIDTH> br_mask, bool &recovery_tail_flag);
+  bool reserve_stq_entry(wire<BR_MASK_WIDTH> br_mask, uint32_t rob_idx, uint32_t rob_flag,
                          uint32_t func3);
   void consume_stq_alloc_reqs(int &push_count);
-  bool reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
+  bool reserve_ldq_entry(int idx, wire<BR_MASK_WIDTH> br_mask, uint32_t rob_idx,
                          uint32_t rob_flag);
   void consume_ldq_alloc_reqs();
   void free_ldq_entry(int idx);
   bool is_mmio_addr(uint32_t paddr) const;
   void drive_store_write_req();
   void handle_global_flush();
-  void handle_mispred(mask_t mask);
+  void handle_mispred(wire<BR_MASK_WIDTH> mask);
   void retire_stq_head_if_ready(bool write_fire, int &pop_count);
   void commit_stores_from_rob();
   void progress_ldq_entries();

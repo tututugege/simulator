@@ -6,13 +6,7 @@
 struct InstructionBufferEntry {
   bool valid = false;
   uint32_t inst = 0;
-  uint32_t pc = 0;
   bool page_fault_inst = false;
-  bool predict_dir = false;
-  bool alt_pred = false;
-  uint8_t altpcpn = 0;
-  uint8_t pcpn = 0;
-  uint32_t tage_idx[4] = {0, 0, 0, 0};
   uint32_t ftq_idx = 0;
   uint32_t ftq_offset = 0;
   bool ftq_is_last = false;
@@ -23,7 +17,9 @@ public:
   void init();
   int count() const { return count_r; }
   int free_slots() const { return IDU_INST_BUFFER_SIZE - count_r; }
-  bool can_accept(int incoming_num) const { return incoming_num <= free_slots(); }
+  bool can_accept(int incoming_num) const {
+    return incoming_num <= free_slots();
+  }
 
   const InstructionBufferEntry &peek(int offset) const;
   void pop_front(int n);

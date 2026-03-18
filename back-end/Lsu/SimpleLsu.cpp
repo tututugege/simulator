@@ -311,7 +311,7 @@ void SimpleLsu::handle_store_data(const MicroOp &inst) {
   stq[inst.stq_idx].data_valid = true;
 }
 
-bool SimpleLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
+bool SimpleLsu::reserve_stq_entry(wire<BR_MASK_WIDTH> br_mask, uint32_t rob_idx,
                                   uint32_t rob_flag, uint32_t func3) {
   if (stq_count >= STQ_SIZE) {
     return false;
@@ -345,7 +345,7 @@ void SimpleLsu::consume_stq_alloc_reqs(int &push_count) {
   }
 }
 
-bool SimpleLsu::reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
+bool SimpleLsu::reserve_ldq_entry(int idx, wire<BR_MASK_WIDTH> br_mask, uint32_t rob_idx,
                                   uint32_t rob_flag) {
   Assert(idx >= 0 && idx < LDQ_SIZE);
   if (ldq[idx].valid) {
@@ -444,7 +444,7 @@ void SimpleLsu::handle_global_flush() {
   reserve_addr = 0;
 }
 
-void SimpleLsu::handle_mispred(mask_t mask) {
+void SimpleLsu::handle_mispred(wire<BR_MASK_WIDTH> mask) {
   auto is_killed = [&](const MicroOp &u) { return (u.br_mask & mask) != 0; };
 
   for (int i = 0; i < LDQ_SIZE; i++) {
@@ -773,7 +773,7 @@ void SimpleLsu::seq() {
   }
 
   // 清除已解析分支的 br_mask bit（在 flush 之后，只影响存活条目）
-  mask_t clear = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear = in.dec_bcast->clear_mask;
   if (clear) {
     for (int i = 0; i < LDQ_SIZE; i++) {
       if (ldq[i].valid) ldq[i].uop.br_mask &= ~clear;
@@ -813,7 +813,7 @@ void SimpleLsu::seq() {
 // =========================================================
 // 辅助：基于 Tag 查找新的 Tail
 // =========================================================
-int SimpleLsu::find_recovery_tail(mask_t br_mask, bool &recovery_tail_flag) {
+int SimpleLsu::find_recovery_tail(wire<BR_MASK_WIDTH> br_mask, bool &recovery_tail_flag) {
   // 从 Commit 指针（安全点）开始，向 Tail 扫描
   // 我们要找的是“第一个”被误预测影响的指令
   // 因为是顺序分配，一旦找到一个，后面（更年轻）的肯定也都要丢弃

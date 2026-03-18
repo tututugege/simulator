@@ -17,6 +17,11 @@ static void fill_ftq_pc_resp(FtqPcReadResp &resp, const FTQEntry &entry,
   resp.next_pc = entry.next_pc;
 }
 
+static inline uint32_t ftq_pc_from_entry(const FTQEntry &entry,
+                                         uint32_t ftq_offset) {
+  return entry.start_pc + (ftq_offset << 2);
+}
+
 int PreIduQueue::ftq_alloc(const FTQEntry &entry) {
   (void)entry;
   if (ftq_count_1 >= FTQ_SIZE) {
@@ -90,9 +95,17 @@ void PreIduQueue::comb_begin() {
     for (auto &e : out.issue->entries) {
       e = {};
     }
+    for (auto &v : out.issue->pc) {
+      v = {};
+    }
     int n = ibuf.count() < DECODE_WIDTH ? ibuf.count() : DECODE_WIDTH;
     for (int i = 0; i < n; i++) {
       out.issue->entries[i] = ibuf.peek(i);
+      const auto &entry = out.issue->entries[i];
+      if (entry.valid && entry.ftq_idx < FTQ_SIZE) {
+        out.issue->pc[i] =
+            ftq_pc_from_entry(ftq_entries[entry.ftq_idx], entry.ftq_offset);
+      }
     }
 #ifdef CONFIG_PERF_COUNTER
     if (ctx != nullptr) {
@@ -200,15 +213,7 @@ void PreIduQueue::comb_accept_front() {
     auto &e = push_entries[push_count++];
     e.valid = true;
     e.inst = in.front2dec->inst[i];
-    e.pc = in.front2dec->pc[i];
     e.page_fault_inst = in.front2dec->page_fault_inst[i];
-    e.predict_dir = in.front2dec->predict_dir[i];
-    e.alt_pred = in.front2dec->alt_pred[i];
-    e.altpcpn = in.front2dec->altpcpn[i];
-    e.pcpn = in.front2dec->pcpn[i];
-    for (int j = 0; j < 4; j++) {
-      e.tage_idx[j] = in.front2dec->tage_idx[i][j];
-    }
     e.ftq_idx = ftq_alloc_idx;
     e.ftq_offset = i;
     e.ftq_is_last = (i == last_fire_idx);

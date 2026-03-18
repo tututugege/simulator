@@ -7,17 +7,7 @@
 
 class SimContext;
 
-struct PreIduIssueIO {
-  InstructionBufferEntry entries[DECODE_WIDTH];
-  PreIduIssueIO() {
-    for (auto &e : entries) {
-      e = {};
-    }
-  }
-};
-
-class PreIduQueueIn {
-public:
+struct PreIduQueueIn {
   FrontDecIO *front2dec = nullptr;
   RenDecIO *ren2dec = nullptr;
   DecRenIO *idu_dec2ren = nullptr;
@@ -28,8 +18,7 @@ public:
   FtqRobPcReqIO *ftq_rob_pc_req = nullptr;
 };
 
-class PreIduQueueOut {
-public:
+struct PreIduQueueOut {
   DecFrontIO *dec2front = nullptr;
   PreIduIssueIO *issue = nullptr;
   FtqExuPcRespIO *ftq_exu_pc_resp = nullptr;

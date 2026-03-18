@@ -120,7 +120,7 @@ void Prf::comb_write() {
 // ==========================================
 void Prf::comb_pipeline() {
   bool global_flush = in.rob_bcast->flush;
-  mask_t clear = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear = in.dec_bcast->clear_mask;
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     if (global_flush) {
       inst_r_1[i].valid = false;

@@ -117,7 +117,7 @@ public:
 
 
   // Flush
-  void flush_br(mask_t br_mask) {
+  void flush_br(wire<BR_MASK_WIDTH> br_mask) {
     for (int i = 0; i < size; i++) {
       if (!entry_1[i].valid) {
         continue;
@@ -132,7 +132,7 @@ public:
   }
 
   // Clear resolved branch bits from surviving entries
-  void clear_br(mask_t clear_mask) {
+  void clear_br(wire<BR_MASK_WIDTH> clear_mask) {
     if (clear_mask == 0) return;
     for (int i = 0; i < size; i++) {
       if (entry_1[i].valid) {

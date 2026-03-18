@@ -282,7 +282,7 @@ void Isu::comb_flush() {
   }
 
   // 清除已解析分支的 br_mask bit（在 flush 之后，只影响存活条目）
-  mask_t clear = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear = in.dec_bcast->clear_mask;
   if (clear) {
     for (auto &q : iqs)
       q.clear_br(clear);

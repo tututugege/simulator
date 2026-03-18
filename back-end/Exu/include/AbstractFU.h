@@ -13,7 +13,7 @@ protected:
 public:
   AbstractFU(std::string n, int port_idx) : name(n), port_idx(port_idx) {}
 
-  virtual int get_lsu_port_id() { return -1; } // 只给agu和sdu用
+  virtual int get_lsu_port_id() { return -1; }  // 只给agu和sdu用
   std::string get_name() const { return name; } // For debugging
   virtual ~AbstractFU() {}
 
@@ -36,8 +36,8 @@ public:
 
   // 动作：结果被取走了，从 FU 里移除它
   virtual void pop_finished() = 0;
-  virtual void flush(mask_t br_mask) = 0;
-  virtual void clear_br(mask_t clear_mask) = 0;
+  virtual void flush(wire<BR_MASK_WIDTH> br_mask) = 0;
+  virtual void clear_br(wire<BR_MASK_WIDTH> clear_mask) = 0;
 };
 
 // 固定延迟、可流水化：ALU、MUL、FADD、FMUL
@@ -85,8 +85,8 @@ public:
 
   // 新增：清空队列
 
-  void flush(mask_t br_mask) override {
-    if (br_mask == (mask_t)-1) {
+  void flush(wire<BR_MASK_WIDTH> br_mask) override {
+    if (br_mask == static_cast<wire<BR_MASK_WIDTH>>(-1)) {
       pipeline.clear();
     } else {
       auto it = pipeline.begin();
@@ -101,7 +101,7 @@ public:
     }
   }
 
-  void clear_br(mask_t clear_mask) override {
+  void clear_br(wire<BR_MASK_WIDTH> clear_mask) override {
     for (auto &inst : pipeline) {
       inst.uop.br_mask &= ~clear_mask;
     }
@@ -173,16 +173,14 @@ public:
     return nullptr;
   }
 
-  void pop_finished() override {
-    busy = false;
-  }
+  void pop_finished() override { busy = false; }
 
-  void flush(mask_t br_mask) override {
+  void flush(wire<BR_MASK_WIDTH> br_mask) override {
     if (!busy)
       return;
 
     bool kill = false;
-    if (br_mask == (mask_t)-1) {
+    if (br_mask == static_cast<wire<BR_MASK_WIDTH>>(-1)) {
       kill = true;
     } else {
       bool kill_by_mask = (current_inst.br_mask & br_mask) != 0;
@@ -197,7 +195,7 @@ public:
     }
   }
 
-  void clear_br(mask_t clear_mask) override {
+  void clear_br(wire<BR_MASK_WIDTH> clear_mask) override {
     if (busy) {
       current_inst.br_mask &= ~clear_mask;
     }
