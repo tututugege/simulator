@@ -702,15 +702,12 @@ struct PrfAwakeIO {
 
 struct DisIssIO {
   struct DisIssUop {
-    wire<32> diag_val;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> src1_preg;
     wire<PRF_IDX_WIDTH> src2_preg;
 
     wire<FTQ_IDX_WIDTH> ftq_idx;
     wire<FTQ_OFFSET_WIDTH> ftq_offset;
-    wire<1> ftq_is_last;
-
     wire<1> is_atomic;
 
     wire<1> dest_en;
@@ -731,11 +728,7 @@ struct DisIssIO {
     wire<1> stq_flag;
     wire<LDQ_IDX_WIDTH> ldq_idx;
 
-    wire<2> uop_num;
     wire<1> rob_flag;
-
-    wire<1> page_fault_inst;
-    wire<1> illegal_inst;
 
     wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
@@ -744,13 +737,11 @@ struct DisIssIO {
 
     static DisIssUop from_micro_op(const MicroOp &src) {
       DisIssUop dst;
-      dst.diag_val = src.diag_val;
       dst.dest_preg = src.dest_preg;
       dst.src1_preg = src.src1_preg;
       dst.src2_preg = src.src2_preg;
       dst.ftq_idx = src.ftq_idx;
       dst.ftq_offset = src.ftq_offset;
-      dst.ftq_is_last = src.ftq_is_last;
       dst.is_atomic = src.is_atomic;
       dst.dest_en = src.dest_en;
       dst.src1_en = src.src1_en;
@@ -769,10 +760,7 @@ struct DisIssIO {
       dst.stq_idx = src.stq_idx;
       dst.stq_flag = src.stq_flag;
       dst.ldq_idx = src.ldq_idx;
-      dst.uop_num = src.uop_num;
       dst.rob_flag = src.rob_flag;
-      dst.page_fault_inst = src.page_fault_inst;
-      dst.illegal_inst = src.illegal_inst;
       dst.op = src.op;
       dst.dbg = src.dbg;
       return dst;
@@ -780,13 +768,11 @@ struct DisIssIO {
 
     MicroOp to_micro_op() const {
       MicroOp dst;
-      dst.diag_val = diag_val;
       dst.dest_preg = dest_preg;
       dst.src1_preg = src1_preg;
       dst.src2_preg = src2_preg;
       dst.ftq_idx = ftq_idx;
       dst.ftq_offset = ftq_offset;
-      dst.ftq_is_last = ftq_is_last;
       dst.is_atomic = is_atomic;
       dst.dest_en = dest_en;
       dst.src1_en = src1_en;
@@ -805,12 +791,9 @@ struct DisIssIO {
       dst.stq_idx = stq_idx;
       dst.stq_flag = stq_flag;
       dst.ldq_idx = ldq_idx;
-      dst.uop_num = uop_num;
       dst.rob_flag = rob_flag;
-      dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = false;
       dst.page_fault_store = false;
-      dst.illegal_inst = illegal_inst;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       return dst;
@@ -888,15 +871,12 @@ struct RobBroadcastIO {
 
 struct IssPrfIO {
   struct IssPrfUop {
-    wire<32> diag_val;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> src1_preg;
     wire<PRF_IDX_WIDTH> src2_preg;
 
     wire<FTQ_IDX_WIDTH> ftq_idx;
     wire<FTQ_OFFSET_WIDTH> ftq_offset;
-    wire<1> ftq_is_last;
-
     wire<1> is_atomic;
     wire<1> dest_en;
     wire<1> src1_en;
@@ -914,11 +894,7 @@ struct IssPrfIO {
     wire<1> stq_flag;
     wire<LDQ_IDX_WIDTH> ldq_idx;
 
-    wire<2> uop_num;
     wire<1> rob_flag;
-
-    wire<1> page_fault_inst;
-    wire<1> illegal_inst;
 
     wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
@@ -927,13 +903,11 @@ struct IssPrfIO {
 
     static IssPrfUop from_micro_op(const MicroOp &src) {
       IssPrfUop dst;
-      dst.diag_val = src.diag_val;
       dst.dest_preg = src.dest_preg;
       dst.src1_preg = src.src1_preg;
       dst.src2_preg = src.src2_preg;
       dst.ftq_idx = src.ftq_idx;
       dst.ftq_offset = src.ftq_offset;
-      dst.ftq_is_last = src.ftq_is_last;
       dst.is_atomic = src.is_atomic;
       dst.dest_en = src.dest_en;
       dst.src1_en = src.src1_en;
@@ -950,10 +924,7 @@ struct IssPrfIO {
       dst.stq_idx = src.stq_idx;
       dst.stq_flag = src.stq_flag;
       dst.ldq_idx = src.ldq_idx;
-      dst.uop_num = src.uop_num;
       dst.rob_flag = src.rob_flag;
-      dst.page_fault_inst = src.page_fault_inst;
-      dst.illegal_inst = src.illegal_inst;
       dst.op = src.op;
       dst.dbg = src.dbg;
       return dst;
@@ -961,13 +932,11 @@ struct IssPrfIO {
 
     MicroOp to_micro_op() const {
       MicroOp dst;
-      dst.diag_val = diag_val;
       dst.dest_preg = dest_preg;
       dst.src1_preg = src1_preg;
       dst.src2_preg = src2_preg;
       dst.ftq_idx = ftq_idx;
       dst.ftq_offset = ftq_offset;
-      dst.ftq_is_last = ftq_is_last;
       dst.is_atomic = is_atomic;
       dst.dest_en = dest_en;
       dst.src1_en = src1_en;
@@ -984,12 +953,9 @@ struct IssPrfIO {
       dst.stq_idx = stq_idx;
       dst.stq_flag = stq_flag;
       dst.ldq_idx = ldq_idx;
-      dst.uop_num = uop_num;
       dst.rob_flag = rob_flag;
-      dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = false;
       dst.page_fault_store = false;
-      dst.illegal_inst = illegal_inst;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       return dst;
@@ -1011,7 +977,6 @@ struct IssPrfIO {
 
 struct PrfExeIO {
   struct PrfExeUop {
-    wire<32> diag_val;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> src1_preg;
     wire<PRF_IDX_WIDTH> src2_preg;
@@ -1020,8 +985,6 @@ struct PrfExeIO {
 
     wire<FTQ_IDX_WIDTH> ftq_idx;
     wire<FTQ_OFFSET_WIDTH> ftq_offset;
-    wire<1> ftq_is_last;
-
     wire<1> is_atomic;
     wire<1> dest_en;
     wire<1> src1_en;
@@ -1039,11 +1002,7 @@ struct PrfExeIO {
     wire<1> stq_flag;
     wire<LDQ_IDX_WIDTH> ldq_idx;
 
-    wire<2> uop_num;
     wire<1> rob_flag;
-
-    wire<1> page_fault_inst;
-    wire<1> illegal_inst;
 
     wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
@@ -1052,13 +1011,11 @@ struct PrfExeIO {
 
     static PrfExeUop from_iss_prf_uop(const IssPrfIO::IssPrfUop &src) {
       PrfExeUop dst;
-      dst.diag_val = src.diag_val;
       dst.dest_preg = src.dest_preg;
       dst.src1_preg = src.src1_preg;
       dst.src2_preg = src.src2_preg;
       dst.ftq_idx = src.ftq_idx;
       dst.ftq_offset = src.ftq_offset;
-      dst.ftq_is_last = src.ftq_is_last;
       dst.is_atomic = src.is_atomic;
       dst.dest_en = src.dest_en;
       dst.src1_en = src.src1_en;
@@ -1075,10 +1032,7 @@ struct PrfExeIO {
       dst.stq_idx = src.stq_idx;
       dst.stq_flag = src.stq_flag;
       dst.ldq_idx = src.ldq_idx;
-      dst.uop_num = src.uop_num;
       dst.rob_flag = src.rob_flag;
-      dst.page_fault_inst = src.page_fault_inst;
-      dst.illegal_inst = src.illegal_inst;
       dst.op = src.op;
       dst.dbg = src.dbg;
       return dst;
@@ -1086,7 +1040,6 @@ struct PrfExeIO {
 
     MicroOp to_micro_op() const {
       MicroOp dst;
-      dst.diag_val = diag_val;
       dst.dest_preg = dest_preg;
       dst.src1_preg = src1_preg;
       dst.src2_preg = src2_preg;
@@ -1094,7 +1047,6 @@ struct PrfExeIO {
       dst.src2_rdata = src2_rdata;
       dst.ftq_idx = ftq_idx;
       dst.ftq_offset = ftq_offset;
-      dst.ftq_is_last = ftq_is_last;
       dst.is_atomic = is_atomic;
       dst.dest_en = dest_en;
       dst.src1_en = src1_en;
@@ -1111,12 +1063,9 @@ struct PrfExeIO {
       dst.stq_idx = stq_idx;
       dst.stq_flag = stq_flag;
       dst.ldq_idx = ldq_idx;
-      dst.uop_num = uop_num;
       dst.rob_flag = rob_flag;
-      dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = false;
       dst.page_fault_store = false;
-      dst.illegal_inst = illegal_inst;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
       return dst;
