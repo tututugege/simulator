@@ -139,6 +139,10 @@ private:
   bool reserve_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag,
                          uint32_t func3);
   void consume_stq_alloc_reqs(int &push_count);
+  int count_active_stq_entries() const;
+  int count_committed_stq_prefix() const;
+  int count_stq_entries_until(int stop_idx) const;
+  void clear_stq_entries(int start_idx, int count);
   bool reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
                          uint32_t rob_flag);
   void consume_ldq_alloc_reqs();

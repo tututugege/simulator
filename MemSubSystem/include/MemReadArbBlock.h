@@ -31,10 +31,14 @@ public:
   };
 
   static constexpr size_t kPtwReqIdBase = static_cast<size_t>(LDQ_SIZE);
+  static constexpr size_t kFirstDynamicPtwReqId =
+      static_cast<size_t>(LDQ_SIZE) + 16;
 
   void init() {
     cur_ = {};
     nxt_ = {};
+    cur_.next_ptw_req_id = kFirstDynamicPtwReqId;
+    nxt_.next_ptw_req_id = kFirstDynamicPtwReqId;
     comb_ = {};
   }
 
@@ -44,6 +48,7 @@ public:
                  uint32_t ptw_itlb_addr) {
     comb_ = {};
     comb_.dcache_req = {};
+    nxt_ = cur_;
 
     if (lsu_req_io != nullptr) {
       comb_.dcache_req = *lsu_req_io;
@@ -74,7 +79,6 @@ public:
     }
 
     if (ptw_owner == Owner::NONE) {
-      nxt_ = cur_;
       return;
     }
 
@@ -95,23 +99,23 @@ public:
     }
 
     auto &ptw_req = comb_.dcache_req.req_ports.load_ports[inject_port];
+    const size_t ptw_req_id = cur_.next_ptw_req_id;
     ptw_req = {};
     ptw_req.valid = true;
     ptw_req.addr = ptw_addr;
-    ptw_req.req_id = kPtwReqIdBase + static_cast<size_t>(ptw_owner);
+    ptw_req.req_id = ptw_req_id;
     ptw_req.uop = {};
 
     comb_.issued_tags[inject_port].valid = true;
     comb_.issued_tags[inject_port].owner = ptw_owner;
     comb_.issued_tags[inject_port].req_addr = ptw_addr;
-    comb_.issued_tags[inject_port].req_id =
-        kPtwReqIdBase + static_cast<size_t>(ptw_owner);
+    comb_.issued_tags[inject_port].req_id = ptw_req_id;
     comb_.issued_tags[inject_port].uop = {};
 
     comb_.granted = true;
     comb_.granted_owner = ptw_owner;
     comb_.injected_port = inject_port;
-    nxt_ = cur_;
+    nxt_.next_ptw_req_id = next_ptw_req_id(cur_.next_ptw_req_id);
   }
 
   void update_seq() { cur_ = nxt_; }
@@ -119,7 +123,17 @@ public:
   const CombResult &comb_result() const { return comb_; }
 
 private:
-  struct State {};
+  struct State {
+    size_t next_ptw_req_id = kFirstDynamicPtwReqId;
+  };
+
+  static size_t next_ptw_req_id(size_t cur_req_id) {
+    const size_t next_req_id = cur_req_id + 1;
+    if (next_req_id < kFirstDynamicPtwReqId) {
+      return kFirstDynamicPtwReqId;
+    }
+    return next_req_id;
+  }
 
   State cur_{};
   State nxt_{};

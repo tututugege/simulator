@@ -101,10 +101,15 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
     out.instructions[i] = oracle.Instruction;
 
 
+    // Serializing events (CSR/MMIO/exception) should terminate the current
+    // fetch bundle. Keep CSR/exception as refetch-stall points, but do not
+    // permanently stall on MMIO since backend may not always generate refetch.
     if (oracle.is_exception || oracle.is_csr || oracle.is_mmio_load ||
         oracle.is_mmio_store) {
       out.predict_dir[i] = false;
-      stall = true;
+      if (oracle.is_exception || oracle.is_csr) {
+        stall = true;
+      }
 
       if (oracle.page_fault_inst) {
         out.page_fault_inst[i] = true;

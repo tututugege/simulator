@@ -4,11 +4,11 @@
 #include "IO.h"
 // ─── Cache geometry (all configurable via -D flags) ───────────────────────────
 // Number of sets; must be a power-of-2.
-#define DCACHE_SETS 512
-#define DCACHE_WAYS 8
-#define DCACHE_OFFSET_BITS 5
-#define DCACHE_LINE_BYTES  32
-#define DCACHE_LINE_WORDS  8
+#define DCACHE_SETS 256
+#define DCACHE_WAYS 4
+#define DCACHE_OFFSET_BITS 6
+#define DCACHE_LINE_BYTES  64
+#define DCACHE_LINE_WORDS  16
 // log2(DCACHE_SETS) — requires power-of-2.
 #define DCACHE_SET_BITS    (__builtin_ctz(DCACHE_SETS))
 #define DCACHE_TAG_BITS    (32 - DCACHE_SET_BITS - DCACHE_OFFSET_BITS)

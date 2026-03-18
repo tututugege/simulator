@@ -1112,7 +1112,7 @@ void RealLsu::handle_load_req(const MicroOp &inst)
             ctx->perf.mmio_inst_count++;
             ctx->perf.mmio_load_count++;
         }
-        task.flush_pipe = is_mmio;
+        // task.flush_pipe = is_mmio;
         ldq[ldq_idx].is_mmio_wait = is_mmio; // 延迟发送：等待到达 ROB 队头后再发出
         auto fwd_res = is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, inst);
 
@@ -1323,19 +1323,13 @@ void RealLsu::change_store_info(StqEntry &head, int port, int store_index)
 
 void RealLsu::handle_global_flush()
 {
-    int old_tail = stq_tail;
-    stq_tail = stq_commit;
-    stq_count = (stq_tail - stq_head + STQ_SIZE) % STQ_SIZE;
+    const int active_count = count_active_stq_entries();
+    const int committed_count = count_committed_stq_prefix();
+    const int discard_count = active_count - committed_count;
 
-    int ptr = stq_tail;
-    while (ptr != old_tail)
-    {
-        stq[ptr].valid = false;
-        stq[ptr].addr_valid = false;
-        stq[ptr].data_valid = false;
-        stq[ptr].suppress_write = 0;
-        ptr = (ptr + 1) % STQ_SIZE;
-    }
+    stq_tail = stq_commit;
+    stq_count = committed_count;
+    clear_stq_entries(stq_tail, discard_count);
     pending_sta_addr_reqs.clear();
     pending_mmio_valid = false;
     pending_mmio_req = {};
@@ -1420,33 +1414,10 @@ void RealLsu::handle_mispred(mask_t mask)
         return;
     }
 
-    int old_tail = stq_tail;
+    const int active_count = count_active_stq_entries();
     stq_tail = recovery_tail;
-    stq_count = (stq_tail - stq_head + STQ_SIZE) % STQ_SIZE;
-    int ptr = stq_tail;
-
-    if (old_tail == stq_tail)
-    {
-        do
-        {
-            stq[ptr].valid = false;
-            stq[ptr].addr_valid = false;
-            stq[ptr].data_valid = false;
-            stq[ptr].suppress_write = 0;
-            ptr = (ptr + 1) % STQ_SIZE;
-        } while (ptr != old_tail);
-    }
-    else
-    {
-        while (ptr != old_tail)
-        {
-            stq[ptr].valid = false;
-            stq[ptr].addr_valid = false;
-            stq[ptr].data_valid = false;
-            stq[ptr].suppress_write = 0;
-            ptr = (ptr + 1) % STQ_SIZE;
-        }
-    }
+    stq_count = count_stq_entries_until(recovery_tail);
+    clear_stq_entries(stq_tail, active_count - stq_count);
 }
 void RealLsu::retire_stq_head_if_ready(int &pop_count)
 {
@@ -1602,7 +1573,7 @@ void RealLsu::progress_ldq_entries()
                     ctx->perf.mmio_inst_count++;
                     ctx->perf.mmio_load_count++;
                 }
-                entry.uop.flush_pipe = is_mmio;
+                // entry.uop.flush_pipe = is_mmio;
                 entry.is_mmio_wait = is_mmio; // 延迟发送：等待到达 ROB 队头后再发出
                 auto fwd_res =
                     is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, entry.uop);
@@ -1887,6 +1858,16 @@ void RealLsu::seq()
     // Retire after load progress so same-cycle completed stores can still
     // participate in store-to-load forwarding.
     retire_stq_head_if_ready(pop_count);
+    if (pop_count > stq_count)
+    {
+        const int scan_active = count_active_stq_entries();
+        const int scan_committed = count_committed_stq_prefix();
+        std::printf(
+            "[LSU][STQ UNDERFLOW PRECHECK] cyc=%lld pop=%d stq_count=%d scan_active=%d scan_committed=%d head=%d commit=%d tail=%d head_flag=%d\n",
+            (long long)sim_time, pop_count, stq_count, scan_active,
+            scan_committed, stq_head, stq_commit, stq_tail,
+            static_cast<int>(stq_head_flag));
+    }
     stq_count = stq_count - pop_count;
     if (stq_count < 0)
     {
@@ -1944,8 +1925,9 @@ int RealLsu::find_recovery_tail(mask_t br_mask)
     // stq_count 追踪总有效条目 (Head -> Tail)。
     // Head -> Commit 之间的条目已提交。
     // Commit -> Tail 之间的条目未提交。
-    int committed_count = (stq_commit - stq_head + STQ_SIZE) % STQ_SIZE;
-    int uncommitted_count = stq_count - committed_count;
+    int committed_count = count_committed_stq_prefix();
+    int active_count = count_active_stq_entries();
+    int uncommitted_count = active_count - committed_count;
 
     // 安全检查
     if (uncommitted_count < 0)
@@ -1968,6 +1950,68 @@ int RealLsu::find_recovery_tail(mask_t br_mask)
     return -1;
 }
 
+int RealLsu::count_active_stq_entries() const
+{
+    int count = 0;
+    int ptr = stq_head;
+    while (count < STQ_SIZE && stq[ptr].valid)
+    {
+        count++;
+        ptr = (ptr + 1) % STQ_SIZE;
+    }
+    return count;
+}
+
+int RealLsu::count_committed_stq_prefix() const
+{
+    int count = 0;
+    int ptr = stq_head;
+    while (count < STQ_SIZE && stq[ptr].valid && stq[ptr].committed)
+    {
+        count++;
+        ptr = (ptr + 1) % STQ_SIZE;
+    }
+    return count;
+}
+
+int RealLsu::count_stq_entries_until(int stop_idx) const
+{
+    int count = 0;
+    int ptr = stq_head;
+    while (count < STQ_SIZE && ptr != stop_idx && stq[ptr].valid)
+    {
+        count++;
+        ptr = (ptr + 1) % STQ_SIZE;
+    }
+    return count;
+}
+
+void RealLsu::clear_stq_entries(int start_idx, int count)
+{
+    int ptr = start_idx;
+    for (int i = 0; i < count; i++)
+    {
+        stq[ptr].valid = false;
+        stq[ptr].addr_valid = false;
+        stq[ptr].data_valid = false;
+        stq[ptr].committed = false;
+        stq[ptr].done = false;
+        stq[ptr].is_mmio = false;
+        stq[ptr].send = false;
+        stq[ptr].replay = 0;
+        stq[ptr].addr = 0;
+        stq[ptr].data = 0;
+        stq[ptr].suppress_write = 0;
+        stq[ptr].br_mask = 0;
+        stq[ptr].rob_idx = 0;
+        stq[ptr].rob_flag = 0;
+        stq[ptr].func3 = 0;
+        stq_trace_seq[ptr] = 0;
+        stq_cache_wait_replay[ptr] = false;
+        ptr = (ptr + 1) % STQ_SIZE;
+    }
+}
+
 bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag)
 {
     if (s_flag == l_flag)
@@ -1987,7 +2031,7 @@ bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag)
 RealLsu::StoreForwardResult
 RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop)
 {
-      uint32_t current_word = p_memory[p_addr >> 2];
+      uint32_t current_word = 0;
   bool hit_any = false;
   int ptr_idx = stq_head;
   bool ptr_flag = stq_head_flag;

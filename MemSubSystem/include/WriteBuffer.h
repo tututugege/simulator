@@ -32,9 +32,23 @@ struct WbDeferredCheck {
 
 struct WbIssueTrace {
     bool valid = false;
+    uint64_t seq = 0;
     uint32_t addr = 0;
     uint32_t head = 0;
     uint32_t data[DCACHE_LINE_WORDS] = {};
+    uint64_t issue_cycle = 0;
+    uint8_t req_total_size = 0;
+    uint64_t req_wstrb = 0;
+};
+
+struct WbRespTrace {
+    bool valid = false;
+    uint64_t seq = 0;
+    uint32_t addr = 0;
+    uint32_t head = 0;
+    uint32_t data[DCACHE_LINE_WORDS] = {};
+    uint64_t resp_cycle = 0;
+    uint64_t issue_seq = 0;
     uint64_t issue_cycle = 0;
 };
 
@@ -51,7 +65,7 @@ struct WbAxiOut {
     uint32_t req_addr       = 0;
     uint8_t  req_total_size = 0;
     uint8_t  req_id         = 0;
-    uint32_t req_wstrb      = 0;
+    uint64_t req_wstrb      = 0;
     uint32_t req_wdata[DCACHE_LINE_WORDS] = {};
     bool     resp_ready     = false;  // ready to accept B response
 };
@@ -111,5 +125,7 @@ public:
     WBState cur, nxt;
     WbDeferredCheck cur_check, nxt_check;
     WbIssueTrace cur_issue, nxt_issue;
+    WbIssueTrace cur_last_issue, nxt_last_issue;
+    WbRespTrace cur_last_resp, nxt_last_resp;
     SimContext *ctx = nullptr;
 };

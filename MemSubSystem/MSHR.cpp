@@ -9,6 +9,11 @@ extern uint32_t *p_memory;
 
 MSHREntry mshr_entries_nxt[MSHR_ENTRIES];
 
+namespace {
+static constexpr uint8_t kCacheLineReqTotalSize =
+    static_cast<uint8_t>(DCACHE_LINE_BYTES - 1u);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // init
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,7 +96,7 @@ void MSHR::comb_outputs()
 
         out.axi_out.req_valid = true;
         out.axi_out.req_addr = get_addr(ce.index, ce.tag, 0);
-        out.axi_out.req_total_size = 31;
+        out.axi_out.req_total_size = kCacheLineReqTotalSize;
         out.axi_out.req_id = static_cast<uint8_t>(i);
         break;
     }

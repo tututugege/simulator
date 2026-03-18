@@ -54,6 +54,7 @@ public:
   using Owner = MemReadArbBlock::Owner;
   using IssueTag = MemReadArbBlock::IssuedTag;
   static constexpr size_t kPtwReqIdBase = MemReadArbBlock::kPtwReqIdBase;
+  static constexpr size_t kPtwTrackCount = 3;
 
   struct PtwRouteEvent {
     bool valid = false;
@@ -61,6 +62,7 @@ public:
     uint32_t data = 0;
     uint8_t replay = 0;
     uint32_t req_addr = 0;
+    size_t req_id = 0;
   };
 
   struct ReplayWakeup {
@@ -72,6 +74,8 @@ public:
   struct CombOutputs {
     DcacheLsuIO lsu_resp = {};
     PtwRouteEvent ptw_event = {};
+    PtwRouteEvent ptw_events[LSU_LDU_COUNT] = {};
+    uint8_t ptw_event_count = 0;
     ReplayWakeup wakeup = {};
     bool ptw_occupies_port0 = false;
     bool lsu_port0_replayed = false;
@@ -84,11 +88,20 @@ public:
       uint32_t req_addr = 0;
     };
 
+    struct PtwReqTrackState {
+      bool valid = false;
+      uint8_t owner = 0;
+      size_t req_id = 0;
+      uint32_t req_addr = 0;
+    };
+
     IssueTag issued_tags[LSU_LDU_COUNT] = {};
     TrackerState dtlb = {};
     TrackerState itlb = {};
     TrackerState walk = {};
+    PtwReqTrackState ptw_tracks[kPtwTrackCount] = {};
     PtwRouteEvent ptw_event = {};
+    uint8_t ptw_event_count = 0;
     ReplayWakeup wakeup = {};
     bool ptw_occupies_port0 = false;
     bool lsu_port0_replayed = false;
@@ -105,6 +118,7 @@ public:
                  const replay_resp &replay_bcast) {
     comb_ = {};
     nxt_ = cur_;
+    register_ptw_issues(nxt_, issue_tags);
 
     if (dcache_resp_io != nullptr) {
       comb_.lsu_resp.resp_ports.store_resps[0] = dcache_resp_io->resp_ports.store_resps[0];
@@ -153,7 +167,14 @@ public:
     d.walk.blocked = cur_.walk.blocked;
     d.walk.reason = cur_.walk.reason;
     d.walk.req_addr = cur_.walk.req_addr;
+    for (size_t i = 0; i < kPtwTrackCount; i++) {
+      d.ptw_tracks[i].valid = cur_.ptw_tracks[i].valid;
+      d.ptw_tracks[i].owner = static_cast<uint8_t>(cur_.ptw_tracks[i].owner);
+      d.ptw_tracks[i].req_id = cur_.ptw_tracks[i].req_id;
+      d.ptw_tracks[i].req_addr = cur_.ptw_tracks[i].req_addr;
+    }
     d.ptw_event = comb_.ptw_event;
+    d.ptw_event_count = comb_.ptw_event_count;
     d.wakeup = comb_.wakeup;
     d.ptw_occupies_port0 = comb_.ptw_occupies_port0;
     d.lsu_port0_replayed = comb_.lsu_port0_replayed;
@@ -169,27 +190,41 @@ public:
     return wake;
   }
 
-  void apply_ptw_event(MemPtwBlock *ptw_block) const {
-    if (ptw_block == nullptr || !comb_.ptw_event.valid ||
-        comb_.ptw_event.replay != 0) {
+  void apply_ptw_events(MemPtwBlock *ptw_block) const {
+    if (ptw_block == nullptr) {
       return;
     }
-
-    switch (comb_.ptw_event.owner) {
-    case Owner::PTW_DTLB:
-      ptw_block->on_mem_resp_client(MemPtwBlock::Client::DTLB,
-                                    comb_.ptw_event.data);
-      break;
-    case Owner::PTW_ITLB:
-      ptw_block->on_mem_resp_client(MemPtwBlock::Client::ITLB,
-                                    comb_.ptw_event.data);
-      break;
-    case Owner::PTW_WALK:
-      (void)ptw_block->on_walk_mem_resp(comb_.ptw_event.data);
-      break;
-    default:
-      break;
+    for (uint8_t i = 0; i < comb_.ptw_event_count; i++) {
+      const auto &evt = comb_.ptw_events[i];
+      if (!evt.valid) {
+        continue;
+      }
+      switch (evt.owner) {
+      case Owner::PTW_DTLB:
+        if (evt.replay == 0) {
+          ptw_block->on_mem_resp_client(MemPtwBlock::Client::DTLB, evt.data);
+        }
+        break;
+      case Owner::PTW_ITLB:
+        if (evt.replay == 0) {
+          ptw_block->on_mem_resp_client(MemPtwBlock::Client::ITLB, evt.data);
+        }
+        break;
+      case Owner::PTW_WALK:
+        if (evt.replay == 0) {
+          (void)ptw_block->on_walk_mem_resp(evt.req_id, evt.data);
+        } else {
+          (void)ptw_block->on_walk_mem_replay(evt.req_id);
+        }
+        break;
+      default:
+        break;
+      }
     }
+  }
+
+  void apply_ptw_event(MemPtwBlock *ptw_block) const {
+    apply_ptw_events(ptw_block);
   }
 
 private:
@@ -209,12 +244,123 @@ private:
     uint32_t req_addr = 0;
   };
 
+  struct PtwReqTrack {
+    bool valid = false;
+    size_t req_id = 0;
+    Owner owner = Owner::NONE;
+    uint32_t req_addr = 0;
+  };
+
   struct State {
     IssueTag issued_tags[LSU_LDU_COUNT] = {};
     ReplayTracker dtlb = {};
     ReplayTracker itlb = {};
     ReplayTracker walk = {};
+    PtwReqTrack ptw_tracks[kPtwTrackCount] = {};
   };
+
+  static bool is_ptw_owner(Owner owner) {
+    return owner == Owner::PTW_DTLB || owner == Owner::PTW_ITLB ||
+           owner == Owner::PTW_WALK;
+  }
+
+  static bool issue_tag_matches_req(const IssueTag &tag, bool req_is_lsu) {
+    if (!tag.valid) {
+      return false;
+    }
+    if (req_is_lsu) {
+      return tag.owner == Owner::LSU;
+    }
+    return is_ptw_owner(tag.owner);
+  }
+
+  static int owner_track_index(Owner owner) {
+    switch (owner) {
+    case Owner::PTW_DTLB:
+      return 0;
+    case Owner::PTW_ITLB:
+      return 1;
+    case Owner::PTW_WALK:
+      return 2;
+    default:
+      return -1;
+    }
+  }
+
+  static void register_one_ptw_issue(State &state, const IssueTag &tag) {
+    if (!tag.valid || !is_ptw_owner(tag.owner)) {
+      return;
+    }
+
+    const int slot = owner_track_index(tag.owner);
+    if (slot < 0) {
+      return;
+    }
+
+    state.ptw_tracks[slot].valid = true;
+    state.ptw_tracks[slot].req_id = tag.req_id;
+    state.ptw_tracks[slot].owner = tag.owner;
+    state.ptw_tracks[slot].req_addr = tag.req_addr;
+  }
+
+  static void register_ptw_issues(State &state,
+                                  const IssueTag (&issue_tags)[LSU_LDU_COUNT]) {
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      register_one_ptw_issue(state, issue_tags[i]);
+    }
+  }
+
+  static bool lookup_ptw_track(const State &state, size_t req_id,
+                               IssueTag &tag) {
+    int slot = -1;
+    for (size_t i = 0; i < kPtwTrackCount; i++) {
+      if (!state.ptw_tracks[i].valid) {
+        continue;
+      }
+      if (state.ptw_tracks[i].req_id == req_id) {
+        slot = static_cast<int>(i);
+        break;
+      }
+    }
+    if (slot < 0) {
+      return false;
+    }
+
+    tag = {};
+    tag.valid = true;
+    tag.owner = state.ptw_tracks[slot].owner;
+    tag.req_id = state.ptw_tracks[slot].req_id;
+    tag.req_addr = state.ptw_tracks[slot].req_addr;
+    return true;
+  }
+
+  static bool lookup_issue_tag_by_req_id(
+      const IssueTag (&issue_tags)[LSU_LDU_COUNT], size_t req_id,
+      IssueTag &tag) {
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      if (!issue_tags[i].valid) {
+        continue;
+      }
+      if (issue_tags[i].req_id != req_id) {
+        continue;
+      }
+      tag = issue_tags[i];
+      return true;
+    }
+    return false;
+  }
+
+  static void clear_ptw_track(State &state, size_t req_id) {
+    for (size_t i = 0; i < kPtwTrackCount; i++) {
+      if (!state.ptw_tracks[i].valid) {
+        continue;
+      }
+      if (state.ptw_tracks[i].req_id == req_id) {
+        state.ptw_tracks[i] = {};
+        return;
+      }
+    }
+  }
 
   void route_load_responses(const DcacheLsuIO *dcache_resp_io,
                             const IssueTag (&issue_tags)[LSU_LDU_COUNT]) {
@@ -223,7 +369,7 @@ private:
     }
 
     load_resp lsu_candidates[LSU_LDU_COUNT] = {};
-    PtwRouteEvent ptw_candidate{};
+    bool has_ptw_event = false;
     bool ptw_resp_on_port0 = false;
 
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
@@ -232,27 +378,18 @@ private:
         continue;
       }
       const bool req_is_lsu = (raw.req_id < (size_t)LDQ_SIZE);
-      const auto tag_matches_req = [&](const IssueTag &tag) {
-        if (!tag.valid) {
-          return false;
-        }
-        if (req_is_lsu) {
-          return tag.owner == Owner::LSU;
-        }
-        return tag.owner == Owner::PTW_DTLB || tag.owner == Owner::PTW_ITLB ||
-               tag.owner == Owner::PTW_WALK;
-      };
 
       IssueTag routed_tag{};
-      if (tag_matches_req(cur_.issued_tags[i])) {
+      if (!req_is_lsu) {
+        if (lookup_ptw_track(cur_, raw.req_id, routed_tag)) {
+        } else if (lookup_issue_tag_by_req_id(issue_tags, raw.req_id,
+                                              routed_tag)) {
+        }
+      } else if (issue_tag_matches_req(cur_.issued_tags[i], true)) {
         routed_tag = cur_.issued_tags[i];
-      } else if (tag_matches_req(issue_tags[i])) {
+      } else if (issue_tag_matches_req(issue_tags[i], true)) {
         // Support same-cycle request+response path (e.g., dcache hit/replay).
         routed_tag = issue_tags[i];
-      } else if (!req_is_lsu) {
-        // Last-resort recovery: infer PTW owner from encoded req_id range.
-        routed_tag.valid = decode_ptw_owner_from_req_id(raw.req_id, routed_tag.owner);
-        routed_tag.req_addr = 0;
       }
 
       if (!routed_tag.valid) {
@@ -274,15 +411,23 @@ private:
       case Owner::PTW_WALK:
       case Owner::PTW_DTLB:
       case Owner::PTW_ITLB:
+        clear_ptw_track(nxt_, raw.req_id);
         if (i == 0) {
           ptw_resp_on_port0 = true;
         }
-        if (!ptw_candidate.valid) {
-          ptw_candidate.valid = true;
-          ptw_candidate.owner = cur_.issued_tags[i].owner;
-          ptw_candidate.data = tagged.data;
-          ptw_candidate.replay = tagged.replay;
-          ptw_candidate.req_addr = tagged.req_addr;
+        if (comb_.ptw_event_count < LSU_LDU_COUNT) {
+          auto &evt = comb_.ptw_events[comb_.ptw_event_count++];
+          evt.valid = true;
+          evt.owner = routed_tag.owner;
+          evt.data = tagged.data;
+          evt.replay = tagged.replay;
+          evt.req_addr = tagged.req_addr;
+          evt.req_id = routed_tag.req_id;
+          if (!comb_.ptw_event.valid) {
+            comb_.ptw_event = evt;
+          }
+          capture_ptw_replay(evt);
+          has_ptw_event = true;
         }
         break;
       default:
@@ -290,17 +435,15 @@ private:
       }
     }
 
-    if (ptw_candidate.valid) {
+    if (has_ptw_event) {
       comb_.ptw_occupies_port0 = ptw_resp_on_port0;
-      comb_.ptw_event = ptw_candidate;
-      capture_ptw_replay(ptw_candidate);
     }
 
     for (int i = 1; i < LSU_LDU_COUNT; i++) {
       comb_.lsu_resp.resp_ports.load_resps[i] = lsu_candidates[i].to_io();
     }
 
-    if (ptw_candidate.valid && ptw_resp_on_port0 && lsu_candidates[0].valid) {
+    if (has_ptw_event && ptw_resp_on_port0 && lsu_candidates[0].valid) {
       // PTW response always owns LSU load response port 0. If LSU also lands on
       // that port in the same cycle, force the LSU side into replay=3 so the
       // request is retried on the next cycle.
@@ -379,26 +522,6 @@ private:
     default:
       return nullptr;
     }
-  }
-
-  static bool decode_ptw_owner_from_req_id(size_t req_id, Owner &owner) {
-    if (req_id < kPtwReqIdBase) {
-      return false;
-    }
-    const size_t code = req_id - kPtwReqIdBase;
-    if (code == static_cast<size_t>(Owner::PTW_DTLB)) {
-      owner = Owner::PTW_DTLB;
-      return true;
-    }
-    if (code == static_cast<size_t>(Owner::PTW_ITLB)) {
-      owner = Owner::PTW_ITLB;
-      return true;
-    }
-    if (code == static_cast<size_t>(Owner::PTW_WALK)) {
-      owner = Owner::PTW_WALK;
-      return true;
-    }
-    return false;
   }
 
   State cur_{};

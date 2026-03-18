@@ -141,7 +141,6 @@ private:
   std::unique_ptr<PtwMemPort>  itlb_ptw_port_inst;
   std::unique_ptr<PtwWalkPort> dtlb_walk_port_inst;
   std::unique_ptr<PtwWalkPort> itlb_walk_port_inst;
-  uint32_t ptw_walk_wait_cycles_ = 0;
 
   void record_debug_event(DebugEventKind kind, uint8_t owner, uint32_t addr,
                           uint32_t data = 0, uint8_t replay = 0,

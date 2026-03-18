@@ -32,14 +32,14 @@ uint32_t PeripheralAxi::pack_write_data(uint32_t data, uint8_t func3) {
   }
 }
 
-uint32_t PeripheralAxi::pack_write_strb(uint8_t func3) {
+uint64_t PeripheralAxi::pack_write_strb(uint8_t func3) {
   switch (func3 & 0x3u) {
   case 0:
-    return 0x1u;
+    return 0x1ull;
   case 1:
-    return 0x3u;
+    return 0x3ull;
   default:
-    return 0xFu;
+    return 0xFull;
   }
 }
 

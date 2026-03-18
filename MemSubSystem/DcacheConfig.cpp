@@ -10,13 +10,38 @@ uint8_t lru_state[DCACHE_SETS][DCACHE_WAYS] = {};
 MSHREntry mshr_entries[MSHR_ENTRIES] = {};
 WriteBufferEntry write_buffer[WB_ENTRIES] = {};
 
+namespace {
+// Maintain per-set LRU ranks in [0, DCACHE_WAYS-1]:
+// larger rank means more recently used.
+inline void lru_touch_way(uint32_t set_idx, uint32_t way) {
+    if (set_idx >= DCACHE_SETS || way >= DCACHE_WAYS) {
+        return;
+    }
+    const uint8_t old_rank = lru_state[set_idx][way];
+    for (uint32_t w = 0; w < DCACHE_WAYS; w++) {
+        if (w == way) {
+            continue;
+        }
+        uint8_t &rank = lru_state[set_idx][w];
+        if (rank > old_rank) {
+            rank--;
+        }
+    }
+    lru_state[set_idx][way] = static_cast<uint8_t>(DCACHE_WAYS - 1);
+}
+} // namespace
+
 void init_dcache()
 {
     std::memset(tag_array, 0, sizeof(tag_array));
     std::memset(data_array, 0, sizeof(data_array));
     std::memset(valid_array, 0, sizeof(valid_array));
     std::memset(dirty_array, 0, sizeof(dirty_array));
-    std::memset(lru_state, 0, sizeof(lru_state));
+    for (uint32_t s = 0; s < DCACHE_SETS; s++) {
+        for (uint32_t w = 0; w < DCACHE_WAYS; w++) {
+            lru_state[s][w] = static_cast<uint8_t>(w);
+        }
+    }
     std::memset(mshr_entries, 0, sizeof(mshr_entries));
     std::memset(write_buffer, 0, sizeof(write_buffer));
 }
@@ -50,6 +75,11 @@ uint32_t get_addr(uint32_t set_idx, uint32_t tag, uint32_t word_off)
 
 int choose_lru_victim(uint32_t set_idx)
 {
+    for (int w = 0; w < DCACHE_WAYS; w++) {
+        if (!valid_array[set_idx][w]) {
+            return w;
+        }
+    }
     int lru_way = 0;
     for (int w = 1; w < DCACHE_WAYS; w++)
     {
@@ -60,7 +90,7 @@ int choose_lru_victim(uint32_t set_idx)
 }
 void lru_reset(uint32_t set_idx, uint32_t way)
 {
-    lru_state[set_idx][way] = 0; // Most recently used
+    lru_touch_way(set_idx, way); // Mark as most recently used
 }
 
 void apply_strobe(uint32_t &dst, uint32_t src, uint8_t strb)
@@ -95,6 +125,7 @@ void write_dcache_line(uint32_t set_idx, uint32_t way, uint32_t tag, uint32_t da
         {
             valid_array[set_idx][w] = false;
             dirty_array[set_idx][w] = false;
+            lru_state[set_idx][w] = 0;
         }
     }
 

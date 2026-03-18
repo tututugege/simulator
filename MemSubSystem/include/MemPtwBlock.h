@@ -26,6 +26,8 @@ public:
     bool walk_active = false;
     uint8_t walk_state = 0;
     uint8_t walk_owner = 0;
+    bool walk_req_id_valid = false;
+    size_t walk_req_id = 0;
     bool walk_req_pending[2] = {false, false};
     bool walk_req_inflight[2] = {false, false};
     bool walk_resp_valid[2] = {false, false};
@@ -43,6 +45,8 @@ public:
     walk_rr_next = Client::DTLB;
     walk_l1_pte = 0;
     walk_drop_resp_credit = 0;
+    walk_req_id_valid = false;
+    walk_req_id = 0;
   }
   void comb_select_walk_owner() {
     if (!walk_active && walk_state == WalkState::IDLE) {
@@ -104,12 +108,14 @@ public:
     return false;
   }
 
-  void on_walk_read_granted() {
+  void on_walk_read_granted(size_t req_id) {
     if (walk_state == WalkState::L1_REQ) {
       walk_state = WalkState::L1_WAIT_RESP;
     } else if (walk_state == WalkState::L2_REQ) {
       walk_state = WalkState::L2_WAIT_RESP;
     }
+    walk_req_id_valid = true;
+    walk_req_id = req_id;
     if (ctx != nullptr) {
       if (walk_owner == Client::DTLB) {
         ctx->perf.ptw_dtlb_grant++;
@@ -154,12 +160,17 @@ public:
     }
   }
 
-  WalkRespResult on_walk_mem_resp(uint32_t pte) {
-    if (walk_drop_resp_credit > 0) {
+  WalkRespResult on_walk_mem_resp(size_t req_id, uint32_t pte) {
+    const bool is_active_req = walk_active && walk_req_id_valid &&
+                               (walk_req_id == req_id);
+    if (walk_drop_resp_credit > 0 && !is_active_req) {
       walk_drop_resp_credit--;
       return WalkRespResult::DROPPED;
     }
     if (!walk_active) {
+      return WalkRespResult::IGNORED;
+    }
+    if (walk_req_id_valid && walk_req_id != req_id) {
       return WalkRespResult::IGNORED;
     }
     auto &wc = walk_clients[client_idx(walk_owner)];
@@ -175,6 +186,8 @@ public:
       wc.resp.fault = true;
       walk_active = false;
       walk_state = WalkState::IDLE;
+      walk_req_id_valid = false;
+      walk_req_id = 0;
     };
     auto publish_leaf = [&](uint8_t leaf_level) {
       wc.req_inflight = false;
@@ -185,6 +198,8 @@ public:
       wc.resp.leaf_level = leaf_level;
       walk_active = false;
       walk_state = WalkState::IDLE;
+      walk_req_id_valid = false;
+      walk_req_id = 0;
     };
 
     if (walk_state == WalkState::L1_WAIT_RESP) {
@@ -199,6 +214,8 @@ public:
       } else {
         walk_l1_pte = pte;
         walk_state = WalkState::L2_REQ;
+        walk_req_id_valid = false;
+        walk_req_id = 0;
       }
     } else if (walk_state == WalkState::L2_WAIT_RESP) {
       if (!v || (!r && w) || !(r || x)) {
@@ -217,6 +234,25 @@ public:
         ctx->perf.ptw_itlb_resp++;
       }
     }
+    return WalkRespResult::HANDLED;
+  }
+
+  WalkRespResult on_walk_mem_replay(size_t req_id) {
+    const bool is_active_req = walk_active && walk_req_id_valid &&
+                               (walk_req_id == req_id);
+    if (walk_drop_resp_credit > 0 && !is_active_req) {
+      walk_drop_resp_credit--;
+      return WalkRespResult::DROPPED;
+    }
+    if (!walk_active) {
+      return WalkRespResult::IGNORED;
+    }
+    if (!is_active_req) {
+      return WalkRespResult::IGNORED;
+    }
+    // replay 响应表示该次访问已结束，后续由 wakeup 驱动重发。
+    walk_req_id_valid = false;
+    walk_req_id = 0;
     return WalkRespResult::HANDLED;
   }
 
@@ -316,6 +352,8 @@ public:
       walk_active = false;
       walk_state = WalkState::IDLE;
       walk_l1_pte = 0;
+      walk_req_id_valid = false;
+      walk_req_id = 0;
     }
   }
 
@@ -328,6 +366,8 @@ public:
     } else if (walk_state == WalkState::L2_WAIT_RESP) {
       walk_state = WalkState::L2_REQ;
     }
+    walk_req_id_valid = false;
+    walk_req_id = 0;
   }
 
   DebugState debug_state() const {
@@ -335,6 +375,8 @@ public:
     d.walk_active = walk_active;
     d.walk_state = static_cast<uint8_t>(walk_state);
     d.walk_owner = static_cast<uint8_t>(walk_owner);
+    d.walk_req_id_valid = walk_req_id_valid;
+    d.walk_req_id = walk_req_id;
     for (size_t i = 0; i < kClientCount; i++) {
       d.walk_req_pending[i] = walk_clients[i].req_pending;
       d.walk_req_inflight[i] = walk_clients[i].req_inflight;
@@ -384,4 +426,6 @@ private:
   Client walk_rr_next = Client::DTLB;
   uint32_t walk_l1_pte = 0;
   uint32_t walk_drop_resp_credit = 0;
+  bool walk_req_id_valid = false;
+  size_t walk_req_id = 0;
 };

@@ -1,6 +1,6 @@
 #include "RealDcache.h"
 #include "DiffMemTrace.h"
-
+#include <oracle.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -233,15 +233,15 @@ void RealDcache::stage1_comb() {
 
     // ① Inter-request conflicts: each request loses to the first earlier
     //   request on the same bank (priority: lower index wins).
-    for (int i = 1; i < LSU_LDU_COUNT + LSU_STA_COUNT; i++) {
-        if (!reqs[i].valid) continue;
-        for (int j = 0; j < i; j++) {
-            if (reqs[j].valid && reqs[j].f.bank == reqs[i].f.bank) {
-                reqs[i].conflict = true;
-                break;
-            }
-        }
-    }
+    // for (int i = 1; i < LSU_LDU_COUNT + LSU_STA_COUNT; i++) {
+    //     if (!reqs[i].valid) continue;
+    //     for (int j = 0; j < i; j++) {
+    //         if (reqs[j].valid && reqs[j].f.bank == reqs[i].f.bank) {
+    //             reqs[i].conflict = true;
+    //             break;
+    //         }
+    //     }
+    // }
 
 
     // ② Fill bank conflict: the MSHR fill write occupies one SRAM bank this
@@ -643,10 +643,37 @@ void RealDcache::stage2_comb() {
         if (hit_way >= 0) {
             // ── Store Hit ────────────────────────────────────────────────────
 
+            // The line has been reallocated in DCache, but an older eviction of
+            // the same line is already on the AXI write path and can no longer
+            // absorb merges. Accepting the hit here would let cache state move
+            // ahead of the in-flight writeback snapshot, so force a replay
+            // until the older WB entry drains.
+            if (wb2dcache->merge_resp[i].busy) {
+                resp.valid = true;
+                resp.replay = 3;
+                resp.req_id = slot.req_id;
+                if (ctx != nullptr) {
+                    ctx->perf.l1d_replay_bank_conflict++;
+                    ctx->perf.l1d_replay_bank_conflict_store++;
+                }
+                if (ctx != nullptr && is_replay_req) {
+                    ctx->perf.l1d_replay_squash_abort++;
+                }
+                DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=3(hit_wb_busy) req_id=%zu rob=%u addr=0x%08x%s\n",
+                       kColorStoreResp, (long long)sim_time, i, slot.req_id,
+                       slot.uop.rob_idx, slot.addr, kColorReset);
+                diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
+                                       DiffMemTraceDetail::ReplayWbBusy,
+                                       static_cast<uint8_t>(i),
+                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                       slot.uop.rob_idx, slot.uop.rob_flag,
+                                       slot.addr, slot.data, 0, 0);
+            }
+
             // If fill writes the same set/way in this cycle, this hit-line is
             // being replaced at seq(). A store-hit "success" here would be
             // overwritten by fill commit, so force replay.
-            if (mshr2dcache->fill.valid &&
+            else if (mshr2dcache->fill.valid &&
                 mshr_f.set_idx == slot.set_idx &&
                 static_cast<int>(mshr2dcache->fill.way) == hit_way) {
                 resp.valid = true;
@@ -945,11 +972,7 @@ void RealDcache::seq() {
     for (int i = 0; i < LSU_LDU_COUNT + LSU_STA_COUNT; i++) {
         const LruUpdate &u = lru_updates_[i];
         if (!u.valid || u.way < 0) continue;
-        uint32_t s = u.set_idx;
-        uint8_t max_lru = 0;
-        for (int ww = 0; ww < DCACHE_WAYS; ww++)
-            if (lru_state[s][ww] > max_lru) max_lru = lru_state[s][ww];
-        lru_state[s][u.way] = max_lru + 1;
+        lru_reset(u.set_idx, static_cast<uint32_t>(u.way));
     }
 
 }

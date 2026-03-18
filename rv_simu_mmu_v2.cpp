@@ -25,7 +25,8 @@ void deadlock_dump_soc_cb() {
   g_deadlock_cpu->axi_ddr.print_state();
 }
 
-void clear_axi_master_inputs(axi_interconnect::AXI_Interconnect_AXI3 &interconnect) {
+template <typename InterconnectT>
+void clear_axi_master_inputs(InterconnectT &interconnect) {
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
     auto &port = interconnect.read_ports[i];
     port.req.valid = false;
@@ -52,7 +53,9 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   cpu.mem_subsystem.mshr_axi_in.req_ready = rport.req.ready;
   cpu.mem_subsystem.mshr_axi_in.resp_valid = rport.resp.valid;
   cpu.mem_subsystem.mshr_axi_in.resp_id = rport.resp.id;
-  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+  for (int i = 0; i < DCACHE_LINE_WORDS &&
+                  i < axi_interconnect::MAX_READ_TRANSACTION_WORDS;
+       i++) {
     cpu.mem_subsystem.mshr_axi_in.resp_data[i] = rport.resp.data[i];
   }
 
@@ -66,7 +69,9 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   cpu.mem_subsystem.peripheral_axi_read_in.req_ready = peri_rport.req.ready;
   cpu.mem_subsystem.peripheral_axi_read_in.resp_valid = peri_rport.resp.valid;
   cpu.mem_subsystem.peripheral_axi_read_in.resp_id = peri_rport.resp.id;
-  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+  for (int i = 0; i < DCACHE_LINE_WORDS &&
+                  i < axi_interconnect::MAX_READ_TRANSACTION_WORDS;
+       i++) {
     cpu.mem_subsystem.peripheral_axi_read_in.resp_data[i] = peri_rport.resp.data[i];
   }
 
@@ -93,7 +98,11 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
   wport.req.total_size = cpu.mem_subsystem.wb_axi_out.req_total_size;
   wport.req.id = cpu.mem_subsystem.wb_axi_out.req_id;
   wport.req.wstrb = cpu.mem_subsystem.wb_axi_out.req_wstrb;
-  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+  for (int i = 0; i < axi_interconnect::CACHELINE_WORDS; i++) {
+    wport.req.wdata[i] = 0;
+  }
+  for (int i = 0; i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS;
+       i++) {
     wport.req.wdata[i] = cpu.mem_subsystem.wb_axi_out.req_wdata[i];
   }
   wport.resp.ready = cpu.mem_subsystem.wb_axi_out.resp_ready;
@@ -113,7 +122,11 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
   peri_wport.req.total_size = cpu.mem_subsystem.peripheral_axi_write_out.req_total_size;
   peri_wport.req.id = cpu.mem_subsystem.peripheral_axi_write_out.req_id;
   peri_wport.req.wstrb = cpu.mem_subsystem.peripheral_axi_write_out.req_wstrb;
-  for (int i = 0; i < DCACHE_LINE_WORDS; i++) {
+  for (int i = 0; i < axi_interconnect::CACHELINE_WORDS; i++) {
+    peri_wport.req.wdata[i] = 0;
+  }
+  for (int i = 0; i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS;
+       i++) {
     peri_wport.req.wdata[i] = cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
   }
   peri_wport.resp.ready = cpu.mem_subsystem.peripheral_axi_write_out.resp_ready;

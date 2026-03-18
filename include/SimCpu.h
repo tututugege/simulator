@@ -2,10 +2,28 @@
 #include "BackTop.h"
 #include "FrontTop.h"
 #include "MemSubsystem.h"
+#include "config.h"
+#if CONFIG_AXI_PROTOCOL == 4
+#include "AXI_Interconnect.h"
+#include "AXI_Router_AXI4.h"
+#include "MMIO_Bus_AXI4.h"
+#include "SimDDR.h"
+using AxiInterconnectImpl = axi_interconnect::AXI_Interconnect;
+using AxiRouterImpl = axi_interconnect::AXI_Router_AXI4;
+using AxiDdrImpl = sim_ddr::SimDDR;
+using AxiMmioImpl = mmio::MMIO_Bus_AXI4;
+#elif CONFIG_AXI_PROTOCOL == 3
 #include "AXI_Interconnect_AXI3.h"
 #include "AXI_Router_AXI3.h"
 #include "MMIO_Bus_AXI3.h"
 #include "SimDDR_AXI3.h"
+using AxiInterconnectImpl = axi_interconnect::AXI_Interconnect_AXI3;
+using AxiRouterImpl = axi_interconnect::AXI_Router_AXI3;
+using AxiDdrImpl = sim_ddr_axi3::SimDDR_AXI3;
+using AxiMmioImpl = mmio::MMIO_Bus_AXI3;
+#else
+#error "Unsupported CONFIG_AXI_PROTOCOL value"
+#endif
 #include "UART16550_Device.h"
 #include "axi_mmio_map.h"
 #include "front_IO.h"
@@ -18,10 +36,10 @@ public:
   FrontTop front;
   MemSubsystem mem_subsystem;
   SimContext ctx;
-  axi_interconnect::AXI_Interconnect_AXI3 axi_interconnect;
-  axi_interconnect::AXI_Router_AXI3 axi_router;
-  sim_ddr_axi3::SimDDR_AXI3 axi_ddr;
-  mmio::MMIO_Bus_AXI3 axi_mmio;
+  AxiInterconnectImpl axi_interconnect;
+  AxiRouterImpl axi_router;
+  AxiDdrImpl axi_ddr;
+  AxiMmioImpl axi_mmio;
   mmio::UART16550_Device axi_uart{MMIO_RANGE_BASE};
   // Oracle 模式下的一拍保留寄存，避免“后端当拍阻塞”导致前端指令丢失。
   bool oracle_pending_valid = false;

@@ -1,6 +1,8 @@
 #include "WriteBuffer.h"
+#include "config.h"
 #include "types.h"
 #include <cassert>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 
@@ -9,12 +11,85 @@ extern uint32_t *p_memory;
 WriteBufferEntry write_buffer_nxt[WB_ENTRIES];
 
 namespace {
+// WB->MSHR ready uses a conservative one-slot guard so the ready sampled by
+// MSHR cannot over-commit when WB enqueues an older eviction later in the same
+// cycle (WB comb_inputs runs after WB comb_outputs in MemSubsystem::comb()).
+static constexpr uint32_t kWbMshrSafetyReserve = 1;
+static uint64_t g_wb_issue_seq = 0;
+static uint64_t g_wb_resp_seq = 0;
+static bool g_warned_req_size_gt_32b = false;
+
+#ifndef WB_AXI_VERBOSE_LOG
+#define WB_AXI_VERBOSE_LOG 0
+#endif
+
+#define WB_AXI_VLOG(fmt, ...)                                                    \
+  do {                                                                           \
+    if (WB_AXI_VERBOSE_LOG) {                                                    \
+      std::printf(fmt, ##__VA_ARGS__);                                           \
+    }                                                                            \
+  } while (0)
+
 static inline void dump_line_words(const char *tag, const uint32_t *data) {
     std::printf("%s[", tag);
     for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
         std::printf("%s%08x", (w == 0) ? "" : " ", data[w]);
     }
     std::printf("]\n");
+}
+
+static inline int first_word_diff(const uint32_t *a, const uint32_t *b) {
+    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+        if (a[w] != b[w]) {
+            return w;
+        }
+    }
+    return -1;
+}
+
+static inline bool has_nonzero_words_from(const uint32_t *data, int start_word) {
+    for (int w = start_word; w < DCACHE_LINE_WORDS; w++) {
+        if (data[w] != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline void dump_issue_trace(const char *tag, const WbIssueTrace &t) {
+    if (!t.valid) {
+        std::printf("%s<invalid>\n", tag);
+        return;
+    }
+    std::printf(
+        "%sseq=%" PRIu64 " cyc=%" PRIu64 " head=%u addr=0x%08x total_size=%u "
+        "wstrb=0x%016" PRIx64 "\n",
+        tag, t.seq, t.issue_cycle, t.head, t.addr, t.req_total_size,
+        static_cast<uint64_t>(t.req_wstrb));
+    dump_line_words("[AXI TRACE][ISSUE_DATA] ", t.data);
+}
+
+static inline void dump_resp_trace(const char *tag, const WbRespTrace &t) {
+    if (!t.valid) {
+        std::printf("%s<invalid>\n", tag);
+        return;
+    }
+    std::printf(
+        "%sseq=%" PRIu64 " cyc=%" PRIu64 " head=%u addr=0x%08x "
+        "matched_issue_seq=%" PRIu64 " matched_issue_cyc=%" PRIu64 "\n",
+        tag, t.seq, t.resp_cycle, t.head, t.addr, t.issue_seq, t.issue_cycle);
+    dump_line_words("[AXI TRACE][RESP_DATA] ", t.data);
+}
+
+static constexpr uint8_t kCacheLineReqTotalSize =
+    static_cast<uint8_t>(DCACHE_LINE_BYTES - 1u);
+
+static constexpr uint64_t full_line_wstrb_mask() {
+    uint64_t mask = 0;
+    for (uint32_t i = 0; i < DCACHE_LINE_BYTES && i < 64; i++) {
+        mask |= (1ull << i);
+    }
+    return mask;
 }
 
 static int find_wb_entry_in_view(const WriteBufferEntry *entries, uint32_t head,
@@ -54,9 +129,9 @@ static void drive_axi_req_from_head(WBOut &out, uint32_t send, uint32_t head,
     }
     out.axi_out.req_valid = true;
     out.axi_out.req_addr = head_e.addr;
-    out.axi_out.req_total_size = 31;
+    out.axi_out.req_total_size = kCacheLineReqTotalSize;
     out.axi_out.req_id = 0;
-    out.axi_out.req_wstrb = 0xffffffffu;
+    out.axi_out.req_wstrb = full_line_wstrb_mask();
     for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
         out.axi_out.req_wdata[w] = head_e.data[w];
     }
@@ -77,7 +152,14 @@ void WriteBuffer::init() {
     std::memset(&nxt_check, 0, sizeof(nxt_check));
     std::memset(&cur_issue, 0, sizeof(cur_issue));
     std::memset(&nxt_issue, 0, sizeof(nxt_issue));
+    std::memset(&cur_last_issue, 0, sizeof(cur_last_issue));
+    std::memset(&nxt_last_issue, 0, sizeof(nxt_last_issue));
+    std::memset(&cur_last_resp, 0, sizeof(cur_last_resp));
+    std::memset(&nxt_last_resp, 0, sizeof(nxt_last_resp));
     std::memset(write_buffer_nxt, 0, sizeof(write_buffer_nxt));
+    g_wb_issue_seq = 0;
+    g_wb_resp_seq = 0;
+    g_warned_req_size_gt_32b = false;
     in.clear();
     out.clear();
 }
@@ -88,7 +170,7 @@ void WriteBuffer::init() {
 // (within the same cycle) are already reflected.
 // ─────────────────────────────────────────────────────────────────────────────
 void WriteBuffer::comb_outputs() {
-    out.wbmshr.ready = (nxt.count < WB_ENTRIES);
+    out.wbmshr.ready = ((nxt.count + kWbMshrSafetyReserve) < WB_ENTRIES);
 
     for(int i=0;i<LSU_LDU_COUNT;i++){
         out.wbdcache.bypass_resp[i].valid = nxt.bypassvalid[i];
@@ -157,6 +239,30 @@ void WriteBuffer::comb_inputs() {
             } else {
                 std::printf("[AXI WRITE MISMATCH][ISSUE] no in-flight issue snapshot captured\n");
             }
+            dump_issue_trace("[AXI WRITE MISMATCH][LAST_ISSUE] ", cur_last_issue);
+            dump_resp_trace("[AXI WRITE MISMATCH][LAST_RESP] ", cur_last_resp);
+            const int last_issue_diff =
+                cur_last_issue.valid ? first_word_diff(cur_last_issue.data, cur_check.data) : -1;
+            std::printf(
+                "[AXI WRITE MISMATCH][CHECK_CTX] check_addr=0x%08x "
+                "check_vs_last_issue_word=%d hi8_exp_nonzero=%d hi8_mem_nonzero=%d\n",
+                cur_check.addr, last_issue_diff,
+                static_cast<int>(has_nonzero_words_from(cur_check.data, 8)),
+                static_cast<int>(has_nonzero_words_from(mem_line, 8)));
+            bool low32b_match = true;
+            for (int w = 0; w < DCACHE_LINE_WORDS && w < 8; w++) {
+                if (cur_check.data[w] != mem_line[w]) {
+                    low32b_match = false;
+                    break;
+                }
+            }
+            if (first_bad >= 8 && low32b_match) {
+                std::printf(
+                    "[AXI WRITE MISMATCH][HINT] first mismatch is at word %d (>=8) "
+                    "while low 32B matches. Suspect 32B write-path truncation "
+                    "between WB and AXI interconnect bridge.\n",
+                    first_bad);
+            }
             dump_line_words("[AXI WRITE MISMATCH][EXP] ", cur_check.data);
             dump_line_words("[AXI WRITE MISMATCH][MEM] ", mem_line);
             Assert(false && "WriteBuffer AXI write mismatch after deferred verification. Likely root causes: write response accepted before backing memory commit, incorrect line payload/address tracking across WB head movement, or AXI write-path ordering bug.");
@@ -164,6 +270,8 @@ void WriteBuffer::comb_inputs() {
     }
     nxt_check = {};
     nxt_issue = cur_issue;
+    nxt_last_issue = cur_last_issue;
+    nxt_last_resp = cur_last_resp;
 
     // Default outputs: nothing to send, always ready to accept a write response.
     for(int i=0;i<LSU_LDU_COUNT;i++){
@@ -242,23 +350,53 @@ void WriteBuffer::comb_inputs() {
     if (cur.send == 0) {
         WriteBufferEntry &head_e = write_buffer_nxt[cur.head];
         const bool can_issue_head = head_e.valid && !head_e.send;
-        if (can_issue_head && in.axi_in.req_ready) {
-            if (!out.axi_out.req_valid) {
-                std::printf(
-                    "[AXI WRITE ISSUE WARN] cyc=%lld req_ready=1 while req_valid=0 head=%u addr=0x%08x\n",
-                    (long long)sim_time, cur.head, head_e.addr);
-            }
+        const bool req_payload_matches_head =
+            out.axi_out.req_valid && (out.axi_out.req_addr == head_e.addr);
+        const bool req_handshake = can_issue_head && in.axi_in.req_ready &&
+                                   req_payload_matches_head;
+        if (can_issue_head && in.axi_in.req_ready && !out.axi_out.req_valid) {
+            std::printf(
+                "[AXI WRITE ISSUE WARN] cyc=%lld req_ready=1 while req_valid=0 head=%u addr=0x%08x\n",
+                (long long)sim_time, cur.head, head_e.addr);
+        } else if (can_issue_head && in.axi_in.req_ready &&
+                   out.axi_out.req_valid &&
+                   out.axi_out.req_addr != head_e.addr) {
+            std::printf(
+                "[AXI WRITE ISSUE WARN] cyc=%lld req_ready=1 but req_addr mismatch head=%u head_addr=0x%08x req_addr=0x%08x\n",
+                (long long)sim_time, cur.head, head_e.addr,
+                out.axi_out.req_addr);
+        }
+        if (req_handshake) {
             head_e.send = true;
             nxt.send = 1;
             nxt.issue_pending = 1;
             nxt_issue.valid = true;
+            nxt_issue.seq = ++g_wb_issue_seq;
             nxt_issue.addr = head_e.addr;
             nxt_issue.head = cur.head;
             nxt_issue.issue_cycle = (uint64_t)sim_time;
+            nxt_issue.req_total_size = out.axi_out.req_total_size;
+            nxt_issue.req_wstrb = out.axi_out.req_wstrb;
             if (out.axi_out.req_valid) {
                 std::memcpy(nxt_issue.data, out.axi_out.req_wdata, sizeof(nxt_issue.data));
             } else {
                 std::memcpy(nxt_issue.data, head_e.data, sizeof(nxt_issue.data));
+            }
+            nxt_last_issue = nxt_issue;
+            WB_AXI_VLOG(
+                "[AXI WRITE ISSUE TRACE] cyc=%lld seq=%" PRIu64 " head=%u "
+                "addr=0x%08x total_size=%u wstrb=0x%016" PRIx64 "\n",
+                (long long)sim_time, nxt_issue.seq, nxt_issue.head,
+                nxt_issue.addr, nxt_issue.req_total_size,
+                static_cast<uint64_t>(nxt_issue.req_wstrb));
+            if (!g_warned_req_size_gt_32b && out.axi_out.req_total_size > 31) {
+                g_warned_req_size_gt_32b = true;
+                std::printf(
+                    "[AXI WRITE ISSUE WARN] cyc=%lld req_total_size=%u (>31) "
+                    "means write larger than 32B. Please verify bridge/interconnect "
+                    "write payload width is not capped at 8 words.\n",
+                    (long long)sim_time,
+                    static_cast<unsigned>(out.axi_out.req_total_size));
             }
         } else if (can_issue_head) {
             nxt.send = 0;
@@ -279,6 +417,26 @@ void WriteBuffer::comb_inputs() {
             nxt_check.addr = head_e.addr;
             nxt_check.resp_cycle = (uint64_t)sim_time;
             std::memcpy(nxt_check.data, head_e.data, sizeof(head_e.data));
+            nxt_last_resp.valid = true;
+            nxt_last_resp.seq = ++g_wb_resp_seq;
+            nxt_last_resp.addr = head_e.addr;
+            nxt_last_resp.head = cur.head;
+            nxt_last_resp.resp_cycle = static_cast<uint64_t>(sim_time);
+            std::memcpy(nxt_last_resp.data, head_e.data, sizeof(head_e.data));
+            nxt_last_resp.issue_seq = 0;
+            nxt_last_resp.issue_cycle = 0;
+            if (cur_issue.valid && cur_issue.addr == head_e.addr) {
+                nxt_last_resp.issue_seq = cur_issue.seq;
+                nxt_last_resp.issue_cycle = cur_issue.issue_cycle;
+            } else if (cur_last_issue.valid && cur_last_issue.addr == head_e.addr) {
+                nxt_last_resp.issue_seq = cur_last_issue.seq;
+                nxt_last_resp.issue_cycle = cur_last_issue.issue_cycle;
+            }
+            WB_AXI_VLOG(
+                "[AXI WRITE RESP TRACE] cyc=%lld seq=%" PRIu64 " head=%u "
+                "addr=0x%08x matched_issue_seq=%" PRIu64 "\n",
+                (long long)sim_time, nxt_last_resp.seq, nxt_last_resp.head,
+                nxt_last_resp.addr, nxt_last_resp.issue_seq);
             if (ctx != nullptr && cur_issue.valid) {
                 const uint64_t now = static_cast<uint64_t>(sim_time);
                 if (now >= cur_issue.issue_cycle) {
@@ -326,8 +484,12 @@ void WriteBuffer::seq() {
     cur = nxt;
     cur_check = nxt_check;
     cur_issue = nxt_issue;
+    cur_last_issue = nxt_last_issue;
+    cur_last_resp = nxt_last_resp;
     memcpy(write_buffer, write_buffer_nxt, sizeof(write_buffer));
     nxt = cur; 
     nxt_check = cur_check;
     nxt_issue = cur_issue;
+    nxt_last_issue = cur_last_issue;
+    nxt_last_resp = cur_last_resp;
 }

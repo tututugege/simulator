@@ -1,6 +1,7 @@
 #include "MemSubsystem.h"
 #include "DeadlockDebug.h"
 #include "DeadlockReplayTrace.h"
+#include "DebugPtwTrace.h"
 #include "config.h"
 #include "diff.h"
 #include <cinttypes>
@@ -339,6 +340,24 @@ void MemSubsystem::init() {
   axi_kit_runtime->mmio.init();
   axi_kit_runtime->mmio.add_device(0x10000000u, 0x1000u, &axi_kit_runtime->uart0);
   axi_kit_runtime->ddr.init();
+  static bool printed_axi_cfg = false;
+  if (!printed_axi_cfg) {
+    printed_axi_cfg = true;
+    std::printf(
+        "[MEM][AXI CFG] protocol=%d dcache_line_bytes=%u dcache_line_words=%u "
+        "axi_up_write_words=%u axi_up_read_words=%u\n",
+        CONFIG_AXI_PROTOCOL, static_cast<unsigned>(DCACHE_LINE_BYTES),
+        static_cast<unsigned>(DCACHE_LINE_WORDS),
+        static_cast<unsigned>(axi_interconnect::CACHELINE_WORDS),
+        static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_WORDS));
+    if (DCACHE_LINE_WORDS > axi_interconnect::CACHELINE_WORDS) {
+      std::printf(
+          "[MEM][AXI CFG][WARN] dcache line (%u words) is wider than AXI upstream "
+          "write payload (%u words). High words may be dropped in bridge path.\n",
+          static_cast<unsigned>(DCACHE_LINE_WORDS),
+          static_cast<unsigned>(axi_interconnect::CACHELINE_WORDS));
+    }
+  }
 #endif
 
 
@@ -476,19 +495,6 @@ void MemSubsystem::comb() {
   const uint32_t ptw_itlb_addr =
       has_ptw_itlb ? ptw_block.pending_mem_addr(MemPtwBlock::Client::ITLB) : 0;
 
-  {
-    const auto dbg = ptw_block.debug_state();
-    if (dbg.walk_active && !issue_ptw_walk_read) {
-      ptw_walk_wait_cycles_++;
-      if (ptw_walk_wait_cycles_ >= PTW_WALK_WAIT_RETRY_CYCLES) {
-        ptw_block.retry_active_walk();
-        ptw_walk_wait_cycles_ = 0;
-      }
-    } else {
-      ptw_walk_wait_cycles_ = 0;
-    }
-  }
-
   read_arb_block.eval_comb(lsu2dcache, issue_ptw_walk_read, ptw_walk_read_addr,
                            has_ptw_dtlb, ptw_dtlb_addr, has_ptw_itlb,
                            ptw_itlb_addr);
@@ -498,25 +504,65 @@ void MemSubsystem::comb() {
 
   dcache_.comb();
 
+  if (read_arb_block.comb_result().granted) {
+    switch (read_arb_block.comb_result().granted_owner) {
+    case MemReadArbBlock::Owner::PTW_DTLB:
+      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB),
+                         ptw_dtlb_addr);
+      ptw_block.on_mem_read_granted(MemPtwBlock::Client::DTLB);
+      break;
+    case MemReadArbBlock::Owner::PTW_ITLB:
+      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_ITLB),
+                         ptw_itlb_addr);
+      ptw_block.on_mem_read_granted(MemPtwBlock::Client::ITLB);
+      break;
+    case MemReadArbBlock::Owner::PTW_WALK:
+      record_debug_event(DebugEventKind::PTW_WALK_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
+                         ptw_walk_read_addr);
+      if (read_arb_block.comb_result().injected_port >= 0) {
+        const auto &tag = read_arb_block.comb_result()
+                              .issued_tags[read_arb_block.comb_result()
+                                               .injected_port];
+        ptw_block.on_walk_read_granted(tag.req_id);
+      } else {
+        ptw_block.on_walk_read_granted(0);
+      }
+      break;
+    default:
+      break;
+    }
+  }
+
   resp_route_block.eval_comb(&dcache_resp_raw_,
                              read_arb_block.comb_result().issued_tags,
                              replay_bcast);
-  const auto &ptw_evt = resp_route_block.comb_outputs().ptw_event;
-  if (ptw_evt.valid) {
+  const auto &route_out = resp_route_block.comb_outputs();
+  for (uint8_t i = 0; i < route_out.ptw_event_count; i++) {
+    const auto &ptw_evt = route_out.ptw_events[i];
+    if (!ptw_evt.valid) {
+      continue;
+    }
     record_debug_event(DebugEventKind::PTW_ROUTE_EVENT,
                        static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
-                       ptw_evt.data, ptw_evt.replay);
+                       ptw_evt.data, ptw_evt.replay, 0, ptw_evt.req_id);
     if (ptw_evt.owner == MemReadArbBlock::Owner::PTW_WALK) {
       record_debug_event(DebugEventKind::PTW_WALK_RESP,
                          static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
-                         ptw_evt.data, ptw_evt.replay);
+                         ptw_evt.data, ptw_evt.replay, 0, ptw_evt.req_id);
+      if (ptw_evt.replay == 0) {
+        debug_ptw_trace::record_ptw_walk_resp_detail(memory, ptw_evt.req_addr,
+                                                     ptw_evt.data);
+      }
     } else {
       record_debug_event(DebugEventKind::PTW_MEM_RESP,
                          static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
-                         ptw_evt.data, ptw_evt.replay);
+                         ptw_evt.data, ptw_evt.replay, 0, ptw_evt.req_id);
     }
   }
-  resp_route_block.apply_ptw_event(&ptw_block);
+  resp_route_block.apply_ptw_events(&ptw_block);
 
   if (dcache2lsu != nullptr) {
     *dcache2lsu = resp_route_block.comb_outputs().lsu_resp;
@@ -562,31 +608,6 @@ void MemSubsystem::comb() {
       // LSU consumes replay by LDQ token; keep token and req_id consistent.
       dst.uop.rob_idx = static_cast<uint32_t>(tag0.req_id);
       dst.replay = 3;
-    }
-  }
-
-  if (read_arb_block.comb_result().granted) {
-    switch (read_arb_block.comb_result().granted_owner) {
-    case MemReadArbBlock::Owner::PTW_DTLB:
-      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
-                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB),
-                         ptw_dtlb_addr);
-      ptw_block.on_mem_read_granted(MemPtwBlock::Client::DTLB);
-      break;
-    case MemReadArbBlock::Owner::PTW_ITLB:
-      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
-                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_ITLB),
-                         ptw_itlb_addr);
-      ptw_block.on_mem_read_granted(MemPtwBlock::Client::ITLB);
-      break;
-    case MemReadArbBlock::Owner::PTW_WALK:
-      record_debug_event(DebugEventKind::PTW_WALK_GRANT,
-                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
-                         ptw_walk_read_addr);
-      ptw_block.on_walk_read_granted();
-      break;
-    default:
-      break;
     }
   }
 
@@ -769,6 +790,14 @@ void MemSubsystem::dump_debug_state() const {
         i, static_cast<int>(tag.valid), static_cast<unsigned>(tag.owner), tag.req_id,
         tag.req_addr, tag.uop.pc, tag.uop.instruction);
   }
+  for (size_t i = 0; i < MemRespRouteBlock::kPtwTrackCount; i++) {
+    const auto &track = route_dbg.ptw_tracks[i];
+    std::printf(
+        "[DEADLOCK][MEM][RESP_ROUTE][PTW_TRACK %d] valid=%d owner=%u req_id=%zu req_addr=0x%08x\n",
+        static_cast<int>(i), static_cast<int>(track.valid),
+        static_cast<unsigned>(track.owner),
+        track.req_id, track.req_addr);
+  }
   std::printf(
       "[DEADLOCK][MEM][RESP_ROUTE][TRACK] dtlb{blk=%d reason=%u addr=0x%08x} itlb{blk=%d reason=%u addr=0x%08x} walk{blk=%d reason=%u addr=0x%08x}\n",
       static_cast<int>(route_dbg.dtlb.blocked),
@@ -779,6 +808,8 @@ void MemSubsystem::dump_debug_state() const {
       static_cast<unsigned>(route_dbg.walk.reason), route_dbg.walk.req_addr);
   dump_key_cache_lines();
   dump_recent_debug_events();
+  debug_ptw_trace::dump_recent_satp_writes();
+  debug_ptw_trace::dump_recent_ptw_walk_resps();
   dump_failure_analysis();
 }
 

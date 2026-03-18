@@ -73,7 +73,7 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // Feature Flags (Macros used for conditional compilation)
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 
 
 // ============================================================
@@ -150,6 +150,14 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 #define CONFIG_DEADLOCK_REPLAY_TRACE_BUFFER_SIZE 131072
 #endif
 
+#ifndef CONFIG_DEBUG_SATP_WRITE_LOG_MAX
+#define CONFIG_DEBUG_SATP_WRITE_LOG_MAX 32
+#endif
+
+#ifndef CONFIG_DEBUG_PTW_WALK_RESP_DETAIL_MAX
+#define CONFIG_DEBUG_PTW_WALK_RESP_DETAIL_MAX 128
+#endif
+
 #define SIM_DEBUG_PRINT_ACTIVE                                                \
   (SIM_DEBUG_PRINT &&                                                         \
    (static_cast<unsigned long long>(sim_time) >=                              \
@@ -176,9 +184,6 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
     }                                                                          \
   } while (0)
 
-#ifndef PTW_WALK_WAIT_RETRY_CYCLES
-#define PTW_WALK_WAIT_RETRY_CYCLES 256
-#endif
 // ============================================================
 // [2] Global Limits
 // ============================================================
@@ -216,6 +221,9 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 // 4 = AXI4 path, 3 = AXI3 path.
 #ifndef CONFIG_AXI_PROTOCOL
 #define CONFIG_AXI_PROTOCOL 4
+#endif
+#if CONFIG_AXI_PROTOCOL != 4
+#error "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
 #endif
 
 constexpr int ICACHE_WAY_NUM = 8;
