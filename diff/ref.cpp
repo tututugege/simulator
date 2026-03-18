@@ -1573,6 +1573,14 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
     eff_priv = (mstatus >> MSTATUS_MPP_SHIFT) & 0x3;
   }
 
+  // Translation is only enabled for effective S/U mode with SATP.SV32.
+  // In M-mode or SATP bare mode, VA is treated as PA.
+  const bool satp_sv32 = (satp & 0x80000000u) != 0;
+  if (eff_priv == RISCV_MODE_M || !satp_sv32) {
+    p_addr = v_addr;
+    return true;
+  }
+
   // 2. Level 1 Page Table Walk
   // satp 的 PPN 字段在 SV32 中是低 22 位 (0-21)
   // VPN[1] 是 v_addr 的 [31:22] 位
