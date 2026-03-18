@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "InstructionBuffer.h"
 #include "util.h"
 #include <bitset>
 #include <cstring>
@@ -36,7 +37,7 @@ struct DecRenIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    inst_type_bits_t type;
+    wire<INST_TYPE_WIDTH> type;
     InstTmaMeta tma;
     InstDebugMeta dbg;
 
@@ -214,7 +215,7 @@ struct DecBroadcastIO {
   wire<BR_MASK_WIDTH> br_mask;
   wire<BR_TAG_WIDTH> br_id;
   wire<ROB_IDX_WIDTH> redirect_rob_idx;
-  mask_t clear_mask; // Bits to clear from all in-flight br_masks (resolved branches)
+  wire<BR_MASK_WIDTH> clear_mask; // Bits to clear from all in-flight br_masks (resolved branches)
 
   DecBroadcastIO() {
     mispred = {};
@@ -289,10 +290,25 @@ struct FtqRobPcRespIO {
   }
 };
 
+struct PreIduIssueIO {
+  InstructionBufferEntry entries[DECODE_WIDTH];
+  wire<32> pc[DECODE_WIDTH];
+
+  PreIduIssueIO() {
+    for (auto &e : entries) {
+      e = {};
+    }
+    for (auto &v : pc) {
+      v = {};
+    }
+  }
+};
+
 struct RobCommitIO {
   struct RobCommitInst {
     wire<32> diag_val;
     wire<AREG_IDX_WIDTH> dest_areg;
+    wire<AREG_IDX_WIDTH> src1_areg;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> old_dest_preg;
 
@@ -304,12 +320,23 @@ struct RobCommitIO {
     wire<1> br_taken;
 
     wire<1> dest_en;
+    wire<1> is_atomic;
+    wire<3> func3;
+    wire<7> func7;
+    wire<32> imm;
+    wire<ROB_IDX_WIDTH> rob_idx;
     wire<STQ_IDX_WIDTH> stq_idx;
+    wire<1> stq_flag;
+
+    wire<2> uop_num;
+    wire<2> cplt_num;
 
     wire<1> page_fault_inst;
+    wire<1> page_fault_load;
+    wire<1> page_fault_store;
     wire<1> illegal_inst;
 
-    inst_type_bits_t type;
+    wire<INST_TYPE_WIDTH> type;
     InstTmaMeta tma;
     InstDebugMeta dbg;
     wire<1> flush_pipe;
@@ -320,6 +347,7 @@ struct RobCommitIO {
       RobCommitInst dst;
       dst.diag_val = src.diag_val;
       dst.dest_areg = src.dest_areg;
+      dst.src1_areg = src.src1_areg;
       dst.dest_preg = src.dest_preg;
       dst.old_dest_preg = src.old_dest_preg;
       dst.ftq_idx = src.ftq_idx;
@@ -328,8 +356,18 @@ struct RobCommitIO {
       dst.mispred = src.mispred;
       dst.br_taken = src.br_taken;
       dst.dest_en = src.dest_en;
+      dst.is_atomic = src.is_atomic;
+      dst.func3 = src.func3;
+      dst.func7 = src.func7;
+      dst.imm = src.imm;
+      dst.rob_idx = src.rob_idx;
       dst.stq_idx = src.stq_idx;
+      dst.stq_flag = src.stq_flag;
+      dst.uop_num = src.uop_num;
+      dst.cplt_num = src.cplt_num;
       dst.page_fault_inst = src.page_fault_inst;
+      dst.page_fault_load = src.page_fault_load;
+      dst.page_fault_store = src.page_fault_store;
       dst.illegal_inst = src.illegal_inst;
       dst.type = encode_inst_type(src.type);
       dst.tma = src.tma;
@@ -342,6 +380,7 @@ struct RobCommitIO {
       InstInfo dst;
       dst.diag_val = diag_val;
       dst.dest_areg = dest_areg;
+      dst.src1_areg = src1_areg;
       dst.dest_preg = dest_preg;
       dst.old_dest_preg = old_dest_preg;
       dst.ftq_idx = ftq_idx;
@@ -350,10 +389,18 @@ struct RobCommitIO {
       dst.mispred = mispred;
       dst.br_taken = br_taken;
       dst.dest_en = dest_en;
+      dst.is_atomic = is_atomic;
+      dst.func3 = func3;
+      dst.func7 = func7;
+      dst.imm = imm;
+      dst.rob_idx = rob_idx;
       dst.stq_idx = stq_idx;
+      dst.stq_flag = stq_flag;
+      dst.uop_num = uop_num;
+      dst.cplt_num = cplt_num;
       dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = false;
-      dst.page_fault_store = false;
+      dst.page_fault_load = page_fault_load;
+      dst.page_fault_store = page_fault_store;
       dst.illegal_inst = illegal_inst;
       dst.type = decode_inst_type(type);
       dst.tma = tma;
@@ -441,7 +488,7 @@ struct DisRobIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    inst_type_bits_t type;
+    wire<INST_TYPE_WIDTH> type;
     InstTmaMeta tma;
     InstDebugMeta dbg;
     wire<1> flush_pipe;
@@ -568,7 +615,7 @@ struct RenDisIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    inst_type_bits_t type;
+    wire<INST_TYPE_WIDTH> type;
     InstTmaMeta tma;
     InstDebugMeta dbg;
 
@@ -715,7 +762,7 @@ struct DisIssIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    uop_type_bits_t op;
+    wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
 
     DisIssUop() { std::memset(this, 0, sizeof(DisIssUop)); }
@@ -898,7 +945,7 @@ struct IssPrfIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    uop_type_bits_t op;
+    wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
 
     IssPrfUop() { std::memset(this, 0, sizeof(IssPrfUop)); }
@@ -1023,7 +1070,7 @@ struct PrfExeIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    uop_type_bits_t op;
+    wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
 
     PrfExeUop() { std::memset(this, 0, sizeof(PrfExeUop)); }
@@ -1120,7 +1167,7 @@ struct ExePrfIO {
     wire<32> result;
     wire<BR_MASK_WIDTH> br_mask;
     wire<1> dest_en;
-    uop_type_bits_t op;
+    wire<UOP_TYPE_WIDTH> op;
 
     ExePrfWbUop() { std::memset(this, 0, sizeof(ExePrfWbUop)); }
 
@@ -1185,7 +1232,7 @@ struct ExuRobIO {
     wire<1> page_fault_inst;
     wire<1> page_fault_load;
     wire<1> page_fault_store;
-    uop_type_bits_t op;
+    wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
     wire<1> flush_pipe;
 
@@ -1244,7 +1291,7 @@ struct ExuIdIO {
   wire<ROB_IDX_WIDTH> redirect_rob_idx;
   wire<BR_TAG_WIDTH> br_id;
   wire<FTQ_IDX_WIDTH> ftq_idx; // FTQ index of mispredicting branch, for tail recovery
-  mask_t clear_mask; // OR of all resolved branches' (1 << br_id) this cycle
+  wire<BR_MASK_WIDTH> clear_mask; // OR of all resolved branches' (1 << br_id) this cycle
 
   ExuIdIO() {
     mispred = {};
@@ -1456,7 +1503,7 @@ struct LsuExeIO {
     wire<1> dest_en;
     wire<1> page_fault_load;
     wire<1> page_fault_store;
-    uop_type_bits_t op;
+    wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
     wire<1> flush_pipe;
 
@@ -1514,14 +1561,14 @@ struct LsuExeIO {
 struct DisLsuIO {
 
   wire<1> alloc_req[MAX_STQ_DISPATCH_WIDTH];
-  mask_t br_mask[MAX_STQ_DISPATCH_WIDTH];
+  wire<BR_MASK_WIDTH> br_mask[MAX_STQ_DISPATCH_WIDTH];
   wire<3> func3[MAX_STQ_DISPATCH_WIDTH];
   wire<ROB_IDX_WIDTH> rob_idx[MAX_STQ_DISPATCH_WIDTH];
   wire<1> rob_flag[MAX_STQ_DISPATCH_WIDTH];
 
   wire<1> ldq_alloc_req[MAX_LDQ_DISPATCH_WIDTH];
   wire<LDQ_IDX_WIDTH> ldq_idx[MAX_LDQ_DISPATCH_WIDTH];
-  mask_t ldq_br_mask[MAX_LDQ_DISPATCH_WIDTH];
+  wire<BR_MASK_WIDTH> ldq_br_mask[MAX_LDQ_DISPATCH_WIDTH];
   wire<ROB_IDX_WIDTH> ldq_rob_idx[MAX_LDQ_DISPATCH_WIDTH];
   wire<1> ldq_rob_flag[MAX_LDQ_DISPATCH_WIDTH];
 
@@ -1563,7 +1610,7 @@ struct ExeLsuIO {
     wire<LDQ_IDX_WIDTH> ldq_idx;
     wire<1> rob_flag;
     wire<1> dest_en;
-    uop_type_bits_t op;
+    wire<UOP_TYPE_WIDTH> op;
     UopDebugMeta dbg;
 
     ExeLsuReqUop() { std::memset(this, 0, sizeof(ExeLsuReqUop)); }

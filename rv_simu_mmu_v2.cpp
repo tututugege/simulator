@@ -68,9 +68,11 @@ void SimCpu::commit_sync(InstInfo *inst) {
     }
   }
 
-  if (is_store(*inst) && !inst->page_fault_store) {
+  if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-    this->mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
+    if (!e.suppress_write) {
+      this->mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
+    }
   }
 }
 
@@ -87,19 +89,23 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
     dut_cpu.gpr[i] = back->prf->reg_file_1[back->rename->arch_RAT_1[i]];
   }
 
-  if (is_store(*inst) && !inst->page_fault_store) {
+  if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-    Assert(e.addr_valid && e.data_valid);
-    dut_cpu.store = true;
-    dut_cpu.store_addr = e.p_addr;
-    if (e.func3 == 0b00)
-      dut_cpu.store_data = e.data & 0xFF;
-    else if (e.func3 == 0b01)
-      dut_cpu.store_data = e.data & 0xFFFF;
-    else
-      dut_cpu.store_data = e.data;
+    if (!e.suppress_write) {
+      Assert(e.addr_valid && e.data_valid);
+      dut_cpu.store = true;
+      dut_cpu.store_addr = e.p_addr;
+      if (e.func3 == 0b00)
+        dut_cpu.store_data = e.data & 0xFF;
+      else if (e.func3 == 0b01)
+        dut_cpu.store_data = e.data & 0xFFFF;
+      else
+        dut_cpu.store_data = e.data;
 
-    dut_cpu.store_data = dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
+      dut_cpu.store_data = dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
+    } else {
+      dut_cpu.store = false;
+    }
   } else {
     dut_cpu.store = false;
   }
