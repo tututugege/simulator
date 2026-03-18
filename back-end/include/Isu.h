@@ -5,15 +5,13 @@
 #include <cstdint>
 #include <list>
 
-class IsuOut {
-public:
+struct IsuOut {
   IssPrfIO *iss2prf;
   IssDisIO *iss2dis;
   IssAwakeIO *iss_awake;
 };
 
-class IsuIn {
-public:
+struct IsuIn {
   DisIssIO *dis2iss;
   PrfAwakeIO *prf_awake;
   ExeIssIO *exe2iss;

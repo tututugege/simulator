@@ -14,8 +14,7 @@ struct PortMapping {
   std::vector<FuEntry> entries;
 };
 
-class ExuIn {
-public:
+struct ExuIn {
   PrfExeIO *prf2exe;
   DecBroadcastIO *dec_bcast;
   RobBroadcastIO *rob_bcast;
@@ -25,8 +24,7 @@ public:
   FtqExuPcRespIO *ftq_pc_resp;
 };
 
-class ExuOut {
-public:
+struct ExuOut {
   ExePrfIO *exe2prf;
   ExeIssIO *exe2iss;
   ExeCsrIO *exe2csr;

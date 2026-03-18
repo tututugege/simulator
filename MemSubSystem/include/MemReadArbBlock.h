@@ -40,7 +40,7 @@ public:
       ret.req.en = true;
       ret.req.wen = false;
       ret.req.addr = ptw_walk_read_addr;
-      ret.req.uop = {};
+      ret.req.meta = {};
       return ret;
     }
 
@@ -50,7 +50,7 @@ public:
       ret.req.en = true;
       ret.req.wen = false;
       ret.req.addr = ptw_dtlb_addr;
-      ret.req.uop = {};
+      ret.req.meta = {};
       return ret;
     }
 
@@ -60,7 +60,7 @@ public:
       ret.req.en = true;
       ret.req.wen = false;
       ret.req.addr = ptw_itlb_addr;
-      ret.req.uop = {};
+      ret.req.meta = {};
       return ret;
     }
 

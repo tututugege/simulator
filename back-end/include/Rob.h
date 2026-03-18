@@ -2,8 +2,7 @@
 #include "IO.h"
 #include "config.h"
 
-class RobOut {
-public:
+struct RobOut {
   RobDisIO *rob2dis;
   RobCsrIO *rob2csr;
   RobCommitIO *rob_commit;
@@ -11,8 +10,7 @@ public:
   FtqRobPcReqIO *ftq_pc_req;
 };
 
-class RobIn {
-public:
+struct RobIn {
   DisRobIO *dis2rob;
   CsrRobIO *csr2rob;
   LsuRobIO *lsu2rob;

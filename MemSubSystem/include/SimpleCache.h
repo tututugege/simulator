@@ -14,6 +14,7 @@ class SimpleCache : public AbstractDcache {
   struct PendingReq {
     MemReqIO req;
     int64_t complete_time;
+    bool is_cache_miss = false;
   };
 
   static constexpr int L1_OFFSET_WIDTH = DCACHE_OFFSET_BITS;

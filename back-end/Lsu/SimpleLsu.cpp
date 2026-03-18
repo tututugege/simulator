@@ -172,14 +172,12 @@ void SimpleLsu::comb_recv() {
       continue;
     }
 
-    MicroOp req_uop = entry.uop;
-    req_uop.rob_idx = i; // Local token: LDQ index
     out.dcache_req->en = true;
     out.dcache_req->wen = false;
     out.dcache_req->addr = entry.uop.diag_val;
     out.dcache_req->wdata = 0;
     out.dcache_req->wstrb = 0;
-    out.dcache_req->uop = req_uop;
+    out.dcache_req->meta.rob_idx = i; // Local token: LDQ index
     entry.state = LoadState::WaitResp;
 
     break;
@@ -198,7 +196,7 @@ void SimpleLsu::comb_load_res() {
   }
 
   if (in.dcache_resp->valid) {
-    int idx = in.dcache_resp->uop.rob_idx;
+    int idx = in.dcache_resp->meta.rob_idx;
     if (idx >= 0 && idx < LDQ_SIZE) {
       auto &entry = ldq[idx];
       if (entry.valid && entry.state == LoadState::WaitResp) {
@@ -211,8 +209,8 @@ void SimpleLsu::comb_load_res() {
             reserve_valid = true;
             reserve_addr = entry.uop.diag_val;
           }
-          entry.uop.dbg.difftest_skip = in.dcache_resp->uop.dbg.difftest_skip;
-          entry.uop.tma.is_cache_miss = in.dcache_resp->uop.tma.is_cache_miss;
+          entry.uop.dbg.difftest_skip = in.dcache_resp->meta.difftest_skip;
+          entry.uop.tma.is_cache_miss = in.dcache_resp->meta.is_cache_miss;
           finished_loads.push_back(entry.uop);
         } else {
 

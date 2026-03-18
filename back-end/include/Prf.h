@@ -3,14 +3,12 @@
 #include "Exu.h"
 #include "IO.h"
 
-class PrfOut {
-public:
+struct PrfOut {
   PrfExeIO *prf2exe;
   PrfAwakeIO *prf_awake;
 };
 
-class PrfIn {
-public:
+struct PrfIn {
   IssPrfIO *iss2prf;
   ExePrfIO *exe2prf;
   DecBroadcastIO *dec_bcast;

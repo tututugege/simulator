@@ -15,7 +15,7 @@
 
 class SimContext;
 
-typedef struct {
+struct Back_in {
   uint32_t inst[FETCH_WIDTH];
   uint32_t pc[FETCH_WIDTH];
   bool valid[FETCH_WIDTH];
@@ -36,9 +36,9 @@ typedef struct {
   uint16_t loop_tag[FETCH_WIDTH];
   uint32_t predict_next_fetch_address[FETCH_WIDTH];
   bool page_fault_inst[FETCH_WIDTH];
-} Back_in;
+};
 
-typedef struct {
+struct Back_out {
   // to front-end
   bool mispred;
   bool stall;
@@ -53,7 +53,7 @@ typedef struct {
   wire<32> mstatus;
   wire<32> satp;
   wire<2> privilege;
-} Back_out;
+};
 
 class Dispatch;
 class Idu;

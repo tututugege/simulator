@@ -4,12 +4,21 @@
 #include <cstdint>
 
 struct InstructionBufferEntry {
-  bool valid = false;
-  uint32_t inst = 0;
-  bool page_fault_inst = false;
-  uint32_t ftq_idx = 0;
-  uint32_t ftq_offset = 0;
-  bool ftq_is_last = false;
+  wire<1> valid;
+  wire<32> inst;
+  wire<1> page_fault_inst;
+  wire<FTQ_IDX_WIDTH> ftq_idx;
+  wire<FTQ_OFFSET_WIDTH> ftq_offset;
+  wire<1> ftq_is_last;
+
+  InstructionBufferEntry() {
+    valid = 0;
+    inst = 0;
+    page_fault_inst = 0;
+    ftq_idx = 0;
+    ftq_offset = 0;
+    ftq_is_last = 0;
+  }
 };
 
 class InstructionBuffer {

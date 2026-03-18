@@ -1339,6 +1339,20 @@ struct PtwWalkRespIO {
   }
 };
 
+struct MemReqMeta {
+  wire<ROB_IDX_WIDTH> rob_idx;
+
+  MemReqMeta() { std::memset(this, 0, sizeof(MemReqMeta)); }
+};
+
+struct MemRespMeta {
+  wire<ROB_IDX_WIDTH> rob_idx;
+  bool is_cache_miss;
+  bool difftest_skip;
+
+  MemRespMeta() { std::memset(this, 0, sizeof(MemRespMeta)); }
+};
+
 struct MemReqIO {
 
   wire<1> en;
@@ -1347,7 +1361,7 @@ struct MemReqIO {
   wire<32> wdata;
   wire<8> wstrb;
 
-  MicroOp uop;
+  MemReqMeta meta;
 
   MemReqIO() {
     en = {};
@@ -1355,7 +1369,7 @@ struct MemReqIO {
     addr = {};
     wdata = {};
     wstrb = {};
-    uop = {};
+    meta = {};
   }
 };
 
@@ -1373,14 +1387,14 @@ struct MemRespIO {
   wire<32> data;
 
   wire<32> addr;
-  MicroOp uop;
+  MemRespMeta meta;
 
   MemRespIO() {
     wen = {};
     valid = {};
     data = {};
     addr = {};
-    uop = {};
+    meta = {};
   }
 };
 

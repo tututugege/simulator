@@ -4,8 +4,7 @@
 
 class BackTop;
 
-class RenIn {
-public:
+struct RenIn {
   DecRenIO *dec2ren;
   DecBroadcastIO *dec_bcast;
   DisRenIO *dis2ren;
@@ -13,8 +12,7 @@ public:
   RobCommitIO *rob_commit;
 };
 
-class RenOut {
-public:
+struct RenOut {
   RenDecIO *ren2dec;
   RenDisIO *ren2dis;
 };

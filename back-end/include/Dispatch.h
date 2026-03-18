@@ -4,16 +4,14 @@
 
 class BackTop;
 
-class DIS_OUT {
-public:
+struct DIS_OUT {
   DisRenIO *dis2ren;
   DisRobIO *dis2rob;
   DisIssIO *dis2iss;
   DisLsuIO *dis2lsu;
 };
 
-class DIS_IN {
-public:
+struct DIS_IN {
   RenDisIO *ren2dis;
   RobDisIO *rob2dis;
   IssDisIO *iss2dis;

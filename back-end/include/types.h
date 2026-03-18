@@ -61,38 +61,38 @@ constexpr uint8_t MAXU = 0b11100;
 // ==========================================
 
 // Debug sideband for InstInfo. Keep diag_val in hardware path.
-typedef struct InstDebugMeta {
+struct InstDebugMeta {
   wire<32> instruction;
   wire<32> pc;
   uint8_t mem_align_mask;
   bool difftest_skip;
   int64_t inst_idx;
-} InstDebugMeta;
+};
 
 // Debug sideband for MicroOp. Keep diag_val in hardware path.
-typedef struct UopDebugMeta {
+struct UopDebugMeta {
   wire<32> instruction;
   wire<32> pc;
   uint8_t mem_align_mask;
   bool difftest_skip;
   int64_t inst_idx;
-} UopDebugMeta;
+};
 
-typedef struct InstTmaMeta {
+struct InstTmaMeta {
   bool is_cache_miss;
   bool is_ret;
   bool mem_commit_is_load;
   bool mem_commit_is_store;
-} InstTmaMeta;
+};
 
-typedef struct UopTmaMeta {
+struct UopTmaMeta {
   bool is_cache_miss;
   bool is_ret;
   bool mem_commit_is_load;
   bool mem_commit_is_store;
-} UopTmaMeta;
+};
 
-typedef struct InstInfo {
+struct InstInfo {
   wire<32> diag_val; // Hardware: Shared field for instruction or pc_next
 
   wire<AREG_IDX_WIDTH> dest_areg, src1_areg, src2_areg;
@@ -142,9 +142,9 @@ typedef struct InstInfo {
   wire<1> flush_pipe;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
-} InstInfo;
+};
 
-typedef struct MicroOp {
+struct MicroOp {
   wire<32> diag_val; // Hardware: Shared field for instruction or pc_next
 
   wire<AREG_IDX_WIDTH> dest_areg, src1_areg;
@@ -245,22 +245,22 @@ typedef struct MicroOp {
     this->dbg.inst_idx = info.dbg.inst_idx;
     this->flush_pipe = info.flush_pipe;
   }
-} MicroOp;
+};
 
-typedef struct {
+struct InstEntry {
   wire<1> valid;
   InstInfo uop;
-} InstEntry;
+};
 
-typedef struct {
+struct UopEntry {
   wire<1> valid;
   MicroOp uop;
-} UopEntry;
+};
 
-typedef struct {
+struct WakeInfo {
   wire<1> valid;
   wire<PRF_IDX_WIDTH> preg;
-} WakeInfo;
+};
 
 #include "PerfCount.h"
 
