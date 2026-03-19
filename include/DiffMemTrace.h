@@ -124,7 +124,7 @@ inline void dump_recent(
     size_t dump_count = CONFIG_DIFF_DEBUG_MEMTRACE_DUMP_COUNT) {
   const size_t count = g_wrapped ? g_events.size() : g_next;
   if (count == 0) {
-    std::printf("[DIFF][MEMTRACE] no load/store events have been recorded\n");
+    // std::printf("[DIFF][MEMTRACE] no load/store events have been recorded\n");
     return;
   }
   const size_t recent = (dump_count < count) ? dump_count : count;
@@ -132,22 +132,22 @@ inline void dump_recent(
       g_wrapped ? ((g_next + g_events.size() - recent) % g_events.size())
                 : (count - recent);
   size_t printed = 0;
-  std::printf(
-      "[DIFF][MEMTRACE] dumping latest %zu events (buffered=%zu)\n",
-      recent, count);
+  // std::printf(
+  //     "[DIFF][MEMTRACE] dumping latest %zu events (buffered=%zu)\n",
+  //     recent, count);
   for (size_t n = 0; n < recent; ++n) {
     const DiffMemTraceEvent &e = g_events[(start + n) % g_events.size()];
-    std::printf(
-        "[DIFF][MEMTRACE] cyc=%lld op=%s phase=%s detail=%s port=%u req_id=%zu "
-        "rob=%u flag=%u addr=0x%08x data=0x%08x func3=0x%x aux0=0x%08x "
-        "aux1=0x%08x\n",
-        e.cycle, op_name(e.op), phase_name(e.phase), detail_name(e.detail),
-        static_cast<unsigned>(e.port), e.req_id, e.rob_idx, e.rob_flag, e.addr,
-        e.data, static_cast<unsigned>(e.func3), e.aux0, e.aux1);
+    // std::printf(
+    //     "[DIFF][MEMTRACE] cyc=%lld op=%s phase=%s detail=%s port=%u req_id=%zu "
+    //     "rob=%u flag=%u addr=0x%08x data=0x%08x func3=0x%x aux0=0x%08x "
+    //     "aux1=0x%08x\n",
+    //     e.cycle, op_name(e.op), phase_name(e.phase), detail_name(e.detail),
+    //     static_cast<unsigned>(e.port), e.req_id, e.rob_idx, e.rob_flag, e.addr,
+    //     e.data, static_cast<unsigned>(e.func3), e.aux0, e.aux1);
     ++printed;
   }
   if (printed == 0) {
-    std::printf("[DIFF][MEMTRACE] no load/store events in the requested range\n");
+    // std::printf("[DIFF][MEMTRACE] no load/store events in the requested range\n");
   }
 }
 

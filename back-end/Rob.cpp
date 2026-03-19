@@ -145,6 +145,23 @@ void Rob::comb_commit() {
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
   bool progress_single_commit = false;
+  auto log_incomplete_store_commit = [&](const InstInfo &uop,
+                                         const char *path, int slot) {
+    if (!is_store(uop) || uop.cplt_num == uop.uop_num) {
+      return;
+    }
+    std::printf(
+        "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
+        "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
+        "interrupt=%d flush=%d mispred=%d\n",
+        (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
+        (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
+        (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
+        (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
+        (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
+        (int)in.dec_bcast->mispred);
+    deadlock_debug::dump_all();
+  };
 
   if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -155,12 +172,12 @@ void Rob::comb_commit() {
       }
     }
 
-    // 看第一个valid的inst是否完成 或者是interrupt，如果完成则single_commit
+    // 看第一个 valid 指令是否完成。即使是 interrupt 触发的 single_commit，
+    // 也必须等待该最老指令完成，避免提交未完成的内存指令。
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
         single_idx = i;
-        if (!out.rob_bcast->interrupt &&
-            entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+        if (entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
           single_commit = false;
         }
         if (entry[i][deq_ptr].uop.type == SFENCE_VMA && in.lsu2rob != nullptr &&
@@ -214,6 +231,10 @@ void Rob::comb_commit() {
         }
       }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
+      if (out.rob_commit->commit_entry[i].valid) {
+        log_incomplete_store_commit(out.rob_commit->commit_entry[i].uop, "group",
+                                    i);
+      }
       entry_1[i][deq_ptr].valid = false;
     }
 
@@ -234,8 +255,8 @@ void Rob::comb_commit() {
 
     if (entry[single_idx][deq_ptr].valid) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
-      // 中断触发 single_commit 时，首条指令可能尚未完成，diag_val
-      // 可能不是地址语义。
+      log_incomplete_store_commit(uop, "single", single_idx);
+      // 中断触发的 single_commit 也要求首条指令已经完成。
       if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
           !is_page_fault(uop)) {
         uint32_t alignment_mask = load_alignment_mask(uop.func3);

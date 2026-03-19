@@ -36,6 +36,17 @@ private:
     uint32_t data = 0;
   };
 
+  struct StqAllocTrace {
+    bool valid = false;
+    uint64_t cycle = 0;
+    int stq_idx = -1;
+    uint32_t rob_idx = 0;
+    uint32_t rob_flag = 0;
+    uint32_t func3 = 0;
+    mask_t br_mask = 0;
+    uint64_t seq = 0;
+  };
+
   // MMU Instance (Composition)
   std::unique_ptr<AbstractMmu> mmu;
 
@@ -85,6 +96,9 @@ private:
   std::deque<MicroOp> pending_sta_addr_reqs;
   bool pending_mmio_valid = false;
   PeripheralInIO pending_mmio_req{};
+  static constexpr int STQ_ALLOC_TRACE_DEPTH = 16;
+  StqAllocTrace recent_stq_allocs[STQ_ALLOC_TRACE_DEPTH] = {};
+  int recent_stq_alloc_cursor = 0;
 
 public:
   RealLsu(SimContext *ctx);
@@ -156,6 +170,9 @@ private:
   void progress_ldq_entries();
   void progress_pending_sta_addr();
   bool finish_store_addr_once(const MicroOp &inst);
+  void record_stq_alloc_trace(int stq_idx, uint32_t rob_idx, uint32_t rob_flag,
+                              uint32_t func3, mask_t br_mask);
+  void dump_recent_stq_alloc_traces() const;
 
   StoreForwardResult check_store_forward(uint32_t p_addr,
                                          const MicroOp &load_uop);

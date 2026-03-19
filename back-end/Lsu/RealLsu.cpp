@@ -1166,6 +1166,26 @@ void RealLsu::handle_store_data(const MicroOp &inst)
     Assert(inst.stq_idx >= 0 && inst.stq_idx < STQ_SIZE);
     if (!stq_entry_matches_uop(stq[inst.stq_idx], inst))
     {
+        const auto &entry = stq[inst.stq_idx];
+        std::fprintf(
+            stderr,
+            "[LSU][STD_MISMATCH] cyc=%lld inst_idx=%lld pc=0x%08x stq_idx=%u "
+            "stq_flag=%u rob=%u flag=%u result=0x%08x func3=0x%x\n",
+            (long long)sim_time, (long long)inst.inst_idx, (uint32_t)inst.pc,
+            (unsigned)inst.stq_idx, (unsigned)inst.stq_flag,
+            (unsigned)inst.rob_idx, (unsigned)inst.rob_flag,
+            (uint32_t)inst.result, (unsigned)inst.func3);
+        std::fprintf(
+            stderr,
+            "[LSU][STD_MISMATCH][STQ %02u] valid=%d addr_v=%d data_v=%d committed=%d "
+            "done=%d send=%d replay=%u rob=%u flag=%u func3=0x%x p_addr=0x%08x data=0x%08x\n",
+            (unsigned)inst.stq_idx, (int)entry.valid, (int)entry.addr_valid,
+            (int)entry.data_valid, (int)entry.committed, (int)entry.done,
+            (int)entry.send, (unsigned)entry.replay, (unsigned)entry.rob_idx,
+            (unsigned)entry.rob_flag, (unsigned)entry.func3,
+            (uint32_t)entry.p_addr, (uint32_t)entry.data);
+        dump_recent_stq_alloc_traces();
+        std::fflush(stderr);
         return;
     }
     if (ctx != nullptr)
@@ -1207,8 +1227,50 @@ bool RealLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
     {
         ctx->perf.trace_store_on_stq_enter(stq_trace_seq[alloc_idx], sim_time);
     }
+    record_stq_alloc_trace(alloc_idx, rob_idx, rob_flag, func3, br_mask);
     stq_tail = (stq_tail + 1) % STQ_SIZE;
     return true;
+}
+
+void RealLsu::record_stq_alloc_trace(int stq_idx, uint32_t rob_idx,
+                                     uint32_t rob_flag, uint32_t func3,
+                                     mask_t br_mask)
+{
+    auto &trace = recent_stq_allocs[recent_stq_alloc_cursor];
+    trace.valid = true;
+    trace.cycle = static_cast<uint64_t>(sim_time);
+    trace.stq_idx = stq_idx;
+    trace.rob_idx = rob_idx;
+    trace.rob_flag = rob_flag;
+    trace.func3 = func3;
+    trace.br_mask = br_mask;
+    trace.seq = stq_trace_seq[stq_idx];
+    recent_stq_alloc_cursor =
+        (recent_stq_alloc_cursor + 1) % STQ_ALLOC_TRACE_DEPTH;
+}
+
+void RealLsu::dump_recent_stq_alloc_traces() const
+{
+    std::fprintf(stderr, "[LSU][STQ_ALLOC_TRACE] recent allocations:\n");
+    for (int n = 0; n < STQ_ALLOC_TRACE_DEPTH; n++)
+    {
+        const int idx =
+            (recent_stq_alloc_cursor - 1 - n + STQ_ALLOC_TRACE_DEPTH) %
+            STQ_ALLOC_TRACE_DEPTH;
+        const auto &trace = recent_stq_allocs[idx];
+        if (!trace.valid)
+        {
+            continue;
+        }
+        std::fprintf(
+            stderr,
+            "[LSU][STQ_ALLOC_TRACE][%02d] cyc=%llu stq_idx=%d seq=%llu rob=%u flag=%u "
+            "func3=0x%x br_mask=0x%08x\n",
+            n, (unsigned long long)trace.cycle, trace.stq_idx,
+            (unsigned long long)trace.seq, (unsigned)trace.rob_idx,
+            (unsigned)trace.rob_flag, (unsigned)trace.func3,
+            (unsigned)trace.br_mask);
+    }
 }
 
 void RealLsu::consume_stq_alloc_reqs(int &push_count)
@@ -1423,6 +1485,12 @@ void RealLsu::retire_stq_head_if_ready(int &pop_count)
 {
     const int retire_idx = stq_head;
     StqEntry &head = stq[retire_idx];
+    const uint32_t retired_suppress_write = head.suppress_write;
+
+    if (!head.valid)
+    {
+        return;
+    }
 
     if (!head.suppress_write)
     {
@@ -1452,7 +1520,10 @@ void RealLsu::retire_stq_head_if_ready(int &pop_count)
     head.br_mask = 0;
     head.send = false;
     head.replay = 0;
-    head.suppress_write = false;
+    // Keep the suppression tag on an invalid entry until the slot is reused so
+    // commit-time difftest can still recognize a failed SC that intentionally
+    // does not perform a memory write.
+    head.suppress_write = retired_suppress_write;
     stq_trace_seq[retire_idx] = 0;
     stq_cache_wait_replay[retire_idx] = false;
 

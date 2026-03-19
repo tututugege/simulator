@@ -73,7 +73,7 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // Feature Flags (Macros used for conditional compilation)
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-// #define CONFIG_BPU
+#define CONFIG_BPU
 
 
 // ============================================================
@@ -120,7 +120,7 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 // Global debug print switch for ad-hoc debug logs in simulator modules.
 // Set to 1 to enable, 0 to disable.
 #ifndef SIM_DEBUG_PRINT
-#define SIM_DEBUG_PRINT 1
+#define SIM_DEBUG_PRINT 0
 #endif
 
 // Optional cycle window for DBG_PRINTF.
