@@ -1509,7 +1509,7 @@ private:
         }
 
         if (!new_entry_found_j) {
-          for (int i = pcpn + 1; i < TN_MAX; i++) {
+          for (int i = start_search; i < TN_MAX; i++) {
             req.useful_we[i] = true;
             req.useful_wdata[i] = sat_dec_2bit_value(read_vals.useful[i]);
           }
