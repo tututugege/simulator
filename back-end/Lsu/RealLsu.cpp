@@ -348,7 +348,7 @@ void RealLsu::comb_recv()
         {
             if (wait_cycles >= LD_KILLED_GC_CYCLES)
             {
-                DBG_PRINTF("[LSU][KILLED LDQ GC] cyc=%lld ldq=%d rob=%u flag=%u pc=0x%08x paddr=0x%08x inst_idx=%lld wait=%llu\n",
+                LSU_MEM_DBG_PRINTF("[LSU][KILLED LDQ GC] cyc=%lld ldq=%d rob=%u flag=%u pc=0x%08x paddr=0x%08x inst_idx=%lld wait=%llu\n",
                            (long long)sim_time, i, (unsigned)entry.uop.rob_idx,
                            (unsigned)entry.uop.rob_flag, entry.uop.pc,
                            entry.uop.diag_val, (long long)entry.uop.inst_idx,
@@ -371,7 +371,7 @@ void RealLsu::comb_recv()
             {
                 ctx->perf.ld_resp_timeout_retry_count++;
             }
-            DBG_PRINTF("[LSU][LD RESP TIMEOUT] cyc=%lld ldq=%d rob=%u pc=0x%08x paddr=0x%08x wait=%llu -> retry\n",
+            LSU_MEM_DBG_PRINTF("[LSU][LD RESP TIMEOUT] cyc=%lld ldq=%d rob=%u pc=0x%08x paddr=0x%08x wait=%llu -> retry\n",
                        (long long)sim_time, i, (unsigned)entry.uop.rob_idx,
                        entry.uop.pc, entry.uop.diag_val,
                        (unsigned long long)wait_cycles);
@@ -515,7 +515,7 @@ void RealLsu::comb_recv()
             if (mshr_has_free && entry.replay_priority == 1 && replay_type == 0 &&
                 !has_replay)
             {
-                DBG_PRINTF("[LSU] Load replay triggered for LDQ entry %d (ROB idx %u) mshr_replay_count_ldq:%d mshr_replay_count_stq:%d replay_type=%d\n",
+                LSU_MEM_DBG_PRINTF("[LSU] Load replay triggered for LDQ entry %d (ROB idx %u) mshr_replay_count_ldq:%d mshr_replay_count_stq:%d replay_type=%d\n",
                            i, (unsigned)entry.uop.rob_idx, mshr_replay_count_ldq,
                            mshr_replay_count_stq, replay_type);
                 entry.replay_priority = 4;
@@ -539,7 +539,7 @@ void RealLsu::comb_recv()
             if (mshr_has_free && entry.replay == 1 && replay_type == 1 &&
                 !has_replay)
             {
-                DBG_PRINTF("[LSU] Store replay triggered for STQ entry %d (ROB idx %u) mshr_replay_count_ldq:%d mshr_replay_count_stq:%d replay_type=%d\n",
+                LSU_MEM_DBG_PRINTF("[LSU] Store replay triggered for STQ entry %d (ROB idx %u) mshr_replay_count_ldq:%d mshr_replay_count_stq:%d replay_type=%d\n",
                            (stq_head + i) % STQ_SIZE, (unsigned)entry.rob_idx,
                            mshr_replay_count_ldq, mshr_replay_count_stq, replay_type);
                 entry.replay = 0;
@@ -601,7 +601,7 @@ void RealLsu::comb_recv()
                 mmio_req.mmio_wdata = 0; // Load 没有写数据
                 mmio_req.mmio_wstrb = 0;
                 mmio_req.uop = mmio_uop;
-                DBG_PRINTF("[LSU][MMIO][LD ISSUE] cyc=%lld ldq=%d rob=%u paddr=0x%08x func3=0x%x\n",
+                LSU_MEM_DBG_PRINTF("[LSU][MMIO][LD ISSUE] cyc=%lld ldq=%d rob=%u paddr=0x%08x func3=0x%x\n",
                            (long long)sim_time, j, (unsigned)entry.uop.rob_idx,
                            entry.uop.diag_val, (unsigned)entry.uop.func3);
                 mmio_req_used = true;
@@ -692,7 +692,7 @@ void RealLsu::comb_recv()
         {
             continue;
         }
-        // DBG_PRINTF("[STQ SCAN] cyc=%lld stq_head=%d stq_idx=%d addr_valid=%d data_valid=%d committed=%d done=%d send=%d replay=%d addr=0x%08x wdata=0x%08x\n",
+        // LSU_MEM_DBG_PRINTF("[STQ SCAN] cyc=%lld stq_head=%d stq_idx=%d addr_valid=%d data_valid=%d committed=%d done=%d send=%d replay=%d addr=0x%08x wdata=0x%08x\n",
         //             (long long)sim_time, stq_head, stq_idx, entry.addr_valid, entry.data_valid,
         //             entry.committed, entry.done, entry.send, entry.replay, entry.p_addr, entry.data);
         if (entry.done || entry.send || entry.replay)
@@ -700,7 +700,7 @@ void RealLsu::comb_recv()
             continue;
         }
         // for(int j=0;j<LSU_STA_COUNT;j++){
-        //     DBG_PRINTF("[STQ CHECK] cyc=%lld port=%d stq_idx=%d issued_stq_addr[%d]=0x%08x issued_stq_addr_valid[%d]=%d entry.addr=0x%08x\n",
+        //     LSU_MEM_DBG_PRINTF("[STQ CHECK] cyc=%lld port=%d stq_idx=%d issued_stq_addr[%d]=0x%08x issued_stq_addr_valid[%d]=%d entry.addr=0x%08x\n",
         //                 (long long)sim_time, j, stq_idx, j, issued_stq_addr[j], j, issued_stq_addr_valid[j], entry.addr);
         // }
         bool continue_flag = false;
@@ -768,7 +768,7 @@ void RealLsu::comb_recv()
             // MMIO response path uses uop.rob_idx as STQ slot token.
             mmio_req.uop.rob_idx = stq_idx;
             mmio_req.uop.func3 = entry.func3;
-            DBG_PRINTF("[LSU][MMIO][ST ISSUE] cyc=%lld stq=%d rob=%u paddr=0x%08x data=0x%08x func3=0x%x\n",
+            LSU_MEM_DBG_PRINTF("[LSU][MMIO][ST ISSUE] cyc=%lld stq=%d rob=%u paddr=0x%08x data=0x%08x func3=0x%x\n",
                        (long long)sim_time, stq_idx, (unsigned)entry.rob_idx,
                        entry.p_addr, entry.data, (unsigned)entry.func3);
             mmio_req_used = true;
@@ -833,7 +833,7 @@ void RealLsu::comb_load_res()
                         {
                             ctx->perf.ld_resp_stale_drop_count++;
                         }
-                        DBG_PRINTF("[LSU][LD RESP STALE] cyc=%lld port=%d ldq=%d replay=%u resp_inst=%lld cur_inst=%lld resp_flag=%u cur_flag=%u resp_pc=0x%08x cur_pc=0x%08x\n",
+                        LSU_MEM_DBG_PRINTF("[LSU][LD RESP STALE] cyc=%lld port=%d ldq=%d replay=%u resp_inst=%lld cur_inst=%lld resp_flag=%u cur_flag=%u resp_pc=0x%08x cur_pc=0x%08x\n",
                                    (long long)sim_time, i, idx,
                                    (unsigned)in.dcache2lsu->resp_ports.load_resps[i].replay,
                                    (long long)resp_uop.inst_idx,
@@ -943,7 +943,7 @@ void RealLsu::comb_load_res()
                     entry.uop.difftest_skip = peripheral_io.out.uop.difftest_skip;
                     entry.uop.cplt_time = sim_time;
                     entry.uop.is_cache_miss = false; // MMIO 访问不算 Cache Miss
-                    DBG_PRINTF("[LSU][MMIO][LD RESP] cyc=%lld ldq=%d rob=%u data=0x%08x\n",
+                    LSU_MEM_DBG_PRINTF("[LSU][MMIO][LD RESP] cyc=%lld ldq=%d rob=%u data=0x%08x\n",
                                (long long)sim_time, idx, (unsigned)entry.uop.rob_idx,
                                entry.uop.result);
                     if (ctx != nullptr)
@@ -1020,7 +1020,7 @@ void RealLsu::comb_load_res()
                 {
                     ctx->perf.trace_store_on_result(stq_trace_seq[stq_idx], sim_time);
                 }
-                DBG_PRINTF("[LSU][MMIO][ST RESP] cyc=%lld stq=%d rob=%u paddr=0x%08x data=0x%08x\n",
+                LSU_MEM_DBG_PRINTF("[LSU][MMIO][ST RESP] cyc=%lld stq=%d rob=%u paddr=0x%08x data=0x%08x\n",
                            (long long)sim_time, stq_idx, (unsigned)entry.rob_idx,
                            entry.p_addr, entry.data);
             }
@@ -1167,7 +1167,7 @@ void RealLsu::handle_store_data(const MicroOp &inst)
     if (!stq_entry_matches_uop(stq[inst.stq_idx], inst))
     {
         const auto &entry = stq[inst.stq_idx];
-        std::fprintf(
+        LSU_MEM_DBG_FPRINTF(
             stderr,
             "[LSU][STD_MISMATCH] cyc=%lld inst_idx=%lld pc=0x%08x stq_idx=%u "
             "stq_flag=%u rob=%u flag=%u result=0x%08x func3=0x%x\n",
@@ -1175,7 +1175,7 @@ void RealLsu::handle_store_data(const MicroOp &inst)
             (unsigned)inst.stq_idx, (unsigned)inst.stq_flag,
             (unsigned)inst.rob_idx, (unsigned)inst.rob_flag,
             (uint32_t)inst.result, (unsigned)inst.func3);
-        std::fprintf(
+        LSU_MEM_DBG_FPRINTF(
             stderr,
             "[LSU][STD_MISMATCH][STQ %02u] valid=%d addr_v=%d data_v=%d committed=%d "
             "done=%d send=%d replay=%u rob=%u flag=%u func3=0x%x p_addr=0x%08x data=0x%08x\n",
@@ -1251,7 +1251,7 @@ void RealLsu::record_stq_alloc_trace(int stq_idx, uint32_t rob_idx,
 
 void RealLsu::dump_recent_stq_alloc_traces() const
 {
-    std::fprintf(stderr, "[LSU][STQ_ALLOC_TRACE] recent allocations:\n");
+    LSU_MEM_DBG_FPRINTF(stderr, "[LSU][STQ_ALLOC_TRACE] recent allocations:\n");
     for (int n = 0; n < STQ_ALLOC_TRACE_DEPTH; n++)
     {
         const int idx =
@@ -1262,7 +1262,7 @@ void RealLsu::dump_recent_stq_alloc_traces() const
         {
             continue;
         }
-        std::fprintf(
+        LSU_MEM_DBG_FPRINTF(
             stderr,
             "[LSU][STQ_ALLOC_TRACE][%02d] cyc=%llu stq_idx=%d seq=%llu rob=%u flag=%u "
             "func3=0x%x br_mask=0x%08x\n",
@@ -1933,7 +1933,7 @@ void RealLsu::seq()
     {
         const int scan_active = count_active_stq_entries();
         const int scan_committed = count_committed_stq_prefix();
-        std::printf(
+        LSU_MEM_DBG_PRINTF(
             "[LSU][STQ UNDERFLOW PRECHECK] cyc=%lld pop=%d stq_count=%d scan_active=%d scan_committed=%d head=%d commit=%d tail=%d head_flag=%d\n",
             (long long)sim_time, pop_count, stq_count, scan_active,
             scan_committed, stq_head, stq_commit, stq_tail,

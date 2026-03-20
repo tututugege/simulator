@@ -123,6 +123,13 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 #define SIM_DEBUG_PRINT 0
 #endif
 
+// Unified debug print switch for RealLsu + MemSubsystem domain logs.
+// By default it follows SIM_DEBUG_PRINT, but it can be overridden
+// independently when we only want memory/LSU diagnostics.
+#ifndef SIM_LSU_MEM_DEBUG_PRINT
+#define SIM_LSU_MEM_DEBUG_PRINT SIM_DEBUG_PRINT
+#endif
+
 // Optional cycle window for DBG_PRINTF.
 // Effective only when SIM_DEBUG_PRINT == 1.
 // Default is full-range (all cycles).
@@ -132,6 +139,14 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 
 #ifndef SIM_DEBUG_PRINT_CYCLE_END
 #define SIM_DEBUG_PRINT_CYCLE_END 9758088
+#endif
+
+#ifndef SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN
+#define SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN SIM_DEBUG_PRINT_CYCLE_BEGIN
+#endif
+
+#ifndef SIM_LSU_MEM_DEBUG_PRINT_CYCLE_END
+#define SIM_LSU_MEM_DEBUG_PRINT_CYCLE_END SIM_DEBUG_PRINT_CYCLE_END
 #endif
 
 #ifndef CONFIG_DIFF_DEBUG_MEMTRACE_DUMP_COUNT
@@ -165,6 +180,13 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
    (static_cast<unsigned long long>(sim_time) <=                              \
     static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_END)))
 
+#define SIM_LSU_MEM_DEBUG_PRINT_ACTIVE                                        \
+  (SIM_LSU_MEM_DEBUG_PRINT &&                                                 \
+   (static_cast<unsigned long long>(sim_time) >=                              \
+    static_cast<unsigned long long>(SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN)) &&  \
+   (static_cast<unsigned long long>(sim_time) <=                              \
+    static_cast<unsigned long long>(SIM_LSU_MEM_DEBUG_PRINT_CYCLE_END)))
+
 // Lightweight LSU STQ invariant checks.
 // Set to 1 when debugging queue/pointer consistency issues.
 #ifndef LSU_LIGHT_ASSERT
@@ -181,6 +203,20 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
   do {                                                                         \
     if (SIM_DEBUG_PRINT_ACTIVE) {                                              \
       std::printf(fmt, ##__VA_ARGS__);                                         \
+    }                                                                          \
+  } while (0)
+
+#define LSU_MEM_DBG_PRINTF(fmt, ...)                                           \
+  do {                                                                         \
+    if (SIM_LSU_MEM_DEBUG_PRINT_ACTIVE) {                                      \
+      std::printf(fmt, ##__VA_ARGS__);                                         \
+    }                                                                          \
+  } while (0)
+
+#define LSU_MEM_DBG_FPRINTF(stream, fmt, ...)                                  \
+  do {                                                                         \
+    if (SIM_LSU_MEM_DEBUG_PRINT_ACTIVE) {                                      \
+      std::fprintf(stream, fmt, ##__VA_ARGS__);                                \
     }                                                                          \
   } while (0)
 

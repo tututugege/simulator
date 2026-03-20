@@ -190,7 +190,7 @@ bool MemSubsystem::ptw_mem_send_read_req(PtwClient client, uint32_t paddr) {
                      static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB) +
                          static_cast<uint8_t>(ptw_client_idx(client)),
                      paddr, 0, static_cast<uint8_t>(!fire));
-  DBG_PRINTF("[MEM][PTW][MEM REQ] cyc=%lld client=%s fire=%d paddr=0x%08x\n",
+  LSU_MEM_DBG_PRINTF("[MEM][PTW][MEM REQ] cyc=%lld client=%s fire=%d paddr=0x%08x\n",
              (long long)sim_time, ptw_client_name(block_client),
              static_cast<int>(fire), paddr);
   refresh_ptw_client_outputs();
@@ -218,7 +218,7 @@ bool MemSubsystem::ptw_walk_send_req(PtwClient client, const PtwWalkReq &req) {
                          static_cast<uint8_t>(ptw_client_idx(client)),
                      req.vaddr, req.satp, static_cast<uint8_t>(!fire),
                      req.access_type);
-  DBG_PRINTF(
+  LSU_MEM_DBG_PRINTF(
       "[MEM][PTW][WALK REQ] cyc=%lld client=%s fire=%d vaddr=0x%08x satp=0x%08x type=%u\n",
       (long long)sim_time, ptw_client_name(block_client), static_cast<int>(fire),
       req.vaddr, req.satp, req.access_type);
@@ -343,7 +343,7 @@ void MemSubsystem::init() {
   static bool printed_axi_cfg = false;
   if (!printed_axi_cfg) {
     printed_axi_cfg = true;
-    std::printf(
+    LSU_MEM_DBG_PRINTF(
         "[MEM][AXI CFG] protocol=%d dcache_line_bytes=%u dcache_line_words=%u "
         "axi_up_write_words=%u axi_up_read_words=%u\n",
         CONFIG_AXI_PROTOCOL, static_cast<unsigned>(DCACHE_LINE_BYTES),
@@ -351,7 +351,7 @@ void MemSubsystem::init() {
         static_cast<unsigned>(axi_interconnect::CACHELINE_WORDS),
         static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_WORDS));
     if (DCACHE_LINE_WORDS > axi_interconnect::CACHELINE_WORDS) {
-      std::printf(
+      LSU_MEM_DBG_PRINTF(
           "[MEM][AXI CFG][WARN] dcache line (%u words) is wider than AXI upstream "
           "write payload (%u words). High words may be dropped in bridge path.\n",
           static_cast<unsigned>(DCACHE_LINE_WORDS),

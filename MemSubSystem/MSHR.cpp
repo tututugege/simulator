@@ -129,7 +129,7 @@ int MSHR::entries_add(int set_idx, int tag)
     miss_alloc_cycle_valid[alloc_idx] = true;
     axi_issue_cycle[alloc_idx] = 0;
     axi_issue_cycle_valid[alloc_idx] = false;
-    DBG_PRINTF("[MSHR ALLOC] cyc=%lld idx=%d line=0x%08x count=%u\n",
+    LSU_MEM_DBG_PRINTF("[MSHR ALLOC] cyc=%lld idx=%d line=0x%08x count=%u\n",
                (long long)sim_time, alloc_idx,
                get_addr(set_idx, tag, 0), nxt.mshr_count);
     return alloc_idx;
@@ -178,7 +178,7 @@ void MSHR::comb_inputs()
                 bool can_consume_resp = (!need_wb_evict) || in.wbmshr.ready;
                 if (!can_consume_resp)
                 {
-                    DBG_PRINTF("[MSHR RESP HOLD] cyc=%lld resp_id=%u line=0x%08x need_wb=%d wb_ready=%d wb_count=%u\n",
+                    LSU_MEM_DBG_PRINTF("[MSHR RESP HOLD] cyc=%lld resp_id=%u line=0x%08x need_wb=%d wb_ready=%d wb_count=%u\n",
                                (long long)sim_time, (unsigned)resp_id,
                                get_addr(mshr_entries[resp_id].index, mshr_entries[resp_id].tag, 0),
                                (int)need_wb_evict, (int)in.wbmshr.ready, cur.mshr_count);
@@ -219,7 +219,7 @@ void MSHR::comb_inputs()
                             }
                             apply_strobe(nxt.wb_data[u.word_off], u.data, u.strb);
                         }
-                        DBG_PRINTF("[MSHR WB] cyc=%lld resp_id=%u evict_line=0x%08x set=%u way=%u data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
+                        LSU_MEM_DBG_PRINTF("[MSHR WB] cyc=%lld resp_id=%u evict_line=0x%08x set=%u way=%u data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
                                    (long long)sim_time, (unsigned)resp_id,
                                    nxt.wb_addr, mshr_entries[resp_id].index, lru_idx,
                                    nxt.wb_data[0], nxt.wb_data[1], nxt.wb_data[2], nxt.wb_data[3],
@@ -251,7 +251,7 @@ void MSHR::comb_inputs()
                         nxt.fill_data[w] = in.axi_in.resp_data[w];
                     }
 
-                    DBG_PRINTF("[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
+                    LSU_MEM_DBG_PRINTF("[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
                                (long long)sim_time, (unsigned)resp_id,
                                fill_line_addr, mshr_entries[resp_id].index, lru_idx, (int)need_wb_evict,
                                nxt.fill_data[0], nxt.fill_data[1], nxt.fill_data[2], nxt.fill_data[3],
@@ -280,7 +280,7 @@ void MSHR::comb_inputs()
                         }
                         if (read_mismatch)
                         {
-                            DBG_PRINTF("[AXI READ MISMATCH] cyc=%lld resp_id=%u line=0x%08x word=%d axi=0x%08x mem=0x%08x\n",
+                            LSU_MEM_DBG_PRINTF("[AXI READ MISMATCH] cyc=%lld resp_id=%u line=0x%08x word=%d axi=0x%08x mem=0x%08x\n",
                                    (long long)sim_time, (unsigned)resp_id, line_addr,
                                    first_bad, axi_word, mem_word);
                             Assert(false && "MSHR AXI read mismatch: backing memory does not match the data returned on the AXI read channel. This likely indicates a bug in the MSHR logic, the AXI interface handling, or the memory model.");

@@ -94,9 +94,11 @@ bool handle_pending_sigint() {
     return false;
   }
 
+#if SIM_LSU_MEM_DEBUG_PRINT
   std::cout << "[sim] SIGINT observed at cycle " << std::dec << sim_time
             << ", printing debug dump." << std::endl;
   deadlock_debug::dump_all();
+#endif
   cpu.ctx.perf.perf_print();
   return true;
 }

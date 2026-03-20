@@ -196,8 +196,10 @@ fault:
   std::printf("[DIFF] p_memory@a5(0x%08x)=0x%08x ref=0x%08x\n", dut_cpu.gpr[15],
               p_memory[dut_cpu.gpr[15] >> 2], ref_cpu.memory[dut_cpu.gpr[15] >> 2]);
   dump_code_line_snapshot("commit_pc", dut_cpu.commit_pc);
+#if SIM_LSU_MEM_DEBUG_PRINT
   dump_inst_related_snapshot(dut_cpu.instruction);
   diff_mem_trace::dump_recent();
+#endif
   dump_mem_subsystem_snapshot();
 
   Assert(0 && "Difftest: Register or Memory mismatch detected.");
