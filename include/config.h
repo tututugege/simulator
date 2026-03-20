@@ -134,9 +134,55 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 #endif
 
 // AXI protocol flavor for the dedicated icache memory path.
-// 4 = AXI4 path, 3 = AXI3 path.
+// Current axi-interconnect-kit integration supports AXI4 only.
 #ifndef CONFIG_AXI_PROTOCOL
 #define CONFIG_AXI_PROTOCOL 4
+#endif
+
+// Enable the shared AXI LLC path.
+// Keep this disabled by default until the fresh-main integration is validated.
+#ifndef CONFIG_AXI_LLC_ENABLE
+#define CONFIG_AXI_LLC_ENABLE 0
+#endif
+
+#ifndef CONFIG_AXI_LLC_SIZE_BYTES
+#define CONFIG_AXI_LLC_SIZE_BYTES (8ull << 20)
+#endif
+
+#ifndef CONFIG_AXI_LLC_LINE_BYTES
+#define CONFIG_AXI_LLC_LINE_BYTES 64u
+#endif
+
+#ifndef CONFIG_AXI_LLC_WAYS
+#define CONFIG_AXI_LLC_WAYS 16u
+#endif
+
+#ifndef CONFIG_AXI_LLC_MSHR_NUM
+#define CONFIG_AXI_LLC_MSHR_NUM 4u
+#endif
+
+#ifndef CONFIG_AXI_LLC_LOOKUP_LATENCY
+#define CONFIG_AXI_LLC_LOOKUP_LATENCY 8u
+#endif
+
+#ifndef CONFIG_AXI_LLC_PREFETCH_ENABLE
+#define CONFIG_AXI_LLC_PREFETCH_ENABLE 0
+#endif
+
+#ifndef CONFIG_AXI_LLC_PREFETCH_DEGREE
+#define CONFIG_AXI_LLC_PREFETCH_DEGREE 1u
+#endif
+
+#ifndef CONFIG_AXI_LLC_NINE
+#define CONFIG_AXI_LLC_NINE 1
+#endif
+
+#ifndef CONFIG_AXI_LLC_UNIFIED
+#define CONFIG_AXI_LLC_UNIFIED 1
+#endif
+
+#ifndef CONFIG_AXI_LLC_PIPT
+#define CONFIG_AXI_LLC_PIPT 1
 #endif
 
 constexpr int ICACHE_WAY_NUM = 8;

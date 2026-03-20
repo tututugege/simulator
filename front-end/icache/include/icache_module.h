@@ -172,6 +172,7 @@ struct ICache_in_t {
 
   // Input from memory
   wire<1> mem_req_ready = false;
+  wire<1> mem_req_accepted = false;
   wire<1> mem_resp_valid = false;
   // For compatibility with ICacheV2 top-level wiring (ignored by V1).
   wire<4> mem_resp_id = 0;

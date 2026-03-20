@@ -17,6 +17,10 @@ class MemSubsystemPtwWalkPortAdapter;
 struct AxiKitRuntime;
 namespace axi_interconnect {
 struct ReadMasterPort_t;
+struct AXI_LLCConfig;
+struct AXI_LLC_LookupIn_t;
+struct AXI_LLC_TableOut_t;
+struct AXI_LLCPerfCounters_t;
 }
 
 class MemSubsystem {
@@ -49,6 +53,11 @@ public:
   void seq();
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   axi_interconnect::ReadMasterPort_t *icache_read_port();
+  void set_llc_config(const axi_interconnect::AXI_LLCConfig &cfg);
+  void llc_comb_outputs();
+  const axi_interconnect::AXI_LLC_LookupIn_t &llc_lookup_in() const;
+  void llc_seq(const axi_interconnect::AXI_LLC_TableOut_t &table_out,
+               const axi_interconnect::AXI_LLCPerfCounters_t &perf);
 
 private:
   SimContext *ctx;
@@ -92,4 +101,30 @@ private:
   std::unique_ptr<PtwMemPort> itlb_ptw_port_inst;
   std::unique_ptr<PtwWalkPort> dtlb_walk_port_inst;
   std::unique_ptr<PtwWalkPort> itlb_walk_port_inst;
+
+  struct LlcPerfShadow {
+    uint64_t read_access = 0;
+    uint64_t read_hit = 0;
+    uint64_t read_miss = 0;
+    uint64_t read_access_icache = 0;
+    uint64_t read_hit_icache = 0;
+    uint64_t read_miss_icache = 0;
+    uint64_t read_access_dcache = 0;
+    uint64_t read_hit_dcache = 0;
+    uint64_t read_miss_dcache = 0;
+    uint64_t bypass_read = 0;
+    uint64_t write_passthrough = 0;
+    uint64_t refill = 0;
+    uint64_t mshr_alloc = 0;
+    uint64_t mshr_merge = 0;
+    uint64_t prefetch_issue = 0;
+    uint64_t prefetch_hit = 0;
+    uint64_t prefetch_drop_inflight = 0;
+    uint64_t prefetch_drop_mshr_full = 0;
+    uint64_t prefetch_drop_queue_full = 0;
+    uint64_t prefetch_drop_table_hit = 0;
+  };
+  void sync_llc_perf();
+  LlcPerfShadow llc_perf_shadow_{};
+  bool llc_perf_shadow_valid_ = false;
 };
