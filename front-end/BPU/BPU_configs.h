@@ -165,12 +165,12 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "BTB_ENTRY_NUM must be power of two and > 0"
 #endif
 
-#if BTB_ENTRY_NUM != (1 << 9)
-#error "BTB_ENTRY_NUM must remain 512 with current btb_idx_t/BTB_IDX_LEN typing"
+#if BTB_ENTRY_NUM > (1 << 16)
+#error "BTB_ENTRY_NUM too large for current wire_for_bits_t coverage"
 #endif
 
-#if BTB_TAG_LEN <= 0 || BTB_TAG_LEN > 8
-#error "BTB_TAG_LEN must be in [1, 8] with current btb_tag_t typing"
+#if BTB_TAG_LEN <= 0 || BTB_TAG_LEN > 16
+#error "BTB_TAG_LEN must be in [1, 16] with current btb_tag_t typing"
 #endif
 
 #if BTB_WAY_NUM <= 0
@@ -237,7 +237,6 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "INDIRECT_TC_INIT_USEFUL must be in [0, 7]"
 #endif
 
-#define BTB_IDX_LEN     9     // log2(512)
 #define BTB_IDX_MASK    (BTB_ENTRY_NUM - 1)
 #define BTB_TAG_MASK    ((1 << BTB_TAG_LEN) - 1)
 #define BTB_TYPE_IDX_MASK (BTB_TYPE_ENTRY_NUM - 1)

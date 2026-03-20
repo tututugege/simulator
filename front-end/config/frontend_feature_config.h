@@ -47,7 +47,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define TYPE_PRED_AGE_BITS 2
 #endif
 #ifndef Q_DEPTH
-#define Q_DEPTH 5000 // UQ depth
+#define Q_DEPTH 500 // UQ depth
 #endif
 
 // TAGE configs
@@ -178,7 +178,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 
 // BTB configs
 #ifndef BTB_ENTRY_NUM
-#define BTB_ENTRY_NUM 512
+#define BTB_ENTRY_NUM 1024
 #endif
 #ifndef ENABLE_BTB_ALIAS_HASH
 #define ENABLE_BTB_ALIAS_HASH 1

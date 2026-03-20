@@ -144,10 +144,10 @@ static constexpr int tage_tag_t_BITS = TAGE_TAG_WIDTH;
 using tage_idx_t = wire12_t;
 static constexpr int tage_idx_t_BITS = TAGE_IDX_WIDTH;
 
-using btb_tag_t = wire8_t;
+using btb_tag_t = wire_for_bits_t<BTB_TAG_LEN>;
 static constexpr int btb_tag_t_BITS = BTB_TAG_LEN;
-using btb_idx_t = wire9_t;
-static constexpr int btb_idx_t_BITS = BTB_IDX_LEN;
+using btb_idx_t = wire_for_bits_t<ceil_log2_u32(BTB_ENTRY_NUM)>;
+static constexpr int btb_idx_t_BITS = ceil_log2_u32(BTB_ENTRY_NUM);
 using btb_type_idx_t = wire12_t;
 static constexpr int btb_type_idx_t_BITS = ceil_log2_u32(BTB_TYPE_ENTRY_NUM);
 using bht_idx_t = wire11_t;
