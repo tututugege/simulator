@@ -213,82 +213,82 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
         is_amo_sc_inst(*inst) && e.suppress_write &&
         e.rob_idx == inst->rob_idx && e.rob_flag == inst->rob_flag;
     if (sc_suppressed) {
-      if (!(e.addr_valid && e.data_valid)) {
-        std::fprintf(
-            stderr,
-            "[DIFFTEST][SC_SUPPRESSED] cyc=%lld inst_idx=%lld pc=0x%08x "
-            "inst=0x%08x rob=%u flag=%u stq_idx=%u stq_flag=%u stq_valid=%d\n",
-            (long long)sim_time, (long long)inst->inst_idx, (uint32_t)inst->pc,
-            (uint32_t)inst->instruction, (unsigned)inst->rob_idx,
-            (unsigned)inst->rob_flag, (unsigned)inst->stq_idx,
-            (unsigned)inst->stq_flag, (int)e.valid);
-        std::fflush(stderr);
-      }
+      // if (!(e.addr_valid && e.data_valid)) {
+      //   std::fprintf(
+      //       stderr,
+      //       "[DIFFTEST][SC_SUPPRESSED] cyc=%lld inst_idx=%lld pc=0x%08x "
+      //       "inst=0x%08x rob=%u flag=%u stq_idx=%u stq_flag=%u stq_valid=%d\n",
+      //       (long long)sim_time, (long long)inst->inst_idx, (uint32_t)inst->pc,
+      //       (uint32_t)inst->instruction, (unsigned)inst->rob_idx,
+      //       (unsigned)inst->rob_flag, (unsigned)inst->stq_idx,
+      //       (unsigned)inst->stq_flag, (int)e.valid);
+      //   std::fflush(stderr);
+      // }
       dut_cpu.store = false;
     } else {
       if (!(e.addr_valid && e.data_valid)) {
         const auto &rb = *back->rob->out.rob_bcast;
-        std::fprintf(
-            stderr,
-            "[DIFFTEST][STORE_NOT_READY] cyc=%lld inst_idx=%lld pc=0x%08x inst=0x%08x "
-            "type=%u rob=%u flag=%u stq_idx=%u stq_flag=%u uop_num=%u cplt_num=%u "
-            "pf_s=%d pf_l=%d pf_i=%d mispred=%d flush_pipe=%d diff_skip=%d "
-            "missing_addr=%d missing_data=%d\n",
-            (long long)sim_time, (long long)inst->inst_idx, (uint32_t)inst->pc,
-            (uint32_t)inst->instruction, (unsigned)inst->type,
-            (unsigned)inst->rob_idx, (unsigned)inst->rob_flag,
-            (unsigned)inst->stq_idx, (unsigned)inst->stq_flag,
-            (unsigned)inst->uop_num, (unsigned)inst->cplt_num,
-            (int)inst->page_fault_store, (int)inst->page_fault_load,
-            (int)inst->page_fault_inst, (int)inst->mispred,
-            (int)inst->flush_pipe, (int)inst->difftest_skip,
-            (int)!e.addr_valid, (int)!e.data_valid);
-        std::fprintf(
-            stderr,
-            "[DIFFTEST][STORE_NOT_READY][STQ] valid=%d addr_v=%d data_v=%d "
-            "committed=%d done=%d send=%d replay=%u suppress=%u is_mmio=%d "
-            "rob=%u flag=%u func3=0x%x addr=0x%08x p_addr=0x%08x data=0x%08x br_mask=0x%08x\n",
-            (int)e.valid, (int)e.addr_valid, (int)e.data_valid,
-            (int)e.committed, (int)e.done, (int)e.send, (unsigned)e.replay,
-            (unsigned)e.suppress_write, (int)e.is_mmio, (unsigned)e.rob_idx,
-            (unsigned)e.rob_flag, (unsigned)e.func3, (uint32_t)e.addr,
-            (uint32_t)e.p_addr, (uint32_t)e.data, (uint32_t)e.br_mask);
-        std::fprintf(
-            stderr,
-            "[DIFFTEST][STORE_NOT_READY][ROB_BCAST] flush=%d interrupt=%d exception=%d "
-            "mispred=%d head_valid=%d head_rob=%u head_incomplete_valid=%d "
-            "head_incomplete_rob=%u trap=0x%08x\n",
-            (int)rb.flush, (int)rb.interrupt, (int)rb.exception,
-            (int)back->out.mispred, (int)rb.head_valid,
-            (unsigned)rb.head_rob_idx, (int)rb.head_incomplete_valid,
-            (unsigned)rb.head_incomplete_rob_idx, (uint32_t)rb.trap_val);
+        // std::fprintf(
+        //     stderr,
+        //     "[DIFFTEST][STORE_NOT_READY] cyc=%lld inst_idx=%lld pc=0x%08x inst=0x%08x "
+        //     "type=%u rob=%u flag=%u stq_idx=%u stq_flag=%u uop_num=%u cplt_num=%u "
+        //     "pf_s=%d pf_l=%d pf_i=%d mispred=%d flush_pipe=%d diff_skip=%d "
+        //     "missing_addr=%d missing_data=%d\n",
+        //     (long long)sim_time, (long long)inst->inst_idx, (uint32_t)inst->pc,
+        //     (uint32_t)inst->instruction, (unsigned)inst->type,
+        //     (unsigned)inst->rob_idx, (unsigned)inst->rob_flag,
+        //     (unsigned)inst->stq_idx, (unsigned)inst->stq_flag,
+        //     (unsigned)inst->uop_num, (unsigned)inst->cplt_num,
+        //     (int)inst->page_fault_store, (int)inst->page_fault_load,
+        //     (int)inst->page_fault_inst, (int)inst->mispred,
+        //     (int)inst->flush_pipe, (int)inst->difftest_skip,
+        //     (int)!e.addr_valid, (int)!e.data_valid);
+        // std::fprintf(
+        //     stderr,
+        //     "[DIFFTEST][STORE_NOT_READY][STQ] valid=%d addr_v=%d data_v=%d "
+        //     "committed=%d done=%d send=%d replay=%u suppress=%u is_mmio=%d "
+        //     "rob=%u flag=%u func3=0x%x addr=0x%08x p_addr=0x%08x data=0x%08x br_mask=0x%08x\n",
+        //     (int)e.valid, (int)e.addr_valid, (int)e.data_valid,
+        //     (int)e.committed, (int)e.done, (int)e.send, (unsigned)e.replay,
+        //     (unsigned)e.suppress_write, (int)e.is_mmio, (unsigned)e.rob_idx,
+        //     (unsigned)e.rob_flag, (unsigned)e.func3, (uint32_t)e.addr,
+        //     (uint32_t)e.p_addr, (uint32_t)e.data, (uint32_t)e.br_mask);
+        // std::fprintf(
+        //     stderr,
+        //     "[DIFFTEST][STORE_NOT_READY][ROB_BCAST] flush=%d interrupt=%d exception=%d "
+        //     "mispred=%d head_valid=%d head_rob=%u head_incomplete_valid=%d "
+        //     "head_incomplete_rob=%u trap=0x%08x\n",
+        //     (int)rb.flush, (int)rb.interrupt, (int)rb.exception,
+        //     (int)back->out.mispred, (int)rb.head_valid,
+        //     (unsigned)rb.head_rob_idx, (int)rb.head_incomplete_valid,
+        //     (unsigned)rb.head_incomplete_rob_idx, (uint32_t)rb.trap_val);
         for (int i = 0; i < COMMIT_WIDTH; i++) {
           const auto &ce = back->out.commit_entry[i];
           if (!ce.valid) {
             continue;
           }
           const auto &cu = ce.uop;
-          std::fprintf(
-              stderr,
-              "[DIFFTEST][STORE_NOT_READY][COMMIT_SLOT %d] pc=0x%08x inst=0x%08x "
-              "type=%u rob=%u flag=%u stq=%u stqf=%u uop_num=%u cplt_num=%u "
-              "pf_s=%d pf_l=%d pf_i=%d\n",
-              i, (uint32_t)cu.pc, (uint32_t)cu.instruction, (unsigned)cu.type,
-              (unsigned)cu.rob_idx, (unsigned)cu.rob_flag,
-              (unsigned)cu.stq_idx, (unsigned)cu.stq_flag,
-              (unsigned)cu.uop_num, (unsigned)cu.cplt_num,
-              (int)cu.page_fault_store, (int)cu.page_fault_load,
-              (int)cu.page_fault_inst);
+          // std::fprintf(
+          //     stderr,
+          //     "[DIFFTEST][STORE_NOT_READY][COMMIT_SLOT %d] pc=0x%08x inst=0x%08x "
+          //     "type=%u rob=%u flag=%u stq=%u stqf=%u uop_num=%u cplt_num=%u "
+          //     "pf_s=%d pf_l=%d pf_i=%d\n",
+          //     i, (uint32_t)cu.pc, (uint32_t)cu.instruction, (unsigned)cu.type,
+          //     (unsigned)cu.rob_idx, (unsigned)cu.rob_flag,
+          //     (unsigned)cu.stq_idx, (unsigned)cu.stq_flag,
+          //     (unsigned)cu.uop_num, (unsigned)cu.cplt_num,
+          //     (int)cu.page_fault_store, (int)cu.page_fault_load,
+          //     (int)cu.page_fault_inst);
         }
-        std::fprintf(
-            stderr,
-            "[DIFFTEST][STORE_NOT_READY] has_committed_store_pending=%d\n",
-            (int)back->lsu->has_committed_store_pending());
-        std::fflush(stderr);
-        std::fflush(stdout);
-        deadlock_debug::dump_all();
-        std::fflush(stderr);
-        std::fflush(stdout);
+        // std::fprintf(
+        //     stderr,
+        //     "[DIFFTEST][STORE_NOT_READY] has_committed_store_pending=%d\n",
+        //     (int)back->lsu->has_committed_store_pending());
+        // std::fflush(stderr);
+        // std::fflush(stdout);
+        // deadlock_debug::dump_all();
+        // std::fflush(stderr);
+        // std::fflush(stdout);
       }
       Assert(e.addr_valid && e.data_valid);
       dut_cpu.store = true;
