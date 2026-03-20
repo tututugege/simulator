@@ -3,20 +3,105 @@
 
 #include "../config/frontend_feature_config.h"
 
+static_assert(BPU_BANK_NUM >= FETCH_WIDTH,
+              "BPU_BANK_NUM must be >= FETCH_WIDTH");
+static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
+              "BPU_BANK_NUM must be >= COMMIT_WIDTH");
+
+#if TN_MAX != 4
+#error "TN_MAX is fixed to 4 by design; do not change TAGE history level count"
+#endif
+
+#if BPU_BANK_NUM <= 0
+#error "BPU_BANK_NUM must be > 0"
+#endif
+
+#if BPU_TYPE_ENTRY_NUM <= 0 || (BPU_TYPE_ENTRY_NUM & (BPU_TYPE_ENTRY_NUM - 1)) != 0
+#error "BPU_TYPE_ENTRY_NUM must be power of two and > 0"
+#endif
+
+#if BPU_TYPE_ENTRY_NUM > (1 << 16)
+#error "BPU_TYPE_ENTRY_NUM too large for current wire_for_bits_t coverage"
+#endif
+
+#if BASE_ENTRY_NUM <= 0 || (BASE_ENTRY_NUM & (BASE_ENTRY_NUM - 1)) != 0
+#error "BASE_ENTRY_NUM must be power of two and > 0"
+#endif
+
+#if TN_ENTRY_NUM <= 0 || (TN_ENTRY_NUM & (TN_ENTRY_NUM - 1)) != 0
+#error "TN_ENTRY_NUM must be power of two and > 0"
+#endif
+
+#if (1 << TAGE_BASE_IDX_WIDTH) != BASE_ENTRY_NUM
+#error "TAGE_BASE_IDX_WIDTH must match BASE_ENTRY_NUM"
+#endif
+
+#if (1 << TAGE_IDX_WIDTH) != TN_ENTRY_NUM
+#error "TAGE_IDX_WIDTH must match TN_ENTRY_NUM"
+#endif
+
+#if TAGE_BASE_IDX_WIDTH <= 0 || TAGE_BASE_IDX_WIDTH > 16
+#error "TAGE_BASE_IDX_WIDTH must be in [1, 16]"
+#endif
+
+#if TAGE_IDX_WIDTH <= 0 || TAGE_IDX_WIDTH > 12
+#error "TAGE_IDX_WIDTH must be in [1, 12] with current tage_idx_t typing"
+#endif
+
+#if TAGE_TAG_WIDTH <= 0 || TAGE_TAG_WIDTH > 8
+#error "TAGE_TAG_WIDTH must be in [1, 8] with current tage_tag_t typing"
+#endif
+
+#if GHR_LENGTH <= 0
+#error "GHR_LENGTH must be > 0"
+#endif
+
 #define BPU_TYPE_IDX_MASK (BPU_TYPE_ENTRY_NUM - 1)
 
 #if TYPE_PRED_WAY_NUM <= 0
 #error "TYPE_PRED_WAY_NUM must be > 0"
 #endif
 
+#if TYPE_PRED_WAY_NUM < 2
+#error "TYPE_PRED_WAY_NUM must be >= 2 with current way-index typing assumptions"
+#endif
+
+#if TYPE_PRED_WAY_NUM > (1 << 16)
+#error "TYPE_PRED_WAY_NUM too large for current wire_for_bits_t coverage"
+#endif
+
 #if (TYPE_PRED_ENTRY_NUM % TYPE_PRED_WAY_NUM) != 0
 #error "TYPE_PRED_ENTRY_NUM must be divisible by TYPE_PRED_WAY_NUM"
+#endif
+
+#if TYPE_PRED_ENTRY_NUM <= 0 || (TYPE_PRED_ENTRY_NUM & (TYPE_PRED_ENTRY_NUM - 1)) != 0
+#error "TYPE_PRED_ENTRY_NUM must be power of two and > 0"
 #endif
 
 #define TYPE_PRED_SET_NUM (TYPE_PRED_ENTRY_NUM / TYPE_PRED_WAY_NUM)
 
 #if (TYPE_PRED_SET_NUM & (TYPE_PRED_SET_NUM - 1)) != 0
 #error "TYPE_PRED_SET_NUM must be power of two"
+#endif
+
+#if TYPE_PRED_SET_NUM < 2
+#error "TYPE_PRED_SET_NUM must be >= 2 with current set-index typing assumptions"
+#endif
+
+#if TYPE_PRED_SET_NUM > (1 << 16)
+#error "TYPE_PRED_SET_NUM too large for current wire_for_bits_t coverage"
+#endif
+
+#if TYPE_PRED_TAG_WIDTH <= 0 || TYPE_PRED_TAG_WIDTH > 16
+#error "TYPE_PRED_TAG_WIDTH must be in [1, 16] with current wire_for_bits_t coverage"
+#endif
+
+#if TYPE_PRED_CONF_BITS <= 0 || TYPE_PRED_CONF_BITS > 8
+#error "TYPE_PRED_CONF_BITS must be in [1, 8]"
+#endif
+
+#if TYPE_PRED_AGE_BITS <= 0 || TYPE_PRED_AGE_BITS > 8
+#error "TYPE_PRED_AGE_BITS must be in [1, 8]"
 #endif
 
 #define TYPE_PRED_SET_MASK (TYPE_PRED_SET_NUM - 1)
@@ -27,10 +112,19 @@
 #if (TAGE_SC_ENTRY_NUM & (TAGE_SC_ENTRY_NUM - 1)) != 0
 #error "TAGE_SC_ENTRY_NUM must be power of two"
 #endif
+
+#if TAGE_SC_ENTRY_NUM <= 0
+#error "TAGE_SC_ENTRY_NUM must be > 0"
+#endif
+
 #define TAGE_SC_IDX_MASK (TAGE_SC_ENTRY_NUM - 1)
 
 #if (TAGE_SC_L_ENTRY_NUM & (TAGE_SC_L_ENTRY_NUM - 1)) != 0
 #error "TAGE_SC_L_ENTRY_NUM must be power of two"
+#endif
+
+#if TAGE_SC_L_ENTRY_NUM <= 0
+#error "TAGE_SC_L_ENTRY_NUM must be > 0"
 #endif
 
 #if TAGE_SC_L_CTR_BITS <= 1 || TAGE_SC_L_CTR_BITS > 8
@@ -67,16 +161,72 @@
 #error "TAGE_LOOP_ITER_BITS must be in [1, 16]"
 #endif
 
+#if BTB_ENTRY_NUM <= 0 || (BTB_ENTRY_NUM & (BTB_ENTRY_NUM - 1)) != 0
+#error "BTB_ENTRY_NUM must be power of two and > 0"
+#endif
+
+#if BTB_ENTRY_NUM != (1 << 9)
+#error "BTB_ENTRY_NUM must remain 512 with current btb_idx_t/BTB_IDX_LEN typing"
+#endif
+
+#if BTB_TAG_LEN <= 0 || BTB_TAG_LEN > 8
+#error "BTB_TAG_LEN must be in [1, 8] with current btb_tag_t typing"
+#endif
+
+#if BTB_WAY_NUM <= 0
+#error "BTB_WAY_NUM must be > 0"
+#endif
+
+#if BTB_WAY_NUM < 2
+#error "BTB_WAY_NUM must be >= 2 with current way-index typing assumptions"
+#endif
+
+#if BTB_WAY_NUM > (1 << 16)
+#error "BTB_WAY_NUM too large for current wire_for_bits_t coverage"
+#endif
+
+#if BTB_TYPE_ENTRY_NUM <= 0 || (BTB_TYPE_ENTRY_NUM & (BTB_TYPE_ENTRY_NUM - 1)) != 0
+#error "BTB_TYPE_ENTRY_NUM must be power of two and > 0"
+#endif
+
+#if BTB_TYPE_ENTRY_NUM > (1 << 12)
+#error "BTB_TYPE_ENTRY_NUM too large for current btb_type_idx_t typing"
+#endif
+
+#if BHT_ENTRY_NUM <= 0 || (BHT_ENTRY_NUM & (BHT_ENTRY_NUM - 1)) != 0
+#error "BHT_ENTRY_NUM must be power of two and > 0"
+#endif
+
+#if BHT_ENTRY_NUM > (1 << 11)
+#error "BHT_ENTRY_NUM too large for current bht_idx_t/bht_hist_t typing"
+#endif
+
+#if TC_ENTRY_NUM <= 0 || (TC_ENTRY_NUM & (TC_ENTRY_NUM - 1)) != 0
+#error "TC_ENTRY_NUM must be power of two and > 0"
+#endif
+
+#if TC_ENTRY_NUM > (1 << 11)
+#error "TC_ENTRY_NUM too large for current tc_idx_t typing"
+#endif
+
 #define TAGE_TAG_MASK ((1 << TAGE_TAG_WIDTH) - 1)
 #define TAGE_IDX_MASK ((1 << TAGE_IDX_WIDTH) - 1)
 #define TAGE_BASE_IDX_MASK ((1 << TAGE_BASE_IDX_WIDTH) - 1)
 
-#if TC_TAG_LEN <= 0 || TC_TAG_LEN > 31
-#error "TC_TAG_LEN must be in [1, 31]"
+#if TC_TAG_LEN <= 0 || TC_TAG_LEN > 16
+#error "TC_TAG_LEN must be in [1, 16] with current wire_for_bits_t coverage"
 #endif
 
 #if TC_WAY_NUM <= 0
 #error "TC_WAY_NUM must be > 0"
+#endif
+
+#if TC_WAY_NUM < 2
+#error "TC_WAY_NUM must be >= 2 with current way-index typing assumptions"
+#endif
+
+#if TC_WAY_NUM > (1 << 16)
+#error "TC_WAY_NUM too large for current wire_for_bits_t coverage"
 #endif
 
 #if INDIRECT_BTB_INIT_USEFUL < 0 || INDIRECT_BTB_INIT_USEFUL > 7
