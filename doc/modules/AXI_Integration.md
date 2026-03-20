@@ -37,9 +37,9 @@ graph TD;
    #define CONFIG_ICACHE_USE_AXI_MEM_PORT 0
    ```
 
-2. **选择 AXI 协议标准**
+2. **AXI 协议标准**
    ```cpp
-   // 支持 AXI4 (4，默认推荐) 或 AXI3 (3，为了向后兼容)
+   // 当前仅支持 AXI4
    #define CONFIG_AXI_PROTOCOL 4
    ```
 

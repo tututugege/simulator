@@ -8,16 +8,22 @@ IMG     := ./baremetal/memory
 AXI_KIT_DIR := ./axi-interconnect-kit
 
 # Compiler & Flags
-CXX      := g++
+CXX      ?= g++
 CXXFLAGS := -O3 -march=native -funroll-loops -mtune=native
 CXXFLAGS += -MMD -MP 
 CXXFLAGS += -Wall -Wextra -Wno-unused-parameter
 CXXFLAGS += --std=c++20
 CXXFLAGS += $(EXTRA_CXXFLAGS)
+ZLIB_CFLAGS := $(shell pkg-config --silence-errors --cflags zlib)
+ZLIB_LIBDIR := $(shell pkg-config --silence-errors --variable=libdir zlib)
+CXXFLAGS += $(ZLIB_CFLAGS)
 
 # Libraries
 LIBS := ./libs/softfloat.a
 LDFLAGS := -lz -lstdc++fs
+ifneq ($(ZLIB_LIBDIR),)
+LDFLAGS := -L$(ZLIB_LIBDIR) $(LDFLAGS)
+endif
 
 # Debug Flags (Use 'make DEBUG=1' to enable)
 ifdef DEBUG

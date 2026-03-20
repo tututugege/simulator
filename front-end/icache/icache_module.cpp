@@ -1,5 +1,5 @@
 #include "include/icache_module.h"
-#include <iostream>
+#include "config.h"
 
 using namespace icache_module_n;
 
@@ -81,13 +81,6 @@ void ICache::reset() {
   lookup_pc_next = 0;
   sram_load_fire = false;
 
-  if (lookup_latency_enabled()) {
-    std::cout << "[icache] lookup source: external delayed response"
-              << std::endl;
-  } else {
-    std::cout << "[icache] lookup source: register-style internal set read"
-              << std::endl;
-  }
 }
 
 void ICache::comb() {
@@ -280,9 +273,18 @@ void ICache::eval_state_machine() {
       io.in.mem_resp_valid && io.regs.txid_canceled_r[resp_id];
   bool active_resp =
       io.in.mem_resp_valid && io.regs.miss_txid_valid_r &&
-      (resp_id == io.regs.miss_txid_r) && !canceled_resp;
+      (resp_id == io.regs.miss_txid_r) &&
+      io.regs.txid_inflight_r[resp_id] && !canceled_resp;
+  bool orphan_resp =
+      io.in.mem_resp_valid && !active_resp && !canceled_resp &&
+      !io.regs.txid_inflight_r[resp_id];
 
   if (canceled_resp) {
+    io.out.mem_resp_ready = true;
+    io.reg_write.txid_canceled_r[resp_id] = false;
+    io.reg_write.txid_inflight_r[resp_id] = false;
+  }
+  if (orphan_resp) {
     io.out.mem_resp_ready = true;
     io.reg_write.txid_canceled_r[resp_id] = false;
     io.reg_write.txid_inflight_r[resp_id] = false;
@@ -409,15 +411,16 @@ void ICache::eval_state_machine() {
     }
 
     if (mem_axi_state == AXI_IDLE) {
-      io.out.mem_req_valid = true;
       io.out.mem_req_addr =
           (io.regs.ppn_r << 12) | (io.regs.req_index_r << offset_bits);
       io.out.mem_req_id = io.regs.miss_txid_r;
       state_next = SWAP_IN;
-      if (io.out.mem_req_valid && io.in.mem_req_ready) {
+      if (io.in.mem_req_accepted) {
+        io.out.mem_req_valid = false;
         mem_axi_state_next = AXI_BUSY;
         io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = true;
       } else {
+        io.out.mem_req_valid = true;
         mem_axi_state_next = AXI_IDLE;
       }
     } else {
@@ -430,7 +433,6 @@ void ICache::eval_state_machine() {
         for (uint32_t offset = 0; offset < ICACHE_LINE_SIZE / 4; ++offset) {
           mem_resp_data_w[offset] = io.in.mem_resp_data[offset];
         }
-
         lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
         bool found_invalid = false;
         for (uint32_t way = 0; way < way_cnt; ++way) {

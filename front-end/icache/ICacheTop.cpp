@@ -26,9 +26,11 @@ struct WideData512_t {
 struct ReadMasterReq_t {
   bool valid = false;
   bool ready = false;
+  bool accepted = false;
   uint32_t addr = 0;
   uint8_t total_size = 0;
   uint8_t id = 0;
+  bool bypass = false;
 };
 struct ReadMasterResp_t {
   bool valid = false;
@@ -48,7 +50,6 @@ struct ReadMasterPort_t {
 #endif
 
 #include <array>
-#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -139,6 +140,7 @@ private:
 
 struct MemReadView {
   bool req_ready = true;
+  bool req_accepted = false;
   bool resp_valid = false;
   uint8_t resp_id = 0;
   uint32_t resp_data[ICACHE_LINE_SIZE / 4] = {0};
@@ -154,11 +156,13 @@ public:
     valid_.fill(false);
     addr_.fill(0);
     age_.fill(0);
+    req_accepted_ = false;
   }
 
   MemReadView comb_view() const {
     MemReadView view;
     view.req_ready = true;
+    view.req_accepted = req_accepted_;
     int matured_id = pick_matured_resp_id();
     if (matured_id >= 0) {
       view.resp_valid = true;
@@ -175,6 +179,7 @@ public:
 
   void seq(bool req_fire, uint32_t req_addr, uint8_t req_id, bool resp_fire,
            uint8_t resp_id, bool) {
+    req_accepted_ = req_fire;
     for (int id = 0; id < kMaxTxId; ++id) {
       if (valid_[id]) {
         age_[id]++;
@@ -205,6 +210,7 @@ private:
   std::array<bool, kMaxTxId> valid_{};
   std::array<uint32_t, kMaxTxId> addr_{};
   std::array<uint32_t, kMaxTxId> age_{};
+  bool req_accepted_ = false;
 
   int pick_matured_resp_id() const {
     for (int id = 0; id < kMaxTxId; ++id) {
@@ -227,6 +233,8 @@ public:
       port_->req.addr = 0;
       port_->req.total_size = 0;
       port_->req.id = 0;
+      port_->req.bypass = false;
+      port_->req.accepted = false;
       port_->resp.ready = false;
     }
   }
@@ -238,6 +246,7 @@ public:
       return view;
     }
     view.req_ready = port_->req.ready;
+    view.req_accepted = port_->req.accepted;
     view.resp_valid = port_->resp.valid;
     view.resp_id = static_cast<uint8_t>(port_->resp.id & 0xF);
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
@@ -255,6 +264,7 @@ public:
     port_->req.addr = req_addr;
     port_->req.total_size = static_cast<uint8_t>(ICACHE_LINE_SIZE - 1u);
     port_->req.id = static_cast<uint8_t>(req_id & 0xF);
+    port_->req.bypass = false;
     port_->resp.ready = resp_ready;
   }
 
@@ -416,6 +426,7 @@ public:
     icache_hw.io.in.ppn_valid = false;
     icache_hw.io.in.page_fault = false;
     icache_hw.io.in.mem_req_ready = mem.req_ready;
+    icache_hw.io.in.mem_req_accepted = mem.req_accepted;
     icache_hw.io.in.mem_resp_valid = mem.resp_valid;
     icache_hw.io.in.mem_resp_id = mem.resp_id;
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
@@ -470,8 +481,10 @@ public:
     }
 
     bool mem_req_fire =
+        icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_accepted;
+    bool mem_req_issue =
         icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_ready;
-    out->perf_miss_event = mem_req_fire;
+    out->perf_miss_event = mem_req_issue;
     const auto icache_state =
         static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
     out->perf_miss_busy =
@@ -522,21 +535,21 @@ public:
     }
 
     bool req_fire = icache_hw.io.in.ifu_req_valid && icache_hw.io.out.ifu_req_ready;
-    bool mem_req_fire =
+    bool mem_req_issue =
         icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_ready;
     bool mem_resp_fire =
         icache_hw.io.in.mem_resp_valid && icache_hw.io.out.mem_resp_ready;
 
     icache_hw.seq();
     read_port_runtime<ReadPort>().seq(
-        mem_req_fire, icache_hw.io.out.mem_req_addr,
+        mem_req_issue, icache_hw.io.out.mem_req_addr,
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF), mem_resp_fire,
         static_cast<uint8_t>(icache_hw.io.in.mem_resp_id & 0xF), in->refetch);
 
     if (!in->refetch && req_fire) {
       access_delta++;
     }
-    if (mem_req_fire) {
+    if (mem_req_issue) {
       miss_delta++;
     }
   }
