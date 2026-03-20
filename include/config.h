@@ -104,8 +104,9 @@ constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 // ============================================================
 // [2] Frontend / Backend Pipeline Width
 // ============================================================
-constexpr int FETCH_WIDTH = 16;
-constexpr int DECODE_WIDTH = 8;
+constexpr int FETCH_WIDTH = 4;
+constexpr int DECODE_WIDTH = 4;
+static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
 static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
               "DECODE_WIDTH must be <= FETCH_WIDTH");

@@ -52,6 +52,10 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "TAGE_TAG_WIDTH must be in [1, 8] with current tage_tag_t typing"
 #endif
 
+#if TAGE_USE_ALT_CTR_BITS <= 1 || TAGE_USE_ALT_CTR_BITS > 8
+#error "TAGE_USE_ALT_CTR_BITS must be in [2, 8]"
+#endif
+
 #if GHR_LENGTH <= 0
 #error "GHR_LENGTH must be > 0"
 #endif
