@@ -5,15 +5,13 @@
 #include <cstdint>
 #include <list>
 
-class IsuOut {
-public:
+struct IsuOut {
   IssPrfIO *iss2prf;
   IssDisIO *iss2dis;
   IssAwakeIO *iss_awake;
 };
 
-class IsuIn {
-public:
+struct IsuIn {
   DisIssIO *dis2iss;
   PrfAwakeIO *prf_awake;
   ExeIssIO *exe2iss;
@@ -26,7 +24,7 @@ struct LatencyEntry {
   bool valid;
   int countdown; // 剩余周期数
   uint32_t dest_preg;
-  mask_t br_mask;
+  wire<BR_MASK_WIDTH> br_mask;
   uint32_t rob_idx;
   uint32_t rob_flag;
 };
@@ -65,10 +63,8 @@ public:
   // 时序逻辑
   void seq();
 
-  IssueIO get_hardware_io(); // Hardware Reference
-
 private:
   void add_iq(const IssueQueueConfig &cfg);
   int get_latency(UopType uop_type);
-  void apply_wakeup_to_uop(MicroOp &uop) const;
+  void apply_wakeup_to_uop(IqStoredUop &uop) const;
 };

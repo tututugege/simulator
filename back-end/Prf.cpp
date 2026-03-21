@@ -57,18 +57,17 @@ void Prf::init() {
 // ==========================================
 void Prf::comb_read() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
-    // 直接传递 Issue 内容
-    out.prf2exe->iss_entry[i] = in.iss2prf->iss_entry[i];
-    UopEntry *entry = &out.prf2exe->iss_entry[i];
-
-    if (!entry->valid)
+    out.prf2exe->iss_entry[i].valid = in.iss2prf->iss_entry[i].valid;
+    if (!out.prf2exe->iss_entry[i].valid)
       continue;
 
-    entry->uop.src1_rdata =
-        read_operand_with_bypass(entry->uop.src1_preg, entry->uop.src1_en,
+    auto &entry = out.prf2exe->iss_entry[i];
+    entry.uop = PrfExeIO::PrfExeUop::from_iss_prf_uop(in.iss2prf->iss_entry[i].uop);
+    entry.uop.src1_rdata =
+        read_operand_with_bypass(entry.uop.src1_preg, entry.uop.src1_en,
                                  reg_file, inst_r, in.exe2prf);
-    entry->uop.src2_rdata =
-        read_operand_with_bypass(entry->uop.src2_preg, entry->uop.src2_en,
+    entry.uop.src2_rdata =
+        read_operand_with_bypass(entry.uop.src2_preg, entry.uop.src2_en,
                                  reg_file, inst_r, in.exe2prf);
   }
 }
@@ -121,12 +120,13 @@ void Prf::comb_write() {
 // ==========================================
 void Prf::comb_pipeline() {
   bool global_flush = in.rob_bcast->flush;
-  mask_t clear = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear = in.dec_bcast->clear_mask;
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     if (global_flush) {
       inst_r_1[i].valid = false;
     } else if (in.exe2prf->entry[i].valid) {
-      inst_r_1[i] = in.exe2prf->entry[i];
+      inst_r_1[i].valid = true;
+      inst_r_1[i].uop = in.exe2prf->entry[i].uop.to_micro_op();
       if (is_killed(inst_r_1[i].uop, in.dec_bcast)) {
         inst_r_1[i].valid = false;
       } else if (inst_r_1[i].valid && clear) {

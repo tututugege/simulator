@@ -7,30 +7,22 @@
 
 class SimContext;
 
-struct PreIduIssueIO {
-  InstructionBufferEntry entries[DECODE_WIDTH];
-  PreIduIssueIO() {
-    for (auto &e : entries) {
-      e = {};
-    }
-  }
-};
-
-class PreIduQueueIn {
-public:
+struct PreIduQueueIn {
   FrontDecIO *front2dec = nullptr;
   RenDecIO *ren2dec = nullptr;
   DecRenIO *idu_dec2ren = nullptr;
   RobBroadcastIO *rob_bcast = nullptr;
   RobCommitIO *rob_commit = nullptr;
   ExuIdIO *exu2id = nullptr;
+  FtqExuPcReqIO *ftq_exu_pc_req = nullptr;
+  FtqRobPcReqIO *ftq_rob_pc_req = nullptr;
 };
 
-class PreIduQueueOut {
-public:
+struct PreIduQueueOut {
   DecFrontIO *dec2front = nullptr;
   PreIduIssueIO *issue = nullptr;
-  FTQLookupIO *ftq_lookup = nullptr;
+  FtqExuPcRespIO *ftq_exu_pc_resp = nullptr;
+  FtqRobPcRespIO *ftq_rob_pc_resp = nullptr;
 };
 
 class PreIduQueue {
@@ -43,9 +35,11 @@ public:
   void comb_begin();
   void comb_accept_front();
   void comb_consume_issue();
+  void comb_ftq_lookup();
   void comb_flush_recover();
   void comb_commit_reclaim();
   void seq();
+  const FTQEntry *lookup_ftq_entry(uint32_t idx) const;
 
 private:
   SimContext *ctx = nullptr;

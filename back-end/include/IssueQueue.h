@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "IO.h"
 #include "util.h"
 #include <algorithm>
 #include <cassert>
@@ -26,6 +27,105 @@ struct IssueQueueConfig {
   std::vector<PortBinding> ports; // 存储端口配置
 };
 
+struct IqStoredUop {
+  wire<PRF_IDX_WIDTH> dest_preg;
+  wire<PRF_IDX_WIDTH> src1_preg;
+  wire<PRF_IDX_WIDTH> src2_preg;
+
+  wire<FTQ_IDX_WIDTH> ftq_idx;
+  wire<FTQ_OFFSET_WIDTH> ftq_offset;
+  wire<1> is_atomic;
+  wire<1> dest_en;
+  wire<1> src1_en;
+  wire<1> src2_en;
+  wire<1> src1_busy;
+  wire<1> src2_busy;
+  wire<1> src1_is_pc;
+  wire<1> src2_is_imm;
+  wire<3> func3;
+  wire<7> func7;
+  wire<32> imm;
+  wire<BR_TAG_WIDTH> br_id;
+  wire<BR_MASK_WIDTH> br_mask;
+  wire<CSR_IDX_WIDTH> csr_idx;
+  wire<ROB_IDX_WIDTH> rob_idx;
+  wire<STQ_IDX_WIDTH> stq_idx;
+  wire<1> stq_flag;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
+
+  wire<1> rob_flag;
+
+  wire<UOP_TYPE_WIDTH> op;
+  UopDebugMeta dbg;
+
+  IqStoredUop() { std::memset(this, 0, sizeof(IqStoredUop)); }
+
+  static IqStoredUop from_dis_iss_uop(const DisIssIO::DisIssUop &src) {
+    IqStoredUop dst;
+    dst.dest_preg = src.dest_preg;
+    dst.src1_preg = src.src1_preg;
+    dst.src2_preg = src.src2_preg;
+    dst.ftq_idx = src.ftq_idx;
+    dst.ftq_offset = src.ftq_offset;
+    dst.is_atomic = src.is_atomic;
+    dst.dest_en = src.dest_en;
+    dst.src1_en = src.src1_en;
+    dst.src2_en = src.src2_en;
+    dst.src1_busy = src.src1_busy;
+    dst.src2_busy = src.src2_busy;
+    dst.src1_is_pc = src.src1_is_pc;
+    dst.src2_is_imm = src.src2_is_imm;
+    dst.func3 = src.func3;
+    dst.func7 = src.func7;
+    dst.imm = src.imm;
+    dst.br_id = src.br_id;
+    dst.br_mask = src.br_mask;
+    dst.csr_idx = src.csr_idx;
+    dst.rob_idx = src.rob_idx;
+    dst.stq_idx = src.stq_idx;
+    dst.stq_flag = src.stq_flag;
+    dst.ldq_idx = src.ldq_idx;
+    dst.rob_flag = src.rob_flag;
+    dst.op = src.op;
+    dst.dbg = src.dbg;
+    return dst;
+  }
+
+  IssPrfIO::IssPrfUop to_iss_prf_uop() const {
+    IssPrfIO::IssPrfUop dst;
+    dst.dest_preg = dest_preg;
+    dst.src1_preg = src1_preg;
+    dst.src2_preg = src2_preg;
+    dst.ftq_idx = ftq_idx;
+    dst.ftq_offset = ftq_offset;
+    dst.is_atomic = is_atomic;
+    dst.dest_en = dest_en;
+    dst.src1_en = src1_en;
+    dst.src2_en = src2_en;
+    dst.src1_is_pc = src1_is_pc;
+    dst.src2_is_imm = src2_is_imm;
+    dst.func3 = func3;
+    dst.func7 = func7;
+    dst.imm = imm;
+    dst.br_id = br_id;
+    dst.br_mask = br_mask;
+    dst.csr_idx = csr_idx;
+    dst.rob_idx = rob_idx;
+    dst.stq_idx = stq_idx;
+    dst.stq_flag = stq_flag;
+    dst.ldq_idx = ldq_idx;
+    dst.rob_flag = rob_flag;
+    dst.op = op;
+    dst.dbg = dbg;
+    return dst;
+  }
+};
+
+struct IqStoredEntry {
+  wire<1> valid;
+  IqStoredUop uop;
+};
+
 // ==========================================
 // 2. IssueQueue (纯逻辑，不含IO)
 // ==========================================
@@ -36,8 +136,8 @@ public:
   int dispatch_width;
   std::vector<PortBinding> ports;
 
-  std::vector<UopEntry> entry;
-  std::vector<UopEntry> entry_1;
+  std::vector<IqStoredEntry> entry;
+  std::vector<IqStoredEntry> entry_1;
   int count, count_1;
   int wake_words_per_row;
 
@@ -62,7 +162,7 @@ public:
   }
 
   // 入队 (返回成功入队的个数)
-  int enqueue(const UopEntry &inst) {
+  int enqueue(const IqStoredEntry &inst) {
     if (count_1 >= size)
       return 0;
     for (int i = 0; i < size; i++) {
@@ -117,7 +217,7 @@ public:
 
 
   // Flush
-  void flush_br(mask_t br_mask) {
+  void flush_br(wire<BR_MASK_WIDTH> br_mask) {
     for (int i = 0; i < size; i++) {
       if (!entry_1[i].valid) {
         continue;
@@ -132,7 +232,7 @@ public:
   }
 
   // Clear resolved branch bits from surviving entries
-  void clear_br(mask_t clear_mask) {
+  void clear_br(wire<BR_MASK_WIDTH> clear_mask) {
     if (clear_mask == 0) return;
     for (int i = 0; i < size; i++) {
       if (entry_1[i].valid) {
@@ -181,7 +281,7 @@ public:
         return;
       }
 
-      UopType op_type = entry[entry_idx].uop.op;
+      uint32_t op_type = entry[entry_idx].uop.op;
       uint64_t op_bit = (1ULL << op_type); // 当前指令的特征位
 
       // 3. 寻找匹配的端口 (First-Fit 策略)
@@ -247,7 +347,7 @@ public:
   }
 
   // 用于 Store Mask 扫描的只读访问
-  const std::vector<UopEntry> &get_entries_1() const { return entry_1; }
+  const std::vector<IqStoredEntry> &get_entries_1() const { return entry_1; }
 
 private:
   size_t matrix_row_base(uint32_t preg) const {
@@ -262,7 +362,7 @@ private:
     return idx >> 6;
   }
 
-  void set_dep_bits_for_slot(const UopEntry &ent, int idx) {
+  void set_dep_bits_for_slot(const IqStoredEntry &ent, int idx) {
     int word = slot_word(idx);
     uint64_t bit = slot_bit(idx);
 
@@ -280,7 +380,7 @@ private:
     }
   }
 
-  void clear_dep_bits_for_slot(const UopEntry &ent, int idx) {
+  void clear_dep_bits_for_slot(const IqStoredEntry &ent, int idx) {
     int word = slot_word(idx);
     uint64_t bit = slot_bit(idx);
     uint64_t clear_mask = ~bit;
@@ -299,7 +399,7 @@ private:
     }
   }
 
-  bool is_ready(const UopEntry &ent) {
+  bool is_ready(const IqStoredEntry &ent) {
     const auto &op = ent.uop;
     bool ops_ok =
         (!op.src1_en || !op.src1_busy) && (!op.src2_en || !op.src2_busy);

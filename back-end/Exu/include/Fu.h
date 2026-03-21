@@ -1,6 +1,5 @@
 #pragma once
 #include "AbstractFU.h" // for __builtin_clz
-#include "FTQ.h"
 #include "IO.h"
 #include "config.h"
 // #include <cassert>
@@ -19,16 +18,23 @@ class AluUnit : public FixedLatencyFU {
   static constexpr int OR = 0b110;
   static constexpr int AND = 0b111;
 
+  FtqExuPcRespIO *ftq_pc_resp;
+  int ftq_pc_port;
+
 public:
-  AluUnit(std::string name = "ALU", int port_idx = 0)
-      : FixedLatencyFU(name, port_idx, 1) {}
+  AluUnit(std::string name = "ALU", int port_idx = 0,
+          FtqExuPcRespIO *ftq_pc_resp = nullptr, int ftq_pc_port = 0)
+      : FixedLatencyFU(name, port_idx, 1), ftq_pc_resp(ftq_pc_resp),
+        ftq_pc_port(ftq_pc_port) {}
 
 protected:
   void impl_compute(MicroOp &inst) override {
     uint32_t operand1, operand2;
-    if (inst.src1_is_pc)
-      operand1 = inst.pc;
-    else
+    if (inst.src1_is_pc) {
+      Assert(ftq_pc_resp != nullptr);
+      Assert(ftq_pc_resp->resp[ftq_pc_port].valid);
+      operand1 = ftq_pc_resp->resp[ftq_pc_port].pc;
+    } else
       operand1 = inst.src1_rdata;
 
     if (inst.src2_is_imm) {
@@ -245,7 +251,8 @@ protected:
     // 效应
     if (agu_port_idx < LSU_AGU_COUNT) {
       exe2lsu->agu_req[agu_port_idx].valid = true;
-      exe2lsu->agu_req[agu_port_idx].uop = inst;
+      exe2lsu->agu_req[agu_port_idx].uop =
+          ExeLsuIO::ExeLsuReqUop::from_micro_op(inst);
       // 这里的 inst 已经包含了刚刚计算好的 result (vaddr)
     }
   }
@@ -322,7 +329,8 @@ protected:
     // === 2. 驱动 LSU IO 接口 ===
     if (sdu_port_idx < LSU_SDU_COUNT) {
       exe2lsu->sdu_req[sdu_port_idx].valid = true;
-      exe2lsu->sdu_req[sdu_port_idx].uop = inst;
+      exe2lsu->sdu_req[sdu_port_idx].uop =
+          ExeLsuIO::ExeLsuReqUop::from_micro_op(inst);
     }
   }
 };
@@ -372,17 +380,23 @@ class BruUnit : public FixedLatencyFU {
   static constexpr int BGE = 0b101;
   static constexpr int BLTU = 0b110;
   static constexpr int BGEU = 0b111;
-  FTQLookupIO *ftq_lookup;
+  FtqExuPcRespIO *ftq_pc_resp;
+  int ftq_pc_port;
 
 public:
-  BruUnit(std::string name, int port_idx, FTQLookupIO *ftq_lookup)
-      : FixedLatencyFU(name, port_idx, 1), ftq_lookup(ftq_lookup) {}
+  BruUnit(std::string name, int port_idx, FtqExuPcRespIO *ftq_pc_resp,
+          int ftq_pc_port)
+      : FixedLatencyFU(name, port_idx, 1), ftq_pc_resp(ftq_pc_resp),
+        ftq_pc_port(ftq_pc_port) {}
 
 protected:
   void impl_compute(MicroOp &inst) override {
     uint32_t operand1 = inst.src1_rdata;
     uint32_t operand2 = inst.src2_rdata;
-    uint32_t pc_br = inst.pc + inst.imm;
+    Assert(ftq_pc_resp != nullptr);
+    Assert(ftq_pc_resp->resp[ftq_pc_port].valid);
+    uint32_t inst_pc = ftq_pc_resp->resp[ftq_pc_port].pc;
+    uint32_t pc_br = inst_pc + inst.imm;
     bool br_taken = true;
 
     if (inst.op == UOP_BR) {
@@ -424,14 +438,14 @@ protected:
     bool pred_taken = false;
     uint32_t pred_target = 0;
 
-    FTQEntry &ftq_entry = ftq_lookup->entries[inst.ftq_idx];
-    if (ftq_entry.valid) {
-      pred_taken = ftq_entry.pred_taken_mask[inst.ftq_offset];
+    const auto &ftq_resp = ftq_pc_resp->resp[ftq_pc_port];
+    if (ftq_resp.entry_valid) {
+      pred_taken = ftq_resp.pred_taken;
       if (pred_taken) {
         // FTQ stores next_pc of the fetch block.
-        pred_target = ftq_entry.next_pc;
+        pred_target = ftq_resp.next_pc;
       } else {
-        pred_target = inst.pc + 4;
+        pred_target = inst_pc + 4;
       }
     }
 
@@ -444,7 +458,7 @@ protected:
     }
 
     inst.br_taken = br_taken;
-    inst.diag_val = br_taken ? pc_br : (inst.pc + 4);
+    inst.diag_val = br_taken ? pc_br : (inst_pc + 4);
   }
 };
 

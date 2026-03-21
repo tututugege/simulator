@@ -1,0 +1,33 @@
+{
+  "defaults": {
+    "rows": 128,
+    "fixed_latency": 1
+  },
+  "modules": [
+    {
+      "module_name": "icache_data_table_regfile",
+      "style": "regfile",
+      "chunks": 8,
+      "chunk_bits": 512
+    },
+    {
+      "module_name": "icache_tag_table_regfile",
+      "style": "regfile",
+      "chunks": 8,
+      "chunk_bits": 20
+    },
+    {
+      "module_name": "icache_valid_table_regfile",
+      "style": "regfile",
+      "chunks": 8,
+      "chunk_bits": 1
+    },
+    {
+      "module_name": "icache_data_table_sram",
+      "style": "sram",
+      "chunks": 8,
+      "chunk_bits": 512,
+      "fixed_latency": 2
+    }
+  ]
+}

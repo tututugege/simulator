@@ -8,7 +8,7 @@
 #include <cstdlib>
 
 // 中间信号
-static tag_t alloc_tag[DECODE_WIDTH]; // 分配的新 Tag
+static wire<BR_TAG_WIDTH> alloc_tag[DECODE_WIDTH]; // 分配的新 Tag
 
 void Idu::init() {
   for (int i = 0; i < MAX_BR_NUM; i++) {
@@ -54,37 +54,38 @@ void Idu::comb_decode() {
       continue;
 
     out.dec2ren->valid[i] = true;
+    InstInfo decoded = {};
     if (entry.page_fault_inst) {
-      out.dec2ren->uop[i].uop_num = 1;
-      out.dec2ren->uop[i].page_fault_inst = true;
-      out.dec2ren->uop[i].page_fault_load = false;
-      out.dec2ren->uop[i].page_fault_store = false;
-      out.dec2ren->uop[i].type = NOP;
-      out.dec2ren->uop[i].src1_en = false;
-      out.dec2ren->uop[i].src2_en = false;
-      out.dec2ren->uop[i].dest_en = false;
-      out.dec2ren->uop[i].instruction = entry.inst;
+      decoded.diag_val = entry.inst;
+      decoded.uop_num = 1;
+      decoded.page_fault_inst = true;
+      decoded.page_fault_load = false;
+      decoded.page_fault_store = false;
+      decoded.type = NOP;
+      decoded.src1_en = false;
+      decoded.src2_en = false;
+      decoded.dest_en = false;
+      decoded.dbg.instruction = entry.inst;
     } else {
-      decode(out.dec2ren->uop[i], entry.inst);
+      decode(decoded, entry.inst);
     }
-
-    out.dec2ren->uop[i].pc = entry.pc;
-    out.dec2ren->uop[i].ftq_idx = entry.ftq_idx;
-    out.dec2ren->uop[i].ftq_offset = entry.ftq_offset;
-    out.dec2ren->uop[i].ftq_is_last = entry.ftq_is_last;
+    decoded.dbg.pc = in.issue->pc[i];
+    decoded.ftq_idx = entry.ftq_idx;
+    decoded.ftq_offset = entry.ftq_offset;
+    decoded.ftq_is_last = entry.ftq_is_last;
+    out.dec2ren->uop[i] = DecRenIO::DecRenInst::from_inst_info(decoded);
   }
 
   int br_num = 0;
 #ifdef CONFIG_BPU
-  auto needs_br_tag = [&](InstType t) { return is_branch(t); };
 #else
   // Oracle mode: disable branch-tag resource pressure.
   auto needs_br_tag = [&](InstType) { return false; };
 #endif
   // ID 阶段旁路清理：本拍已解析分支的 bit 不应继续传播到新译码指令。
   // clear_mask 来自上拍锁存的 BRU 解析结果（br_latch）。
-  mask_t clear = br_latch.clear_mask;
-  mask_t running_mask = now_br_mask & ~clear;
+  wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
+  wire<BR_MASK_WIDTH> running_mask = now_br_mask & ~clear;
   bool stall = false;
   int i = 0;
   for (; i < DECODE_WIDTH; i++) {
@@ -94,7 +95,7 @@ void Idu::comb_decode() {
       continue;
     }
 
-    if (needs_br_tag(out.dec2ren->uop[i].type)) {
+    if (is_branch(out.dec2ren->uop[i].type)) {
       if (!alloc_valid[br_num]) {
 #ifdef CONFIG_PERF_COUNTER
         ctx->perf.idu_tag_stall++;
@@ -103,11 +104,11 @@ void Idu::comb_decode() {
         stall = true;
         break;
       }
-      tag_t new_tag = alloc_tag[br_num];
+      wire<BR_TAG_WIDTH> new_tag = alloc_tag[br_num];
       out.dec2ren->uop[i].br_id = new_tag;
       // 分支自身不依赖自己；self bit 只作用于后续更年轻指令。
       out.dec2ren->uop[i].br_mask = running_mask;
-      running_mask |= (mask_t(1) << new_tag);
+      running_mask |= (wire<BR_MASK_WIDTH>(1) << new_tag);
       br_num++;
     } else {
       out.dec2ren->uop[i].br_id = 0;
@@ -134,21 +135,21 @@ void Idu::comb_branch() {
   pending_free_mask_1 = pending_free_mask;
 
   // 0. 先应用上拍累积的释放请求（延迟一拍生效）
-  mask_t matured_free = pending_free_mask;
+  wire<BR_MASK_WIDTH> matured_free = pending_free_mask;
   for (int i = 1; i < MAX_BR_NUM; i++) {
     if ((matured_free >> i) & 1) {
       tag_vec_1[i] = true;
-      pending_free_mask_1 &= ~(mask_t(1) << i);
+      pending_free_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
     }
   }
 
   // 1. 处理 clear_mask: 所有已解析的 branch 立即释放 (IDU 本地状态)
-  mask_t clear = br_latch.clear_mask;
+  wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
   for (int i = 1; i < MAX_BR_NUM; i++) {
     if ((clear >> i) & 1) {
       // 延迟到下一拍再真正释放 tag_vec，避免同拍复用
-      pending_free_mask_1 |= (mask_t(1) << i);
-      now_br_mask_1 &= ~(mask_t(1) << i);
+      pending_free_mask_1 |= (wire<BR_MASK_WIDTH>(1) << i);
+      now_br_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
     }
   }
 
@@ -169,7 +170,7 @@ void Idu::comb_branch() {
     out.dec_bcast->br_mask = 1ULL << br_latch.br_id;
 
     // 释放误预测分支之后分配的更年轻的 tag
-    mask_t tags_to_free = now_br_mask & ~br_mask_cp[br_latch.br_id];
+    wire<BR_MASK_WIDTH> tags_to_free = now_br_mask & ~br_mask_cp[br_latch.br_id];
     now_br_mask_1 &= ~tags_to_free;
     // 同样延迟到下一拍释放空闲位图
     pending_free_mask_1 |= tags_to_free;
@@ -208,17 +209,16 @@ void Idu::comb_fire() {
 
   int br_num = 0;
 #ifdef CONFIG_BPU
-  auto needs_br_tag = [&](InstType t) { return is_branch(t); };
 #else
   // Oracle mode: no branch-tag allocation in fire path.
   auto needs_br_tag = [&](InstType) { return false; };
 #endif
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
-    if (fire && needs_br_tag(out.dec2ren->uop[i].type)) {
-      tag_t new_tag = alloc_tag[br_num];
+    if (fire && is_branch(out.dec2ren->uop[i].type)) {
+      wire<BR_TAG_WIDTH> new_tag = alloc_tag[br_num];
       tag_vec_1[new_tag] = false;
-      now_br_mask_1 |= (mask_t(1) << new_tag);
+      now_br_mask_1 |= (wire<BR_MASK_WIDTH>(1) << new_tag);
       br_mask_cp_1[new_tag] = now_br_mask_1;
       br_num++;
     }
@@ -253,7 +253,8 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   // 操作数来源以及type
   // uint32_t imm;
   int uop_num = 1;
-  uop.difftest_skip = false;
+  uop.dbg.instruction = inst;
+  uop.dbg.difftest_skip = false;
 
   uint32_t opcode = BITS(inst, 6, 0);
   uint32_t number_funct3_unsigned = BITS(inst, 14, 12);
@@ -264,7 +265,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   uint32_t csr_idx = inst >> 20;
 
   // 准备立即数
-  uop.instruction = inst;
   uop.diag_val = inst;
   uop.dest_areg = reg_d_index;
   uop.src1_areg = reg_a_index;
@@ -279,8 +279,13 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   uop.page_fault_store = false;
   uop.illegal_inst = false;
   uop.type = NOP;
+  uop.tma.is_cache_miss = false;
+  uop.tma.is_ret = false;
+  uop.tma.mem_commit_is_load = false;
+  uop.tma.mem_commit_is_store = false;
+  uop.dbg.mem_align_mask = 0;
   static uint64_t global_inst_idx = 0;
-  uop.inst_idx = global_inst_idx++;
+  uop.dbg.inst_idx = global_inst_idx++;
 
   switch (opcode) {
   case number_0_opcode_lui: { // lui
@@ -463,6 +468,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src2_en = true;
     uop.imm = 0;
     uop.type = AMO;
+    uop.is_atomic = true;
 
     if ((number_funct7_unsigned >> 2) == AmoOp::LR) {
       uop_num = 1;
@@ -492,6 +498,19 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   }
 
   uop.uop_num = uop_num;
+  uop.tma.is_ret =
+      (uop.type == JALR && uop.src1_areg == 1 && uop.dest_areg == 0 &&
+       uop.imm == 0);
+  uop.tma.mem_commit_is_load =
+      (uop.type == LOAD || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::SC));
+  uop.tma.mem_commit_is_store =
+      (uop.type == STORE || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR));
+  if (uop.tma.mem_commit_is_load) {
+    uop.dbg.mem_align_mask =
+        (uop.func3 & 0x3) == 0   ? 0
+        : (uop.func3 & 0x3) == 1 ? 1
+                                 : 3;
+  }
 
   if (uop.type == AMO && uop.dest_areg == 0 && (uop.func7 >> 2) != AmoOp::LR &&
       (uop.func7 >> 2) != AmoOp::SC) {
@@ -500,36 +519,4 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
 
   if (uop.dest_areg == 0)
     uop.dest_en = false;
-}
-
-IduIO Idu::get_hardware_io() {
-  IduIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.from_front.valid[i] = in.issue->entries[i].valid;
-    hardware.from_front.inst[i] = in.issue->entries[i].inst;
-  }
-  hardware.from_ren.ready = in.ren2dec->ready;
-
-  hardware.from_back.flush = in.rob_bcast->flush;
-  hardware.from_back.mispred = br_latch.mispred;
-  hardware.from_back.br_id = br_latch.br_id;
-
-  // --- Outputs ---
-  hardware.to_front.ready = false;
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    hardware.to_front.fire[i] = false;
-  }
-
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.to_ren.valid[i] = out.dec2ren->valid[i];
-    hardware.to_ren.uop[i] = DecRenUop::filter(out.dec2ren->uop[i]);
-  }
-
-  hardware.to_back.mispred = out.dec_bcast->mispred;
-  hardware.to_back.br_mask = out.dec_bcast->br_mask;
-  hardware.to_back.br_id = out.dec_bcast->br_id;
-
-  return hardware;
 }

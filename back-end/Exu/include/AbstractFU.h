@@ -13,7 +13,7 @@ protected:
 public:
   AbstractFU(std::string n, int port_idx) : name(n), port_idx(port_idx) {}
 
-  virtual int get_lsu_port_id() { return -1; } // 只给agu和sdu用
+  virtual int get_lsu_port_id() { return -1; }  // 只给agu和sdu用
   std::string get_name() const { return name; } // For debugging
   virtual ~AbstractFU() {}
 
@@ -36,15 +36,20 @@ public:
 
   // 动作：结果被取走了，从 FU 里移除它
   virtual void pop_finished() = 0;
-  virtual void flush(mask_t br_mask) = 0;
-  virtual void clear_br(mask_t clear_mask) = 0;
+  virtual void flush(wire<BR_MASK_WIDTH> br_mask) = 0;
+  virtual void clear_br(wire<BR_MASK_WIDTH> clear_mask) = 0;
 };
 
 // 固定延迟、可流水化：ALU、MUL、FADD、FMUL
 class FixedLatencyFU : public AbstractFU {
 protected:
+  struct PipeEntry {
+    MicroOp uop;
+    int64_t done_cycle;
+  };
+
   int latency;
-  std::deque<MicroOp> pipeline;
+  std::deque<PipeEntry> pipeline;
 
 public:
   FixedLatencyFU(std::string n, int port_idx, int lat)
@@ -66,10 +71,12 @@ public:
     impl_compute(inst);
 
     // 2. 标记完成时间 (Timing Simulation)
-    inst.cplt_time = sim_time + latency - 1;
+    PipeEntry entry{};
+    entry.uop = inst;
+    entry.done_cycle = sim_time + latency - 1;
 
     // 3. 推入流水线
-    pipeline.push_back(inst);
+    pipeline.push_back(entry);
   }
 
   void tick() override {
@@ -78,13 +85,13 @@ public:
 
   // 新增：清空队列
 
-  void flush(mask_t br_mask) override {
-    if (br_mask == (mask_t)-1) {
+  void flush(wire<BR_MASK_WIDTH> br_mask) override {
+    if (br_mask == static_cast<wire<BR_MASK_WIDTH>>(-1)) {
       pipeline.clear();
     } else {
       auto it = pipeline.begin();
       while (it != pipeline.end()) {
-        bool kill_by_mask = (it->br_mask & br_mask) != 0;
+        bool kill_by_mask = (it->uop.br_mask & br_mask) != 0;
         if (kill_by_mask) {
           it = pipeline.erase(it);
         } else {
@@ -94,22 +101,22 @@ public:
     }
   }
 
-  void clear_br(mask_t clear_mask) override {
+  void clear_br(wire<BR_MASK_WIDTH> clear_mask) override {
     for (auto &inst : pipeline) {
-      inst.br_mask &= ~clear_mask;
+      inst.uop.br_mask &= ~clear_mask;
     }
   }
 
   MicroOp *get_finished_uop() override {
     // For latency=1 FUs, instruction completes in the SAME cycle it's accepted
-    // cplt_time = sim_time + latency - 1 = sim_time + 1 - 1 = sim_time
+    // done_cycle = sim_time + latency - 1 = sim_time + 1 - 1 = sim_time
     // The newest instruction (back) is the one that just completed!
     // For latency>1, return the oldest (front) as usual
     if (latency == 1 && !pipeline.empty() &&
-        pipeline.back().cplt_time <= sim_time) {
-      return &pipeline.back();
-    } else if (!pipeline.empty() && pipeline.front().cplt_time <= sim_time) {
-      return &pipeline.front();
+        pipeline.back().done_cycle <= sim_time) {
+      return &pipeline.back().uop;
+    } else if (!pipeline.empty() && pipeline.front().done_cycle <= sim_time) {
+      return &pipeline.front().uop;
     }
     return nullptr;
   }
@@ -133,14 +140,14 @@ protected:
 
 class IterativeFU : public AbstractFU {
 protected:
-  int remaining_cycles;
   MicroOp current_inst; // 迭代单元通常是非流水化的，持有一个 latch 即可
+  int64_t done_cycle;
   bool busy;
   int max_latency;
 
 public:
   IterativeFU(std::string n, int port_idx, int max_lat)
-      : AbstractFU(n, port_idx), remaining_cycles(0), busy(false),
+      : AbstractFU(n, port_idx), done_cycle(0), busy(false),
         max_latency(max_lat) {}
 
   bool can_accept() override {
@@ -151,34 +158,29 @@ public:
     impl_compute(inst);
     int dyn_latency = calculate_latency(inst);
     current_inst = inst;
-    current_inst.cplt_time = sim_time + dyn_latency;
-    remaining_cycles = dyn_latency;
+    done_cycle = sim_time + dyn_latency;
     busy = true;
   }
 
   void tick() override {
-    if (busy && remaining_cycles > 0) {
-      remaining_cycles--;
-    }
+    // 迭代单元的时间推进由 done_cycle 显式表示。
   }
 
   MicroOp *get_finished_uop() override {
-    if (busy && remaining_cycles == 0) {
+    if (busy && done_cycle <= sim_time) {
       return &current_inst;
     }
     return nullptr;
   }
 
-  void pop_finished() override {
-    busy = false;
-  }
+  void pop_finished() override { busy = false; }
 
-  void flush(mask_t br_mask) override {
+  void flush(wire<BR_MASK_WIDTH> br_mask) override {
     if (!busy)
       return;
 
     bool kill = false;
-    if (br_mask == (mask_t)-1) {
+    if (br_mask == static_cast<wire<BR_MASK_WIDTH>>(-1)) {
       kill = true;
     } else {
       bool kill_by_mask = (current_inst.br_mask & br_mask) != 0;
@@ -189,11 +191,11 @@ public:
 
     if (kill) {
       busy = false;
-      remaining_cycles = 0;
+      done_cycle = 0;
     }
   }
 
-  void clear_br(mask_t clear_mask) override {
+  void clear_br(wire<BR_MASK_WIDTH> clear_mask) override {
     if (busy) {
       current_inst.br_mask &= ~clear_mask;
     }

@@ -13,6 +13,14 @@ class PtwWalkPort;
 
 class RealLsu : public AbstractLsu {
 private:
+  enum class LoadState : uint8_t {
+    WaitExec = 0,
+    WaitSend = 1,
+    WaitResp = 2,
+    WaitRetry = 3,
+    Ready = 4,
+  };
+
   struct LdqEntry {
     bool valid;
     bool killed;

@@ -22,7 +22,7 @@ void BackTop::init() {
   dis = new Dispatch(ctx);
   isu = new Isu(ctx);
   prf = new Prf(ctx);
-  exu = new Exu(ctx, &ftq_lookup);
+  exu = new Exu(ctx);
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new RealLsu(ctx);
@@ -30,17 +30,19 @@ void BackTop::init() {
 
   pre_idu_queue->out.dec2front = &dec2front;
   pre_idu_queue->out.issue = &pre_idu_issue;
-  pre_idu_queue->out.ftq_lookup = &ftq_lookup;
+  pre_idu_queue->out.ftq_exu_pc_resp = &ftq_exu_pc_resp;
+  pre_idu_queue->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
   pre_idu_queue->in.front2dec = &front2dec;
   pre_idu_queue->in.ren2dec = &ren2dec;
   pre_idu_queue->in.idu_dec2ren = &dec2ren;
   pre_idu_queue->in.rob_bcast = &rob_bcast;
   pre_idu_queue->in.rob_commit = &rob_commit;
   pre_idu_queue->in.exu2id = &exu2id;
+  pre_idu_queue->in.ftq_exu_pc_req = &ftq_exu_pc_req;
+  pre_idu_queue->in.ftq_rob_pc_req = &ftq_rob_pc_req;
 
   idu->out.dec2ren = &dec2ren;
   idu->out.dec_bcast = &dec_bcast;
-  idu->out.ftq_lookup = &ftq_lookup;
   idu->in.issue = &pre_idu_issue;
   idu->in.ren2dec = &ren2dec;
   idu->in.rob_bcast = &rob_bcast;
@@ -48,8 +50,6 @@ void BackTop::init() {
 
   rename->in.dec2ren = &dec2ren;
   rename->in.dis2ren = &dis2ren;
-  rename->in.iss_awake = &iss_awake;
-  rename->in.prf_awake = &prf_awake;
   rename->in.dec_bcast = &dec_bcast;
   rename->in.rob_bcast = &rob_bcast;
   rename->in.rob_commit = &rob_commit;
@@ -94,6 +94,7 @@ void BackTop::init() {
   exu->in.rob_bcast = &rob_bcast;
   exu->in.lsu2exe = &lsu2exe;
   exu->in.csr2exe = &csr2exe;
+  exu->in.ftq_pc_resp = &ftq_exu_pc_resp;
 
   exu->out.exe2prf = &exe2prf;
   exu->out.exe2iss = &exe2iss;
@@ -102,17 +103,20 @@ void BackTop::init() {
   exu->out.exe2csr = &exe2csr;
   exu->out.exu2id = &exu2id;
   exu->out.exu2rob = &exu2rob;
+  exu->out.ftq_pc_req = &ftq_exu_pc_req;
 
   rob->in.dis2rob = &dis2rob;
   rob->in.dec_bcast = &dec_bcast;
   rob->in.lsu2rob = &lsu2rob;
   rob->in.csr2rob = &csr2rob;
   rob->in.exu2rob = &exu2rob;
+  rob->in.ftq_pc_resp = &ftq_rob_pc_resp;
 
   rob->out.rob_bcast = &rob_bcast;
   rob->out.rob_commit = &rob_commit;
   rob->out.rob2dis = &rob2dis;
   rob->out.rob2csr = &rob2csr;
+  rob->out.ftq_pc_req = &ftq_rob_pc_req;
 
   csr->in.exe2csr = &exe2csr;
   csr->in.rob2csr = &rob2csr;
@@ -158,6 +162,58 @@ void BackTop::comb_csr_status() {
 
 void BackTop::comb() {
   // CSR 状态由 SimCpu::cycle() 在进入 front/back 组合逻辑前统一刷新。
+#if CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
+  // Diagnostic mode: clear backend internal stage IOs to expose hidden
+  // dependence on previous-cycle combinational values.
+  dec2front = {};
+  pre_idu_issue = {};
+  ftq_exu_pc_req = {};
+  ftq_exu_pc_resp = {};
+  ftq_rob_pc_req = {};
+  ftq_rob_pc_resp = {};
+
+  dec2ren = {};
+  dec_bcast = {};
+
+  ren2dec = {};
+  ren2dis = {};
+
+  dis2ren = {};
+  dis2iss = {};
+  dis2rob = {};
+  dis2lsu = {};
+
+  iss_awake = {};
+  iss2prf = {};
+  iss2dis = {};
+
+  prf2exe = {};
+  prf_awake = {};
+
+  exu2id = {};
+  // Known issue path: ROB consumes exu2rob before EXU refreshes it in current
+  // comb order. Keep it out of global clear for now and handle EXU separately.
+  exe2prf = {};
+  exe2iss = {};
+  exe2lsu = {};
+  exe2csr = {};
+
+  rob2dis = {};
+  rob2csr = {};
+  rob_bcast = {};
+  rob_commit = {};
+
+  csr2exe = {};
+  csr2rob = {};
+  csr2front = {};
+
+  lsu2exe = {};
+  lsu2dis = {};
+  lsu2rob = {};
+  lsu2dcache_req = {};
+  lsu2dcache_wreq = {};
+#endif
+
   pre_idu_queue->comb_begin();
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -168,6 +224,17 @@ void BackTop::comb() {
     pre_idu_queue->in.front2dec->alt_pred[i] = in.alt_pred[i];
     pre_idu_queue->in.front2dec->altpcpn[i] = in.altpcpn[i];
     pre_idu_queue->in.front2dec->pcpn[i] = in.pcpn[i];
+    pre_idu_queue->in.front2dec->sc_used[i] = in.sc_used[i];
+    pre_idu_queue->in.front2dec->sc_pred[i] = in.sc_pred[i];
+    pre_idu_queue->in.front2dec->sc_sum[i] = in.sc_sum[i];
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      pre_idu_queue->in.front2dec->sc_idx[i][t] = in.sc_idx[i][t];
+    }
+    pre_idu_queue->in.front2dec->loop_used[i] = in.loop_used[i];
+    pre_idu_queue->in.front2dec->loop_hit[i] = in.loop_hit[i];
+    pre_idu_queue->in.front2dec->loop_pred[i] = in.loop_pred[i];
+    pre_idu_queue->in.front2dec->loop_idx[i] = in.loop_idx[i];
+    pre_idu_queue->in.front2dec->loop_tag[i] = in.loop_tag[i];
     pre_idu_queue->in.front2dec->predict_next_fetch_address[i] =
         in.predict_next_fetch_address[i];
     pre_idu_queue->in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
@@ -189,9 +256,11 @@ void BackTop::comb() {
   lsu->comb_lsu2dis_info();
 
   idu->comb_branch();
-  rob->comb_complete();
 
   rob->comb_ready();
+  rob->comb_ftq_pc_req();
+  exu->comb_ftq_pc_req();
+  pre_idu_queue->comb_ftq_lookup();
   rob->comb_commit();
 
   dis->comb_alloc();
@@ -200,6 +269,7 @@ void BackTop::comb() {
   exu->comb_to_csr();
   csr->comb_csr_read();
   exu->comb_exec();
+  rob->comb_complete();
 
   exu->comb_ready();
   isu->comb_issue();
@@ -210,7 +280,6 @@ void BackTop::comb() {
   csr->comb_exception();
   csr->comb_csr_write();
   prf->comb_read();
-  rename->comb_wake();
   dis->comb_wake();
   rename->comb_rename();
 
@@ -226,6 +295,7 @@ void BackTop::comb() {
   // 修正pc_next 以及difftest对应的pc_next
   out.flush = rob->out.rob_bcast->flush;
   out.fence_i = rob->out.rob_bcast->fence_i;
+  out.itlb_flush = rob->out.rob_bcast->fence;
 
   // 1. Normal case (No Rob flush)
   if (!rob->out.rob_bcast->flush) {
@@ -245,7 +315,8 @@ void BackTop::comb() {
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    out.commit_entry[i] = rob->out.rob_commit->commit_entry[i];
+    out.commit_entry[i] = rob->out.rob_commit->commit_entry[i].uop.to_inst_entry(
+        rob->out.rob_commit->commit_entry[i].valid);
     if (out.commit_entry[i].valid && out.flush) {
       // Flush: override extra_data.pc_next with redirect_pc for ALL
       // instructions so Difftest can read the correct next-PC (trap vector,

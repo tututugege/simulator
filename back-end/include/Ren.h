@@ -4,19 +4,15 @@
 
 class BackTop;
 
-class RenIn {
-public:
+struct RenIn {
   DecRenIO *dec2ren;
   DecBroadcastIO *dec_bcast;
-  IssAwakeIO *iss_awake;
-  PrfAwakeIO *prf_awake;
   DisRenIO *dis2ren;
   RobBroadcastIO *rob_bcast;
   RobCommitIO *rob_commit;
 };
 
-class RenOut {
-public:
+struct RenOut {
   RenDecIO *ren2dec;
   RenDisIO *ren2dis;
 };
@@ -32,15 +28,12 @@ public:
   void comb_select();
   void comb_rename(); // 重命名
   void comb_fire();
-  void comb_wake();
   void comb_alloc(); // 分配寄存器
   void comb_branch();
   void comb_commit();
   void comb_pipeline();
   void comb_flush();
   void seq();
-
-  RenIO get_hardware_io(); // 获取硬件级别 IO (Hardware Reference)
 
   // register
   InstEntry inst_r[DECODE_WIDTH];
@@ -49,7 +42,6 @@ public:
   reg<PRF_IDX_WIDTH> RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
   reg<1> free_vec[PRF_NUM];
   reg<1> alloc_checkpoint[MAX_BR_NUM][PRF_NUM];
-  reg<1> busy_table[PRF_NUM];
   reg<1> spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
   InstEntry inst_r_1[DECODE_WIDTH];
@@ -58,6 +50,5 @@ public:
   wire<PRF_IDX_WIDTH> RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];
   wire<1> free_vec_1[PRF_NUM];
   wire<1> alloc_checkpoint_1[MAX_BR_NUM][PRF_NUM];
-  wire<1> busy_table_1[PRF_NUM];
   wire<1> spec_alloc_1[PRF_NUM]; // 处于speculative状态分配的寄存器
 };

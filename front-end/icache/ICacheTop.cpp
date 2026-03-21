@@ -26,9 +26,11 @@ struct WideData512_t {
 struct ReadMasterReq_t {
   bool valid = false;
   bool ready = false;
+  bool accepted = false;
   uint32_t addr = 0;
   uint8_t total_size = 0;
   uint8_t id = 0;
+  bool bypass = false;
 };
 struct ReadMasterResp_t {
   bool valid = false;
@@ -48,7 +50,6 @@ struct ReadMasterPort_t {
 #endif
 
 #include <array>
-#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -84,6 +85,23 @@ void clear_primary_outputs(struct icache_out *out) {
     out->page_fault_inst[i] = false;
     out->inst_valid[i] = false;
   }
+}
+
+void clear_perf_outputs(struct icache_out *out) {
+  out->perf_req_fire = false;
+  out->perf_req_blocked = false;
+  out->perf_resp_fire = false;
+  out->perf_miss_event = false;
+  out->perf_miss_busy = false;
+  out->perf_outstanding_req = false;
+  out->perf_itlb_hit = false;
+  out->perf_itlb_miss = false;
+  out->perf_itlb_fault = false;
+  out->perf_itlb_retry = false;
+  out->perf_itlb_retry_other_walk = false;
+  out->perf_itlb_retry_walk_req_blocked = false;
+  out->perf_itlb_retry_wait_walk_resp = false;
+  out->perf_itlb_retry_local_walker_busy = false;
 }
 
 void fill_fetch_group(uint32_t fetch_pc, const uint32_t *line_words,
@@ -122,6 +140,7 @@ private:
 
 struct MemReadView {
   bool req_ready = true;
+  bool req_accepted = false;
   bool resp_valid = false;
   uint8_t resp_id = 0;
   uint32_t resp_data[ICACHE_LINE_SIZE / 4] = {0};
@@ -137,11 +156,13 @@ public:
     valid_.fill(false);
     addr_.fill(0);
     age_.fill(0);
+    req_accepted_ = false;
   }
 
   MemReadView comb_view() const {
     MemReadView view;
     view.req_ready = true;
+    view.req_accepted = req_accepted_;
     int matured_id = pick_matured_resp_id();
     if (matured_id >= 0) {
       view.resp_valid = true;
@@ -158,6 +179,7 @@ public:
 
   void seq(bool req_fire, uint32_t req_addr, uint8_t req_id, bool resp_fire,
            uint8_t resp_id, bool) {
+    req_accepted_ = req_fire;
     for (int id = 0; id < kMaxTxId; ++id) {
       if (valid_[id]) {
         age_[id]++;
@@ -188,6 +210,7 @@ private:
   std::array<bool, kMaxTxId> valid_{};
   std::array<uint32_t, kMaxTxId> addr_{};
   std::array<uint32_t, kMaxTxId> age_{};
+  bool req_accepted_ = false;
 
   int pick_matured_resp_id() const {
     for (int id = 0; id < kMaxTxId; ++id) {
@@ -210,6 +233,8 @@ public:
       port_->req.addr = 0;
       port_->req.total_size = 0;
       port_->req.id = 0;
+      port_->req.bypass = false;
+      port_->req.accepted = false;
       port_->resp.ready = false;
     }
   }
@@ -221,6 +246,7 @@ public:
       return view;
     }
     view.req_ready = port_->req.ready;
+    view.req_accepted = port_->req.accepted;
     view.resp_valid = port_->resp.valid;
     view.resp_id = static_cast<uint8_t>(port_->resp.id & 0xF);
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
@@ -238,6 +264,7 @@ public:
     port_->req.addr = req_addr;
     port_->req.total_size = static_cast<uint8_t>(ICACHE_LINE_SIZE - 1u);
     port_->req.id = static_cast<uint8_t>(req_id & 0xF);
+    port_->req.bypass = false;
     port_->resp.ready = resp_ready;
   }
 
@@ -334,9 +361,24 @@ public:
     bind_mem_read_port(true_icache_runtime<HW, ReadPort>(), port);
   }
 
+  void peek_ready() override {
+    clear_primary_outputs(out);
+    clear_secondary_outputs(out);
+    clear_perf_outputs(out);
+    uint32_t cur_satp =
+        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    bool satp_changed = !satp_seen || cur_satp != last_satp;
+    bool hold_for_translation_flush = in->itlb_flush || satp_changed;
+    out->icache_read_ready =
+        in->reset ? true
+                  : (hold_for_translation_flush ? false
+                                                : icache_hw.io.regs.ifu_req_ready_r);
+  }
+
   void comb() override {
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
+    clear_perf_outputs(out);
 
     auto &runtime = true_icache_runtime<HW, ReadPort>();
     auto &read_port = read_port_runtime<ReadPort>();
@@ -350,18 +392,30 @@ public:
       if (runtime.mmu_model != nullptr) {
         runtime.mmu_model->flush();
       }
+      satp_seen = false;
       out->icache_read_ready = true;
       return;
     }
 
     if (in->refetch && runtime.mmu_model != nullptr) {
-      runtime.mmu_model->flush();
+      runtime.mmu_model->cancel_pending_walk();
     }
 
+    uint32_t cur_satp =
+        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    bool satp_changed = !satp_seen || cur_satp != last_satp;
+    bool translation_context_flush = in->itlb_flush || satp_changed;
+    if (translation_context_flush && runtime.mmu_model != nullptr) {
+      runtime.mmu_model->flush();
+    }
+    satp_seen = true;
+    last_satp = cur_satp;
+
     MemReadView mem = read_port.comb_view();
-    const bool probe_only = in->run_comb_only;
-    const bool req_valid = probe_only ? false : in->icache_read_valid;
-    const uint32_t req_pc = probe_only ? 0u : in->fetch_address;
+    const bool req_valid = in->icache_read_valid;
+    const uint32_t req_pc = in->fetch_address;
+    bool itlb_translate_invoked = false;
+    AbstractMmu::Result itlb_translate_ret = AbstractMmu::Result::OK;
 
     icache_hw.io.in.refetch = in->refetch;
     icache_hw.io.in.flush = false;
@@ -372,6 +426,7 @@ public:
     icache_hw.io.in.ppn_valid = false;
     icache_hw.io.in.page_fault = false;
     icache_hw.io.in.mem_req_ready = mem.req_ready;
+    icache_hw.io.in.mem_req_accepted = mem.req_accepted;
     icache_hw.io.in.mem_resp_valid = mem.resp_valid;
     icache_hw.io.in.mem_resp_id = mem.resp_id;
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
@@ -380,12 +435,15 @@ public:
 
     icache_hw.comb();
 
-    if (!probe_only && !in->refetch && runtime.mmu_model != nullptr &&
+    if (!in->refetch &&
+        runtime.mmu_model != nullptr &&
         icache_hw.io.out.mmu_req_valid) {
+      itlb_translate_invoked = true;
       uint32_t p_addr = 0;
       uint32_t v_addr = icache_hw.io.out.mmu_req_vtag << 12;
       AbstractMmu::Result ret =
           runtime.mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
+      itlb_translate_ret = ret;
       if (ret == AbstractMmu::Result::OK) {
         icache_hw.io.in.ppn = p_addr >> 12;
         icache_hw.io.in.ppn_valid = true;
@@ -403,9 +461,12 @@ public:
         icache_hw.io.out.mem_resp_ready);
 
     out->icache_read_ready = icache_hw.io.out.ifu_req_ready;
+    out->perf_req_fire = req_valid && out->icache_read_ready;
+    out->perf_req_blocked = req_valid && !out->icache_read_ready;
 
     bool resp_fire =
         icache_hw.io.out.ifu_resp_valid && icache_hw.io.in.ifu_resp_ready;
+    out->perf_resp_fire = resp_fire;
     if (resp_fire) {
       if (icache_hw.io.out.miss) {
         std::cout << "[icache_top] WARNING: miss is true when ifu_resp is valid"
@@ -419,9 +480,53 @@ public:
                        out->page_fault_inst, out->inst_valid);
     }
 
-    if (probe_only) {
-      out->icache_read_complete = false;
+    bool mem_req_fire =
+        icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_accepted;
+    bool mem_req_issue =
+        icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_ready;
+    out->perf_miss_event = mem_req_issue;
+    const auto icache_state =
+        static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
+    out->perf_miss_busy =
+        (icache_state == icache_module_n::SWAP_IN ||
+         icache_state == icache_module_n::DRAIN);
+    out->perf_outstanding_req =
+        out->perf_miss_busy || icache_hw.io.regs.req_valid_r ||
+        icache_hw.io.regs.lookup_pending_r;
+
+    if (itlb_translate_invoked) {
+      if (itlb_translate_ret == AbstractMmu::Result::OK) {
+        out->perf_itlb_hit = true;
+      } else if (itlb_translate_ret == AbstractMmu::Result::FAULT) {
+        out->perf_itlb_fault = true;
+      } else {
+        out->perf_itlb_miss = true;
+        out->perf_itlb_retry = true;
+        TlbMmu::RetryReason reason = TlbMmu::RetryReason::LOCAL_WALKER_BUSY;
+        if (auto *tlb = dynamic_cast<TlbMmu *>(runtime.mmu_model); tlb != nullptr) {
+          reason = tlb->last_retry_reason();
+        }
+        switch (reason) {
+        case TlbMmu::RetryReason::OTHER_WALK_ACTIVE:
+          out->perf_itlb_retry_other_walk = true;
+          break;
+        case TlbMmu::RetryReason::WALK_REQ_BLOCKED:
+          out->perf_itlb_retry_walk_req_blocked = true;
+          break;
+        case TlbMmu::RetryReason::WAIT_WALK_RESP:
+          out->perf_itlb_retry_wait_walk_resp = true;
+          break;
+        case TlbMmu::RetryReason::LOCAL_WALKER_BUSY:
+          out->perf_itlb_retry_local_walker_busy = true;
+          break;
+        case TlbMmu::RetryReason::NONE:
+        default:
+          out->perf_itlb_retry_local_walker_busy = true;
+          break;
+        }
+      }
     }
+
   }
 
   void seq() override {
@@ -430,32 +535,43 @@ public:
     }
 
     bool req_fire = icache_hw.io.in.ifu_req_valid && icache_hw.io.out.ifu_req_ready;
-    bool mem_req_fire =
+    bool mem_req_issue =
         icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_ready;
     bool mem_resp_fire =
         icache_hw.io.in.mem_resp_valid && icache_hw.io.out.mem_resp_ready;
 
     icache_hw.seq();
     read_port_runtime<ReadPort>().seq(
-        mem_req_fire, icache_hw.io.out.mem_req_addr,
+        mem_req_issue, icache_hw.io.out.mem_req_addr,
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF), mem_resp_fire,
         static_cast<uint8_t>(icache_hw.io.in.mem_resp_id & 0xF), in->refetch);
 
     if (!in->refetch && req_fire) {
       access_delta++;
     }
-    if (mem_req_fire) {
+    if (mem_req_issue) {
       miss_delta++;
     }
   }
 
 private:
   HW &icache_hw;
+  uint32_t last_satp = 0;
+  bool satp_seen = false;
 };
 
 class SimpleICacheTop : public ICacheTop {
 public:
+  void peek_ready() override {
+    clear_perf_outputs(out);
+    out->icache_read_ready_2 = false;
+    out->icache_read_complete_2 = false;
+    out->icache_read_ready = in->reset || in->refetch || !pending_req_valid;
+    out->icache_read_complete = false;
+  }
+
   void comb() override {
+    clear_perf_outputs(out);
     out->icache_read_ready_2 = false;
     out->icache_read_complete_2 = false;
     out->fetch_pc_2 = 0;
@@ -491,11 +607,19 @@ public:
       pending_fetch_addr = 0;
       out->icache_read_ready = true;
       out->icache_read_complete = false;
+      out->perf_req_blocked = in->icache_read_valid;
       return;
+    }
+
+    if (in->refetch && mmu_model != nullptr) {
+      mmu_model->cancel_pending_walk();
     }
 
     out->icache_read_complete = false;
     out->icache_read_ready = !pending_req_valid;
+    out->perf_req_fire = in->icache_read_valid && out->icache_read_ready;
+    out->perf_req_blocked = in->icache_read_valid && !out->icache_read_ready;
+    out->perf_outstanding_req = pending_req_valid;
     out->fetch_pc =
         pending_req_valid ? pending_fetch_addr : in->fetch_address;
     for (int i = 0; i < FETCH_WIDTH; i++) {
@@ -506,7 +630,7 @@ public:
 
     uint32_t cur_satp =
         in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
-    if (!satp_seen || cur_satp != last_satp || in->refetch) {
+    if (!satp_seen || cur_satp != last_satp || in->itlb_flush) {
       if (mmu_model != nullptr) {
         mmu_model->flush();
       }
@@ -515,10 +639,9 @@ public:
       pending_req_valid = false;
       pending_fetch_addr = 0;
       out->icache_read_ready = true;
-    }
-
-    if (in->run_comb_only) {
-      return;
+      out->perf_req_fire = in->icache_read_valid;
+      out->perf_req_blocked = false;
+      out->perf_outstanding_req = false;
     }
 
     if (!pending_req_valid && !in->icache_read_valid) {
@@ -551,6 +674,9 @@ public:
       }
 
       if (ret == AbstractMmu::Result::RETRY) {
+        out->perf_itlb_miss = true;
+        out->perf_itlb_retry = true;
+        out->perf_itlb_retry_local_walker_busy = true;
         out->icache_read_complete = false;
         out->icache_read_ready = false;
         if (!pending_req_valid) {
@@ -565,6 +691,7 @@ public:
       }
 
       if (ret == AbstractMmu::Result::FAULT) {
+        out->perf_itlb_fault = true;
         out->page_fault_inst[i] = true;
         out->fetch_group[i] = INST_NOP;
         for (int j = i + 1; j < FETCH_WIDTH; j++) {
@@ -576,6 +703,7 @@ public:
       }
 
       out->page_fault_inst[i] = false;
+      out->perf_itlb_hit = true;
       out->fetch_group[i] = p_memory[p_addr / 4];
 
       if (DEBUG_PRINT) {
@@ -593,6 +721,11 @@ public:
     if (out->icache_read_complete) {
       resp_fire_comb = true;
     }
+    out->perf_resp_fire = out->icache_read_complete;
+    out->perf_miss_event = pend_on_retry_comb;
+    out->perf_miss_busy = pending_req_valid;
+    out->perf_outstanding_req =
+        out->perf_outstanding_req || pending_req_valid || pend_on_retry_comb;
   }
 
   void set_ptw_mem_port(PtwMemPort *port) override {

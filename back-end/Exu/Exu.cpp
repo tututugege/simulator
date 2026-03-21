@@ -7,8 +7,7 @@ static inline bool is_br_killed(const MicroOp &uop, const DecBroadcastIO *db) {
   return (uop.br_mask & db->br_mask) != 0;
 }
 
-Exu::Exu(SimContext *ctx, FTQLookupIO *ftq_lookup)
-    : ctx(ctx), ftq_lookup(ftq_lookup) {
+Exu::Exu(SimContext *ctx) : ctx(ctx) {
   // 可以在这里或 init 创建 backend
 }
 
@@ -20,6 +19,7 @@ Exu::~Exu() {
 
 void Exu::init() {
   int alu_cnt = 0;
+  int bru_cnt = 0;
   int agu_cnt = 0;
   int sdu_cnt = 0;
 
@@ -65,7 +65,7 @@ void Exu::init() {
 
     // 6. BRU
     if (mask & OP_MASK_BR) {
-      auto bru = new BruUnit("BRU", i, ftq_lookup);
+      auto bru = new BruUnit("BRU", i, in.ftq_pc_resp, ALU_NUM + bru_cnt++);
       units.push_back(bru);
       port_mappings[i].entries.push_back({bru, OP_MASK_BR});
     }
@@ -73,7 +73,7 @@ void Exu::init() {
     // 7. ALU
     if (mask & OP_MASK_ALU) {
       std::string alu_name = "ALU" + std::to_string(alu_cnt++);
-      auto alu = new AluUnit(alu_name, i);
+      auto alu = new AluUnit(alu_name, i, in.ftq_pc_resp, alu_cnt - 1);
       units.push_back(alu);
       port_mappings[i].entries.push_back({alu, OP_MASK_ALU});
     }
@@ -100,6 +100,38 @@ void Exu::init() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     inst_r[i].valid = false;
     inst_r_1[i].valid = false;
+  }
+}
+
+void Exu::comb_ftq_pc_req() {
+  for (auto &req : out.ftq_pc_req->req) {
+    req = {};
+  }
+
+  for (int p_idx = 0; p_idx < ISSUE_WIDTH; p_idx++) {
+    if (!inst_r[p_idx].valid) {
+      continue;
+    }
+
+    const MicroOp &uop = inst_r[p_idx].uop;
+    if (in.rob_bcast->flush || is_br_killed(uop, in.dec_bcast)) {
+      continue;
+    }
+
+    uint64_t req_bit = (1ULL << uop.op);
+    if (p_idx >= IQ_ALU_PORT_BASE && p_idx < IQ_ALU_PORT_BASE + ALU_NUM &&
+        (req_bit & OP_MASK_ALU) && uop.src1_is_pc) {
+      int slot = p_idx - IQ_ALU_PORT_BASE;
+      out.ftq_pc_req->req[slot].valid = true;
+      out.ftq_pc_req->req[slot].ftq_idx = uop.ftq_idx;
+      out.ftq_pc_req->req[slot].ftq_offset = uop.ftq_offset;
+    } else if (p_idx >= IQ_BR_PORT_BASE &&
+               p_idx < IQ_BR_PORT_BASE + BRU_NUM && (req_bit & OP_MASK_BR)) {
+      int slot = ALU_NUM + (p_idx - IQ_BR_PORT_BASE);
+      out.ftq_pc_req->req[slot].valid = true;
+      out.ftq_pc_req->req[slot].ftq_idx = uop.ftq_idx;
+      out.ftq_pc_req->req[slot].ftq_offset = uop.ftq_offset;
+    }
   }
 }
 
@@ -144,15 +176,20 @@ void Exu::comb_to_csr() {
   out.exe2csr->re = false;
 
   if (inst_r[0].valid && inst_r[0].uop.op == UOP_CSR && !in.rob_bcast->flush) {
-    out.exe2csr->we = inst_r[0].uop.func3 == 1 || inst_r[0].uop.src1_areg != 0;
-    out.exe2csr->re = inst_r[0].uop.func3 != 1 || inst_r[0].uop.dest_areg != 0;
+    const auto &uop = inst_r[0].uop;
+    bool is_csrrw_family = (uop.func3 == 0b001) || (uop.func3 == 0b101);
+    bool src_is_zero = (uop.imm == 0);
+    bool rd_is_zero = (uop.dest_preg == 0);
 
-    out.exe2csr->idx = inst_r[0].uop.csr_idx;
-    out.exe2csr->wcmd = inst_r[0].uop.func3 & 0b11;
-    if (inst_r[0].uop.src2_is_imm) {
-      out.exe2csr->wdata = inst_r[0].uop.imm;
+    out.exe2csr->we = is_csrrw_family || !src_is_zero;
+    out.exe2csr->re = !is_csrrw_family || !rd_is_zero;
+
+    out.exe2csr->idx = uop.csr_idx;
+    out.exe2csr->wcmd = uop.func3 & 0b11;
+    if (uop.src2_is_imm) {
+      out.exe2csr->wdata = uop.imm;
     } else {
-      out.exe2csr->wdata = inst_r[0].uop.src1_rdata;
+      out.exe2csr->wdata = uop.src1_rdata;
     }
   }
 }
@@ -168,15 +205,15 @@ void Exu::comb_pipeline() {
       inst_r_1[i].valid = false;
     }
     for (auto fu : units)
-      fu->flush((mask_t)-1);
+      fu->flush(static_cast<wire<BR_MASK_WIDTH>>(-1));
     return;
   }
 
-  mask_t clear = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear = in.dec_bcast->clear_mask;
 
   // 2. 分支误预测选择性冲刷（先 flush，再 clear）
   if (in.dec_bcast->mispred) {
-    mask_t mask = in.dec_bcast->br_mask;
+    wire<BR_MASK_WIDTH> mask = in.dec_bcast->br_mask;
     for (auto fu : units)
       fu->flush(mask);
   }
@@ -202,7 +239,8 @@ void Exu::comb_pipeline() {
     if (inst_r[i].valid && issue_stall[i]) {
       inst_r_1[i] = inst_r[i];
     } else if (in.prf2exe->iss_entry[i].valid) {
-      inst_r_1[i] = in.prf2exe->iss_entry[i];
+      inst_r_1[i].valid = true;
+      inst_r_1[i].uop = in.prf2exe->iss_entry[i].uop.to_micro_op();
     } else {
       inst_r_1[i].valid = false;
     }
@@ -280,7 +318,8 @@ void Exu::comb_exec() {
 
     if (res) {
       // ✅ 无论是否能写回，先广播出去给 Bypass 用！
-      out.exe2prf->bypass[fu_global_idx].uop = *res;
+      out.exe2prf->bypass[fu_global_idx].uop =
+          ExePrfIO::ExePrfWbUop::from_micro_op(*res);
       out.exe2prf->bypass[fu_global_idx].valid = true;
     }
 
@@ -315,7 +354,7 @@ void Exu::comb_exec() {
     // 注意：LOAD/STA 的完成通报由 LSU 回调阶段处理
     if (!flushed && u->op != UOP_LOAD && u->op != UOP_STA) {
       out.exu2rob->entry[p_idx].valid = true;
-      out.exu2rob->entry[p_idx].uop = *u;
+      out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(*u);
     }
 
     // B. 立即外发 LSU 请求
@@ -323,10 +362,12 @@ void Exu::comb_exec() {
       int lsu_idx = winner_fu->get_lsu_port_id();
       if (u->op == UOP_STA || u->op == UOP_LOAD) {
         out.exe2lsu->agu_req[lsu_idx].valid = true;
-        out.exe2lsu->agu_req[lsu_idx].uop = *u;
+        out.exe2lsu->agu_req[lsu_idx].uop =
+            ExeLsuIO::ExeLsuReqUop::from_micro_op(*u);
       } else if (u->op == UOP_STD) {
         out.exe2lsu->sdu_req[lsu_idx].valid = true;
-        out.exe2lsu->sdu_req[lsu_idx].uop = *u;
+        out.exe2lsu->sdu_req[lsu_idx].uop =
+            ExeLsuIO::ExeLsuReqUop::from_micro_op(*u);
       }
     }
 
@@ -356,7 +397,8 @@ void Exu::comb_exec() {
     if (int_res[i].valid) {
       int p_idx = IQ_ALU_PORT_BASE + i;
       out.exe2prf->entry[p_idx].valid = true;
-      out.exe2prf->entry[p_idx].uop = int_res[i].uop;
+      out.exe2prf->entry[p_idx].uop =
+          ExePrfIO::ExePrfWbUop::from_micro_op(int_res[i].uop);
     }
   }
 
@@ -365,14 +407,14 @@ void Exu::comb_exec() {
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
     if (in.lsu2exe->wb_req[i].valid) {
       int p_idx = IQ_LD_PORT_BASE + i;
-      MicroOp &u = in.lsu2exe->wb_req[i].uop;
+      MicroOp u = in.lsu2exe->wb_req[i].uop.to_micro_op();
       bool flushed = in.rob_bcast->flush || is_br_killed(u, in.dec_bcast);
       Assert(!out.exe2prf->entry[p_idx].valid);
       out.exe2prf->entry[p_idx].valid = true;
-      out.exe2prf->entry[p_idx].uop = u;
+      out.exe2prf->entry[p_idx].uop = ExePrfIO::ExePrfWbUop::from_micro_op(u);
       if (!flushed) {
         out.exu2rob->entry[p_idx].valid = true;
-        out.exu2rob->entry[p_idx].uop = u;
+        out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(u);
       }
     }
   }
@@ -380,14 +422,14 @@ void Exu::comb_exec() {
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     if (in.lsu2exe->sta_wb_req[i].valid) {
       int p_idx = IQ_STA_PORT_BASE + i;
-      MicroOp &u = in.lsu2exe->sta_wb_req[i].uop;
+      MicroOp u = in.lsu2exe->sta_wb_req[i].uop.to_micro_op();
       bool flushed = in.rob_bcast->flush || is_br_killed(u, in.dec_bcast);
       Assert(!out.exe2prf->entry[p_idx].valid);
       out.exe2prf->entry[p_idx].valid = true;
-      out.exe2prf->entry[p_idx].uop = u;
+      out.exe2prf->entry[p_idx].uop = ExePrfIO::ExePrfWbUop::from_micro_op(u);
       if (!flushed) {
         out.exu2rob->entry[p_idx].valid = true;
-        out.exu2rob->entry[p_idx].uop = u;
+        out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(u);
       }
     }
   }
@@ -397,12 +439,12 @@ void Exu::comb_exec() {
   // ==========================================
   bool mispred = false;
   MicroOp *mispred_uop = nullptr;
-  mask_t clear_mask = 0;
+  wire<BR_MASK_WIDTH> clear_mask = 0;
 
   for (int i = 0; i < BRU_NUM; i++) {
     if (br_res[i].valid) {
       // 所有已解析的 branch 贡献 clear_mask
-      clear_mask |= (mask_t(1) << br_res[i].uop.br_id);
+      clear_mask |= (wire<BR_MASK_WIDTH>(1) << br_res[i].uop.br_id);
 
       if (br_res[i].uop.mispred) {
         if (!mispred) {
@@ -442,25 +484,4 @@ void Exu::seq() {
   for (auto fu : units) {
     fu->tick();
   }
-}
-
-ExuIO Exu::get_hardware_io() {
-  ExuIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.from_iss.valid[i] = in.prf2exe->iss_entry[i].valid;
-    hardware.from_iss.uop[i]   = IssExeUop::filter(in.prf2exe->iss_entry[i].uop);
-    hardware.from_iss.src1_data[i] = in.prf2exe->iss_entry[i].uop.src1_rdata;
-    hardware.from_iss.src2_data[i] = in.prf2exe->iss_entry[i].uop.src2_rdata;
-  }
-  hardware.from_back.flush = in.rob_bcast->flush;
-
-  // --- Outputs ---
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.to_back.valid[i] = out.exe2prf->entry[i].valid;
-    hardware.to_back.uop[i]   = ExeWbUop::filter(out.exe2prf->entry[i].uop);
-  }
-
-  return hardware;
 }

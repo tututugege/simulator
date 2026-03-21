@@ -5,10 +5,68 @@
 
 #define BPU_TYPE_IDX_MASK (BPU_TYPE_ENTRY_NUM - 1)
 
+#if TYPE_PRED_WAY_NUM <= 0
+#error "TYPE_PRED_WAY_NUM must be > 0"
+#endif
+
+#if (TYPE_PRED_ENTRY_NUM % TYPE_PRED_WAY_NUM) != 0
+#error "TYPE_PRED_ENTRY_NUM must be divisible by TYPE_PRED_WAY_NUM"
+#endif
+
+#define TYPE_PRED_SET_NUM (TYPE_PRED_ENTRY_NUM / TYPE_PRED_WAY_NUM)
+
+#if (TYPE_PRED_SET_NUM & (TYPE_PRED_SET_NUM - 1)) != 0
+#error "TYPE_PRED_SET_NUM must be power of two"
+#endif
+
+#define TYPE_PRED_SET_MASK (TYPE_PRED_SET_NUM - 1)
+#define TYPE_PRED_CONF_MAX ((1 << TYPE_PRED_CONF_BITS) - 1)
+#define TYPE_PRED_AGE_MAX ((1 << TYPE_PRED_AGE_BITS) - 1)
+#define TYPE_PRED_TAG_MASK ((1 << TYPE_PRED_TAG_WIDTH) - 1)
+
 #if (TAGE_SC_ENTRY_NUM & (TAGE_SC_ENTRY_NUM - 1)) != 0
 #error "TAGE_SC_ENTRY_NUM must be power of two"
 #endif
 #define TAGE_SC_IDX_MASK (TAGE_SC_ENTRY_NUM - 1)
+
+#if (TAGE_SC_L_ENTRY_NUM & (TAGE_SC_L_ENTRY_NUM - 1)) != 0
+#error "TAGE_SC_L_ENTRY_NUM must be power of two"
+#endif
+
+#if TAGE_SC_L_CTR_BITS <= 1 || TAGE_SC_L_CTR_BITS > 8
+#error "TAGE_SC_L_CTR_BITS must be in [2, 8]"
+#endif
+
+#if TAGE_SC_PATH_BITS <= 0 || TAGE_SC_PATH_BITS > 32
+#error "TAGE_SC_PATH_BITS must be in [1, 32]"
+#endif
+
+#if TAGE_SC_PATH_BITS == 32
+#define TAGE_SC_PATH_MASK 0xffffffffu
+#else
+#define TAGE_SC_PATH_MASK ((1u << TAGE_SC_PATH_BITS) - 1u)
+#endif
+
+#if (TAGE_LOOP_ENTRY_NUM & (TAGE_LOOP_ENTRY_NUM - 1)) != 0
+#error "TAGE_LOOP_ENTRY_NUM must be power of two"
+#endif
+
+#if TAGE_LOOP_TAG_BITS <= 0 || TAGE_LOOP_TAG_BITS > 16
+#error "TAGE_LOOP_TAG_BITS must be in [1, 16]"
+#endif
+
+#if TAGE_LOOP_CONF_BITS <= 0 || TAGE_LOOP_CONF_BITS > 8
+#error "TAGE_LOOP_CONF_BITS must be in [1, 8]"
+#endif
+
+#if TAGE_LOOP_AGE_BITS <= 0 || TAGE_LOOP_AGE_BITS > 8
+#error "TAGE_LOOP_AGE_BITS must be in [1, 8]"
+#endif
+
+#if TAGE_LOOP_ITER_BITS <= 0 || TAGE_LOOP_ITER_BITS > 16
+#error "TAGE_LOOP_ITER_BITS must be in [1, 16]"
+#endif
+
 #define TAGE_TAG_MASK ((1 << TAGE_TAG_WIDTH) - 1)
 #define TAGE_IDX_MASK ((1 << TAGE_IDX_WIDTH) - 1)
 #define TAGE_BASE_IDX_MASK ((1 << TAGE_BASE_IDX_WIDTH) - 1)

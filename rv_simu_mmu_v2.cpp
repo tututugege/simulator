@@ -140,7 +140,7 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
 void SimCpu::commit_sync(InstInfo *inst) {
   BackTop *back = &this->back;
   if (inst->type == JALR) {
-    if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+    if (inst->tma.is_ret) {
       this->ctx.perf.ret_br_num++;
     } else {
       this->ctx.perf.jalr_br_num++;
@@ -151,12 +151,12 @@ void SimCpu::commit_sync(InstInfo *inst) {
 
   if (inst->mispred) {
     if (inst->type == JALR) {
-      if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0) {
+      if (inst->tma.is_ret) {
         this->ctx.perf.ret_mispred_num++;
         bool pred_taken = false;
-        FTQEntry &entry = back->idu->out.ftq_lookup->entries[inst->ftq_idx];
-        if (entry.valid) {
-          pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+        const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+        if (entry != nullptr && entry->valid) {
+          pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
         if (!pred_taken) {
           this->ctx.perf.ret_dir_mispred++;
@@ -166,9 +166,9 @@ void SimCpu::commit_sync(InstInfo *inst) {
       } else {
         this->ctx.perf.jalr_mispred_num++;
         bool pred_taken = false;
-        FTQEntry &entry = back->idu->out.ftq_lookup->entries[inst->ftq_idx];
-        if (entry.valid) {
-          pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+        const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+        if (entry != nullptr && entry->valid) {
+          pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
         if (!pred_taken) {
           this->ctx.perf.jalr_dir_mispred++;
@@ -178,9 +178,9 @@ void SimCpu::commit_sync(InstInfo *inst) {
       }
     } else if (inst->type == BR) {
       bool pred_taken = false;
-      FTQEntry &entry = back->idu->out.ftq_lookup->entries[inst->ftq_idx];
-      if (entry.valid) {
-        pred_taken = entry.pred_taken_mask[inst->ftq_offset];
+      const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+      if (entry != nullptr && entry->valid) {
+        pred_taken = entry->pred_taken_mask[inst->ftq_offset];
       }
       if (pred_taken != inst->br_taken) {
         this->ctx.perf.cond_dir_mispred++;
@@ -204,10 +204,13 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   InstInfo *inst = &inst_entry->uop;
 
   for (int i = 0; i < ARF_NUM; i++) {
-    dut_cpu.gpr[i] = back->prf->reg_file[back->rename->arch_RAT_1[i]];
+    // With same-cycle EXU->ROB completion, commit-side architectural mapping
+    // (arch_RAT_1) can point to a preg whose value is produced in this cycle's
+    // comb writeback path. Use reg_file_1 to observe the up-to-date comb state.
+    dut_cpu.gpr[i] = back->prf->reg_file_1[back->rename->arch_RAT_1[i]];
   }
 
-  if (is_store(*inst) && !inst->page_fault_store) {
+  if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
     const bool sc_suppressed =
         is_amo_sc_inst(*inst) && e.suppress_write &&
@@ -313,8 +316,8 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL ||
                 back->rob->out.rob_bcast->flush)
                    ? inst_entry->uop.diag_val
-                   : inst->pc + 4;
-  dut_cpu.instruction = inst->instruction;
+                   : inst->dbg.pc + 4;
+  dut_cpu.instruction = inst->dbg.instruction;
   dut_cpu.page_fault_inst = inst->page_fault_inst;
   dut_cpu.page_fault_load = inst->page_fault_load;
   dut_cpu.page_fault_store = inst->page_fault_store;
@@ -489,6 +492,7 @@ void SimCpu::front_cycle() {
 
     front.in.FIFO_read_enable = true;
     front.in.refetch = (back.out.mispred || back.out.flush);
+    front.in.itlb_flush = back.out.itlb_flush;
     if (front.in.refetch) {
       front.in.refetch_address =
           back.out.redirect_pc; // 再次确保赋值，防止时序错位
@@ -530,6 +534,7 @@ void SimCpu::front_cycle() {
 #ifdef CONFIG_BPU
     front.in.FIFO_read_enable = false;
     front.in.refetch = false;
+    front.in.itlb_flush = back.out.itlb_flush;
     front.step_bpu();
 #else
 #endif
@@ -538,6 +543,7 @@ void SimCpu::front_cycle() {
   // Oracle 模式：每拍都执行握手，利用 1-entry pending 防止“当拍后端阻塞”丢指令。
   front.in.FIFO_read_enable = true;
   front.in.refetch = (back.out.mispred || back.out.flush);
+  front.in.itlb_flush = back.out.itlb_flush;
   if (front.in.refetch) {
     front.in.refetch_address = back.out.redirect_pc;
   }
@@ -570,6 +576,17 @@ void SimCpu::front_cycle() {
     back.in.alt_pred[j] = front.out.alt_pred[j];
     back.in.altpcpn[j] = front.out.altpcpn[j];
     back.in.pcpn[j] = front.out.pcpn[j];
+    back.in.sc_used[j] = front.out.sc_used[j];
+    back.in.sc_pred[j] = front.out.sc_pred[j];
+    back.in.sc_sum[j] = front.out.sc_sum[j];
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      back.in.sc_idx[j][t] = front.out.sc_idx[j][t];
+    }
+    back.in.loop_used[j] = front.out.loop_used[j];
+    back.in.loop_hit[j] = front.out.loop_hit[j];
+    back.in.loop_pred[j] = front.out.loop_pred[j];
+    back.in.loop_idx[j] = front.out.loop_idx[j];
+    back.in.loop_tag[j] = front.out.loop_tag[j];
     for (int k = 0; k < 4; k++) {
       back.in.tage_idx[j][k] = front.out.tage_idx[j][k];
       back.in.tage_tag[j][k] = front.out.tage_tag[j][k];
@@ -597,12 +614,24 @@ bool SimCpu::ready_to_exit() const {
 void SimCpu::back2front_comb() {
   front.in.FIFO_read_enable = false;
   front.in.csr_status = back.csr->out.csr_status;
+  front.in.itlb_flush = back.out.itlb_flush;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     InstInfo *inst = &back.out.commit_entry[i].uop;
     front.in.back2front_valid[i] = back.out.commit_entry[i].valid;
     for (int j = 0; j < 4; j++) {
       front.in.tage_tag[i][j] = 0;
     }
+    front.in.sc_used[i] = false;
+    front.in.sc_pred[i] = false;
+    front.in.sc_sum[i] = 0;
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      front.in.sc_idx[i][t] = 0;
+    }
+    front.in.loop_used[i] = false;
+    front.in.loop_hit[i] = false;
+    front.in.loop_pred[i] = false;
+    front.in.loop_idx[i] = 0;
+    front.in.loop_tag[i] = 0;
 
     if (front.in.back2front_valid[i]) {
 
@@ -612,27 +641,47 @@ void SimCpu::back2front_comb() {
       uint8_t pcpn = 0;
       uint32_t tage_idx[4] = {0};
       uint32_t tage_tag[4] = {0};
+      bool sc_used = false;
+      bool sc_pred = false;
+      int16_t sc_sum = 0;
+      uint16_t sc_idx[BPU_SCL_META_NTABLE] = {0};
+      bool loop_used = false;
+      bool loop_hit = false;
+      bool loop_pred = false;
+      uint16_t loop_idx = 0;
+      uint16_t loop_tag = 0;
 
-      FTQEntry &entry = back.idu->out.ftq_lookup->entries[inst->ftq_idx];
-      if (entry.valid) {
-        pred_taken = entry.pred_taken_mask[inst->ftq_offset];
-        alt_pred = entry.alt_pred[inst->ftq_offset];
-        altpcpn = entry.altpcpn[inst->ftq_offset];
-        pcpn = entry.pcpn[inst->ftq_offset];
+      const FTQEntry *entry = back.pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+      if (entry != nullptr && entry->valid) {
+        pred_taken = entry->pred_taken_mask[inst->ftq_offset];
+        alt_pred = entry->alt_pred[inst->ftq_offset];
+        altpcpn = entry->altpcpn[inst->ftq_offset];
+        pcpn = entry->pcpn[inst->ftq_offset];
+        sc_used = entry->sc_used[inst->ftq_offset];
+        sc_pred = entry->sc_pred[inst->ftq_offset];
+        sc_sum = entry->sc_sum[inst->ftq_offset];
+        for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+          sc_idx[t] = entry->sc_idx[inst->ftq_offset][t];
+        }
+        loop_used = entry->loop_used[inst->ftq_offset];
+        loop_hit = entry->loop_hit[inst->ftq_offset];
+        loop_pred = entry->loop_pred[inst->ftq_offset];
+        loop_idx = entry->loop_idx[inst->ftq_offset];
+        loop_tag = entry->loop_tag[inst->ftq_offset];
         for (int k = 0; k < 4; k++) {
-          tage_idx[k] = entry.tage_idx[inst->ftq_offset][k];
-          tage_tag[k] = entry.tage_tag[inst->ftq_offset][k];
+          tage_idx[k] = entry->tage_idx[inst->ftq_offset][k];
+          tage_tag[k] = entry->tage_tag[inst->ftq_offset][k];
         }
       }
 
       front.in.predict_dir[i] = pred_taken;
-      front.in.predict_base_pc[i] = inst->pc;
+      front.in.predict_base_pc[i] = inst->dbg.pc;
       front.in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
       front.in.actual_target[i] =
           (is_branch(inst->type) || inst->type == JAL || inst->type == JALR)
               ? back.out.commit_entry[i].uop.diag_val
-              : inst->pc + 4;
+              : inst->dbg.pc + 4;
       int br_type = BR_NONCTL;
       if (is_branch(inst->type)) {
         br_type = BR_DIRECT;
@@ -643,7 +692,7 @@ void SimCpu::back2front_comb() {
       if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
         br_type = BR_CALL;
       } else if (inst->type == JALR) {
-        if (inst->src1_areg == 1 && inst->dest_areg == 0 && inst->imm == 0)
+        if (inst->tma.is_ret)
           br_type = BR_RET;
         else
           br_type = BR_IDIRECT;
@@ -653,6 +702,17 @@ void SimCpu::back2front_comb() {
       front.in.alt_pred[i] = alt_pred;
       front.in.altpcpn[i] = altpcpn;
       front.in.pcpn[i] = pcpn;
+      front.in.sc_used[i] = sc_used;
+      front.in.sc_pred[i] = sc_pred;
+      front.in.sc_sum[i] = sc_sum;
+      for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+        front.in.sc_idx[i][t] = sc_idx[t];
+      }
+      front.in.loop_used[i] = loop_used;
+      front.in.loop_hit[i] = loop_hit;
+      front.in.loop_pred[i] = loop_pred;
+      front.in.loop_idx[i] = loop_idx;
+      front.in.loop_tag[i] = loop_tag;
       for (int j = 0; j < 4; j++) { // TN_MAX = 4 (分支预测相关索引)
         front.in.tage_idx[i][j] = tage_idx[j];
         front.in.tage_tag[i][j] = tage_tag[j];

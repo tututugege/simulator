@@ -4,19 +4,16 @@
 #include "config.h"
 class SimContext;
 
-class IduIn {
-public:
+struct IduIn {
   PreIduIssueIO *issue;
   RenDecIO *ren2dec;
   RobBroadcastIO *rob_bcast;
   ExuIdIO *exu2id; // [New] From Exu
 };
 
-class IduOut {
-public:
+struct IduOut {
   DecRenIO *dec2ren;
   DecBroadcastIO *dec_bcast;
-  FTQLookupIO *ftq_lookup;
 };
 
 class Idu {
@@ -24,7 +21,6 @@ public:
   Idu(SimContext *ctx, int max_br = 1) {
     this->ctx = ctx;
     this->max_br_per_cycle = max_br;
-    out.ftq_lookup = nullptr;
   }
   SimContext *ctx;
   int max_br_per_cycle;
@@ -38,8 +34,6 @@ public:
   void comb_fire();  // 发射握手与分支tag推进
   void comb_flush(); // flush处理
   void seq();              // 时钟跳变，状态更新
-
-  IduIO get_hardware_io(); // 获取硬件级别 IO (Hardware Reference)
 
   // 状态
   reg<BR_MASK_WIDTH> now_br_mask;

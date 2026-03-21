@@ -24,6 +24,9 @@ public:
 
   // Optional TLB shootdown hook (e.g. sfence.vma).
   virtual void flush() {}
+  // Optional hook to cancel only in-flight translation walks without dropping
+  // cached TLB entries.
+  virtual void cancel_pending_walk() {}
 
   // Optional binding hook for PTW memory access path.
   virtual void set_ptw_mem_port(PtwMemPort *port) { (void)port; }

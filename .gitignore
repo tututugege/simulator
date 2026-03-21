@@ -1,6 +1,7 @@
 # Build artifacts
 a.out
 /build/
+/build*/
 *.o
 *.d
 *.so

@@ -3,25 +3,54 @@
 #include "SimCpu.h"
 #include "util.h"
 
-void Dispatch::apply_wakeup_to_uop(InstInfo &uop) const {
+bool Dispatch::is_preg_woken(wire<PRF_IDX_WIDTH> preg) const {
   for (int w = 0; w < LSU_LOAD_WB_WIDTH; w++) {
-    if (!in.prf_awake->wake[w].valid)
-      continue;
-    if (uop.src1_preg == in.prf_awake->wake[w].preg) {
-      uop.src1_busy = false;
-    }
-    if (uop.src2_preg == in.prf_awake->wake[w].preg) {
-      uop.src2_busy = false;
+    if (in.prf_awake->wake[w].valid && in.prf_awake->wake[w].preg == preg) {
+      return true;
     }
   }
   for (int w = 0; w < MAX_WAKEUP_PORTS; w++) {
-    if (!in.iss_awake->wake[w].valid)
-      continue;
-    if (uop.src1_preg == in.iss_awake->wake[w].preg) {
-      uop.src1_busy = false;
+    if (in.iss_awake->wake[w].valid && in.iss_awake->wake[w].preg == preg) {
+      return true;
     }
-    if (uop.src2_preg == in.iss_awake->wake[w].preg) {
-      uop.src2_busy = false;
+  }
+  return false;
+}
+
+void Dispatch::apply_wakeup_to_uop(InstInfo &uop) const {
+  if (uop.src1_en && is_preg_woken(uop.src1_preg)) {
+    uop.src1_busy = false;
+  }
+  if (uop.src2_en && is_preg_woken(uop.src2_preg)) {
+    uop.src2_busy = false;
+  }
+}
+
+void Dispatch::refresh_source_busy() {
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (!inst_alloc[i].valid) {
+      continue;
+    }
+
+    auto &uop = inst_alloc[i].uop;
+    uop.src1_busy = uop.src1_en ? busy_table[uop.src1_preg] : false;
+    uop.src2_busy = uop.src2_en ? busy_table[uop.src2_preg] : false;
+    apply_wakeup_to_uop(uop);
+
+    for (int j = 0; j < i; j++) {
+      if (!inst_alloc[j].valid || !inst_alloc[j].uop.dest_en) {
+        continue;
+      }
+      if (inst_alloc[j].uop.dest_areg == 0) {
+        continue;
+      }
+
+      if (uop.src1_en && uop.src1_preg == inst_alloc[j].uop.dest_preg) {
+        uop.src1_busy = true;
+      }
+      if (uop.src2_en && uop.src2_preg == inst_alloc[j].uop.dest_preg) {
+        uop.src2_busy = true;
+      }
     }
   }
 }
@@ -43,12 +72,14 @@ void Dispatch::init() {
   for (int k = 0; k < MAX_LDQ_DISPATCH_WIDTH; k++) {
     ldq_port_owner[k] = -1;
   }
+  std::memset(busy_table, 0, sizeof(busy_table));
+  std::memset(busy_table_1, 0, sizeof(busy_table_1));
 }
 
 void Dispatch::comb_alloc() {
   int store_alloc_count = 0; // 当前周期已分配的 store 数量
   int load_alloc_count = 0;  // 当前周期已分配的 load 数量
-  mask_t clear_mask = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
 
   // 初始化输出
   for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
@@ -84,7 +115,7 @@ void Dispatch::comb_alloc() {
       if (load_alloc_count < in.lsu2dis->ldq_free &&
           load_alloc_count < GLOBAL_IQ_CONFIG[IQ_LD].dispatch_width &&
           load_alloc_count < MAX_LDQ_DISPATCH_WIDTH &&
-          in.lsu2dis->ldq_alloc_idx[load_alloc_count] >= 0) {
+          in.lsu2dis->ldq_alloc_valid[load_alloc_count]) {
         inst_alloc[i].uop.ldq_idx = in.lsu2dis->ldq_alloc_idx[load_alloc_count];
         ldq_port_owner[load_alloc_count] = i;
         load_alloc_count++;
@@ -114,18 +145,13 @@ void Dispatch::comb_alloc() {
       }
     }
 
-    out.dis2rob->uop[i] = inst_alloc[i].uop;
+    out.dis2rob->uop[i] = DisRobIO::DisRobInst::from_inst_info(inst_alloc[i].uop);
   }
 }
 
-// BusyTable 旁路 (BusyTable Bypass)
+// BusyTable owner: Dispatch
 void Dispatch::comb_wake() {
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (!inst_alloc[i].valid) {
-      continue;
-    }
-    apply_wakeup_to_uop(inst_alloc[i].uop);
-  }
+  refresh_source_busy();
 }
 
 void Dispatch::comb_dispatch() {
@@ -183,7 +209,8 @@ void Dispatch::comb_dispatch() {
         int slot = iq_usage[target];
 
         out.dis2iss->req[target][slot].valid = true;
-        out.dis2iss->req[target][slot].uop = temp_uops[k].uop;
+        out.dis2iss->req[target][slot].uop =
+            DisIssIO::DisIssUop::from_micro_op(temp_uops[k].uop);
 
         iq_usage[target]++;
       }
@@ -220,9 +247,21 @@ void Dispatch::comb_fire() {
   bool serializing_barrier = false;
   int dis2ren_block_reason = DIS2REN_BLOCK_NONE;
   int dis2ren_dispatch_detail = DIS2REN_DISPATCH_DETAIL_NONE;
-  mask_t clear_mask = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
   bool global_flush =
       in.rob_bcast->flush || in.dec_bcast->mispred || in.rob2dis->stall;
+
+  std::memcpy(busy_table_1, busy_table, sizeof(busy_table_1));
+  for (int w = 0; w < LSU_LOAD_WB_WIDTH; w++) {
+    if (in.prf_awake->wake[w].valid) {
+      busy_table_1[in.prf_awake->wake[w].preg] = false;
+    }
+  }
+  for (int w = 0; w < MAX_WAKEUP_PORTS; w++) {
+    if (in.iss_awake->wake[w].valid) {
+      busy_table_1[in.iss_awake->wake[w].preg] = false;
+    }
+  }
 
   auto classify_dispatch_block = [&](int slot_idx) -> int {
     if (slot_idx < 0 || slot_idx >= DECODE_WIDTH) {
@@ -342,6 +381,12 @@ void Dispatch::comb_fire() {
 
     if (basic_fire)
       pre_fire = true;
+  }
+
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (out.dis2rob->dis_fire[i] && inst_r[i].uop.dest_en) {
+      busy_table_1[inst_r[i].uop.dest_preg] = true;
+    }
   }
 
   // 更新 Rename 单元的 Ready 信号
@@ -483,8 +528,8 @@ void Dispatch::comb_fire() {
       // If ROB is full/stalled
       if (!in.rob2dis->ready) { // ROB Full
         any_rob_full_stall = true;
-        if (in.rob2dis->head_is_memory && in.rob2dis->head_not_ready) {
-          if (in.rob2dis->head_is_miss) {
+        if (in.rob2dis->tma.head_is_memory && in.rob2dis->tma.head_not_ready) {
+          if (in.rob2dis->tma.head_is_miss) {
             is_mem_ext_bound[i] = true;
           } else {
             is_mem_l1_bound[i] = true;
@@ -582,7 +627,7 @@ void Dispatch::comb_fire() {
 }
 
 void Dispatch::comb_pipeline() {
-  mask_t clear_mask = in.dec_bcast->clear_mask;
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
 
   if (in.rob_bcast->flush || in.dec_bcast->mispred) {
 #ifdef CONFIG_PERF_COUNTER
@@ -617,9 +662,9 @@ void Dispatch::comb_pipeline() {
       continue;
     }
     if (out.dis2ren->ready) {
-      inst_r_1[i].uop = in.ren2dis->uop[i];
-      inst_r_1[i].uop.br_mask &= ~clear_mask;
       inst_r_1[i].valid = in.ren2dis->valid[i];
+      inst_r_1[i].uop = in.ren2dis->uop[i].to_inst_info();
+      inst_r_1[i].uop.br_mask &= ~clear_mask;
       continue;
     }
 
@@ -635,6 +680,7 @@ void Dispatch::seq() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     inst_r[i] = inst_r_1[i];
   }
+  std::memcpy(busy_table, busy_table_1, sizeof(busy_table));
 }
 
 int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
@@ -840,35 +886,4 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
     break;
   }
   return count;
-}
-
-DispatchIO Dispatch::get_hardware_io() {
-  DispatchIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.from_ren.valid[i] = in.ren2dis->valid[i];
-    hardware.from_ren.uop[i] = RenDisUop::filter(in.ren2dis->uop[i]);
-  }
-  hardware.from_rob.ready = in.rob2dis->ready;
-  hardware.from_rob.full = in.rob2dis->stall;
-  for (int j = 0; j < IQ_NUM; j++) {
-    hardware.from_iss.ready_num[j] = in.iss2dis->ready_num[j];
-  }
-  hardware.from_back.flush = in.rob_bcast->flush;
-
-  // --- Outputs ---
-  hardware.to_ren.ready = out.dis2ren->ready;
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.to_rob.valid[i] = out.dis2rob->valid[i];
-    hardware.to_rob.uop[i] = RobUop::filter(out.dis2rob->uop[i]);
-  }
-  for (int j = 0; j < IQ_NUM; j++) {
-    for (int k = 0; k < MAX_IQ_DISPATCH_WIDTH; k++) {
-      hardware.to_iss.valid[j][k] = out.dis2iss->req[j][k].valid;
-      hardware.to_iss.uop[j][k] = DisIssUop::filter(out.dis2iss->req[j][k].uop);
-    }
-  }
-
-  return hardware;
 }

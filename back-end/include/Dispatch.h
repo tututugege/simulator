@@ -4,16 +4,14 @@
 
 class BackTop;
 
-class DIS_OUT {
-public:
+struct DIS_OUT {
   DisRenIO *dis2ren;
   DisRobIO *dis2rob;
   DisIssIO *dis2iss;
   DisLsuIO *dis2lsu;
 };
 
-class DIS_IN {
-public:
+struct DIS_IN {
   RenDisIO *ren2dis;
   RobDisIO *rob2dis;
   IssDisIO *iss2dis;
@@ -32,9 +30,13 @@ struct UopPacket {
 class Dispatch {
 private:
   int decompose_inst(const InstEntry &original_inst, UopPacket *out_uops);
+  bool is_preg_woken(wire<PRF_IDX_WIDTH> preg) const;
   void apply_wakeup_to_uop(InstInfo &uop) const;
+  void refresh_source_busy();
 
   InstEntry inst_alloc[DECODE_WIDTH];
+  reg<1> busy_table[PRF_NUM];
+  wire<1> busy_table_1[PRF_NUM];
 
   // 记录每条指令 Dispatch 是否成功 (comb_dispatch -> comb_fire)
   bool dispatch_success_flags[DECODE_WIDTH];
@@ -64,8 +66,6 @@ public:
   void comb_fire();
   void comb_pipeline();
   void seq();
-
-  DispatchIO get_hardware_io(); // Hardware Reference
   InstEntry inst_r[DECODE_WIDTH];
   InstEntry inst_r_1[DECODE_WIDTH];
 };

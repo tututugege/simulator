@@ -4,10 +4,6 @@
 #include <iostream>
 #include <string>
 
-typedef wire<PRF_IDX_WIDTH> preg_t;
-typedef wire<BR_TAG_WIDTH> tag_t;
-typedef wire<BR_MASK_WIDTH> mask_t;
-
 // Standard library usings (kept for compatibility)
 using std::cin;
 using std::cout;
@@ -42,6 +38,9 @@ enum InstType {
   FP
 };
 
+constexpr int INST_TYPE_COUNT = FP + 1;
+constexpr int INST_TYPE_WIDTH = bit_width_for_count(INST_TYPE_COUNT);
+
 // AMO Operations (funct7[6:2])
 namespace AmoOp {
 constexpr uint8_t ADD = 0b00000;
@@ -61,9 +60,39 @@ constexpr uint8_t MAXU = 0b11100;
 // [Structs & Classes]
 // ==========================================
 
-typedef struct InstInfo {
-  wire<32>
-      instruction; // Debug only: raw instruction bits (not for hardware logic)
+// Debug sideband for InstInfo. Keep diag_val in hardware path.
+struct InstDebugMeta {
+  wire<32> instruction;
+  wire<32> pc;
+  uint8_t mem_align_mask;
+  bool difftest_skip;
+  int64_t inst_idx;
+};
+
+// Debug sideband for MicroOp. Keep diag_val in hardware path.
+struct UopDebugMeta {
+  wire<32> instruction;
+  wire<32> pc;
+  uint8_t mem_align_mask;
+  bool difftest_skip;
+  int64_t inst_idx;
+};
+
+struct InstTmaMeta {
+  bool is_cache_miss;
+  bool is_ret;
+  bool mem_commit_is_load;
+  bool mem_commit_is_store;
+};
+
+struct UopTmaMeta {
+  bool is_cache_miss;
+  bool is_ret;
+  bool mem_commit_is_load;
+  bool mem_commit_is_store;
+};
+
+struct InstInfo {
   wire<32> diag_val; // Hardware: Shared field for instruction or pc_next
 
   wire<AREG_IDX_WIDTH> dest_areg, src1_areg, src2_areg;
@@ -85,7 +114,6 @@ typedef struct InstInfo {
   wire<3> func3;
   wire<7> func7;
   wire<32> imm;
-  wire<32> pc;
   wire<BR_TAG_WIDTH> br_id;
   wire<BR_MASK_WIDTH> br_mask;
   wire<CSR_IDX_WIDTH> csr_idx;
@@ -107,19 +135,16 @@ typedef struct InstInfo {
   wire<1> is_atomic;
 
   InstType type;
-  bool is_cache_miss;
+  InstTmaMeta tma;
 
   // Debug
-  bool difftest_skip;
-  bool flush_pipe;
-  int64_t inst_idx;
+  InstDebugMeta dbg;
+  wire<1> flush_pipe;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
-} InstInfo;
+};
 
-typedef struct MicroOp {
-  wire<32>
-      instruction; // Debug only: raw instruction bits (not for hardware logic)
+struct MicroOp {
   wire<32> diag_val; // Hardware: Shared field for instruction or pc_next
 
   wire<AREG_IDX_WIDTH> dest_areg, src1_areg;
@@ -144,7 +169,6 @@ typedef struct MicroOp {
   wire<3> func3;
   wire<7> func7;
   wire<32> imm;
-  wire<32> pc;
   wire<BR_TAG_WIDTH> br_id;
   wire<BR_MASK_WIDTH> br_mask;
   wire<CSR_IDX_WIDTH> csr_idx;
@@ -164,20 +188,17 @@ typedef struct MicroOp {
   wire<1> illegal_inst;
 
   UopType op;
-  bool is_cache_miss;
+  UopTmaMeta tma;
 
   // Debug
-  bool difftest_skip;
-  bool flush_pipe;
-  int64_t inst_idx;
-  int64_t cplt_time;
+  UopDebugMeta dbg;
+  wire<1> flush_pipe;
 
   MicroOp() { std::memset(this, 0, sizeof(MicroOp)); }
 
   // Explicit conversion from InstInfo
   MicroOp(const InstInfo &info) {
     std::memset(this, 0, sizeof(MicroOp));
-    this->instruction = info.instruction;
     this->diag_val = info.diag_val;
     this->dest_areg = info.dest_areg;
     this->src1_areg = info.src1_areg;
@@ -199,7 +220,6 @@ typedef struct MicroOp {
     this->func3 = info.func3;
     this->func7 = info.func7;
     this->imm = info.imm;
-    this->pc = info.pc;
     this->br_id = info.br_id;
     this->br_mask = info.br_mask;
     this->csr_idx = info.csr_idx;
@@ -213,28 +233,34 @@ typedef struct MicroOp {
     this->page_fault_load = info.page_fault_load;
     this->page_fault_store = info.page_fault_store;
     this->illegal_inst = info.illegal_inst;
-    this->is_cache_miss = info.is_cache_miss;
+    this->tma.is_cache_miss = info.tma.is_cache_miss;
+    this->tma.is_ret = info.tma.is_ret;
+    this->tma.mem_commit_is_load = info.tma.mem_commit_is_load;
+    this->tma.mem_commit_is_store = info.tma.mem_commit_is_store;
     this->is_atomic = info.is_atomic;
-    this->difftest_skip = info.difftest_skip;
+    this->dbg.instruction = info.dbg.instruction;
+    this->dbg.pc = info.dbg.pc;
+    this->dbg.mem_align_mask = info.dbg.mem_align_mask;
+    this->dbg.difftest_skip = info.dbg.difftest_skip;
+    this->dbg.inst_idx = info.dbg.inst_idx;
     this->flush_pipe = info.flush_pipe;
-    this->inst_idx = info.inst_idx;
   }
-} MicroOp;
+};
 
-typedef struct {
+struct InstEntry {
   wire<1> valid;
   InstInfo uop;
-} InstEntry;
+};
 
-typedef struct {
+struct UopEntry {
   wire<1> valid;
   MicroOp uop;
-} UopEntry;
+};
 
-typedef struct {
+struct WakeInfo {
   wire<1> valid;
   wire<PRF_IDX_WIDTH> preg;
-} WakeInfo;
+};
 
 #include "PerfCount.h"
 

@@ -10,15 +10,28 @@
 #include <iostream>
 
 namespace {
-inline uint32_t load_alignment_mask(uint32_t func3) {
-  switch (func3 & 0x3) {
-  case 0:
-    return 0;
-  case 1:
-    return 1;
-  default:
-    return 3;
-  }
+inline bool rob_is_store(const RobStoredInst &uop) {
+  return uop.tma.mem_commit_is_store;
+}
+
+inline bool rob_is_load(const RobStoredInst &uop) {
+  return uop.tma.mem_commit_is_load;
+}
+
+inline bool rob_is_page_fault(const RobStoredInst &uop) {
+  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;
+}
+
+inline bool rob_is_exception(const RobStoredInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return rob_is_page_fault(uop) || uop.illegal_inst || type == ECALL;
+}
+
+inline bool rob_is_flush_inst(const RobStoredInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return type == CSR || type == ECALL || type == MRET || type == SRET ||
+         type == SFENCE_VMA || rob_is_exception(uop) || type == EBREAK ||
+         uop.flush_pipe;
 }
 } // namespace
 
@@ -43,7 +56,7 @@ void Rob::comb_ready() {
   out.rob2csr->interrupt_resp = false;
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    if (entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop)) {
+    if (entry[i][deq_ptr].valid && rob_is_flush_inst(entry[i][deq_ptr].uop)) {
       out.rob2dis->stall = true;
       break;
     }
@@ -74,11 +87,12 @@ void Rob::comb_ready() {
       if (!is_ready) {
         // This is the oldest incomplete instruction. It is the bottleneck.
         found_stall = true;
-        if (is_load(entry[i][deq_ptr].uop) || is_store(entry[i][deq_ptr].uop)) {
+        if (rob_is_load(entry[i][deq_ptr].uop) ||
+            rob_is_store(entry[i][deq_ptr].uop)) {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
           stall_is_miss =
-              (rob_idx < ROB_NUM) ? in.lsu2rob->miss_mask.test(rob_idx) : false;
+              (rob_idx < ROB_NUM) ? in.lsu2rob->tma.miss_mask.test(rob_idx) : false;
         } else {
           stall_is_mem = false;
           stall_is_miss = false;
@@ -90,12 +104,29 @@ void Rob::comb_ready() {
     }
   }
 
-  out.rob2dis->head_not_ready = found_stall;
-  out.rob2dis->head_is_memory = (found_stall && stall_is_mem);
-  out.rob2dis->head_is_miss = (found_stall && stall_is_miss);
+  out.rob2dis->tma.head_not_ready = found_stall;
+  out.rob2dis->tma.head_is_memory = (found_stall && stall_is_mem);
+  out.rob2dis->tma.head_is_miss = (found_stall && stall_is_miss);
 
   out.rob2dis->empty = is_empty();
   out.rob2dis->ready = !is_full();
+}
+
+void Rob::comb_ftq_pc_req() {
+  out.ftq_pc_req->req[0] = {};
+
+  if (is_empty()) {
+    return;
+  }
+
+  for (int i = 0; i < ROB_BANK_NUM; i++) {
+    if (entry[i][deq_ptr].valid) {
+      out.ftq_pc_req->req[0].valid = true;
+      out.ftq_pc_req->req[0].ftq_idx = entry[i][deq_ptr].uop.ftq_idx;
+      out.ftq_pc_req->req[0].ftq_offset = entry[i][deq_ptr].uop.ftq_offset;
+      break;
+    }
+  }
 }
 
 void Rob::comb_commit() {
@@ -165,7 +196,8 @@ void Rob::comb_commit() {
 
   if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
-      if ((entry[i][deq_ptr].valid && is_flush_inst(entry[i][deq_ptr].uop)) ||
+      if ((entry[i][deq_ptr].valid &&
+           rob_is_flush_inst(entry[i][deq_ptr].uop)) ||
           out.rob2csr->interrupt_resp) {
         single_commit = true;
         break;
@@ -180,7 +212,8 @@ void Rob::comb_commit() {
         if (entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
           single_commit = false;
         }
-        if (entry[i][deq_ptr].uop.type == SFENCE_VMA && in.lsu2rob != nullptr &&
+        if (decode_inst_type(entry[i][deq_ptr].uop.type) == SFENCE_VMA &&
+            in.lsu2rob != nullptr &&
             in.lsu2rob->committed_store_pending) {
           // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
@@ -213,7 +246,7 @@ void Rob::comb_commit() {
   }
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop;
+    out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop.to_commit_inst();
   }
 
   // 一组提交
@@ -223,9 +256,9 @@ void Rob::comb_commit() {
         const auto &uop = entry[i][deq_ptr].uop;
         // 仅在 Load 已完成且非异常语义时检查地址对齐，避免中断单提交/异常路径下
         // 将 diag_val 的其他语义（如指令字、异常地址）误当作物理地址检查。
-        if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
-            !is_page_fault(uop)) {
-          uint32_t alignment_mask = load_alignment_mask(uop.func3);
+        if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+            !rob_is_page_fault(uop)) {
+          uint32_t alignment_mask = uop.dbg.mem_align_mask;
           Assert((uop.diag_val & alignment_mask) == 0 &&
                  "DUT: Load address misaligned at commit!");
         }
@@ -275,45 +308,48 @@ void Rob::comb_commit() {
     }
     if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
+      const auto &uop = entry[single_idx][deq_ptr].uop;
+      Assert(in.ftq_pc_resp->resp[0].valid);
+      uint32_t single_pc = in.ftq_pc_resp->resp[0].pc;
       out.rob_bcast->flush = true;
-      out.rob_bcast->exception = is_exception(entry[single_idx][deq_ptr].uop) ||
-                                 out.rob2csr->interrupt_resp;
-      out.rob_bcast->pc = out.rob_commit->commit_entry[single_idx].uop.pc;
+      out.rob_bcast->exception =
+          rob_is_exception(uop) || out.rob2csr->interrupt_resp;
+      out.rob_bcast->pc = single_pc;
 
       if (out.rob2csr->interrupt_resp) {
         // interrupt拥有最高优先级
-      } else if (entry[single_idx][deq_ptr].uop.type == ECALL) {
+      } else if (decode_inst_type(uop.type) == ECALL) {
         out.rob_bcast->ecall = true;
-        out.rob_bcast->pc = out.rob_commit->commit_entry[single_idx].uop.pc;
-      } else if (entry[single_idx][deq_ptr].uop.type == MRET) {
+        out.rob_bcast->pc = single_pc;
+      } else if (decode_inst_type(uop.type) == MRET) {
         out.rob_bcast->mret = true;
-      } else if (entry[single_idx][deq_ptr].uop.type == SRET) {
+      } else if (decode_inst_type(uop.type) == SRET) {
         out.rob_bcast->sret = true;
-      } else if (entry[single_idx][deq_ptr].uop.page_fault_store) {
+      } else if (uop.page_fault_store) {
         out.rob_bcast->page_fault_store = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
-      } else if (entry[single_idx][deq_ptr].uop.page_fault_load) {
+        out.rob_bcast->trap_val = uop.diag_val;
+      } else if (uop.page_fault_load) {
         out.rob_bcast->page_fault_load = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
-      } else if (entry[single_idx][deq_ptr].uop.page_fault_inst) {
+        out.rob_bcast->trap_val = uop.diag_val;
+      } else if (uop.page_fault_inst) {
         out.rob_bcast->page_fault_inst = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.pc;
-      } else if (entry[single_idx][deq_ptr].uop.illegal_inst) {
+        out.rob_bcast->trap_val = single_pc;
+      } else if (uop.illegal_inst) {
         out.rob_bcast->illegal_inst = true;
-        out.rob_bcast->trap_val = entry[single_idx][deq_ptr].uop.diag_val;
-      } else if (entry[single_idx][deq_ptr].uop.type == EBREAK) {
+        out.rob_bcast->trap_val = uop.diag_val;
+      } else if (decode_inst_type(uop.type) == EBREAK) {
         ctx->exit_reason = ExitReason::EBREAK;
-      } else if (entry[single_idx][deq_ptr].uop.type == WFI) {
+      } else if (decode_inst_type(uop.type) == WFI) {
         ctx->exit_reason = ExitReason::WFI;
-      } else if (entry[single_idx][deq_ptr].uop.type == CSR) {
+      } else if (decode_inst_type(uop.type) == CSR) {
         out.rob2csr->commit = true;
-      } else if (entry[single_idx][deq_ptr].uop.type == SFENCE_VMA) {
+      } else if (decode_inst_type(uop.type) == SFENCE_VMA) {
         out.rob_bcast->fence = true;
-      } else if (entry[single_idx][deq_ptr].uop.flush_pipe) {
+      } else if (uop.flush_pipe) {
         // MMIO-triggered flush, no extra CSR/MMU actions needed here
-        out.rob_bcast->pc = entry[single_idx][deq_ptr].uop.pc;
+        out.rob_bcast->pc = single_pc;
       } else {
-        if (entry[single_idx][deq_ptr].uop.type != CSR) {
+        if (decode_inst_type(uop.type) != CSR) {
           Assert(0 && "Error: Who is Rem? This pointer is forgotten.");
         }
       }
@@ -343,12 +379,12 @@ void Rob::comb_commit() {
       if (entry[i][deq_ptr].valid) {
         printf("0x%08x: 0x%08x cplt_num: %d  uop_num: %d rob_idx:%d "
                "is_page_fault: %d inst_idx: %lld type: %d\n",
-               entry[i][deq_ptr].uop.pc, entry[i][deq_ptr].uop.diag_val,
+               entry[i][deq_ptr].uop.dbg.pc, entry[i][deq_ptr].uop.diag_val,
                entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
                (i + (deq_ptr * ROB_BANK_NUM)),
-               is_page_fault(entry[i][deq_ptr].uop),
-               (long long)entry[i][deq_ptr].uop.inst_idx,
-               entry[i][deq_ptr].uop.type);
+               rob_is_page_fault(entry[i][deq_ptr].uop),
+               (long long)entry[i][deq_ptr].uop.dbg.inst_idx,
+               decode_inst_type(entry[i][deq_ptr].uop.type));
       } else {
         printf("[Bank %d] INVALID\n", i);
       }
@@ -363,8 +399,11 @@ void Rob::comb_complete() {
   //  执行完毕的标记 (Early Completion Phase 2)
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     if (in.exu2rob->entry[i].valid) {
-      int bank_idx = get_rob_bank(in.exu2rob->entry[i].uop.rob_idx);
-      int line_idx = get_rob_line(in.exu2rob->entry[i].uop.rob_idx);
+      const auto &wb = in.exu2rob->entry[i].uop;
+      bool wb_has_page_fault =
+          wb.page_fault_inst || wb.page_fault_load || wb.page_fault_store;
+      int bank_idx = get_rob_bank(wb.rob_idx);
+      int line_idx = get_rob_line(wb.rob_idx);
 
       entry_1[bank_idx][line_idx].uop.cplt_num++;
       if (entry_1[bank_idx][line_idx].uop.cplt_num >
@@ -375,12 +414,10 @@ void Rob::comb_complete() {
       for (int k = 0; k < LSU_LDU_COUNT; k++) {
         if (i == IQ_LD_PORT_BASE + k) {
           // 保存物理地址，用于 Commit 时的对齐检查
-          entry_1[bank_idx][line_idx].uop.diag_val =
-              in.exu2rob->entry[i].uop.diag_val;
+          entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
 
-          if (is_page_fault(in.exu2rob->entry[i].uop)) {
-            entry_1[bank_idx][line_idx].uop.diag_val =
-                in.exu2rob->entry[i].uop.result;
+          if (wb_has_page_fault) {
+            entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
             entry_1[bank_idx][line_idx].uop.page_fault_load = true;
           }
         }
@@ -388,9 +425,8 @@ void Rob::comb_complete() {
 
       for (int k = 0; k < LSU_STA_COUNT; k++) {
         if (i == IQ_STA_PORT_BASE + k) {
-          if (is_page_fault(in.exu2rob->entry[i].uop)) {
-            entry_1[bank_idx][line_idx].uop.diag_val =
-                in.exu2rob->entry[i].uop.result;
+          if (wb_has_page_fault) {
+            entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
             entry_1[bank_idx][line_idx].uop.page_fault_store = true;
           }
         }
@@ -399,17 +435,12 @@ void Rob::comb_complete() {
       // 同一条指令可能由多个 uop 回写（例如 STA/STD），flush_pipe
       // 需要保持置位， 不能被后到达的 uop 覆盖为 0。
       entry_1[bank_idx][line_idx].uop.flush_pipe =
-          entry_1[bank_idx][line_idx].uop.flush_pipe ||
-          in.exu2rob->entry[i].uop.flush_pipe;
-      entry_1[bank_idx][line_idx].uop.difftest_skip =
-          in.exu2rob->entry[i].uop.difftest_skip;
-      if (is_branch_uop(in.exu2rob->entry[i].uop.op)) {
-        entry_1[bank_idx][line_idx].uop.diag_val =
-            in.exu2rob->entry[i].uop.diag_val;
-        entry_1[bank_idx][line_idx].uop.mispred =
-            in.exu2rob->entry[i].uop.mispred;
-        entry_1[bank_idx][line_idx].uop.br_taken =
-            in.exu2rob->entry[i].uop.br_taken;
+          entry_1[bank_idx][line_idx].uop.flush_pipe || wb.flush_pipe;
+      entry_1[bank_idx][line_idx].uop.dbg.difftest_skip = wb.dbg.difftest_skip;
+      if (is_branch_uop(wb.op)) {
+        entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
+        entry_1[bank_idx][line_idx].uop.mispred = wb.mispred;
+        entry_1[bank_idx][line_idx].uop.br_taken = wb.br_taken;
       }
     }
   }
@@ -469,7 +500,8 @@ void Rob::comb_fire() {
     for (int i = 0; i < DECODE_WIDTH; i++) {
       if (in.dis2rob->dis_fire[i]) {
         entry_1[i][enq_ptr].valid = true;
-        entry_1[i][enq_ptr].uop = in.dis2rob->uop[i];
+        entry_1[i][enq_ptr].uop =
+            RobStoredInst::from_dis_rob_inst(in.dis2rob->uop[i]);
         entry_1[i][enq_ptr].uop.cplt_num = 0;
         enq = true;
       }
@@ -510,33 +542,4 @@ void Rob::seq() {
   enq_ptr = enq_ptr_1;
   enq_flag = enq_flag_1;
   deq_flag = deq_flag_1;
-}
-
-RobIO Rob::get_hardware_io() {
-  RobIO hardware;
-
-  // --- Inputs ---
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    hardware.from_dis.valid[i] = in.dis2rob->valid[i];
-    hardware.from_dis.uop[i] = RobUop::filter(in.dis2rob->uop[i]);
-  }
-  for (int i = 0; i < ISSUE_WIDTH; i++) {
-    hardware.from_exe.valid[i] = in.exu2rob->entry[i].valid;
-    hardware.from_exe.uop[i] = ExeWbUop::filter(in.exu2rob->entry[i].uop);
-  }
-
-  // --- Outputs ---
-  hardware.to_dis.stall = out.rob2dis->stall;
-  for (int i = 0; i < COMMIT_WIDTH; i++) {
-    hardware.to_ren.commit_valid[i] = out.rob_commit->commit_entry[i].valid;
-    hardware.to_ren.commit_areg[i] =
-        out.rob_commit->commit_entry[i].uop.dest_areg;
-    hardware.to_ren.commit_preg[i] =
-        out.rob_commit->commit_entry[i].uop.dest_preg;
-    hardware.to_ren.commit_dest_en[i] =
-        out.rob_commit->commit_entry[i].uop.dest_en;
-  }
-  hardware.to_all.flush = out.rob_bcast->flush;
-
-  return hardware;
 }

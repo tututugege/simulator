@@ -114,6 +114,15 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // - undefined : I/D side both use SimpleMmu (ideal va2pa)
 #define CONFIG_TLB_MMU
 
+// Diagnostic switch:
+// When enabled, clear backend internal stage IO structs at the beginning of
+// BackTop::comb() before any comb_* runs. This helps detect hidden dependence
+// on previous-cycle IO values (latch-like behavior in combinational paths).
+// Keep disabled for normal runs.
+#ifndef CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
+#define CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN 1
+#endif
+
 extern long long sim_time; // Global simulation time
 constexpr int REPLAY_STORE_COUNT_UPPER_BOUND = 32;
 constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
@@ -242,6 +251,15 @@ constexpr int COMMIT_WIDTH = DECODE_WIDTH;
 constexpr int IDU_INST_BUFFER_SIZE = 64;
 
 // ============================================================
+// [2.1] Frontend/Backend Shared Branch-Predictor Metadata Sizes
+// ============================================================
+// Metadata plumbing sizes for predict -> commit roundtrip.
+constexpr int BPU_SCL_META_NTABLE = 8;
+constexpr int BPU_SCL_META_IDX_BITS = 16;
+constexpr int BPU_LOOP_META_IDX_BITS = 16;
+constexpr int BPU_LOOP_META_TAG_BITS = 16;
+
+// ============================================================
 // [3] I-Cache Config
 // ============================================================
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
@@ -254,12 +272,58 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 #endif
 
 // AXI protocol flavor for the dedicated icache memory path.
-// 4 = AXI4 path, 3 = AXI3 path.
+// Current axi-interconnect-kit integration supports AXI4 only.
 #ifndef CONFIG_AXI_PROTOCOL
 #define CONFIG_AXI_PROTOCOL 4
 #endif
 #if CONFIG_AXI_PROTOCOL != 4
 #error "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
+#endif
+
+// Enable the shared AXI LLC path.
+// Keep this disabled by default until the fresh-main integration is validated.
+#ifndef CONFIG_AXI_LLC_ENABLE
+#define CONFIG_AXI_LLC_ENABLE 0
+#endif
+
+#ifndef CONFIG_AXI_LLC_SIZE_BYTES
+#define CONFIG_AXI_LLC_SIZE_BYTES (8ull << 20)
+#endif
+
+#ifndef CONFIG_AXI_LLC_LINE_BYTES
+#define CONFIG_AXI_LLC_LINE_BYTES 64u
+#endif
+
+#ifndef CONFIG_AXI_LLC_WAYS
+#define CONFIG_AXI_LLC_WAYS 16u
+#endif
+
+#ifndef CONFIG_AXI_LLC_MSHR_NUM
+#define CONFIG_AXI_LLC_MSHR_NUM 4u
+#endif
+
+#ifndef CONFIG_AXI_LLC_LOOKUP_LATENCY
+#define CONFIG_AXI_LLC_LOOKUP_LATENCY 8u
+#endif
+
+#ifndef CONFIG_AXI_LLC_PREFETCH_ENABLE
+#define CONFIG_AXI_LLC_PREFETCH_ENABLE 0
+#endif
+
+#ifndef CONFIG_AXI_LLC_PREFETCH_DEGREE
+#define CONFIG_AXI_LLC_PREFETCH_DEGREE 1u
+#endif
+
+#ifndef CONFIG_AXI_LLC_NINE
+#define CONFIG_AXI_LLC_NINE 1
+#endif
+
+#ifndef CONFIG_AXI_LLC_UNIFIED
+#define CONFIG_AXI_LLC_UNIFIED 1
+#endif
+
+#ifndef CONFIG_AXI_LLC_PIPT
+#define CONFIG_AXI_LLC_PIPT 1
 #endif
 
 constexpr int ICACHE_WAY_NUM = 8;
@@ -413,6 +477,8 @@ constexpr int MAX_UOPS_PER_INST = 3;
 // ============================================================
 constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
+constexpr int FTQ_EXU_PC_PORT_NUM = ALU_NUM + BRU_NUM;
+constexpr int FTQ_ROB_PC_PORT_NUM = 1;
 constexpr int STQ_SIZE = 64;
 constexpr int LDQ_SIZE = 64;
 constexpr int MUL_MAX_LATENCY = 2;
@@ -486,6 +552,19 @@ constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
      count_ports_with_mask(OP_MASK_STD)},
     {IQ_BR, 32, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
+
+constexpr int calculate_max_iq_size() {
+  int max_size = 0;
+  for (const auto &cfg : GLOBAL_IQ_CONFIG) {
+    if (cfg.size > max_size) {
+      max_size = cfg.size;
+    }
+  }
+  return max_size;
+}
+
+constexpr int MAX_IQ_SIZE = calculate_max_iq_size();
+constexpr int IQ_READY_NUM_WIDTH = bit_width_for_count(MAX_IQ_SIZE + 1);
 
 // ============================================================
 // [16] Global Sanity Checks

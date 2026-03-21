@@ -96,6 +96,26 @@ public:
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
+  uint64_t llc_read_access = 0;
+  uint64_t llc_read_hit = 0;
+  uint64_t llc_read_miss = 0;
+  uint64_t llc_icache_read_access = 0;
+  uint64_t llc_icache_read_hit = 0;
+  uint64_t llc_icache_read_miss = 0;
+  uint64_t llc_dcache_read_access = 0;
+  uint64_t llc_dcache_read_hit = 0;
+  uint64_t llc_dcache_read_miss = 0;
+  uint64_t llc_bypass_read = 0;
+  uint64_t llc_write_passthrough = 0;
+  uint64_t llc_refill = 0;
+  uint64_t llc_mshr_alloc = 0;
+  uint64_t llc_mshr_merge = 0;
+  uint64_t llc_prefetch_issue = 0;
+  uint64_t llc_prefetch_hit = 0;
+  uint64_t llc_prefetch_drop_inflight = 0;
+  uint64_t llc_prefetch_drop_mshr_full = 0;
+  uint64_t llc_prefetch_drop_queue_full = 0;
+  uint64_t llc_prefetch_drop_table_hit = 0;
 
   uint64_t cond_br_num = 0;
   uint64_t jalr_br_num = 0;
@@ -406,6 +426,26 @@ public:
     reset_mem_op_traces();
     icache_access_num = 0;
     icache_miss_num = 0;
+    llc_read_access = 0;
+    llc_read_hit = 0;
+    llc_read_miss = 0;
+    llc_icache_read_access = 0;
+    llc_icache_read_hit = 0;
+    llc_icache_read_miss = 0;
+    llc_dcache_read_access = 0;
+    llc_dcache_read_hit = 0;
+    llc_dcache_read_miss = 0;
+    llc_bypass_read = 0;
+    llc_write_passthrough = 0;
+    llc_refill = 0;
+    llc_mshr_alloc = 0;
+    llc_mshr_merge = 0;
+    llc_prefetch_issue = 0;
+    llc_prefetch_hit = 0;
+    llc_prefetch_drop_inflight = 0;
+    llc_prefetch_drop_mshr_full = 0;
+    llc_prefetch_drop_queue_full = 0;
+    llc_prefetch_drop_table_hit = 0;
 
     // bpu
     cond_br_num = 0;
@@ -534,6 +574,7 @@ public:
     perf_print_periodic_snapshots();
     perf_print_dcache();
     perf_print_icache();
+    perf_print_llc();
     perf_print_ptw();
     perf_print_branch();
     perf_print_frontend_fetch();
@@ -880,6 +921,38 @@ public:
     printf("\033[38;5;34micache hit      : %ld\033[0m\n",
            icache_access_num - icache_miss_num);
     printf("\033[38;5;34micache miss     : %ld\033[0m\n", icache_miss_num);
+    printf("\n");
+  }
+
+  void perf_print_llc() {
+    printf("\033[38;5;34m*********LLC COUNTER**************\033[0m\n");
+#if CONFIG_AXI_LLC_ENABLE
+    const double llc_acc =
+        llc_read_access ? static_cast<double>(llc_read_hit) / llc_read_access
+                        : 1.0;
+    printf("\033[38;5;34mllc read acc    : %f\033[0m\n", llc_acc);
+    printf("\033[38;5;34mllc read access : %ld\033[0m\n", llc_read_access);
+    printf("\033[38;5;34mllc read hit    : %ld\033[0m\n", llc_read_hit);
+    printf("\033[38;5;34mllc read miss   : %ld\033[0m\n", llc_read_miss);
+    printf("\033[38;5;34mllc icache a/h/m: %ld / %ld / %ld\033[0m\n",
+           llc_icache_read_access, llc_icache_read_hit, llc_icache_read_miss);
+    printf("\033[38;5;34mllc dcache a/h/m: %ld / %ld / %ld\033[0m\n",
+           llc_dcache_read_access, llc_dcache_read_hit, llc_dcache_read_miss);
+    printf("\033[38;5;34mllc bypass read : %ld\033[0m\n", llc_bypass_read);
+    printf("\033[38;5;34mllc refill      : %ld\033[0m\n", llc_refill);
+    printf("\033[38;5;34mllc mshr alloc  : %ld\033[0m\n", llc_mshr_alloc);
+    printf("\033[38;5;34mllc mshr merge  : %ld\033[0m\n", llc_mshr_merge);
+    printf("\033[38;5;34mllc wr passthru : %ld\033[0m\n",
+           llc_write_passthrough);
+    printf("\033[38;5;34mpf issue/hit    : %ld / %ld\033[0m\n",
+           llc_prefetch_issue, llc_prefetch_hit);
+    printf("\033[38;5;34mpf drop inflight/full : %ld / %ld\033[0m\n",
+           llc_prefetch_drop_inflight, llc_prefetch_drop_mshr_full);
+    printf("\033[38;5;34mpf drop queue/hit     : %ld / %ld\033[0m\n",
+           llc_prefetch_drop_queue_full, llc_prefetch_drop_table_hit);
+#else
+    printf("\033[38;5;34mllc status      : disabled\033[0m\n");
+#endif
     printf("\n");
   }
 

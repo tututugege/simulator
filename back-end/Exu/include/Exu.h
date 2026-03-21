@@ -14,38 +14,38 @@ struct PortMapping {
   std::vector<FuEntry> entries;
 };
 
-class ExuIn {
-public:
+struct ExuIn {
   PrfExeIO *prf2exe;
   DecBroadcastIO *dec_bcast;
   RobBroadcastIO *rob_bcast;
   CsrExeIO *csr2exe;
   LsuExeIO *lsu2exe;
   CsrStatusIO *csr_status;
+  FtqExuPcRespIO *ftq_pc_resp;
 };
 
-class ExuOut {
-public:
+struct ExuOut {
   ExePrfIO *exe2prf;
   ExeIssIO *exe2iss;
   ExeCsrIO *exe2csr;
   ExeLsuIO *exe2lsu;
   ExuIdIO *exu2id; // [New] Early Branch Resolution
   ExuRobIO *exu2rob;
+  FtqExuPcReqIO *ftq_pc_req;
 };
 
 class Exu {
 public:
-  Exu(SimContext *ctx, FTQLookupIO *ftq_lookup);
+  Exu(SimContext *ctx);
   ~Exu(); // 析构函数释放 FU 内存
 
   SimContext *ctx;
-  FTQLookupIO *ftq_lookup;
   std::vector<PortMapping> port_mappings;
 
   void init();
 
   // 组合逻辑
+  void comb_ftq_pc_req();
   void comb_exec(); // 核心：发射到 FU + 收集结果
   void comb_to_csr();
   void comb_pipeline(); // 准备下一周期的 inst_r
@@ -53,8 +53,6 @@ public:
 
   // 时序逻辑
   void seq();
-
-  ExuIO get_hardware_io(); // Hardware Reference
 
   ExuIn in;
   ExuOut out;

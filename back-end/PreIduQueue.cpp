@@ -3,6 +3,25 @@
 #include "types.h"
 #include "util.h"
 
+static void fill_ftq_pc_resp(FtqPcReadResp &resp, const FTQEntry &entry,
+                             const FtqPcReadReq &req) {
+  resp = {};
+  if (!req.valid) {
+    return;
+  }
+
+  resp.valid = true;
+  resp.entry_valid = entry.valid;
+  resp.pc = entry.start_pc + (req.ftq_offset << 2);
+  resp.pred_taken = entry.pred_taken_mask[req.ftq_offset];
+  resp.next_pc = entry.next_pc;
+}
+
+static inline uint32_t ftq_pc_from_entry(const FTQEntry &entry,
+                                         uint32_t ftq_offset) {
+  return entry.start_pc + (ftq_offset << 2);
+}
+
 int PreIduQueue::ftq_alloc(const FTQEntry &entry) {
   (void)entry;
   if (ftq_count_1 >= FTQ_SIZE) {
@@ -30,6 +49,10 @@ void PreIduQueue::ftq_pop(int pop_cnt) {
 void PreIduQueue::ftq_recover(int new_tail) {
   int normalized_tail = ((new_tail % FTQ_SIZE) + FTQ_SIZE) % FTQ_SIZE;
   int discarded = (ftq_tail_1 - normalized_tail + FTQ_SIZE) % FTQ_SIZE;
+  for (int i = 0; i < discarded; i++) {
+    int idx = (normalized_tail + i) % FTQ_SIZE;
+    ftq_entries[idx] = FTQEntry();
+  }
   ftq_tail_1 = normalized_tail;
   ftq_count_1 -= discarded;
 }
@@ -40,9 +63,6 @@ void PreIduQueue::ftq_flush() {
   ftq_count_1 = 0;
   for (int i = 0; i < FTQ_SIZE; i++) {
     ftq_entries[i] = FTQEntry();
-    if (out.ftq_lookup != nullptr) {
-      out.ftq_lookup->entries[i] = ftq_entries[i];
-    }
   }
 }
 
@@ -63,9 +83,6 @@ void PreIduQueue::init() {
   pop_count = 0;
   for (int i = 0; i < FTQ_SIZE; i++) {
     ftq_entries[i] = FTQEntry();
-    if (out.ftq_lookup != nullptr) {
-      out.ftq_lookup->entries[i] = ftq_entries[i];
-    }
   }
 }
 
@@ -78,9 +95,17 @@ void PreIduQueue::comb_begin() {
     for (auto &e : out.issue->entries) {
       e = {};
     }
+    for (auto &v : out.issue->pc) {
+      v = {};
+    }
     int n = ibuf.count() < DECODE_WIDTH ? ibuf.count() : DECODE_WIDTH;
     for (int i = 0; i < n; i++) {
       out.issue->entries[i] = ibuf.peek(i);
+      const auto &entry = out.issue->entries[i];
+      if (entry.valid && entry.ftq_idx < FTQ_SIZE) {
+        out.issue->pc[i] =
+            ftq_pc_from_entry(ftq_entries[entry.ftq_idx], entry.ftq_offset);
+      }
     }
 #ifdef CONFIG_PERF_COUNTER
     if (ctx != nullptr) {
@@ -144,6 +169,17 @@ void PreIduQueue::comb_accept_front() {
     ftq_entry.alt_pred[i] = in.front2dec->alt_pred[i];
     ftq_entry.altpcpn[i] = in.front2dec->altpcpn[i];
     ftq_entry.pcpn[i] = in.front2dec->pcpn[i];
+    ftq_entry.sc_used[i] = in.front2dec->sc_used[i];
+    ftq_entry.sc_pred[i] = in.front2dec->sc_pred[i];
+    ftq_entry.sc_sum[i] = in.front2dec->sc_sum[i];
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      ftq_entry.sc_idx[i][t] = in.front2dec->sc_idx[i][t];
+    }
+    ftq_entry.loop_used[i] = in.front2dec->loop_used[i];
+    ftq_entry.loop_hit[i] = in.front2dec->loop_hit[i];
+    ftq_entry.loop_pred[i] = in.front2dec->loop_pred[i];
+    ftq_entry.loop_idx[i] = in.front2dec->loop_idx[i];
+    ftq_entry.loop_tag[i] = in.front2dec->loop_tag[i];
     for (int j = 0; j < 4; j++) {
       ftq_entry.tage_idx[i][j] = in.front2dec->tage_idx[i][j];
       ftq_entry.tage_tag[i][j] = in.front2dec->tage_tag[i][j];
@@ -177,15 +213,7 @@ void PreIduQueue::comb_accept_front() {
     auto &e = push_entries[push_count++];
     e.valid = true;
     e.inst = in.front2dec->inst[i];
-    e.pc = in.front2dec->pc[i];
     e.page_fault_inst = in.front2dec->page_fault_inst[i];
-    e.predict_dir = in.front2dec->predict_dir[i];
-    e.alt_pred = in.front2dec->alt_pred[i];
-    e.altpcpn = in.front2dec->altpcpn[i];
-    e.pcpn = in.front2dec->pcpn[i];
-    for (int j = 0; j < 4; j++) {
-      e.tage_idx[j] = in.front2dec->tage_idx[i][j];
-    }
     e.ftq_idx = ftq_alloc_idx;
     e.ftq_offset = i;
     e.ftq_is_last = (i == last_fire_idx);
@@ -216,6 +244,30 @@ void PreIduQueue::comb_consume_issue() {
 #endif
 }
 
+void PreIduQueue::comb_ftq_lookup() {
+  if (out.ftq_exu_pc_resp != nullptr) {
+    for (int i = 0; i < FTQ_EXU_PC_PORT_NUM; i++) {
+      out.ftq_exu_pc_resp->resp[i] = {};
+      if (in.ftq_exu_pc_req != nullptr && in.ftq_exu_pc_req->req[i].valid) {
+        fill_ftq_pc_resp(out.ftq_exu_pc_resp->resp[i],
+                         ftq_entries[in.ftq_exu_pc_req->req[i].ftq_idx],
+                         in.ftq_exu_pc_req->req[i]);
+      }
+    }
+  }
+
+  if (out.ftq_rob_pc_resp != nullptr) {
+    for (int i = 0; i < FTQ_ROB_PC_PORT_NUM; i++) {
+      out.ftq_rob_pc_resp->resp[i] = {};
+      if (in.ftq_rob_pc_req != nullptr && in.ftq_rob_pc_req->req[i].valid) {
+        fill_ftq_pc_resp(out.ftq_rob_pc_resp->resp[i],
+                         ftq_entries[in.ftq_rob_pc_req->req[i].ftq_idx],
+                         in.ftq_rob_pc_req->req[i]);
+      }
+    }
+  }
+}
+
 void PreIduQueue::comb_flush_recover() {
   if (in.rob_bcast != nullptr && in.rob_bcast->flush) {
     ftq_flush_req = true;
@@ -237,7 +289,8 @@ void PreIduQueue::comb_commit_reclaim() {
   }
   int pop_cnt = 0;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    if (in.rob_commit->commit_entry[i].valid && in.rob_commit->commit_entry[i].uop.ftq_is_last) {
+    if (in.rob_commit->commit_entry[i].valid &&
+        in.rob_commit->commit_entry[i].uop.ftq_is_last) {
       pop_cnt++;
     }
   }
@@ -273,8 +326,12 @@ void PreIduQueue::seq() {
   if (ftq_alloc_success) {
     ftq_entries[ftq_alloc_idx] = ftq_alloc_req_entry;
     ftq_entries[ftq_alloc_idx].valid = true;
-    if (out.ftq_lookup != nullptr) {
-      out.ftq_lookup->entries[ftq_alloc_idx] = ftq_entries[ftq_alloc_idx];
-    }
   }
+}
+
+const FTQEntry *PreIduQueue::lookup_ftq_entry(uint32_t idx) const {
+  if (idx >= FTQ_SIZE) {
+    return nullptr;
+  }
+  return &ftq_entries[idx];
 }
