@@ -35,7 +35,9 @@ struct MSHR_STATE{
 // axi_in  — inputs from IC to MSHR (driven by RealDcache bridge).
 // axi_out — outputs from MSHR to IC (consumed by RealDcache bridge).
 struct MshrAxiIn {
-    bool     req_ready  = false;   // IC accepted the AR request
+    bool     req_ready  = false;   // IC ready-first hint for AR request
+    bool     req_accepted = false; // true AR handshake committed in IC seq
+    uint8_t  req_accepted_id = 0; // accepted request ID from IC
     bool     resp_valid = false;   // R data available from IC
     uint32_t resp_data[DCACHE_LINE_WORDS] = {};
     uint8_t  resp_id    = 0;       // transaction ID echoed back

@@ -176,21 +176,21 @@ void Rob::comb_commit() {
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
   bool progress_single_commit = false;
-  auto log_incomplete_store_commit = [&](const InstInfo &uop,
+  auto log_incomplete_store_commit = [&](const RobStoredInst &uop,
                                          const char *path, int slot) {
-    if (!is_store(uop) || uop.cplt_num == uop.uop_num) {
+    if (!rob_is_store(uop) || uop.cplt_num == uop.uop_num) {
       return;
     }
-    std::printf(
-        "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
-        "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
-        "interrupt=%d flush=%d mispred=%d\n",
-        (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
-        (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
-        (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
-        (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
-        (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
-        (int)in.dec_bcast->mispred);
+    // std::printf(
+    //     "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
+    //     "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
+    //     "interrupt=%d flush=%d mispred=%d\n",
+    //     (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
+    //     (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
+    //     (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
+    //     (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
+    //     (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
+    //     (int)in.dec_bcast->mispred);
     deadlock_debug::dump_all();
   };
 
@@ -235,7 +235,7 @@ void Rob::comb_commit() {
         }
         const auto &uop = entry[i][deq_ptr].uop;
         const bool ready = (uop.cplt_num == uop.uop_num);
-        if (ready && !is_flush_inst(uop)) {
+        if (ready && !rob_is_flush_inst(uop)) {
           single_commit = true;
           single_idx = i;
           progress_single_commit = true;
@@ -265,7 +265,7 @@ void Rob::comb_commit() {
       }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
       if (out.rob_commit->commit_entry[i].valid) {
-        log_incomplete_store_commit(out.rob_commit->commit_entry[i].uop, "group",
+        log_incomplete_store_commit(entry[i][deq_ptr].uop, "group",
                                     i);
       }
       entry_1[i][deq_ptr].valid = false;
@@ -290,9 +290,9 @@ void Rob::comb_commit() {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       log_incomplete_store_commit(uop, "single", single_idx);
       // 中断触发的 single_commit 也要求首条指令已经完成。
-      if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
-          !is_page_fault(uop)) {
-        uint32_t alignment_mask = load_alignment_mask(uop.func3);
+      if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+          !rob_is_page_fault(uop)) {
+        uint32_t alignment_mask = uop.dbg.mem_align_mask;
         Assert((uop.diag_val & alignment_mask) == 0 &&
                "DUT: Load address misaligned at single commit!");
       }
@@ -303,10 +303,10 @@ void Rob::comb_commit() {
       DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u rob_idx=%u pc=0x%08x type=%u\n",
                  (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
                  (unsigned)single_idx, (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
-                 entry[single_idx][deq_ptr].uop.pc,
+                 entry[single_idx][deq_ptr].uop.dbg.pc,
                  (unsigned)entry[single_idx][deq_ptr].uop.type);
     }
-    if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
+    if (rob_is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       Assert(in.ftq_pc_resp->resp[0].valid);
@@ -389,7 +389,7 @@ void Rob::comb_commit() {
         printf("[Bank %d] INVALID\n", i);
       }
     }
-    
+
     deadlock_debug::dump_all();
     Assert(0 && "ROB Deadlock detected (stall_cycle > 10000)");
   }

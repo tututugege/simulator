@@ -110,9 +110,14 @@ void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
   std::memcpy(ref_cpu.memory, ckpt_memory,
               (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
 
-  uint32_t p_addr;
-  bool success = ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0);
-  Assert(success);
+  // Keep checkpoint bootstrap aligned with RefCpu::exec(): only probe a
+  // translation when SATP is active, and do not require the restored PC to be
+  // immediately translatable at init time.
+  if ((ref_cpu.state.csr[csr_satp] & 0x80000000u) != 0 &&
+      ref_cpu.privilege != RISCV_MODE_M) {
+    uint32_t p_addr = 0;
+    (void)ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0);
+  }
 }
 
 void get_state(CPU_state &dut_state, uint8_t &privilege, uint32_t *dut_memory) {

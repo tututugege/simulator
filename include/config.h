@@ -73,7 +73,7 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // Feature Flags (Macros used for conditional compilation)
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 
 
 // ============================================================
@@ -200,12 +200,6 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 // Set to 1 when debugging queue/pointer consistency issues.
 #ifndef LSU_LIGHT_ASSERT
 #define LSU_LIGHT_ASSERT 0
-#endif
-
-// ROB deadlock watchdog threshold (cycles without commit).
-// Memory-intensive workloads can legitimately exceed 1000 cycles.
-#ifndef ROB_DEADLOCK_STALL_CYCLES
-#define ROB_DEADLOCK_STALL_CYCLES 10000
 #endif
 
 #define DBG_PRINTF(fmt, ...)                                                   \

@@ -206,6 +206,10 @@ void RealLsu::comb_lsu2dis_info()
     {
         v = -1;
     }
+    for (auto &v : out.lsu2dis->ldq_alloc_valid)
+    {
+        v = false;
+    }
     int scan_pos = ldq_alloc_tail;
     int produced = 0;
     for (int n = 0; n < LDQ_SIZE && produced < MAX_LDQ_DISPATCH_WIDTH;
@@ -213,7 +217,9 @@ void RealLsu::comb_lsu2dis_info()
     {
         if (!ldq[scan_pos].valid)
         {
-            out.lsu2dis->ldq_alloc_idx[produced++] = scan_pos;
+            out.lsu2dis->ldq_alloc_idx[produced] = scan_pos;
+            out.lsu2dis->ldq_alloc_valid[produced] = true;
+            produced++;
         }
         scan_pos = (scan_pos + 1) % LDQ_SIZE;
     }
@@ -228,7 +234,7 @@ void RealLsu::comb_lsu2dis_info()
             mask |= (1ULL << entry.uop.rob_idx);
         }
     }
-    out.lsu2rob->miss_mask = mask;
+    out.lsu2rob->tma.miss_mask = mask;
     out.lsu2rob->committed_store_pending = has_committed_store_pending();
 }
 
@@ -279,7 +285,7 @@ void RealLsu::comb_recv()
     {
         if (in.exe2lsu->sdu_req[i].valid)
         {
-            handle_store_data(in.exe2lsu->sdu_req[i].uop);
+            handle_store_data(in.exe2lsu->sdu_req[i].uop.to_micro_op());
         }
     }
 
@@ -292,7 +298,7 @@ void RealLsu::comb_recv()
             const auto &uop = in.exe2lsu->agu_req[i].uop;
             if (uop.op == UOP_STA)
             {
-                handle_store_addr(uop);
+                handle_store_addr(uop.to_micro_op());
             }
         }
     }
@@ -306,7 +312,7 @@ void RealLsu::comb_recv()
             const auto &uop = in.exe2lsu->agu_req[i].uop;
             if (uop.op == UOP_LOAD)
             {
-                handle_load_req(uop);
+                handle_load_req(uop.to_micro_op());
             }
         }
     }
@@ -1037,7 +1043,7 @@ void RealLsu::comb_load_res()
         if (!finished_loads.empty())
         {
             out.lsu2exe->wb_req[i].valid = true;
-            out.lsu2exe->wb_req[i].uop = finished_loads.front();
+            out.lsu2exe->wb_req[i].uop = LsuExeIO::LsuExeRespUop::from_micro_op(finished_loads.front());
 
             finished_loads.pop_front();
         }
@@ -1053,7 +1059,7 @@ void RealLsu::comb_load_res()
         if (!finished_sta_reqs.empty())
         {
             out.lsu2exe->sta_wb_req[i].valid = true;
-            out.lsu2exe->sta_wb_req[i].uop = finished_sta_reqs.front();
+            out.lsu2exe->sta_wb_req[i].uop = LsuExeIO::LsuExeRespUop::from_micro_op(finished_sta_reqs.front());
             finished_sta_reqs.pop_front();
         }
         else
@@ -1574,11 +1580,12 @@ void RealLsu::commit_stores_from_rob()
             continue;
         }
         const auto &commit_uop = in.rob_commit->commit_entry[i].uop;
-        if (ctx != nullptr && is_load(commit_uop))
+        InstInfo commit_inst = commit_uop.to_inst_info();
+        if (ctx != nullptr && is_load(commit_inst))
         {
-            ctx->perf.trace_load_on_rob_exit(commit_uop.inst_idx, sim_time);
+            ctx->perf.trace_load_on_rob_exit(commit_inst.inst_idx, sim_time);
         }
-        if (!is_store(commit_uop))
+        if (!is_store(commit_inst))
         {
             continue;
         }
@@ -2211,7 +2218,6 @@ void RealLsu::dump_debug_state() const
                 ldq_alloc_tail, pending_sta_addr_reqs.size(), finished_loads.size(),
                 finished_sta_reqs.size(), (int)replay_type, replay_count_ldq,
                 replay_count_stq, mshr_replay_count_ldq, mshr_replay_count_stq);
-
     for (int i = 0; i < STQ_SIZE; i++)
     {
         const auto &e = stq[i];

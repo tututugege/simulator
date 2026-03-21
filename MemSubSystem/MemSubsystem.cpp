@@ -4,6 +4,7 @@
 #include "DebugPtwTrace.h"
 #include "config.h"
 #include "diff.h"
+#include "icache/GenericTable.h"
 #include <cinttypes>
 #include <memory>
 #include <cstdio>
@@ -734,6 +735,11 @@ void MemSubsystem::comb() {
   dcache_req_mux_ = read_arb_block.comb_result().dcache_req;
   dcache_resp_raw_ = {};
 
+  // RealDcache::stage2_comb() consumes mshr/wb comb_outputs in this cycle.
+  // WB ready must be visible to MSHR before MSHR computes resp_ready.
+  wb_.comb_outputs();
+  mshr_.in.wbmshr = wb_.out.wbmshr;
+  mshr_.comb_outputs();
   dcache_.comb();
 
   if (read_arb_block.comb_result().granted) {
@@ -767,6 +773,9 @@ void MemSubsystem::comb() {
       break;
     }
   }
+
+  const replay_resp replay_bcast =
+      replay_resp::from_io(mshr_.out.replay_resp);
 
   resp_route_block.eval_comb(&dcache_resp_raw_,
                              read_arb_block.comb_result().issued_tags,
@@ -852,6 +861,7 @@ void MemSubsystem::comb() {
   // timeline than the one used by the external interconnect.
   // Phase 3b: inject AXI write-channel inputs and MSHR eviction, then run
   //           WriteBuffer comb_inputs (drains evictions onto AXI).
+  mshr_.in.axi_in = mshr_axi_in;
   wb_.in.axi_in   = wb_axi_in;
   wb_.in.mshrwb   = mshr_.out.mshrwb;  // eviction push (set in Phase 3a)
   wb_.comb_inputs();

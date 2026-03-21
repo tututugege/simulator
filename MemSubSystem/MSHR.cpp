@@ -147,6 +147,21 @@ void MSHR::comb_inputs()
     nxt.wb_addr = 0;
     std::memset(nxt.wb_data, 0, sizeof(nxt.wb_data));
 
+    out.axi_out.resp_ready = true;
+    if (in.axi_in.resp_valid) {
+        const uint8_t rid = in.axi_in.resp_id;
+        if (rid < MSHR_ENTRIES) {
+            const MSHREntry re = mshr_entries[rid];
+            if (re.valid && re.issued && !re.fill) {
+                const uint32_t lru_idx = choose_lru_victim(re.index);
+                const bool need_wb_evict = dirty_array[re.index][lru_idx];
+                if (need_wb_evict && !in.wbmshr.ready) {
+                    out.axi_out.resp_ready = false;
+                }
+            }
+        }
+    }
+
     // ── Process alloc and secondary requests ─────────────────────────────────
     for (int i = 0; i < LSU_LDU_COUNT; i++)
     {
@@ -309,22 +324,18 @@ void MSHR::comb_inputs()
 
     // ── Issue next pending AR ─────────────────────────────────────────────────
     // Handshake note:
-    // `in.axi_in.req_ready` is sampled before this module drives current-cycle
-    // `req_valid`, so treat it as acknowledgement for a previously held request.
-    // Keep one pending AR asserted until we observe ready in a later cycle.
-    for(int i=0; i<MSHR_ENTRIES; i++){
-        const MSHREntry &ce = mshr_entries[i];
-        if (!ce.valid || ce.issued)
-            continue;
-        if (in.axi_in.req_ready){
-            mshr_entries_nxt[i].issued = true;
-            axi_issue_cycle[i] = static_cast<uint64_t>(sim_time);
-            axi_issue_cycle_valid[i] = true;
+    // `req_ready` is only a ready-first hint. Use `req_accepted + req_accepted_id`
+    // to mark exactly which MSHR slot completed AR handshake.
+    if (in.axi_in.req_accepted) {
+        const uint8_t acc_id = in.axi_in.req_accepted_id;
+        if (acc_id < MSHR_ENTRIES) {
+            const MSHREntry &ce = mshr_entries[acc_id];
+            if (ce.valid && !ce.issued) {
+                mshr_entries_nxt[acc_id].issued = true;
+                axi_issue_cycle[acc_id] = static_cast<uint64_t>(sim_time);
+                axi_issue_cycle_valid[acc_id] = true;
+            }
         }
-        else{
-
-        }
-        break;
     }
 
 }

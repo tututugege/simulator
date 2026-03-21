@@ -128,7 +128,8 @@ void PeripheralAxi::comb_inputs() {
   }
 
   if (!cur.req_accepted) {
-    if ((cur.write && in.write.req_ready) || (!cur.write && in.read.req_ready)) {
+    if ((cur.write && in.write.req_accepted) ||
+        (!cur.write && in.read.req_accepted)) {
       nxt.req_accepted = true;
     }
     return;

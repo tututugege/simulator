@@ -250,7 +250,16 @@ public:
     if (!is_active_req) {
       return WalkRespResult::IGNORED;
     }
-    // replay 响应表示该次访问已结束，后续由 wakeup 驱动重发。
+
+    auto &wc = walk_clients[client_idx(walk_owner)];
+    wc.req_inflight = false;
+
+    if (walk_state == WalkState::L1_WAIT_RESP) {
+      walk_state = WalkState::L1_REQ;
+    } else if (walk_state == WalkState::L2_WAIT_RESP) {
+      walk_state = WalkState::L2_REQ;
+    }
+
     walk_req_id_valid = false;
     walk_req_id = 0;
     return WalkRespResult::HANDLED;
