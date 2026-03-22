@@ -80,7 +80,7 @@
 ### 4.2 分配与释放
 - 分配：Dispatch 依据 `lsu2dis.ldq_alloc_idx[]` 选择槽位，LSU 在 `seq` 中 `reserve_ldq_entry()`
 - 释放：`free_ldq_entry(idx)` 清空条目并递减 `ldq_count`
-- `ldq_free = MAX_INFLIGHT_LOADS - ldq_count`
+- `ldq_free = LDQ_SIZE - ldq_count`
 
 ### 4.3 Load 状态机（基于 `uop.cplt_time`）
 - `REQ_WAIT_EXEC`：已分配 LDQ，但尚未收到 AGU 的 Load 请求

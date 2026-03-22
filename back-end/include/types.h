@@ -12,6 +12,9 @@ using std::endl;
 using std::hex;
 using std::string;
 
+// Legacy branch-mask alias used across LSU/dispatch paths.
+using mask_t = wire<BR_MASK_WIDTH>;
+
 // ==========================================
 // [Instruction & Pipeline Definitions]
 // ==========================================
@@ -136,9 +139,15 @@ struct InstInfo {
 
   InstType type;
   InstTmaMeta tma;
+  bool is_cache_miss;
 
   // Debug
   InstDebugMeta dbg;
+  wire<32> instruction;
+  wire<32> pc;
+  uint8_t mem_align_mask;
+  bool difftest_skip;
+  int64_t inst_idx;
   wire<1> flush_pipe;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
@@ -189,10 +198,17 @@ struct MicroOp {
 
   UopType op;
   UopTmaMeta tma;
+  bool is_cache_miss;
 
   // Debug
   UopDebugMeta dbg;
+  wire<32> instruction;
+  wire<32> pc;
+  uint8_t mem_align_mask;
+  bool difftest_skip;
+  int64_t inst_idx;
   wire<1> flush_pipe;
+  int64_t cplt_time;
 
   MicroOp() { std::memset(this, 0, sizeof(MicroOp)); }
 
@@ -243,6 +259,13 @@ struct MicroOp {
     this->dbg.mem_align_mask = info.dbg.mem_align_mask;
     this->dbg.difftest_skip = info.dbg.difftest_skip;
     this->dbg.inst_idx = info.dbg.inst_idx;
+    this->instruction = this->dbg.instruction;
+    this->pc = this->dbg.pc;
+    this->mem_align_mask = this->dbg.mem_align_mask;
+    this->difftest_skip = this->dbg.difftest_skip;
+    this->inst_idx = this->dbg.inst_idx;
+    this->is_cache_miss = this->tma.is_cache_miss;
+    this->cplt_time = 0;
     this->flush_pipe = info.flush_pipe;
   }
 };

@@ -1,8 +1,15 @@
 #include "MemSubsystem.h"
-#include "SimpleCache.h"
+#include "DeadlockDebug.h"
+#include "DeadlockReplayTrace.h"
+#include "DebugPtwTrace.h"
 #include "config.h"
+#include "diff.h"
 #include "icache/GenericTable.h"
+#include <cinttypes>
 #include <memory>
+#include <cstdio>
+#include <assert.h>
+#include <cstring>
 
 #if __has_include("UART16550_Device.h") && \
     __has_include("AXI_Interconnect.h") && \
@@ -173,6 +180,65 @@ struct AxiKitRuntime {
 struct AxiKitRuntime {};
 #endif
 
+namespace {
+MemSubsystem *g_deadlock_mem = nullptr;
+
+const char *ptw_client_name(MemPtwBlock::Client c) {
+  switch (c) {
+  case MemPtwBlock::Client::DTLB:
+    return "DTLB";
+  case MemPtwBlock::Client::ITLB:
+    return "ITLB";
+  default:
+    return "UNK";
+  }
+}
+
+const char *mem_owner_name(uint8_t owner) {
+  switch (static_cast<MemReadArbBlock::Owner>(owner)) {
+  case MemReadArbBlock::Owner::LSU:
+    return "LSU";
+  case MemReadArbBlock::Owner::PTW_DTLB:
+    return "PTW_DTLB";
+  case MemReadArbBlock::Owner::PTW_ITLB:
+    return "PTW_ITLB";
+  case MemReadArbBlock::Owner::PTW_WALK:
+    return "PTW_WALK";
+  default:
+    return "NONE";
+  }
+}
+
+const char *replay_reason_name(uint8_t reason) {
+  switch (reason) {
+  case 0:
+    return "none";
+  case 1:
+    return "mshr_full";
+  case 2:
+    return "wait_fill";
+  case 3:
+    return "struct_replay";
+  default:
+    return "unknown";
+  }
+}
+
+void deadlock_dump_mem_cb() {
+  if (g_deadlock_mem != nullptr) {
+    g_deadlock_mem->dump_debug_state();
+  }
+}
+
+void print_line_words(const char *prefix, const uint32_t *data) {
+  std::printf("%s[", prefix);
+  for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+    std::printf("%s%08x", (w == 0) ? "" : " ", data[w]);
+  }
+  std::printf("]\n");
+}
+} // namespace
+
 class MemSubsystemPtwMemPortAdapter : public PtwMemPort {
 public:
   MemSubsystemPtwMemPortAdapter(MemSubsystem *owner, MemSubsystem::PtwClient c)
@@ -227,7 +293,15 @@ void MemSubsystem::refresh_ptw_client_outputs() {
 }
 
 bool MemSubsystem::ptw_mem_send_read_req(PtwClient client, uint32_t paddr) {
-  bool fire = ptw_block.client_send_read_req(to_block_client(client), paddr);
+  auto block_client = to_block_client(client);
+  bool fire = ptw_block.client_send_read_req(block_client, paddr);
+  record_debug_event(DebugEventKind::PTW_MEM_REQ,
+                     static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB) +
+                         static_cast<uint8_t>(ptw_client_idx(client)),
+                     paddr, 0, static_cast<uint8_t>(!fire));
+  LSU_MEM_DBG_PRINTF("[MEM][PTW][MEM REQ] cyc=%lld client=%s fire=%d paddr=0x%08x\n",
+             (long long)sim_time, ptw_client_name(block_client),
+             static_cast<int>(fire), paddr);
   refresh_ptw_client_outputs();
   return fire;
 }
@@ -246,7 +320,17 @@ void MemSubsystem::ptw_mem_consume_resp(PtwClient client) {
 }
 
 bool MemSubsystem::ptw_walk_send_req(PtwClient client, const PtwWalkReq &req) {
-  bool fire = ptw_block.walk_client_send_req(to_block_client(client), req);
+  auto block_client = to_block_client(client);
+  bool fire = ptw_block.walk_client_send_req(block_client, req);
+  record_debug_event(DebugEventKind::PTW_WALK_REQ,
+                     static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB) +
+                         static_cast<uint8_t>(ptw_client_idx(client)),
+                     req.vaddr, req.satp, static_cast<uint8_t>(!fire),
+                     req.access_type);
+  LSU_MEM_DBG_PRINTF(
+      "[MEM][PTW][WALK REQ] cyc=%lld client=%s fire=%d vaddr=0x%08x satp=0x%08x type=%u\n",
+      (long long)sim_time, ptw_client_name(block_client), static_cast<int>(fire),
+      req.vaddr, req.satp, req.access_type);
   refresh_ptw_client_outputs();
   return fire;
 }
@@ -421,7 +505,6 @@ axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
 }
 
 MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
-  dcache = std::make_unique<SimpleCache>(ctx);
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime = std::make_unique<AxiKitRuntime>();
 #endif
@@ -438,24 +521,67 @@ MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
   itlb_ptw_port = itlb_ptw_port_inst.get();
   dtlb_walk_port = dtlb_walk_port_inst.get();
   itlb_walk_port = itlb_walk_port_inst.get();
+  g_deadlock_mem = this;
+  deadlock_debug::register_mem_dump_cb(deadlock_dump_mem_cb);
 }
 
-MemSubsystem::~MemSubsystem() = default;
+MemSubsystem::~MemSubsystem() {
+  if (g_deadlock_mem == this) {
+    g_deadlock_mem = nullptr;
+  }
+}
 
 void MemSubsystem::init() {
-  Assert(lsu_req_io != nullptr && "MemSubsystem: lsu_req_io is not connected");
-  Assert(lsu_wreq_io != nullptr &&
-         "MemSubsystem: lsu_wreq_io is not connected");
-  Assert(lsu_resp_io != nullptr &&
-         "MemSubsystem: lsu_resp_io is not connected");
-  Assert(lsu_wready_io != nullptr &&
-         "MemSubsystem: lsu_wready_io is not connected");
-  Assert(csr != nullptr && "MemSubsystem: csr is not connected");
+  Assert(lsu2dcache != nullptr && "MemSubsystem: lsu2dcache is not connected");
+  Assert(dcache2lsu  != nullptr && "MemSubsystem: dcache2lsu is not connected");
+  Assert(peripheral_io != nullptr && "MemSubsystem: peripheral_io is not connected");
+  Assert(csr    != nullptr && "MemSubsystem: csr is not connected");
   Assert(memory != nullptr && "MemSubsystem: memory is not connected");
+  
+  // Route LSU requests through MemReadArbBlock so PTW reads can be injected,
+  // and capture raw DCache responses before routing them back to LSU/PTW.
+  dcache_.lsu2dcache  = &dcache_req_mux_;
+  dcache_.dcache2lsu  = &dcache_resp_raw_;
 
-  peripheral.csr = csr;
-  peripheral.memory = memory;
-  peripheral.init();
+  // Internal MSHR ↔ DCache wires: RealDcache reads/writes MSHR IO structs
+  // directly via pointers, keeping the connection zero-copy.
+  dcache_.mshr2dcache = &mshr_.out.mshr2dcache;  // MSHR output → DCache input
+  dcache_.dcache2mshr = &mshr_.in.dcachemshr;    // DCache output → MSHR input
+
+  // Internal WriteBuffer ↔ DCache wires.
+  dcache_.wb2dcache   = &wb_.out.wbdcache;       // WB output → DCache input
+  dcache_.dcache2wb   = &wb_.in.dcachewb;        // DCache output → WB input
+  dcache_.bind_context(ctx);
+  mshr_.bind_context(ctx);
+  wb_.bind_context(ctx);
+
+  // ── Initialise sub-modules ─────────────────────────────────────────────────
+  mshr_.init();
+  wb_.init();
+  dcache_.init();
+  peripheral_axi_.peripheral_io = peripheral_io;
+  peripheral_axi_.init();
+
+  ptw_block.init();
+  read_arb_block.init();
+  resp_route_block.init();
+  ptw_mem_resp_ios  = {};
+  ptw_walk_resp_ios = {};
+  debug_events_ = {};
+  debug_event_head_ = 0;
+  debug_event_count_ = 0;
+  refresh_ptw_client_outputs();
+
+  dcache_req_mux_ = {};
+  dcache_resp_raw_ = {};
+  mshr_axi_in  = {};
+  mshr_axi_out = {};
+  wb_axi_in    = {};
+  wb_axi_out   = {};
+  peripheral_axi_read_in = {};
+  peripheral_axi_read_out = {};
+  peripheral_axi_write_in = {};
+  peripheral_axi_write_out = {};
 
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime->interconnect.init();
@@ -478,26 +604,27 @@ void MemSubsystem::init() {
   axi_kit_runtime->mmio.init();
   axi_kit_runtime->mmio.add_device(0x10000000u, 0x1000u, &axi_kit_runtime->uart0);
   axi_kit_runtime->ddr.init();
+  static bool printed_axi_cfg = false;
+  if (!printed_axi_cfg) {
+    printed_axi_cfg = true;
+    LSU_MEM_DBG_PRINTF(
+        "[MEM][AXI CFG] protocol=%d dcache_line_bytes=%u dcache_line_words=%u "
+        "axi_up_write_words=%u axi_up_read_words=%u\n",
+        CONFIG_AXI_PROTOCOL, static_cast<unsigned>(DCACHE_LINE_BYTES),
+        static_cast<unsigned>(DCACHE_LINE_WORDS),
+        static_cast<unsigned>(axi_interconnect::CACHELINE_WORDS),
+        static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_WORDS));
+    if (DCACHE_LINE_WORDS > axi_interconnect::CACHELINE_WORDS) {
+      LSU_MEM_DBG_PRINTF(
+          "[MEM][AXI CFG][WARN] dcache line (%u words) is wider than AXI upstream "
+          "write payload (%u words). High words may be dropped in bridge path.\n",
+          static_cast<unsigned>(DCACHE_LINE_WORDS),
+          static_cast<unsigned>(axi_interconnect::CACHELINE_WORDS));
+    }
+  }
 #endif
 
-  dcache->lsu_req_io = &dcache_req_mux;
-  dcache->lsu_wreq_io = &dcache_wreq_mux;
-  dcache->lsu_resp_io = &dcache_resp_raw;
-  dcache->lsu_wready_io = &dcache_wready_raw;
-  dcache->peripheral_model = &peripheral;
 
-  ptw_block.init();
-  resp_route_block.init();
-  ptw_mem_resp_ios = {};
-  ptw_walk_resp_ios = {};
-  refresh_ptw_client_outputs();
-
-  dcache_req_mux = {};
-  dcache_wreq_mux = {};
-  dcache_resp_raw = {};
-  dcache_wready_raw = {};
-  *lsu_resp_io = {};
-  *lsu_wready_io = {};
 
 #if AXI_KIT_RUNTIME_ENABLED
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
@@ -520,11 +647,54 @@ void MemSubsystem::init() {
   }
 #endif
 
-  dcache->init();
 }
 
 void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3) {
-  peripheral.on_commit_store(paddr, data, func3);
+  if (memory == nullptr) {
+    return;
+  }
+
+  const bool is_uart = ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE);
+  const bool is_plic = ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
+  if (!is_uart && !is_plic) {
+    return;
+  }
+
+  // Keep MMIO backing memory coherent with the committed store width.
+  const uint32_t byte_off = paddr & 0x3u;
+  uint32_t wstrb = 0;
+  uint32_t wdata = 0;
+  switch (func3 & 0x3u) {
+  case 0:
+    wstrb = (1u << byte_off);
+    wdata = (data & 0xFFu) << (byte_off * 8);
+    break;
+  case 1:
+    wstrb = (0x3u << byte_off);
+    wdata = (data & 0xFFFFu) << (byte_off * 8);
+    break;
+  default:
+    wstrb = 0xFu;
+    wdata = data;
+    break;
+  }
+
+  uint32_t wmask = 0;
+  for (int i = 0; i < 4; i++) {
+    if ((wstrb >> i) & 1u) {
+      wmask |= (0xFFu << (i * 8));
+    }
+  }
+  const uint32_t word_idx = paddr >> 2;
+  const uint32_t old_val = memory[word_idx];
+  const uint32_t new_val = (old_val & ~wmask) | (wdata & wmask);
+  memory[word_idx] = new_val;
+
+  // Keep UART THR backing memory coherent for difftest / software polling.
+  // Host-side character output is produced by the MMIO UART device itself.
+  if (paddr == UART_ADDR_BASE) {
+    memory[UART_ADDR_BASE / 4] &= 0xFFFFFF00u;
+  }
 }
 
 void MemSubsystem::comb() {
@@ -543,59 +713,187 @@ void MemSubsystem::comb() {
   interconnect.comb_outputs();
 #endif
 
-  // 子模块按组合逻辑顺序推进。
+
   ptw_block.comb_select_walk_owner();
-
-  // Default outputs every cycle.
-  *lsu_resp_io = {};
-  dcache_req_mux = {};
-  dcache_wreq_mux = {};
-
-  // Pass write channel (currently only LSU issues writes).
-  dcache_wreq_mux = *lsu_wreq_io;
-
-  uint32_t ptw_walk_read_addr = 0;
-  bool issue_ptw_walk_read = ptw_block.walk_read_req(ptw_walk_read_addr);
-
-  bool has_ptw_dtlb = ptw_block.has_pending_mem_req(MemPtwBlock::Client::DTLB);
-  bool has_ptw_itlb = ptw_block.has_pending_mem_req(MemPtwBlock::Client::ITLB);
-  uint32_t ptw_dtlb_addr = has_ptw_dtlb
-                               ? ptw_block.pending_mem_addr(
-                                     MemPtwBlock::Client::DTLB)
-                               : 0;
-  uint32_t ptw_itlb_addr = has_ptw_itlb
-                               ? ptw_block.pending_mem_addr(
-                                     MemPtwBlock::Client::ITLB)
-                               : 0;
-
-  auto arb_ret = read_arb_block.arbitrate(
-      lsu_req_io, issue_ptw_walk_read, ptw_walk_read_addr, has_ptw_dtlb,
-      ptw_dtlb_addr, has_ptw_itlb, ptw_itlb_addr);
   ptw_block.count_wait_cycles();
 
-  if (arb_ret.granted) {
-    dcache_req_mux = arb_ret.req;
+  uint32_t ptw_walk_read_addr = 0;
+  const bool issue_ptw_walk_read = ptw_block.walk_read_req(ptw_walk_read_addr);
+  const bool has_ptw_dtlb =
+      ptw_block.has_pending_mem_req(MemPtwBlock::Client::DTLB);
+  const bool has_ptw_itlb =
+      ptw_block.has_pending_mem_req(MemPtwBlock::Client::ITLB);
+  const uint32_t ptw_dtlb_addr =
+      has_ptw_dtlb ? ptw_block.pending_mem_addr(MemPtwBlock::Client::DTLB) : 0;
+  const uint32_t ptw_itlb_addr =
+      has_ptw_itlb ? ptw_block.pending_mem_addr(MemPtwBlock::Client::ITLB) : 0;
+
+  read_arb_block.eval_comb(lsu2dcache, issue_ptw_walk_read, ptw_walk_read_addr,
+                           has_ptw_dtlb, ptw_dtlb_addr, has_ptw_itlb,
+                           ptw_itlb_addr);
+
+  dcache_req_mux_ = read_arb_block.comb_result().dcache_req;
+  dcache_resp_raw_ = {};
+
+  // RealDcache::stage2_comb() consumes mshr/wb comb_outputs in this cycle.
+  // WB ready must be visible to MSHR before MSHR computes resp_ready.
+  wb_.comb_outputs();
+  mshr_.in.wbmshr = wb_.out.wbmshr;
+  mshr_.comb_outputs();
+  dcache_.comb();
+
+  if (read_arb_block.comb_result().granted) {
+    switch (read_arb_block.comb_result().granted_owner) {
+    case MemReadArbBlock::Owner::PTW_DTLB:
+      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB),
+                         ptw_dtlb_addr);
+      ptw_block.on_mem_read_granted(MemPtwBlock::Client::DTLB);
+      break;
+    case MemReadArbBlock::Owner::PTW_ITLB:
+      record_debug_event(DebugEventKind::PTW_MEM_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_ITLB),
+                         ptw_itlb_addr);
+      ptw_block.on_mem_read_granted(MemPtwBlock::Client::ITLB);
+      break;
+    case MemReadArbBlock::Owner::PTW_WALK:
+      record_debug_event(DebugEventKind::PTW_WALK_GRANT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
+                         ptw_walk_read_addr);
+      if (read_arb_block.comb_result().injected_port >= 0) {
+        const auto &tag = read_arb_block.comb_result()
+                              .issued_tags[read_arb_block.comb_result()
+                                               .injected_port];
+        ptw_block.on_walk_read_granted(tag.req_id);
+      } else {
+        ptw_block.on_walk_read_granted(0);
+      }
+      break;
+    default:
+      break;
+    }
   }
 
-  if (arb_ret.owner == MemReadArbBlock::Owner::LSU) {
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::LSU);
-  } else if (arb_ret.owner == MemReadArbBlock::Owner::PTW_WALK) {
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::PTW_WALK);
-    ptw_block.on_walk_read_granted();
-  } else if (arb_ret.owner == MemReadArbBlock::Owner::PTW_DTLB) {
-    ptw_block.on_mem_read_granted(MemPtwBlock::Client::DTLB);
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::PTW_DTLB);
-  } else if (arb_ret.owner == MemReadArbBlock::Owner::PTW_ITLB) {
-    ptw_block.on_mem_read_granted(MemPtwBlock::Client::ITLB);
-    resp_route_block.enqueue_owner(MemRespRouteBlock::Owner::PTW_ITLB);
+  const replay_resp replay_bcast =
+      replay_resp::from_io(mshr_.out.replay_resp);
+
+  resp_route_block.eval_comb(&dcache_resp_raw_,
+                             read_arb_block.comb_result().issued_tags,
+                             replay_bcast);
+  const auto &route_out = resp_route_block.comb_outputs();
+  for (uint8_t i = 0; i < route_out.ptw_event_count; i++) {
+    const auto &ptw_evt = route_out.ptw_events[i];
+    if (!ptw_evt.valid) {
+      continue;
+    }
+    record_debug_event(DebugEventKind::PTW_ROUTE_EVENT,
+                       static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
+                       ptw_evt.data, ptw_evt.replay, 0, ptw_evt.req_id);
+    if (ptw_evt.owner == MemReadArbBlock::Owner::PTW_WALK) {
+      record_debug_event(DebugEventKind::PTW_WALK_RESP,
+                         static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
+                         ptw_evt.data, ptw_evt.replay, 0, ptw_evt.req_id);
+      if (ptw_evt.replay == 0) {
+        debug_ptw_trace::record_ptw_walk_resp_detail(memory, ptw_evt.req_addr,
+                                                     ptw_evt.data);
+      }
+    } else {
+      record_debug_event(DebugEventKind::PTW_MEM_RESP,
+                         static_cast<uint8_t>(ptw_evt.owner), ptw_evt.req_addr,
+                         ptw_evt.data, ptw_evt.replay, 0, ptw_evt.req_id);
+    }
+  }
+  resp_route_block.apply_ptw_events(&ptw_block);
+
+  if (dcache2lsu != nullptr) {
+    *dcache2lsu = resp_route_block.comb_outputs().lsu_resp;
+
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      const auto &resp = dcache2lsu->resp_ports.load_resps[i];
+      if (!resp.valid) {
+        continue;
+      }
+      record_debug_event(DebugEventKind::LSU_LOAD_RESP,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::LSU), 0,
+                         resp.data, resp.replay, 0, resp.req_id,
+                         static_cast<uint8_t>(i));
+    }
+
+    if (read_arb_block.comb_result().lsu_port0_preempted) {
+      record_debug_event(DebugEventKind::LSU_PORT0_PREEMPT,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::LSU),
+                         read_arb_block.comb_result().preempted_lsu_tag.req_addr,
+                         0, 0, 0,
+                         read_arb_block.comb_result().preempted_lsu_tag.req_id, 0);
+      if (ctx != nullptr) {
+        ctx->perf.ptw_port0_replay_count++;
+      }
+      int replay_port = -1;
+      for (int i = 0; i < LSU_LDU_COUNT; i++) {
+        if (!dcache2lsu->resp_ports.load_resps[i].valid) {
+          replay_port = i;
+          break;
+        }
+      }
+      if (replay_port < 0) {
+        // Do not silently drop this replay: LSU has already marked the preempted
+        // request as sent/waiting and will deadlock without a retry signal.
+        replay_port = 0;
+      }
+      auto &dst = dcache2lsu->resp_ports.load_resps[replay_port];
+      const auto &tag0 = read_arb_block.comb_result().preempted_lsu_tag;
+      dst = {};
+      dst.valid = tag0.valid;
+      dst.req_id = tag0.req_id;
+      dst.uop = tag0.uop;
+      // LSU consumes replay by LDQ token; keep token and req_id consistent.
+      dst.uop.rob_idx = static_cast<uint32_t>(tag0.req_id);
+      dst.replay = 3;
+    }
   }
 
-  dcache->comb();
+  refresh_ptw_client_outputs();
 
-  // Write ready backpressure directly reflects DCache.
-  *lsu_wready_io = dcache_wready_raw;
+  // NOTE:
+  // mshr_axi_in / wb_axi_in / peripheral_axi_*_in are sourced from the top-level
+  // bridge (rv_simu_mmu_v2.cpp). Do not overwrite them with internal AXI-kit
+  // runtime feedback here, otherwise WB/MSHR may observe a different handshake
+  // timeline than the one used by the external interconnect.
+  // Phase 3b: inject AXI write-channel inputs and MSHR eviction, then run
+  //           WriteBuffer comb_inputs (drains evictions onto AXI).
+  mshr_.in.axi_in = mshr_axi_in;
+  wb_.in.axi_in   = wb_axi_in;
+  wb_.in.mshrwb   = mshr_.out.mshrwb;  // eviction push (set in Phase 3a)
+  wb_.comb_inputs();
 
-  (void)resp_route_block.route_resp(dcache_resp_raw, lsu_resp_io, &ptw_block);
+  // Export MSHR replay wakeup to LSU. RealDcache::comb() clears resp ports
+  // every cycle, so this must be written after dcache_.comb().
+  if (dcache2lsu != nullptr) {
+    dcache2lsu->resp_ports.replay_resp = mshr_.out.replay_resp;
+    if (mshr_.out.replay_resp.replay) {
+      deadlock_replay_trace::record(
+          DeadlockReplayTraceKind::MemToLsu, 0,
+          static_cast<uint8_t>(mshr_.out.replay_resp.replay), 0,
+          static_cast<uint8_t>(dcache2lsu->resp_ports.load_resps[0].valid),
+          static_cast<uint8_t>(dcache2lsu->resp_ports.load_resps[1].valid),
+          0, 0, static_cast<uint32_t>(mshr_.out.replay_resp.replay_addr),
+          static_cast<uint32_t>(mshr_.out.replay_resp.free_slots), 0);
+    }
+  }
+
+  // Phase 3a: run MSHR comb_inputs (may accept AXI R, allocate entries, and
+  // prepare next-cycle registered fill / eviction outputs).
+  mshr_.comb_inputs();
+
+  peripheral_axi_.in.read = peripheral_axi_read_in;
+  peripheral_axi_.in.write = peripheral_axi_write_in;
+  peripheral_axi_.comb_outputs();
+  peripheral_axi_.comb_inputs();
+
+  mshr_axi_out = mshr_.out.axi_out;
+  wb_axi_out = wb_.out.axi_out;
+  peripheral_axi_read_out = peripheral_axi_.out.read;
+  peripheral_axi_write_out = peripheral_axi_.out.write;
 
   // Stage-1 AXI wiring: connect ICache read master, keep all others idle.
 #if AXI_KIT_RUNTIME_ENABLED
@@ -632,7 +930,12 @@ void MemSubsystem::comb() {
 }
 
 void MemSubsystem::seq() {
-  dcache->seq();
+  dcache_.seq();
+  mshr_.seq();
+  wb_.seq();
+  peripheral_axi_.seq();
+  read_arb_block.update_seq();
+  resp_route_block.update_seq();
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime->ddr.seq();
   axi_kit_runtime->mmio.seq();
@@ -642,4 +945,357 @@ void MemSubsystem::seq() {
           axi_kit_runtime->interconnect.get_llc_perf_counters());
   axi_kit_runtime->interconnect.seq();
 #endif
+}
+
+void MemSubsystem::dump_debug_state() const {
+  std::printf(
+      "[DEADLOCK][MEM] mshr_count=%u fill=%d fill_addr=0x%08x wb_count=%u wb_head=%u wb_tail=%u\n",
+      mshr_.cur.mshr_count, static_cast<int>(mshr_.cur.fill), mshr_.cur.fill_addr,
+      wb_.cur.count, wb_.cur.head, wb_.cur.tail);
+  std::printf(
+      "[DEADLOCK][MEM][MSHR_STATE] cur_fill_valid=%d cur_fill_way=%u cur_wb_valid=%d cur_wb_addr=0x%08x nxt_count=%u\n",
+      static_cast<int>(mshr_.cur.fill_valid), mshr_.cur.fill_way,
+      static_cast<int>(mshr_.cur.wb_valid), mshr_.cur.wb_addr,
+      mshr_.nxt.mshr_count);
+
+  for (int i = 0; i < MSHR_ENTRIES; i++) {
+    const MSHREntry &cur_e = mshr_entries[i];
+    const MSHREntry &nxt_e = mshr_entries_nxt[i];
+    std::printf(
+        "[DEADLOCK][MEM][MSHR][%d] cur:{v=%d issue=%d fill=%d set=%u tag=0x%x line=0x%08x} nxt:{v=%d issue=%d fill=%d set=%u tag=0x%x line=0x%08x}\n",
+        i, static_cast<int>(cur_e.valid), static_cast<int>(cur_e.issued),
+        static_cast<int>(cur_e.fill), cur_e.index, cur_e.tag,
+        get_addr(cur_e.index, cur_e.tag, 0), static_cast<int>(nxt_e.valid),
+        static_cast<int>(nxt_e.issued), static_cast<int>(nxt_e.fill), nxt_e.index,
+        nxt_e.tag, get_addr(nxt_e.index, nxt_e.tag, 0));
+  }
+
+  if (mshr_.cur.fill_valid) {
+    print_line_words("[DEADLOCK][MEM][MSHR][FILL_DATA] ",
+                     mshr_.cur.fill_data);
+  }
+  if (mshr_.cur.wb_valid) {
+    print_line_words("[DEADLOCK][MEM][MSHR][WB_DATA]   ", mshr_.cur.wb_data);
+  }
+
+  std::printf(
+      "[DEADLOCK][MEM][WB_STATE] cur_count=%u cur_head=%u cur_tail=%u cur_send=%u cur_issue_pending=%u nxt_count=%u nxt_head=%u nxt_tail=%u nxt_send=%u nxt_issue_pending=%u\n",
+      wb_.cur.count, wb_.cur.head, wb_.cur.tail, wb_.cur.send,
+      wb_.cur.issue_pending, wb_.nxt.count, wb_.nxt.head, wb_.nxt.tail, wb_.nxt.send,
+      wb_.nxt.issue_pending);
+  for (int i = 0; i < WB_ENTRIES; i++) {
+    const WriteBufferEntry &cur_e = write_buffer[i];
+    const WriteBufferEntry &nxt_e = write_buffer_nxt[i];
+    std::printf(
+        "[DEADLOCK][MEM][WB][%d] cur:{v=%d send=%d addr=0x%08x} nxt:{v=%d send=%d addr=0x%08x}\n",
+        i, static_cast<int>(cur_e.valid), static_cast<int>(cur_e.send),
+        cur_e.addr, static_cast<int>(nxt_e.valid), static_cast<int>(nxt_e.send),
+        nxt_e.addr);
+    if (cur_e.valid) {
+      print_line_words("[DEADLOCK][MEM][WB][CUR_DATA] ", cur_e.data);
+    }
+    if (nxt_e.valid) {
+      print_line_words("[DEADLOCK][MEM][WB][NXT_DATA] ", nxt_e.data);
+    }
+  }
+
+  const auto ptw_dbg = ptw_block.debug_state();
+  std::printf(
+      "[DEADLOCK][MEM][PTW] walk_active=%d walk_state=%u walk_owner=%u dtlb_mem{pending=%d inflight=%d} itlb_mem{pending=%d inflight=%d} dtlb_walk{pending=%d inflight=%d resp=%d} itlb_walk{pending=%d inflight=%d resp=%d}\n",
+      static_cast<int>(ptw_dbg.walk_active), static_cast<unsigned>(ptw_dbg.walk_state),
+      static_cast<unsigned>(ptw_dbg.walk_owner),
+      static_cast<int>(ptw_dbg.mem_req_pending[0]),
+      static_cast<int>(ptw_dbg.mem_req_inflight[0]),
+      static_cast<int>(ptw_dbg.mem_req_pending[1]),
+      static_cast<int>(ptw_dbg.mem_req_inflight[1]),
+      static_cast<int>(ptw_dbg.walk_req_pending[0]),
+      static_cast<int>(ptw_dbg.walk_req_inflight[0]),
+      static_cast<int>(ptw_dbg.walk_resp_valid[0]),
+      static_cast<int>(ptw_dbg.walk_req_pending[1]),
+      static_cast<int>(ptw_dbg.walk_req_inflight[1]),
+      static_cast<int>(ptw_dbg.walk_resp_valid[1]));
+
+  const auto route_dbg = resp_route_block.debug_state();
+  std::printf(
+      "[DEADLOCK][MEM][RESP_ROUTE] wakeup{dtlb=%d itlb=%d walk=%d} ptw_evt{valid=%d owner=%u replay=%u req_addr=0x%08x data=0x%08x} ptw_port0=%d lsu_port0_replayed=%d\n",
+      static_cast<int>(route_dbg.wakeup.dtlb),
+      static_cast<int>(route_dbg.wakeup.itlb),
+      static_cast<int>(route_dbg.wakeup.walk),
+      static_cast<int>(route_dbg.ptw_event.valid),
+      static_cast<unsigned>(route_dbg.ptw_event.owner),
+      static_cast<unsigned>(route_dbg.ptw_event.replay),
+      route_dbg.ptw_event.req_addr, route_dbg.ptw_event.data,
+      static_cast<int>(route_dbg.ptw_occupies_port0),
+      static_cast<int>(route_dbg.lsu_port0_replayed));
+  for (int i = 0; i < LSU_LDU_COUNT; i++) {
+    const auto &tag = route_dbg.issued_tags[i];
+    std::printf(
+        "[DEADLOCK][MEM][RESP_ROUTE][TAG %d] valid=%d owner=%u req_id=%zu req_addr=0x%08x pc=0x%08x inst=0x%08x\n",
+        i, static_cast<int>(tag.valid), static_cast<unsigned>(tag.owner), tag.req_id,
+        tag.req_addr, tag.uop.pc, tag.uop.instruction);
+  }
+  for (size_t i = 0; i < MemRespRouteBlock::kPtwTrackCount; i++) {
+    const auto &track = route_dbg.ptw_tracks[i];
+    std::printf(
+        "[DEADLOCK][MEM][RESP_ROUTE][PTW_TRACK %d] valid=%d owner=%u req_id=%zu req_addr=0x%08x\n",
+        static_cast<int>(i), static_cast<int>(track.valid),
+        static_cast<unsigned>(track.owner),
+        track.req_id, track.req_addr);
+  }
+  std::printf(
+      "[DEADLOCK][MEM][RESP_ROUTE][TRACK] dtlb{blk=%d reason=%u addr=0x%08x} itlb{blk=%d reason=%u addr=0x%08x} walk{blk=%d reason=%u addr=0x%08x}\n",
+      static_cast<int>(route_dbg.dtlb.blocked),
+      static_cast<unsigned>(route_dbg.dtlb.reason), route_dbg.dtlb.req_addr,
+      static_cast<int>(route_dbg.itlb.blocked),
+      static_cast<unsigned>(route_dbg.itlb.reason), route_dbg.itlb.req_addr,
+      static_cast<int>(route_dbg.walk.blocked),
+      static_cast<unsigned>(route_dbg.walk.reason), route_dbg.walk.req_addr);
+  dump_key_cache_lines();
+  dump_recent_debug_events();
+  debug_ptw_trace::dump_recent_satp_writes();
+  debug_ptw_trace::dump_recent_ptw_walk_resps();
+  dump_failure_analysis();
+}
+
+void MemSubsystem::record_debug_event(DebugEventKind kind, uint8_t owner,
+                                      uint32_t addr, uint32_t data,
+                                      uint8_t replay, uint8_t extra,
+                                      size_t req_id, uint8_t port) {
+  DebugEvent &slot = debug_events_[debug_event_head_];
+  slot.cycle = static_cast<uint64_t>(sim_time);
+  slot.kind = kind;
+  slot.owner = owner;
+  slot.port = port;
+  slot.replay = replay;
+  slot.extra = extra;
+  slot.addr = addr;
+  slot.data = data;
+  slot.req_id = req_id;
+  debug_event_head_ = (debug_event_head_ + 1) % kDebugEventCapacity;
+  if (debug_event_count_ < kDebugEventCapacity) {
+    debug_event_count_++;
+  }
+}
+
+void MemSubsystem::dump_recent_debug_events() const {
+  const size_t recent_count =
+      (debug_event_count_ < 20) ? debug_event_count_ : static_cast<size_t>(20);
+  if (recent_count == 0) {
+    std::printf("[DEADLOCK][MEM][EVENTS] no recent MemSubsystem events recorded.\n");
+    return;
+  }
+
+  auto event_name = [](DebugEventKind kind) {
+    switch (kind) {
+    case DebugEventKind::PTW_MEM_REQ:
+      return "ptw_mem_req";
+    case DebugEventKind::PTW_MEM_GRANT:
+      return "ptw_mem_grant";
+    case DebugEventKind::PTW_MEM_RESP:
+      return "ptw_mem_resp";
+    case DebugEventKind::PTW_WALK_REQ:
+      return "ptw_walk_req";
+    case DebugEventKind::PTW_WALK_GRANT:
+      return "ptw_walk_grant";
+    case DebugEventKind::PTW_WALK_RESP:
+      return "ptw_walk_resp";
+    case DebugEventKind::REPLAY_WAKEUP:
+      return "replay_wakeup";
+    case DebugEventKind::LSU_PORT0_PREEMPT:
+      return "lsu_port0_preempt";
+    case DebugEventKind::LSU_LOAD_RESP:
+      return "lsu_load_resp";
+    case DebugEventKind::PTW_ROUTE_EVENT:
+      return "ptw_route";
+    default:
+      return "unknown";
+    }
+  };
+
+  const size_t start =
+      (debug_event_head_ + kDebugEventCapacity - recent_count) %
+      kDebugEventCapacity;
+  std::printf("[DEADLOCK][MEM][EVENTS] showing last %zu events\n", recent_count);
+  for (size_t i = 0; i < recent_count; i++) {
+    const DebugEvent &e = debug_events_[(start + i) % kDebugEventCapacity];
+    std::printf(
+        "[DEADLOCK][MEM][EVENT %02zu] cyc=%" PRIu64
+        " kind=%s owner=%s port=%u replay=%u extra=%u addr=0x%08x data=0x%08x req_id=%zu\n",
+        i, e.cycle, event_name(e.kind), mem_owner_name(e.owner),
+        static_cast<unsigned>(e.port), static_cast<unsigned>(e.replay),
+        static_cast<unsigned>(e.extra), e.addr, e.data, e.req_id);
+  }
+}
+
+void MemSubsystem::dump_failure_analysis() const {
+  const auto ptw_dbg = ptw_block.debug_state();
+  const auto route_dbg = resp_route_block.debug_state();
+  const auto pf_warn = difftest_get_last_pf_warning();
+
+  if (pf_warn.valid) {
+    const char *kind = "inst";
+    if (pf_warn.access_type == 1) {
+      kind = "load";
+    } else if (pf_warn.access_type == 2) {
+      kind = "store";
+    }
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] last_difftest_pf_mismatch cycle=%" PRIu64
+        " kind=%s dut_pc=0x%08x commit_pc=0x%08x inst=0x%08x\n",
+        pf_warn.cycle, kind, pf_warn.dut_pc, pf_warn.dut_commit_pc,
+        pf_warn.dut_inst);
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] likely_root_cause=The DUT raised a %s page fault that REF did not see. For Linux bring-up this usually means PTW walk data, DCache fill data, or PTW response routing/replay corrupted a kernel pointer before the later panic became visible.\n",
+        kind);
+  } else {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] no difftest-only page-fault mismatch has been recorded yet.\n");
+  }
+
+  if (route_dbg.dtlb.blocked || route_dbg.itlb.blocked || route_dbg.walk.blocked) {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] blocked_trackers dtlb=%s itlb=%s walk=%s\n",
+        replay_reason_name(route_dbg.dtlb.reason),
+        replay_reason_name(route_dbg.itlb.reason),
+        replay_reason_name(route_dbg.walk.reason));
+  }
+
+  if (ptw_dbg.walk_active || ptw_dbg.mem_req_pending[0] || ptw_dbg.mem_req_pending[1] ||
+      ptw_dbg.mem_req_inflight[0] || ptw_dbg.mem_req_inflight[1] ||
+      ptw_dbg.walk_req_pending[0] || ptw_dbg.walk_req_pending[1] ||
+      ptw_dbg.walk_req_inflight[0] || ptw_dbg.walk_req_inflight[1]) {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] outstanding_ptw walk_active=%d walk_state=%u dtlb_mem{pending=%d inflight=%d} itlb_mem{pending=%d inflight=%d} dtlb_walk{pending=%d inflight=%d} itlb_walk{pending=%d inflight=%d}\n",
+        static_cast<int>(ptw_dbg.walk_active),
+        static_cast<unsigned>(ptw_dbg.walk_state),
+        static_cast<int>(ptw_dbg.mem_req_pending[0]),
+        static_cast<int>(ptw_dbg.mem_req_inflight[0]),
+        static_cast<int>(ptw_dbg.mem_req_pending[1]),
+        static_cast<int>(ptw_dbg.mem_req_inflight[1]),
+        static_cast<int>(ptw_dbg.walk_req_pending[0]),
+        static_cast<int>(ptw_dbg.walk_req_inflight[0]),
+        static_cast<int>(ptw_dbg.walk_req_pending[1]),
+        static_cast<int>(ptw_dbg.walk_req_inflight[1]));
+  }
+
+  if (route_dbg.lsu_port0_replayed || route_dbg.ptw_occupies_port0) {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] arbitration_notice ptw_occupies_port0=%d lsu_port0_replayed=%d; if a later crash shows a bogus kernel pointer (for example 0xcfxxxxxx in kstrdup_const), prioritize PTW/LSU arbitration and response routing over SLUB itself.\n",
+        static_cast<int>(route_dbg.ptw_occupies_port0),
+        static_cast<int>(route_dbg.lsu_port0_replayed));
+  } else {
+    std::printf(
+        "[DEADLOCK][MEM][ANALYSIS] kernel_hint=If Linux later crashes in kstrdup_const/__kernfs_new_node with a bogus kernel pointer, the allocator is usually the victim. Check earlier PTW walk results, DCache fills, and replay handling first.\n");
+  }
+}
+
+void MemSubsystem::dump_key_cache_lines() const {
+  uint32_t line_bases[32] = {};
+  const char *reasons[32] = {};
+  size_t line_count = 0;
+
+  auto add_line = [&](const char *reason, uint32_t addr) {
+    if (addr == 0) {
+      return;
+    }
+    const uint32_t line_base = addr & ~(static_cast<uint32_t>(DCACHE_LINE_BYTES) - 1u);
+    for (size_t i = 0; i < line_count; i++) {
+      if (line_bases[i] == line_base) {
+        return;
+      }
+    }
+    if (line_count < (sizeof(line_bases) / sizeof(line_bases[0]))) {
+      line_bases[line_count] = line_base;
+      reasons[line_count] = reason;
+      line_count++;
+    }
+  };
+
+  if (mshr_.cur.fill_addr != 0) {
+    add_line("mshr_fill_addr", mshr_.cur.fill_addr);
+  }
+  if (mshr_.cur.wb_addr != 0) {
+    add_line("mshr_wb_addr", mshr_.cur.wb_addr);
+  }
+
+  for (int i = 0; i < MSHR_ENTRIES; i++) {
+    const MSHREntry &cur_e = mshr_entries[i];
+    const MSHREntry &nxt_e = mshr_entries_nxt[i];
+    if (cur_e.valid) {
+      add_line("mshr_cur", get_addr(cur_e.index, cur_e.tag, 0));
+    }
+    if (nxt_e.valid) {
+      add_line("mshr_nxt", get_addr(nxt_e.index, nxt_e.tag, 0));
+    }
+  }
+
+  for (int i = 0; i < WB_ENTRIES; i++) {
+    const WriteBufferEntry &cur_e = write_buffer[i];
+    const WriteBufferEntry &nxt_e = write_buffer_nxt[i];
+    if (cur_e.valid) {
+      add_line("wb_cur", cur_e.addr);
+    }
+    if (nxt_e.valid) {
+      add_line("wb_nxt", nxt_e.addr);
+    }
+  }
+
+  const auto route_dbg = resp_route_block.debug_state();
+  if (route_dbg.dtlb.req_addr != 0) {
+    add_line("route_dtlb", route_dbg.dtlb.req_addr);
+  }
+  if (route_dbg.itlb.req_addr != 0) {
+    add_line("route_itlb", route_dbg.itlb.req_addr);
+  }
+  if (route_dbg.walk.req_addr != 0) {
+    add_line("route_walk", route_dbg.walk.req_addr);
+  }
+  if (route_dbg.ptw_event.req_addr != 0) {
+    add_line("ptw_event", route_dbg.ptw_event.req_addr);
+  }
+
+  const size_t recent_count =
+      (debug_event_count_ < 16) ? debug_event_count_ : static_cast<size_t>(16);
+  const size_t start =
+      (debug_event_head_ + kDebugEventCapacity - recent_count) %
+      kDebugEventCapacity;
+  for (size_t i = 0; i < recent_count; i++) {
+    const DebugEvent &e = debug_events_[(start + i) % kDebugEventCapacity];
+    if (e.addr != 0) {
+      add_line("recent_event", e.addr);
+    }
+  }
+
+  if (line_count == 0) {
+    std::printf("[DEADLOCK][MEM][CACHE_LINE] no key cache lines selected.\n");
+    return;
+  }
+
+  std::printf("[DEADLOCK][MEM][CACHE_LINE] dumping %zu key cache lines\n", line_count);
+  for (size_t i = 0; i < line_count; i++) {
+    dump_cache_line_for_addr(reasons[i], line_bases[i]);
+  }
+}
+
+void MemSubsystem::dump_cache_line_for_addr(const char *reason, uint32_t addr) const {
+  const AddrFields f = decode(addr);
+  const uint32_t line_base =
+      addr & ~(static_cast<uint32_t>(DCACHE_LINE_BYTES) - 1u);
+
+  std::printf(
+      "[DEADLOCK][MEM][CACHE_LINE][%s] line=0x%08x set=%u tag=0x%x bank=%u word_off=%u\n",
+      reason, line_base, f.set_idx, f.tag, f.bank, f.word_off);
+
+  for (int w = 0; w < DCACHE_WAYS; w++) {
+    const bool match = valid_array[f.set_idx][w] && tag_array[f.set_idx][w] == f.tag;
+    std::printf(
+        "[DEADLOCK][MEM][CACHE_LINE][%s][WAY %d] match=%d valid=%d dirty=%d tag=0x%x words=[",
+        reason, w, static_cast<int>(match), static_cast<int>(valid_array[f.set_idx][w]),
+        static_cast<int>(dirty_array[f.set_idx][w]), tag_array[f.set_idx][w]);
+    for (int word = 0; word < DCACHE_LINE_WORDS; word++) {
+      std::printf("%s%08x", (word == 0) ? "" : " ",
+                  data_array[f.set_idx][w][word]);
+    }
+    std::printf("]\n");
+  }
 }

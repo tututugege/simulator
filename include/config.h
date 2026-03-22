@@ -73,7 +73,39 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 // Feature Flags (Macros used for conditional compilation)
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
+
+
+// ============================================================
+// [4] D-Cache Config
+// ============================================================
+// Targeted LSU trace (1-based sequence id):
+// 0 = disabled, N = trace the Nth load/store entering LDQ/STQ.
+#ifndef CONFIG_PERF_TRACE_LOAD_N
+#define CONFIG_PERF_TRACE_LOAD_N 1000
+#endif
+#ifndef CONFIG_PERF_TRACE_STORE_N
+#define CONFIG_PERF_TRACE_STORE_N 1000
+#endif
+// Perf snapshot at a specific sim-time(cycle):
+// 0 = disabled, N > 0 = capture committed(total/load/store) at cycle N.
+#define CONFIG_PERF_SNAPSHOT_SIM_TIME 10000
+// Periodic perf snapshots:
+// - INTERVAL=0: disabled
+// - BEGIN/END: capture window (inclusive)
+// - MAX: max snapshot records kept (avoid huge logs)
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL 0
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN 26000
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_END
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_END 35000
+#endif
+#ifndef CONFIG_PERF_PERIODIC_SNAPSHOT_MAX
+#define CONFIG_PERF_PERIODIC_SNAPSHOT_MAX 256
+#endif
 // MMU domain feature tags (kept enabled for front/back path visibility)
 #define CONFIG_DTLB
 #define CONFIG_ITLB
@@ -90,6 +122,106 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 #ifndef CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
 #define CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN 1
 #endif
+
+extern long long sim_time; // Global simulation time
+constexpr int REPLAY_STORE_COUNT_UPPER_BOUND = 32;
+constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
+// Global debug print switch for ad-hoc debug logs in simulator modules.
+// Set to 1 to enable, 0 to disable.
+#ifndef SIM_DEBUG_PRINT
+#define SIM_DEBUG_PRINT 0
+#endif
+
+// Unified debug print switch for RealLsu + MemSubsystem domain logs.
+// By default it follows SIM_DEBUG_PRINT, but it can be overridden
+// independently when we only want memory/LSU diagnostics.
+#ifndef SIM_LSU_MEM_DEBUG_PRINT
+#define SIM_LSU_MEM_DEBUG_PRINT SIM_DEBUG_PRINT
+#endif
+
+// Optional cycle window for DBG_PRINTF.
+// Effective only when SIM_DEBUG_PRINT == 1.
+// Default is full-range (all cycles).
+#ifndef SIM_DEBUG_PRINT_CYCLE_BEGIN
+#define SIM_DEBUG_PRINT_CYCLE_BEGIN 9758088
+#endif
+
+#ifndef SIM_DEBUG_PRINT_CYCLE_END
+#define SIM_DEBUG_PRINT_CYCLE_END 9758088
+#endif
+
+#ifndef SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN
+#define SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN SIM_DEBUG_PRINT_CYCLE_BEGIN
+#endif
+
+#ifndef SIM_LSU_MEM_DEBUG_PRINT_CYCLE_END
+#define SIM_LSU_MEM_DEBUG_PRINT_CYCLE_END SIM_DEBUG_PRINT_CYCLE_END
+#endif
+
+#ifndef CONFIG_DIFF_DEBUG_MEMTRACE_DUMP_COUNT
+#define CONFIG_DIFF_DEBUG_MEMTRACE_DUMP_COUNT 5000
+#endif
+
+#ifndef CONFIG_DIFF_DEBUG_MEMTRACE_BUFFER_SIZE
+#define CONFIG_DIFF_DEBUG_MEMTRACE_BUFFER_SIZE 262144
+#endif
+
+#ifndef CONFIG_DEADLOCK_REPLAY_TRACE_DUMP_COUNT
+#define CONFIG_DEADLOCK_REPLAY_TRACE_DUMP_COUNT 5000
+#endif
+
+#ifndef CONFIG_DEADLOCK_REPLAY_TRACE_BUFFER_SIZE
+#define CONFIG_DEADLOCK_REPLAY_TRACE_BUFFER_SIZE 131072
+#endif
+
+#ifndef CONFIG_DEBUG_SATP_WRITE_LOG_MAX
+#define CONFIG_DEBUG_SATP_WRITE_LOG_MAX 32
+#endif
+
+#ifndef CONFIG_DEBUG_PTW_WALK_RESP_DETAIL_MAX
+#define CONFIG_DEBUG_PTW_WALK_RESP_DETAIL_MAX 128
+#endif
+
+#define SIM_DEBUG_PRINT_ACTIVE                                                \
+  (SIM_DEBUG_PRINT &&                                                         \
+   (static_cast<unsigned long long>(sim_time) >=                              \
+    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_BEGIN)) &&          \
+   (static_cast<unsigned long long>(sim_time) <=                              \
+    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_END)))
+
+#define SIM_LSU_MEM_DEBUG_PRINT_ACTIVE                                        \
+  (SIM_LSU_MEM_DEBUG_PRINT &&                                                 \
+   (static_cast<unsigned long long>(sim_time) >=                              \
+    static_cast<unsigned long long>(SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN)) &&  \
+   (static_cast<unsigned long long>(sim_time) <=                              \
+    static_cast<unsigned long long>(SIM_LSU_MEM_DEBUG_PRINT_CYCLE_END)))
+
+// Lightweight LSU STQ invariant checks.
+// Set to 1 when debugging queue/pointer consistency issues.
+#ifndef LSU_LIGHT_ASSERT
+#define LSU_LIGHT_ASSERT 0
+#endif
+
+#define DBG_PRINTF(fmt, ...)                                                   \
+  do {                                                                         \
+    if (SIM_DEBUG_PRINT_ACTIVE) {                                              \
+      std::printf(fmt, ##__VA_ARGS__);                                         \
+    }                                                                          \
+  } while (0)
+
+#define LSU_MEM_DBG_PRINTF(fmt, ...)                                           \
+  do {                                                                         \
+    if (SIM_LSU_MEM_DEBUG_PRINT_ACTIVE) {                                      \
+      std::printf(fmt, ##__VA_ARGS__);                                         \
+    }                                                                          \
+  } while (0)
+
+#define LSU_MEM_DBG_FPRINTF(stream, fmt, ...)                                  \
+  do {                                                                         \
+    if (SIM_LSU_MEM_DEBUG_PRINT_ACTIVE) {                                      \
+      std::fprintf(stream, fmt, ##__VA_ARGS__);                                \
+    }                                                                          \
+  } while (0)
 
 // ============================================================
 // [2] Global Limits
@@ -137,6 +269,9 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 // Current axi-interconnect-kit integration supports AXI4 only.
 #ifndef CONFIG_AXI_PROTOCOL
 #define CONFIG_AXI_PROTOCOL 4
+#endif
+#if CONFIG_AXI_PROTOCOL != 4
+#error "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
 #endif
 
 // Enable the shared AXI LLC path.
@@ -193,9 +328,7 @@ constexpr int ICACHE_WORD_NUM = ICACHE_LINE_SIZE / 4;
 constexpr int ICACHE_TAG_BITS = 32 - ICACHE_INDEX_BITS - ICACHE_OFFSET_BITS;
 constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
-// ============================================================
-// [4] D-Cache (SimpleCache) Config
-// ============================================================
+
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
 constexpr int DCACHE_L2_HIT_LATENCY = 8;
@@ -225,7 +358,7 @@ constexpr uint32_t DCACHE_L2_TAG_MASK = (1u << DCACHE_L2_TAG_BITS) - 1u;
 // [5] Core Resource Size
 // ============================================================
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 160; // Tuned for 4-wide
+constexpr int PRF_NUM = 256; // Tuned for 4-wide
 constexpr int MAX_BR_NUM = 64;
 // Branch tag allocation bandwidth per cycle.
 // Keep it aligned with decode width on wide frontend/backend configurations.
@@ -233,7 +366,7 @@ constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 128;
+constexpr int ROB_NUM = 256;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM; // (ROB_NUM / ROB_BANK_NUM)
 
 // ============================================================
@@ -281,7 +414,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
+    PORT_CFG(OP_MASK_ALU | OP_MASK_FP),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1

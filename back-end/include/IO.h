@@ -102,6 +102,12 @@ struct DecRenIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
 
@@ -380,6 +386,12 @@ struct RobCommitIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -536,6 +548,12 @@ struct DisRobIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -667,6 +685,12 @@ struct RenDisIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
 
@@ -796,6 +820,12 @@ struct DisIssIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -851,6 +881,11 @@ struct RobBroadcastIO {
   wire<32> trap_val;
   wire<32> pc;
 
+  wire<ROB_IDX_WIDTH> head_rob_idx;
+  wire<1> head_valid;
+  wire<ROB_IDX_WIDTH> head_incomplete_rob_idx;
+  wire<1> head_incomplete_valid;
+
   RobBroadcastIO() {
     flush = {};
     mret = {};
@@ -866,6 +901,11 @@ struct RobBroadcastIO {
     interrupt = {};
     trap_val = {};
     pc = {};
+    
+    head_rob_idx = {};
+    head_valid = {};
+    head_incomplete_rob_idx = {};
+    head_incomplete_valid = {};
   }
 };
 
@@ -958,6 +998,12 @@ struct IssPrfIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -1068,6 +1114,12 @@ struct PrfExeIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -1190,6 +1242,12 @@ struct ExuRobIO {
       dst.page_fault_store = page_fault_store;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -1398,6 +1456,163 @@ struct MemRespIO {
   }
 };
 
+
+struct PeripheralInIO{
+  wire<1> is_mmio;
+  wire<1> wen;
+  wire<32> mmio_addr;
+  wire<32> mmio_wdata;
+  wire<8> mmio_wstrb;
+  MicroOp uop;
+
+  PeripheralInIO() {
+    is_mmio = {};
+    mmio_addr = {};
+    mmio_wdata = {};
+    mmio_wstrb = {};
+    uop = {};
+  }
+};
+struct PeripheralOutIO{
+  wire<1> is_mmio;
+  wire<1> ready;
+  wire<32> mmio_rdata;
+  MicroOp uop;
+
+  PeripheralOutIO() {
+    is_mmio = {};
+    ready = {};
+    mmio_rdata = {};
+    uop = {};
+  }
+
+};
+
+struct PeripheralIO {
+  PeripheralInIO in;
+  PeripheralOutIO out;
+};
+
+// STQ 条目结构（定义在此以供 StoreReq 使用）
+struct StqEntry {
+  bool valid        = false;
+  bool addr_valid   = false;
+  bool data_valid   = false;
+  bool committed    = false;
+  bool done         = false;
+  bool is_mmio      = false;
+  bool send         = false; // Whether the store has been sent to DCache (for replay logic)
+  uint8_t replay = 0;
+  uint32_t addr     = 0;
+  uint32_t p_addr   = 0;
+  uint32_t suppress_write = 0; // For MMIO: bits to suppress in the write (e.g., for LR/SC)
+  uint32_t data     = 0;
+  uint32_t func3    = 0;
+  mask_t   br_mask  = {};
+  uint32_t rob_idx  = 0;
+  uint32_t rob_flag = 0;
+};
+
+struct LoadReq {
+    wire<1> valid;
+    wire<32> addr;
+    MicroOp uop;
+    size_t req_id;
+
+    LoadReq() : valid(false), addr(0), uop(), req_id(0) {}
+};
+
+struct StoreReq {
+    wire<1> valid;
+    wire<32> addr;
+    wire<32> data;
+    wire<8> strb;
+    StqEntry uop;
+    size_t req_id;
+
+    StoreReq() : valid(false), addr(0), data(0), strb(0xF), uop(), req_id(0) {}
+};
+
+// Load响应结构
+struct LoadResp {
+    wire<1> valid;
+    wire<32> data;
+    MicroOp uop;
+    size_t req_id;
+    wire<2> replay;
+    LoadResp() : valid(false), data(0), uop(), req_id(0), replay(0) {}
+};
+
+// Store响应结构
+struct StoreResp {
+    wire<1> valid;
+    wire<2> replay;         
+    size_t req_id;
+    wire<1> is_cache_miss;
+
+    StoreResp() : valid(false), replay(0), req_id(0), is_cache_miss(false) {}
+};
+
+// 请求端口集合（支持4个Load + 4个Store）
+struct DCacheReqPorts {
+
+    LoadReq load_ports[LSU_LDU_COUNT];
+    StoreReq store_ports[LSU_STA_COUNT];
+
+    void clear() {
+        for (int i = 0; i < LSU_LDU_COUNT; i++) {
+            load_ports[i].valid = false;
+        }
+        for (int i = 0; i < LSU_STA_COUNT; i++) {
+            store_ports[i].valid = false;
+        }
+    }
+};
+struct ReplayResp{
+    wire<2> replay;
+    size_t replay_addr;
+    wire<8> free_slots;
+
+    ReplayResp() : replay(0), replay_addr(0), free_slots(0) {}
+};
+
+// 响应端口集合
+struct DCacheRespPorts {
+    LoadResp load_resps[LSU_LDU_COUNT];
+    StoreResp store_resps[LSU_STA_COUNT];
+    ReplayResp replay_resp;
+
+    void clear() {
+        for (int i = 0; i < LSU_LDU_COUNT; i++) {
+            load_resps[i].valid = false;
+        }
+        for (int i = 0; i < LSU_STA_COUNT; i++) {
+            store_resps[i].valid = false;
+            store_resps[i].replay = 0;
+            store_resps[i].is_cache_miss = false;
+        }
+        replay_resp = ReplayResp();
+    }
+};
+
+struct LsuDcacheIO {
+  DCacheReqPorts req_ports;
+
+  LsuDcacheIO() {
+    req_ports.clear();
+  }
+};
+
+struct DcacheLsuIO
+{
+  DCacheRespPorts resp_ports;
+
+  DcacheLsuIO() {
+    resp_ports.clear();
+  }
+
+};
+
 struct LsuDisIO {
 
   wire<STQ_IDX_WIDTH> stq_tail; // 当前分配指针
@@ -1475,6 +1690,12 @@ struct LsuExeIO {
       dst.page_fault_store = page_fault_store;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -1588,6 +1809,12 @@ struct ExeLsuIO {
       dst.dest_en = dest_en;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };

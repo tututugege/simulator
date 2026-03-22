@@ -1,5 +1,7 @@
 #include "Rob.h"
 #include "IO.h"
+
+#include "DeadlockDebug.h"
 #include "RISCV.h"
 #include "config.h"
 #include "util.h"
@@ -137,6 +139,30 @@ void Rob::comb_commit() {
   out.rob_bcast->page_fault_inst = out.rob_bcast->page_fault_load =
       out.rob_bcast->page_fault_store = out.rob_bcast->illegal_inst = false;
 
+  // 广播队头行的第一个 valid 项，以及该行里第一个未完成项。
+  // LSU 使用后者决定 MMIO 访存何时可以发射，避免与 ROB 的整行提交
+  // 策略形成循环等待。
+  out.rob_bcast->head_valid = false;
+  out.rob_bcast->head_rob_idx = 0;
+  out.rob_bcast->head_incomplete_valid = false;
+  out.rob_bcast->head_incomplete_rob_idx = 0;
+  if (!is_empty()) {
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid) {
+        out.rob_bcast->head_valid = true;
+        out.rob_bcast->head_rob_idx = make_rob_idx(deq_ptr, i);
+        break;
+      }
+    }
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry[i][deq_ptr].valid &&
+          entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+        out.rob_bcast->head_incomplete_valid = true;
+        out.rob_bcast->head_incomplete_rob_idx = make_rob_idx(deq_ptr, i);
+        break;
+      }
+    }
+  }
   wire<1> commit = (!is_empty() && !in.dec_bcast->mispred);
 
   // 检查 BANK 的同一行是否都已完成
@@ -149,6 +175,24 @@ void Rob::comb_commit() {
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
+  bool progress_single_commit = false;
+  auto log_incomplete_store_commit = [&](const RobStoredInst &uop,
+                                         const char *path, int slot) {
+    if (!rob_is_store(uop) || uop.cplt_num == uop.uop_num) {
+      return;
+    }
+    // std::printf(
+    //     "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
+    //     "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
+    //     "interrupt=%d flush=%d mispred=%d\n",
+    //     (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
+    //     (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
+    //     (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
+    //     (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
+    //     (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
+    //     (int)in.dec_bcast->mispred);
+    deadlock_debug::dump_all();
+  };
 
   if (!in.dec_bcast->mispred) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -160,12 +204,12 @@ void Rob::comb_commit() {
       }
     }
 
-    // 看第一个valid的inst是否完成 或者是interrupt，如果完成则single_commit
+    // 看第一个 valid 指令是否完成。即使是 interrupt 触发的 single_commit，
+    // 也必须等待该最老指令完成，避免提交未完成的内存指令。
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
         single_idx = i;
-        if (!out.rob_bcast->interrupt &&
-            entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+        if (entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
           single_commit = false;
         }
         if (decode_inst_type(entry[i][deq_ptr].uop.type) == SFENCE_VMA &&
@@ -175,6 +219,26 @@ void Rob::comb_commit() {
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
           single_commit = false;
           commit = false;
+        }
+        break;
+      }
+    }
+
+    // Forward-progress fallback:
+    // If group commit is blocked by younger banks in the same ROB line, allow
+    // committing the oldest ready non-flush instruction so older stores can
+    // still commit/retire and unblock younger loads that are waiting on them.
+    if (!commit && !single_commit && !out.rob_bcast->interrupt) {
+      for (int i = 0; i < ROB_BANK_NUM; i++) {
+        if (!entry[i][deq_ptr].valid) {
+          continue;
+        }
+        const auto &uop = entry[i][deq_ptr].uop;
+        const bool ready = (uop.cplt_num == uop.uop_num);
+        if (ready && !rob_is_flush_inst(uop)) {
+          single_commit = true;
+          single_idx = i;
+          progress_single_commit = true;
         }
         break;
       }
@@ -200,6 +264,10 @@ void Rob::comb_commit() {
         }
       }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
+      if (out.rob_commit->commit_entry[i].valid) {
+        log_incomplete_store_commit(entry[i][deq_ptr].uop, "group",
+                                    i);
+      }
       entry_1[i][deq_ptr].valid = false;
     }
 
@@ -220,8 +288,8 @@ void Rob::comb_commit() {
 
     if (entry[single_idx][deq_ptr].valid) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
-      // 中断触发 single_commit 时，首条指令可能尚未完成，diag_val
-      // 可能不是地址语义。
+      log_incomplete_store_commit(uop, "single", single_idx);
+      // 中断触发的 single_commit 也要求首条指令已经完成。
       if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
           !rob_is_page_fault(uop)) {
         uint32_t alignment_mask = uop.dbg.mem_align_mask;
@@ -231,6 +299,13 @@ void Rob::comb_commit() {
     }
 
     entry_1[single_idx][deq_ptr].valid = false;
+    if (progress_single_commit) {
+      DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u rob_idx=%u pc=0x%08x type=%u\n",
+                 (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
+                 (unsigned)single_idx, (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
+                 entry[single_idx][deq_ptr].uop.dbg.pc,
+                 (unsigned)entry[single_idx][deq_ptr].uop.type);
+    }
     if (rob_is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
@@ -289,7 +364,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 20000) {
+  if (stall_cycle > 10000) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -315,7 +390,8 @@ void Rob::comb_commit() {
       }
     }
 
-    Assert(0 && "ROB Deadlock detected (stall_cycle > 1000)");
+    deadlock_debug::dump_all();
+    Assert(0 && "ROB Deadlock detected (stall_cycle > 10000)");
   }
 }
 

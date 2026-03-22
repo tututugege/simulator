@@ -12,7 +12,7 @@ CXX      ?= g++
 CXXFLAGS := -O3 -march=native -funroll-loops -mtune=native
 CXXFLAGS += -MMD -MP 
 CXXFLAGS += -Wall -Wextra -Wno-unused-parameter
-CXXFLAGS += --std=c++20
+CXXFLAGS += --std=c++2a
 CXXFLAGS += $(EXTRA_CXXFLAGS)
 ZLIB_CFLAGS := $(shell pkg-config --silence-errors --cflags zlib)
 ZLIB_LIBDIR := $(shell pkg-config --silence-errors --variable=libdir zlib)
@@ -60,8 +60,12 @@ endif
 # (Using find to locate all cpp files)
 CXXSRC := $(shell find ./back-end -name "*.cpp") \
           ./MemSubSystem/MemSubsystem.cpp \
-          ./MemSubSystem/SimpleCache.cpp \
           ./MemSubSystem/PtwWalker.cpp \
+          ./MemSubSystem/PeripheralAxi.cpp \
+          ./MemSubSystem/RealDcache.cpp \
+          ./MemSubSystem/MSHR.cpp \
+          ./MemSubSystem/WriteBuffer.cpp \
+          ./MemSubSystem/DcacheConfig.cpp \
           $(shell find $(FRONT_DIR) -name "*.cpp") \
           $(shell find ./diff -name "*.cpp") \
           $(AXI_KIT_SRC) \
@@ -76,7 +80,7 @@ DEPS := $(OBJS:.o=.d)
 # Rules
 # ==========================================
 
-.PHONY: all clean run gdb coverage help gdb_linux
+.PHONY: all clean run gdb coverage help gdb_linux linux
 
 all: $(SIM_EXE)
 
@@ -94,6 +98,9 @@ $(BUILD_DIR)/%.o: %.cpp
 # Run
 run: $(SIM_EXE)
 	./$(SIM_EXE) $(IMG)
+
+linux: $(SIM_EXE)
+	./$(SIM_EXE) ./baremetal/linux.bin  
 
 # Debug with GDB
 gdb: CXXFLAGS += -g -O0

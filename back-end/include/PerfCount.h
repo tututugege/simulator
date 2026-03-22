@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -10,11 +11,88 @@ public:
   bool icache_busy = false;
   uint64_t cycle = 0;
   uint64_t commit_num = 0;
+  uint64_t commit_load_num = 0;
+  uint64_t commit_store_num = 0;
+  bool simtime_snapshot_valid = false;
+  uint64_t simtime_snapshot_cycle = 0;
+  uint64_t simtime_snapshot_commit_num = 0;
+  uint64_t simtime_snapshot_commit_load_num = 0;
+  uint64_t simtime_snapshot_commit_store_num = 0;
+
+  struct PeriodicSnapshot {
+    uint64_t cycle = 0;
+    uint64_t commit_num = 0;
+    uint64_t commit_load_num = 0;
+    uint64_t commit_store_num = 0;
+    uint64_t mmio_inst_count = 0;
+    uint64_t stq_same_addr_block_count = 0;
+    uint64_t l1d_req_replay = 0;
+    uint64_t stall_rob_full_cycles = 0;
+    uint64_t dis2ren_not_ready_cycles = 0;
+  };
+  std::array<PeriodicSnapshot, CONFIG_PERF_PERIODIC_SNAPSHOT_MAX>
+      periodic_snapshots = {};
+  uint64_t periodic_snapshot_count = 0;
+  bool periodic_snapshot_overflow = false;
 
   uint64_t dcache_access_num = 0;
   uint64_t dcache_miss_num = 0;
   uint64_t dcache_l2_access_num = 0;
   uint64_t dcache_l2_miss_num = 0;
+  // RealDcache detailed counters
+  uint64_t l1d_req_initial = 0; // first requests, excluding replay requests
+  uint64_t l1d_req_all = 0; // all dcache requests, including replay requests
+  uint64_t l1d_miss_mshr_alloc = 0; // real misses that allocate an MSHR entry
+  uint64_t l1d_req_replay = 0; // requests re-issued by replay mechanism
+  uint64_t l1d_replay_squash_abort = 0; // replay request failed again
+  uint64_t l1d_replay_bank_conflict = 0;
+  uint64_t l1d_replay_bank_conflict_load = 0;
+  uint64_t l1d_replay_bank_conflict_store = 0;
+  uint64_t l1d_replay_mshr_full = 0;
+  uint64_t l1d_replay_mshr_full_load = 0;
+  uint64_t l1d_replay_mshr_full_store = 0;
+  uint64_t l1d_replay_wait_mshr = 0;
+  uint64_t l1d_replay_wait_mshr_load = 0;
+  uint64_t l1d_replay_wait_mshr_store = 0;
+  uint64_t l1d_replay_wait_mshr_hit = 0;
+  uint64_t l1d_replay_wait_mshr_first_alloc = 0;
+  uint64_t l1d_replay_wait_mshr_fill_wait = 0;
+  uint64_t l1d_miss_penalty_total_cycles = 0;
+  uint64_t l1d_miss_penalty_samples = 0;
+  uint64_t l1d_axi_read_total_cycles = 0;
+  uint64_t l1d_axi_read_samples = 0;
+  uint64_t l1d_axi_write_total_cycles = 0;
+  uint64_t l1d_axi_write_samples = 0;
+  uint64_t l1d_mem_inst_total_cycles = 0;
+  uint64_t l1d_mem_inst_samples = 0;
+  uint64_t mmio_inst_count = 0;
+  uint64_t mmio_load_count = 0;
+  uint64_t mmio_store_count = 0;
+  uint64_t ld_resp_stale_drop_count = 0;
+  uint64_t ld_resp_timeout_retry_count = 0;
+  uint64_t mmio_head_block_cycles = 0;
+  uint64_t ptw_port0_replay_count = 0;
+  uint64_t stq_same_addr_block_count = 0;
+  static constexpr int64_t trace_time_unset = -1;
+
+  struct MemOpTrace {
+    uint64_t target_n = 0;
+    uint64_t target_seq = 0;
+    bool tracked = false;
+    bool inst_idx_valid = false;
+    int64_t inst_idx = 0;
+    int mmio = -1;
+    int stlf_success = -1;
+    int dcache_hit = -1;
+    int64_t enter_q_time = trace_time_unset;
+    int64_t issue_req_time = trace_time_unset;
+    int64_t recv_result_time = trace_time_unset;
+    int64_t exit_q_time = trace_time_unset;
+    int64_t exit_rob_time = trace_time_unset;
+  };
+
+  MemOpTrace tracked_load_trace = {CONFIG_PERF_TRACE_LOAD_N};
+  MemOpTrace tracked_store_trace = {CONFIG_PERF_TRACE_STORE_N};
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -156,14 +234,196 @@ public:
   uint64_t ib_blocked_cycles = 0;
   uint64_t ftq_blocked_cycles = 0;
 
+  static inline void set_once(int64_t &slot, int64_t value) {
+    if (slot == trace_time_unset) {
+      slot = value;
+    }
+  }
+
+  void reset_mem_op_traces() {
+    tracked_load_trace = {};
+    tracked_store_trace = {};
+    tracked_load_trace.target_n = CONFIG_PERF_TRACE_LOAD_N;
+    tracked_store_trace.target_n = CONFIG_PERF_TRACE_STORE_N;
+  }
+
+  void trace_load_on_ldq_enter(uint64_t seq, int64_t cycle_now) {
+    if (tracked_load_trace.tracked || tracked_load_trace.target_n == 0 ||
+        seq != tracked_load_trace.target_n) {
+      return;
+    }
+    tracked_load_trace.tracked = true;
+    tracked_load_trace.target_seq = seq;
+    tracked_load_trace.enter_q_time = cycle_now;
+  }
+
+  void trace_load_set_inst_idx(uint64_t seq, int64_t inst_idx) {
+    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq ||
+        tracked_load_trace.inst_idx_valid) {
+      return;
+    }
+    tracked_load_trace.inst_idx = inst_idx;
+    tracked_load_trace.inst_idx_valid = true;
+  }
+
+  void trace_load_set_mmio(uint64_t seq, bool is_mmio) {
+    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq ||
+        tracked_load_trace.mmio != -1) {
+      return;
+    }
+    tracked_load_trace.mmio = is_mmio ? 1 : 0;
+  }
+
+  void trace_load_set_stlf(uint64_t seq, bool stlf_success) {
+    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
+      return;
+    }
+    if (stlf_success) {
+      tracked_load_trace.stlf_success = 1;
+      return;
+    }
+    if (tracked_load_trace.stlf_success == -1) {
+      tracked_load_trace.stlf_success = 0;
+    }
+  }
+
+  void trace_load_set_dcache_hit(uint64_t seq, bool is_hit) {
+    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq ||
+        tracked_load_trace.dcache_hit != -1) {
+      return;
+    }
+    tracked_load_trace.dcache_hit = is_hit ? 1 : 0;
+  }
+
+  void trace_load_on_issue(uint64_t seq, int64_t cycle_now) {
+    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
+      return;
+    }
+    set_once(tracked_load_trace.issue_req_time, cycle_now);
+  }
+
+  void trace_load_on_result(uint64_t seq, int64_t cycle_now) {
+    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
+      return;
+    }
+    set_once(tracked_load_trace.recv_result_time, cycle_now);
+  }
+
+  void trace_load_on_ldq_exit(uint64_t seq, int64_t cycle_now) {
+    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
+      return;
+    }
+    set_once(tracked_load_trace.exit_q_time, cycle_now);
+  }
+
+  void trace_load_on_rob_exit(int64_t inst_idx, int64_t cycle_now) {
+    if (!tracked_load_trace.tracked || !tracked_load_trace.inst_idx_valid ||
+        tracked_load_trace.inst_idx != inst_idx) {
+      return;
+    }
+    set_once(tracked_load_trace.exit_rob_time, cycle_now);
+  }
+
+  void trace_store_on_stq_enter(uint64_t seq, int64_t cycle_now) {
+    if (tracked_store_trace.tracked || tracked_store_trace.target_n == 0 ||
+        seq != tracked_store_trace.target_n) {
+      return;
+    }
+    tracked_store_trace.tracked = true;
+    tracked_store_trace.target_seq = seq;
+    tracked_store_trace.enter_q_time = cycle_now;
+  }
+
+  void trace_store_set_inst_idx(uint64_t seq, int64_t inst_idx) {
+    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq ||
+        tracked_store_trace.inst_idx_valid) {
+      return;
+    }
+    tracked_store_trace.inst_idx = inst_idx;
+    tracked_store_trace.inst_idx_valid = true;
+  }
+
+  void trace_store_set_dcache_hit(uint64_t seq, bool is_hit) {
+    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq ||
+        tracked_store_trace.dcache_hit != -1) {
+      return;
+    }
+    tracked_store_trace.dcache_hit = is_hit ? 1 : 0;
+  }
+
+  void trace_store_on_issue(uint64_t seq, int64_t cycle_now) {
+    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq) {
+      return;
+    }
+    set_once(tracked_store_trace.issue_req_time, cycle_now);
+  }
+
+  void trace_store_on_result(uint64_t seq, int64_t cycle_now) {
+    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq) {
+      return;
+    }
+    set_once(tracked_store_trace.recv_result_time, cycle_now);
+  }
+
+  void trace_store_on_stq_exit(uint64_t seq, int64_t cycle_now) {
+    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq) {
+      return;
+    }
+    set_once(tracked_store_trace.exit_q_time, cycle_now);
+  }
+
   void perf_reset() {
     cycle = 0;
     commit_num = 0;
+    commit_load_num = 0;
+    commit_store_num = 0;
+    simtime_snapshot_valid = false;
+    simtime_snapshot_cycle = 0;
+    simtime_snapshot_commit_num = 0;
+    simtime_snapshot_commit_load_num = 0;
+    simtime_snapshot_commit_store_num = 0;
+    periodic_snapshot_count = 0;
+    periodic_snapshot_overflow = false;
+    periodic_snapshots = {};
     // dcache
     dcache_access_num = 0;
     dcache_miss_num = 0;
     dcache_l2_access_num = 0;
     dcache_l2_miss_num = 0;
+    l1d_req_initial = 0;
+    l1d_req_all = 0;
+    l1d_miss_mshr_alloc = 0;
+    l1d_req_replay = 0;
+    l1d_replay_squash_abort = 0;
+    l1d_replay_bank_conflict = 0;
+    l1d_replay_bank_conflict_load = 0;
+    l1d_replay_bank_conflict_store = 0;
+    l1d_replay_mshr_full = 0;
+    l1d_replay_mshr_full_load = 0;
+    l1d_replay_mshr_full_store = 0;
+    l1d_replay_wait_mshr = 0;
+    l1d_replay_wait_mshr_load = 0;
+    l1d_replay_wait_mshr_store = 0;
+    l1d_replay_wait_mshr_hit = 0;
+    l1d_replay_wait_mshr_first_alloc = 0;
+    l1d_replay_wait_mshr_fill_wait = 0;
+    l1d_miss_penalty_total_cycles = 0;
+    l1d_miss_penalty_samples = 0;
+    l1d_axi_read_total_cycles = 0;
+    l1d_axi_read_samples = 0;
+    l1d_axi_write_total_cycles = 0;
+    l1d_axi_write_samples = 0;
+    l1d_mem_inst_total_cycles = 0;
+    l1d_mem_inst_samples = 0;
+    mmio_inst_count = 0;
+    mmio_load_count = 0;
+    mmio_store_count = 0;
+    ld_resp_stale_drop_count = 0;
+    ld_resp_timeout_retry_count = 0;
+    mmio_head_block_cycles = 0;
+    ptw_port0_replay_count = 0;
+    stq_same_addr_block_count = 0;
+    reset_mem_op_traces();
     icache_access_num = 0;
     icache_miss_num = 0;
     llc_read_access = 0;
@@ -292,11 +552,26 @@ public:
   }
 
   void perf_print() {
+    if (CONFIG_PERF_SNAPSHOT_SIM_TIME > 0) {
+      if (simtime_snapshot_valid) {
+        printf("\033[38;5;34msim-time target(cycle)= %llu, committed(total/load/store)= %llu / %llu / %llu\033[0m\n",
+               static_cast<unsigned long long>(simtime_snapshot_cycle),
+               static_cast<unsigned long long>(simtime_snapshot_commit_num),
+               static_cast<unsigned long long>(simtime_snapshot_commit_load_num),
+               static_cast<unsigned long long>(simtime_snapshot_commit_store_num));
+      } else {
+        printf("\033[38;5;34msim-time target(cycle)= %llu, committed(total/load/store)= not reached\033[0m\n",
+               static_cast<unsigned long long>(CONFIG_PERF_SNAPSHOT_SIM_TIME));
+      }
+    }
+    printf("\033[38;5;34msim-time(cycle)= %ld, committed(total/load/store)= %ld / %ld / %ld\033[0m\n",
+           cycle, commit_num, commit_load_num, commit_store_num);
     printf("\033[38;5;34minstruction num: %ld\033[0m\n", commit_num);
     printf("\033[38;5;34mcycle       num: %ld\033[0m\n", cycle);
     printf("\033[38;5;34mipc            : %f\033[0m\n",
            (double)commit_num / cycle);
     printf("\n");
+    perf_print_periodic_snapshots();
     perf_print_dcache();
     perf_print_icache();
     perf_print_llc();
@@ -307,15 +582,321 @@ public:
     perf_print_tma();
   }
 
+  void perf_maybe_capture_simtime_snapshot() {
+    perf_maybe_capture_periodic_snapshot();
+    constexpr uint64_t kTargetCycle =
+        static_cast<uint64_t>(CONFIG_PERF_SNAPSHOT_SIM_TIME);
+    if (kTargetCycle == 0 || simtime_snapshot_valid) {
+      return;
+    }
+    if (cycle < kTargetCycle) {
+      return;
+    }
+    simtime_snapshot_valid = true;
+    simtime_snapshot_cycle = cycle;
+    simtime_snapshot_commit_num = commit_num;
+    simtime_snapshot_commit_load_num = commit_load_num;
+    simtime_snapshot_commit_store_num = commit_store_num;
+  }
+
+  void perf_maybe_capture_periodic_snapshot() {
+#if CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL == 0 ||                             \
+    CONFIG_PERF_PERIODIC_SNAPSHOT_MAX == 0
+    return;
+#else
+    constexpr uint64_t kInterval =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL);
+    constexpr uint64_t kBegin =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN);
+    constexpr uint64_t kEnd =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_END);
+    constexpr uint64_t kMax =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_MAX);
+    if (cycle < kBegin || cycle > kEnd) {
+      return;
+    }
+    if (((cycle - kBegin) % kInterval) != 0) {
+      return;
+    }
+    if (periodic_snapshot_count >= kMax) {
+      periodic_snapshot_overflow = true;
+      return;
+    }
+
+    auto &s = periodic_snapshots[periodic_snapshot_count++];
+    s.cycle = cycle;
+    s.commit_num = commit_num;
+    s.commit_load_num = commit_load_num;
+    s.commit_store_num = commit_store_num;
+    s.mmio_inst_count = mmio_inst_count;
+    s.stq_same_addr_block_count = stq_same_addr_block_count;
+    s.l1d_req_replay = l1d_req_replay;
+    s.stall_rob_full_cycles = stall_rob_full_cycles;
+    s.dis2ren_not_ready_cycles = dis2ren_not_ready_cycles;
+#endif
+  }
+
+  void perf_print_periodic_snapshots() {
+    constexpr uint64_t kInterval =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL);
+    constexpr uint64_t kBegin =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_BEGIN);
+    constexpr uint64_t kEnd =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_END);
+    constexpr uint64_t kMax =
+        static_cast<uint64_t>(CONFIG_PERF_PERIODIC_SNAPSHOT_MAX);
+    if (kInterval == 0) {
+      return;
+    }
+
+    printf("\033[38;5;34m*********PERIODIC SNAPSHOT*********\033[0m\n");
+    if (periodic_snapshot_count == 0) {
+      printf("\033[38;5;34mperiodic snapshot: no sample captured (begin=%llu end=%llu interval=%llu)\033[0m\n",
+             static_cast<unsigned long long>(kBegin),
+             static_cast<unsigned long long>(kEnd),
+             static_cast<unsigned long long>(kInterval));
+      printf("\n");
+      return;
+    }
+
+    printf("\033[38;5;34mperiodic snapshot cfg: begin=%llu end=%llu interval=%llu max=%llu samples=%llu%s\033[0m\n",
+           static_cast<unsigned long long>(kBegin),
+           static_cast<unsigned long long>(kEnd),
+           static_cast<unsigned long long>(kInterval),
+           static_cast<unsigned long long>(kMax),
+           static_cast<unsigned long long>(periodic_snapshot_count),
+           periodic_snapshot_overflow ? " (truncated)" : "");
+
+    uint64_t prev_cycle = 0;
+    uint64_t prev_commit = 0;
+    uint64_t prev_load = 0;
+    uint64_t prev_store = 0;
+    uint64_t prev_mmio = 0;
+    uint64_t prev_stq_blk = 0;
+    uint64_t prev_replay = 0;
+    bool first = true;
+
+    for (uint64_t i = 0; i < periodic_snapshot_count; i++) {
+      const auto &s = periodic_snapshots[i];
+      const uint64_t delta_cycle = first ? s.cycle : (s.cycle - prev_cycle);
+      const uint64_t delta_commit =
+          first ? s.commit_num : (s.commit_num - prev_commit);
+      const uint64_t delta_load =
+          first ? s.commit_load_num : (s.commit_load_num - prev_load);
+      const uint64_t delta_store =
+          first ? s.commit_store_num : (s.commit_store_num - prev_store);
+      const uint64_t delta_mmio =
+          first ? s.mmio_inst_count : (s.mmio_inst_count - prev_mmio);
+      const uint64_t delta_stq_blk = first
+                                         ? s.stq_same_addr_block_count
+                                         : (s.stq_same_addr_block_count -
+                                            prev_stq_blk);
+      const uint64_t delta_replay =
+          first ? s.l1d_req_replay : (s.l1d_req_replay - prev_replay);
+      const double window_ipc =
+          (delta_cycle == 0)
+              ? 0.0
+              : static_cast<double>(delta_commit) /
+                    static_cast<double>(delta_cycle);
+
+      printf("\033[38;5;34m  [snap %4llu] cyc=%llu commit=%llu (+%llu) ld=%llu (+%llu) st=%llu (+%llu) ipc_win=%.3f mmio=%llu (+%llu) stq_blk=%llu (+%llu) replay=%llu (+%llu)\033[0m\n",
+             static_cast<unsigned long long>(i),
+             static_cast<unsigned long long>(s.cycle),
+             static_cast<unsigned long long>(s.commit_num),
+             static_cast<unsigned long long>(delta_commit),
+             static_cast<unsigned long long>(s.commit_load_num),
+             static_cast<unsigned long long>(delta_load),
+             static_cast<unsigned long long>(s.commit_store_num),
+             static_cast<unsigned long long>(delta_store), window_ipc,
+             static_cast<unsigned long long>(s.mmio_inst_count),
+             static_cast<unsigned long long>(delta_mmio),
+             static_cast<unsigned long long>(s.stq_same_addr_block_count),
+             static_cast<unsigned long long>(delta_stq_blk),
+             static_cast<unsigned long long>(s.l1d_req_replay),
+             static_cast<unsigned long long>(delta_replay));
+
+      prev_cycle = s.cycle;
+      prev_commit = s.commit_num;
+      prev_load = s.commit_load_num;
+      prev_store = s.commit_store_num;
+      prev_mmio = s.mmio_inst_count;
+      prev_stq_blk = s.stq_same_addr_block_count;
+      prev_replay = s.l1d_req_replay;
+      first = false;
+    }
+    printf("\n");
+  }
+
   void perf_print_dcache() {
     printf("\033[38;5;34m*********DCACHE COUNTER************\033[0m\n");
-
-    printf("\033[38;5;34mdcache accuracy : %f\033[0m\n",
-           1 - dcache_miss_num / (double)dcache_access_num);
+    const double dcache_acc =
+        (dcache_access_num == 0)
+            ? 1.0
+            : 1.0 - static_cast<double>(dcache_miss_num) /
+                        static_cast<double>(dcache_access_num);
+    printf("\033[38;5;34mdcache accuracy : %f\033[0m\n", dcache_acc);
     printf("\033[38;5;34mdcache access   : %ld\033[0m\n", dcache_access_num);
     printf("\033[38;5;34mdcache hit      : %ld\033[0m\n",
            dcache_access_num - dcache_miss_num);
     printf("\033[38;5;34mdcache miss     : %ld\033[0m\n", dcache_miss_num);
+    const double l1d_hit_rate =
+        (l1d_req_initial == 0)
+            ? 1.0
+            : 1.0 - static_cast<double>(l1d_miss_mshr_alloc) /
+                        static_cast<double>(l1d_req_initial);
+    const double l1d_miss_rate = 1.0 - l1d_hit_rate;
+    const double l1d_mpki =
+        (commit_num == 0)
+            ? 0.0
+            : static_cast<double>(l1d_miss_mshr_alloc) * 1000.0 /
+                  static_cast<double>(commit_num);
+    const double avg_miss_penalty =
+        (l1d_miss_penalty_samples == 0)
+            ? 0.0
+            : static_cast<double>(l1d_miss_penalty_total_cycles) /
+                  static_cast<double>(l1d_miss_penalty_samples);
+    const double amat = 1.0 + l1d_miss_rate * avg_miss_penalty;
+    const double avg_axi_read =
+        (l1d_axi_read_samples == 0)
+            ? 0.0
+            : static_cast<double>(l1d_axi_read_total_cycles) /
+                  static_cast<double>(l1d_axi_read_samples);
+    const double avg_axi_write =
+        (l1d_axi_write_samples == 0)
+            ? 0.0
+            : static_cast<double>(l1d_axi_write_total_cycles) /
+                  static_cast<double>(l1d_axi_write_samples);
+    const double avg_mem_inst_latency =
+        (l1d_mem_inst_samples == 0)
+            ? 0.0
+            : static_cast<double>(l1d_mem_inst_total_cycles) /
+                  static_cast<double>(l1d_mem_inst_samples);
+    const uint64_t l1d_replay_reason_total =
+        l1d_replay_bank_conflict + l1d_replay_mshr_full + l1d_replay_wait_mshr;
+    const double l1d_replay_bank_conflict_ratio =
+        (l1d_replay_reason_total == 0)
+            ? 0.0
+            : static_cast<double>(l1d_replay_bank_conflict) * 100.0 /
+                  static_cast<double>(l1d_replay_reason_total);
+    const double l1d_replay_mshr_full_ratio =
+        (l1d_replay_reason_total == 0)
+            ? 0.0
+            : static_cast<double>(l1d_replay_mshr_full) * 100.0 /
+                  static_cast<double>(l1d_replay_reason_total);
+    const double l1d_replay_wait_mshr_ratio =
+        (l1d_replay_reason_total == 0)
+            ? 0.0
+            : static_cast<double>(l1d_replay_wait_mshr) * 100.0 /
+                  static_cast<double>(l1d_replay_reason_total);
+    printf("\033[38;5;34mL1D_REQ_INITIAL      : %ld\033[0m\n", l1d_req_initial);
+    printf("\033[38;5;34mL1D_REQ_ALL          : %ld\033[0m\n", l1d_req_all);
+    printf("\033[38;5;34mL1D_MISS_MSHR_ALLOC  : %ld\033[0m\n", l1d_miss_mshr_alloc);
+    printf("\033[38;5;34mL1D_REQ_REPLAY       : %ld\033[0m\n", l1d_req_replay);
+    printf("\033[38;5;34mL1D_REPLAY_SQUASH    : %ld\033[0m\n",
+           l1d_replay_squash_abort);
+    printf("\033[38;5;34mL1D_REPLAY_BANK_CONFLICT : %ld\033[0m\n",
+           l1d_replay_bank_conflict);
+    printf("\033[38;5;34m  - LOAD                 : %ld\033[0m\n",
+           l1d_replay_bank_conflict_load);
+    printf("\033[38;5;34m  - STORE                : %ld\033[0m\n",
+           l1d_replay_bank_conflict_store);
+    printf("\033[38;5;34mL1D_REPLAY_MSHR_FULL     : %ld\033[0m\n",
+           l1d_replay_mshr_full);
+    printf("\033[38;5;34m  - LOAD                 : %ld\033[0m\n",
+           l1d_replay_mshr_full_load);
+    printf("\033[38;5;34m  - STORE                : %ld\033[0m\n",
+           l1d_replay_mshr_full_store);
+    printf("\033[38;5;34mL1D_REPLAY_WAIT_MSHR     : %ld\033[0m\n",
+           l1d_replay_wait_mshr);
+    printf("\033[38;5;34m  - LOAD                 : %ld\033[0m\n",
+           l1d_replay_wait_mshr_load);
+    printf("\033[38;5;34m  - STORE                : %ld\033[0m\n",
+           l1d_replay_wait_mshr_store);
+    printf("\033[38;5;34m  - WAIT_MSHR_HITLINE    : %ld\033[0m\n",
+           l1d_replay_wait_mshr_hit);
+    printf("\033[38;5;34m  - WAIT_MSHR_FIRST_ALLOC: %ld\033[0m\n",
+           l1d_replay_wait_mshr_first_alloc);
+    printf("\033[38;5;34m  - WAIT_MSHR_FILL_WAIT  : %ld\033[0m\n",
+           l1d_replay_wait_mshr_fill_wait);
+    printf("\033[38;5;34mL1D_REPLAY_REASON_TOTAL  : %ld\033[0m\n",
+           l1d_replay_reason_total);
+    printf("\033[38;5;34m  - BANK_CONFLICT_RATIO  : %.2f%%\033[0m\n",
+           l1d_replay_bank_conflict_ratio);
+    printf("\033[38;5;34m  - MSHR_FULL_RATIO      : %.2f%%\033[0m\n",
+           l1d_replay_mshr_full_ratio);
+    printf("\033[38;5;34m  - WAIT_MSHR_RATIO      : %.2f%%\033[0m\n",
+           l1d_replay_wait_mshr_ratio);
+    printf("\033[38;5;34mL1D Hit Rate         : %.6f\033[0m\n", l1d_hit_rate);
+    printf("\033[38;5;34mL1D MPKI             : %.6f\033[0m\n", l1d_mpki);
+    printf("\033[38;5;34mL1D AMAT(cycles)     : %.6f (hit=1cy assumption)\033[0m\n",
+           amat);
+    printf("\033[38;5;34mAvg Miss Penalty     : %.6f cycles (samples=%ld)\033[0m\n",
+           avg_miss_penalty, l1d_miss_penalty_samples);
+    printf("\033[38;5;34mAvg AXI Read Latency : %.6f cycles (samples=%ld)\033[0m\n",
+           avg_axi_read, l1d_axi_read_samples);
+    printf("\033[38;5;34mAvg AXI Write Latency: %.6f cycles (samples=%ld)\033[0m\n",
+           avg_axi_write, l1d_axi_write_samples);
+    printf("\033[38;5;34mAvg Mem-Inst Latency : %.6f cycles (samples=%ld)\033[0m\n",
+           avg_mem_inst_latency, l1d_mem_inst_samples);
+    printf("\033[38;5;34mMMIO Inst Count      : %ld\033[0m\n", mmio_inst_count);
+    printf("\033[38;5;34mMMIO Load Count      : %ld\033[0m\n", mmio_load_count);
+    printf("\033[38;5;34mMMIO Store Count     : %ld\033[0m\n", mmio_store_count);
+    printf("\033[38;5;34mLD Resp Stale Drop   : %ld\033[0m\n",
+           ld_resp_stale_drop_count);
+    printf("\033[38;5;34mLD Resp TimeoutRetry : %ld\033[0m\n",
+           ld_resp_timeout_retry_count);
+    printf("\033[38;5;34mMMIO Head Block Cyc  : %ld\033[0m\n",
+           mmio_head_block_cycles);
+    printf("\033[38;5;34mPTW Port0 Replay Cnt : %ld\033[0m\n",
+           ptw_port0_replay_count);
+    printf("\033[38;5;34mSTQ SameAddr Block   : %ld\033[0m\n",
+           stq_same_addr_block_count);
+    printf("\033[38;5;34mTrace Load Target N  : %ld\033[0m\n",
+           tracked_load_trace.target_n);
+    printf("\033[38;5;34m  - tracked          : %d\033[0m\n",
+           tracked_load_trace.tracked ? 1 : 0);
+    printf("\033[38;5;34m  - seq              : %ld\033[0m\n",
+           tracked_load_trace.target_seq);
+    printf("\033[38;5;34m  - inst_idx         : %lld\033[0m\n",
+           tracked_load_trace.inst_idx_valid
+               ? (long long)tracked_load_trace.inst_idx
+               : -1LL);
+    printf("\033[38;5;34m  - is_mmio          : %d\033[0m\n",
+           tracked_load_trace.mmio);
+    printf("\033[38;5;34m  - stlf_success     : %d\033[0m\n",
+           tracked_load_trace.stlf_success);
+    printf("\033[38;5;34m  - dcache_hit       : %d\033[0m\n",
+           tracked_load_trace.dcache_hit);
+    printf("\033[38;5;34m  - enter_ldq        : %lld\033[0m\n",
+           (long long)tracked_load_trace.enter_q_time);
+    printf("\033[38;5;34m  - issue_req        : %lld\033[0m\n",
+           (long long)tracked_load_trace.issue_req_time);
+    printf("\033[38;5;34m  - recv_result      : %lld\033[0m\n",
+           (long long)tracked_load_trace.recv_result_time);
+    printf("\033[38;5;34m  - exit_ldq         : %lld\033[0m\n",
+           (long long)tracked_load_trace.exit_q_time);
+    printf("\033[38;5;34m  - exit_rob         : %lld\033[0m\n",
+           (long long)tracked_load_trace.exit_rob_time);
+    printf("\033[38;5;34mTrace Store Target N : %ld\033[0m\n",
+           tracked_store_trace.target_n);
+    printf("\033[38;5;34m  - tracked          : %d\033[0m\n",
+           tracked_store_trace.tracked ? 1 : 0);
+    printf("\033[38;5;34m  - seq              : %ld\033[0m\n",
+           tracked_store_trace.target_seq);
+    printf("\033[38;5;34m  - inst_idx         : %lld\033[0m\n",
+           tracked_store_trace.inst_idx_valid
+               ? (long long)tracked_store_trace.inst_idx
+               : -1LL);
+    printf("\033[38;5;34m  - dcache_hit       : %d\033[0m\n",
+           tracked_store_trace.dcache_hit);
+    printf("\033[38;5;34m  - enter_stq        : %lld\033[0m\n",
+           (long long)tracked_store_trace.enter_q_time);
+    printf("\033[38;5;34m  - issue_req        : %lld\033[0m\n",
+           (long long)tracked_store_trace.issue_req_time);
+    printf("\033[38;5;34m  - recv_result      : %lld\033[0m\n",
+           (long long)tracked_store_trace.recv_result_time);
+    printf("\033[38;5;34m  - exit_stq         : %lld\033[0m\n",
+           (long long)tracked_store_trace.exit_q_time);
     if (DCACHE_L2_ENABLE) {
       double l2_acc = (dcache_l2_access_num == 0)
                           ? 1.0
