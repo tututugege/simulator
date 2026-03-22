@@ -54,11 +54,17 @@ void clear_axi_master_inputs(InterconnectT &interconnect) {
 }
 
 void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
+  auto &interconnect = cpu.axi_interconnect;
   const auto &rport =
-      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_DCACHE_R];
+      interconnect.read_ports[axi_interconnect::MASTER_DCACHE_R];
   cpu.mem_subsystem.mshr_axi_in.req_ready = rport.req.ready;
-  cpu.mem_subsystem.mshr_axi_in.req_accepted = rport.req.accepted;
-  cpu.mem_subsystem.mshr_axi_in.req_accepted_id = rport.req.accepted_id;
+  cpu.mem_subsystem.mshr_axi_in.req_accepted =
+      interconnect.read_req_accepted[axi_interconnect::MASTER_DCACHE_R];
+  // The accepted pulse is observed one cycle after the request was driven.
+  // At this point the interconnect master inputs have already been cleared, so
+  // recover the accepted MSHR slot ID from the latched MemSubsystem output.
+  cpu.mem_subsystem.mshr_axi_in.req_accepted_id =
+      cpu.mem_subsystem.mshr_axi_out.req_id;
   cpu.mem_subsystem.mshr_axi_in.resp_valid = rport.resp.valid;
   cpu.mem_subsystem.mshr_axi_in.resp_id = rport.resp.id;
   for (int i = 0; i < DCACHE_LINE_WORDS &&
@@ -73,9 +79,10 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   cpu.mem_subsystem.wb_axi_in.resp_valid = wport.resp.valid;
 
   const auto &peri_rport =
-      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_EXTRA_R];
+      interconnect.read_ports[axi_interconnect::MASTER_EXTRA_R];
   cpu.mem_subsystem.peripheral_axi_read_in.req_ready = peri_rport.req.ready;
-  cpu.mem_subsystem.peripheral_axi_read_in.req_accepted = peri_rport.req.accepted;
+  cpu.mem_subsystem.peripheral_axi_read_in.req_accepted =
+      interconnect.read_req_accepted[axi_interconnect::MASTER_EXTRA_R];
   cpu.mem_subsystem.peripheral_axi_read_in.resp_valid = peri_rport.resp.valid;
   cpu.mem_subsystem.peripheral_axi_read_in.resp_id = peri_rport.resp.id;
   for (int i = 0; i < DCACHE_LINE_WORDS &&
@@ -85,9 +92,10 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   }
 
   const auto &peri_wport =
-      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_EXTRA_W];
+      interconnect.write_ports[axi_interconnect::MASTER_EXTRA_W];
   cpu.mem_subsystem.peripheral_axi_write_in.req_ready = peri_wport.req.ready;
-  cpu.mem_subsystem.peripheral_axi_write_in.req_accepted = peri_wport.req.accepted;
+  cpu.mem_subsystem.peripheral_axi_write_in.req_accepted =
+      interconnect.write_req_accepted[axi_interconnect::MASTER_EXTRA_W];
   cpu.mem_subsystem.peripheral_axi_write_in.resp_valid = peri_wport.resp.valid;
   cpu.mem_subsystem.peripheral_axi_write_in.resp_id = peri_wport.resp.id;
 }
@@ -294,7 +302,7 @@ void SimContext::run_difftest_inst(InstEntry *inst_entry) {
   if (skip) {
     difftest_skip();
   } else {
-    difftest_step(false);//page fault check disabled;
+    difftest_step(true);
   }
 }
 

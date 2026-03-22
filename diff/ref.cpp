@@ -16,6 +16,19 @@ extern RefCpu ref_cpu; // Monitor
 
 namespace {
 DifftestPageFaultWarning g_last_pf_warning = {};
+
+inline int effective_data_privilege(const CPU_state &state, uint8_t privilege) {
+  const uint32_t mstatus = state.csr[csr_mstatus];
+  if ((mstatus & MSTATUS_MPRV) == 0) {
+    return privilege;
+  }
+  return (mstatus >> MSTATUS_MPP_SHIFT) & 0x3;
+}
+
+inline bool data_translation_enabled(const CPU_state &state, uint8_t privilege) {
+  return (state.csr[csr_satp] & 0x80000000u) != 0 &&
+         effective_data_privilege(state, privilege) != 3;
+}
 }
 
 DifftestPageFaultWarning difftest_get_last_pf_warning() {
@@ -899,7 +912,7 @@ void RefCpu::RV32A() {
   uint32_t v_addr = reg_rdata1;
   uint32_t p_addr = v_addr;
 
-  if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+  if (data_translation_enabled(state, privilege)) {
     bool page_fault_1 = !va2pa_fix(p_addr, v_addr, 1);
     bool page_fault_2 = !va2pa_fix(p_addr, v_addr, 2);
 
@@ -1103,7 +1116,7 @@ void RefCpu::RV32IM() {
   case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
-    if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+    if (data_translation_enabled(state, privilege)) {
       page_fault_load = !va2pa_fix(p_addr, v_addr, 1);
     }
 
@@ -1161,7 +1174,7 @@ void RefCpu::RV32IM() {
 
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
-    if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+    if (data_translation_enabled(state, privilege)) {
       page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
     }
 
