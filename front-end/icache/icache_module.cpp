@@ -9,6 +9,114 @@ inline bool mem_wait_must_drain_on_refetch() {
   return true;
 }
 
+#ifndef CONFIG_ICACHE_FOCUS_VADDR_BEGIN
+#define CONFIG_ICACHE_FOCUS_VADDR_BEGIN 0u
+#endif
+
+#ifndef CONFIG_ICACHE_FOCUS_VADDR_END
+#define CONFIG_ICACHE_FOCUS_VADDR_END 0u
+#endif
+
+inline bool icache_focus_pc(uint32_t pc) {
+  return CONFIG_ICACHE_FOCUS_VADDR_END > CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
+         pc >= CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
+         pc < CONFIG_ICACHE_FOCUS_VADDR_END;
+}
+
+inline bool icache_window_debug_active(long long cycle) {
+#if SIM_DEBUG_PRINT
+  return cycle >= static_cast<long long>(SIM_DEBUG_PRINT_CYCLE_BEGIN) &&
+         cycle <= static_cast<long long>(SIM_DEBUG_PRINT_CYCLE_END);
+#else
+  (void)cycle;
+  return false;
+#endif
+}
+
+inline bool icache_trace_pc(uint32_t pc, long long cycle) {
+  return icache_focus_pc(pc) || icache_window_debug_active(cycle);
+}
+
+inline void dump_icache_module_line(const char *tag, long long cycle,
+                                    const ICache_IO_t &io, bool mem_gnt,
+                                    const uint32_t *line_words) {
+  std::printf(
+      "[ICACHE][MODULE][%s] cyc=%lld state=%u mem_axi=%u req_valid=%u "
+      "lookup_pending=%u lookup_resp=%u req_pc=0x%08x req_idx=%u ppn_r=0x%05x "
+      "in_ppn_v=%u in_ppn=0x%05x mmu_req_v=%u mmu_vtag=0x%05x "
+      "mem_req_v=%u mem_req_addr=0x%08x miss_txid_v=%u miss_txid=%u "
+      "mem_req_acc=%u mem_req_acc_id=%u mem_resp_v=%u mem_resp_id=%u "
+      "mem_gnt=%u line=[",
+      tag, cycle, static_cast<unsigned>(io.regs.state),
+      static_cast<unsigned>(io.regs.mem_axi_state),
+      static_cast<unsigned>(io.regs.req_valid_r),
+      static_cast<unsigned>(io.regs.lookup_pending_r),
+      static_cast<unsigned>(io.lookup_in.lookup_resp_valid),
+      static_cast<unsigned>(io.regs.req_pc_r),
+      static_cast<unsigned>(io.regs.req_index_r),
+      static_cast<unsigned>(io.regs.ppn_r),
+      static_cast<unsigned>(io.in.ppn_valid),
+      static_cast<unsigned>(io.in.ppn),
+      static_cast<unsigned>(io.out.mmu_req_valid),
+      static_cast<unsigned>(io.out.mmu_req_vtag),
+      static_cast<unsigned>(io.out.mem_req_valid),
+      static_cast<unsigned>(io.out.mem_req_addr),
+      static_cast<unsigned>(io.regs.miss_txid_valid_r),
+      static_cast<unsigned>(io.regs.miss_txid_r),
+      static_cast<unsigned>(io.in.mem_req_accepted),
+      static_cast<unsigned>(io.in.mem_req_accepted_id & 0xF),
+      static_cast<unsigned>(io.in.mem_resp_valid),
+      static_cast<unsigned>(io.in.mem_resp_id & 0xF),
+      static_cast<unsigned>(mem_gnt));
+  for (uint32_t word = 0; word < ICACHE_LINE_SIZE / 4; ++word) {
+    std::printf("%s%08x", (word == 0) ? "" : " ",
+                static_cast<unsigned>(line_words[word]));
+  }
+  std::printf("]\n");
+}
+
+inline void dump_icache_module_ctx(const char *tag, long long cycle,
+                                   const ICache_IO_t &io, bool mem_gnt) {
+  std::printf(
+      "[ICACHE][MODULE][%s] cyc=%lld state=%u mem_axi=%u req_valid=%u "
+      "lookup_pending=%u lookup_resp=%u req_pc=0x%08x req_idx=%u ppn_r=0x%05x "
+      "in_ppn_v=%u in_ppn=0x%05x mmu_req_v=%u mmu_vtag=0x%05x "
+      "mem_req_v=%u mem_req_addr=0x%08x miss_txid_v=%u miss_txid=%u "
+      "mem_req_acc=%u mem_req_acc_id=%u mem_resp_v=%u mem_resp_id=%u "
+      "mem_gnt=%u page_fault=%u refetch=%u flush=%u\n",
+      tag, cycle, static_cast<unsigned>(io.regs.state),
+      static_cast<unsigned>(io.regs.mem_axi_state),
+      static_cast<unsigned>(io.regs.req_valid_r),
+      static_cast<unsigned>(io.regs.lookup_pending_r),
+      static_cast<unsigned>(io.lookup_in.lookup_resp_valid),
+      static_cast<unsigned>(io.regs.req_pc_r),
+      static_cast<unsigned>(io.regs.req_index_r),
+      static_cast<unsigned>(io.regs.ppn_r),
+      static_cast<unsigned>(io.in.ppn_valid),
+      static_cast<unsigned>(io.in.ppn),
+      static_cast<unsigned>(io.out.mmu_req_valid),
+      static_cast<unsigned>(io.out.mmu_req_vtag),
+      static_cast<unsigned>(io.out.mem_req_valid),
+      static_cast<unsigned>(io.out.mem_req_addr),
+      static_cast<unsigned>(io.regs.miss_txid_valid_r),
+      static_cast<unsigned>(io.regs.miss_txid_r),
+      static_cast<unsigned>(io.in.mem_req_accepted),
+      static_cast<unsigned>(io.in.mem_req_accepted_id & 0xF),
+      static_cast<unsigned>(io.in.mem_resp_valid),
+      static_cast<unsigned>(io.in.mem_resp_id & 0xF),
+      static_cast<unsigned>(mem_gnt),
+      static_cast<unsigned>(io.in.page_fault),
+      static_cast<unsigned>(io.in.refetch),
+      static_cast<unsigned>(io.in.flush));
+}
+
+inline bool icache_req_slot_idle(const ICache_regs_t &regs) {
+  return !regs.req_valid_r &&
+         static_cast<ICacheState>(regs.state) == IDLE &&
+         static_cast<AXIState>(regs.mem_axi_state) == AXI_IDLE &&
+         !regs.miss_txid_valid_r;
+}
+
 inline int alloc_free_txid(const ICache_regs_t &regs) {
   for (int id = 0; id < 16; ++id) {
     if (!regs.txid_inflight_r[id]) {
@@ -33,6 +141,7 @@ ICache::ICache() {
   io.regs.ifu_req_ready_r = true;
   io.regs.miss_txid_valid_r = false;
   io.regs.miss_txid_r = 0;
+  io.regs.miss_ready_seen_r = false;
   for (int i = 0; i < 16; ++i) {
     io.regs.txid_inflight_r[i] = false;
     io.regs.txid_canceled_r[i] = false;
@@ -63,6 +172,7 @@ void ICache::reset() {
   io.regs.ifu_req_ready_r = true;
   io.regs.miss_txid_valid_r = false;
   io.regs.miss_txid_r = 0;
+  io.regs.miss_ready_seen_r = false;
   for (int i = 0; i < 16; ++i) {
     io.regs.txid_inflight_r[i] = false;
     io.regs.txid_canceled_r[i] = false;
@@ -113,6 +223,7 @@ void ICache::comb() {
   eval_state_machine();
   uint32_t index = (io.in.pc >> offset_bits) & (set_num - 1u);
   lookup(index);
+  io.out.ifu_req_ready = req_ready_w;
 }
 
 void ICache::seq() {
@@ -157,6 +268,7 @@ void ICache::lookup(uint32_t index) {
   }
 
   if (kill_pipe) {
+    req_ready_w = false;
     req_valid_next = false;
     io.out.mmu_req_valid = false;
     io.reg_write.req_valid_r = false;
@@ -178,8 +290,9 @@ void ICache::lookup(uint32_t index) {
     return;
   }
 
-  bool can_accept = io.in.ifu_req_valid && io.regs.ifu_req_ready_r &&
-                    !io.regs.lookup_pending_r;
+  const bool slot_idle = icache_req_slot_idle(io.regs);
+  bool can_accept = io.in.ifu_req_valid && req_ready_w &&
+                    !io.regs.lookup_pending_r && slot_idle;
   if (can_accept) {
     if (!use_external_lookup) {
       sram_load_fire = true;
@@ -195,7 +308,7 @@ void ICache::lookup(uint32_t index) {
   }
 
   if (use_external_lookup && io.regs.lookup_pending_r &&
-      io.lookup_in.lookup_resp_valid) {
+      io.lookup_in.lookup_resp_valid && slot_idle) {
     sram_load_fire = true;
     lookup_pending_next = false;
   }
@@ -213,6 +326,20 @@ void ICache::lookup(uint32_t index) {
 
   if (sram_load_fire) {
     req_valid_next = true;
+    if (SIM_DEBUG_PRINT_ACTIVE && icache_trace_pc(load_pc, sim_time)) {
+      std::printf(
+          "[ICACHE][MODULE][REQ_LOAD] cyc=%lld load_pc=0x%08x load_idx=%u "
+          "slot_idle=%u can_accept=%u lookup_pending_r=%u in_ppn_v=%u "
+          "in_ppn=0x%05x mmu_req_v=%u mmu_vtag=0x%05x\n",
+          (long long)sim_time, static_cast<unsigned>(load_pc),
+          static_cast<unsigned>(load_index),
+          static_cast<unsigned>(slot_idle), static_cast<unsigned>(can_accept),
+          static_cast<unsigned>(io.regs.lookup_pending_r),
+          static_cast<unsigned>(io.in.ppn_valid),
+          static_cast<unsigned>(io.in.ppn),
+          static_cast<unsigned>(io.out.mmu_req_valid),
+          static_cast<unsigned>(io.out.mmu_req_vtag));
+    }
   } else if (req_ready_w) {
     req_valid_next = false;
   }
@@ -309,6 +436,10 @@ void ICache::eval_state_machine() {
         }
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = true;
+        if (SIM_DEBUG_PRINT_ACTIVE &&
+            icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
+          dump_icache_module_ctx("FAST_PF_BYPASS", sim_time, io, mem_gnt);
+        }
         req_ready_w = true;
         fast_bypass_fire = true;
         state_next = IDLE;
@@ -331,6 +462,11 @@ void ICache::eval_state_machine() {
       if (hit) {
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = false;
+        if (SIM_DEBUG_PRINT_ACTIVE &&
+            icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
+          dump_icache_module_line("FAST_HIT_BYPASS", sim_time, io, mem_gnt,
+                                  io.out.rd_data);
+        }
         req_ready_w = true;
         fast_bypass_fire = true;
         state_next = IDLE;
@@ -346,9 +482,19 @@ void ICache::eval_state_machine() {
         }
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = true;
+        if (SIM_DEBUG_PRINT_ACTIVE &&
+            icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
+          dump_icache_module_ctx("REG_PF", sim_time, io, mem_gnt);
+        }
         req_ready_w = true;
         state_next = IDLE;
         break;
+      }
+
+      if (SIM_DEBUG_PRINT_ACTIVE &&
+          icache_trace_pc(io.regs.req_pc_r, sim_time) &&
+          !io.lookup_in.lookup_resp_valid) {
+        dump_icache_module_ctx("REG_LOOKUP_STALE", sim_time, io, mem_gnt);
       }
 
       lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
@@ -367,16 +513,46 @@ void ICache::eval_state_machine() {
       io.out.ifu_resp_valid = hit;
       req_ready_w = hit;
       if (hit) {
+        if (SIM_DEBUG_PRINT_ACTIVE &&
+            icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
+          dump_icache_module_line("REG_HIT", sim_time, io, mem_gnt,
+                                  io.out.rd_data);
+        }
         state_next = IDLE;
       } else {
+        if (SIM_DEBUG_PRINT_ACTIVE &&
+            icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
+          dump_icache_module_ctx("REG_MISS", sim_time, io, mem_gnt);
+          std::printf(
+              "[ICACHE][MODULE][REG_MISS_SET] cyc=%lld req_pc=0x%08x req_idx=%u "
+              "cmp_ppn=0x%05x",
+              sim_time, static_cast<unsigned>(io.regs.req_pc_r),
+              static_cast<unsigned>(io.regs.req_index_r),
+              static_cast<unsigned>(io.in.ppn & 0xFFFFF));
+          for (uint32_t way = 0; way < way_cnt; ++way) {
+            std::printf(
+                " | way%u v=%u tag=0x%05x w0=0x%08x w7=0x%08x",
+                static_cast<unsigned>(way),
+                static_cast<unsigned>(lookup_set_valid_w[way]),
+                static_cast<unsigned>(lookup_set_tag_w[way]),
+                static_cast<unsigned>(lookup_set_data_w[way][0]),
+                static_cast<unsigned>(lookup_set_data_w[way][7]));
+          }
+          std::printf("\n");
+        }
         int txid = io.regs.miss_txid_valid_r ? static_cast<int>(io.regs.miss_txid_r)
                                              : alloc_free_txid(io.regs);
         if (txid < 0) {
           state_next = IDLE;
           req_ready_w = false;
         } else {
+          // A miss carries the translated PPN as part of the refill request
+          // context. Latching it here avoids issuing the next-cycle AXI read
+          // with the previous request's stale ppn_r under redirect pressure.
+          io.reg_write.ppn_r = io.in.ppn;
           io.reg_write.miss_txid_valid_r = true;
           io.reg_write.miss_txid_r = static_cast<uint8_t>(txid & 0xF);
+          io.reg_write.miss_ready_seen_r = false;
           state_next = SWAP_IN;
         }
       }
@@ -393,18 +569,52 @@ void ICache::eval_state_machine() {
     break;
 
   case SWAP_IN:
+    {
+    const bool req_ready_seen_now =
+        (mem_axi_state == AXI_IDLE) && io.in.mem_req_ready &&
+        io.regs.miss_txid_valid_r;
+    if (req_ready_seen_now) {
+      io.reg_write.miss_ready_seen_r = true;
+    }
+    const bool req_accepted_now =
+        (mem_axi_state == AXI_IDLE) && io.in.mem_req_accepted &&
+        ((io.in.mem_req_accepted_id & 0xF) == (io.regs.miss_txid_r & 0xF)) &&
+        io.regs.miss_txid_valid_r;
+    // Under the ready-first interconnect contract, a miss request may already
+    // be committed downstream once req.ready is observed, even if the explicit
+    // accepted pulse arrives a cycle later. On a refetch/redirect, dropping the
+    // miss state too early allows the same txid to be reused before the stale
+    // response returns.
+    const bool req_may_complete_later =
+        io.regs.miss_txid_valid_r &&
+        (mem_axi_state != AXI_IDLE || req_accepted_now ||
+         io.regs.miss_ready_seen_r || req_ready_seen_now);
     if (kill_pipe) {
-      if (mem_axi_state != AXI_IDLE && mem_wait_must_drain_on_refetch()) {
-        state_next = DRAIN;
-        req_ready_w = false;
-      } else {
-        if (mem_axi_state != AXI_IDLE && io.regs.miss_txid_valid_r) {
-          uint8_t txid = io.regs.miss_txid_r & 0xF;
-          io.reg_write.txid_canceled_r[txid] = true;
-        }
+      const bool req_already_inflight =
+          io.regs.miss_txid_valid_r &&
+          (mem_axi_state != AXI_IDLE || req_accepted_now);
+      const bool req_waiting_accept =
+          io.regs.miss_txid_valid_r && !req_already_inflight &&
+          (io.regs.miss_ready_seen_r || req_ready_seen_now);
+      if (req_already_inflight) {
+        uint8_t txid = io.regs.miss_txid_r & 0xF;
+        io.reg_write.txid_canceled_r[txid] = true;
+        io.reg_write.txid_inflight_r[txid] = true;
         state_next = IDLE;
         mem_axi_state_next = AXI_IDLE;
         io.reg_write.miss_txid_valid_r = false;
+        io.reg_write.miss_ready_seen_r = false;
+        req_ready_w = true;
+      } else if (req_waiting_accept) {
+        state_next = CANCEL_WAIT_ACCEPT;
+        mem_axi_state_next = AXI_IDLE;
+        req_ready_w = false;
+      } else {
+        (void)req_may_complete_later;
+        state_next = IDLE;
+        mem_axi_state_next = AXI_IDLE;
+        io.reg_write.miss_txid_valid_r = false;
+        io.reg_write.miss_ready_seen_r = false;
         req_ready_w = true;
       }
       break;
@@ -414,8 +624,13 @@ void ICache::eval_state_machine() {
       io.out.mem_req_addr =
           (io.regs.ppn_r << 12) | (io.regs.req_index_r << offset_bits);
       io.out.mem_req_id = io.regs.miss_txid_r;
+      if (SIM_DEBUG_PRINT_ACTIVE &&
+          icache_trace_pc(io.regs.req_pc_r, sim_time)) {
+        dump_icache_module_ctx("SWAP_REQ", sim_time, io, mem_gnt);
+      }
       state_next = SWAP_IN;
-      if (io.in.mem_req_accepted) {
+      if (io.in.mem_req_accepted &&
+          ((io.in.mem_req_accepted_id & 0xF) == (io.regs.miss_txid_r & 0xF))) {
         io.out.mem_req_valid = false;
         mem_axi_state_next = AXI_BUSY;
         io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = true;
@@ -450,6 +665,7 @@ void ICache::eval_state_machine() {
         state_next = IDLE;
         io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
         io.reg_write.miss_txid_valid_r = false;
+        io.reg_write.miss_ready_seen_r = false;
 
         if (!io.in.flush) {
           io.table_write.we = true;
@@ -467,6 +683,11 @@ void ICache::eval_state_machine() {
           for (uint32_t word = 0; word < word_num; ++word) {
             io.out.rd_data[word] = mem_resp_data_w[word];
           }
+          if (SIM_DEBUG_PRINT_ACTIVE &&
+              icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
+            dump_icache_module_line("SWAP_MEM_GNT", sim_time, io, mem_gnt,
+                                    io.out.rd_data);
+          }
           req_ready_w = true;
         } else {
           req_ready_w = true;
@@ -474,12 +695,30 @@ void ICache::eval_state_machine() {
       }
     }
     break;
+    }
+
+  case CANCEL_WAIT_ACCEPT:
+    io.out.mem_req_valid = false;
+    io.out.mem_resp_ready = true;
+    if (io.in.mem_req_accepted && io.regs.miss_txid_valid_r &&
+        ((io.in.mem_req_accepted_id & 0xF) == (io.regs.miss_txid_r & 0xF))) {
+      uint8_t txid = io.regs.miss_txid_r & 0xF;
+      io.reg_write.txid_canceled_r[txid] = true;
+      io.reg_write.txid_inflight_r[txid] = true;
+    }
+    state_next = IDLE;
+    mem_axi_state_next = AXI_IDLE;
+    io.reg_write.miss_txid_valid_r = false;
+    io.reg_write.miss_ready_seen_r = false;
+    req_ready_w = true;
+    break;
 
   case DRAIN:
     if (kill_pipe && !mem_wait_must_drain_on_refetch()) {
       state_next = IDLE;
       mem_axi_state_next = AXI_IDLE;
       io.reg_write.miss_txid_valid_r = false;
+      io.reg_write.miss_ready_seen_r = false;
       req_ready_w = true;
       break;
     }
@@ -495,6 +734,7 @@ void ICache::eval_state_machine() {
         io.reg_write.txid_canceled_r[txid] = false;
         io.reg_write.miss_txid_valid_r = false;
       }
+      io.reg_write.miss_ready_seen_r = false;
       req_ready_w = true;
     } else {
       state_next = DRAIN;
@@ -541,6 +781,9 @@ void ICache::log_state() {
   case SWAP_IN:
     std::cout << "SWAP_IN";
     break;
+  case CANCEL_WAIT_ACCEPT:
+    std::cout << "CANCEL_WAIT_ACCEPT";
+    break;
   case DRAIN:
     std::cout << "DRAIN";
     break;
@@ -555,6 +798,9 @@ void ICache::log_state() {
     break;
   case SWAP_IN:
     std::cout << "SWAP_IN";
+    break;
+  case CANCEL_WAIT_ACCEPT:
+    std::cout << "CANCEL_WAIT_ACCEPT";
     break;
   case DRAIN:
     std::cout << "DRAIN";

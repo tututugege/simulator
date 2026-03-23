@@ -59,6 +59,30 @@ extern icache_module_n::ICache icache;
 
 namespace {
 
+#ifndef CONFIG_ICACHE_FOCUS_VADDR_BEGIN
+#define CONFIG_ICACHE_FOCUS_VADDR_BEGIN 0u
+#endif
+
+#ifndef CONFIG_ICACHE_FOCUS_VADDR_END
+#define CONFIG_ICACHE_FOCUS_VADDR_END 0u
+#endif
+
+inline bool icache_focus_vaddr(uint32_t v_addr) {
+  return CONFIG_ICACHE_FOCUS_VADDR_END > CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
+         v_addr >= CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
+         v_addr < CONFIG_ICACHE_FOCUS_VADDR_END;
+}
+
+inline void dump_icache_focus_line(const char *tag, uint32_t fetch_pc,
+                                   const uint32_t *line_words) {
+  std::printf("[ICACHE][TRACE][%s] cyc=%lld fetch_pc=0x%08x line=[", tag,
+              (long long)sim_time, fetch_pc);
+  for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
+    std::printf("%s%08x", (i == 0) ? "" : " ", line_words[i]);
+  }
+  std::printf("]\n");
+}
+
 #if CONFIG_ICACHE_USE_AXI_MEM_PORT
 static_assert(ICACHE_LINE_SIZE <= axi_interconnect::MAX_READ_TRANSACTION_BYTES,
               "ICACHE_LINE_SIZE exceeds AXI upstream read transaction limit");
@@ -141,6 +165,7 @@ private:
 struct MemReadView {
   bool req_ready = true;
   bool req_accepted = false;
+  uint8_t req_accepted_id = 0;
   bool resp_valid = false;
   uint8_t resp_id = 0;
   uint32_t resp_data[ICACHE_LINE_SIZE / 4] = {0};
@@ -157,12 +182,14 @@ public:
     addr_.fill(0);
     age_.fill(0);
     req_accepted_ = false;
+    req_accepted_id_ = 0;
   }
 
   MemReadView comb_view() const {
     MemReadView view;
     view.req_ready = true;
     view.req_accepted = req_accepted_;
+    view.req_accepted_id = req_accepted_id_;
     int matured_id = pick_matured_resp_id();
     if (matured_id >= 0) {
       view.resp_valid = true;
@@ -180,6 +207,7 @@ public:
   void seq(bool req_fire, uint32_t req_addr, uint8_t req_id, bool resp_fire,
            uint8_t resp_id, bool) {
     req_accepted_ = req_fire;
+    req_accepted_id_ = static_cast<uint8_t>(req_id & 0xF);
     for (int id = 0; id < kMaxTxId; ++id) {
       if (valid_[id]) {
         age_[id]++;
@@ -211,6 +239,7 @@ private:
   std::array<uint32_t, kMaxTxId> addr_{};
   std::array<uint32_t, kMaxTxId> age_{};
   bool req_accepted_ = false;
+  uint8_t req_accepted_id_ = 0;
 
   int pick_matured_resp_id() const {
     for (int id = 0; id < kMaxTxId; ++id) {
@@ -235,6 +264,7 @@ public:
       port_->req.id = 0;
       port_->req.bypass = false;
       port_->req.accepted = false;
+      port_->req.accepted_id = 0;
       port_->resp.ready = false;
     }
   }
@@ -247,10 +277,30 @@ public:
     }
     view.req_ready = port_->req.ready;
     view.req_accepted = port_->req.accepted;
+    view.req_accepted_id = static_cast<uint8_t>(port_->req.accepted_id & 0xF);
     view.resp_valid = port_->resp.valid;
     view.resp_id = static_cast<uint8_t>(port_->resp.id & 0xF);
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
       view.resp_data[i] = port_->resp.data[i];
+    }
+    if (SIM_DEBUG_PRINT_ACTIVE &&
+        (port_->req.valid || port_->req.ready || port_->req.accepted ||
+         port_->resp.valid || port_->resp.ready)) {
+      std::printf(
+          "[ICACHE][ADAPTER][VIEW] cyc=%lld req_v=%u req_addr=0x%08x "
+          "req_id=%u req_ready=%u req_acc=%u acc_id=%u resp_v=%u resp_id=%u "
+          "resp_ready=%u resp_w0=0x%08x resp_w7=0x%08x\n",
+          (long long)sim_time, static_cast<unsigned>(port_->req.valid),
+          static_cast<unsigned>(port_->req.addr),
+          static_cast<unsigned>(port_->req.id & 0xF),
+          static_cast<unsigned>(port_->req.ready),
+          static_cast<unsigned>(port_->req.accepted),
+          static_cast<unsigned>(port_->req.accepted_id & 0xF),
+          static_cast<unsigned>(port_->resp.valid),
+          static_cast<unsigned>(port_->resp.id & 0xF),
+          static_cast<unsigned>(port_->resp.ready),
+          static_cast<unsigned>(port_->resp.data[0]),
+          static_cast<unsigned>(port_->resp.data[7]));
     }
     return view;
   }
@@ -266,6 +316,26 @@ public:
     port_->req.id = static_cast<uint8_t>(req_id & 0xF);
     port_->req.bypass = false;
     port_->resp.ready = resp_ready;
+    if (SIM_DEBUG_PRINT_ACTIVE &&
+        (req_valid || resp_ready || port_->req.ready || port_->req.accepted ||
+         port_->resp.valid)) {
+      std::printf(
+          "[ICACHE][ADAPTER][ACCEPT] cyc=%lld req_v=%u req_addr=0x%08x "
+          "req_id=%u resp_ready=%u port_req_ready=%u port_req_acc=%u acc_id=%u "
+          "port_resp_v=%u port_resp_id=%u port_resp_w0=0x%08x "
+          "port_resp_w7=0x%08x\n",
+          (long long)sim_time, static_cast<unsigned>(req_valid),
+          static_cast<unsigned>(req_addr),
+          static_cast<unsigned>(req_id & 0xF),
+          static_cast<unsigned>(resp_ready),
+          static_cast<unsigned>(port_->req.ready),
+          static_cast<unsigned>(port_->req.accepted),
+          static_cast<unsigned>(port_->req.accepted_id & 0xF),
+          static_cast<unsigned>(port_->resp.valid),
+          static_cast<unsigned>(port_->resp.id & 0xF),
+          static_cast<unsigned>(port_->resp.data[0]),
+          static_cast<unsigned>(port_->resp.data[7]));
+    }
   }
 
   void seq(bool, uint32_t, uint8_t, bool, uint8_t, bool) {}
@@ -313,7 +383,7 @@ void ensure_mmu_model(Runtime &runtime, SimContext *ctx) {
 #ifdef CONFIG_TLB_MMU
   runtime.mmu_model =
       new TlbMmu(ctx, runtime.ptw_mem_port ? runtime.ptw_mem_port : &ptw_port,
-                 ITLB_ENTRIES);
+                 nullptr, ITLB_ENTRIES);
   if (runtime.ptw_walk_port != nullptr) {
     runtime.mmu_model->set_ptw_walk_port(runtime.ptw_walk_port);
   }
@@ -368,11 +438,76 @@ public:
     uint32_t cur_satp =
         in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
     bool satp_changed = !satp_seen || cur_satp != last_satp;
-    bool hold_for_translation_flush = in->itlb_flush || satp_changed;
-    out->icache_read_ready =
-        in->reset ? true
-                  : (hold_for_translation_flush ? false
-                                                : icache_hw.io.regs.ifu_req_ready_r);
+    bool hold_for_recovery =
+        in->itlb_flush || in->fence_i || in->invalidate_req || satp_changed;
+    out->icache_read_ready = in->reset ? true : comb_visible_ready(hold_for_recovery);
+  }
+
+  void dump_debug_state() const override {
+    uint32_t inflight_mask = 0;
+    uint32_t canceled_mask = 0;
+    for (int i = 0; i < 16; ++i) {
+      if (icache_hw.io.regs.txid_inflight_r[i]) {
+        inflight_mask |= (1u << i);
+      }
+      if (icache_hw.io.regs.txid_canceled_r[i]) {
+        canceled_mask |= (1u << i);
+      }
+    }
+    std::printf(
+        "[DEADLOCK][FRONT][ICACHE_HW] type=true req_valid=%d fetch_addr=0x%08x "
+        "refetch=%d inv=%d fence_i=%d itlb_flush=%d hold_recovery=%d "
+        "last_mem{ready=%d acc=%d acc_id=%u resp_v=%d resp_id=%u w0=0x%08x w7=0x%08x}\n",
+        static_cast<int>(in && in->icache_read_valid),
+        static_cast<unsigned>(in ? in->fetch_address : 0u),
+        static_cast<int>(in && in->refetch),
+        static_cast<int>(in && in->invalidate_req),
+        static_cast<int>(in && in->fence_i),
+        static_cast<int>(in && in->itlb_flush),
+        static_cast<int>(last_hold_for_recovery_),
+        static_cast<int>(last_mem_view_.req_ready),
+        static_cast<int>(last_mem_view_.req_accepted),
+        static_cast<unsigned>(last_mem_view_.req_accepted_id & 0xF),
+        static_cast<int>(last_mem_view_.resp_valid),
+        static_cast<unsigned>(last_mem_view_.resp_id & 0xF),
+        static_cast<unsigned>(last_mem_view_.resp_data[0]),
+        static_cast<unsigned>(last_mem_view_.resp_data[7]));
+    std::printf(
+        "[DEADLOCK][FRONT][ICACHE_HW] regs state=%u mem_axi=%u ifu_ready_r=%d "
+        "req_valid_r=%d req_pc_r=0x%08x req_idx_r=%u lookup_pending=%d "
+        "lookup_pc_r=0x%08x lookup_idx_r=%u ppn_r=0x%05x "
+        "miss_txid_valid=%d miss_txid=%u miss_ready_seen=%d "
+        "inflight=0x%04x canceled=0x%04x\n",
+        static_cast<unsigned>(icache_hw.io.regs.state),
+        static_cast<unsigned>(icache_hw.io.regs.mem_axi_state),
+        static_cast<int>(icache_hw.io.regs.ifu_req_ready_r),
+        static_cast<int>(icache_hw.io.regs.req_valid_r),
+        static_cast<unsigned>(icache_hw.io.regs.req_pc_r),
+        static_cast<unsigned>(icache_hw.io.regs.req_index_r),
+        static_cast<int>(icache_hw.io.regs.lookup_pending_r),
+        static_cast<unsigned>(icache_hw.io.regs.lookup_pc_r),
+        static_cast<unsigned>(icache_hw.io.regs.lookup_index_r),
+        static_cast<unsigned>(icache_hw.io.regs.ppn_r),
+        static_cast<int>(icache_hw.io.regs.miss_txid_valid_r),
+        static_cast<unsigned>(icache_hw.io.regs.miss_txid_r & 0xF),
+        static_cast<int>(icache_hw.io.regs.miss_ready_seen_r),
+        static_cast<unsigned>(inflight_mask),
+        static_cast<unsigned>(canceled_mask));
+    std::printf(
+        "[DEADLOCK][FRONT][ICACHE_HW] out ifu_req_ready=%d ifu_resp_valid=%d "
+        "ifu_resp_pc=0x%08x miss=%d page_fault=%d mmu_req_v=%d mmu_vtag=0x%05x "
+        "mem_req_v=%d mem_req_addr=0x%08x mem_req_id=%u mem_resp_ready=%d\n",
+        static_cast<int>(icache_hw.io.out.ifu_req_ready),
+        static_cast<int>(icache_hw.io.out.ifu_resp_valid),
+        static_cast<unsigned>(icache_hw.io.out.ifu_resp_pc),
+        static_cast<int>(icache_hw.io.out.miss),
+        static_cast<int>(icache_hw.io.out.ifu_page_fault),
+        static_cast<int>(icache_hw.io.out.mmu_req_valid),
+        static_cast<unsigned>(icache_hw.io.out.mmu_req_vtag),
+        static_cast<int>(icache_hw.io.out.mem_req_valid),
+        static_cast<unsigned>(icache_hw.io.out.mem_req_addr),
+        static_cast<unsigned>(icache_hw.io.out.mem_req_id & 0xF),
+        static_cast<int>(icache_hw.io.out.mem_resp_ready));
   }
 
   void comb() override {
@@ -405,6 +540,11 @@ public:
         in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
     bool satp_changed = !satp_seen || cur_satp != last_satp;
     bool translation_context_flush = in->itlb_flush || satp_changed;
+    bool cache_invalidate = in->fence_i;
+    bool cancel_pending_req = in->refetch || in->invalidate_req || in->fence_i;
+    bool hold_for_recovery =
+        in->itlb_flush || in->fence_i || in->invalidate_req || satp_changed;
+    last_hold_for_recovery_ = hold_for_recovery;
     if (translation_context_flush && runtime.mmu_model != nullptr) {
       runtime.mmu_model->flush();
     }
@@ -412,13 +552,14 @@ public:
     last_satp = cur_satp;
 
     MemReadView mem = read_port.comb_view();
+    last_mem_view_ = mem;
     const bool req_valid = in->icache_read_valid;
     const uint32_t req_pc = in->fetch_address;
     bool itlb_translate_invoked = false;
     AbstractMmu::Result itlb_translate_ret = AbstractMmu::Result::OK;
 
-    icache_hw.io.in.refetch = in->refetch;
-    icache_hw.io.in.flush = false;
+    icache_hw.io.in.refetch = cancel_pending_req;
+    icache_hw.io.in.flush = cache_invalidate;
     icache_hw.io.in.pc = req_pc;
     icache_hw.io.in.ifu_req_valid = req_valid;
     icache_hw.io.in.ifu_resp_ready = true;
@@ -427,6 +568,7 @@ public:
     icache_hw.io.in.page_fault = false;
     icache_hw.io.in.mem_req_ready = mem.req_ready;
     icache_hw.io.in.mem_req_accepted = mem.req_accepted;
+    icache_hw.io.in.mem_req_accepted_id = mem.req_accepted_id;
     icache_hw.io.in.mem_resp_valid = mem.resp_valid;
     icache_hw.io.in.mem_resp_id = mem.resp_id;
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
@@ -460,7 +602,7 @@ public:
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF),
         icache_hw.io.out.mem_resp_ready);
 
-    out->icache_read_ready = icache_hw.io.out.ifu_req_ready;
+    out->icache_read_ready = comb_visible_ready(hold_for_recovery);
     out->perf_req_fire = req_valid && out->icache_read_ready;
     out->perf_req_blocked = req_valid && !out->icache_read_ready;
 
@@ -475,6 +617,9 @@ public:
       }
       out->icache_read_complete = true;
       out->fetch_pc = icache_hw.io.out.ifu_resp_pc;
+      if (icache_focus_vaddr(out->fetch_pc)) {
+        dump_icache_focus_line("RESP", out->fetch_pc, icache_hw.io.out.rd_data);
+      }
       fill_fetch_group(icache_hw.io.out.ifu_resp_pc, icache_hw.io.out.rd_data,
                        icache_hw.io.out.ifu_page_fault, out->fetch_group,
                        out->page_fault_inst, out->inst_valid);
@@ -482,8 +627,18 @@ public:
 
     bool mem_req_fire =
         icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_accepted;
-    bool mem_req_issue =
-        icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_ready;
+    bool mem_req_issue = mem_req_fire;
+    if ((mem_req_fire || mem_req_issue) &&
+        icache_focus_vaddr(icache_hw.io.regs.lookup_pc_r)) {
+      std::printf(
+          "[ICACHE][TRACE][MEM_REQ] cyc=%lld issue=%d fire=%d req_pc_r=0x%08x "
+          "lookup_pc_r=0x%08x mem_req_addr=0x%08x req_id=%u state=%u\n",
+          (long long)sim_time, static_cast<int>(mem_req_issue),
+          static_cast<int>(mem_req_fire), icache_hw.io.regs.req_pc_r,
+          icache_hw.io.regs.lookup_pc_r, icache_hw.io.out.mem_req_addr,
+          static_cast<unsigned>(icache_hw.io.out.mem_req_id & 0xF),
+          static_cast<unsigned>(icache_hw.io.regs.state));
+    }
     out->perf_miss_event = mem_req_issue;
     const auto icache_state =
         static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
@@ -495,6 +650,18 @@ public:
         icache_hw.io.regs.lookup_pending_r;
 
     if (itlb_translate_invoked) {
+      if (icache_focus_vaddr(icache_hw.io.out.mmu_req_vtag << 12)) {
+        std::printf(
+            "[ICACHE][TRACE][MMU] cyc=%lld req_vaddr=0x%08x ppn_valid=%d "
+            "ppn=0x%05x page_fault=%d ret=%d satp=0x%08x refetch=%d\n",
+            (long long)sim_time, icache_hw.io.out.mmu_req_vtag << 12,
+            static_cast<int>(icache_hw.io.in.ppn_valid),
+            static_cast<unsigned>(icache_hw.io.in.ppn),
+            static_cast<int>(icache_hw.io.in.page_fault),
+            static_cast<int>(itlb_translate_ret),
+            in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0u,
+            static_cast<int>(in->refetch));
+      }
       if (itlb_translate_ret == AbstractMmu::Result::OK) {
         out->perf_itlb_hit = true;
       } else if (itlb_translate_ret == AbstractMmu::Result::FAULT) {
@@ -536,7 +703,7 @@ public:
 
     bool req_fire = icache_hw.io.in.ifu_req_valid && icache_hw.io.out.ifu_req_ready;
     bool mem_req_issue =
-        icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_ready;
+        icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_accepted;
     bool mem_resp_fire =
         icache_hw.io.in.mem_resp_valid && icache_hw.io.out.mem_resp_ready;
 
@@ -555,18 +722,53 @@ public:
   }
 
 private:
+  bool comb_visible_ready(bool hold_for_recovery) const {
+    const auto state =
+        static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
+    const auto mem_axi_state =
+        static_cast<icache_module_n::AXIState>(icache_hw.io.regs.mem_axi_state);
+    const bool local_busy =
+        icache_hw.io.regs.lookup_pending_r || icache_hw.io.regs.req_valid_r ||
+        icache_hw.io.regs.miss_txid_valid_r ||
+        state != icache_module_n::IDLE ||
+        mem_axi_state != icache_module_n::AXI_IDLE;
+    return hold_for_recovery ? false
+                             : (icache_hw.io.regs.ifu_req_ready_r &&
+                                !local_busy &&
+                                icache_hw.io.out.ifu_req_ready);
+  }
+
   HW &icache_hw;
   uint32_t last_satp = 0;
   bool satp_seen = false;
+  MemReadView last_mem_view_ = {};
+  bool last_hold_for_recovery_ = false;
 };
 
 class SimpleICacheTop : public ICacheTop {
 public:
+  void dump_debug_state() const override {
+    std::printf(
+        "[DEADLOCK][FRONT][ICACHE_HW] type=simple pending_req_valid=%d "
+        "pending_fetch_addr=0x%08x pend_on_retry=%d resp_fire=%d satp_seen=%d "
+        "last_satp=0x%08x in_req_valid=%d in_fetch_addr=0x%08x\n",
+        static_cast<int>(pending_req_valid),
+        static_cast<unsigned>(pending_fetch_addr),
+        static_cast<int>(pend_on_retry_comb),
+        static_cast<int>(resp_fire_comb),
+        static_cast<int>(satp_seen),
+        static_cast<unsigned>(last_satp),
+        static_cast<int>(in && in->icache_read_valid),
+        static_cast<unsigned>(in ? in->fetch_address : 0u));
+  }
+
   void peek_ready() override {
     clear_perf_outputs(out);
     out->icache_read_ready_2 = false;
     out->icache_read_complete_2 = false;
-    out->icache_read_ready = in->reset || in->refetch || !pending_req_valid;
+    out->icache_read_ready =
+        in->reset || in->refetch || in->invalidate_req || in->fence_i ||
+        !pending_req_valid;
     out->icache_read_complete = false;
   }
 
@@ -585,7 +787,8 @@ public:
     if (mmu_model == nullptr && ctx != nullptr) {
 #ifdef CONFIG_TLB_MMU
       mmu_model =
-          new TlbMmu(ctx, ptw_mem_port ? ptw_mem_port : &ptw_port, ITLB_ENTRIES);
+          new TlbMmu(ctx, ptw_mem_port ? ptw_mem_port : &ptw_port, nullptr,
+                     ITLB_ENTRIES);
       if (ptw_walk_port != nullptr) {
         mmu_model->set_ptw_walk_port(ptw_walk_port);
       }
@@ -611,12 +814,14 @@ public:
       return;
     }
 
-    if (in->refetch && mmu_model != nullptr) {
+    if ((in->refetch || in->invalidate_req || in->fence_i) &&
+        mmu_model != nullptr) {
       mmu_model->cancel_pending_walk();
     }
 
     out->icache_read_complete = false;
-    out->icache_read_ready = !pending_req_valid;
+    out->icache_read_ready =
+        !(pending_req_valid || in->invalidate_req || in->fence_i);
     out->perf_req_fire = in->icache_read_valid && out->icache_read_ready;
     out->perf_req_blocked = in->icache_read_valid && !out->icache_read_ready;
     out->perf_outstanding_req = pending_req_valid;
@@ -640,6 +845,15 @@ public:
       pending_fetch_addr = 0;
       out->icache_read_ready = true;
       out->perf_req_fire = in->icache_read_valid;
+      out->perf_req_blocked = false;
+      out->perf_outstanding_req = false;
+    }
+
+    if (in->invalidate_req || in->fence_i) {
+      pending_req_valid = false;
+      pending_fetch_addr = 0;
+      out->icache_read_ready = true;
+      out->perf_req_fire = false;
       out->perf_req_blocked = false;
       out->perf_outstanding_req = false;
     }
@@ -814,4 +1028,12 @@ ICacheTop *get_icache_instance() {
 #endif
   }
   return instance.get();
+}
+
+void icache_dump_debug_state() {
+  if (auto *instance = get_icache_instance(); instance != nullptr) {
+    instance->dump_debug_state();
+  } else {
+    std::printf("[DEADLOCK][FRONT][ICACHE_HW] no icache instance\n");
+  }
 }

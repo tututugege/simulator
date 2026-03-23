@@ -86,7 +86,8 @@ static constexpr uint32_t ICACHE_V1_TAG_BITS = 20;
 enum ICacheState {
   IDLE,         // Idle state
   SWAP_IN,      // Swapping in state
-  DRAIN         // Draining memory response after refetch
+  DRAIN,        // Draining memory response after refetch
+  CANCEL_WAIT_ACCEPT // Wait one cycle for delayed accepted pulse
 };
 // AXI Memory Channel State
 enum AXIState {
@@ -131,6 +132,7 @@ struct ICache_regs_t {
   reg<20> ppn_r = 0;
   reg<1> miss_txid_valid_r = false;
   reg<4> miss_txid_r = 0;
+  reg<1> miss_ready_seen_r = false;
   reg<1> txid_inflight_r[16] = {false};
   reg<1> txid_canceled_r[16] = {false};
 
@@ -173,6 +175,7 @@ struct ICache_in_t {
   // Input from memory
   wire<1> mem_req_ready = false;
   wire<1> mem_req_accepted = false;
+  wire<4> mem_req_accepted_id = 0;
   wire<1> mem_resp_valid = false;
   // For compatibility with ICacheV2 top-level wiring (ignored by V1).
   wire<4> mem_resp_id = 0;

@@ -2,6 +2,7 @@
 #define BPU_TOP_H
 
 #include "../frontend.h"
+#include "../host_profile.h"
 #include "../wire_types.h"
 #include "./dir_predictor/TAGE_top.h"
 #include "./type_predictor/TypePredictor.h"
@@ -457,7 +458,6 @@ public:
   };
 
   struct BpuNlpCombOut {
-    OutputPayload out;
     fetch_addr_t final_2_ahead_address;
     fetch_addr_t saved_2ahead_prediction_next;
     wire1_t saved_2ahead_pred_valid_next;
@@ -677,6 +677,7 @@ public:
   }
 
   void bpu_seq_read(const InputPayload &inp, ReadData &rd) const {
+    FRONTEND_HOST_PROFILE_SCOPE(BpuSeqRead);
     std::memset(&rd, 0, sizeof(ReadData));
 
     rd.state_snapshot = state;
@@ -733,19 +734,20 @@ public:
 #endif
   }
 
-  void bpu_pre_read_req_comb(const BpuPreReadReqCombIn &in,
+  void bpu_pre_read_req_comb(const InputPayload &inp, const ReadData &rd,
                              BpuPreReadReqCombOut &out) const {
+    FRONTEND_HOST_PROFILE_SCOPE(BpuPreReadReq);
     out = BpuPreReadReqCombOut{};
 
 #ifdef ENABLE_BPU_RAS
-    out.use_arch_ras_snapshot = in.inp.refetch;
+    out.use_arch_ras_snapshot = inp.refetch;
     out.ras_count_snapshot =
-        out.use_arch_ras_snapshot ? in.rd.Arch_ras_count_snapshot : in.rd.Spec_ras_count_snapshot;
+        out.use_arch_ras_snapshot ? rd.Arch_ras_count_snapshot : rd.Spec_ras_count_snapshot;
     out.ras_has_entry_snapshot = (out.ras_count_snapshot > 0);
     out.ras_top_index = out.ras_has_entry_snapshot ? (out.ras_count_snapshot - 1) : 0;
 #endif
 
-    out.pred_base_pc = in.inp.refetch ? in.inp.refetch_address : in.rd.pc_reg_snapshot;
+    out.pred_base_pc = inp.refetch ? inp.refetch_address : rd.pc_reg_snapshot;
 
     const uint32_t cache_mask = ~(ICACHE_LINE_SIZE - 1);
     const uint32_t pc_plus_width = out.pred_base_pc + (FETCH_WIDTH * 4);
@@ -774,12 +776,12 @@ public:
     }
 
     out.going_to_do_pred =
-        in.rd.pc_can_send_to_icache_snapshot && (in.inp.icache_read_ready || in.inp.refetch);
+        rd.pc_can_send_to_icache_snapshot && (inp.icache_read_ready || inp.refetch);
     out.going_to_do_upd_any = false;
     for (int i = 0; i < BPU_BANK_NUM; i++) {
-      out.q_full[i] = (in.rd.q_count_snapshot[i] == Q_DEPTH);
-      out.q_empty[i] = (in.rd.q_count_snapshot[i] == 0);
-      out.q_read_slot[i] = in.rd.q_rd_ptr_snapshot[i];
+      out.q_full[i] = (rd.q_count_snapshot[i] == Q_DEPTH);
+      out.q_empty[i] = (rd.q_count_snapshot[i] == 0);
+      out.q_read_slot[i] = rd.q_rd_ptr_snapshot[i];
       out.going_to_do_upd[i] = !out.q_empty[i];
       out.going_to_do_upd_any |= out.going_to_do_upd[i];
     }
@@ -795,6 +797,7 @@ public:
   }
 
   void bpu_data_seq_read(const BpuPreReadReqCombOut &in, ReadData &rd) const {
+    FRONTEND_HOST_PROFILE_SCOPE(BpuDataSeqRead);
 #ifdef ENABLE_BPU_RAS
     rd.ras_count_snapshot = in.ras_count_snapshot;
     rd.ras_has_entry_snapshot = in.ras_has_entry_snapshot;
@@ -879,18 +882,19 @@ public:
     }
   }
 
-  void bpu_post_read_req_comb(const BpuPostReadReqCombIn &in,
+  void bpu_post_read_req_comb(const InputPayload &inp, const ReadData &rd,
                               BpuPostReadReqCombOut &out) const {
+    FRONTEND_HOST_PROFILE_SCOPE(BpuPostReadReq);
     out = BpuPostReadReqCombOut{};
 
 #ifdef SPECULATIVE_ON
-    const bool *ghr_src = in.rd.Spec_GHR_snapshot;
-    const uint32_t (*fh_src)[TN_MAX] = in.rd.Spec_FH_snapshot;
-    const tage_path_hist_t path_src = in.rd.Spec_PATH_snapshot;
+    const bool *ghr_src = rd.Spec_GHR_snapshot;
+    const uint32_t (*fh_src)[TN_MAX] = rd.Spec_FH_snapshot;
+    const tage_path_hist_t path_src = rd.Spec_PATH_snapshot;
 #else
-    const bool *ghr_src = in.rd.Arch_GHR_snapshot;
-    const uint32_t (*fh_src)[TN_MAX] = in.rd.Arch_FH_snapshot;
-    const tage_path_hist_t path_src = in.rd.Arch_PATH_snapshot;
+    const bool *ghr_src = rd.Arch_GHR_snapshot;
+    const uint32_t (*fh_src)[TN_MAX] = rd.Arch_FH_snapshot;
+    const tage_path_hist_t path_src = rd.Arch_PATH_snapshot;
 #endif
     for (int b = 0; b < BPU_BANK_NUM; b++) {
       for (int k = 0; k < FH_N_MAX; k++) {
@@ -905,18 +909,18 @@ public:
     }
 
 #ifdef ENABLE_2AHEAD
-    if (in.rd.going_to_do_pred && !in.inp.refetch) {
+    if (rd.going_to_do_pred && !inp.refetch) {
       NlpTagCombOut stage1_tag_out{};
-      nlp_tag_comb(NlpTagCombIn{in.rd.pred_base_pc}, stage1_tag_out);
+      nlp_tag_comb(NlpTagCombIn{rd.pred_base_pc}, stage1_tag_out);
       const bool stage1_hit =
-          in.rd.nlp_pred_base_entry_snapshot.entry_valid &&
-          (in.rd.nlp_pred_base_entry_snapshot.entry_tag == stage1_tag_out.tag);
+          rd.nlp_pred_base_entry_snapshot.entry_valid &&
+          (rd.nlp_pred_base_entry_snapshot.entry_tag == stage1_tag_out.tag);
       const uint8_t stage1_conf =
-          stage1_hit ? in.rd.nlp_pred_base_entry_snapshot.entry_conf : 0;
+          stage1_hit ? rd.nlp_pred_base_entry_snapshot.entry_conf : 0;
       out.nlp_s1_req_pc =
           (stage1_hit && stage1_conf >= NLP_CONF_THRESHOLD)
-              ? in.rd.nlp_pred_base_entry_snapshot.entry_target
-              : nlp_fallback_next_pc(in.rd.pred_base_pc);
+              ? rd.nlp_pred_base_entry_snapshot.entry_target
+              : nlp_fallback_next_pc(rd.pred_base_pc);
       out.nlp_s1_re = true;
       NlpIndexCombOut stage1_idx_out{};
       nlp_index_comb(NlpIndexCombIn{out.nlp_s1_req_pc}, stage1_idx_out);
@@ -924,20 +928,20 @@ public:
     }
 #endif
 
-    if (in.rd.set_submodule_input) {
-      if (in.rd.going_to_do_pred) {
+    if (rd.set_submodule_input) {
+      if (rd.going_to_do_pred) {
         bool pred_req_sent[BPU_BANK_NUM];
         std::memset(pred_req_sent, 0, sizeof(pred_req_sent));
         for (int i = 0; i < FETCH_WIDTH; i++) {
-          if (!in.rd.do_pred_on_this_pc[i]) {
+          if (!rd.do_pred_on_this_pc[i]) {
             continue;
           }
           out.type_in.pred_valid[i] = true;
-          out.type_in.pred_pc[i] = in.rd.do_pred_for_this_pc[i];
-          const bpu_bank_sel_ext_t bank_sel = in.rd.this_pc_bank_sel[i];
+          out.type_in.pred_pc[i] = rd.do_pred_for_this_pc[i];
+          const bpu_bank_sel_ext_t bank_sel = rd.this_pc_bank_sel[i];
           if (bank_sel < BPU_BANK_NUM && !pred_req_sent[bank_sel]) {
             BankPcCombOut bank_pc_out{};
-            bank_pc_comb(BankPcCombIn{in.rd.do_pred_for_this_pc[i]}, bank_pc_out);
+            bank_pc_comb(BankPcCombIn{rd.do_pred_for_this_pc[i]}, bank_pc_out);
             out.tage_in[bank_sel].pred_req = true;
             out.tage_in[bank_sel].pc_pred_in = bank_pc_out.bank_pc;
             out.btb_in[bank_sel].pred_req = true;
@@ -949,92 +953,97 @@ public:
       }
 
       for (int i = 0; i < BPU_BANK_NUM; i++) {
-        if (!in.rd.going_to_do_upd[i]) {
+        if (!rd.going_to_do_upd[i]) {
           continue;
         }
         BankPcCombOut bank_pc_out{};
-        bank_pc_comb(BankPcCombIn{in.rd.q_data[i].base_pc}, bank_pc_out);
-        if (in.rd.q_data[i].br_type == BR_DIRECT) {
-          out.tage_in[i].update_en = in.rd.q_data[i].valid_mask;
+        bank_pc_comb(BankPcCombIn{rd.q_data[i].base_pc}, bank_pc_out);
+        if (rd.q_data[i].br_type == BR_DIRECT) {
+          out.tage_in[i].update_en = rd.q_data[i].valid_mask;
           out.tage_in[i].pc_update_in = bank_pc_out.bank_pc;
-          out.tage_in[i].real_dir = in.rd.q_data[i].actual_dir;
-          out.tage_in[i].pred_in = in.rd.q_data[i].pred_dir;
-          out.tage_in[i].alt_pred_in = in.rd.q_data[i].alt_pred;
-          out.tage_in[i].pcpn_in = in.rd.q_data[i].pcpn;
-          out.tage_in[i].altpcpn_in = in.rd.q_data[i].altpcpn;
-          out.tage_in[i].sc_used_in = in.rd.q_data[i].sc_used;
-          out.tage_in[i].sc_pred_in = in.rd.q_data[i].sc_pred;
-          out.tage_in[i].sc_sum_in = in.rd.q_data[i].sc_sum;
+          out.tage_in[i].real_dir = rd.q_data[i].actual_dir;
+          out.tage_in[i].pred_in = rd.q_data[i].pred_dir;
+          out.tage_in[i].alt_pred_in = rd.q_data[i].alt_pred;
+          out.tage_in[i].pcpn_in = rd.q_data[i].pcpn;
+          out.tage_in[i].altpcpn_in = rd.q_data[i].altpcpn;
+          out.tage_in[i].sc_used_in = rd.q_data[i].sc_used;
+          out.tage_in[i].sc_pred_in = rd.q_data[i].sc_pred;
+          out.tage_in[i].sc_sum_in = rd.q_data[i].sc_sum;
           for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-            out.tage_in[i].sc_idx_in[t] = in.rd.q_data[i].sc_idx[t];
+            out.tage_in[i].sc_idx_in[t] = rd.q_data[i].sc_idx[t];
           }
-          out.tage_in[i].loop_used_in = in.rd.q_data[i].loop_used;
-          out.tage_in[i].loop_hit_in = in.rd.q_data[i].loop_hit;
-          out.tage_in[i].loop_pred_in = in.rd.q_data[i].loop_pred;
-          out.tage_in[i].loop_idx_in = in.rd.q_data[i].loop_idx;
-          out.tage_in[i].loop_tag_in = in.rd.q_data[i].loop_tag;
+          out.tage_in[i].loop_used_in = rd.q_data[i].loop_used;
+          out.tage_in[i].loop_hit_in = rd.q_data[i].loop_hit;
+          out.tage_in[i].loop_pred_in = rd.q_data[i].loop_pred;
+          out.tage_in[i].loop_idx_in = rd.q_data[i].loop_idx;
+          out.tage_in[i].loop_tag_in = rd.q_data[i].loop_tag;
           for (int k = 0; k < TN_MAX; k++) {
-            out.tage_in[i].tage_tag_flat_in[k] = in.rd.q_data[i].tage_tags[k];
-            out.tage_in[i].tage_idx_flat_in[k] = in.rd.q_data[i].tage_idxs[k];
+            out.tage_in[i].tage_tag_flat_in[k] = rd.q_data[i].tage_tags[k];
+            out.tage_in[i].tage_idx_flat_in[k] = rd.q_data[i].tage_idxs[k];
           }
         }
 
-        out.btb_in[i].upd_valid = in.rd.q_data[i].valid_mask;
+        out.btb_in[i].upd_valid = rd.q_data[i].valid_mask;
         out.btb_in[i].upd_pc = bank_pc_out.bank_pc;
-        out.btb_in[i].upd_actual_addr = in.rd.q_data[i].targets;
-        out.btb_in[i].upd_actual_dir = in.rd.q_data[i].actual_dir;
-        out.btb_in[i].upd_br_type_in = in.rd.q_data[i].br_type;
+        out.btb_in[i].upd_actual_addr = rd.q_data[i].targets;
+        out.btb_in[i].upd_actual_dir = rd.q_data[i].actual_dir;
+        out.btb_in[i].upd_br_type_in = rd.q_data[i].br_type;
       }
     }
 
     for (int i = 0; i < COMMIT_WIDTH; ++i) {
-      out.type_in.upd_valid[i] = in.inp.in_upd_valid[i];
-      out.type_in.upd_pc[i] = in.inp.in_update_base_pc[i];
-      out.type_in.upd_br_type[i] = in.inp.in_actual_br_type[i];
+      out.type_in.upd_valid[i] = inp.in_upd_valid[i];
+      out.type_in.upd_pc[i] = inp.in_update_base_pc[i];
+      out.type_in.upd_br_type[i] = inp.in_actual_br_type[i];
     }
   }
 
-  void bpu_submodule_bind_comb(const BpuSubmoduleBindCombIn &in,
+  void bpu_submodule_bind_comb(const ReadData &rd,
+                               const BpuPostReadReqCombOut &post_req,
+                               const TypePredictor::OutputPayload &type_out,
                                BpuSubmoduleBindCombOut &out) const {
     std::memset(&out, 0, sizeof(out));
     for (int i = 0; i < BPU_BANK_NUM; ++i) {
-      out.btb_in_with_type[i] = in.post_req.btb_in[i];
+      out.btb_in_with_type[i] = post_req.btb_in[i];
     }
     for (int i = 0; i < FETCH_WIDTH; ++i) {
-      if (!in.rd.do_pred_on_this_pc[i]) {
+      if (!rd.do_pred_on_this_pc[i]) {
         continue;
       }
-      const bpu_bank_sel_ext_t bank_sel = in.rd.this_pc_bank_sel[i];
+      const bpu_bank_sel_ext_t bank_sel = rd.this_pc_bank_sel[i];
       if (bank_sel >= BPU_BANK_NUM) {
         continue;
       }
       if (out.btb_in_with_type[bank_sel].pred_req) {
-        out.btb_in_with_type[bank_sel].pred_type_in = in.type_out.pred_type[i];
+        out.btb_in_with_type[bank_sel].pred_type_in = type_out.pred_type[i];
       }
     }
   }
 
-  void bpu_predict_main_comb(const BpuPredictMainCombIn &in,
+  void bpu_predict_main_comb(const InputPayload &inp, const ReadData &rd,
+                             const TypePredictor::OutputPayload &type_out,
+                             const TAGE_TOP::OutputPayload tage_out[BPU_BANK_NUM],
+                             const BTB_TOP::OutputPayload btb_out[BPU_BANK_NUM],
                              BpuPredictMainCombOut &out) const {
     std::memset(&out, 0, sizeof(out));
-    out.out.icache_read_valid = in.rd.pc_can_send_to_icache_snapshot && !in.inp.refetch;
-    out.out.fetch_address = in.rd.pred_base_pc;
+    out.out.icache_read_valid = rd.pc_can_send_to_icache_snapshot && !inp.refetch;
+    out.out.fetch_address = rd.pred_base_pc;
     out.out.out_pred_base_pc = out.out.fetch_address;
-    out.next_fetch_addr_calc = in.rd.boundary_addr;
+    out.next_fetch_addr_calc = rd.boundary_addr;
 
     bool found_taken_branch = false;
-    if (in.rd.going_to_do_pred) {
+    if (rd.going_to_do_pred) {
       for (int i = 0; i < FETCH_WIDTH; ++i) {
-        if (!in.rd.do_pred_on_this_pc[i]) {
+        if (!rd.do_pred_on_this_pc[i]) {
           continue;
         }
-        const bpu_bank_sel_ext_t bank_sel = in.rd.this_pc_bank_sel[i];
+        const bpu_bank_sel_ext_t bank_sel = rd.this_pc_bank_sel[i];
         if (bank_sel >= BPU_BANK_NUM) {
           continue;
         }
-        const br_type_t p_type = in.type_out.pred_type[i];
-        const bool tage_valid = in.tage_out[bank_sel].tage_pred_out_valid;
-        const bool btb_valid = in.btb_out[bank_sel].btb_pred_out_valid;
+        const br_type_t p_type = type_out.pred_type[i];
+        const bool tage_valid = tage_out[bank_sel].tage_pred_out_valid;
+        const bool btb_valid = btb_out[bank_sel].btb_pred_out_valid;
         bool pred_taken = false;
         if (p_type == BR_NONCTL) {
           pred_taken = false;
@@ -1042,44 +1051,43 @@ public:
                    p_type == BR_JAL) {
           pred_taken = true;
         } else {
-          pred_taken = tage_valid ? in.tage_out[bank_sel].pred_out : false;
+          pred_taken = tage_valid ? tage_out[bank_sel].pred_out : false;
         }
         out.final_pred_dir[i] = pred_taken;
         out.tage_calc_pred_dir_latch_next[i] = pred_taken;
         out.tage_calc_altpred_latch_next[i] =
-            tage_valid ? in.tage_out[bank_sel].alt_pred_out : false;
+            tage_valid ? tage_out[bank_sel].alt_pred_out : false;
         out.tage_calc_pcpn_latch_next[i] =
-            tage_valid ? in.tage_out[bank_sel].pcpn_out : static_cast<pcpn_t>(0);
+            tage_valid ? tage_out[bank_sel].pcpn_out : static_cast<pcpn_t>(0);
         out.tage_calc_altpcpn_latch_next[i] =
-            tage_valid ? in.tage_out[bank_sel].altpcpn_out : static_cast<pcpn_t>(0);
+            tage_valid ? tage_out[bank_sel].altpcpn_out : static_cast<pcpn_t>(0);
         out.tage_result_valid_latch_next[i] = tage_valid;
         out.btb_pred_target_latch_next[i] =
-            btb_valid ? in.btb_out[bank_sel].pred_target
-                      : in.rd.do_pred_for_this_pc[i] + 4;
+            btb_valid ? btb_out[bank_sel].pred_target : rd.do_pred_for_this_pc[i] + 4;
         out.btb_result_valid_latch_next[i] = btb_valid;
         for (int k = 0; k < TN_MAX; ++k) {
           out.tage_pred_calc_tags_latch_next[i][k] =
-              in.tage_out[bank_sel].tage_tag_flat_out[k];
+              tage_out[bank_sel].tage_tag_flat_out[k];
           out.tage_pred_calc_idxs_latch_next[i][k] =
-              in.tage_out[bank_sel].tage_idx_flat_out[k];
+              tage_out[bank_sel].tage_idx_flat_out[k];
         }
-        out.out.out_sc_used[i] = tage_valid ? in.tage_out[bank_sel].sc_used_out : false;
-        out.out.out_sc_pred[i] = tage_valid ? in.tage_out[bank_sel].sc_pred_out : false;
-        out.out.out_sc_sum[i] = tage_valid ? in.tage_out[bank_sel].sc_sum_out : 0;
+        out.out.out_sc_used[i] = tage_valid ? tage_out[bank_sel].sc_used_out : false;
+        out.out.out_sc_pred[i] = tage_valid ? tage_out[bank_sel].sc_pred_out : false;
+        out.out.out_sc_sum[i] = tage_valid ? tage_out[bank_sel].sc_sum_out : 0;
         for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
           out.out.out_sc_idx[i][t] =
-              tage_valid ? in.tage_out[bank_sel].sc_idx_out[t] : 0;
+              tage_valid ? tage_out[bank_sel].sc_idx_out[t] : 0;
         }
-        out.out.out_loop_used[i] = tage_valid ? in.tage_out[bank_sel].loop_used_out : false;
-        out.out.out_loop_hit[i] = tage_valid ? in.tage_out[bank_sel].loop_hit_out : false;
-        out.out.out_loop_pred[i] = tage_valid ? in.tage_out[bank_sel].loop_pred_out : false;
-        out.out.out_loop_idx[i] = tage_valid ? in.tage_out[bank_sel].loop_idx_out : 0;
-        out.out.out_loop_tag[i] = tage_valid ? in.tage_out[bank_sel].loop_tag_out : 0;
+        out.out.out_loop_used[i] = tage_valid ? tage_out[bank_sel].loop_used_out : false;
+        out.out.out_loop_hit[i] = tage_valid ? tage_out[bank_sel].loop_hit_out : false;
+        out.out.out_loop_pred[i] = tage_valid ? tage_out[bank_sel].loop_pred_out : false;
+        out.out.out_loop_idx[i] = tage_valid ? tage_out[bank_sel].loop_idx_out : 0;
+        out.out.out_loop_tag[i] = tage_valid ? tage_out[bank_sel].loop_tag_out : 0;
 
         if (pred_taken && !found_taken_branch && btb_valid) {
-          uint32_t chosen_target = in.btb_out[bank_sel].pred_target;
-          if (p_type == BR_RET && in.rd.ras_has_entry_snapshot) {
-            chosen_target = in.rd.ras_top_snapshot;
+          uint32_t chosen_target = btb_out[bank_sel].pred_target;
+          if (p_type == BR_RET && rd.ras_has_entry_snapshot) {
+            chosen_target = rd.ras_top_snapshot;
           }
           out.next_fetch_addr_calc = chosen_target;
           found_taken_branch = true;
@@ -1088,7 +1096,7 @@ public:
     }
 
     out.out.predict_next_fetch_address = out.next_fetch_addr_calc;
-    out.out.PTAB_write_enable = in.rd.going_to_do_pred && !in.inp.refetch;
+    out.out.PTAB_write_enable = rd.going_to_do_pred && !inp.refetch;
     for (int i = 0; i < FETCH_WIDTH; ++i) {
       out.out.out_pred_dir[i] = out.final_pred_dir[i];
       out.out.out_alt_pred[i] = out.tage_calc_altpred_latch_next[i];
@@ -1101,76 +1109,78 @@ public:
     }
 
     out.final_2_ahead_address = out.out.fetch_address + (FETCH_WIDTH * 4);
-    const uint32_t refetch_twoahead_target = in.inp.refetch_address + (FETCH_WIDTH * 4);
+    const uint32_t refetch_twoahead_target = inp.refetch_address + (FETCH_WIDTH * 4);
     const uint32_t fallback_twoahead_target = out.out.fetch_address + (FETCH_WIDTH * 4);
     out.out.two_ahead_valid =
-        in.inp.refetch ? false : in.rd.saved_2ahead_pred_valid_snapshot;
+        inp.refetch ? false : rd.saved_2ahead_pred_valid_snapshot;
     out.out.two_ahead_target =
-        in.inp.refetch ? refetch_twoahead_target
-                       : (out.out.two_ahead_valid ? in.rd.saved_2ahead_prediction_snapshot
+        inp.refetch ? refetch_twoahead_target
+                       : (out.out.two_ahead_valid ? rd.saved_2ahead_prediction_snapshot
                                                   : fallback_twoahead_target);
     out.out.mini_flush_req = false;
     out.out.mini_flush_correct =
-        in.rd.saved_mini_flush_correct_snapshot && !in.inp.refetch;
-    out.out.mini_flush_target = in.rd.saved_mini_flush_target_snapshot;
+        rd.saved_mini_flush_correct_snapshot && !inp.refetch;
+    out.out.mini_flush_target = rd.saved_mini_flush_target_snapshot;
   }
 
-  void bpu_nlp_comb(const BpuNlpCombIn &in, BpuNlpCombOut &out) const {
+  void bpu_nlp_comb(const InputPayload &inp, const ReadData &rd,
+                    fetch_addr_t next_fetch_addr_calc,
+                    fetch_addr_t final_2_ahead_address_seed,
+                    OutputPayload &out_regs, BpuNlpCombOut &out) const {
     std::memset(&out, 0, sizeof(out));
-    out.out = in.out_seed;
-    out.final_2_ahead_address = in.final_2_ahead_address_seed;
-    out.saved_2ahead_prediction_next = in.rd.saved_2ahead_prediction_snapshot;
-    out.saved_2ahead_pred_valid_next = in.rd.saved_2ahead_pred_valid_snapshot;
-    out.saved_mini_flush_req_next = in.rd.saved_mini_flush_req_snapshot;
-    out.saved_mini_flush_correct_next = in.rd.saved_mini_flush_correct_snapshot;
-    out.saved_mini_flush_target_next = in.rd.saved_mini_flush_target_snapshot;
+    out.final_2_ahead_address = final_2_ahead_address_seed;
+    out.saved_2ahead_prediction_next = rd.saved_2ahead_prediction_snapshot;
+    out.saved_2ahead_pred_valid_next = rd.saved_2ahead_pred_valid_snapshot;
+    out.saved_mini_flush_req_next = rd.saved_mini_flush_req_snapshot;
+    out.saved_mini_flush_correct_next = rd.saved_mini_flush_correct_snapshot;
+    out.saved_mini_flush_target_next = rd.saved_mini_flush_target_snapshot;
 
 #ifdef ENABLE_2AHEAD
-    if (in.rd.going_to_do_pred && !in.inp.refetch) {
+    if (rd.going_to_do_pred && !inp.refetch) {
       NlpTagCombOut stage1_tag_out{};
-      nlp_tag_comb(NlpTagCombIn{in.rd.pred_base_pc}, stage1_tag_out);
-      const bool stage1_hit = in.rd.nlp_pred_base_entry_snapshot.entry_valid &&
-                              (in.rd.nlp_pred_base_entry_snapshot.entry_tag ==
+      nlp_tag_comb(NlpTagCombIn{rd.pred_base_pc}, stage1_tag_out);
+      const bool stage1_hit = rd.nlp_pred_base_entry_snapshot.entry_valid &&
+                              (rd.nlp_pred_base_entry_snapshot.entry_tag ==
                                stage1_tag_out.tag);
       const uint8_t stage1_conf =
-          stage1_hit ? in.rd.nlp_pred_base_entry_snapshot.entry_conf : 0;
+          stage1_hit ? rd.nlp_pred_base_entry_snapshot.entry_conf : 0;
       const uint32_t stage1_next_pc =
           (stage1_hit && stage1_conf >= NLP_CONF_THRESHOLD)
-              ? in.rd.nlp_pred_base_entry_snapshot.entry_target
-              : nlp_fallback_next_pc(in.rd.pred_base_pc);
+              ? rd.nlp_pred_base_entry_snapshot.entry_target
+              : nlp_fallback_next_pc(rd.pred_base_pc);
 
       NlpTagCombOut stage2_tag_out{};
       nlp_tag_comb(NlpTagCombIn{stage1_next_pc}, stage2_tag_out);
-      const bool stage2_hit = in.rd.nlp_s1_entry_snapshot.entry_valid &&
-                              (in.rd.nlp_s1_entry_snapshot.entry_tag == stage2_tag_out.tag);
+      const bool stage2_hit = rd.nlp_s1_entry_snapshot.entry_valid &&
+                              (rd.nlp_s1_entry_snapshot.entry_tag == stage2_tag_out.tag);
       const uint8_t stage2_conf =
-          stage2_hit ? in.rd.nlp_s1_entry_snapshot.entry_conf : 0;
+          stage2_hit ? rd.nlp_s1_entry_snapshot.entry_conf : 0;
       const uint32_t stage2_target =
-          stage2_hit ? in.rd.nlp_s1_entry_snapshot.entry_target
+          stage2_hit ? rd.nlp_s1_entry_snapshot.entry_target
                      : nlp_fallback_next_pc(stage1_next_pc);
-      const bool s1_match = (stage1_next_pc == in.next_fetch_addr_calc);
+      const bool s1_match = (stage1_next_pc == next_fetch_addr_calc);
       const bool s2_usable = stage2_hit && (stage2_conf >= NLP_CONF_THRESHOLD);
       const bool emit_two_ahead = s1_match && s2_usable;
       out.final_2_ahead_address =
-          emit_two_ahead ? stage2_target : (in.next_fetch_addr_calc + (FETCH_WIDTH * 4));
+          emit_two_ahead ? stage2_target : (next_fetch_addr_calc + (FETCH_WIDTH * 4));
 
       const bool need_mini_flush =
-          (in.rd.saved_2ahead_prediction_snapshot != in.next_fetch_addr_calc);
-      out.out.mini_flush_req = need_mini_flush && in.out_seed.PTAB_write_enable;
-      out.out.mini_flush_target = in.rd.saved_mini_flush_target_snapshot;
+          (rd.saved_2ahead_prediction_snapshot != next_fetch_addr_calc);
+      out_regs.mini_flush_req = need_mini_flush && out_regs.PTAB_write_enable;
+      out_regs.mini_flush_target = rd.saved_mini_flush_target_snapshot;
       out.saved_2ahead_prediction_next = out.final_2_ahead_address;
       out.saved_2ahead_pred_valid_next = emit_two_ahead;
       out.saved_mini_flush_req_next = need_mini_flush;
       out.saved_mini_flush_correct_next = !need_mini_flush;
-      out.saved_mini_flush_target_next = in.rd.saved_2ahead_prediction_snapshot;
+      out.saved_mini_flush_target_next = rd.saved_2ahead_prediction_snapshot;
 
-      const uint32_t train_pc = in.rd.pred_base_pc;
-      const uint32_t train_target = in.next_fetch_addr_calc;
+      const uint32_t train_pc = rd.pred_base_pc;
+      const uint32_t train_target = next_fetch_addr_calc;
       NlpIndexCombOut train_idx_out{};
       NlpTagCombOut train_tag_out{};
       nlp_index_comb(NlpIndexCombIn{train_pc}, train_idx_out);
       nlp_tag_comb(NlpTagCombIn{train_pc}, train_tag_out);
-      const ReadData::NlpEntrySnapshot &old_entry = in.rd.nlp_train_entry_snapshot;
+      const ReadData::NlpEntrySnapshot &old_entry = rd.nlp_train_entry_snapshot;
       const bool train_hit = old_entry.entry_valid && (old_entry.entry_tag == train_tag_out.tag);
       uint8_t next_conf = NLP_CONF_INIT;
       if (train_hit) {
@@ -1192,27 +1202,30 @@ public:
 #endif
 
 #ifndef ENABLE_2AHEAD
-    out.out.two_ahead_valid = false;
-    out.out.mini_flush_req = false;
-    out.out.mini_flush_correct = false;
+    out_regs.two_ahead_valid = false;
+    out_regs.mini_flush_req = false;
+    out_regs.mini_flush_correct = false;
 #endif
   }
 
-  void bpu_hist_comb(const BpuHistCombIn &in, BpuHistCombOut &out) const {
+  void bpu_hist_comb(const InputPayload &inp, const ReadData &rd,
+                     const TypePredictor::OutputPayload &type_out,
+                     const wire1_t final_pred_dir[FETCH_WIDTH],
+                     BpuHistCombOut &out) const {
     std::memset(&out, 0, sizeof(out));
-    std::memcpy(out.Spec_GHR_next, in.rd.Spec_GHR_snapshot, sizeof(out.Spec_GHR_next));
-    std::memcpy(out.Arch_GHR_next, in.rd.Arch_GHR_snapshot, sizeof(out.Arch_GHR_next));
-    std::memcpy(out.Spec_FH_next, in.rd.Spec_FH_snapshot, sizeof(out.Spec_FH_next));
-    std::memcpy(out.Arch_FH_next, in.rd.Arch_FH_snapshot, sizeof(out.Arch_FH_next));
-    out.Spec_PATH_next = in.rd.Spec_PATH_snapshot;
-    out.Arch_PATH_next = in.rd.Arch_PATH_snapshot;
-    std::memcpy(out.Arch_ras_stack_next, in.rd.Arch_ras_stack_snapshot,
+    std::memcpy(out.Spec_GHR_next, rd.Spec_GHR_snapshot, sizeof(out.Spec_GHR_next));
+    std::memcpy(out.Arch_GHR_next, rd.Arch_GHR_snapshot, sizeof(out.Arch_GHR_next));
+    std::memcpy(out.Spec_FH_next, rd.Spec_FH_snapshot, sizeof(out.Spec_FH_next));
+    std::memcpy(out.Arch_FH_next, rd.Arch_FH_snapshot, sizeof(out.Arch_FH_next));
+    out.Spec_PATH_next = rd.Spec_PATH_snapshot;
+    out.Arch_PATH_next = rd.Arch_PATH_snapshot;
+    std::memcpy(out.Arch_ras_stack_next, rd.Arch_ras_stack_snapshot,
                 sizeof(out.Arch_ras_stack_next));
-    out.Arch_ras_count_next = in.rd.Arch_ras_count_snapshot;
-    std::memcpy(out.Spec_ras_stack_next, in.rd.Spec_ras_stack_snapshot,
+    out.Arch_ras_count_next = rd.Arch_ras_count_snapshot;
+    std::memcpy(out.Spec_ras_stack_next, rd.Spec_ras_stack_snapshot,
                 sizeof(out.Spec_ras_stack_next));
-    out.Spec_ras_count_next = in.rd.Spec_ras_count_snapshot;
-    out.should_update_spec_hist = in.rd.going_to_do_pred && !in.inp.refetch;
+    out.Spec_ras_count_next = rd.Spec_ras_count_snapshot;
+    out.should_update_spec_hist = rd.going_to_do_pred && !inp.refetch;
 
     if (out.should_update_spec_hist) {
       bool spec_ghr_tmp[GHR_LENGTH];
@@ -1221,15 +1234,15 @@ public:
       std::memcpy(spec_ghr_tmp, out.Spec_GHR_next, sizeof(spec_ghr_tmp));
       std::memcpy(spec_fh_tmp, out.Spec_FH_next, sizeof(spec_fh_tmp));
       for (int i = 0; i < FETCH_WIDTH; ++i) {
-        if (!in.rd.do_pred_on_this_pc[i]) {
+        if (!rd.do_pred_on_this_pc[i]) {
           continue;
         }
-        const bpu_bank_sel_ext_t bank_sel = in.rd.this_pc_bank_sel[i];
+        const bpu_bank_sel_ext_t bank_sel = rd.this_pc_bank_sel[i];
         if (bank_sel >= BPU_BANK_NUM) {
           continue;
         }
-        br_type_t p_type = in.type_out.pred_type[i];
-        const bool pred_taken = in.final_pred_dir[i];
+        br_type_t p_type = type_out.pred_type[i];
+        const bool pred_taken = final_pred_dir[i];
         if (p_type == BR_DIRECT) {
           bool next_ghr[GHR_LENGTH];
           uint32_t next_fh[FH_N_MAX][TN_MAX];
@@ -1239,7 +1252,7 @@ public:
           std::memcpy(spec_ghr_tmp, next_ghr, sizeof(next_ghr));
           std::memcpy(spec_fh_tmp, next_fh, sizeof(next_fh));
           spec_path_tmp =
-              tage_path_update_value(spec_path_tmp, in.rd.do_pred_for_this_pc[i], pred_taken);
+              tage_path_update_value(spec_path_tmp, rd.do_pred_for_this_pc[i], pred_taken);
         }
         if (pred_taken) {
           break;
@@ -1254,16 +1267,16 @@ public:
       ras_count_t spec_ras_count_tmp = out.Spec_ras_count_next;
       std::memcpy(spec_ras_stack_tmp, out.Spec_ras_stack_next, sizeof(spec_ras_stack_tmp));
       for (int i = 0; i < FETCH_WIDTH; ++i) {
-        if (!in.rd.do_pred_on_this_pc[i]) {
+        if (!rd.do_pred_on_this_pc[i]) {
           continue;
         }
-        const bpu_bank_sel_ext_t bank_sel = in.rd.this_pc_bank_sel[i];
+        const bpu_bank_sel_ext_t bank_sel = rd.this_pc_bank_sel[i];
         if (bank_sel >= BPU_BANK_NUM) {
           continue;
         }
-        pc_t pc = in.rd.do_pred_for_this_pc[i];
-        br_type_t p_type = in.type_out.pred_type[i];
-        bool pred_taken = in.final_pred_dir[i];
+        pc_t pc = rd.do_pred_for_this_pc[i];
+        br_type_t p_type = type_out.pred_type[i];
+        bool pred_taken = final_pred_dir[i];
         if (!pred_taken) {
           continue;
         }
@@ -1287,22 +1300,22 @@ public:
       std::memcpy(arch_fh_tmp, out.Arch_FH_next, sizeof(arch_fh_tmp));
       bool arch_need_write = false;
       for (int i = 0; i < COMMIT_WIDTH; ++i) {
-        if (!in.inp.in_upd_valid[i]) {
+        if (!inp.in_upd_valid[i]) {
           continue;
         }
-        bool is_cond_upd = (in.inp.in_actual_br_type[i] == BR_DIRECT);
+        bool is_cond_upd = (inp.in_actual_br_type[i] == BR_DIRECT);
         if (!is_cond_upd) {
           continue;
         }
-        bool real_dir = in.inp.in_actual_dir[i];
+        bool real_dir = inp.in_actual_dir[i];
         bool next_ghr[GHR_LENGTH];
         uint32_t next_fh[FH_N_MAX][TN_MAX];
         tage_ghr_update_apply(arch_ghr_tmp, real_dir, next_ghr);
         tage_fh_update_apply(arch_fh_tmp, arch_ghr_tmp, real_dir, next_fh, fh_length,
                              ghr_length);
         tage_path_hist_t next_path =
-            tage_path_update_value(arch_path_tmp, in.inp.in_update_base_pc[i], real_dir);
-        if (in.inp.in_pred_dir[i] != real_dir) {
+            tage_path_update_value(arch_path_tmp, inp.in_update_base_pc[i], real_dir);
+        if (inp.in_pred_dir[i] != real_dir) {
           std::memcpy(out.Spec_GHR_next, next_ghr, sizeof(out.Spec_GHR_next));
           std::memcpy(out.Spec_FH_next, next_fh, sizeof(out.Spec_FH_next));
           out.Spec_PATH_next = next_path;
@@ -1325,12 +1338,12 @@ public:
       ras_count_t arch_ras_count_tmp = out.Arch_ras_count_next;
       std::memcpy(arch_ras_stack_tmp, out.Arch_ras_stack_next, sizeof(arch_ras_stack_tmp));
       for (int i = 0; i < COMMIT_WIDTH; ++i) {
-        if (!in.inp.in_upd_valid[i]) {
+        if (!inp.in_upd_valid[i]) {
           continue;
         }
-        br_type_t br_type = in.inp.in_actual_br_type[i];
+        br_type_t br_type = inp.in_actual_br_type[i];
         if (br_type == BR_CALL) {
-          ras_push(arch_ras_stack_tmp, arch_ras_count_tmp, in.inp.in_update_base_pc[i] + 4);
+          ras_push(arch_ras_stack_tmp, arch_ras_count_tmp, inp.in_update_base_pc[i] + 4);
         } else if (br_type == BR_RET) {
           ras_pop(arch_ras_count_tmp);
         }
@@ -1342,60 +1355,61 @@ public:
 #endif
   }
 
-  void bpu_queue_comb(const BpuQueueCombIn &in, BpuQueueCombOut &out) const {
+  void bpu_queue_comb(const InputPayload &inp, const ReadData &rd,
+                      BpuQueueCombOut &out) const {
     std::memset(&out, 0, sizeof(out));
     for (int i = 0; i < BPU_BANK_NUM; ++i) {
-      out.q_wr_ptr_next[i] = in.rd.q_wr_ptr_snapshot[i];
-      out.q_rd_ptr_next[i] = in.rd.q_rd_ptr_snapshot[i];
-      out.q_count_next[i] = in.rd.q_count_snapshot[i];
-      if (in.rd.going_to_do_upd[i] && out.q_count_next[i] > 0) {
+      out.q_wr_ptr_next[i] = rd.q_wr_ptr_snapshot[i];
+      out.q_rd_ptr_next[i] = rd.q_rd_ptr_snapshot[i];
+      out.q_count_next[i] = rd.q_count_snapshot[i];
+      if (rd.going_to_do_upd[i] && out.q_count_next[i] > 0) {
         out.q_pop_en[i] = true;
         out.q_rd_ptr_next[i] = (out.q_rd_ptr_next[i] + 1) % Q_DEPTH;
         out.q_count_next[i]--;
       }
     }
     for (int i = 0; i < COMMIT_WIDTH; i++) {
-      if (!in.inp.in_upd_valid[i]) {
+      if (!inp.in_upd_valid[i]) {
         continue;
       }
       BankSelCombOut bank_sel_out{};
-      bank_sel_comb(BankSelCombIn{in.inp.in_update_base_pc[i]}, bank_sel_out);
+      bank_sel_comb(BankSelCombIn{inp.in_update_base_pc[i]}, bank_sel_out);
       int bank_sel = bank_sel_out.bank_sel;
       if (out.q_count_next[bank_sel] < Q_DEPTH) {
         out.q_push_en[bank_sel] = true;
         out.q_entry_we[i] = true;
         out.q_entry_bank[i] = bank_sel;
         out.q_entry_slot[i] = out.q_wr_ptr_next[bank_sel];
-        out.q_entry_data[i].base_pc = in.inp.in_update_base_pc[i];
-        out.q_entry_data[i].valid_mask = in.inp.in_upd_valid[i];
-        out.q_entry_data[i].actual_dir = in.inp.in_actual_dir[i];
-        out.q_entry_data[i].pred_dir = in.inp.in_pred_dir[i];
-        out.q_entry_data[i].alt_pred = in.inp.in_alt_pred[i];
-        out.q_entry_data[i].br_type = in.inp.in_actual_br_type[i];
-        out.q_entry_data[i].targets = in.inp.in_actual_targets[i];
-        out.q_entry_data[i].pcpn = in.inp.in_pcpn[i];
-        out.q_entry_data[i].altpcpn = in.inp.in_altpcpn[i];
+        out.q_entry_data[i].base_pc = inp.in_update_base_pc[i];
+        out.q_entry_data[i].valid_mask = inp.in_upd_valid[i];
+        out.q_entry_data[i].actual_dir = inp.in_actual_dir[i];
+        out.q_entry_data[i].pred_dir = inp.in_pred_dir[i];
+        out.q_entry_data[i].alt_pred = inp.in_alt_pred[i];
+        out.q_entry_data[i].br_type = inp.in_actual_br_type[i];
+        out.q_entry_data[i].targets = inp.in_actual_targets[i];
+        out.q_entry_data[i].pcpn = inp.in_pcpn[i];
+        out.q_entry_data[i].altpcpn = inp.in_altpcpn[i];
         for (int k = 0; k < TN_MAX; k++) {
-          out.q_entry_data[i].tage_tags[k] = in.inp.in_tage_tags[i][k];
-          out.q_entry_data[i].tage_idxs[k] = in.inp.in_tage_idxs[i][k];
+          out.q_entry_data[i].tage_tags[k] = inp.in_tage_tags[i][k];
+          out.q_entry_data[i].tage_idxs[k] = inp.in_tage_idxs[i][k];
         }
-        out.q_entry_data[i].sc_used = in.inp.in_sc_used[i];
-        out.q_entry_data[i].sc_pred = in.inp.in_sc_pred[i];
-        out.q_entry_data[i].sc_sum = in.inp.in_sc_sum[i];
+        out.q_entry_data[i].sc_used = inp.in_sc_used[i];
+        out.q_entry_data[i].sc_pred = inp.in_sc_pred[i];
+        out.q_entry_data[i].sc_sum = inp.in_sc_sum[i];
         for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-          out.q_entry_data[i].sc_idx[t] = in.inp.in_sc_idx[i][t];
+          out.q_entry_data[i].sc_idx[t] = inp.in_sc_idx[i][t];
         }
-        out.q_entry_data[i].loop_used = in.inp.in_loop_used[i];
-        out.q_entry_data[i].loop_hit = in.inp.in_loop_hit[i];
-        out.q_entry_data[i].loop_pred = in.inp.in_loop_pred[i];
-        out.q_entry_data[i].loop_idx = in.inp.in_loop_idx[i];
-        out.q_entry_data[i].loop_tag = in.inp.in_loop_tag[i];
+        out.q_entry_data[i].loop_used = inp.in_loop_used[i];
+        out.q_entry_data[i].loop_hit = inp.in_loop_hit[i];
+        out.q_entry_data[i].loop_pred = inp.in_loop_pred[i];
+        out.q_entry_data[i].loop_idx = inp.in_loop_idx[i];
+        out.q_entry_data[i].loop_tag = inp.in_loop_tag[i];
         out.q_wr_ptr_next[bank_sel] = (out.q_wr_ptr_next[bank_sel] + 1) % Q_DEPTH;
         out.q_count_next[bank_sel]++;
       } else {
         std::cerr << "[BPU] update_queue overflow: commit_slot=" << i
                   << " bank=" << bank_sel
-                  << " base_pc=0x" << std::hex << in.inp.in_update_base_pc[i]
+                  << " base_pc=0x" << std::hex << inp.in_update_base_pc[i]
                   << std::dec << " q_count=" << out.q_count_next[bank_sel]
                   << " depth=" << Q_DEPTH << std::endl;
         assert(false && "BPU update_queue overflow");
@@ -1411,6 +1425,7 @@ public:
   }
 
   void bpu_submodule_seq_read(const BpuPostReadReqCombOut &in, ReadData &rd) const {
+    FRONTEND_HOST_PROFILE_SCOPE(BpuSubmoduleSeqRead);
     rd.nlp_s1_req_pc_snapshot = in.nlp_s1_req_pc;
     std::memset(&rd.nlp_s1_entry_snapshot, 0, sizeof(rd.nlp_s1_entry_snapshot));
     if (in.nlp_s1_re) {
@@ -1428,10 +1443,10 @@ public:
     type_pred_inst->type_pred_seq_read(in.type_in, rd.type_rd);
   }
 
-  void bpu_core_comb_calc(const BpuCombIn &comb_in, BpuCombOut &comb_out) {
-    const InputPayload &inp = comb_in.inp;
-    const ReadData &rd = comb_in.rd;
-    const BpuPostReadReqCombOut &post_req = comb_in.post_req;
+  void bpu_core_comb_calc(const InputPayload &inp, ReadData &rd,
+                          const BpuPostReadReqCombOut &post_req,
+                          BpuCombOut &comb_out) {
+    FRONTEND_HOST_PROFILE_SCOPE(BpuCoreComb);
     OutputPayload &out = comb_out.out_regs;
     UpdateRequest &req = comb_out.update_req;
     std::memset(&out, 0, sizeof(OutputPayload));
@@ -1516,30 +1531,33 @@ public:
 
     req.type_in = post_req.type_in;
     TypePredictor::OutputPayload type_out{};
-    type_pred_inst->type_pred_comb_calc(post_req.type_in, rd.type_rd, type_out, req.type_req);
+    {
+      FRONTEND_HOST_PROFILE_SCOPE(BpuTypeComb);
+      type_pred_inst->type_pred_comb_calc(post_req.type_in, rd.type_rd, type_out,
+                                          req.type_req);
+    }
 
     TAGE_TOP::OutputPayload tage_out[BPU_BANK_NUM];
     BTB_TOP::OutputPayload btb_out[BPU_BANK_NUM];
     BpuSubmoduleBindCombOut bind_out{};
-    bpu_submodule_bind_comb(BpuSubmoduleBindCombIn{rd, post_req, type_out}, bind_out);
-    for (int i = 0; i < BPU_BANK_NUM; i++) {
-      tage_inst[i]->tage_comb_calc(post_req.tage_in[i], rd.tage_rd[i], tage_out[i],
-                                   req.tage_req[i]);
-
-      btb_inst[i]->btb_comb_calc(bind_out.btb_in_with_type[i], rd.btb_rd[i], btb_out[i],
-                                 req.btb_req[i]);
-      req.btb_in[i] = bind_out.btb_in_with_type[i];
+    bpu_submodule_bind_comb(rd, post_req, type_out, bind_out);
+    {
+      FRONTEND_HOST_PROFILE_SCOPE(BpuTageComb);
+      for (int i = 0; i < BPU_BANK_NUM; i++) {
+        tage_inst[i]->tage_comb_calc(post_req.tage_in[i], rd.tage_rd[i], tage_out[i],
+                                     req.tage_req[i]);
+      }
     }
-    BpuPredictMainCombIn predict_main_in{};
-    predict_main_in.inp = inp;
-    predict_main_in.rd = rd;
-    predict_main_in.type_out = type_out;
-    for (int i = 0; i < BPU_BANK_NUM; ++i) {
-      predict_main_in.tage_out[i] = tage_out[i];
-      predict_main_in.btb_out[i] = btb_out[i];
+    {
+      FRONTEND_HOST_PROFILE_SCOPE(BpuBtbComb);
+      for (int i = 0; i < BPU_BANK_NUM; i++) {
+        btb_inst[i]->btb_comb_calc(bind_out.btb_in_with_type[i], rd.btb_rd[i],
+                                   btb_out[i], req.btb_req[i]);
+        req.btb_in[i] = bind_out.btb_in_with_type[i];
+      }
     }
     BpuPredictMainCombOut predict_main_out{};
-    bpu_predict_main_comb(predict_main_in, predict_main_out);
+    bpu_predict_main_comb(inp, rd, type_out, tage_out, btb_out, predict_main_out);
     out = predict_main_out.out;
     req.next_fetch_addr_calc = predict_main_out.next_fetch_addr_calc;
     req.final_2_ahead_address = predict_main_out.final_2_ahead_address;
@@ -1566,10 +1584,8 @@ public:
     }
 
     BpuNlpCombOut nlp_out{};
-    bpu_nlp_comb(
-        BpuNlpCombIn{inp, rd, req.next_fetch_addr_calc, req.final_2_ahead_address, out},
-        nlp_out);
-    out = nlp_out.out;
+    bpu_nlp_comb(inp, rd, req.next_fetch_addr_calc, req.final_2_ahead_address, out,
+                 nlp_out);
     req.final_2_ahead_address = nlp_out.final_2_ahead_address;
     req.saved_2ahead_prediction_next = nlp_out.saved_2ahead_prediction_next;
     req.saved_2ahead_pred_valid_next = nlp_out.saved_2ahead_pred_valid_next;
@@ -1583,15 +1599,8 @@ public:
     req.nlp_entry_target_next = nlp_out.nlp_entry_target_next;
     req.nlp_entry_conf_next = nlp_out.nlp_entry_conf_next;
 
-    BpuHistCombIn hist_in{};
-    hist_in.inp = inp;
-    hist_in.rd = rd;
-    hist_in.type_out = type_out;
-    for (int i = 0; i < FETCH_WIDTH; ++i) {
-      hist_in.final_pred_dir[i] = req.final_pred_dir[i];
-    }
     BpuHistCombOut hist_out{};
-    bpu_hist_comb(hist_in, hist_out);
+    bpu_hist_comb(inp, rd, type_out, req.final_pred_dir, hist_out);
     req.should_update_spec_hist = hist_out.should_update_spec_hist;
     std::memcpy(req.Spec_GHR_next, hist_out.Spec_GHR_next, sizeof(req.Spec_GHR_next));
     std::memcpy(req.Spec_FH_next, hist_out.Spec_FH_next, sizeof(req.Spec_FH_next));
@@ -1607,7 +1616,7 @@ public:
     req.Spec_ras_count_next = hist_out.Spec_ras_count_next;
 
     BpuQueueCombOut queue_out{};
-    bpu_queue_comb(BpuQueueCombIn{inp, rd}, queue_out);
+    bpu_queue_comb(inp, rd, queue_out);
     for (int i = 0; i < BPU_BANK_NUM; ++i) {
       req.q_push_en[i] = queue_out.q_push_en[i];
       req.q_pop_en[i] = queue_out.q_pop_en[i];
@@ -1850,17 +1859,16 @@ public:
     nlp_s2_conf = 0;
   }
 
-  void bpu_comb_calc(const InputPayload &inp, const ReadData &rd,
+  void bpu_comb_calc(const InputPayload &inp, ReadData &rd,
                      OutputPayload &out, UpdateRequest &req) {
-    ReadData working_rd = rd;
     BpuPreReadReqCombOut pre_read_req{};
     BpuPostReadReqCombOut post_read_req{};
     BpuCombOut comb_out{};
-    bpu_pre_read_req_comb(BpuPreReadReqCombIn{inp, rd}, pre_read_req);
-    bpu_data_seq_read(pre_read_req, working_rd);
-    bpu_post_read_req_comb(BpuPostReadReqCombIn{inp, working_rd}, post_read_req);
-    bpu_submodule_seq_read(post_read_req, working_rd);
-    bpu_core_comb_calc(BpuCombIn{inp, working_rd, post_read_req}, comb_out);
+    bpu_pre_read_req_comb(inp, rd, pre_read_req);
+    bpu_data_seq_read(pre_read_req, rd);
+    bpu_post_read_req_comb(inp, rd, post_read_req);
+    bpu_submodule_seq_read(post_read_req, rd);
+    bpu_core_comb_calc(inp, rd, post_read_req, comb_out);
     out = comb_out.out_regs;
     req = comb_out.update_req;
   }

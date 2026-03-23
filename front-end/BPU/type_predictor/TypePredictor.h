@@ -405,14 +405,13 @@ public:
     std::memset(&rd, 0, sizeof(rd));
   }
 
-  void type_pred_comb_calc(const InputPayload &in, const ReadData &rd,
+  void type_pred_comb_calc(const InputPayload &in, ReadData &rd,
                            OutputPayload &out, CombResult &req) const {
-    ReadData working_rd = rd;
     PreReadCombOut pre_read{};
     pre_read_comb(in, pre_read);
-    data_seq_read(pre_read, working_rd);
+    data_seq_read(pre_read, rd);
     TypePredCombOut comb_out{};
-    type_pred_comb(TypePredCombIn{in, pre_read, working_rd}, comb_out);
+    type_pred_comb(TypePredCombIn{in, pre_read, rd}, comb_out);
     out = comb_out.out_regs;
     req = comb_out.req;
   }

@@ -1170,26 +1170,25 @@ public:
 #endif
   }
 
-  void tage_comb_calc(const InputPayload &inp, const ReadData &rd,
+  void tage_comb_calc(const InputPayload &inp, ReadData &rd,
                       OutputPayload &out, CombResult &req) const {
-    ReadData working_rd = rd;
     TagePreReadCombOut pre_read_out{};
     tage_pre_read_comb(TagePreReadCombIn{inp, rd.state_in}, pre_read_out);
     TageCombOut comb_out{};
-    working_rd.pred_read_valid = pre_read_out.pred_req.pred_read_valid;
-    working_rd.pred_idx_tag = pre_read_out.pred_req.pred_idx_tag;
-    working_rd.upd_read_valid = pre_read_out.upd_req.upd_read_valid;
-    working_rd.upd_base_idx = pre_read_out.upd_req.upd_base_idx;
-    working_rd.upd_sc_idx = pre_read_out.upd_req.upd_sc_idx;
-    working_rd.upd_reset_row_valid = pre_read_out.upd_req.upd_reset_row_valid;
-    working_rd.upd_reset_row_idx = pre_read_out.upd_req.upd_reset_row_idx;
-    working_rd.useful_reset_row_data_valid =
+    rd.pred_read_valid = pre_read_out.pred_req.pred_read_valid;
+    rd.pred_idx_tag = pre_read_out.pred_req.pred_idx_tag;
+    rd.upd_read_valid = pre_read_out.upd_req.upd_read_valid;
+    rd.upd_base_idx = pre_read_out.upd_req.upd_base_idx;
+    rd.upd_sc_idx = pre_read_out.upd_req.upd_sc_idx;
+    rd.upd_reset_row_valid = pre_read_out.upd_req.upd_reset_row_valid;
+    rd.upd_reset_row_idx = pre_read_out.upd_req.upd_reset_row_idx;
+    rd.useful_reset_row_data_valid =
         pre_read_out.useful_reset_req.useful_reset_row_data_valid;
-    working_rd.idx = pre_read_out.idx;
+    rd.idx = pre_read_out.idx;
     tage_data_seq_read(TageDataSeqReadIn{pre_read_out.pred_req, pre_read_out.upd_req,
                                          pre_read_out.useful_reset_req, pre_read_out.idx},
-                       working_rd);
-    tage_comb(TageCombIn{inp, working_rd}, comb_out);
+                       rd);
+    tage_comb(TageCombIn{inp, rd}, comb_out);
     out = comb_out.out_regs;
     req = comb_out.req;
   }

@@ -39,6 +39,7 @@ struct RobStoredInst {
   wire<7> func7;
   wire<32> imm;
   wire<ROB_IDX_WIDTH> rob_idx;
+  wire<1> rob_flag;
   wire<STQ_IDX_WIDTH> stq_idx;
   wire<1> stq_flag;
 
@@ -75,6 +76,7 @@ struct RobStoredInst {
     dst.func7 = src.func7;
     dst.imm = src.imm;
     dst.rob_idx = src.rob_idx;
+    dst.rob_flag = src.rob_flag;
     dst.stq_idx = src.stq_idx;
     dst.stq_flag = src.stq_flag;
     dst.uop_num = src.uop_num;

@@ -18,6 +18,7 @@ static constexpr uint32_t kWbMshrSafetyReserve = 1;
 static uint64_t g_wb_issue_seq = 0;
 static uint64_t g_wb_resp_seq = 0;
 static bool g_warned_req_size_gt_32b = false;
+static constexpr uint32_t kFastDiffFocusLine = 0x8fdfd800u;
 
 #ifndef WB_AXI_VERBOSE_LOG
 #define WB_AXI_VERBOSE_LOG 0
@@ -136,6 +137,17 @@ static void drive_axi_req_from_head(WBOut &out, uint32_t send, uint32_t head,
         out.axi_out.req_wdata[w] = head_e.data[w];
     }
 }
+
+static void check_wb_state(const char *phase, const WBState &st) {
+    if (st.count > WB_ENTRIES || st.head >= WB_ENTRIES || st.tail >= WB_ENTRIES ||
+        st.send > 1u || st.issue_pending > 1u) {
+        LSU_MEM_DBG_PRINTF(
+            "[WB STATE CORRUPT] phase=%s cyc=%lld count=%u head=%u tail=%u send=%u issue_pending=%u\n",
+            phase, (long long)sim_time, st.count, st.head, st.tail, st.send,
+            st.issue_pending);
+        Assert(false && "WriteBuffer state corrupted");
+    }
+}
 } // namespace
 
 int WriteBuffer::find_wb_entry(uint32_t addr)
@@ -170,6 +182,8 @@ void WriteBuffer::init() {
 // (within the same cycle) are already reflected.
 // ─────────────────────────────────────────────────────────────────────────────
 void WriteBuffer::comb_outputs() {
+    check_wb_state("comb_outputs.cur", cur);
+    check_wb_state("comb_outputs.nxt", nxt);
     out.wbmshr.ready = ((nxt.count + kWbMshrSafetyReserve) < WB_ENTRIES);
 
     for(int i=0;i<LSU_LDU_COUNT;i++){
@@ -195,9 +209,21 @@ void WriteBuffer::comb_outputs() {
 // Writes axi_out (bridged to IC by RealDcache after this call).
 // ─────────────────────────────────────────────────────────────────────────────
 void WriteBuffer::comb_inputs() {
+    check_wb_state("comb_inputs.cur", cur);
+    check_wb_state("comb_inputs.nxt.pre", nxt);
     // Deferred verification: check one cycle after B response, so backing
     // memory has passed through interconnect/memory seq updates.
+    //
+    // This is only valid when the WB drains directly to backing memory.
+    // With LLC enabled the B response means the LLC accepted the write-back,
+    // not that DDR backing memory has already been updated. In that mode the
+    // dirty line can legitimately remain newer in LLC than in p_memory until a
+    // later LLC eviction reaches memory, so comparing against p_memory here
+    // would produce false mismatches.
     if (cur_check.valid && p_memory != nullptr) {
+#if CONFIG_AXI_LLC_ENABLE
+        cur_check.valid = false;
+#else
         const uint32_t line_addr = cur_check.addr;
         const uint32_t word_base = (line_addr >> 2);
         bool write_mismatch = false;
@@ -267,6 +293,7 @@ void WriteBuffer::comb_inputs() {
             dump_line_words("[AXI WRITE MISMATCH][MEM] ", mem_line);
             Assert(false && "WriteBuffer AXI write mismatch after deferred verification. Likely root causes: write response accepted before backing memory commit, incorrect line payload/address tracking across WB head movement, or AXI write-path ordering bug.");
         }
+#endif
     }
     nxt_check = {};
     nxt_issue = cur_issue;
@@ -290,7 +317,15 @@ void WriteBuffer::comb_inputs() {
                                                in.dcachewb.merge_req[i].addr);
             if(wb_idx != -1){
                 WriteBufferEntry &e = write_buffer_nxt[wb_idx];
-                if (e.send) {
+                const bool head_issue_frozen =
+                    (wb_idx == static_cast<int>(cur.head)) &&
+                    ((cur.issue_pending != 0u) || (nxt.issue_pending != 0u));
+                // Ready-first AXI means the interconnect may capture the head
+                // entry one cycle before WriteBuffer observes req_accepted.
+                // Once that window opens, same-line merges must stop; otherwise
+                // the buffer state moves ahead of the payload already captured
+                // by the interconnect.
+                if (e.send || head_issue_frozen) {
                     nxt.mergebusy[i] = true;
                 } else {
                     nxt.mergevalid[i] = true;
@@ -327,17 +362,49 @@ void WriteBuffer::comb_inputs() {
 
     for(int i=0;i<LSU_LDU_COUNT;i++){
         if(in.dcachewb.bypass_req[i].valid){
+            if (cache_line_match(in.dcachewb.bypass_req[i].addr, kFastDiffFocusLine)) {
+                LSU_MEM_DBG_PRINTF(
+                    "[WB BYPASS TRACE] cyc=%lld port=%d req=0x%08x cur{count=%u head=%u tail=%u send=%u} nxt{count=%u head=%u tail=%u send=%u}\n",
+                    (long long)sim_time, i, in.dcachewb.bypass_req[i].addr,
+                    cur.count, cur.head, cur.tail, cur.send, nxt.count, nxt.head,
+                    nxt.tail, nxt.send);
+                for (int e = 0; e < WB_ENTRIES; ++e) {
+                    LSU_MEM_DBG_PRINTF(
+                        "[WB BYPASS TRACE][ENTRY %d] cur{v=%d send=%d addr=0x%08x} nxt{v=%d send=%d addr=0x%08x}\n",
+                        e, static_cast<int>(write_buffer[e].valid),
+                        static_cast<int>(write_buffer[e].send), write_buffer[e].addr,
+                        static_cast<int>(write_buffer_nxt[e].valid),
+                        static_cast<int>(write_buffer_nxt[e].send), write_buffer_nxt[e].addr);
+                }
+            }
             int wb_idx = find_wb_entry_in_view(write_buffer_nxt, nxt.head,
                                                nxt.count,
                                                in.dcachewb.bypass_req[i].addr);
             if(wb_idx != -1){
                 nxt.bypassvalid[i] = true;
                 nxt.bypassdata[i] = write_buffer_nxt[wb_idx].data[decode(in.dcachewb.bypass_req[i].addr).word_off];
+                if (cache_line_match(in.dcachewb.bypass_req[i].addr, kFastDiffFocusLine)) {
+                    LSU_MEM_DBG_PRINTF(
+                        "[WB BYPASS TRACE] cyc=%lld port=%d HIT entry=%d word_off=%u data=0x%08x\n",
+                        (long long)sim_time, i, wb_idx,
+                        decode(in.dcachewb.bypass_req[i].addr).word_off,
+                        nxt.bypassdata[i]);
+                }
             }
             else if(cache_line_match(in.dcachewb.bypass_req[i].addr,in.mshrwb.addr)&&in.mshrwb.valid){
                 // Bypass from the MSHR fill data if the requested line matches the line being filled by the MSHR.
                 nxt.bypassvalid[i] = true;
                 nxt.bypassdata[i] = in.mshrwb.data[decode(in.dcachewb.bypass_req[i].addr).word_off];
+                if (cache_line_match(in.dcachewb.bypass_req[i].addr, kFastDiffFocusLine)) {
+                    LSU_MEM_DBG_PRINTF(
+                        "[WB BYPASS TRACE] cyc=%lld port=%d HIT mshrwb word_off=%u data=0x%08x\n",
+                        (long long)sim_time, i,
+                        decode(in.dcachewb.bypass_req[i].addr).word_off,
+                        nxt.bypassdata[i]);
+                }
+            } else if (cache_line_match(in.dcachewb.bypass_req[i].addr, kFastDiffFocusLine)) {
+                LSU_MEM_DBG_PRINTF("[WB BYPASS TRACE] cyc=%lld port=%d MISS\n",
+                                   (long long)sim_time, i);
             }
         }
     }
@@ -345,31 +412,31 @@ void WriteBuffer::comb_inputs() {
     // Rebuild current-cycle AXI request after same-cycle merges / pushes.
     drive_axi_req_from_head(out, cur.send, cur.head, write_buffer_nxt);
 
-    // AXI interconnect uses ready-first handshake:
-    // if req.ready is observed while req.valid is held, treat it as accepted.
+    // AXI interconnect uses ready-first timing, but only req.accepted means the
+    // request has actually been captured by the interconnect.
     if (cur.send == 0) {
         WriteBufferEntry &head_e = write_buffer_nxt[cur.head];
         const bool can_issue_head = head_e.valid && !head_e.send;
         const bool req_payload_matches_head =
             out.axi_out.req_valid && (out.axi_out.req_addr == head_e.addr);
-        const bool req_handshake = can_issue_head && in.axi_in.req_ready &&
+        const bool req_handshake = can_issue_head && in.axi_in.req_accepted &&
                                    req_payload_matches_head;
-        if (can_issue_head && in.axi_in.req_ready && !out.axi_out.req_valid) {
+        if (can_issue_head && in.axi_in.req_accepted && !out.axi_out.req_valid) {
             LSU_MEM_DBG_PRINTF(
-                "[AXI WRITE ISSUE WARN] cyc=%lld req_ready=1 while req_valid=0 head=%u addr=0x%08x\n",
+                "[AXI WRITE ISSUE WARN] cyc=%lld req_accepted=1 while req_valid=0 head=%u addr=0x%08x\n",
                 (long long)sim_time, cur.head, head_e.addr);
-        } else if (can_issue_head && in.axi_in.req_ready &&
+        } else if (can_issue_head && in.axi_in.req_accepted &&
                    out.axi_out.req_valid &&
                    out.axi_out.req_addr != head_e.addr) {
             LSU_MEM_DBG_PRINTF(
-                "[AXI WRITE ISSUE WARN] cyc=%lld req_ready=1 but req_addr mismatch head=%u head_addr=0x%08x req_addr=0x%08x\n",
+                "[AXI WRITE ISSUE WARN] cyc=%lld req_accepted=1 but req_addr mismatch head=%u head_addr=0x%08x req_addr=0x%08x\n",
                 (long long)sim_time, cur.head, head_e.addr,
                 out.axi_out.req_addr);
         }
         if (req_handshake) {
             head_e.send = true;
             nxt.send = 1;
-            nxt.issue_pending = 1;
+            nxt.issue_pending = 0;
             nxt_issue.valid = true;
             nxt_issue.seq = ++g_wb_issue_seq;
             nxt_issue.addr = head_e.addr;
@@ -400,7 +467,8 @@ void WriteBuffer::comb_inputs() {
             }
         } else if (can_issue_head) {
             nxt.send = 0;
-            nxt.issue_pending = 0;
+            nxt.issue_pending =
+                (in.axi_in.req_ready && req_payload_matches_head) ? 1u : 0u;
         } else {
             nxt.issue_pending = 0;
         }
@@ -472,6 +540,8 @@ void WriteBuffer::comb_inputs() {
         nxt.issue_pending = 0;
     }
 
+    check_wb_state("comb_inputs.nxt.post", nxt);
+
     // ── Issue write request (AW + W) ─────────────────────────────────────────
     // Walk the FIFO from nxt.head to find the first unsent entry.
     
@@ -481,6 +551,8 @@ void WriteBuffer::comb_inputs() {
 // seq
 // ─────────────────────────────────────────────────────────────────────────────
 void WriteBuffer::seq() {
+    check_wb_state("seq.cur.pre", cur);
+    check_wb_state("seq.nxt.pre", nxt);
     cur = nxt;
     cur_check = nxt_check;
     cur_issue = nxt_issue;
@@ -492,4 +564,6 @@ void WriteBuffer::seq() {
     nxt_issue = cur_issue;
     nxt_last_issue = cur_last_issue;
     nxt_last_resp = cur_last_resp;
+    check_wb_state("seq.cur.post", cur);
+    check_wb_state("seq.nxt.post", nxt);
 }

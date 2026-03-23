@@ -9,6 +9,10 @@
 #include <cstdlib>
 #include <iostream>
 
+#ifndef CONFIG_ROB_DEADLOCK_STALL_CYCLES
+#define CONFIG_ROB_DEADLOCK_STALL_CYCLES 10000
+#endif
+
 namespace {
 inline bool rob_is_store(const RobStoredInst &uop) {
   return uop.tma.mem_commit_is_store;
@@ -30,7 +34,8 @@ inline bool rob_is_exception(const RobStoredInst &uop) {
 inline bool rob_is_flush_inst(const RobStoredInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
-         type == SFENCE_VMA || rob_is_exception(uop) || type == EBREAK ||
+         type == SFENCE_VMA || type == FENCE_I || rob_is_exception(uop) ||
+         type == EBREAK ||
          uop.flush_pipe;
 }
 } // namespace
@@ -176,21 +181,21 @@ void Rob::comb_commit() {
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
   bool progress_single_commit = false;
-  auto log_incomplete_store_commit = [&](const InstInfo &uop,
+  auto log_incomplete_store_commit = [&](const RobStoredInst &uop,
                                          const char *path, int slot) {
-    if (!is_store(uop) || uop.cplt_num == uop.uop_num) {
+    if (!rob_is_store(uop) || uop.cplt_num == uop.uop_num) {
       return;
     }
-    std::printf(
-        "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
-        "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
-        "interrupt=%d flush=%d mispred=%d\n",
-        (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
-        (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
-        (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
-        (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
-        (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
-        (int)in.dec_bcast->mispred);
+    // std::printf(
+    //     "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
+    //     "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
+    //     "interrupt=%d flush=%d mispred=%d\n",
+    //     (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
+    //     (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
+    //     (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
+    //     (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
+    //     (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
+    //     (int)in.dec_bcast->mispred);
     deadlock_debug::dump_all();
   };
 
@@ -235,7 +240,7 @@ void Rob::comb_commit() {
         }
         const auto &uop = entry[i][deq_ptr].uop;
         const bool ready = (uop.cplt_num == uop.uop_num);
-        if (ready && !is_flush_inst(uop)) {
+        if (ready && !rob_is_flush_inst(uop)) {
           single_commit = true;
           single_idx = i;
           progress_single_commit = true;
@@ -265,7 +270,7 @@ void Rob::comb_commit() {
       }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
       if (out.rob_commit->commit_entry[i].valid) {
-        log_incomplete_store_commit(out.rob_commit->commit_entry[i].uop, "group",
+        log_incomplete_store_commit(entry[i][deq_ptr].uop, "group",
                                     i);
       }
       entry_1[i][deq_ptr].valid = false;
@@ -290,9 +295,9 @@ void Rob::comb_commit() {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       log_incomplete_store_commit(uop, "single", single_idx);
       // 中断触发的 single_commit 也要求首条指令已经完成。
-      if (is_load(uop) && (uop.cplt_num == uop.uop_num) &&
-          !is_page_fault(uop)) {
-        uint32_t alignment_mask = load_alignment_mask(uop.func3);
+      if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+          !rob_is_page_fault(uop)) {
+        uint32_t alignment_mask = uop.dbg.mem_align_mask;
         Assert((uop.diag_val & alignment_mask) == 0 &&
                "DUT: Load address misaligned at single commit!");
       }
@@ -303,10 +308,10 @@ void Rob::comb_commit() {
       DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u rob_idx=%u pc=0x%08x type=%u\n",
                  (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
                  (unsigned)single_idx, (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
-                 entry[single_idx][deq_ptr].uop.pc,
+                 entry[single_idx][deq_ptr].uop.dbg.pc,
                  (unsigned)entry[single_idx][deq_ptr].uop.type);
     }
-    if (is_flush_inst(entry[single_idx][deq_ptr].uop) ||
+    if (rob_is_flush_inst(entry[single_idx][deq_ptr].uop) ||
         out.rob2csr->interrupt_resp) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       Assert(in.ftq_pc_resp->resp[0].valid);
@@ -345,6 +350,8 @@ void Rob::comb_commit() {
         out.rob2csr->commit = true;
       } else if (decode_inst_type(uop.type) == SFENCE_VMA) {
         out.rob_bcast->fence = true;
+      } else if (decode_inst_type(uop.type) == FENCE_I) {
+        out.rob_bcast->fence_i = true;
       } else if (uop.flush_pipe) {
         // MMIO-triggered flush, no extra CSR/MMU actions needed here
         out.rob_bcast->pc = single_pc;
@@ -364,7 +371,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 10000) {
+  if (stall_cycle > CONFIG_ROB_DEADLOCK_STALL_CYCLES) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -389,9 +396,9 @@ void Rob::comb_commit() {
         printf("[Bank %d] INVALID\n", i);
       }
     }
-    
+
     deadlock_debug::dump_all();
-    Assert(0 && "ROB Deadlock detected (stall_cycle > 10000)");
+    Assert(0 && "ROB Deadlock detected (stall_cycle exceeded threshold)");
   }
 }
 
@@ -405,9 +412,41 @@ void Rob::comb_complete() {
       int bank_idx = get_rob_bank(wb.rob_idx);
       int line_idx = get_rob_line(wb.rob_idx);
 
+      if (!entry_1[bank_idx][line_idx].valid ||
+          entry_1[bank_idx][line_idx].uop.rob_flag != wb.rob_flag) {
+        continue;
+      }
+      if (rob_is_page_fault(entry_1[bank_idx][line_idx].uop) ||
+          entry_1[bank_idx][line_idx].uop.illegal_inst) {
+        continue;
+      }
+
       entry_1[bank_idx][line_idx].uop.cplt_num++;
       if (entry_1[bank_idx][line_idx].uop.cplt_num >
           entry_1[bank_idx][line_idx].uop.uop_num) {
+        const auto &eu = entry_1[bank_idx][line_idx].uop;
+        std::printf(
+            "[ROB][OVERFLOW] cyc=%llu bank=%d line=%d wb{rob=%u flag=%u op=%u "
+            "pf_i=%d pf_l=%d pf_s=%d pc=0x%08x inst=0x%08x} "
+            "entry{cplt=%u uop_num=%u pf_i=%d pf_l=%d pf_s=%d ill=%d "
+            "pc=0x%08x inst=0x%08x inst_idx=%lld}\n",
+            static_cast<unsigned long long>(ctx->perf.cycle), bank_idx,
+            line_idx, static_cast<unsigned>(wb.rob_idx),
+            static_cast<unsigned>(wb.rob_flag), static_cast<unsigned>(wb.op),
+            static_cast<int>(wb.page_fault_inst),
+            static_cast<int>(wb.page_fault_load),
+            static_cast<int>(wb.page_fault_store),
+            static_cast<uint32_t>(wb.dbg.pc),
+            static_cast<uint32_t>(wb.dbg.instruction),
+            static_cast<unsigned>(eu.cplt_num),
+            static_cast<unsigned>(eu.uop_num),
+            static_cast<int>(eu.page_fault_inst),
+            static_cast<int>(eu.page_fault_load),
+            static_cast<int>(eu.page_fault_store),
+            static_cast<int>(eu.illegal_inst),
+            static_cast<uint32_t>(eu.dbg.pc),
+            static_cast<uint32_t>(eu.dbg.instruction),
+            static_cast<long long>(eu.dbg.inst_idx));
         Assert(0 && "ROB: completion overflow (cplt_num > uop_num)");
       }
 
@@ -430,6 +469,14 @@ void Rob::comb_complete() {
             entry_1[bank_idx][line_idx].uop.page_fault_store = true;
           }
         }
+      }
+      if (wb_has_page_fault) {
+        // A faulting uop terminates the whole architectural instruction.
+        // Stores are split into STA+STD (and some atomics into more uops), so
+        // counting only the faulting uop can leave ROB waiting forever for
+        // younger internal uops that should be squashed by the exception.
+        entry_1[bank_idx][line_idx].uop.cplt_num =
+            entry_1[bank_idx][line_idx].uop.uop_num;
       }
 
       // 同一条指令可能由多个 uop 回写（例如 STA/STD），flush_pipe
@@ -502,7 +549,11 @@ void Rob::comb_fire() {
         entry_1[i][enq_ptr].valid = true;
         entry_1[i][enq_ptr].uop =
             RobStoredInst::from_dis_rob_inst(in.dis2rob->uop[i]);
-        entry_1[i][enq_ptr].uop.cplt_num = 0;
+        entry_1[i][enq_ptr].uop.cplt_num =
+            (entry_1[i][enq_ptr].uop.page_fault_inst ||
+             entry_1[i][enq_ptr].uop.illegal_inst)
+                ? entry_1[i][enq_ptr].uop.uop_num
+                : 0;
         enq = true;
       }
     }

@@ -13,8 +13,15 @@
 #define DCACHE_SET_BITS    (__builtin_ctz(DCACHE_SETS))
 #define DCACHE_TAG_BITS    (32 - DCACHE_SET_BITS - DCACHE_OFFSET_BITS)
 
-#define MSHR_ENTRIES 8
-#define WB_ENTRIES 8
+#ifndef CONFIG_DCACHE_MSHR_ENTRIES
+#define CONFIG_DCACHE_MSHR_ENTRIES 8
+#endif
+#define MSHR_ENTRIES CONFIG_DCACHE_MSHR_ENTRIES
+
+#ifndef CONFIG_DCACHE_WB_ENTRIES
+#define CONFIG_DCACHE_WB_ENTRIES 8
+#endif
+#define WB_ENTRIES CONFIG_DCACHE_WB_ENTRIES
 
 #define DCACHE_BANKS 16
 
@@ -31,6 +38,7 @@ extern uint8_t  lru_state[DCACHE_SETS][DCACHE_WAYS];
 
 struct MSHR_FILL{
     bool valid;
+    bool dirty;
     uint32_t way;
     uint32_t addr;
     uint32_t data[DCACHE_LINE_WORDS];
@@ -121,6 +129,9 @@ struct MSHREntry {
     bool fill;
     uint32_t index;
     uint32_t tag;
+    bool merged_store_dirty;
+    uint32_t merged_store_data[DCACHE_LINE_WORDS];
+    uint8_t merged_store_strb[DCACHE_LINE_WORDS];
 };
 
 struct WriteBufferEntry {

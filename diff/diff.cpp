@@ -13,8 +13,27 @@ CPU_state dut_cpu;
 RefCpu ref_cpu;
 
 namespace {
+#ifndef CONFIG_DIFF_FOCUS_ADDR_BEGIN
+#define CONFIG_DIFF_FOCUS_ADDR_BEGIN 0u
+#endif
+
+#ifndef CONFIG_DIFF_FOCUS_ADDR_END
+#define CONFIG_DIFF_FOCUS_ADDR_END 0u
+#endif
+
 inline uint32_t sign_extend_12(uint32_t imm12) {
   return static_cast<uint32_t>(static_cast<int32_t>(imm12 << 20) >> 20);
+}
+
+void dump_memory_line_words(const char *tag, const char *domain,
+                            const uint32_t *mem, uint32_t line_base) {
+  const uint32_t start_idx = line_base >> 2;
+  for (int row = 0; row < DCACHE_WORD_NUM; row += 4) {
+    std::printf("[DIFF][MEMLINE][%s][%s] +0x%02x: %08x %08x %08x %08x\n", tag,
+                domain, row * 4, mem[start_idx + row + 0],
+                mem[start_idx + row + 1], mem[start_idx + row + 2],
+                mem[start_idx + row + 3]);
+  }
 }
 
 void dump_addr_snapshot(const char *tag, uint32_t addr) {
@@ -68,6 +87,25 @@ void dump_code_line_snapshot(const char *tag, uint32_t pc) {
   }
 }
 
+void dump_phys_line_snapshot(const char *tag, uint32_t p_addr) {
+  const uint32_t line_base =
+      p_addr & ~(static_cast<uint32_t>(ICACHE_LINE_SIZE) - 1u);
+  const uint32_t start_idx = line_base >> 2;
+  std::printf("[DIFF][PHYS_LINE][%s] p_addr=0x%08x line_base=0x%08x\n", tag,
+              p_addr, line_base);
+  for (int row = 0; row < ICACHE_WORD_NUM; row += 4) {
+    std::printf(
+        "[DIFF][PHYS_LINE][%s][DUT] +0x%02x: %08x %08x %08x %08x\n", tag,
+        row * 4, p_memory[start_idx + row + 0], p_memory[start_idx + row + 1],
+        p_memory[start_idx + row + 2], p_memory[start_idx + row + 3]);
+    std::printf(
+        "[DIFF][PHYS_LINE][%s][REF] +0x%02x: %08x %08x %08x %08x\n", tag,
+        row * 4, ref_cpu.memory[start_idx + row + 0],
+        ref_cpu.memory[start_idx + row + 1], ref_cpu.memory[start_idx + row + 2],
+        ref_cpu.memory[start_idx + row + 3]);
+  }
+}
+
 void dump_inst_related_snapshot(uint32_t inst) {
   const uint32_t opcode = inst & 0x7F;
   if (opcode != 0x03 && opcode != 0x23) {
@@ -88,6 +126,16 @@ void dump_inst_related_snapshot(uint32_t inst) {
   }
 }
 } // namespace
+
+void difftest_dump_memory_line(const char *tag, uint32_t addr) {
+  const uint32_t line_base =
+      addr & ~(static_cast<uint32_t>(DCACHE_LINE_SIZE) - 1u);
+  const uint32_t word_idx = addr >> 2;
+  std::printf("[DIFF][MEMLINE][%s] addr=0x%08x line_base=0x%08x dut=0x%08x ref=0x%08x\n",
+              tag, addr, line_base, p_memory[word_idx], ref_cpu.memory[word_idx]);
+  dump_memory_line_words(tag, "DUT", p_memory, line_base);
+  dump_memory_line_words(tag, "REF", ref_cpu.memory, line_base);
+}
 
 // relocate the init_difftest function to avoid multiple definition error
 void init_difftest(int img_size) {
@@ -110,9 +158,14 @@ void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
   std::memcpy(ref_cpu.memory, ckpt_memory,
               (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
 
-  uint32_t p_addr;
-  bool success = ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0);
-  Assert(success);
+  // Keep checkpoint bootstrap aligned with RefCpu::exec(): only probe a
+  // translation when SATP is active, and do not require the restored PC to be
+  // immediately translatable at init time.
+  if ((ref_cpu.state.csr[csr_satp] & 0x80000000u) != 0 &&
+      ref_cpu.privilege != RISCV_MODE_M) {
+    uint32_t p_addr = 0;
+    (void)ref_cpu.va2pa(p_addr, ref_cpu.state.pc, 0);
+  }
 }
 
 void get_state(CPU_state &dut_state, uint8_t &privilege, uint32_t *dut_memory) {
@@ -196,10 +249,22 @@ fault:
   std::printf("[DIFF] p_memory@a5(0x%08x)=0x%08x ref=0x%08x\n", dut_cpu.gpr[15],
               p_memory[dut_cpu.gpr[15] >> 2], ref_cpu.memory[dut_cpu.gpr[15] >> 2]);
   dump_code_line_snapshot("commit_pc", dut_cpu.commit_pc);
+  uint32_t ref_inst_paddr = 0;
+  if (ref_cpu.va2pa(ref_inst_paddr, dut_cpu.commit_pc, 0)) {
+    std::printf("[DIFF][INST_PA] commit_pc=0x%08x ref_paddr=0x%08x dut_word=0x%08x ref_word=0x%08x\n",
+                dut_cpu.commit_pc, ref_inst_paddr, p_memory[ref_inst_paddr >> 2],
+                ref_cpu.memory[ref_inst_paddr >> 2]);
+    dump_phys_line_snapshot("commit_pc", ref_inst_paddr);
+  } else {
+    std::printf("[DIFF][INST_PA] commit_pc=0x%08x ref_va2pa_fault\n",
+                dut_cpu.commit_pc);
+  }
 #if SIM_LSU_MEM_DEBUG_PRINT
   dump_inst_related_snapshot(dut_cpu.instruction);
   diff_mem_trace::dump_recent();
 #endif
+  difftest_dump_recent_commits();
+  difftest_dump_soc_debug_state();
   dump_mem_subsystem_snapshot();
 
   Assert(0 && "Difftest: Register or Memory mismatch detected.");

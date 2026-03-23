@@ -21,4 +21,5 @@ public:
   void init();
   void step_bpu();
   void step_oracle();
+  void dump_debug_state() const;
 };

@@ -229,8 +229,8 @@ public:
 
 private:
   static inline bool is_dbg_stuck_load_uop(const MicroOp &uop) {
-    return uop.pc == 0xc038afd0u || uop.instruction == 0x04c4a783u ||
-           uop.pc == 0xc006c620u || uop.instruction == 0x0144a803u;
+    return uop.dbg.pc == 0xc038afd0u || uop.dbg.instruction == 0x04c4a783u ||
+           uop.dbg.pc == 0xc006c620u || uop.dbg.instruction == 0x0144a803u;
   }
 
   static constexpr uint8_t REPLAY_NONE = 0;

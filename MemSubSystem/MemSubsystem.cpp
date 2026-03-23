@@ -4,6 +4,7 @@
 #include "DebugPtwTrace.h"
 #include "config.h"
 #include "diff.h"
+#include "icache/GenericTable.h"
 #include <cinttypes>
 #include <memory>
 #include <cstdio>
@@ -440,6 +441,15 @@ void MemSubsystem::sync_llc_perf() {
   }
 }
 
+void MemSubsystem::set_internal_axi_runtime_active(bool active) {
+#if AXI_KIT_RUNTIME_ENABLED
+  internal_axi_runtime_active_ = active;
+#else
+  (void)active;
+  internal_axi_runtime_active_ = false;
+#endif
+}
+
 void MemSubsystem::set_llc_config(const axi_interconnect::AXI_LLCConfig &cfg) {
 #if AXI_KIT_RUNTIME_ENABLED
   if (axi_kit_runtime == nullptr) {
@@ -494,7 +504,7 @@ void MemSubsystem::llc_seq(
 
 axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
 #if AXI_KIT_RUNTIME_ENABLED
-  if (axi_kit_runtime == nullptr) {
+  if (axi_kit_runtime == nullptr || !internal_axi_runtime_active_) {
     return nullptr;
   }
   return &axi_kit_runtime->interconnect.read_ports[axi_interconnect::MASTER_ICACHE];
@@ -506,6 +516,9 @@ axi_interconnect::ReadMasterPort_t *MemSubsystem::icache_read_port() {
 MemSubsystem::MemSubsystem(SimContext *ctx) : ctx(ctx) {
 #if AXI_KIT_RUNTIME_ENABLED
   axi_kit_runtime = std::make_unique<AxiKitRuntime>();
+  internal_axi_runtime_active_ = true;
+#else
+  internal_axi_runtime_active_ = false;
 #endif
   ptw_block.bind_context(ctx);
   dtlb_ptw_port_inst =
@@ -696,20 +709,32 @@ void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3)
   }
 }
 
+void MemSubsystem::sync_mmio_devices_from_backing() {
+#if AXI_KIT_RUNTIME_ENABLED
+  if (memory != nullptr && axi_kit_runtime != nullptr) {
+    axi_kit_runtime->uart0.sync_from_backing(memory);
+  }
+#endif
+}
+
 void MemSubsystem::comb() {
 #if AXI_KIT_RUNTIME_ENABLED
-  auto &interconnect = axi_kit_runtime->interconnect;
-  auto &ddr = axi_kit_runtime->ddr;
-  auto &router = axi_kit_runtime->router;
-  auto &mmio = axi_kit_runtime->mmio;
+  if (internal_axi_runtime_active_) {
+    auto &interconnect = axi_kit_runtime->interconnect;
+    auto &ddr = axi_kit_runtime->ddr;
+    auto &router = axi_kit_runtime->router;
+    auto &mmio = axi_kit_runtime->mmio;
 
-  // AXI-kit phase-1 combinational outputs.
-  llc_comb_outputs();
-  interconnect.set_llc_lookup_in(llc_lookup_in());
-  ddr.comb_outputs();
-  mmio.comb_outputs();
-  router.comb_outputs(interconnect.axi_io, ddr.io, mmio.io);
-  interconnect.comb_outputs();
+    // Internal icache-only runtime is optional. When shared LLC is driven by
+    // the top-level interconnect, keep this path idle and let SimCpu feed the
+    // LLC tables/perf shadow directly.
+    llc_comb_outputs();
+    interconnect.set_llc_lookup_in(llc_lookup_in());
+    ddr.comb_outputs();
+    mmio.comb_outputs();
+    router.comb_outputs(interconnect.axi_io, ddr.io, mmio.io);
+    interconnect.comb_outputs();
+  }
 #endif
 
 
@@ -727,14 +752,71 @@ void MemSubsystem::comb() {
   const uint32_t ptw_itlb_addr =
       has_ptw_itlb ? ptw_block.pending_mem_addr(MemPtwBlock::Client::ITLB) : 0;
 
-  read_arb_block.eval_comb(lsu2dcache, issue_ptw_walk_read, ptw_walk_read_addr,
+  bool ptw_walk_direct_hit = false;
+  bool ptw_walk_hold_for_coherence = false;
+  uint32_t ptw_walk_direct_data = 0;
+  if (issue_ptw_walk_read) {
+    const auto q =
+        dcache_.query_coherent_word(ptw_walk_read_addr, ptw_walk_direct_data);
+    ptw_walk_direct_hit = (q == MemDcacheImpl::CoherentQueryResult::Hit);
+    ptw_walk_hold_for_coherence =
+        (q == MemDcacheImpl::CoherentQueryResult::Retry) ||
+        (mshr_.cur.fill_valid &&
+         cache_line_match(mshr_.cur.fill_addr, ptw_walk_read_addr));
+  }
+
+  read_arb_block.eval_comb(lsu2dcache,
+                           issue_ptw_walk_read && !ptw_walk_direct_hit &&
+                               !ptw_walk_hold_for_coherence,
+                           ptw_walk_read_addr,
                            has_ptw_dtlb, ptw_dtlb_addr, has_ptw_itlb,
                            ptw_itlb_addr);
 
   dcache_req_mux_ = read_arb_block.comb_result().dcache_req;
   dcache_resp_raw_ = {};
 
-  dcache_.comb();
+  // Feed current-cycle AXI feedback before any comb phase that consumes it.
+  mshr_.in.axi_in = mshr_axi_in;
+  wb_.in.axi_in   = wb_axi_in;
+
+  // RealDcache::stage2_comb() consumes current-cycle MSHR/WB comb outputs.
+  // Order:
+  // 1. WB comb_outputs exposes ready from the current WB view.
+  // 2. MSHR comb_outputs uses that ready to decide whether an AXI read response
+  //    may retire this cycle.
+  // 3. DCache stage1 snapshots the new requests into s1s2_nxt.
+  // 4. DCache emits WB bypass/merge queries for s1s2_cur, the requests that
+  //    stage2 will actually evaluate in this cycle.
+  // 5. WB comb_inputs consumes those queries immediately.
+  // 6. WB comb_outputs is refreshed so DCache stage2 sees same-cycle bypass.
+  wb_.comb_outputs();
+  mshr_.in.wbmshr = wb_.out.wbmshr;
+  mshr_.comb_outputs();
+  dcache_.stage1_comb();
+  dcache_.prepare_wb_queries_for_stage2();
+
+  wb_.in.mshrwb   = mshr_.out.mshrwb;  // eviction push from MSHR current comb
+  wb_.comb_inputs();
+  wb_.comb_outputs();
+  mshr_.in.wbmshr = wb_.out.wbmshr;
+
+  dcache_.stage2_comb();
+
+  if (ptw_walk_direct_hit) {
+    record_debug_event(DebugEventKind::PTW_WALK_GRANT,
+                       static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
+                       ptw_walk_read_addr, ptw_walk_direct_data, 0, 1, 0, 0);
+    ptw_block.on_walk_read_granted(0);
+    record_debug_event(DebugEventKind::PTW_ROUTE_EVENT,
+                       static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
+                       ptw_walk_read_addr, ptw_walk_direct_data, 0, 1, 0, 0);
+    record_debug_event(DebugEventKind::PTW_WALK_RESP,
+                       static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
+                       ptw_walk_read_addr, ptw_walk_direct_data, 0, 1, 0, 0);
+    debug_ptw_trace::record_ptw_walk_resp_detail(memory, ptw_walk_read_addr,
+                                                 ptw_walk_direct_data);
+    (void)ptw_block.on_walk_mem_resp(0, ptw_walk_direct_data);
+  }
 
   if (read_arb_block.comb_result().granted) {
     switch (read_arb_block.comb_result().granted_owner) {
@@ -768,6 +850,9 @@ void MemSubsystem::comb() {
     }
   }
 
+  const replay_resp replay_bcast =
+      replay_resp::from_io(mshr_.out.replay_resp);
+
   resp_route_block.eval_comb(&dcache_resp_raw_,
                              read_arb_block.comb_result().issued_tags,
                              replay_bcast);
@@ -795,6 +880,25 @@ void MemSubsystem::comb() {
     }
   }
   resp_route_block.apply_ptw_events(&ptw_block);
+
+  if (route_out.wakeup.dtlb) {
+    ptw_block.retry_mem_req(MemPtwBlock::Client::DTLB);
+    record_debug_event(DebugEventKind::REPLAY_WAKEUP,
+                       static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB),
+                       0, 0, 0, 0, 0, 0);
+  }
+  if (route_out.wakeup.itlb) {
+    ptw_block.retry_mem_req(MemPtwBlock::Client::ITLB);
+    record_debug_event(DebugEventKind::REPLAY_WAKEUP,
+                       static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_ITLB),
+                       0, 0, 0, 0, 0, 0);
+  }
+  if (route_out.wakeup.walk) {
+    ptw_block.retry_active_walk();
+    record_debug_event(DebugEventKind::REPLAY_WAKEUP,
+                       static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_WALK),
+                       0, 0, 0, 0, 0, 0);
+  }
 
   if (dcache2lsu != nullptr) {
     *dcache2lsu = resp_route_block.comb_outputs().lsu_resp;
@@ -845,17 +949,6 @@ void MemSubsystem::comb() {
 
   refresh_ptw_client_outputs();
 
-  // NOTE:
-  // mshr_axi_in / wb_axi_in / peripheral_axi_*_in are sourced from the top-level
-  // bridge (rv_simu_mmu_v2.cpp). Do not overwrite them with internal AXI-kit
-  // runtime feedback here, otherwise WB/MSHR may observe a different handshake
-  // timeline than the one used by the external interconnect.
-  // Phase 3b: inject AXI write-channel inputs and MSHR eviction, then run
-  //           WriteBuffer comb_inputs (drains evictions onto AXI).
-  wb_.in.axi_in   = wb_axi_in;
-  wb_.in.mshrwb   = mshr_.out.mshrwb;  // eviction push (set in Phase 3a)
-  wb_.comb_inputs();
-
   // Export MSHR replay wakeup to LSU. RealDcache::comb() clears resp ports
   // every cycle, so this must be written after dcache_.comb().
   if (dcache2lsu != nullptr) {
@@ -887,33 +980,40 @@ void MemSubsystem::comb() {
 
   // Stage-1 AXI wiring: connect ICache read master, keep all others idle.
 #if AXI_KIT_RUNTIME_ENABLED
-  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
-    if (i == axi_interconnect::MASTER_ICACHE) {
-      continue;
-    }
-    auto &port = interconnect.read_ports[i];
-    port.req.valid = false;
-    port.req.addr = 0;
-    port.req.total_size = 0;
-    port.req.id = 0;
-    port.resp.ready = false;
-  }
-  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; i++) {
-    auto &port = interconnect.write_ports[i];
-    port.req.valid = false;
-    port.req.addr = 0;
-    port.req.wdata.clear();
-    port.req.wstrb = 0;
-    port.req.total_size = 0;
-    port.req.id = 0;
-    port.resp.ready = false;
-  }
+  if (internal_axi_runtime_active_) {
+    auto &interconnect = axi_kit_runtime->interconnect;
+    auto &ddr = axi_kit_runtime->ddr;
+    auto &router = axi_kit_runtime->router;
+    auto &mmio = axi_kit_runtime->mmio;
 
-  // AXI-kit phase-2 combinational inputs.
-  interconnect.comb_inputs();
-  router.comb_inputs(interconnect.axi_io, ddr.io, mmio.io);
-  ddr.comb_inputs();
-  mmio.comb_inputs();
+    for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
+      if (i == axi_interconnect::MASTER_ICACHE) {
+        continue;
+      }
+      auto &port = interconnect.read_ports[i];
+      port.req.valid = false;
+      port.req.addr = 0;
+      port.req.total_size = 0;
+      port.req.id = 0;
+      port.resp.ready = false;
+    }
+    for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; i++) {
+      auto &port = interconnect.write_ports[i];
+      port.req.valid = false;
+      port.req.addr = 0;
+      port.req.wdata.clear();
+      port.req.wstrb = 0;
+      port.req.total_size = 0;
+      port.req.id = 0;
+      port.resp.ready = false;
+    }
+
+    // AXI-kit phase-2 combinational inputs.
+    interconnect.comb_inputs();
+    router.comb_inputs(interconnect.axi_io, ddr.io, mmio.io);
+    ddr.comb_inputs();
+    mmio.comb_inputs();
+  }
 #endif
 
   refresh_ptw_client_outputs();
@@ -927,13 +1027,16 @@ void MemSubsystem::seq() {
   read_arb_block.update_seq();
   resp_route_block.update_seq();
 #if AXI_KIT_RUNTIME_ENABLED
-  axi_kit_runtime->ddr.seq();
-  axi_kit_runtime->mmio.seq();
-  axi_kit_runtime->router.seq(axi_kit_runtime->interconnect.axi_io, axi_kit_runtime->ddr.io,
-                          axi_kit_runtime->mmio.io);
-  llc_seq(axi_kit_runtime->interconnect.get_llc_table_out(),
-          axi_kit_runtime->interconnect.get_llc_perf_counters());
-  axi_kit_runtime->interconnect.seq();
+  if (internal_axi_runtime_active_) {
+    axi_kit_runtime->ddr.seq();
+    axi_kit_runtime->mmio.seq();
+    axi_kit_runtime->router.seq(axi_kit_runtime->interconnect.axi_io,
+                                axi_kit_runtime->ddr.io,
+                                axi_kit_runtime->mmio.io);
+    llc_seq(axi_kit_runtime->interconnect.get_llc_table_out(),
+            axi_kit_runtime->interconnect.get_llc_perf_counters());
+    axi_kit_runtime->interconnect.seq();
+  }
 #endif
 }
 
@@ -1045,6 +1148,13 @@ void MemSubsystem::dump_debug_state() const {
   debug_ptw_trace::dump_recent_satp_writes();
   debug_ptw_trace::dump_recent_ptw_walk_resps();
   dump_failure_analysis();
+#if AXI_KIT_RUNTIME_ENABLED
+  if (axi_kit_runtime != nullptr) {
+    std::printf("[DEADLOCK][MEM][AXI_KIT] internal icache/llc path state dump follows\n");
+    axi_kit_runtime->interconnect.debug_print();
+    axi_kit_runtime->ddr.print_state();
+  }
+#endif
 }
 
 void MemSubsystem::record_debug_event(DebugEventKind kind, uint8_t owner,

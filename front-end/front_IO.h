@@ -14,6 +14,7 @@ struct front_top_in {
   wire1_t back2front_valid[COMMIT_WIDTH];
   wire1_t refetch;
   wire1_t itlb_flush;
+  wire1_t fence_i;
   fetch_addr_t refetch_address;
   pc_t predict_base_pc[COMMIT_WIDTH];
   wire1_t predict_dir[COMMIT_WIDTH];
@@ -129,6 +130,7 @@ struct icache_in {
   wire1_t reset;
   wire1_t refetch;
   wire1_t itlb_flush;
+  wire1_t fence_i;
   // cancel in-flight/front-end-visible request state only; keep cache contents
   wire1_t invalidate_req;
   // from BPU

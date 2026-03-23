@@ -14,7 +14,7 @@ struct WBState {
     uint32_t head;  // index of the oldest entry (next to evict)
     uint32_t tail;  // index of the next free slot for new entry
     uint32_t send;  // flag to indicate if a request is currently being sent
-    uint32_t issue_pending; // saw req_ready pulse, waiting acceptance confirmation
+    uint32_t issue_pending; // saw req_ready hint, waiting real acceptance
 
     uint32_t bypassdata[LSU_LDU_COUNT];
     bool bypassvalid[LSU_LDU_COUNT];
@@ -56,7 +56,8 @@ struct WbRespTrace {
 // axi_in  — inputs from IC to WriteBuffer (driven by RealDcache bridge).
 // axi_out — outputs from WriteBuffer to IC (consumed by RealDcache bridge).
 struct WbAxiIn {
-    bool req_ready  = false;  // IC accepted the AW+W request
+    bool req_ready  = false;  // IC is ready to accept the current request
+    bool req_accepted = false; // one-cycle pulse when IC actually accepts it
     bool resp_valid = false;  // B response available
 };
 

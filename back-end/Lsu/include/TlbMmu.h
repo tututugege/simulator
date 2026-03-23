@@ -8,6 +8,7 @@
 
 class SimContext;
 class PtwMemPort;
+class AbstractLsu;
 
 class TlbMmu : public AbstractMmu {
 public:
@@ -20,6 +21,7 @@ public:
   };
 
   TlbMmu(SimContext *ctx, PtwMemPort *port = nullptr,
+         AbstractLsu *coherent_lsu = nullptr,
          int tlb_entries = DTLB_ENTRIES);
 
   Result translate(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
@@ -29,6 +31,18 @@ public:
   void set_ptw_mem_port(PtwMemPort *port) override;
   void set_ptw_walk_port(PtwWalkPort *port) override;
   RetryReason last_retry_reason() const { return last_retry_reason_; }
+  struct DebugState {
+    bool walk_active = false;
+    bool walk_req_sent = false;
+    uint32_t walk_v_addr = 0;
+    uint32_t walk_type = 0;
+    uint32_t walk_satp = 0;
+    int walk_eff_priv = 0;
+    bool walk_mxr = false;
+    bool walk_sum = false;
+    RetryReason last_retry_reason = RetryReason::NONE;
+  };
+  DebugState debug_state() const;
 
 private:
   struct TlbEntry {
@@ -57,11 +71,14 @@ private:
   bool walk_sum = false;
   bool walk_req_sent = false;
   RetryReason last_retry_reason_ = RetryReason::NONE;
+  AbstractLsu *coherent_lsu_ = nullptr;
 
   bool lookup(uint32_t v_addr, uint8_t asid, TlbEntry &hit) const;
   uint32_t compose_paddr(uint32_t v_addr, const TlbEntry &e) const;
   bool check_perm(uint8_t perm, uint32_t type, int eff_priv, bool sum,
                   bool mxr) const;
+  Result walk_and_refill_coherent(uint32_t &p_addr, uint32_t v_addr,
+                                  uint32_t type, CsrStatusIO *status);
   Result walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr,
                                 uint32_t type, CsrStatusIO *status);
   Result walk_and_refill(uint32_t &p_addr, uint32_t v_addr, uint32_t type,

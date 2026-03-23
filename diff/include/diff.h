@@ -24,3 +24,7 @@ void get_state(CPU_state &dut_state, uint8_t &privilege, uint32_t *dut_memory);
 void difftest_step(bool);
 void difftest_skip();
 DifftestPageFaultWarning difftest_get_last_pf_warning();
+uint64_t difftest_get_oracle_timer();
+void difftest_dump_memory_line(const char *tag, uint32_t addr);
+void difftest_dump_recent_commits();
+void difftest_dump_soc_debug_state();

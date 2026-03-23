@@ -1,9 +1,18 @@
 #include "../front_IO.h"
 #include "PtwMemPort.h"
 #include "include/ICacheTop.h"
+#include "host_profile.h"
 #include "include/icache_module.h"
 #include "GenericTable.h"
 #include <cassert>
+
+#ifndef CONFIG_ICACHE_FOCUS_VADDR_BEGIN
+#define CONFIG_ICACHE_FOCUS_VADDR_BEGIN 0u
+#endif
+
+#ifndef CONFIG_ICACHE_FOCUS_VADDR_END
+#define CONFIG_ICACHE_FOCUS_VADDR_END 0u
+#endif
 
 // Define global ICache instance
 icache_module_n::ICache icache;
@@ -48,6 +57,40 @@ GenericTableTimingConfig make_lookup_timing_config() {
   return cfg;
 }
 
+inline bool icache_focus_enabled() {
+  return CONFIG_ICACHE_FOCUS_VADDR_END > CONFIG_ICACHE_FOCUS_VADDR_BEGIN;
+}
+
+inline uint32_t icache_focus_index() {
+  return (CONFIG_ICACHE_FOCUS_VADDR_BEGIN >> icache_module_n::ICACHE_V1_OFFSET_BITS) &
+         (icache_module_n::ICACHE_V1_SET_NUM - 1u);
+}
+
+template <typename DataTableT, typename TagTableT, typename ValidTableT>
+void dump_focus_row(const char *tag, const DataTableT &data_table,
+                    const TagTableT &tag_table, const ValidTableT &valid_table,
+                    uint32_t index) {
+  if (!SIM_DEBUG_PRINT_ACTIVE || !icache_focus_enabled() ||
+      index != icache_focus_index()) {
+    return;
+  }
+
+  const auto &data_payload = data_table.peek_row(index);
+  const auto &tag_payload = tag_table.peek_row(index);
+  const auto &valid_payload = valid_table.peek_row(index);
+  std::printf("[ICACHE][TABLE][%s] idx=%u\n", tag, index);
+  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+    std::printf("[ICACHE][TABLE][%s] way=%u valid=%u tag=0x%05x data=[", tag,
+                way, static_cast<unsigned>(valid_payload.chunks[way][0]),
+                static_cast<unsigned>(tag_payload.chunks[way][0]));
+    for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+      std::printf("%s%08x", (word == 0) ? "" : " ",
+                  static_cast<unsigned>(data_payload.chunks[way][word]));
+    }
+    std::printf("]\n");
+  }
+}
+
 void bind_icache_runtime(ICacheTop *instance) {
   static PtwMemPort *bound_mem_port = nullptr;
   static PtwWalkPort *bound_walk_port = nullptr;
@@ -70,6 +113,20 @@ void bind_icache_runtime(ICacheTop *instance) {
     instance->setContext(icache_ctx);
     bound_ctx = icache_ctx;
   }
+}
+
+void dump_focus_read_row(const DataTable &data_table, const TagTable &tag_table,
+                         const ValidTable &valid_table, uint32_t lookup_pc,
+                         uint32_t lookup_index, bool resp_valid) {
+  if (!SIM_DEBUG_PRINT_ACTIVE || !icache_focus_enabled() ||
+      lookup_index != icache_focus_index() ||
+      !resp_valid) {
+    return;
+  }
+  std::printf("[ICACHE][TABLE][READ] pc=0x%08x idx=%u\n",
+              static_cast<unsigned>(lookup_pc),
+              static_cast<unsigned>(lookup_index));
+  dump_focus_row("READ", data_table, tag_table, valid_table, lookup_index);
 }
 } // namespace
 
@@ -94,6 +151,7 @@ void icache_peek_ready(struct icache_in *in, struct icache_out *out) {
 }
 
 void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
+  FRONTEND_HOST_PROFILE_SCOPE(IcacheComb);
   assert(in != nullptr);
   assert(out != nullptr);
   if (!in->reset) {
@@ -107,6 +165,8 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
     data_table.reset();
     tag_table.reset();
     valid_table.reset();
+    dump_focus_row("RESET", data_table, tag_table, valid_table,
+                   icache_focus_index());
   }
   ICacheTop *instance = get_icache_instance();
   bind_icache_runtime(instance);
@@ -142,6 +202,9 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
   data_table.comb(data_read, data_resp);
   tag_table.comb(tag_read, tag_resp);
   valid_table.comb(valid_read, valid_resp);
+  dump_focus_read_row(data_table, tag_table, valid_table, lookup_pc,
+                      lookup_index,
+                      data_resp.valid && tag_resp.valid && valid_resp.valid);
 
   icache.io.lookup_in = {};
   icache.io.lookup_in.lookup_resp_valid =
@@ -187,10 +250,16 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
   }
   if (icache.io.table_write.invalidate_all) {
     valid_table.reset();
+    dump_focus_row("INVAL", data_table, tag_table, valid_table,
+                   icache_focus_index());
   }
   data_table.seq(data_read, data_write);
   tag_table.seq(tag_read, tag_write);
   valid_table.seq(valid_read, valid_write);
+  if (icache.io.table_write.we) {
+    dump_focus_row("WRITE", data_table, tag_table, valid_table,
+                   static_cast<uint32_t>(icache.io.table_write.index));
+  }
   instance->syncPerf();
 }
 

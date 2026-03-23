@@ -12,6 +12,41 @@ MSHREntry mshr_entries_nxt[MSHR_ENTRIES];
 namespace {
 static constexpr uint8_t kCacheLineReqTotalSize =
     static_cast<uint8_t>(DCACHE_LINE_BYTES - 1u);
+
+int find_next_entry_idx(uint32_t set_idx, uint32_t tag) {
+    for (int i = 0; i < MSHR_ENTRIES; i++) {
+        const MSHREntry &entry = mshr_entries_nxt[i];
+        if (entry.valid && entry.index == set_idx && entry.tag == tag) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void merge_store_into_entry(MSHREntry &entry, const StoreReq &req) {
+    const AddrFields f = decode(req.addr);
+    Assert(f.word_off < DCACHE_LINE_WORDS && "Store merge word offset overflow");
+    apply_strobe(entry.merged_store_data[f.word_off], req.data, req.strb);
+    entry.merged_store_strb[f.word_off] |= req.strb;
+    entry.merged_store_dirty = true;
+}
+
+void log_unexpected_resp(uint8_t resp_id, const char *reason, uint32_t mshr_count) {
+    if (resp_id >= MSHR_ENTRIES) {
+        LSU_MEM_DBG_PRINTF(
+            "[MSHR RESP UNEXPECTED] cyc=%lld resp_id=%u reason=%s count=%u\n",
+            (long long)sim_time, static_cast<unsigned>(resp_id), reason,
+            mshr_count);
+        return;
+    }
+    const MSHREntry &e = mshr_entries[resp_id];
+    const uint32_t line_addr = e.valid ? get_addr(e.index, e.tag, 0) : 0u;
+    LSU_MEM_DBG_PRINTF(
+        "[MSHR RESP UNEXPECTED] cyc=%lld resp_id=%u reason=%s valid=%d issued=%d fill=%d line=0x%08x count=%u\n",
+        (long long)sim_time, static_cast<unsigned>(resp_id), reason,
+        static_cast<int>(e.valid), static_cast<int>(e.issued),
+        static_cast<int>(e.fill), line_addr, mshr_count);
+}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +91,7 @@ void MSHR::comb_outputs()
 
     // Registered fill output (from previous cycle comb_inputs()).
     out.mshr2dcache.fill.valid = cur.fill_valid;
+    out.mshr2dcache.fill.dirty = cur.fill_dirty;
     out.mshr2dcache.fill.way = cur.fill_way;
     out.mshr2dcache.fill.addr = cur.fill_addr;
     std::memcpy(out.mshr2dcache.fill.data, cur.fill_data,
@@ -124,6 +160,11 @@ int MSHR::entries_add(int set_idx, int tag)
     mshr_entries_nxt[alloc_idx].fill = false;
     mshr_entries_nxt[alloc_idx].index = set_idx;
     mshr_entries_nxt[alloc_idx].tag = tag;
+    mshr_entries_nxt[alloc_idx].merged_store_dirty = false;
+    std::memset(mshr_entries_nxt[alloc_idx].merged_store_data, 0,
+                sizeof(mshr_entries_nxt[alloc_idx].merged_store_data));
+    std::memset(mshr_entries_nxt[alloc_idx].merged_store_strb, 0,
+                sizeof(mshr_entries_nxt[alloc_idx].merged_store_strb));
     nxt.mshr_count++;
     miss_alloc_cycle[alloc_idx] = static_cast<uint64_t>(sim_time);
     miss_alloc_cycle_valid[alloc_idx] = true;
@@ -141,11 +182,27 @@ void MSHR::comb_inputs()
     // comb_outputs() in the next cycle.
     nxt.fill = false;
     nxt.fill_valid = false;
+    nxt.fill_dirty = false;
     nxt.fill_way = 0;
     std::memset(nxt.fill_data, 0, sizeof(nxt.fill_data));
     nxt.wb_valid = false;
     nxt.wb_addr = 0;
     std::memset(nxt.wb_data, 0, sizeof(nxt.wb_data));
+
+    out.axi_out.resp_ready = true;
+    if (in.axi_in.resp_valid) {
+        const uint8_t rid = in.axi_in.resp_id;
+        if (rid < MSHR_ENTRIES) {
+            const MSHREntry re = mshr_entries[rid];
+            if (re.valid && re.issued && !re.fill) {
+                const uint32_t lru_idx = choose_lru_victim(re.index);
+                const bool need_wb_evict = dirty_array[re.index][lru_idx];
+                if (need_wb_evict && !in.wbmshr.ready) {
+                    out.axi_out.resp_ready = false;
+                }
+            }
+        }
+    }
 
     // ── Process alloc and secondary requests ─────────────────────────────────
     for (int i = 0; i < LSU_LDU_COUNT; i++)
@@ -161,7 +218,16 @@ void MSHR::comb_inputs()
         const StoreReq &req = in.dcachemshr.store_reqs[i];
         if (!req.valid)
             continue;
-        entries_add(decode(req.addr).set_idx, decode(req.addr).tag);
+        const AddrFields f = decode(req.addr);
+        int entry_idx = find_next_entry_idx(f.set_idx, f.tag);
+        if (entry_idx < 0) {
+            entry_idx = entries_add(f.set_idx, f.tag);
+        }
+        merge_store_into_entry(mshr_entries_nxt[entry_idx], req);
+        LSU_MEM_DBG_PRINTF("[MSHR STORE MERGE] cyc=%lld idx=%d line=0x%08x word=%u strb=0x%x data=0x%08x dirty=%d\n",
+                   (long long)sim_time, entry_idx, get_addr(f.set_idx, f.tag, 0),
+                   f.word_off, static_cast<unsigned>(req.strb), req.data,
+                   static_cast<int>(mshr_entries_nxt[entry_idx].merged_store_dirty));
     }
 
     // ── Accept R channel response ─────────────────────────────────────────────
@@ -170,8 +236,8 @@ void MSHR::comb_inputs()
         uint8_t resp_id = in.axi_in.resp_id;
         if (resp_id < MSHR_ENTRIES)
         {
-            const MSHREntry &e = mshr_entries[resp_id];
-            if (e.valid && e.issued && !e.fill)
+            const MSHREntry &e_cur = mshr_entries[resp_id];
+            if (e_cur.valid && e_cur.issued && !e_cur.fill)
             {
                 uint32_t lru_idx = choose_lru_victim(mshr_entries[resp_id].index);
                 bool need_wb_evict = dirty_array[mshr_entries[resp_id].index][lru_idx];
@@ -243,20 +309,37 @@ void MSHR::comb_inputs()
                     }
                     miss_alloc_cycle_valid[resp_id] = false;
                     axi_issue_cycle_valid[resp_id] = false;
+                    // Same-cycle store miss merges were already applied into
+                    // mshr_entries_nxt above. Use that snapshot so the refill
+                    // line delivered to DCache includes those merged bytes
+                    // instead of overwriting them with stale AXI payload.
+                    const MSHREntry &e_fill = mshr_entries_nxt[resp_id];
                     nxt.fill_valid = true;
+                    nxt.fill_dirty = e_fill.merged_store_dirty;
                     nxt.fill_way = lru_idx;
                     nxt.fill_addr = fill_line_addr;
                     for (int w = 0; w < DCACHE_LINE_WORDS; w++)
                     {
                         nxt.fill_data[w] = in.axi_in.resp_data[w];
+                        if (e_fill.merged_store_strb[w] != 0) {
+                            apply_strobe(nxt.fill_data[w],
+                                         e_fill.merged_store_data[w],
+                                         e_fill.merged_store_strb[w]);
+                        }
                     }
 
-                    LSU_MEM_DBG_PRINTF("[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
+                    LSU_MEM_DBG_PRINTF("[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d dirty=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
                                (long long)sim_time, (unsigned)resp_id,
-                               fill_line_addr, mshr_entries[resp_id].index, lru_idx, (int)need_wb_evict,
+                               fill_line_addr, mshr_entries[resp_id].index, lru_idx,
+                               (int)need_wb_evict, (int)nxt.fill_dirty,
                                nxt.fill_data[0], nxt.fill_data[1], nxt.fill_data[2], nxt.fill_data[3],
                                nxt.fill_data[4], nxt.fill_data[5], nxt.fill_data[6], nxt.fill_data[7]);
-                    // AXI read-path check: returned cacheline should match backing memory.
+                    // AXI read-path check: under direct-memory mode, returned
+                    // cachelines must match the backing memory. Under LLC
+                    // write-back mode, the response may legally come from a
+                    // dirty LLC resident line that has not been written back to
+                    // p_memory yet, so this comparison is no longer valid.
+#if !CONFIG_AXI_LLC_ENABLE
                     if (p_memory != nullptr)
                     {
                         const uint32_t line_addr = fill_line_addr;
@@ -286,9 +369,8 @@ void MSHR::comb_inputs()
                             Assert(false && "MSHR AXI read mismatch: backing memory does not match the data returned on the AXI read channel. This likely indicates a bug in the MSHR logic, the AXI interface handling, or the memory model.");
                         }
                     }
-                    mshr_entries_nxt[resp_id].valid = false; // auto-consume the fill response
-                    mshr_entries_nxt[resp_id].issued = false;
-                    mshr_entries_nxt[resp_id].fill = false;
+#endif
+                    mshr_entries_nxt[resp_id] = {};
                     nxt.fill = true;
                     nxt.fill_addr = fill_line_addr;
                     if (nxt.mshr_count > 0)
@@ -299,32 +381,41 @@ void MSHR::comb_inputs()
             }
             else
             {
+                log_unexpected_resp(resp_id, "slot_not_waiting_for_fill", cur.mshr_count);
             }
         }
         else
         {
+            log_unexpected_resp(resp_id, "resp_id_oob", cur.mshr_count);
             Assert(false && "Invalid MSHR response ID");
         }
     }
 
     // ── Issue next pending AR ─────────────────────────────────────────────────
     // Handshake note:
-    // `in.axi_in.req_ready` is sampled before this module drives current-cycle
-    // `req_valid`, so treat it as acknowledgement for a previously held request.
-    // Keep one pending AR asserted until we observe ready in a later cycle.
-    for(int i=0; i<MSHR_ENTRIES; i++){
-        const MSHREntry &ce = mshr_entries[i];
-        if (!ce.valid || ce.issued)
-            continue;
-        if (in.axi_in.req_ready){
-            mshr_entries_nxt[i].issued = true;
-            axi_issue_cycle[i] = static_cast<uint64_t>(sim_time);
-            axi_issue_cycle_valid[i] = true;
+    // `req_ready` is only a ready-first hint. Use `req_accepted + req_accepted_id`
+    // to mark exactly which MSHR slot completed AR handshake.
+    if (in.axi_in.req_accepted) {
+        const uint8_t acc_id = in.axi_in.req_accepted_id;
+        if (acc_id < MSHR_ENTRIES) {
+            const MSHREntry &ce = mshr_entries[acc_id];
+            if (ce.valid && !ce.issued) {
+                mshr_entries_nxt[acc_id].issued = true;
+                axi_issue_cycle[acc_id] = static_cast<uint64_t>(sim_time);
+                axi_issue_cycle_valid[acc_id] = true;
+            } else {
+                const uint32_t line_addr = ce.valid ? get_addr(ce.index, ce.tag, 0) : 0u;
+                LSU_MEM_DBG_PRINTF(
+                    "[MSHR AR ACCEPT UNEXPECTED] cyc=%lld acc_id=%u valid=%d issued=%d fill=%d line=0x%08x count=%u\n",
+                    (long long)sim_time, static_cast<unsigned>(acc_id),
+                    static_cast<int>(ce.valid), static_cast<int>(ce.issued),
+                    static_cast<int>(ce.fill), line_addr, cur.mshr_count);
+            }
+        } else {
+            LSU_MEM_DBG_PRINTF(
+                "[MSHR AR ACCEPT UNEXPECTED] cyc=%lld acc_id=%u reason=id_oob count=%u\n",
+                (long long)sim_time, static_cast<unsigned>(acc_id), cur.mshr_count);
         }
-        else{
-
-        }
-        break;
     }
 
 }

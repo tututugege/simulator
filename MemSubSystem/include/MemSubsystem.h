@@ -66,7 +66,9 @@ public:
   void seq();
   void dump_debug_state() const;
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
+  void sync_mmio_devices_from_backing();
   axi_interconnect::ReadMasterPort_t *icache_read_port();
+  void set_internal_axi_runtime_active(bool active);
   void set_llc_config(const axi_interconnect::AXI_LLCConfig &cfg);
   void llc_comb_outputs();
   const axi_interconnect::AXI_LLC_LookupIn_t &llc_lookup_in() const;
@@ -121,6 +123,7 @@ private:
   DcacheLsuIO dcache_resp_raw_{};
 
   std::unique_ptr<AxiKitRuntime> axi_kit_runtime;
+  bool internal_axi_runtime_active_ = true;
 
   static constexpr size_t kPtwClientCount =
       static_cast<size_t>(PtwClient::NUM_CLIENTS);

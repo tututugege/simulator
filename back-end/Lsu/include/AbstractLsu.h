@@ -64,14 +64,21 @@ public:
 
   // debug接口
   virtual StqEntry get_stq_entry(int stq_idx) = 0;
+  virtual void dump_debug_state() const {}
 
   virtual void set_csr(Csr *csr) {}
   virtual void set_ptw_mem_port(PtwMemPort *port) { ptw_mem_port = port; }
   virtual void set_ptw_walk_port(PtwWalkPort *port) { ptw_walk_port = port; }
+  virtual void restore_reservation(bool valid, uint32_t addr) {
+    (void)valid;
+    (void)addr;
+  }
 
   // 一致性访存接口 (供 MMU 使用)
   virtual uint32_t coherent_read(uint32_t p_addr) = 0;
-  // sfence.vma 提交门控：是否存在“已提交但尚未从 STQ retire”的 store
+  // sfence.vma 提交门控：是否存在“已提交但尚未从 STQ retire”的 store。
+  // 注意这必须覆盖 store 已经拿到 dcache resp、但其写命中结果仍要到
+  // MemSubsystem::seq()/RealDcache::seq() 才真正对 PTW 可见的窗口。
   virtual bool has_committed_store_pending() const = 0;
 
   // 辅助函数

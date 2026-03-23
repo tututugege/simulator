@@ -84,10 +84,18 @@ struct S1S2Reg {
 // ─────────────────────────────────────────────────────────────────────────────
 class RealDcache : public AbstractDcache {
 public:
+    enum class CoherentQueryResult : uint8_t {
+        Miss = 0,
+        Retry = 1,
+        Hit = 2,
+    };
+
     void bind_context(SimContext *c) { ctx = c; }
     void init() override;
     void comb() override;
     void seq()  override;
+    CoherentQueryResult query_coherent_word(uint32_t addr,
+                                            uint32_t &data) const;
 
     // IO ports — set by the owning module (e.g. MemSubsystem) before init().
     LsuDcacheIO  *lsu2dcache  = nullptr;  // LSU → DCache requests
@@ -99,6 +107,11 @@ public:
 
     // Stage 1: decode incoming requests, detect bank conflicts, snapshot SRAMs.
     void stage1_comb();
+
+    // Drive WB bypass/merge queries for the S2 pipeline register currently
+    // being evaluated. This must stay aligned with s1s2_cur rather than the
+    // new requests seen by stage1 in the same cycle.
+    void prepare_wb_queries_for_stage2();
 
     // Stage 2: evaluate S1S2 pipeline register, generate responses.
     void stage2_comb();
@@ -139,7 +152,6 @@ private:
         uint32_t set_idx = 0;
         int      way     = -1;
     } lru_updates_[LSU_LDU_COUNT + LSU_STA_COUNT];
-
 
 
     bool special_load_addr(uint32_t addr,uint32_t& mem_val,MicroOp &uop);

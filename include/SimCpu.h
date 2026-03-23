@@ -46,6 +46,8 @@ public:
   front_top_out oracle_pending_out = {};
 
   void init();
+  void sync_mmio_devices_from_backing();
+  void reinit_frontend_after_restore();
   void restore_pc(uint32_t pc);
   void cycle();
   void front_cycle();

@@ -7,6 +7,7 @@
 
 struct PeripheralAxiReadIn {
   bool req_ready = false;
+  bool req_accepted = false;
   bool resp_valid = false;
   uint32_t resp_data[DCACHE_LINE_WORDS] = {};
   uint8_t resp_id = 0;
@@ -22,6 +23,7 @@ struct PeripheralAxiReadOut {
 
 struct PeripheralAxiWriteIn {
   bool req_ready = false;
+  bool req_accepted = false;
   bool resp_valid = false;
   uint8_t resp_id = 0;
 };

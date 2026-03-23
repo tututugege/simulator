@@ -16,11 +16,40 @@ extern RefCpu ref_cpu; // Monitor
 
 namespace {
 DifftestPageFaultWarning g_last_pf_warning = {};
+
+#ifndef CONFIG_DIFF_FOCUS_ADDR_BEGIN
+#define CONFIG_DIFF_FOCUS_ADDR_BEGIN 0u
+#endif
+
+#ifndef CONFIG_DIFF_FOCUS_ADDR_END
+#define CONFIG_DIFF_FOCUS_ADDR_END 0u
+#endif
+
+inline bool ref_focus_addr_match(uint32_t addr) {
+  return CONFIG_DIFF_FOCUS_ADDR_END > CONFIG_DIFF_FOCUS_ADDR_BEGIN &&
+         addr >= CONFIG_DIFF_FOCUS_ADDR_BEGIN && addr < CONFIG_DIFF_FOCUS_ADDR_END;
+}
+
+void dump_ref_focus_line(const char *tag, uint32_t addr, const uint32_t *memory) {
+  const uint32_t line_base =
+      addr & ~(static_cast<uint32_t>(DCACHE_LINE_SIZE) - 1u);
+  const uint32_t start_idx = line_base >> 2;
+  std::printf("[REF][FOCUS][%s] addr=0x%08x line_base=0x%08x\n", tag, addr,
+              line_base);
+  for (int row = 0; row < DCACHE_WORD_NUM; row += 4) {
+    std::printf("[REF][FOCUS][%s] +0x%02x: %08x %08x %08x %08x\n", tag,
+                row * 4, memory[start_idx + row + 0],
+                memory[start_idx + row + 1], memory[start_idx + row + 2],
+                memory[start_idx + row + 3]);
+  }
+}
 }
 
 DifftestPageFaultWarning difftest_get_last_pf_warning() {
   return g_last_pf_warning;
 }
+
+uint64_t difftest_get_oracle_timer() { return ref_cpu.oracle_timer; }
 
 // ---------------- 辅助工具 ----------------
 static inline float32_t to_f32(uint32_t v) {
@@ -1534,6 +1563,15 @@ void RefCpu::store_data() {
 
   if (state.store) {
     memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
+  }
+
+  if (state.store && ref_focus_addr_match(p_addr)) {
+    std::printf(
+        "[REF][FOCUS][STORE] cycle=%lld pc=0x%08x addr=0x%08x strb=0x%x "
+        "store_data=0x%08x old=0x%08x new=0x%08x\n",
+        sim_time, state.pc, p_addr, state.store_strb, state.store_data, old_data,
+        memory[p_addr / 4]);
+    dump_ref_focus_line("STORE", p_addr, memory);
   }
 
   if (p_addr == UART_ADDR_BASE) {

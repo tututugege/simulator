@@ -1,4 +1,5 @@
 #include "FrontTop.h"
+#include "DeadlockDebug.h"
 #include "config.h"
 #include "front_module.h"
 #include "oracle.h"
@@ -18,6 +19,7 @@ void FrontTop::init() {
   sync_icache_ptw_ports(*this);
   front_set_context(ctx);
   icache_set_context(ctx);
+  deadlock_debug::register_front_dump_cb(front_dump_debug_state);
   std::memset(&in, 0, sizeof(in));
   std::memset(&out, 0, sizeof(out));
   in.csr_status = bound_csr;
@@ -40,3 +42,5 @@ void FrontTop::step_oracle() {
   sync_icache_ptw_ports(*this);
   get_oracle(in, out);
 }
+
+void FrontTop::dump_debug_state() const { front_dump_debug_state(); }

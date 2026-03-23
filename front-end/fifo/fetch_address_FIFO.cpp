@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <queue>
 #include <vector>
 
 void fetch_address_FIFO_comb(const FetchAddrCombIn &in, FetchAddrCombOut &out) {
@@ -58,13 +57,7 @@ class FetchAddressFifoModel {
 public:
   void seq_read(const fetch_address_FIFO_in &inp, fetch_address_FIFO_read_data &rd) const {
     (void)inp;
-    std::memset(&rd, 0, sizeof(fetch_address_FIFO_read_data));
-    rd.size = static_cast<uint8_t>(fifo_.size());
-    std::queue<uint32_t> snapshot = fifo_;
-    for (uint8_t i = 0; i < rd.size; ++i) {
-      rd.entries[i] = snapshot.front();
-      snapshot.pop();
-    }
+    rd = state_;
   }
 
   void build_next_read_data(const fetch_address_FIFO_read_data &cur,
@@ -109,20 +102,11 @@ public:
   }
 
   void seq_write(const fetch_address_FIFO_read_data &next_rd) {
-    clear_queue(fifo_);
-    for (uint8_t i = 0; i < next_rd.size; ++i) {
-      fifo_.push(next_rd.entries[i]);
-    }
+    state_ = next_rd;
   }
 
 private:
-  void clear_queue(std::queue<uint32_t> &queue_ref) {
-    while (!queue_ref.empty()) {
-      queue_ref.pop();
-    }
-  }
-
-  std::queue<uint32_t> fifo_;
+  fetch_address_FIFO_read_data state_{};
 };
 
 FetchAddressFifoModel g_fetch_addr_fifo_model;

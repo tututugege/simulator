@@ -31,9 +31,18 @@ static inline bool is_amo_sc_uop(const MicroOp &uop)
 namespace
 {
     RealLsu *g_deadlock_lsu = nullptr;
-    constexpr uint32_t kCoremarkFocusAddrBegin = 0x87fffa70u;
-    constexpr uint32_t kCoremarkFocusAddrEnd = 0x87fffa80u;
-    constexpr uint32_t kCoremarkFocusLoadPc = 0x80002520u;
+#ifndef CONFIG_LSU_FOCUS_ADDR_BEGIN
+#define CONFIG_LSU_FOCUS_ADDR_BEGIN 0x87fffa70u
+#endif
+#ifndef CONFIG_LSU_FOCUS_ADDR_END
+#define CONFIG_LSU_FOCUS_ADDR_END 0x87fffa80u
+#endif
+#ifndef CONFIG_LSU_FOCUS_LOAD_PC
+#define CONFIG_LSU_FOCUS_LOAD_PC 0x80002520u
+#endif
+    constexpr uint32_t kCoremarkFocusAddrBegin = CONFIG_LSU_FOCUS_ADDR_BEGIN;
+    constexpr uint32_t kCoremarkFocusAddrEnd = CONFIG_LSU_FOCUS_ADDR_END;
+    constexpr uint32_t kCoremarkFocusLoadPc = CONFIG_LSU_FOCUS_LOAD_PC;
 
     inline bool is_coremark_focus_addr(uint32_t addr)
     {
@@ -100,13 +109,32 @@ namespace
         return entry.valid && entry.rob_idx == uop.rob_idx &&
                entry.rob_flag == uop.rob_flag;
     }
+
+    const char *tlb_retry_reason_name(TlbMmu::RetryReason reason)
+    {
+        switch (reason)
+        {
+        case TlbMmu::RetryReason::NONE:
+            return "NONE";
+        case TlbMmu::RetryReason::OTHER_WALK_ACTIVE:
+            return "OTHER_WALK_ACTIVE";
+        case TlbMmu::RetryReason::WALK_REQ_BLOCKED:
+            return "WALK_REQ_BLOCKED";
+        case TlbMmu::RetryReason::WAIT_WALK_RESP:
+            return "WAIT_WALK_RESP";
+        case TlbMmu::RetryReason::LOCAL_WALKER_BUSY:
+            return "LOCAL_WALKER_BUSY";
+        default:
+            return "UNKNOWN";
+        }
+    }
 } // namespace
 
 RealLsu::RealLsu(SimContext *ctx) : AbstractLsu(ctx)
 {
     // Initialize MMU
 #ifdef CONFIG_TLB_MMU
-    mmu = std::make_unique<TlbMmu>(ctx, nullptr, DTLB_ENTRIES);
+    mmu = std::make_unique<TlbMmu>(ctx, nullptr, this, DTLB_ENTRIES);
 #else
     mmu = std::make_unique<SimpleMmu>(ctx, this);
 #endif
@@ -151,7 +179,11 @@ void RealLsu::init()
     memset(ldq_trace_seq, 0, sizeof(ldq_trace_seq));
     memset(stq_trace_seq, 0, sizeof(stq_trace_seq));
     memset(ldq_cache_wait_replay, 0, sizeof(ldq_cache_wait_replay));
+    memset(ldq_fault_deferred_valid, 0, sizeof(ldq_fault_deferred_valid));
     memset(stq_cache_wait_replay, 0, sizeof(stq_cache_wait_replay));
+    memset(stq_sta_retry_shadow_valid, 0, sizeof(stq_sta_retry_shadow_valid));
+    memset(stq_sta_fault_wb_pending, 0, sizeof(stq_sta_fault_wb_pending));
+    memset(stq_sta_fault_deferred_valid, 0, sizeof(stq_sta_fault_deferred_valid));
 
     // 初始化所有 STQ LDQ 条目，防止未初始化内存导致的破坏
     for (int i = 0; i < STQ_SIZE; i++)
@@ -165,12 +197,17 @@ void RealLsu::init()
         stq[i].send = false;
         stq[i].replay = 0;
         stq[i].addr = 0;
+        stq[i].p_addr = 0;
         stq[i].data = 0;
         stq[i].br_mask = 0;
         stq[i].rob_idx = 0;
         stq[i].rob_flag = 0;
         stq[i].func3 = 0;
         stq[i].is_mmio = false;
+        stq_sta_retry_shadow[i] = {};
+        stq_sta_retry_shadow_valid[i] = false;
+        stq_sta_fault_wb_pending[i] = false;
+        stq_sta_fault_deferred_valid[i] = false;
     }
 
     for (int i = 0; i < LDQ_SIZE; i++)
@@ -184,6 +221,7 @@ void RealLsu::init()
         ldq[i].is_mmio_wait = false;
         ldq[i].uop = {};
         ldq[i].replay_priority = 0;
+        ldq_fault_deferred_valid[i] = false;
     }
 }
 
@@ -206,6 +244,10 @@ void RealLsu::comb_lsu2dis_info()
     {
         v = -1;
     }
+    for (auto &v : out.lsu2dis->ldq_alloc_valid)
+    {
+        v = false;
+    }
     int scan_pos = ldq_alloc_tail;
     int produced = 0;
     for (int n = 0; n < LDQ_SIZE && produced < MAX_LDQ_DISPATCH_WIDTH;
@@ -213,7 +255,9 @@ void RealLsu::comb_lsu2dis_info()
     {
         if (!ldq[scan_pos].valid)
         {
-            out.lsu2dis->ldq_alloc_idx[produced++] = scan_pos;
+            out.lsu2dis->ldq_alloc_idx[produced] = scan_pos;
+            out.lsu2dis->ldq_alloc_valid[produced] = true;
+            produced++;
         }
         scan_pos = (scan_pos + 1) % LDQ_SIZE;
     }
@@ -228,7 +272,7 @@ void RealLsu::comb_lsu2dis_info()
             mask |= (1ULL << entry.uop.rob_idx);
         }
     }
-    out.lsu2rob->miss_mask = mask;
+    out.lsu2rob->tma.miss_mask = mask;
     out.lsu2rob->committed_store_pending = has_committed_store_pending();
 }
 
@@ -279,7 +323,7 @@ void RealLsu::comb_recv()
     {
         if (in.exe2lsu->sdu_req[i].valid)
         {
-            handle_store_data(in.exe2lsu->sdu_req[i].uop);
+            handle_store_data(in.exe2lsu->sdu_req[i].uop.to_micro_op());
         }
     }
 
@@ -292,7 +336,7 @@ void RealLsu::comb_recv()
             const auto &uop = in.exe2lsu->agu_req[i].uop;
             if (uop.op == UOP_STA)
             {
-                handle_store_addr(uop);
+                handle_store_addr(uop.to_micro_op());
             }
         }
     }
@@ -306,7 +350,7 @@ void RealLsu::comb_recv()
             const auto &uop = in.exe2lsu->agu_req[i].uop;
             if (uop.op == UOP_LOAD)
             {
-                handle_load_req(uop);
+                handle_load_req(uop.to_micro_op());
             }
         }
     }
@@ -646,15 +690,15 @@ void RealLsu::comb_recv()
             out.lsu2dcache->req_ports.load_ports[i].addr = ldq[max_idx].uop.diag_val;
             out.lsu2dcache->req_ports.load_ports[i].req_id = max_idx;
             out.lsu2dcache->req_ports.load_ports[i].uop = req_uop;
-            // if (is_coremark_focus_addr(ldq[max_idx].uop.diag_val) ||
-            //     is_coremark_focus_load_pc(ldq[max_idx].uop.pc))
-            // {
-            //     std::printf("[FOCUS][LSU][LD ISSUE] cyc=%lld port=%d ldq=%d req_id=%d rob=%u pc=0x%08x paddr=0x%08x func3=0x%x replay_pri=%u\n",
-            //                 (long long)sim_time, i, max_idx, max_idx,
-            //                 (unsigned)ldq[max_idx].uop.rob_idx, ldq[max_idx].uop.pc,
-            //                 ldq[max_idx].uop.diag_val, ldq[max_idx].uop.func3,
-            //                 (unsigned)ldq[max_idx].replay_priority);
-            // }
+            if (is_coremark_focus_addr(ldq[max_idx].uop.diag_val) ||
+                is_coremark_focus_load_pc(ldq[max_idx].uop.pc))
+            {
+                std::printf("[FOCUS][LSU][LD ISSUE] cyc=%lld port=%d ldq=%d req_id=%d rob=%u pc=0x%08x paddr=0x%08x func3=0x%x replay_pri=%u\n",
+                            (long long)sim_time, i, max_idx, max_idx,
+                            (unsigned)ldq[max_idx].uop.rob_idx, ldq[max_idx].uop.pc,
+                            ldq[max_idx].uop.diag_val, ldq[max_idx].uop.func3,
+                            (unsigned)ldq[max_idx].replay_priority);
+            }
             ldq[max_idx].sent = true;
             ldq[max_idx].waiting_resp = true;
             ldq[max_idx].wait_resp_since = sim_time;
@@ -850,16 +894,16 @@ void RealLsu::comb_load_res()
                             uint32_t raw_data = in.dcache2lsu->resp_ports.load_resps[i].data;
                             uint32_t extracted =
                                 extract_data(raw_data, entry.uop.diag_val, entry.uop.func3);
-                            // if (is_coremark_focus_addr(entry.uop.diag_val) ||
-                            //     is_coremark_focus_load_pc(entry.uop.pc))
-                            // {
-                            //     std::printf("[FOCUS][LSU][LD WB] cyc=%lld port=%d ldq=%d req_id=%zu rob=%u pc=0x%08x paddr=0x%08x func3=0x%x raw=0x%08x result=0x%08x\n",
-                            //                 (long long)sim_time, i, idx,
-                            //                 in.dcache2lsu->resp_ports.load_resps[i].req_id,
-                            //                 (unsigned)entry.uop.rob_idx, entry.uop.pc,
-                            //                 entry.uop.diag_val, entry.uop.func3, raw_data,
-                            //                 extracted);
-                            // }
+                            if (is_coremark_focus_addr(entry.uop.diag_val) ||
+                                is_coremark_focus_load_pc(entry.uop.pc))
+                            {
+                                std::printf("[FOCUS][LSU][LD WB] cyc=%lld port=%d ldq=%d req_id=%zu rob=%u pc=0x%08x paddr=0x%08x func3=0x%x raw=0x%08x result=0x%08x\n",
+                                            (long long)sim_time, i, idx,
+                                            in.dcache2lsu->resp_ports.load_resps[i].req_id,
+                                            (unsigned)entry.uop.rob_idx, entry.uop.pc,
+                                            entry.uop.diag_val, entry.uop.func3, raw_data,
+                                            extracted);
+                            }
                             if (is_amo_lr_uop(entry.uop))
                             {
                                 reserve_addr = entry.uop.diag_val;
@@ -867,6 +911,8 @@ void RealLsu::comb_load_res()
                             }
                             entry.uop.result = extracted;
                             entry.uop.difftest_skip = in.dcache2lsu->resp_ports.load_resps[i].uop.difftest_skip;
+                            entry.uop.dbg.difftest_skip =
+                                in.dcache2lsu->resp_ports.load_resps[i].uop.difftest_skip;
                             entry.uop.cplt_time = sim_time;
                             entry.uop.is_cache_miss = !in.dcache2lsu->resp_ports.load_resps[i].uop.is_cache_miss;
                             entry.replay_priority = 0;
@@ -941,6 +987,7 @@ void RealLsu::comb_load_res()
                 {
                     entry.uop.result = peripheral_io.out.mmio_rdata;
                     entry.uop.difftest_skip = peripheral_io.out.uop.difftest_skip;
+                    entry.uop.dbg.difftest_skip = peripheral_io.out.uop.difftest_skip;
                     entry.uop.cplt_time = sim_time;
                     entry.uop.is_cache_miss = false; // MMIO 访问不算 Cache Miss
                     LSU_MEM_DBG_PRINTF("[LSU][MMIO][LD RESP] cyc=%lld ldq=%d rob=%u data=0x%08x\n",
@@ -1037,7 +1084,7 @@ void RealLsu::comb_load_res()
         if (!finished_loads.empty())
         {
             out.lsu2exe->wb_req[i].valid = true;
-            out.lsu2exe->wb_req[i].uop = finished_loads.front();
+            out.lsu2exe->wb_req[i].uop = LsuExeIO::LsuExeRespUop::from_micro_op(finished_loads.front());
 
             finished_loads.pop_front();
         }
@@ -1050,11 +1097,12 @@ void RealLsu::comb_load_res()
     // 3. 从完成队列填充端口 (STA)
     for (int i = 0; i < LSU_STA_COUNT; i++)
     {
-        if (!finished_sta_reqs.empty())
+        MicroOp emit_uop = {};
+        if (dequeue_ready_sta_wb(emit_uop))
         {
             out.lsu2exe->sta_wb_req[i].valid = true;
-            out.lsu2exe->sta_wb_req[i].uop = finished_sta_reqs.front();
-            finished_sta_reqs.pop_front();
+            out.lsu2exe->sta_wb_req[i].uop =
+                LsuExeIO::LsuExeRespUop::from_micro_op(emit_uop);
         }
         else
         {
@@ -1086,18 +1134,31 @@ void RealLsu::handle_load_req(const MicroOp &inst)
     {
         task.cplt_time = REQ_WAIT_EXEC;
         ldq[ldq_idx].tlb_retry = true;
+        ldq_fault_deferred_valid[ldq_idx] = false;
         ldq[ldq_idx].uop = task;
         return;
     }
 
     if (mmu_ret == AbstractMmu::Result::FAULT)
     {
+        if (has_older_store_in_stq(task))
+        {
+            task.page_fault_load = true;
+            task.diag_val = task.result;
+            task.cplt_time = REQ_WAIT_EXEC;
+            ldq[ldq_idx].tlb_retry = false;
+            ldq_fault_deferred_valid[ldq_idx] = true;
+            ldq[ldq_idx].uop = task;
+            return;
+        }
+        ldq_fault_deferred_valid[ldq_idx] = false;
         task.page_fault_load = true;
         task.diag_val = task.result; // Store faulting virtual address
         task.cplt_time = sim_time + 1;
     }
     else
     {
+        ldq_fault_deferred_valid[ldq_idx] = false;
         task.diag_val = p_addr;
 
         // [Fix] Disable Store-to-Load Forwarding for MMIO ranges
@@ -1150,6 +1211,8 @@ void RealLsu::handle_load_req(const MicroOp &inst)
 void RealLsu::handle_store_addr(const MicroOp &inst)
 {
     Assert(inst.stq_idx >= 0 && inst.stq_idx < STQ_SIZE);
+    stq_sta_retry_shadow[inst.stq_idx] = inst;
+    stq_sta_retry_shadow_valid[inst.stq_idx] = true;
     if (stq_entry_matches_uop(stq[inst.stq_idx], inst) && ctx != nullptr)
     {
         ctx->perf.trace_store_set_inst_idx(stq_trace_seq[inst.stq_idx],
@@ -1214,12 +1277,17 @@ bool RealLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
     stq[alloc_idx].send = false;
     stq[alloc_idx].replay = 0;
     stq[alloc_idx].addr = 0;
+    stq[alloc_idx].p_addr = 0;
     stq[alloc_idx].data = 0;
     stq[alloc_idx].suppress_write = 0;
     stq[alloc_idx].br_mask = br_mask;
     stq[alloc_idx].rob_idx = rob_idx;
     stq[alloc_idx].rob_flag = rob_flag;
     stq[alloc_idx].func3 = func3;
+    stq_sta_retry_shadow[alloc_idx] = {};
+    stq_sta_retry_shadow_valid[alloc_idx] = false;
+    stq_sta_fault_wb_pending[alloc_idx] = false;
+    stq_sta_fault_deferred_valid[alloc_idx] = false;
     stq_seq_counter++;
     stq_trace_seq[alloc_idx] = stq_seq_counter;
     stq_cache_wait_replay[alloc_idx] = false;
@@ -1375,12 +1443,12 @@ void RealLsu::change_store_info(StqEntry &head, int port, int store_index)
     out.lsu2dcache->req_ports.store_ports[port].data = wdata;
     out.lsu2dcache->req_ports.store_ports[port].uop = head;
     out.lsu2dcache->req_ports.store_ports[port].req_id = store_index;
-    // if (is_coremark_focus_addr(head.p_addr))
-    // {
-    //     std::printf("[FOCUS][LSU][ST ISSUE] cyc=%lld port=%d stq=%d rob=%u paddr=0x%08x func3=0x%x data=0x%08x wdata=0x%08x wstrb=0x%x\n",
-    //                 (long long)sim_time, port, store_index, (unsigned)head.rob_idx,
-    //                 head.p_addr, head.func3, head.data, wdata, wstrb);
-    // }
+    if (is_coremark_focus_addr(head.p_addr))
+    {
+        std::printf("[FOCUS][LSU][ST ISSUE] cyc=%lld port=%d stq=%d rob=%u paddr=0x%08x func3=0x%x data=0x%08x wdata=0x%08x wstrb=0x%x\n",
+                    (long long)sim_time, port, store_index, (unsigned)head.rob_idx,
+                    head.p_addr, head.func3, head.data, wdata, wstrb);
+    }
 }
 
 void RealLsu::handle_global_flush()
@@ -1516,6 +1584,7 @@ void RealLsu::retire_stq_head_if_ready(int &pop_count)
     head.data_valid = false;
     head.done = false;
     head.addr = 0;
+    head.p_addr = 0;
     head.data = 0;
     head.br_mask = 0;
     head.send = false;
@@ -1526,6 +1595,10 @@ void RealLsu::retire_stq_head_if_ready(int &pop_count)
     head.suppress_write = retired_suppress_write;
     stq_trace_seq[retire_idx] = 0;
     stq_cache_wait_replay[retire_idx] = false;
+    stq_sta_retry_shadow[retire_idx] = {};
+    stq_sta_retry_shadow_valid[retire_idx] = false;
+    stq_sta_fault_wb_pending[retire_idx] = false;
+    stq_sta_fault_deferred_valid[retire_idx] = false;
 
     stq_head++;
     if (stq_head == STQ_SIZE)
@@ -1574,11 +1647,12 @@ void RealLsu::commit_stores_from_rob()
             continue;
         }
         const auto &commit_uop = in.rob_commit->commit_entry[i].uop;
-        if (ctx != nullptr && is_load(commit_uop))
+        InstInfo commit_inst = commit_uop.to_inst_info();
+        if (ctx != nullptr && is_load(commit_inst))
         {
-            ctx->perf.trace_load_on_rob_exit(commit_uop.inst_idx, sim_time);
+            ctx->perf.trace_load_on_rob_exit(commit_inst.inst_idx, sim_time);
         }
-        if (!is_store(commit_uop))
+        if (!is_store(commit_inst))
         {
             continue;
         }
@@ -1598,6 +1672,35 @@ void RealLsu::commit_stores_from_rob()
 
 void RealLsu::progress_ldq_entries()
 {
+    bool active_walk_page_valid = false;
+    uint32_t active_walk_page = 0;
+    if (auto *tlb = dynamic_cast<TlbMmu *>(mmu.get()); tlb != nullptr)
+    {
+        const auto dbg = tlb->debug_state();
+        if (dbg.walk_active)
+        {
+            active_walk_page_valid = true;
+            active_walk_page = dbg.walk_v_addr >> 12;
+        }
+    }
+    const bool head_incomplete_valid = in.rob_bcast->head_incomplete_valid;
+    const uint32_t head_incomplete_rob =
+        (uint32_t)in.rob_bcast->head_incomplete_rob_idx;
+    bool head_tlb_retry_present = false;
+    if (head_incomplete_valid)
+    {
+        for (int i = 0; i < LDQ_SIZE; i++)
+        {
+            const auto &entry = ldq[i];
+            if (entry.valid && entry.tlb_retry &&
+                entry.uop.rob_idx == head_incomplete_rob)
+            {
+                head_tlb_retry_present = true;
+                break;
+            }
+        }
+    }
+
     for (int i = 0; i < LDQ_SIZE; i++)
     {
         auto &entry = ldq[i];
@@ -1614,12 +1717,90 @@ void RealLsu::progress_ldq_entries()
 
         if (entry.waiting_resp || entry.uop.cplt_time == REQ_WAIT_EXEC)
         {
+            if (ldq_fault_deferred_valid[i])
+            {
+                if (has_older_store_in_stq(entry.uop))
+                {
+                    continue;
+                }
+                uint32_t p_addr = 0;
+                auto mmu_ret =
+                    mmu->translate(p_addr, entry.uop.result, 1, in.csr_status);
+                if (mmu_ret == AbstractMmu::Result::RETRY)
+                {
+                    continue;
+                }
+                if (mmu_ret == AbstractMmu::Result::FAULT)
+                {
+                    ldq_fault_deferred_valid[i] = false;
+                    entry.tlb_retry = false;
+                    entry.uop.page_fault_load = true;
+                    entry.uop.diag_val = entry.uop.result;
+                    entry.uop.cplt_time = sim_time + 1;
+                    continue;
+                }
+
+                ldq_fault_deferred_valid[i] = false;
+                entry.tlb_retry = false;
+                entry.uop.page_fault_load = false;
+                entry.uop.diag_val = p_addr;
+                bool is_mmio = is_mmio_addr(p_addr);
+                if (ctx != nullptr)
+                {
+                    ctx->perf.trace_load_set_mmio(ldq_trace_seq[i], is_mmio);
+                }
+                if (is_mmio && ctx != nullptr)
+                {
+                    ctx->perf.mmio_inst_count++;
+                    ctx->perf.mmio_load_count++;
+                }
+                entry.is_mmio_wait = is_mmio;
+                auto fwd_res =
+                    is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, entry.uop);
+                if (fwd_res.state == StoreForwardState::Hit)
+                {
+                    if (!is_mmio && ctx != nullptr)
+                    {
+                        ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], true);
+                    }
+                    entry.uop.result = fwd_res.data;
+                    entry.uop.cplt_time = sim_time;
+                }
+                else if (fwd_res.state == StoreForwardState::NoHit)
+                {
+                    if (!is_mmio && ctx != nullptr)
+                    {
+                        ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], false);
+                    }
+                    entry.uop.cplt_time = REQ_WAIT_SEND;
+                }
+                else
+                {
+                    if (!is_mmio && ctx != nullptr)
+                    {
+                        ctx->perf.trace_load_set_stlf(ldq_trace_seq[i], false);
+                    }
+                    entry.uop.cplt_time = REQ_WAIT_RETRY;
+                }
+                continue;
+            }
             if (!entry.tlb_retry)
             {
                 continue;
             }
+            if (active_walk_page_valid &&
+                ((entry.uop.result >> 12) != active_walk_page))
+            {
+                continue;
+            }
+            if (!active_walk_page_valid && head_tlb_retry_present &&
+                entry.uop.rob_idx != head_incomplete_rob)
+            {
+                continue;
+            }
             uint32_t p_addr = 0;
-            auto mmu_ret = mmu->translate(p_addr, entry.uop.result, 1, in.csr_status);
+            auto mmu_ret =
+                mmu->translate(p_addr, entry.uop.result, 1, in.csr_status);
             if (mmu_ret == AbstractMmu::Result::RETRY)
             {
                 continue;
@@ -1627,12 +1808,23 @@ void RealLsu::progress_ldq_entries()
             entry.tlb_retry = false;
             if (mmu_ret == AbstractMmu::Result::FAULT)
             {
+                if (has_older_store_in_stq(entry.uop))
+                {
+                    entry.uop.page_fault_load = true;
+                    entry.uop.diag_val = entry.uop.result;
+                    entry.uop.cplt_time = REQ_WAIT_EXEC;
+                    entry.tlb_retry = false;
+                    ldq_fault_deferred_valid[i] = true;
+                    continue;
+                }
+                ldq_fault_deferred_valid[i] = false;
                 entry.uop.page_fault_load = true;
                 entry.uop.diag_val = entry.uop.result;
                 entry.uop.cplt_time = sim_time + 1;
             }
             else
             {
+                ldq_fault_deferred_valid[i] = false;
                 entry.uop.diag_val = p_addr;
                 bool is_mmio = is_mmio_addr(p_addr);
                 if (ctx != nullptr)
@@ -1729,6 +1921,26 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst)
     }
     stq[idx].addr = inst.result; // VA
 
+    if (stq_sta_fault_deferred_valid[idx])
+    {
+        if (has_older_store_in_stq(inst))
+        {
+            return false;
+        }
+        MicroOp fault_op = inst;
+        fault_op.page_fault_store = true;
+        fault_op.cplt_time = sim_time;
+        if (is_amo_sc_uop(inst))
+        {
+            reserve_valid = false;
+        }
+        finished_sta_reqs.push_back(fault_op);
+        stq[idx].addr_valid = false;
+        stq_sta_fault_wb_pending[idx] = true;
+        stq_sta_fault_deferred_valid[idx] = false;
+        return true;
+    }
+
     uint32_t pa = inst.result;
     auto mmu_ret = mmu->translate(pa, inst.result, 2, in.csr_status);
     if (mmu_ret == AbstractMmu::Result::RETRY)
@@ -1738,6 +1950,13 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst)
 
     if (mmu_ret == AbstractMmu::Result::FAULT)
     {
+        if (has_older_store_in_stq(inst))
+        {
+            stq[idx].p_addr = pa;
+            stq[idx].addr_valid = false;
+            stq_sta_fault_deferred_valid[idx] = true;
+            return false;
+        }
         MicroOp fault_op = inst;
         fault_op.page_fault_store = true;
         fault_op.cplt_time = sim_time;
@@ -1748,11 +1967,14 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst)
         finished_sta_reqs.push_back(fault_op);
         stq[idx].p_addr = pa;
         stq[idx].addr_valid = false;
+        stq_sta_fault_wb_pending[idx] = true;
+        stq_sta_fault_deferred_valid[idx] = false;
         return true;
     }
 
     MicroOp success_op = inst;
     success_op.cplt_time = sim_time;
+    stq_sta_fault_deferred_valid[idx] = false;
     if (is_amo_sc_uop(inst))
     {
         bool sc_success = reserve_valid && (reserve_addr == pa);
@@ -1784,21 +2006,265 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst)
     return true;
 }
 
+bool RealLsu::pending_sta_queue_contains(const MicroOp &inst) const
+{
+    for (const auto &op : pending_sta_addr_reqs)
+    {
+        if (op.stq_idx == inst.stq_idx && op.rob_idx == inst.rob_idx &&
+            op.rob_flag == inst.rob_flag)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool RealLsu::dequeue_ready_sta_wb(MicroOp &emit_uop)
+{
+    auto it = finished_sta_reqs.begin();
+    while (it != finished_sta_reqs.end())
+    {
+        MicroOp candidate = *it;
+        if (!candidate.page_fault_store)
+        {
+            emit_uop = candidate;
+            finished_sta_reqs.erase(it);
+            return true;
+        }
+
+        const int idx = candidate.stq_idx;
+        if (idx < 0 || idx >= STQ_SIZE)
+        {
+            it = finished_sta_reqs.erase(it);
+            continue;
+        }
+        if (!stq_entry_matches_uop(stq[idx], candidate))
+        {
+            stq_sta_fault_wb_pending[idx] = false;
+            stq_sta_fault_deferred_valid[idx] = false;
+            it = finished_sta_reqs.erase(it);
+            continue;
+        }
+
+        const bool at_head_incomplete =
+            in.rob_bcast->head_incomplete_valid &&
+            candidate.rob_idx ==
+                (uint32_t)in.rob_bcast->head_incomplete_rob_idx;
+        if (!at_head_incomplete)
+        {
+            ++it;
+            continue;
+        }
+        if (has_older_store_in_stq(candidate))
+        {
+            ++it;
+            continue;
+        }
+
+        uint32_t pa = candidate.result;
+        const auto mmu_ret = mmu->translate(pa, candidate.result, 2, in.csr_status);
+        LSU_MEM_DBG_PRINTF(
+            "[LSU][STA FAULT RECHECK] cyc=%lld stq=%d rob=%u flag=%u pc=0x%08x vaddr=0x%08x mmu=%d pa=0x%08x\n",
+            (long long)sim_time, idx, (unsigned)candidate.rob_idx,
+            (unsigned)candidate.rob_flag, (uint32_t)candidate.pc,
+            (uint32_t)candidate.result, (int)mmu_ret, pa);
+        if (mmu_ret == AbstractMmu::Result::RETRY)
+        {
+            if (const auto *tlb = dynamic_cast<const TlbMmu *>(mmu.get());
+                tlb != nullptr &&
+                tlb->last_retry_reason() == TlbMmu::RetryReason::OTHER_WALK_ACTIVE)
+            {
+                // The original store fault is already established. Once this
+                // store reaches ROB head, a younger PTW walk must not be able to
+                // starve trap delivery indefinitely.
+                LSU_MEM_DBG_PRINTF(
+                    "[LSU][STA FAULT RECHECK][FALLBACK] cyc=%lld stq=%d rob=%u flag=%u pc=0x%08x vaddr=0x%08x reason=OTHER_WALK_ACTIVE\n",
+                    (long long)sim_time, idx, (unsigned)candidate.rob_idx,
+                    (unsigned)candidate.rob_flag, (uint32_t)candidate.pc,
+                    (uint32_t)candidate.result);
+                emit_uop = candidate;
+                it = finished_sta_reqs.erase(it);
+                return true;
+            }
+            ++it;
+            continue;
+        }
+        if (mmu_ret == AbstractMmu::Result::OK)
+        {
+            MicroOp success_op = candidate;
+            success_op.page_fault_store = false;
+            success_op.cplt_time = sim_time;
+            stq_sta_fault_wb_pending[idx] = false;
+            stq_sta_fault_deferred_valid[idx] = false;
+            if (is_amo_sc_uop(candidate))
+            {
+                const bool sc_success = reserve_valid && (reserve_addr == (int)pa);
+                reserve_valid = false;
+                success_op.result = sc_success ? 0 : 1;
+                success_op.dest_en = true;
+                success_op.op = UOP_LOAD;
+                stq[idx].suppress_write = !sc_success;
+                stq[idx].is_mmio = false;
+                stq[idx].p_addr = pa;
+                stq[idx].addr_valid = true;
+                finished_loads.push_back(success_op);
+                it = finished_sta_reqs.erase(it);
+                continue;
+            }
+            const bool is_mmio = is_mmio_addr(pa);
+            if (is_mmio && ctx != nullptr)
+            {
+                ctx->perf.mmio_inst_count++;
+                ctx->perf.mmio_store_count++;
+            }
+            success_op.flush_pipe = false;
+            stq[idx].is_mmio = is_mmio;
+            stq[idx].p_addr = pa;
+            stq[idx].addr_valid = true;
+            emit_uop = success_op;
+            it = finished_sta_reqs.erase(it);
+            return true;
+        }
+
+        emit_uop = candidate;
+        it = finished_sta_reqs.erase(it);
+        return true;
+    }
+
+    return false;
+}
+
+bool RealLsu::finished_sta_queue_contains(const MicroOp &inst) const
+{
+    for (const auto &op : finished_sta_reqs)
+    {
+        if (op.stq_idx == inst.stq_idx && op.rob_idx == inst.rob_idx &&
+            op.rob_flag == inst.rob_flag)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void RealLsu::repair_oldest_pending_sta_addr()
+{
+    int ptr = stq_head;
+    bool ptr_flag = stq_head_flag;
+    int remain = stq_count;
+    while (remain > 0)
+    {
+        const auto &entry = stq[ptr];
+        if (entry.valid && !entry.addr_valid && !entry.suppress_write)
+        {
+            if (stq_sta_fault_wb_pending[ptr])
+            {
+                return;
+            }
+            MicroOp shadow = {};
+            if (stq_sta_retry_shadow_valid[ptr])
+            {
+                shadow = stq_sta_retry_shadow[ptr];
+            }
+            else
+            {
+                const uint32_t recover_vaddr =
+                    (entry.addr != 0) ? entry.addr : entry.p_addr;
+                if (recover_vaddr == 0)
+                {
+                    return;
+                }
+                shadow.op = UOP_STA;
+                // Recover the oldest pending STA even if its original retry
+                // shadow was lost. Prefer the recorded virtual address, but
+                // tolerate partially-updated state that only preserved p_addr.
+                shadow.result = recover_vaddr;
+                shadow.stq_idx = ptr;
+                shadow.stq_flag = ptr_flag;
+                shadow.rob_idx = entry.rob_idx;
+                shadow.rob_flag = entry.rob_flag;
+                shadow.func3 = entry.func3;
+                shadow.br_mask = entry.br_mask;
+            }
+            if (!stq_entry_matches_uop(entry, shadow))
+            {
+                return;
+            }
+            if (!pending_sta_queue_contains(shadow) &&
+                !finished_sta_queue_contains(shadow))
+            {
+                pending_sta_addr_reqs.push_front(shadow);
+                LSU_MEM_DBG_PRINTF(
+                    "[LSU][STA RETRY REPAIR] cyc=%lld stq=%d rob=%u flag=%u pc=0x%08x vaddr=0x%08x shadow=%d\n",
+                    (long long)sim_time, ptr, (unsigned)shadow.rob_idx,
+                    (unsigned)shadow.rob_flag, (uint32_t)shadow.pc,
+                    (uint32_t)shadow.result,
+                    (int)stq_sta_retry_shadow_valid[ptr]);
+            }
+            return;
+        }
+        ptr = (ptr + 1) % STQ_SIZE;
+        if (ptr == 0)
+        {
+            ptr_flag = !ptr_flag;
+        }
+        remain--;
+    }
+}
+
 void RealLsu::progress_pending_sta_addr()
 {
+    repair_oldest_pending_sta_addr();
     if (pending_sta_addr_reqs.empty())
     {
         return;
     }
-    size_t n = pending_sta_addr_reqs.size();
-    for (size_t i = 0; i < n; i++)
+
+    auto selected = pending_sta_addr_reqs.begin();
+    bool active_walk_page_valid = false;
+    uint32_t active_walk_page = 0;
+    if (auto *tlb = dynamic_cast<TlbMmu *>(mmu.get()); tlb != nullptr)
     {
-        MicroOp op = pending_sta_addr_reqs.front();
-        pending_sta_addr_reqs.pop_front();
-        if (!finish_store_addr_once(op))
+        const auto dbg = tlb->debug_state();
+        if (dbg.walk_active)
         {
-            pending_sta_addr_reqs.push_back(op);
+            active_walk_page_valid = true;
+            active_walk_page = dbg.walk_v_addr >> 12;
         }
+    }
+
+    if (active_walk_page_valid)
+    {
+        for (auto it = pending_sta_addr_reqs.begin();
+             it != pending_sta_addr_reqs.end(); ++it)
+        {
+            if ((it->result >> 12) == active_walk_page)
+            {
+                selected = it;
+                break;
+            }
+        }
+    }
+    else if (in.rob_bcast->head_incomplete_valid)
+    {
+        const uint32_t head_incomplete_rob =
+            (uint32_t)in.rob_bcast->head_incomplete_rob_idx;
+        for (auto it = pending_sta_addr_reqs.begin();
+             it != pending_sta_addr_reqs.end(); ++it)
+        {
+            if (it->rob_idx == head_incomplete_rob)
+            {
+                selected = it;
+                break;
+            }
+        }
+    }
+
+    MicroOp op = *selected;
+    pending_sta_addr_reqs.erase(selected);
+    if (!finish_store_addr_once(op))
+    {
+        pending_sta_addr_reqs.push_back(op);
     }
 }
 
@@ -1818,6 +2284,7 @@ void RealLsu::free_ldq_entry(int idx)
         ldq[idx].waiting_resp = false;
         ldq[idx].wait_resp_since = 0;
         ldq[idx].tlb_retry = false;
+        ldq_fault_deferred_valid[idx] = false;
         ldq[idx].is_mmio_wait = false;
         ldq[idx].uop = {};
         ldq_trace_seq[idx] = 0;
@@ -2071,6 +2538,7 @@ void RealLsu::clear_stq_entries(int start_idx, int count)
         stq[ptr].send = false;
         stq[ptr].replay = 0;
         stq[ptr].addr = 0;
+        stq[ptr].p_addr = 0;
         stq[ptr].data = 0;
         stq[ptr].suppress_write = 0;
         stq[ptr].br_mask = 0;
@@ -2079,6 +2547,10 @@ void RealLsu::clear_stq_entries(int start_idx, int count)
         stq[ptr].func3 = 0;
         stq_trace_seq[ptr] = 0;
         stq_cache_wait_replay[ptr] = false;
+        stq_sta_retry_shadow[ptr] = {};
+        stq_sta_retry_shadow_valid[ptr] = false;
+        stq_sta_fault_wb_pending[ptr] = false;
+        stq_sta_fault_deferred_valid[ptr] = false;
         ptr = (ptr + 1) % STQ_SIZE;
     }
 }
@@ -2093,6 +2565,37 @@ bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag)
     {
         return s_idx > l_idx;
     }
+}
+
+bool RealLsu::has_older_store_in_stq(const MicroOp &uop) const
+{
+    const int stop_idx = uop.stq_idx;
+    const bool stop_flag = uop.stq_flag;
+    if (stop_idx < 0 || stop_idx >= STQ_SIZE)
+    {
+        return false;
+    }
+
+    int ptr_idx = stq_head;
+    bool ptr_flag = stq_head_flag;
+    int guard = 0;
+    while (!(ptr_idx == stop_idx && ptr_flag == stop_flag))
+    {
+        guard++;
+        Assert(guard <= STQ_SIZE + 1);
+        const StqEntry &entry = stq[ptr_idx];
+        if (entry.valid && !entry.suppress_write)
+        {
+            return true;
+        }
+        ptr_idx++;
+        if (ptr_idx == STQ_SIZE)
+        {
+            ptr_idx = 0;
+            ptr_flag = !ptr_flag;
+        }
+    }
+    return false;
 }
 
 // =========================================================
@@ -2174,9 +2677,9 @@ StqEntry RealLsu::get_stq_entry(int stq_idx)
 
 uint32_t RealLsu::coherent_read(uint32_t p_addr)
 {
-    // 1. 基准值：读物理内存 (假设 p_addr 已对齐到 4)
-    Assert(0 && "coherent_read should not be called in current design!");
-    uint32_t data = pmem_read(p_addr);
+    // PTW coherent read: base memory overlaid by committed stores still resident
+    // in STQ. Do not merge speculative younger stores.
+    uint32_t data = pmem_read(p_addr & ~0x3u);
 
     // 2. 遍历 STQ 进行覆盖 (Coherent Check)
     int ptr = stq_head;
@@ -2184,7 +2687,8 @@ uint32_t RealLsu::coherent_read(uint32_t p_addr)
     for (int i = 0; i < count; i++)
     {
         const auto &entry = stq[ptr];
-        if (entry.valid && entry.addr_valid && !entry.suppress_write)
+        if (entry.valid && entry.addr_valid && entry.committed &&
+            !entry.suppress_write)
         {
             // 只要 Store 的 Word 地址匹配，就进行 merge (假设 aligned Store 不跨
             // Word)
@@ -2211,7 +2715,34 @@ void RealLsu::dump_debug_state() const
                 ldq_alloc_tail, pending_sta_addr_reqs.size(), finished_loads.size(),
                 finished_sta_reqs.size(), (int)replay_type, replay_count_ldq,
                 replay_count_stq, mshr_replay_count_ldq, mshr_replay_count_stq);
-
+    if (const auto *tlb = dynamic_cast<const TlbMmu *>(mmu.get()); tlb != nullptr)
+    {
+        const auto dbg = tlb->debug_state();
+        std::printf("[DEADLOCK][LSU][DTLB] walk_active=%d walk_req_sent=%d vaddr=0x%08x type=%u satp=0x%08x eff_priv=%d mxr=%d sum=%d last_retry=%s\n",
+                    (int)dbg.walk_active, (int)dbg.walk_req_sent,
+                    dbg.walk_v_addr, dbg.walk_type, dbg.walk_satp,
+                    dbg.walk_eff_priv, (int)dbg.walk_mxr, (int)dbg.walk_sum,
+                    tlb_retry_reason_name(dbg.last_retry_reason));
+    }
+    if (!pending_sta_addr_reqs.empty())
+    {
+        int seq = 0;
+        for (const auto &op : pending_sta_addr_reqs)
+        {
+            const bool older = has_older_store_in_stq(op);
+            std::printf("[DEADLOCK][LSU][PENDING_STA %02d] rob=%u flag=%u pc=0x%08x stq_idx=%u stq_flag=%u vaddr=0x%08x func3=0x%x older_store=%d page_fault_store=%d inst_idx=%lld\n",
+                        seq, (unsigned)op.rob_idx, (unsigned)op.rob_flag,
+                        (uint32_t)op.pc, (unsigned)op.stq_idx,
+                        (unsigned)op.stq_flag, (uint32_t)op.result,
+                        (unsigned)op.func3, (int)older,
+                        (int)op.page_fault_store, (long long)op.inst_idx);
+            seq++;
+            if (seq >= 16)
+            {
+                break;
+            }
+        }
+    }
     for (int i = 0; i < STQ_SIZE; i++)
     {
         const auto &e = stq[i];
@@ -2219,10 +2750,11 @@ void RealLsu::dump_debug_state() const
         {
             continue;
         }
-        std::printf("[DEADLOCK][LSU][STQ %02d] valid=%d addr_v=%d data_v=%d committed=%d done=%d send=%d suppress_write=%d replay=%u mmio=%d p_addr=0x%08x data=0x%08x func3=0x%x rob=%u flag=%u br_mask=0x%08x\n",
+        std::printf("[DEADLOCK][LSU][STQ %02d] valid=%d addr_v=%d data_v=%d committed=%d done=%d send=%d suppress_write=%d replay=%u mmio=%d shadow=%d fault_wb=%d fault_def=%d addr=0x%08x p_addr=0x%08x data=0x%08x func3=0x%x rob=%u flag=%u br_mask=0x%08x\n",
                     i, (int)e.valid, (int)e.addr_valid, (int)e.data_valid,
                     (int)e.committed, (int)e.done, (int)e.send, (int)e.suppress_write, (unsigned)e.replay,
-                    (int)e.is_mmio, e.p_addr, e.data, e.func3, (unsigned)e.rob_idx,
+                    (int)e.is_mmio, (int)stq_sta_retry_shadow_valid[i],
+                    (int)stq_sta_fault_wb_pending[i], (int)stq_sta_fault_deferred_valid[i], e.addr, e.p_addr, e.data, e.func3, (unsigned)e.rob_idx,
                     (unsigned)e.rob_flag, (unsigned)e.br_mask);
     }
 
@@ -2249,6 +2781,12 @@ void RealLsu::dump_debug_state() const
                     e.uop.func3, (unsigned)e.uop.stq_idx,
                     (unsigned)e.uop.stq_flag,
                     (long long)e.uop.inst_idx);
+        if (ldq_fault_deferred_valid[i])
+        {
+            std::printf("[DEADLOCK][LSU][LDQ %02d][DEFERRED_LOAD_FAULT] vaddr=0x%08x rob=%u flag=%u pc=0x%08x\n",
+                        i, (uint32_t)e.uop.result, (unsigned)e.uop.rob_idx,
+                        (unsigned)e.uop.rob_flag, (uint32_t)e.uop.pc);
+        }
     }
 
     std::printf("[DEADLOCK][LSU][RESP] replay=%u replay_addr=0x%08zx free_slots=%u\n",

@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <queue>
 #include <vector>
 
 #include "frontend.h"
@@ -134,13 +133,7 @@ class PTABModel {
 public:
   void seq_read(const PTAB_in &inp, PTAB_read_data &rd) const {
     (void)inp;
-    std::memset(&rd, 0, sizeof(PTAB_read_data));
-    rd.size = static_cast<uint8_t>(ptab_.size());
-    std::queue<PTAB_entry> snapshot = ptab_;
-    for (uint8_t i = 0; i < rd.size; ++i) {
-      rd.entries[i] = snapshot.front();
-      snapshot.pop();
-    }
+    rd = state_;
   }
 
   void build_next_read_data(const PTAB_read_data &cur, const PtabCombOut &comb_out,
@@ -189,29 +182,21 @@ public:
   }
 
   void seq_write(const PTAB_read_data &next_rd) {
-    clear_queue(ptab_);
-    for (uint8_t i = 0; i < next_rd.size; ++i) {
-      ptab_.push(next_rd.entries[i]);
-    }
+    state_ = next_rd;
   }
 
   bool peek_mini_flush() {
-    if (ptab_.empty()) {
+    if (state_.size == 0) {
       return false;
     }
     DEBUG_LOG_SMALL_4("ptab_peeking for pc=%x,need_mini_flush=%d\n",
-                      ptab_.front().predict_base_pc[0], ptab_.front().need_mini_flush);
-    return ptab_.front().need_mini_flush;
+                      state_.entries[0].predict_base_pc[0],
+                      state_.entries[0].need_mini_flush);
+    return state_.entries[0].need_mini_flush;
   }
 
 private:
-  void clear_queue(std::queue<PTAB_entry> &queue_ref) {
-    while (!queue_ref.empty()) {
-      queue_ref.pop();
-    }
-  }
-
-  std::queue<PTAB_entry> ptab_;
+  PTAB_read_data state_{};
 };
 
 PTABModel g_ptab_model;

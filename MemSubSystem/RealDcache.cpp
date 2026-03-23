@@ -1,5 +1,6 @@
 #include "RealDcache.h"
 #include "DiffMemTrace.h"
+#include "PhysMemory.h"
 #include <oracle.h>
 #include <cassert>
 #include <cstdio>
@@ -11,10 +12,25 @@ constexpr const char *kColorLoadReq   = "\033[1;36m"; // Cyan
 constexpr const char *kColorStoreReq  = "\033[1;33m"; // Yellow
 constexpr const char *kColorLoadResp  = "\033[1;32m"; // Green
 constexpr const char *kColorStoreResp = "\033[1;35m"; // Magenta
-constexpr uint32_t kCoremarkFocusAddrBegin1 = 0x87fffa70u;
-constexpr uint32_t kCoremarkFocusAddrEnd1 = 0x87fffa90u;
-constexpr uint32_t kCoremarkFocusAddrBegin2 = 0x87fff5e0;
-constexpr uint32_t kCoremarkFocusAddrEnd2 = 0x87fff600;
+
+#ifndef CONFIG_DCACHE_FOCUS_ADDR_BEGIN1
+#define CONFIG_DCACHE_FOCUS_ADDR_BEGIN1 0x87fffa70u
+#endif
+#ifndef CONFIG_DCACHE_FOCUS_ADDR_END1
+#define CONFIG_DCACHE_FOCUS_ADDR_END1 0x87fffa90u
+#endif
+#ifndef CONFIG_DCACHE_FOCUS_ADDR_BEGIN2
+#define CONFIG_DCACHE_FOCUS_ADDR_BEGIN2 0x87fff5e0u
+#endif
+#ifndef CONFIG_DCACHE_FOCUS_ADDR_END2
+#define CONFIG_DCACHE_FOCUS_ADDR_END2 0x87fff600u
+#endif
+
+constexpr uint32_t kCoremarkFocusAddrBegin1 = CONFIG_DCACHE_FOCUS_ADDR_BEGIN1;
+constexpr uint32_t kCoremarkFocusAddrEnd1 = CONFIG_DCACHE_FOCUS_ADDR_END1;
+constexpr uint32_t kCoremarkFocusAddrBegin2 = CONFIG_DCACHE_FOCUS_ADDR_BEGIN2;
+constexpr uint32_t kCoremarkFocusAddrEnd2 = CONFIG_DCACHE_FOCUS_ADDR_END2;
+constexpr uint32_t kFastDiffFocusLine = 0x8fdfd800u;
 
 inline bool is_coremark_focus_addr(uint32_t addr) {
     return (addr >= kCoremarkFocusAddrBegin1 && addr < kCoremarkFocusAddrEnd1) ||
@@ -63,16 +79,54 @@ void pending_miss_add(PendingMissLine *pending_miss_lines,
     pending_miss_count++;
 }
 
+void print_focus_words_array(const char *tag, long long cyc, const char *prefix,
+                             uint32_t set_idx, int way,
+                             const uint32_t *words) {
+    char buf[1024];
+    int pos = std::snprintf(buf, sizeof(buf),
+                            "[FOCUS][DCACHE][%s] cyc=%lld %s set=%u way=%d words=[",
+                            tag, cyc, prefix, set_idx, way);
+    for (int i = 0; i < DCACHE_LINE_WORDS && pos > 0 &&
+                    pos < static_cast<int>(sizeof(buf)); i++) {
+        pos += std::snprintf(buf + pos, sizeof(buf) - static_cast<size_t>(pos),
+                             "%s%08x", (i == 0) ? "" : " ", words[i]);
+    }
+    if (pos > 0 && pos < static_cast<int>(sizeof(buf))) {
+        std::snprintf(buf + pos, sizeof(buf) - static_cast<size_t>(pos), "]\n");
+    } else {
+        buf[sizeof(buf) - 2] = ']';
+        buf[sizeof(buf) - 1] = '\0';
+    }
+    LSU_MEM_DBG_PRINTF("%s", buf);
+}
+
+void print_focus_backing_words(const char *tag, long long cyc, uint32_t line_addr) {
+    char buf[1024];
+    int pos = std::snprintf(buf, sizeof(buf),
+                            "[FOCUS][DCACHE][%s][BACKING] cyc=%lld line=0x%08x words=[",
+                            tag, cyc, line_addr);
+    for (int i = 0; i < DCACHE_LINE_WORDS && pos > 0 &&
+                    pos < static_cast<int>(sizeof(buf)); i++) {
+        pos += std::snprintf(
+            buf + pos, sizeof(buf) - static_cast<size_t>(pos), "%s%08x",
+            (i == 0) ? "" : " ", p_memory[(line_addr >> 2) + static_cast<uint32_t>(i)]);
+    }
+    if (pos > 0 && pos < static_cast<int>(sizeof(buf))) {
+        std::snprintf(buf + pos, sizeof(buf) - static_cast<size_t>(pos), "]\n");
+    } else {
+        buf[sizeof(buf) - 2] = ']';
+        buf[sizeof(buf) - 1] = '\0';
+    }
+    LSU_MEM_DBG_PRINTF("%s", buf);
+}
+
 void print_focus_line_words(const char *tag, long long cyc, uint32_t set_idx, int way) {
     if (way < 0 || way >= DCACHE_WAYS) {
         return;
     }
-    LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][%s] cyc=%lld set=%u way=%d words=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-                tag, cyc, set_idx, way, data_array[set_idx][way][0],
-                data_array[set_idx][way][1], data_array[set_idx][way][2],
-                data_array[set_idx][way][3], data_array[set_idx][way][4],
-                data_array[set_idx][way][5], data_array[set_idx][way][6],
-                data_array[set_idx][way][7]);
+    print_focus_words_array(tag, cyc, "", set_idx, way, data_array[set_idx][way]);
+    print_focus_backing_words(tag, cyc,
+                              get_addr(set_idx, tag_array[set_idx][way], 0));
 }
 }
 
@@ -147,23 +201,64 @@ void RealDcache::end_req_track(bool is_store, size_t req_id, uint32_t rob_idx,
 }
 
 bool RealDcache::special_load_addr(uint32_t addr,uint32_t &mem_val,MicroOp &uop){
+    const uint64_t timer_base =
+        (ctx != nullptr) ? ctx->special_timer_value : 0ull;
+    const uint64_t timer_delta =
+        (sim_time >= 0) ? static_cast<uint64_t>(sim_time) : 0ull;
+    const uint64_t timer_value = timer_base + timer_delta;
+
     if (addr == 0x1fd0e000) {
-#ifdef CONFIG_BPU
-    mem_val = sim_time;
-#else
-    mem_val = get_oracle_timer();
-#endif
-    uop.difftest_skip = true;
-    return 1;
-  } else if (addr == 0x1fd0e004) {
-    mem_val = 0;
-    uop.difftest_skip = true;
-    return 1;
-  } else {
-    uop.difftest_skip = false;
-    return 0;
-  }
-  return 0;
+        mem_val = static_cast<uint32_t>(timer_value);
+        uop.difftest_skip = true;
+        uop.dbg.difftest_skip = true;
+        return true;
+    } else if (addr == 0x1fd0e004) {
+        mem_val = static_cast<uint32_t>(timer_value >> 32);
+        uop.difftest_skip = true;
+        uop.dbg.difftest_skip = true;
+        return true;
+    } else {
+        uop.difftest_skip = false;
+        uop.dbg.difftest_skip = false;
+        return false;
+    }
+}
+
+RealDcache::CoherentQueryResult
+RealDcache::query_coherent_word(uint32_t addr, uint32_t &data) const {
+    const AddrFields f = decode(addr);
+
+    for (int w = 0; w < DCACHE_WAYS; w++) {
+        if (!valid_array[f.set_idx][w] || tag_array[f.set_idx][w] != f.tag) {
+            continue;
+        }
+        data = data_array[f.set_idx][w][f.word_off];
+        for (int p = 0; p < LSU_STA_COUNT; p++) {
+            const auto &pw = pending_writes_[p];
+            if (!pw.valid || pw.set_idx != f.set_idx ||
+                pw.way_idx != static_cast<uint32_t>(w) ||
+                pw.word_off != f.word_off) {
+                continue;
+            }
+            apply_strobe(data, pw.data, pw.strb);
+        }
+        return CoherentQueryResult::Hit;
+    }
+
+    for (int i = 0; i < WB_ENTRIES; i++) {
+        if (!write_buffer[i].valid ||
+            !cache_line_match(write_buffer[i].addr, addr)) {
+            continue;
+        }
+        data = write_buffer[i].data[f.word_off];
+        return CoherentQueryResult::Hit;
+    }
+
+    if (find_mshr_entry(f.set_idx, f.tag)) {
+        return CoherentQueryResult::Retry;
+    }
+
+    return CoherentQueryResult::Miss;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -201,14 +296,12 @@ void RealDcache::stage1_comb() {
                                    req.uop.rob_idx, req.uop.rob_flag, req.addr, 0,
                                    static_cast<uint32_t>(req.uop.dest_preg), 0);
             
-            // if (is_coremark_focus_addr(req.addr)) {
-            //     LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD REQ] cyc=%lld port=%d req_id=%zu rob=%u pc=0x%08x addr=0x%08x\n",
-            //                 (long long)sim_time, i, req.req_id, req.uop.rob_idx,
-            //                 req.uop.pc, req.addr);
-            // }
+            if (is_coremark_focus_addr(req.addr)) {
+                LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD REQ] cyc=%lld port=%d req_id=%zu rob=%u pc=0x%08x addr=0x%08x\n",
+                            (long long)sim_time, i, req.req_id, req.uop.rob_idx,
+                            req.uop.pc, req.addr);
+            }
         }
-        dcache2wb->bypass_req[i].valid = req.valid;
-        dcache2wb->bypass_req[i].addr = req.addr;
     }
     for (int i = 0; i < LSU_STA_COUNT; i++) {
         const StoreReq &req = lsu2dcache->req_ports.store_ports[i];
@@ -223,11 +316,11 @@ void RealDcache::stage1_comb() {
                                    static_cast<uint8_t>(req.uop.func3), req.req_id,
                                    req.uop.rob_idx, req.uop.rob_flag, req.addr,
                                    req.data, req.strb, 0);
-            // if (is_coremark_focus_addr(req.addr)) {
-            //     LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST REQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x data=0x%08x strb=0x%x\n",
-            //                 (long long)sim_time, i, req.req_id, req.uop.rob_idx,
-            //                 req.addr, req.data, req.strb);
-            // }
+            if (is_coremark_focus_addr(req.addr)) {
+                LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST REQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x data=0x%08x strb=0x%x\n",
+                            (long long)sim_time, i, req.req_id, req.uop.rob_idx,
+                            req.addr, req.data, req.strb);
+            }
         }
     }
 
@@ -259,19 +352,6 @@ void RealDcache::stage1_comb() {
         // Same-cycle miss allocations are tracked later in stage2 after the
         // older request is proven to be a real miss rather than a hit/bypass.
         reqs[i].mshr_hit = find_mshr_entry(reqs[i].f.set_idx, reqs[i].f.tag);
-    }
-
-    for(int i = 0;i<LSU_STA_COUNT;i++){
-        int idx = LSU_LDU_COUNT + i;
-        if(reqs[idx].valid && !reqs[idx].conflict ){
-            dcache2wb->merge_req[i].valid = true;
-            dcache2wb->merge_req[i].addr = get_addr(reqs[idx].f.set_idx, reqs[idx].f.tag, reqs[idx].f.word_off);
-            dcache2wb->merge_req[i].data = lsu2dcache->req_ports.store_ports[i].data;
-            dcache2wb->merge_req[i].strb = lsu2dcache->req_ports.store_ports[i].strb;
-        }
-        else{
-            dcache2wb->merge_req[i].valid = false;
-        }
     }
 
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
@@ -321,6 +401,32 @@ void RealDcache::stage1_comb() {
             for (int d = 0; d < DCACHE_LINE_WORDS; d++)
                 slot.data_snap[w][d] = data_array[f.set_idx][w][d];
         }
+    }
+}
+
+void RealDcache::prepare_wb_queries_for_stage2() {
+    Assert(dcache2wb != nullptr && "dcache2wb pointer not set");
+
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+        dcache2wb->bypass_req[i] = {};
+        const S1S2Reg::LoadSlot &slot = s1s2_cur.loads[i];
+        if (!slot.valid || slot.replayed) {
+            continue;
+        }
+        dcache2wb->bypass_req[i].valid = true;
+        dcache2wb->bypass_req[i].addr = slot.addr;
+    }
+
+    for (int i = 0; i < LSU_STA_COUNT; i++) {
+        dcache2wb->merge_req[i] = {};
+        const S1S2Reg::StoreSlot &slot = s1s2_cur.stores[i];
+        if (!slot.valid || slot.replayed) {
+            continue;
+        }
+        dcache2wb->merge_req[i].valid = true;
+        dcache2wb->merge_req[i].addr = slot.addr;
+        dcache2wb->merge_req[i].data = slot.data;
+        dcache2wb->merge_req[i].strb = slot.strb;
     }
 }
 
@@ -393,6 +499,10 @@ void RealDcache::stage2_comb() {
 
         AddrFields f          = decode(slot.addr);
         uint32_t tag_expected = f.tag;
+        const bool mshr_pending_line =
+            pending_miss_contains(pending_miss_lines, pending_miss_count,
+                                  slot.set_idx, tag_expected) ||
+            slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected);
 
         uint32_t mem_val = 0;
         MicroOp response_uop = slot.uop;
@@ -406,6 +516,9 @@ void RealDcache::stage2_comb() {
                 break;
             }
         }
+        const bool mshr_fill_match =
+            mshr2dcache->fill.valid && mshr_f.set_idx == slot.set_idx &&
+            mshr_f.tag == tag_expected;
 
         if(is_special){
             resp.valid = true;
@@ -423,7 +536,89 @@ void RealDcache::stage2_comb() {
                                    slot.uop.rob_idx, slot.uop.rob_flag, slot.addr,
                                    resp.data, 0, 0);
         }
+        else if (mshr_pending_line && mshr_fill_match) {
+            resp.valid = true;
+            resp.data = mshr2dcache->fill.data[f.word_off];
+            resp.uop = slot.uop;
+            resp.replay = 0;
+            resp.req_id = slot.req_id;
+            end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
+            LSU_MEM_DBG_PRINTF("%s[DCACHE LOAD RESP OK] cyc=%lld port=%d src=mshr_fill req_id=%zu rob=%u addr=0x%08x data=0x%08x fill_line=0x%08x%s\n",
+                   kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, resp.data, mshr2dcache->fill.addr, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                   DiffMemTraceDetail::OkMshrFill,
+                                   static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                   slot.uop.rob_idx, slot.uop.rob_flag,
+                                   slot.addr, resp.data, mshr2dcache->fill.addr,
+                                   0);
+            if (is_coremark_focus_addr(slot.addr)) {
+                LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD FILL BYPASS] cyc=%lld port=%d req_id=%zu addr=0x%08x data=0x%08x fill_line=0x%08x\n",
+                            (long long)sim_time, i, slot.req_id, slot.addr,
+                            resp.data, mshr2dcache->fill.addr);
+            }
+        }
+        else if (mshr_pending_line) {
+            // Once a line has an active MSHR/fill in flight, the cache snapshot
+            // seen in s1s2_cur can be stale relative to the eventual refill or
+            // same-line store merges. Returning a plain hit here lets PTW/LSU
+            // observe transient old PTE/data values and commit false faults.
+            resp.valid = true;
+            resp.replay = 2;
+            resp.req_id = slot.req_id;
+            resp.uop = slot.uop;
+            if (ctx != nullptr) {
+                ctx->perf.l1d_replay_wait_mshr++;
+                ctx->perf.l1d_replay_wait_mshr_load++;
+                ctx->perf.l1d_replay_wait_mshr_hit++;
+            }
+            if (ctx != nullptr && is_replay_req) {
+                ctx->perf.l1d_replay_squash_abort++;
+            }
+            LSU_MEM_DBG_PRINTF("%s[DCACHE LOAD RESP] cyc=%lld port=%d replay=2(mshr_pending_guard) req_id=%zu slot.uop.rob_idx=%u addr=0x%08x%s\n",
+                   kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                   DiffMemTraceDetail::ReplayMshrHit,
+                                   static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                   slot.uop.rob_idx, slot.uop.rob_flag,
+                                   slot.addr, 0, 0, 0);
+        }
+        else if (wb2dcache->bypass_resp[i].valid) {
+            // Same-line dirty victims in WriteBuffer are newer than a clean
+            // line that may have been refilled into DCache before WB drains.
+            resp.valid = true;
+            resp.replay = 0;
+            resp.data = wb2dcache->bypass_resp[i].data;
+            resp.uop = slot.uop;
+            resp.req_id = slot.req_id;
+            end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
+            LSU_MEM_DBG_PRINTF("%s[DCACHE LOAD RESP OK] cyc=%lld port=%d src=wb_bypass req_id=%zu rob=%u addr=0x%08x data=0x%08x hit_way=%d%s\n",
+                   kColorLoadResp, (long long)sim_time, i, slot.req_id,
+                   slot.uop.rob_idx, slot.addr, resp.data, hit_way, kColorReset);
+            diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
+                                   DiffMemTraceDetail::OkWbBypass,
+                                   static_cast<uint8_t>(i),
+                                   static_cast<uint8_t>(slot.uop.func3), slot.req_id,
+                                   slot.uop.rob_idx, slot.uop.rob_flag,
+                                   slot.addr, resp.data, slot.set_idx,
+                                   static_cast<uint32_t>(hit_way >= 0 ? hit_way : 0xFF));
+            if (is_coremark_focus_addr(slot.addr)) {
+                LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD WB BYPASS] cyc=%lld port=%d req_id=%zu addr=0x%08x data=0x%08x hit_way=%d\n",
+                            (long long)sim_time, i, slot.req_id, slot.addr,
+                            resp.data, hit_way);
+            }
+        }
         else if (hit_way >= 0 ) {
+            if (cache_line_match(slot.addr, kFastDiffFocusLine)) {
+                LSU_MEM_DBG_PRINTF(
+                    "[FAST DIFF TRACE][LD PATH] cyc=%lld port=%d addr=0x%08x choose=dcache_hit hit_way=%d wb_valid=%d mshr_pending=%d fill_valid=%d fill_addr=0x%08x\n",
+                    (long long)sim_time, i, slot.addr, hit_way,
+                    static_cast<int>(wb2dcache->bypass_resp[i].valid),
+                    static_cast<int>(mshr_pending_line),
+                    static_cast<int>(mshr2dcache->fill.valid),
+                    mshr2dcache->fill.addr);
+            }
             // ── Cache Hit ────────────────────────────────────────────────────
             resp.valid  = true;
             resp.replay = 0;
@@ -441,48 +636,25 @@ void RealDcache::stage2_comb() {
                                    slot.uop.rob_idx, slot.uop.rob_flag, slot.addr,
                                    resp.data, slot.set_idx,
                                    static_cast<uint32_t>(hit_way));
-            // if (is_coremark_focus_addr(slot.addr)) {
-            //     LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD HIT] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x set=%u way=%d word_off=%u data=0x%08x\n",
-            //                 (long long)sim_time, i, slot.req_id, slot.uop.rob_idx,
-            //                 slot.addr, slot.set_idx, hit_way, f.word_off, resp.data);
-            //     print_focus_line_words("LD HIT SNAP", (long long)sim_time, slot.set_idx,
-            //                            hit_way);
-            // }
+            if (is_coremark_focus_addr(slot.addr)) {
+                LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD HIT] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x set=%u way=%d word_off=%u data=0x%08x\n",
+                            (long long)sim_time, i, slot.req_id, slot.uop.rob_idx,
+                            slot.addr, slot.set_idx, hit_way, f.word_off, resp.data);
+                print_focus_line_words("LD HIT SNAP", (long long)sim_time, slot.set_idx,
+                                       hit_way);
+            }
 
         } else {
-            const bool mshr_fill_match =
-                mshr2dcache->fill.valid && mshr_f.set_idx == slot.set_idx &&
-                mshr_f.tag == tag_expected;
-            const bool mshr_pending_line =
-                pending_miss_contains(pending_miss_lines, pending_miss_count,
-                                      slot.set_idx, tag_expected) ||
-                slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected);
-
-            // Do not consume WB bypass while this line is owned by MSHR.
-            // WB entry can be older than replayed stores that are waiting behind
-            // the same MSHR line, causing stale-load mismatches.
-            if (wb2dcache->bypass_resp[i].valid && !mshr_pending_line){
-                resp.valid = true;
-                resp.replay = 0;
-                resp.data = wb2dcache->bypass_resp[i].data;
-                resp.uop = slot.uop;
-                resp.req_id = slot.req_id;
-                end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
-                LSU_MEM_DBG_PRINTF("%s[DCACHE LOAD RESP OK] cyc=%lld port=%d src=wb_bypass req_id=%zu rob=%u addr=0x%08x data=0x%08x%s\n",
-                       kColorLoadResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, resp.data, kColorReset);
-                diff_mem_trace::record(DiffMemTraceOp::Load, DiffMemTracePhase::Resp,
-                                       DiffMemTraceDetail::OkWbBypass,
-                                       static_cast<uint8_t>(i),
-                                       static_cast<uint8_t>(slot.uop.func3), slot.req_id,
-                                       slot.uop.rob_idx, slot.uop.rob_flag,
-                                       slot.addr, resp.data, 0, 0);
-                // if (is_coremark_focus_addr(slot.addr)) {
-                //     LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD WB BYPASS] cyc=%lld port=%d req_id=%zu addr=0x%08x data=0x%08x\n",
-                //                 (long long)sim_time, i, slot.req_id, slot.addr,
-                //                 resp.data);
-                // }
+            if (cache_line_match(slot.addr, kFastDiffFocusLine)) {
+                LSU_MEM_DBG_PRINTF(
+                    "[FAST DIFF TRACE][LD PATH] cyc=%lld port=%d addr=0x%08x choose=miss wb_valid=%d mshr_pending=%d fill_valid=%d fill_addr=0x%08x\n",
+                    (long long)sim_time, i, slot.addr,
+                    static_cast<int>(wb2dcache->bypass_resp[i].valid),
+                    static_cast<int>(mshr_pending_line),
+                    static_cast<int>(mshr2dcache->fill.valid),
+                    mshr2dcache->fill.addr);
             }
-            else if(mshr_fill_match){
+            if(mshr_fill_match){
                 resp.valid = true;
                 resp.data = mshr2dcache->fill.data[f.word_off];
                 resp.uop = slot.uop;
@@ -498,11 +670,11 @@ void RealDcache::stage2_comb() {
                                        slot.uop.rob_idx, slot.uop.rob_flag,
                                        slot.addr, resp.data, mshr2dcache->fill.addr,
                                        0);
-                // if (is_coremark_focus_addr(slot.addr)) {
-                //     LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD FILL BYPASS] cyc=%lld port=%d req_id=%zu addr=0x%08x data=0x%08x fill_line=0x%08x\n",
-                //                 (long long)sim_time, i, slot.req_id, slot.addr,
-                //                 resp.data, mshr2dcache->fill.addr);
-                // }
+                if (is_coremark_focus_addr(slot.addr)) {
+                    LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD FILL BYPASS] cyc=%lld port=%d req_id=%zu addr=0x%08x data=0x%08x fill_line=0x%08x\n",
+                                (long long)sim_time, i, slot.req_id, slot.addr,
+                                resp.data, mshr2dcache->fill.addr);
+                }
             }
             else if (mshr_pending_line) {
                 resp.valid = true;
@@ -734,10 +906,10 @@ void RealDcache::stage2_comb() {
                     uint32_t before = slot.data_snap[hit_way][f.word_off];
                     uint32_t after = before;
                     apply_strobe(after, slot.data, slot.strb);
-                    // LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST HIT ENQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x set=%u way=%d word_off=%u strb=0x%x data=0x%08x before=0x%08x after=0x%08x\n",
-                    //             (long long)sim_time, i, slot.req_id, slot.uop.rob_idx,
-                    //             slot.addr, slot.set_idx, hit_way, f.word_off, slot.strb,
-                    //             slot.data, before, after);
+                    LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST HIT ENQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x set=%u way=%d word_off=%u strb=0x%x data=0x%08x before=0x%08x after=0x%08x\n",
+                                (long long)sim_time, i, slot.req_id, slot.uop.rob_idx,
+                                slot.addr, slot.set_idx, hit_way, f.word_off, slot.strb,
+                                slot.data, before, after);
                 }
             }
         } else {
@@ -800,21 +972,20 @@ void RealDcache::stage2_comb() {
                                            pending_miss_count, slot.set_idx,
                                            tag_expected) ||
                      slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected)) {
+                dcache2mshr->store_reqs[i].valid = true;
+                dcache2mshr->store_reqs[i].addr  = slot.addr;
+                dcache2mshr->store_reqs[i].data  = slot.data;
+                dcache2mshr->store_reqs[i].strb  = slot.strb;
+                dcache2mshr->store_reqs[i].uop   = slot.uop;
+                dcache2mshr->store_reqs[i].req_id = slot.req_id;
                 resp.valid = true;
-                resp.replay = 2; // MSHR full, replay later
+                resp.replay = 0;
                 resp.req_id = slot.req_id;
-                if (ctx != nullptr) {
-                    ctx->perf.l1d_replay_wait_mshr++;
-                    ctx->perf.l1d_replay_wait_mshr_store++;
-                    ctx->perf.l1d_replay_wait_mshr_hit++;
-                }
-                if (ctx != nullptr && is_replay_req) {
-                    ctx->perf.l1d_replay_squash_abort++;
-                }
-                LSU_MEM_DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=2(mshr_hit) req_id=%zu rob=%u addr=0x%08x%s\n",
+                end_req_track(true, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
+                LSU_MEM_DBG_PRINTF("%s[DCACHE STORE RESP OK] cyc=%lld port=%d src=mshr_merge req_id=%zu rob=%u addr=0x%08x%s\n",
                        kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
                 diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
-                                       DiffMemTraceDetail::ReplayMshrHit,
+                                       DiffMemTraceDetail::OkMshrMerge,
                                        static_cast<uint8_t>(i),
                                        static_cast<uint8_t>(slot.uop.func3), slot.req_id,
                                        slot.uop.rob_idx, slot.uop.rob_flag,
@@ -850,29 +1021,23 @@ void RealDcache::stage2_comb() {
                 pending_miss_add(pending_miss_lines, pending_miss_count,
                                  LSU_LDU_COUNT + LSU_STA_COUNT, slot.set_idx,
                                  tag_expected);
-                // First miss allocation must still return replay to LSU,
-                // otherwise LSU keeps `send=1` and cannot reissue this store.
                 resp.valid = true;
-                resp.replay = 2;
+                resp.replay = 0;
                 resp.req_id = slot.req_id;
+                resp.is_cache_miss = true;
+                end_req_track(true, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
                 if (ctx != nullptr) {
-                    ctx->perf.l1d_replay_wait_mshr++;
-                    ctx->perf.l1d_replay_wait_mshr_store++;
-                    ctx->perf.l1d_replay_wait_mshr_first_alloc++;
                     ctx->perf.l1d_miss_mshr_alloc++;
                     ctx->perf.dcache_miss_num++;
-                    if (is_replay_req) {
-                        ctx->perf.l1d_replay_squash_abort++;
-                    }
                 }
-                LSU_MEM_DBG_PRINTF("%s[DCACHE STORE RESP] cyc=%lld port=%d replay=2(first_mshr_alloc) req_id=%zu rob=%u addr=0x%08x%s\n",
+                LSU_MEM_DBG_PRINTF("%s[DCACHE STORE RESP OK] cyc=%lld port=%d src=first_mshr_alloc_merge req_id=%zu rob=%u addr=0x%08x%s\n",
                        kColorStoreResp, (long long)sim_time, i, slot.req_id, slot.uop.rob_idx, slot.addr, kColorReset);
                 diff_mem_trace::record(DiffMemTraceOp::Store, DiffMemTracePhase::Resp,
-                                       DiffMemTraceDetail::ReplayFirstAlloc,
+                                       DiffMemTraceDetail::OkMshrMerge,
                                        static_cast<uint8_t>(i),
                                        static_cast<uint8_t>(slot.uop.func3), slot.req_id,
                                        slot.uop.rob_idx, slot.uop.rob_flag,
-                                       slot.addr, slot.data, 0, 0);
+                                       slot.addr, slot.data, 1, 0);
                 mshr_free_entries = mshr_free_entries - 1;
             }
         }
@@ -900,8 +1065,8 @@ void RealDcache::comb() {
     assert(lsu2dcache  != nullptr && "lsu2dcache pointer not set");
     assert(dcache2lsu  != nullptr && "dcache2lsu pointer not set");
 
-
     stage1_comb();
+    prepare_wb_queries_for_stage2();
 
     stage2_comb();
 
@@ -927,11 +1092,11 @@ void RealDcache::seq() {
         uint32_t write_addr = get_addr(pw.set_idx, tag_array[pw.set_idx][pw.way_idx],
                                        pw.word_off);
         if (is_coremark_focus_line(write_addr)) {
-            // LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST HIT APPLY] cyc=%lld port=%d set=%u way=%u word_off=%u addr=0x%08x strb=0x%x data=0x%08x before=0x%08x after=0x%08x\n",
-            //             (long long)sim_time, i, pw.set_idx, pw.way_idx, pw.word_off,
-            //             write_addr, pw.strb, pw.data, before_word, after_word);
-            // print_focus_line_words("ST HIT APPLY", (long long)sim_time, pw.set_idx,
-            //                        static_cast<int>(pw.way_idx));
+            LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST HIT APPLY] cyc=%lld port=%d set=%u way=%u word_off=%u addr=0x%08x strb=0x%x data=0x%08x before=0x%08x after=0x%08x\n",
+                        (long long)sim_time, i, pw.set_idx, pw.way_idx, pw.word_off,
+                        write_addr, pw.strb, pw.data, before_word, after_word);
+            print_focus_line_words("ST HIT APPLY", (long long)sim_time, pw.set_idx,
+                                   static_cast<int>(pw.way_idx));
         }
     }
 
@@ -942,18 +1107,21 @@ void RealDcache::seq() {
                     (long long)sim_time, mshr2dcache->fill.addr,
                    decode(mshr2dcache->fill.addr).set_idx, mshr2dcache->fill.way, kColorReset);
         if (is_coremark_focus_line(mshr2dcache->fill.addr)) {
-            // LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][FILL APPLY] cyc=%lld line=0x%08x set=%u way=%u fill_words=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-            //             (long long)sim_time, mshr2dcache->fill.addr,
-            //             decode(mshr2dcache->fill.addr).set_idx, mshr2dcache->fill.way,
-            //             mshr2dcache->fill.data[0], mshr2dcache->fill.data[1],
-            //             mshr2dcache->fill.data[2], mshr2dcache->fill.data[3],
-            //             mshr2dcache->fill.data[4], mshr2dcache->fill.data[5],
-            //             mshr2dcache->fill.data[6], mshr2dcache->fill.data[7]);
+            print_focus_words_array("FILL APPLY", (long long)sim_time, "line",
+                                    decode(mshr2dcache->fill.addr).set_idx,
+                                    static_cast<int>(mshr2dcache->fill.way),
+                                    mshr2dcache->fill.data);
+            print_focus_backing_words("FILL APPLY", (long long)sim_time,
+                                      mshr2dcache->fill.addr);
         }
         write_dcache_line(decode(mshr2dcache->fill.addr).set_idx,
                           mshr2dcache->fill.way,
                           decode(mshr2dcache->fill.addr).tag,
                           mshr2dcache->fill.data);
+        if (mshr2dcache->fill.dirty) {
+            dirty_array[decode(mshr2dcache->fill.addr).set_idx]
+                       [mshr2dcache->fill.way] = true;
+        }
         if (is_coremark_focus_line(mshr2dcache->fill.addr)) {
             int final_way = -1;
             AddrFields f = decode(mshr2dcache->fill.addr);
@@ -963,8 +1131,8 @@ void RealDcache::seq() {
                     break;
                 }
             }
-            // print_focus_line_words("FILL COMMIT", (long long)sim_time, f.set_idx,
-            //                        final_way);
+            print_focus_line_words("FILL COMMIT", (long long)sim_time, f.set_idx,
+                                   final_way);
         }
     }
 

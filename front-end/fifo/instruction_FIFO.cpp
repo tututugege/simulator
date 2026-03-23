@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <queue>
 #include <vector>
 
 #include "frontend.h"
@@ -82,13 +81,7 @@ class InstructionFifoModel {
 public:
   void seq_read(const instruction_FIFO_in &inp, instruction_FIFO_read_data &rd) const {
     (void)inp;
-    std::memset(&rd, 0, sizeof(instruction_FIFO_read_data));
-    rd.size = static_cast<uint8_t>(fifo_.size());
-    std::queue<instruction_FIFO_entry> snapshot = fifo_;
-    for (uint8_t i = 0; i < rd.size; ++i) {
-      rd.entries[i] = snapshot.front();
-      snapshot.pop();
-    }
+    rd = state_;
   }
 
   void build_next_read_data(const instruction_FIFO_read_data &cur,
@@ -133,20 +126,11 @@ public:
   }
 
   void seq_write(const instruction_FIFO_read_data &next_rd) {
-    clear_fifo(fifo_);
-    for (uint8_t i = 0; i < next_rd.size; ++i) {
-      fifo_.push(next_rd.entries[i]);
-    }
+    state_ = next_rd;
   }
 
 private:
-  void clear_fifo(std::queue<instruction_FIFO_entry> &queue_ref) {
-    while (!queue_ref.empty()) {
-      queue_ref.pop();
-    }
-  }
-
-  std::queue<instruction_FIFO_entry> fifo_;
+  instruction_FIFO_read_data state_{};
 };
 
 InstructionFifoModel g_instruction_fifo;

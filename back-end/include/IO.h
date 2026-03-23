@@ -102,6 +102,12 @@ struct DecRenIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
 
@@ -380,6 +386,12 @@ struct RobCommitIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -536,6 +548,12 @@ struct DisRobIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -667,6 +685,12 @@ struct RenDisIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
 
@@ -796,6 +820,12 @@ struct DisIssIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -968,6 +998,12 @@ struct IssPrfIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -1078,6 +1114,12 @@ struct PrfExeIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -1161,6 +1203,7 @@ struct ExuRobIO {
     wire<32> diag_val;
     wire<32> result;
     wire<ROB_IDX_WIDTH> rob_idx;
+    wire<1> rob_flag;
     wire<1> mispred;
     wire<1> br_taken;
     wire<1> page_fault_inst;
@@ -1177,6 +1220,7 @@ struct ExuRobIO {
       dst.diag_val = src.diag_val;
       dst.result = src.result;
       dst.rob_idx = src.rob_idx;
+      dst.rob_flag = src.rob_flag;
       dst.mispred = src.mispred;
       dst.br_taken = src.br_taken;
       dst.page_fault_inst = src.page_fault_inst;
@@ -1193,6 +1237,7 @@ struct ExuRobIO {
       dst.diag_val = diag_val;
       dst.result = result;
       dst.rob_idx = rob_idx;
+      dst.rob_flag = rob_flag;
       dst.mispred = mispred;
       dst.br_taken = br_taken;
       dst.page_fault_inst = page_fault_inst;
@@ -1200,6 +1245,12 @@ struct ExuRobIO {
       dst.page_fault_store = page_fault_store;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -1605,6 +1656,7 @@ struct LsuExeIO {
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<BR_MASK_WIDTH> br_mask;
     wire<ROB_IDX_WIDTH> rob_idx;
+    wire<1> rob_flag;
     wire<1> dest_en;
     wire<1> page_fault_load;
     wire<1> page_fault_store;
@@ -1621,6 +1673,7 @@ struct LsuExeIO {
       dst.dest_preg = src.dest_preg;
       dst.br_mask = src.br_mask;
       dst.rob_idx = src.rob_idx;
+      dst.rob_flag = src.rob_flag;
       dst.dest_en = src.dest_en;
       dst.page_fault_load = src.page_fault_load;
       dst.page_fault_store = src.page_fault_store;
@@ -1637,11 +1690,18 @@ struct LsuExeIO {
       dst.dest_preg = dest_preg;
       dst.br_mask = br_mask;
       dst.rob_idx = rob_idx;
+      dst.rob_flag = rob_flag;
       dst.dest_en = dest_en;
       dst.page_fault_load = page_fault_load;
       dst.page_fault_store = page_fault_store;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -1755,6 +1815,12 @@ struct ExeLsuIO {
       dst.dest_en = dest_en;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
+      dst.instruction = dst.dbg.instruction;
+      dst.pc = dst.dbg.pc;
+      dst.mem_align_mask = dst.dbg.mem_align_mask;
+      dst.difftest_skip = dst.dbg.difftest_skip;
+      dst.inst_idx = dst.dbg.inst_idx;
+      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };

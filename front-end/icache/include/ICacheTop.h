@@ -30,6 +30,7 @@ public:
   virtual void comb() = 0;
   virtual void seq() = 0;
   virtual void peek_ready() = 0;
+  virtual void dump_debug_state() const = 0;
   virtual void set_ptw_mem_port(PtwMemPort *port) { (void)port; }
   virtual void set_ptw_walk_port(PtwWalkPort *port) { (void)port; }
   virtual void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) {

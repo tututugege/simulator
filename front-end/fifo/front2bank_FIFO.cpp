@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <queue>
 #include <vector>
 
 constexpr uint32_t bit_mask_u32(int bits) {
@@ -130,13 +129,7 @@ class Front2BackFifoModel {
 public:
   void seq_read(const front2back_FIFO_in &inp, front2back_FIFO_read_data &rd) const {
     (void)inp;
-    std::memset(&rd, 0, sizeof(front2back_FIFO_read_data));
-    rd.size = static_cast<uint8_t>(fifo_.size());
-    std::queue<front2back_FIFO_entry> snapshot = fifo_;
-    for (uint8_t i = 0; i < rd.size; ++i) {
-      rd.entries[i] = snapshot.front();
-      snapshot.pop();
-    }
+    rd = state_;
   }
 
   void build_next_read_data(const front2back_FIFO_read_data &cur,
@@ -181,20 +174,11 @@ public:
   }
 
   void seq_write(const front2back_FIFO_read_data &next_rd) {
-    clear_queue(fifo_);
-    for (uint8_t i = 0; i < next_rd.size; ++i) {
-      fifo_.push(next_rd.entries[i]);
-    }
+    state_ = next_rd;
   }
 
 private:
-  void clear_queue(std::queue<front2back_FIFO_entry> &queue_ref) {
-    while (!queue_ref.empty()) {
-      queue_ref.pop();
-    }
-  }
-
-  std::queue<front2back_FIFO_entry> fifo_;
+  front2back_FIFO_read_data state_{};
 };
 
 Front2BackFifoModel g_front2back_fifo_model;

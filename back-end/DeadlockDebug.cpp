@@ -8,12 +8,15 @@ namespace deadlock_debug {
 namespace {
 DumpCallback g_lsu_dump_cb = nullptr;
 DumpCallback g_mem_dump_cb = nullptr;
+DumpCallback g_front_dump_cb = nullptr;
 DumpCallback g_soc_dump_cb = nullptr;
 } // namespace
 
 void register_lsu_dump_cb(DumpCallback cb) { g_lsu_dump_cb = cb; }
 
 void register_mem_dump_cb(DumpCallback cb) { g_mem_dump_cb = cb; }
+
+void register_front_dump_cb(DumpCallback cb) { g_front_dump_cb = cb; }
 
 void register_soc_dump_cb(DumpCallback cb) { g_soc_dump_cb = cb; }
 
@@ -28,6 +31,11 @@ void dump_all() {
     g_mem_dump_cb();
   } else {
     std::printf("[DEADLOCK] MemSubsystem dump callback is not registered.\n");
+  }
+  if (g_front_dump_cb != nullptr) {
+    g_front_dump_cb();
+  } else {
+    std::printf("[DEADLOCK] Front-end dump callback is not registered.\n");
   }
   if (g_soc_dump_cb != nullptr) {
     g_soc_dump_cb();

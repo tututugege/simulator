@@ -210,8 +210,7 @@ void BackTop::comb() {
   lsu2exe = {};
   lsu2dis = {};
   lsu2rob = {};
-  lsu2dcache_req = {};
-  lsu2dcache_wreq = {};
+  lsu2dcache_io = {};
 #endif
 
   pre_idu_queue->comb_begin();
@@ -438,6 +437,10 @@ void BackTop::restore_from_ref() {
   dut_cpu.store = state.store;
   dut_cpu.store_addr = state.store_addr;
   dut_cpu.store_data = state.store_data;
+  dut_cpu.store_strb = state.store_strb;
+  dut_cpu.reserve_valid = state.reserve_valid;
+  dut_cpu.reserve_addr = state.reserve_addr;
+  lsu->restore_reservation(state.reserve_valid, state.reserve_addr);
 
   // Ensure the pipeline starts with a refetch from the restored PC
   out.flush = true;
@@ -493,6 +496,8 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   state.store_data = ckpt_state.store_data;
   state.store_strb = ckpt_state.store_strb;
   state.store = ckpt_state.store;
+  state.reserve_valid = ckpt_state.reserve_valid;
+  state.reserve_addr = ckpt_state.reserve_addr;
 
   // 初始化新字段
   state.instruction = 0;
@@ -523,6 +528,10 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   dut_cpu.store = state.store;
   dut_cpu.store_addr = state.store_addr;
   dut_cpu.store_data = state.store_data;
+  dut_cpu.store_strb = state.store_strb;
+  dut_cpu.reserve_valid = state.reserve_valid;
+  dut_cpu.reserve_addr = state.reserve_addr;
+  lsu->restore_reservation(state.reserve_valid, state.reserve_addr);
 
   // 2. 恢复内存
   if (p_memory == nullptr) {

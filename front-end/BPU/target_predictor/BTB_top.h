@@ -861,15 +861,13 @@ public:
     std::memset(&rd.mem_2, 0, sizeof(rd.mem_2));
   }
 
-  void btb_comb_calc(const InputPayload &inp, const ReadData &rd,
+  void btb_comb_calc(const InputPayload &inp, ReadData &rd,
                      OutputPayload &out, CombResult &req) const {
-    ReadData working_rd = rd;
     BtbPreReadCombOut pre_read_out{};
     btb_pre_read_comb(BtbPreReadCombIn{inp}, pre_read_out);
     BtbCombOut comb_out{};
-    btb_data_seq_read(BtbDataSeqReadIn{pre_read_out.pred_req, pre_read_out.upd_req},
-                      working_rd);
-    btb_comb(BtbCombIn{inp, working_rd}, comb_out);
+    btb_data_seq_read(BtbDataSeqReadIn{pre_read_out.pred_req, pre_read_out.upd_req}, rd);
+    btb_comb(BtbCombIn{inp, rd}, comb_out);
     out = comb_out.out_regs;
     req = comb_out.req;
   }

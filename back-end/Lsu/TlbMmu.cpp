@@ -1,10 +1,42 @@
 #include "TlbMmu.h"
+#include "AbstractLsu.h"
 #include "PtwMemPort.h"
 #include "ref.h"
 
-TlbMmu::TlbMmu(SimContext *ctx, PtwMemPort *port, int tlb_entries)
+namespace {
+#ifndef CONFIG_ITLB_FOCUS_VADDR_BEGIN
+#define CONFIG_ITLB_FOCUS_VADDR_BEGIN 0u
+#endif
+
+#ifndef CONFIG_ITLB_FOCUS_VADDR_END
+#define CONFIG_ITLB_FOCUS_VADDR_END 0u
+#endif
+
+inline bool itlb_focus_vaddr(uint32_t v_addr) {
+  return CONFIG_ITLB_FOCUS_VADDR_END > CONFIG_ITLB_FOCUS_VADDR_BEGIN &&
+         v_addr >= CONFIG_ITLB_FOCUS_VADDR_BEGIN &&
+         v_addr < CONFIG_ITLB_FOCUS_VADDR_END;
+}
+
+inline const char *mmu_result_name(AbstractMmu::Result ret) {
+  switch (ret) {
+  case AbstractMmu::Result::OK:
+    return "OK";
+  case AbstractMmu::Result::RETRY:
+    return "RETRY";
+  case AbstractMmu::Result::FAULT:
+    return "FAULT";
+  default:
+    return "UNKNOWN";
+  }
+}
+} // namespace
+
+TlbMmu::TlbMmu(SimContext *ctx, PtwMemPort *port, AbstractLsu *coherent_lsu,
+               int tlb_entries)
     : ctx(ctx), walker(port), dtlb(tlb_entries > 0 ? tlb_entries : 1),
-      tlb_entries(tlb_entries > 0 ? tlb_entries : 1), repl_ptr(0) {
+      tlb_entries(tlb_entries > 0 ? tlb_entries : 1), repl_ptr(0),
+      coherent_lsu_(coherent_lsu) {
   (void)this->ctx;
   flush();
 }
@@ -29,6 +61,20 @@ void TlbMmu::flush() {
   }
   repl_ptr = 0;
   cancel_pending_walk();
+}
+
+TlbMmu::DebugState TlbMmu::debug_state() const {
+  DebugState d{};
+  d.walk_active = walk_active;
+  d.walk_req_sent = walk_req_sent;
+  d.walk_v_addr = walk_v_addr;
+  d.walk_type = walk_type;
+  d.walk_satp = walk_satp;
+  d.walk_eff_priv = walk_eff_priv;
+  d.walk_mxr = walk_mxr;
+  d.walk_sum = walk_sum;
+  d.last_retry_reason = last_retry_reason_;
+  return d;
 }
 
 bool TlbMmu::lookup(uint32_t v_addr, uint8_t asid, TlbEntry &hit) const {
@@ -175,6 +221,63 @@ AbstractMmu::Result TlbMmu::walk_and_refill(uint32_t &p_addr, uint32_t v_addr,
 }
 
 AbstractMmu::Result
+TlbMmu::walk_and_refill_coherent(uint32_t &p_addr, uint32_t v_addr,
+                                 uint32_t type, CsrStatusIO *status) {
+  if (coherent_lsu_ == nullptr) {
+    return Result::FAULT;
+  }
+
+  uint32_t satp = status->satp;
+  uint32_t mstatus = status->mstatus;
+  int eff_priv = status->privilege;
+  bool mxr = (mstatus & MSTATUS_MXR) != 0;
+  bool sum = (mstatus & MSTATUS_SUM) != 0;
+  bool mprv = (mstatus & MSTATUS_MPRV) != 0;
+  if (type != 0 && mprv) {
+    eff_priv = (mstatus >> MSTATUS_MPP_SHIFT) & 0x3;
+  }
+
+  if ((eff_priv == 3) || ((satp & 0x80000000u) == 0)) {
+    p_addr = v_addr;
+    return Result::OK;
+  }
+
+  uint32_t ppn = satp & 0x3FFFFFu;
+  for (int level = 1; level >= 0; level--) {
+    const int vpn_shift = 12 + level * 10;
+    const uint32_t vpn = (v_addr >> vpn_shift) & 0x3FFu;
+    const uint32_t pte_addr = (ppn << 12) + (vpn << 2);
+    const uint32_t pte = coherent_lsu_->coherent_read(pte_addr);
+    const bool v = (pte & PTE_V) != 0;
+    const bool r = (pte & PTE_R) != 0;
+    const bool w = (pte & PTE_W) != 0;
+    const bool x = (pte & PTE_X) != 0;
+    if (!v || (!r && w)) {
+      return Result::FAULT;
+    }
+    if (r || x) {
+      if (((pte >> 10) & ((1u << (level * 10)) - 1u)) != 0) {
+        return Result::FAULT;
+      }
+      if (!check_perm(pte & 0xFFu, type, eff_priv, sum, mxr)) {
+        return Result::FAULT;
+      }
+      const uint8_t asid = (satp >> 22) & 0xFF;
+      refill(v_addr, asid, static_cast<uint8_t>(level), pte);
+      const TlbEntry &e = dtlb[(repl_ptr + tlb_entries - 1) % tlb_entries];
+      p_addr = compose_paddr(v_addr, e);
+      return Result::OK;
+    }
+    if (level == 0) {
+      return Result::FAULT;
+    }
+    ppn = (pte >> 10) & 0x3FFFFFu;
+  }
+
+  return Result::FAULT;
+}
+
+AbstractMmu::Result
 TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
                                CsrStatusIO *status) {
   uint32_t satp = status->satp;
@@ -197,7 +300,9 @@ TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
     walk_mxr = mxr;
     walk_sum = sum;
   } else {
-    if (walk_v_addr != v_addr || walk_type != type || walk_satp != satp) {
+    const uint32_t walk_page = walk_v_addr >> 12;
+    const uint32_t req_page = v_addr >> 12;
+    if (walk_page != req_page || walk_satp != satp) {
       last_retry_reason_ = RetryReason::OTHER_WALK_ACTIVE;
       return Result::RETRY;
     }
@@ -226,20 +331,36 @@ TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
   walk_req_sent = false;
 
   if (wr.fault) {
+    if (coherent_lsu_ != nullptr && coherent_lsu_->has_committed_store_pending()) {
+      const Result coherent_ret =
+          walk_and_refill_coherent(p_addr, v_addr, type, status);
+      if (coherent_ret == Result::OK) {
+        last_retry_reason_ = RetryReason::NONE;
+        return coherent_ret;
+      }
+    }
     last_retry_reason_ = RetryReason::NONE;
     return Result::FAULT;
   }
 
   uint8_t perm = wr.leaf_pte & 0xFF;
-  if (!check_perm(perm, walk_type, walk_eff_priv, walk_sum, walk_mxr)) {
+  if (!check_perm(perm, type, eff_priv, sum, mxr)) {
+    if (coherent_lsu_ != nullptr && coherent_lsu_->has_committed_store_pending()) {
+      const Result coherent_ret =
+          walk_and_refill_coherent(p_addr, v_addr, type, status);
+      if (coherent_ret == Result::OK) {
+        last_retry_reason_ = RetryReason::NONE;
+        return coherent_ret;
+      }
+    }
     last_retry_reason_ = RetryReason::NONE;
     return Result::FAULT;
   }
 
   uint8_t asid = (walk_satp >> 22) & 0xFF;
-  refill(walk_v_addr, asid, wr.leaf_level, wr.leaf_pte);
+  refill(v_addr, asid, wr.leaf_level, wr.leaf_pte);
   const TlbEntry &e = dtlb[(repl_ptr + tlb_entries - 1) % tlb_entries];
-  p_addr = compose_paddr(walk_v_addr, e);
+  p_addr = compose_paddr(v_addr, e);
   last_retry_reason_ = RetryReason::NONE;
   return Result::OK;
 }
@@ -257,6 +378,13 @@ AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
 
   if (eff_priv == 3 || ((satp & 0x80000000u) == 0)) {
     p_addr = v_addr;
+    if (itlb_focus_vaddr(v_addr)) {
+      std::printf(
+          "[ITLB][TRACE] cyc=%lld src=identity v=0x%08x p=0x%08x satp=0x%08x "
+          "priv=%d type=%u ret=%s\n",
+          (long long)sim_time, v_addr, p_addr, satp, eff_priv, type,
+          mmu_result_name(Result::OK));
+    }
     return Result::OK;
   }
 
@@ -266,14 +394,47 @@ AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
 
   TlbEntry hit = {};
   if (lookup(v_addr, asid, hit)) {
-    if (!check_perm(hit.perm, type, eff_priv, sum, mxr)) {
+    const bool perm_ok = check_perm(hit.perm, type, eff_priv, sum, mxr);
+    if (!perm_ok) {
+      if (itlb_focus_vaddr(v_addr)) {
+        std::printf(
+            "[ITLB][TRACE] cyc=%lld src=tlb_hit_perm_fault v=0x%08x "
+            "satp=0x%08x asid=0x%02x priv=%d type=%u perm=0x%02x ret=%s\n",
+            (long long)sim_time, v_addr, satp, asid, eff_priv, type, hit.perm,
+            mmu_result_name(Result::FAULT));
+      }
       return Result::FAULT;
     }
     p_addr = compose_paddr(v_addr, hit);
+    if (itlb_focus_vaddr(v_addr)) {
+      std::printf(
+          "[ITLB][TRACE] cyc=%lld src=tlb_hit v=0x%08x p=0x%08x satp=0x%08x "
+          "asid=0x%02x priv=%d type=%u level=%u perm=0x%02x ret=%s\n",
+          (long long)sim_time, v_addr, p_addr, satp, asid, eff_priv, type,
+          static_cast<unsigned>(hit.level), hit.perm, mmu_result_name(Result::OK));
+    }
     return Result::OK;
   }
   if (walk_port != nullptr) {
-    return walk_and_refill_shared(p_addr, v_addr, type, status);
+    const Result ret = walk_and_refill_shared(p_addr, v_addr, type, status);
+    if (itlb_focus_vaddr(v_addr)) {
+      std::printf(
+          "[ITLB][TRACE] cyc=%lld src=walk_shared v=0x%08x p=0x%08x "
+          "satp=0x%08x asid=0x%02x priv=%d type=%u walk_active=%d "
+          "walk_req_sent=%d ret=%s\n",
+          (long long)sim_time, v_addr, p_addr, satp, asid, eff_priv, type,
+          static_cast<int>(walk_active), static_cast<int>(walk_req_sent),
+          mmu_result_name(ret));
+    }
+    return ret;
   }
-  return walk_and_refill(p_addr, v_addr, type, status);
+  const Result ret = walk_and_refill(p_addr, v_addr, type, status);
+  if (itlb_focus_vaddr(v_addr)) {
+    std::printf(
+        "[ITLB][TRACE] cyc=%lld src=walk_local v=0x%08x p=0x%08x "
+        "satp=0x%08x asid=0x%02x priv=%d type=%u ret=%s\n",
+        (long long)sim_time, v_addr, p_addr, satp, asid, eff_priv, type,
+        mmu_result_name(ret));
+  }
+  return ret;
 }
