@@ -102,12 +102,6 @@ struct DecRenIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
 
@@ -386,12 +380,6 @@ struct RobCommitIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -548,12 +536,6 @@ struct DisRobIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -685,12 +667,6 @@ struct RenDisIO {
       dst.type = decode_inst_type(type);
       dst.tma = tma;
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
 
@@ -820,12 +796,6 @@ struct DisIssIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -998,12 +968,6 @@ struct IssPrfIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -1114,12 +1078,6 @@ struct PrfExeIO {
       dst.page_fault_store = false;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };
@@ -1242,12 +1200,6 @@ struct ExuRobIO {
       dst.page_fault_store = page_fault_store;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -1690,12 +1642,6 @@ struct LsuExeIO {
       dst.page_fault_store = page_fault_store;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       dst.flush_pipe = flush_pipe;
       return dst;
     }
@@ -1809,12 +1755,6 @@ struct ExeLsuIO {
       dst.dest_en = dest_en;
       dst.op = decode_uop_type(op);
       dst.dbg = dbg;
-      dst.instruction = dst.dbg.instruction;
-      dst.pc = dst.dbg.pc;
-      dst.mem_align_mask = dst.dbg.mem_align_mask;
-      dst.difftest_skip = dst.dbg.difftest_skip;
-      dst.inst_idx = dst.dbg.inst_idx;
-      dst.is_cache_miss = dst.tma.is_cache_miss;
       return dst;
     }
   };

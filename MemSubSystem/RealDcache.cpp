@@ -147,23 +147,13 @@ void RealDcache::end_req_track(bool is_store, size_t req_id, uint32_t rob_idx,
 }
 
 bool RealDcache::special_load_addr(uint32_t addr,uint32_t &mem_val,MicroOp &uop){
-    if (addr == 0x1fd0e000) {
-#ifdef CONFIG_BPU
-    mem_val = sim_time;
-#else
-    mem_val = get_oracle_timer();
-#endif
-    uop.difftest_skip = true;
-    return 1;
-  } else if (addr == 0x1fd0e004) {
-    mem_val = 0;
-    uop.difftest_skip = true;
-    return 1;
-  } else {
-    uop.difftest_skip = false;
+    // Timer addresses (0x1fd0e000, 0x1fd0e004) are now classified as MMIO by
+    // is_mmio_addr() and routed through PeripheralAxi. If a Timer load somehow
+    // reaches DCache, it would cause a double-pop of the oracle_timer_queue.
+    Assert(addr != OPENSBI_TIMER_LOW_ADDR && addr != OPENSBI_TIMER_HIGH_ADDR &&
+           "Timer address reached DCache! Should be routed via MMIO path.");
+    uop.dbg.difftest_skip = false;
     return 0;
-  }
-  return 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

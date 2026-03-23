@@ -75,7 +75,6 @@ constexpr uint32_t DEBUG_ADDR = 0x807a1848; // 0x807a4000
 #define CONFIG_PERF_COUNTER
 // #define CONFIG_BPU
 
-
 // ============================================================
 // [4] D-Cache Config
 // ============================================================
@@ -167,7 +166,7 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 #endif
 
 #ifndef CONFIG_DEADLOCK_REPLAY_TRACE_DUMP_COUNT
-#define CONFIG_DEADLOCK_REPLAY_TRACE_DUMP_COUNT 5000
+#define CONFIG_DEADLOCK_REPLAY_TRACE_DUMP_COUNT 0
 #endif
 
 #ifndef CONFIG_DEADLOCK_REPLAY_TRACE_BUFFER_SIZE
@@ -182,18 +181,18 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 #define CONFIG_DEBUG_PTW_WALK_RESP_DETAIL_MAX 128
 #endif
 
-#define SIM_DEBUG_PRINT_ACTIVE                                                \
-  (SIM_DEBUG_PRINT &&                                                         \
-   (static_cast<unsigned long long>(sim_time) >=                              \
-    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_BEGIN)) &&          \
-   (static_cast<unsigned long long>(sim_time) <=                              \
+#define SIM_DEBUG_PRINT_ACTIVE                                                 \
+  (SIM_DEBUG_PRINT &&                                                          \
+   (static_cast<unsigned long long>(sim_time) >=                               \
+    static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_BEGIN)) &&           \
+   (static_cast<unsigned long long>(sim_time) <=                               \
     static_cast<unsigned long long>(SIM_DEBUG_PRINT_CYCLE_END)))
 
-#define SIM_LSU_MEM_DEBUG_PRINT_ACTIVE                                        \
-  (SIM_LSU_MEM_DEBUG_PRINT &&                                                 \
-   (static_cast<unsigned long long>(sim_time) >=                              \
-    static_cast<unsigned long long>(SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN)) &&  \
-   (static_cast<unsigned long long>(sim_time) <=                              \
+#define SIM_LSU_MEM_DEBUG_PRINT_ACTIVE                                         \
+  (SIM_LSU_MEM_DEBUG_PRINT &&                                                  \
+   (static_cast<unsigned long long>(sim_time) >=                               \
+    static_cast<unsigned long long>(SIM_LSU_MEM_DEBUG_PRINT_CYCLE_BEGIN)) &&   \
+   (static_cast<unsigned long long>(sim_time) <=                               \
     static_cast<unsigned long long>(SIM_LSU_MEM_DEBUG_PRINT_CYCLE_END)))
 
 // Lightweight LSU STQ invariant checks.
@@ -271,7 +270,8 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 #define CONFIG_AXI_PROTOCOL 4
 #endif
 #if CONFIG_AXI_PROTOCOL != 4
-#error "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
+#error                                                                         \
+    "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
 #endif
 
 // Enable the shared AXI LLC path.
@@ -328,7 +328,6 @@ constexpr int ICACHE_WORD_NUM = ICACHE_LINE_SIZE / 4;
 constexpr int ICACHE_TAG_BITS = 32 - ICACHE_INDEX_BITS - ICACHE_OFFSET_BITS;
 constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
-
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
 constexpr int DCACHE_L2_HIT_LATENCY = 8;
@@ -358,7 +357,7 @@ constexpr uint32_t DCACHE_L2_TAG_MASK = (1u << DCACHE_L2_TAG_BITS) - 1u;
 // [5] Core Resource Size
 // ============================================================
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 256; // Tuned for 4-wide
+constexpr int PRF_NUM = 160; // Tuned for 4-wide
 constexpr int MAX_BR_NUM = 64;
 // Branch tag allocation bandwidth per cycle.
 // Keep it aligned with decode width on wide frontend/backend configurations.
@@ -366,7 +365,7 @@ constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 256;
+constexpr int ROB_NUM = 128;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM; // (ROB_NUM / ROB_BANK_NUM)
 
 // ============================================================
@@ -414,7 +413,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU | OP_MASK_FP),               // Port 1: Simple ALU
+    PORT_CFG(OP_MASK_ALU | OP_MASK_FP),  // Port 1: Simple ALU
     PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
@@ -660,5 +659,7 @@ constexpr uint32_t PLIC_ADDR_MASK = 0xFC000000;
 constexpr uint32_t PLIC_CLAIM_ADDR = 0x0c201004;
 constexpr uint32_t CLINT_ADDR_BASE = 0x02000000;
 constexpr uint32_t CLINT_ADDR_MASK = 0xFFFF0000;
+constexpr uint32_t OPENSBI_TIMER_LOW_ADDR = 0x1fd0e000;
+constexpr uint32_t OPENSBI_TIMER_HIGH_ADDR = 0x1fd0e004;
 
 #include "types.h"

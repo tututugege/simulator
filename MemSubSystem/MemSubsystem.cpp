@@ -1032,7 +1032,7 @@ void MemSubsystem::dump_debug_state() const {
     std::printf(
         "[DEADLOCK][MEM][RESP_ROUTE][TAG %d] valid=%d owner=%u req_id=%zu req_addr=0x%08x pc=0x%08x inst=0x%08x\n",
         i, static_cast<int>(tag.valid), static_cast<unsigned>(tag.owner), tag.req_id,
-        tag.req_addr, tag.uop.pc, tag.uop.instruction);
+        tag.req_addr, tag.uop.dbg.pc, tag.uop.dbg.instruction);
   }
   for (size_t i = 0; i < MemRespRouteBlock::kPtwTrackCount; i++) {
     const auto &track = route_dbg.ptw_tracks[i];

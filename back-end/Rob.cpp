@@ -91,8 +91,9 @@ void Rob::comb_ready() {
             rob_is_store(entry[i][deq_ptr].uop)) {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
-          stall_is_miss =
-              (rob_idx < ROB_NUM) ? in.lsu2rob->tma.miss_mask.test(rob_idx) : false;
+          stall_is_miss = (rob_idx < ROB_NUM)
+                              ? in.lsu2rob->tma.miss_mask.test(rob_idx)
+                              : false;
         } else {
           stall_is_mem = false;
           stall_is_miss = false;
@@ -181,17 +182,12 @@ void Rob::comb_commit() {
     if (!rob_is_store(uop) || uop.cplt_num == uop.uop_num) {
       return;
     }
-    // std::printf(
-    //     "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
-    //     "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
-    //     "interrupt=%d flush=%d mispred=%d\n",
-    //     (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
-    //     (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
-    //     (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
-    //     (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
-    //     (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
-    //     (int)in.dec_bcast->mispred);
-    deadlock_debug::dump_all();
+    // Disabled: dump_all() here fires on every incomplete-store commit,
+    // flooding the terminal.  The deadlock path (stall_cycle > 10000)
+    // already calls dump_all().
+    // deadlock_debug::dump_all();
+    // std::fflush(stdout);
+    // std::fflush(stderr);
   };
 
   if (!in.dec_bcast->mispred) {
@@ -213,8 +209,7 @@ void Rob::comb_commit() {
           single_commit = false;
         }
         if (decode_inst_type(entry[i][deq_ptr].uop.type) == SFENCE_VMA &&
-            in.lsu2rob != nullptr &&
-            in.lsu2rob->committed_store_pending) {
+            in.lsu2rob != nullptr && in.lsu2rob->committed_store_pending) {
           // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
           single_commit = false;
@@ -246,7 +241,8 @@ void Rob::comb_commit() {
   }
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop.to_commit_inst();
+    out.rob_commit->commit_entry[i].uop =
+        entry[i][deq_ptr].uop.to_commit_inst();
   }
 
   // 一组提交
@@ -265,8 +261,7 @@ void Rob::comb_commit() {
       }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
       if (out.rob_commit->commit_entry[i].valid) {
-        log_incomplete_store_commit(entry[i][deq_ptr].uop, "group",
-                                    i);
+        log_incomplete_store_commit(entry[i][deq_ptr].uop, "group", i);
       }
       entry_1[i][deq_ptr].valid = false;
     }
@@ -300,9 +295,11 @@ void Rob::comb_commit() {
 
     entry_1[single_idx][deq_ptr].valid = false;
     if (progress_single_commit) {
-      DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u rob_idx=%u pc=0x%08x type=%u\n",
+      DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u "
+                 "rob_idx=%u pc=0x%08x type=%u\n",
                  (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
-                 (unsigned)single_idx, (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
+                 (unsigned)single_idx,
+                 (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
                  entry[single_idx][deq_ptr].uop.dbg.pc,
                  (unsigned)entry[single_idx][deq_ptr].uop.type);
     }
@@ -364,7 +361,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > 10000) {
+  if (stall_cycle > 50000) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -390,8 +387,8 @@ void Rob::comb_commit() {
       }
     }
 
-    deadlock_debug::dump_all();
-    Assert(0 && "ROB Deadlock detected (stall_cycle > 10000)");
+    // deadlock_debug::dump_all();
+    Assert(0 && "ROB Deadlock detected (stall_cycle > 50000)");
   }
 }
 

@@ -381,3 +381,86 @@ MMIO store：
 - 因此，MMIO load 和 MMIO store 应分开看：
   - load 更像“漏掉了旧语义”
   - store 更像“为了规避新时序问题而故意改变语义”
+
+## 本次提交落地清单（对应 1/2/5 + 内存修复）
+
+本节基于当前工作区 `git diff` 汇总本次实际落地内容。
+
+### A. 对应问题 1：Difftest page fault 传递与 `ref_only`
+
+相关文件：
+- [diff/diff.cpp](/home/tututu/qimeng/simulator/diff/diff.cpp)
+- [diff/include/ref.h](/home/tututu/qimeng/simulator/diff/include/ref.h)
+- [diff/ref.cpp](/home/tututu/qimeng/simulator/diff/ref.cpp)
+- [main.cpp](/home/tututu/qimeng/simulator/main.cpp)
+
+已落地：
+- `difftest_step()` / `difftest_skip()` 直接同步 `dut_cpu.page_fault_*` 到 REF 期望位。
+- 移除 `set_dut_page_fault_expect(...)` setter，减少过度包装。
+- 新增 `ref_only` 模式；在 `va2pa_fix()` 中 `ref_only` 下绕过 DUT/REF page fault 对齐检查。
+- `main` 的 prewarm/fast/ref-only 路径显式设置 `ref_only` 开关。
+
+### B. 对应问题 2：Oracle 行为与 timer 同步
+
+相关文件：
+- [diff/br_oracle.cpp](/home/tututu/qimeng/simulator/diff/br_oracle.cpp)
+- [diff/include/oracle.h](/home/tututu/qimeng/simulator/diff/include/oracle.h)
+- [diff/ref.cpp](/home/tututu/qimeng/simulator/diff/ref.cpp)
+- [MemSubSystem/PeripheralAxi.cpp](/home/tututu/qimeng/simulator/MemSubSystem/PeripheralAxi.cpp)
+- [MemSubSystem/RealDcache.cpp](/home/tututu/qimeng/simulator/MemSubSystem/RealDcache.cpp)
+- [include/config.h](/home/tututu/qimeng/simulator/include/config.h)
+
+已落地：
+- 采用简洁 timer FIFO 方案：
+  - REF 在 timer low/high 读时 `push_oracle_timer(val)`
+  - DUT 在 oracle 模式经 `PeripheralAxi` 本地特殊路径 `get_oracle_timer()`
+- 新增 OpenSBI timer 地址常量：
+  - `OPENSBI_TIMER_LOW_ADDR`
+  - `OPENSBI_TIMER_HIGH_ADDR`
+- `init_oracle()` / `init_oracle_ckpt()` 启动时清空 timer FIFO。
+- DCache 侧增加防护断言：timer 地址不应进入 DCache 数据路径，避免双消费 FIFO。
+
+### C. 对应问题 5：去除重复 sideband 字段，统一 `dbg/tma`
+
+相关文件：
+- [back-end/include/types.h](/home/tututu/qimeng/simulator/back-end/include/types.h)
+- [back-end/include/IO.h](/home/tututu/qimeng/simulator/back-end/include/IO.h)
+- [rv_simu_mmu_v2.cpp](/home/tututu/qimeng/simulator/rv_simu_mmu_v2.cpp)
+- [MemSubSystem/MemSubsystem.cpp](/home/tututu/qimeng/simulator/MemSubSystem/MemSubsystem.cpp)
+
+已落地：
+- 删除 `InstInfo/MicroOp` 中重复平铺字段（`instruction/pc/mem_align_mask/difftest_skip/inst_idx/is_cache_miss`）。
+- 各层 IO 转换统一使用 `dbg` 与 `tma`，不再拷贝重复字段。
+- difftest 准备路径统一读取 `inst->dbg.*`。
+- 内存子系统调试打印同步切换到 `uop.dbg.*`。
+
+### D. 内存相关修复（MSHR、双访存/MMIO）
+
+相关文件：
+- [rv_simu_mmu_v2.cpp](/home/tututu/qimeng/simulator/rv_simu_mmu_v2.cpp)
+- [back-end/Lsu/RealLsu.cpp](/home/tututu/qimeng/simulator/back-end/Lsu/RealLsu.cpp)
+
+已落地：
+- MSHR AXI 握手 ID 修复：
+  - `req_accepted_id` 改为使用 interconnect 的 `read_req_accepted_id`，避免槽位错配。
+- MMIO load/store 仍通过 `pending_mmio` + `peripheral_io` 路径。
+- 修复 MMIO 双发：
+  - 删除 `comb_recv()` 末尾对 `pending_mmio_req` 的再次驱动，确保请求只在拍首 pending 路径发送一次。
+  - 该修复用于消除“同一条 MMIO load 被重复发送/重复消费”的问题。
+
+### E. 其他并行调整
+
+相关文件：
+- [include/config.h](/home/tututu/qimeng/simulator/include/config.h)
+- [back-end/Rob.cpp](/home/tututu/qimeng/simulator/back-end/Rob.cpp)
+
+已落地：
+- 核心规模恢复：`PRF_NUM=160`、`ROB_NUM=128`。
+- 维持当前 `CONFIG_BPU` 关闭状态。
+- ROB 死锁阈值与 dump 行为做了调试向调整（阈值与打印策略变化）。
+
+### 当前状态结论
+
+- 本次提交已将 timer 同步路径收敛为“简单 FIFO”实现，去除此前临时调试包装。
+- MSHR accepted-id 与 MMIO 双发问题已同步修复。
+- Linux/oracle 路径仍可能出现后续 `a5` 分叉，这属于后续独立问题，不影响本次提交对 1/2/5 与内存基础修复项的落地范围定义。

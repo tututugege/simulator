@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -65,8 +66,8 @@ constexpr uint8_t MAXU = 0b11100;
 
 // Debug sideband for InstInfo. Keep diag_val in hardware path.
 struct InstDebugMeta {
-  wire<32> instruction;
-  wire<32> pc;
+  uint32_t instruction;
+  uint32_t pc;
   uint8_t mem_align_mask;
   bool difftest_skip;
   int64_t inst_idx;
@@ -136,19 +137,11 @@ struct InstInfo {
   wire<1> page_fault_store;
   wire<1> illegal_inst;
   wire<1> is_atomic;
+  wire<1> flush_pipe;
 
   InstType type;
   InstTmaMeta tma;
-  bool is_cache_miss;
-
-  // Debug
   InstDebugMeta dbg;
-  wire<32> instruction;
-  wire<32> pc;
-  uint8_t mem_align_mask;
-  bool difftest_skip;
-  int64_t inst_idx;
-  wire<1> flush_pipe;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
 };
@@ -198,15 +191,7 @@ struct MicroOp {
 
   UopType op;
   UopTmaMeta tma;
-  bool is_cache_miss;
-
-  // Debug
   UopDebugMeta dbg;
-  wire<32> instruction;
-  wire<32> pc;
-  uint8_t mem_align_mask;
-  bool difftest_skip;
-  int64_t inst_idx;
   wire<1> flush_pipe;
   int64_t cplt_time;
 
@@ -259,12 +244,6 @@ struct MicroOp {
     this->dbg.mem_align_mask = info.dbg.mem_align_mask;
     this->dbg.difftest_skip = info.dbg.difftest_skip;
     this->dbg.inst_idx = info.dbg.inst_idx;
-    this->instruction = this->dbg.instruction;
-    this->pc = this->dbg.pc;
-    this->mem_align_mask = this->dbg.mem_align_mask;
-    this->difftest_skip = this->dbg.difftest_skip;
-    this->inst_idx = this->dbg.inst_idx;
-    this->is_cache_miss = this->tma.is_cache_miss;
     this->cplt_time = 0;
     this->flush_pipe = info.flush_pipe;
   }

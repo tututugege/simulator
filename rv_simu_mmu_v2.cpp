@@ -1,6 +1,7 @@
 #include "AbstractLsu.h"
 #include "BackTop.h"
 #include "Csr.h"
+#include "DeadlockDebug.h"
 #include "SimCpu.h"
 #include "config.h"
 #include "diff.h"
@@ -9,10 +10,9 @@
 #include "oracle.h"
 #include "util.h"
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cstdio>
-#include "DeadlockDebug.h"
 #include <iostream>
 
 uint32_t *p_memory;
@@ -60,11 +60,10 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   cpu.mem_subsystem.mshr_axi_in.req_ready = rport.req.ready;
   cpu.mem_subsystem.mshr_axi_in.req_accepted =
       interconnect.read_req_accepted[axi_interconnect::MASTER_DCACHE_R];
-  // The accepted pulse is observed one cycle after the request was driven.
-  // At this point the interconnect master inputs have already been cleared, so
-  // recover the accepted MSHR slot ID from the latched MemSubsystem output.
+  // Use the interconnect-provided accepted_id to mark the exact MSHR slot
+  // whose AR request handshook this cycle.
   cpu.mem_subsystem.mshr_axi_in.req_accepted_id =
-      cpu.mem_subsystem.mshr_axi_out.req_id;
+      interconnect.read_req_accepted_id[axi_interconnect::MASTER_DCACHE_R];
   cpu.mem_subsystem.mshr_axi_in.resp_valid = rport.resp.valid;
   cpu.mem_subsystem.mshr_axi_in.resp_id = rport.resp.id;
   for (int i = 0; i < DCACHE_LINE_WORDS &&
@@ -88,7 +87,8 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   for (int i = 0; i < DCACHE_LINE_WORDS &&
                   i < axi_interconnect::MAX_READ_TRANSACTION_WORDS;
        i++) {
-    cpu.mem_subsystem.peripheral_axi_read_in.resp_data[i] = peri_rport.resp.data[i];
+    cpu.mem_subsystem.peripheral_axi_read_in.resp_data[i] =
+        peri_rport.resp.data[i];
   }
 
   const auto &peri_wport =
@@ -119,8 +119,8 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
   for (int i = 0; i < axi_interconnect::CACHELINE_WORDS; i++) {
     wport.req.wdata[i] = 0;
   }
-  for (int i = 0; i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS;
-       i++) {
+  for (int i = 0;
+       i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS; i++) {
     wport.req.wdata[i] = cpu.mem_subsystem.wb_axi_out.req_wdata[i];
   }
   wport.resp.ready = cpu.mem_subsystem.wb_axi_out.resp_ready;
@@ -129,7 +129,8 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
       cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_EXTRA_R];
   peri_rport.req.valid = cpu.mem_subsystem.peripheral_axi_read_out.req_valid;
   peri_rport.req.addr = cpu.mem_subsystem.peripheral_axi_read_out.req_addr;
-  peri_rport.req.total_size = cpu.mem_subsystem.peripheral_axi_read_out.req_total_size;
+  peri_rport.req.total_size =
+      cpu.mem_subsystem.peripheral_axi_read_out.req_total_size;
   peri_rport.req.id = cpu.mem_subsystem.peripheral_axi_read_out.req_id;
   peri_rport.resp.ready = cpu.mem_subsystem.peripheral_axi_read_out.resp_ready;
 
@@ -137,15 +138,17 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
       cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_EXTRA_W];
   peri_wport.req.valid = cpu.mem_subsystem.peripheral_axi_write_out.req_valid;
   peri_wport.req.addr = cpu.mem_subsystem.peripheral_axi_write_out.req_addr;
-  peri_wport.req.total_size = cpu.mem_subsystem.peripheral_axi_write_out.req_total_size;
+  peri_wport.req.total_size =
+      cpu.mem_subsystem.peripheral_axi_write_out.req_total_size;
   peri_wport.req.id = cpu.mem_subsystem.peripheral_axi_write_out.req_id;
   peri_wport.req.wstrb = cpu.mem_subsystem.peripheral_axi_write_out.req_wstrb;
   for (int i = 0; i < axi_interconnect::CACHELINE_WORDS; i++) {
     peri_wport.req.wdata[i] = 0;
   }
-  for (int i = 0; i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS;
-       i++) {
-    peri_wport.req.wdata[i] = cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
+  for (int i = 0;
+       i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS; i++) {
+    peri_wport.req.wdata[i] =
+        cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
   }
   peri_wport.resp.ready = cpu.mem_subsystem.peripheral_axi_write_out.resp_ready;
 }
@@ -167,7 +170,8 @@ void SimCpu::commit_sync(InstInfo *inst) {
       if (inst->tma.is_ret) {
         this->ctx.perf.ret_mispred_num++;
         bool pred_taken = false;
-        const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+        const FTQEntry *entry =
+            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -179,7 +183,8 @@ void SimCpu::commit_sync(InstInfo *inst) {
       } else {
         this->ctx.perf.jalr_mispred_num++;
         bool pred_taken = false;
-        const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+        const FTQEntry *entry =
+            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -191,7 +196,8 @@ void SimCpu::commit_sync(InstInfo *inst) {
       }
     } else if (inst->type == BR) {
       bool pred_taken = false;
-      const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+      const FTQEntry *entry =
+          back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
       }
@@ -204,14 +210,11 @@ void SimCpu::commit_sync(InstInfo *inst) {
     }
   }
 
-  // if (is_store(*inst) && !inst->page_fault_store) {
-  //   StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-  //   this->mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
-  // }
 }
 
 void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
-  Assert(inst_entry != nullptr && "SimCpu::difftest_prepare: inst_entry is null");
+  Assert(inst_entry != nullptr &&
+         "SimCpu::difftest_prepare: inst_entry is null");
   Assert(skip != nullptr && "SimCpu::difftest_prepare: skip is null");
   BackTop *back = &this->back;
   InstInfo *inst = &inst_entry->uop;
@@ -225,19 +228,19 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-    const bool sc_suppressed =
-        is_amo_sc_inst(*inst) && e.suppress_write &&
-        e.rob_idx == inst->rob_idx && e.rob_flag == inst->rob_flag;
+    const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
+                               e.rob_idx == inst->rob_idx &&
+                               e.rob_flag == inst->rob_flag;
     if (sc_suppressed) {
       // if (!(e.addr_valid && e.data_valid)) {
       //   std::fprintf(
       //       stderr,
       //       "[DIFFTEST][SC_SUPPRESSED] cyc=%lld inst_idx=%lld pc=0x%08x "
-      //       "inst=0x%08x rob=%u flag=%u stq_idx=%u stq_flag=%u stq_valid=%d\n",
-      //       (long long)sim_time, (long long)inst->inst_idx, (uint32_t)inst->pc,
-      //       (uint32_t)inst->instruction, (unsigned)inst->rob_idx,
-      //       (unsigned)inst->rob_flag, (unsigned)inst->stq_idx,
-      //       (unsigned)inst->stq_flag, (int)e.valid);
+      //       "inst=0x%08x rob=%u flag=%u stq_idx=%u stq_flag=%u
+      //       stq_valid=%d\n", (long long)sim_time, (long long)inst->dbg.inst_idx,
+      //       (uint32_t)inst->dbg.pc, (uint32_t)inst->dbg.instruction,
+      //       (unsigned)inst->rob_idx, (unsigned)inst->rob_flag,
+      //       (unsigned)inst->stq_idx, (unsigned)inst->stq_flag, (int)e.valid);
       //   std::fflush(stderr);
       // }
       dut_cpu.store = false;
@@ -258,8 +261,8 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
         else
           dut_cpu.store_data = e.data;
 
-        dut_cpu.store_data =
-            dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
+        dut_cpu.store_data = dut_cpu.store_data
+                             << (dut_cpu.store_addr & 0b11) * 8;
       }
     }
   } else {
@@ -277,9 +280,9 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   dut_cpu.page_fault_inst = inst->page_fault_inst;
   dut_cpu.page_fault_load = inst->page_fault_load;
   dut_cpu.page_fault_store = inst->page_fault_store;
-  dut_cpu.inst_idx = inst->inst_idx;
-  dut_cpu.commit_pc = inst->pc;
-  *skip = inst->difftest_skip;
+  dut_cpu.inst_idx = inst->dbg.inst_idx;
+  dut_cpu.commit_pc = inst->dbg.pc;
+  *skip = inst->dbg.difftest_skip;
 }
 
 void SimContext::run_commit_inst(InstEntry *inst_entry) {
@@ -328,7 +331,7 @@ void SimCpu::init() {
   back.lsu->ptw_mem_port = mem_subsystem.dtlb_ptw_port;
 
   mem_subsystem.lsu2dcache = back.lsu_dcache_req_io;
-  mem_subsystem.dcache2lsu  = back.lsu_dcache_resp_io;
+  mem_subsystem.dcache2lsu = back.lsu_dcache_resp_io;
 
   front.icache_ptw_walk_port = mem_subsystem.itlb_walk_port;
   front.icache_ptw_mem_port = mem_subsystem.itlb_ptw_port;
@@ -341,8 +344,8 @@ void SimCpu::init() {
 #endif
 
   // 第四阶段：统一执行各模块复位逻辑
-  // 先初始化内存子系统，确保 front.init()/front.step_bpu() 期间若访问 icache AXI
-  // 端口时，互连/DDRx/MMIO 后端已经完成 init，不会命中未初始化握手状态。
+  // 先初始化内存子系统，确保 front.init()/front.step_bpu() 期间若访问 icache
+  // AXI 端口时，互连/DDRx/MMIO 后端已经完成 init，不会命中未初始化握手状态。
   mem_subsystem.init();
   front.init();
   axi_interconnect.init();
@@ -388,7 +391,6 @@ void SimCpu::cycle() {
   axi_router.comb_outputs(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
   axi_interconnect.comb_outputs();
   bridge_axi_to_mem_subsystem(*this);
-
 
   mem_subsystem.comb();
 
@@ -496,7 +498,8 @@ void SimCpu::front_cycle() {
 #endif
   }
 #else
-  // Oracle 模式：每拍都执行握手，利用 1-entry pending 防止“当拍后端阻塞”丢指令。
+  // Oracle 模式：每拍都执行握手，利用 1-entry pending
+  // 防止“当拍后端阻塞”丢指令。
   front.in.FIFO_read_enable = true;
   front.in.refetch = (back.out.mispred || back.out.flush);
   front.in.itlb_flush = back.out.itlb_flush;
@@ -523,9 +526,11 @@ void SimCpu::front_cycle() {
 
   bool no_taken = true;
   for (int j = 0; j < FETCH_WIDTH; j++) {
-    back.in.valid[j] = no_taken && front.out.FIFO_valid && front.out.inst_valid[j];
+    back.in.valid[j] =
+        no_taken && front.out.FIFO_valid && front.out.inst_valid[j];
     back.in.pc[j] = front.out.pc[j];
-    back.in.predict_next_fetch_address[j] = front.out.predict_next_fetch_address;
+    back.in.predict_next_fetch_address[j] =
+        front.out.predict_next_fetch_address;
     back.in.page_fault_inst[j] = front.out.page_fault_inst[j];
     back.in.inst[j] = front.out.instructions[j];
     back.in.predict_dir[j] = front.out.predict_dir[j];
@@ -607,7 +612,8 @@ void SimCpu::back2front_comb() {
       uint16_t loop_idx = 0;
       uint16_t loop_tag = 0;
 
-      const FTQEntry *entry = back.pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+      const FTQEntry *entry =
+          back.pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         alt_pred = entry->alt_pred[inst->ftq_offset];

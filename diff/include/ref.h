@@ -94,6 +94,7 @@ public:
   bool page_fault_load;
   bool page_fault_store;
   bool dut_pf_check_enable;
+  bool ref_only;
   bool dut_expect_pf_inst;
   bool dut_expect_pf_load;
   bool dut_expect_pf_store;
@@ -119,7 +120,6 @@ public:
   void RV32Zfinx();
   void exception(uint32_t trap_val);
   void store_data();
-  void set_dut_page_fault_expect(bool enable, bool inst, bool load, bool store);
   bool va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
   bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
 

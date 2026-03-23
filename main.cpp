@@ -97,7 +97,7 @@ bool handle_pending_sigint() {
 #if SIM_LSU_MEM_DEBUG_PRINT
   std::cout << "[sim] SIGINT observed at cycle " << std::dec << sim_time
             << ", printing debug dump." << std::endl;
-  deadlock_debug::dump_all();
+  // deadlock_debug::dump_all();
 #endif
   cpu.ctx.perf.perf_print();
   return true;
@@ -257,6 +257,7 @@ int main(int argc, char *argv[]) {
       std::cout << "[Step 1] Ref prewarm for " << ref_prewarm_target
                 << " steps..." << std::endl;
       ref_cpu.uart_print = false;
+      ref_cpu.ref_only = true;
       for (; ref_prewarm_done < ref_prewarm_target; ref_prewarm_done++) {
         difftest_step(false);
         if (ref_cpu.sim_end) {
@@ -264,6 +265,7 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
+      ref_cpu.ref_only = false;
       std::cout << "[Step 1] Ref prewarm done: " << ref_prewarm_done
                 << " steps." << std::endl;
     }
@@ -293,10 +295,12 @@ int main(int argc, char *argv[]) {
 
     cpu.back.load_image(config.target_file);
     ref_cpu.uart_print = true;
+    ref_cpu.ref_only = true;
 
     for (uint64_t i = 0; i < config.fast_forward_count; i++) {
       difftest_step(false);
     }
+    ref_cpu.ref_only = false;
 
     cpu.back.restore_from_ref();
 #ifndef CONFIG_BPU
@@ -312,6 +316,7 @@ int main(int argc, char *argv[]) {
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.load_image(config.target_file);
     ref_cpu.uart_print = true;
+    ref_cpu.ref_only = true;
 
     std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
 
