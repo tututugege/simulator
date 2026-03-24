@@ -7,46 +7,28 @@ static_assert(BPU_BANK_NUM >= FETCH_WIDTH,
               "BPU_BANK_NUM must be >= FETCH_WIDTH");
 static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
               "BPU_BANK_NUM must be >= COMMIT_WIDTH");
-
-#if TN_MAX != 4
-#error "TN_MAX is fixed to 4 by design; do not change TAGE history level count"
-#endif
-
-#if BPU_BANK_NUM <= 0
-#error "BPU_BANK_NUM must be > 0"
-#endif
-
-#if BPU_TYPE_ENTRY_NUM <= 0 || (BPU_TYPE_ENTRY_NUM & (BPU_TYPE_ENTRY_NUM - 1)) != 0
-#error "BPU_TYPE_ENTRY_NUM must be power of two and > 0"
-#endif
-
-#if BPU_TYPE_ENTRY_NUM > (1 << 16)
-#error "BPU_TYPE_ENTRY_NUM too large for current wire_for_bits_t coverage"
-#endif
-
-#if BASE_ENTRY_NUM <= 0 || (BASE_ENTRY_NUM & (BASE_ENTRY_NUM - 1)) != 0
-#error "BASE_ENTRY_NUM must be power of two and > 0"
-#endif
-
-#if TN_ENTRY_NUM <= 0 || (TN_ENTRY_NUM & (TN_ENTRY_NUM - 1)) != 0
-#error "TN_ENTRY_NUM must be power of two and > 0"
-#endif
-
-#if (1 << TAGE_BASE_IDX_WIDTH) != BASE_ENTRY_NUM
-#error "TAGE_BASE_IDX_WIDTH must match BASE_ENTRY_NUM"
-#endif
-
-#if (1 << TAGE_IDX_WIDTH) != TN_ENTRY_NUM
-#error "TAGE_IDX_WIDTH must match TN_ENTRY_NUM"
-#endif
-
-#if TAGE_BASE_IDX_WIDTH <= 0 || TAGE_BASE_IDX_WIDTH > 16
-#error "TAGE_BASE_IDX_WIDTH must be in [1, 16]"
-#endif
-
-#if TAGE_IDX_WIDTH <= 0 || TAGE_IDX_WIDTH > 16
-#error "TAGE_IDX_WIDTH must be in [1, 16] with current tage_idx_t typing"
-#endif
+static_assert(TN_MAX == 4,
+              "TN_MAX is fixed to 4 by design; do not change TAGE history level count");
+static_assert(BPU_BANK_NUM > 0, "BPU_BANK_NUM must be > 0");
+static_assert(BPU_TYPE_ENTRY_NUM > 0, "BPU_TYPE_ENTRY_NUM must be > 0");
+static_assert(is_power_of_two_u64(BPU_TYPE_ENTRY_NUM),
+              "BPU_TYPE_ENTRY_NUM must be power of two");
+static_assert(BPU_TYPE_ENTRY_NUM <= (1u << 16),
+              "BPU_TYPE_ENTRY_NUM too large for current wire_for_bits_t coverage");
+static_assert(BASE_ENTRY_NUM > 0, "BASE_ENTRY_NUM must be > 0");
+static_assert(is_power_of_two_u64(BASE_ENTRY_NUM),
+              "BASE_ENTRY_NUM must be power of two");
+static_assert(TN_ENTRY_NUM > 0, "TN_ENTRY_NUM must be > 0");
+static_assert(is_power_of_two_u64(TN_ENTRY_NUM),
+              "TN_ENTRY_NUM must be power of two");
+static_assert(TAGE_BASE_IDX_WIDTH == clog2(BASE_ENTRY_NUM),
+              "TAGE_BASE_IDX_WIDTH must match BASE_ENTRY_NUM");
+static_assert(TAGE_IDX_WIDTH == clog2(TN_ENTRY_NUM),
+              "TAGE_IDX_WIDTH must match TN_ENTRY_NUM");
+static_assert(TAGE_BASE_IDX_WIDTH > 0 && TAGE_BASE_IDX_WIDTH <= 16,
+              "TAGE_BASE_IDX_WIDTH must be in [1, 16]");
+static_assert(TAGE_IDX_WIDTH > 0 && TAGE_IDX_WIDTH <= 16,
+              "TAGE_IDX_WIDTH must be in [1, 16] with current tage_idx_t typing");
 
 #if TAGE_TAG_WIDTH <= 0 || TAGE_TAG_WIDTH > 16
 #error "TAGE_TAG_WIDTH must be in [1, 16] with current tage_tag_t typing"
@@ -189,29 +171,21 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "BTB_WAY_NUM too large for current wire_for_bits_t coverage"
 #endif
 
-#if BTB_TYPE_ENTRY_NUM <= 0 || (BTB_TYPE_ENTRY_NUM & (BTB_TYPE_ENTRY_NUM - 1)) != 0
-#error "BTB_TYPE_ENTRY_NUM must be power of two and > 0"
-#endif
-
-#if BTB_TYPE_ENTRY_NUM > (1 << 16)
-#error "BTB_TYPE_ENTRY_NUM too large for current btb_type_idx_t typing"
-#endif
-
-#if BHT_ENTRY_NUM <= 0 || (BHT_ENTRY_NUM & (BHT_ENTRY_NUM - 1)) != 0
-#error "BHT_ENTRY_NUM must be power of two and > 0"
-#endif
-
-#if BHT_ENTRY_NUM > (1 << 16)
-#error "BHT_ENTRY_NUM too large for current bht_idx_t/bht_hist_t typing"
-#endif
-
-#if TC_ENTRY_NUM <= 0 || (TC_ENTRY_NUM & (TC_ENTRY_NUM - 1)) != 0
-#error "TC_ENTRY_NUM must be power of two and > 0"
-#endif
-
-#if TC_ENTRY_NUM > (1 << 16)
-#error "TC_ENTRY_NUM too large for current tc_idx_t typing"
-#endif
+static_assert(BTB_TYPE_ENTRY_NUM > 0, "BTB_TYPE_ENTRY_NUM must be > 0");
+static_assert(is_power_of_two_u64(BTB_TYPE_ENTRY_NUM),
+              "BTB_TYPE_ENTRY_NUM must be power of two");
+static_assert(BTB_TYPE_ENTRY_NUM <= (1u << 16),
+              "BTB_TYPE_ENTRY_NUM too large for current btb_type_idx_t typing");
+static_assert(BHT_ENTRY_NUM > 0, "BHT_ENTRY_NUM must be > 0");
+static_assert(is_power_of_two_u64(BHT_ENTRY_NUM),
+              "BHT_ENTRY_NUM must be power of two");
+static_assert(BHT_ENTRY_NUM <= (1u << 16),
+              "BHT_ENTRY_NUM too large for current bht_idx_t/bht_hist_t typing");
+static_assert(TC_ENTRY_NUM > 0, "TC_ENTRY_NUM must be > 0");
+static_assert(is_power_of_two_u64(TC_ENTRY_NUM),
+              "TC_ENTRY_NUM must be power of two");
+static_assert(TC_ENTRY_NUM <= (1u << 16),
+              "TC_ENTRY_NUM too large for current tc_idx_t typing");
 
 #define TAGE_TAG_MASK ((1 << TAGE_TAG_WIDTH) - 1)
 #define TAGE_IDX_MASK ((1 << TAGE_IDX_WIDTH) - 1)

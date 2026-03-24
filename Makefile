@@ -6,6 +6,12 @@ BUILD_DIR := build
 SIM_EXE   := $(BUILD_DIR)/simulator
 IMG     := ./baremetal/memory
 AXI_KIT_DIR := ./axi-interconnect-kit
+USE_AXI_KIT ?= 0
+PROFILE ?= large
+PROFILE_FRONT_SRC = ./front-end/config/frontend_feature_config.h.$(PROFILE)
+PROFILE_INCLUDE_SRC = ./include/config.h.$(PROFILE)
+PROFILE_FRONT_DST = ./front-end/config/frontend_feature_config.h
+PROFILE_INCLUDE_DST = ./include/config.h
 
 # Compiler & Flags
 CXX      := g++
@@ -40,6 +46,7 @@ INCLUDES := -I./include/ \
             -I$(FRONT_DIR)/
 
 AXI_KIT_IO_HDR := $(AXI_KIT_DIR)/axi_interconnect/include/AXI_Interconnect_IO.h
+ifeq ($(USE_AXI_KIT),1)
 ifneq ($(wildcard $(AXI_KIT_IO_HDR)),)
 INCLUDES += -I$(AXI_KIT_DIR)/include/ \
             -I$(AXI_KIT_DIR)/axi_interconnect/include/ \
@@ -48,6 +55,7 @@ INCLUDES += -I$(AXI_KIT_DIR)/include/ \
 AXI_KIT_SRC := $(shell find $(AXI_KIT_DIR)/axi_interconnect -name "*.cpp" ! -name "*_test.cpp") \
                $(shell find $(AXI_KIT_DIR)/sim_ddr -name "*.cpp" ! -name "*_test.cpp") \
                $(shell find $(AXI_KIT_DIR)/mmio -name "*.cpp" ! -name "*_test.cpp")
+endif
 endif
 
 # Source Files
@@ -70,20 +78,35 @@ DEPS := $(OBJS:.o=.d)
 # Rules
 # ==========================================
 
-.PHONY: all clean run gdb coverage help gdb_linux
+.PHONY: all clean run gdb coverage help gdb_linux profile-config small medium large
 
 all: $(SIM_EXE)
 
+small: PROFILE := small
+small: all
+
+medium: PROFILE := medium
+medium: all
+
+large: PROFILE := large
+large: all
+
 # Link
-$(SIM_EXE): $(OBJS) $(LIBS)
+$(SIM_EXE): profile-config $(OBJS) $(LIBS)
 	@echo "Linking $@"
 	@$(CXX) $(OBJS) $(LIBS) $(LDFLAGS) -o $@ $(CXXFLAGS)
 
 # Compile
-$(BUILD_DIR)/%.o: %.cpp
+$(BUILD_DIR)/%.o: %.cpp $(PROFILE_FRONT_DST) $(PROFILE_INCLUDE_DST) | profile-config
 	@mkdir -p $(dir $@)
 	@echo "Compiling $<"
 	@$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+profile-config:
+	@if [ ! -f $(PROFILE_FRONT_SRC) ]; then echo "Missing profile file: $(PROFILE_FRONT_SRC)"; exit 1; fi
+	@if [ ! -f $(PROFILE_INCLUDE_SRC) ]; then echo "Missing profile file: $(PROFILE_INCLUDE_SRC)"; exit 1; fi
+	@if [ ! -f $(PROFILE_FRONT_DST) ] || ! cmp -s $(PROFILE_FRONT_SRC) $(PROFILE_FRONT_DST); then cp $(PROFILE_FRONT_SRC) $(PROFILE_FRONT_DST); fi
+	@if [ ! -f $(PROFILE_INCLUDE_DST) ] || ! cmp -s $(PROFILE_INCLUDE_SRC) $(PROFILE_INCLUDE_DST); then cp $(PROFILE_INCLUDE_SRC) $(PROFILE_INCLUDE_DST); fi
 
 # Run
 run: $(SIM_EXE)
@@ -111,8 +134,12 @@ clean:
 
 help:
 	@echo "Usage:"
-	@echo "  make          - Build the simulator"
+	@echo "  make          - Build the simulator with large profile"
+	@echo "  make large    - Build with large profile"
+	@echo "  make medium   - Build with medium profile"
+	@echo "  make small    - Build with small profile"
 	@echo "  make run      - Build and run the simulator"
+	@echo "  make USE_AXI_KIT=1 - Build with axi-interconnect-kit sources"
 	@echo "  make DEBUG=1  - Build with debug symbols"
 	@echo "  make clean    - Clean build files"
 	@echo "  make gdb_linux - Debug linux"
