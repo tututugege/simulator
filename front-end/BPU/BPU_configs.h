@@ -44,12 +44,12 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "TAGE_BASE_IDX_WIDTH must be in [1, 16]"
 #endif
 
-#if TAGE_IDX_WIDTH <= 0 || TAGE_IDX_WIDTH > 12
-#error "TAGE_IDX_WIDTH must be in [1, 12] with current tage_idx_t typing"
+#if TAGE_IDX_WIDTH <= 0 || TAGE_IDX_WIDTH > 16
+#error "TAGE_IDX_WIDTH must be in [1, 16] with current tage_idx_t typing"
 #endif
 
-#if TAGE_TAG_WIDTH <= 0 || TAGE_TAG_WIDTH > 8
-#error "TAGE_TAG_WIDTH must be in [1, 8] with current tage_tag_t typing"
+#if TAGE_TAG_WIDTH <= 0 || TAGE_TAG_WIDTH > 16
+#error "TAGE_TAG_WIDTH must be in [1, 16] with current tage_tag_t typing"
 #endif
 
 #if TAGE_USE_ALT_CTR_BITS <= 1 || TAGE_USE_ALT_CTR_BITS > 8
@@ -193,7 +193,7 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "BTB_TYPE_ENTRY_NUM must be power of two and > 0"
 #endif
 
-#if BTB_TYPE_ENTRY_NUM > (1 << 12)
+#if BTB_TYPE_ENTRY_NUM > (1 << 16)
 #error "BTB_TYPE_ENTRY_NUM too large for current btb_type_idx_t typing"
 #endif
 
@@ -201,7 +201,7 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "BHT_ENTRY_NUM must be power of two and > 0"
 #endif
 
-#if BHT_ENTRY_NUM > (1 << 11)
+#if BHT_ENTRY_NUM > (1 << 16)
 #error "BHT_ENTRY_NUM too large for current bht_idx_t/bht_hist_t typing"
 #endif
 
@@ -209,7 +209,7 @@ static_assert(BPU_BANK_NUM >= COMMIT_WIDTH,
 #error "TC_ENTRY_NUM must be power of two and > 0"
 #endif
 
-#if TC_ENTRY_NUM > (1 << 11)
+#if TC_ENTRY_NUM > (1 << 16)
 #error "TC_ENTRY_NUM too large for current tc_idx_t typing"
 #endif
 
