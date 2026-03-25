@@ -52,8 +52,8 @@ struct RobStoredInst {
   wire<1> flush_pipe;
 
   wire<INST_TYPE_WIDTH> type;
-  InstTmaMeta tma;
-  InstDebugMeta dbg;
+  TmaMeta tma;
+  DebugMeta dbg;
 
   RobStoredInst() { std::memset(this, 0, sizeof(RobStoredInst)); }
 

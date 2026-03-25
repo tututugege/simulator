@@ -483,9 +483,9 @@ void SimCpu::front_cycle() {
       back.in.page_fault_inst[j] = front.out.page_fault_inst[j];
       back.in.inst[j] = front.out.instructions[j];
 
-      if (LOG && back.in.valid[j]) {
-        cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-             << front.out.pc[j] << " Inst: " << back.in.inst[j] << endl;
+      if (back.in.valid[j]) {
+        BE_LOG("inst_index=%lld pc=0x%08x inst=0x%08x", (long long)sim_time,
+               (uint32_t)front.out.pc[j], (uint32_t)back.in.inst[j]);
       }
 
       back.in.predict_dir[j] = front.out.predict_dir[j];

@@ -28,17 +28,6 @@ static inline bool is_amo_sc_uop(const MicroOp &uop) {
 }
 namespace {
 RealLsu *g_deadlock_lsu = nullptr;
-constexpr uint32_t kCoremarkFocusAddrBegin = 0x87fffa70u;
-constexpr uint32_t kCoremarkFocusAddrEnd = 0x87fffa80u;
-constexpr uint32_t kCoremarkFocusLoadPc = 0x80002520u;
-
-inline bool is_coremark_focus_addr(uint32_t addr) {
-  return addr >= kCoremarkFocusAddrBegin && addr < kCoremarkFocusAddrEnd;
-}
-
-inline bool is_coremark_focus_load_pc(uint32_t pc) {
-  return pc == kCoremarkFocusLoadPc;
-}
 
 const char *ldq_wait_state_name(int64_t cplt_time) {
   if (cplt_time == REQ_WAIT_EXEC) {
@@ -1384,11 +1373,10 @@ void RealLsu::commit_stores_from_rob() {
       continue;
     }
     const auto &commit_uop = in.rob_commit->commit_entry[i].uop;
-    InstInfo commit_inst = commit_uop.to_inst_info();
-    if (ctx != nullptr && is_load(commit_inst)) {
-      ctx->perf.trace_load_on_rob_exit(commit_inst.dbg.inst_idx, sim_time);
+    if (ctx != nullptr && is_load(commit_uop)) {
+      ctx->perf.trace_load_on_rob_exit(commit_uop.dbg.inst_idx, sim_time);
     }
-    if (!is_store(commit_inst)) {
+    if (!is_store(commit_uop)) {
       continue;
     }
     int idx = commit_uop.stq_idx;

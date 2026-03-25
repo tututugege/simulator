@@ -94,7 +94,7 @@ bool handle_pending_sigint() {
     return false;
   }
 
-#if SIM_LSU_MEM_DEBUG_PRINT
+#if defined(LOG_ENABLE) && defined(LOG_LSU_MEM_ENABLE)
   std::cout << "[sim] SIGINT observed at cycle " << std::dec << sim_time
             << ", printing debug dump." << std::endl;
   // deadlock_debug::dump_all();
@@ -346,12 +346,9 @@ int main(int argc, char *argv[]) {
     if (sim_time % 10000000 == 0) {
       cout << dec << sim_time << endl;
     }
-    if (LOG) {
-      cout << "**************************************************************"
-           << dec << " cycle: " << sim_time
-           << " *************************************************************"
-           << endl;
-    }
+    BE_LOG("************************************************************** cycle: %lld "
+           "*************************************************************",
+           (long long)sim_time);
 
     cpu.cycle();
 

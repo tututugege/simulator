@@ -25,7 +25,7 @@ static bool g_warned_req_size_gt_32b = false;
 
 #define WB_AXI_VLOG(fmt, ...)                                                    \
   do {                                                                           \
-    if (WB_AXI_VERBOSE_LOG && SIM_LSU_MEM_DEBUG_PRINT_ACTIVE) {                  \
+    if (WB_AXI_VERBOSE_LOG && LSU_MEM_LOG) {                                     \
       LSU_MEM_DBG_PRINTF(fmt, ##__VA_ARGS__);                                    \
     }                                                                            \
   } while (0)

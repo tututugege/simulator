@@ -17,23 +17,6 @@ inline uint32_t sign_extend_12(uint32_t imm12) {
   return static_cast<uint32_t>(static_cast<int32_t>(imm12 << 20) >> 20);
 }
 
-void dump_addr_snapshot(const char *tag, uint32_t addr) {
-  const uint32_t word_idx = addr >> 2;
-  const AddrFields f = decode(addr);
-  std::printf(
-      "[DIFF][ADDR][%s] addr=0x%08x word_idx=%u set=%u tag=0x%x word_off=%u\n",
-      tag, addr, word_idx, f.set_idx, f.tag, f.word_off);
-  std::printf("[DIFF][ADDR][%s] mem dut=0x%08x ref=0x%08x\n", tag,
-              p_memory[word_idx], ref_cpu.memory[word_idx]);
-  for (int w = 0; w < DCACHE_WAYS; ++w) {
-    std::printf("[DIFF][DCACHE] set=%u way=%d valid=%d dirty=%d tag=0x%x "
-                "data[word_off]=0x%08x\n",
-                f.set_idx, w, static_cast<int>(valid_array[f.set_idx][w]),
-                static_cast<int>(dirty_array[f.set_idx][w]),
-                tag_array[f.set_idx][w], data_array[f.set_idx][w][f.word_off]);
-  }
-}
-
 void dump_mem_subsystem_snapshot() {
   for (int i = 0; i < MSHR_ENTRIES; ++i) {
     const auto &e = mshr_entries[i];
@@ -72,24 +55,6 @@ void dump_code_line_snapshot(const char *tag, uint32_t pc) {
   }
 }
 
-void dump_inst_related_snapshot(uint32_t inst) {
-  const uint32_t opcode = inst & 0x7F;
-  if (opcode != 0x03 && opcode != 0x23) {
-    return;
-  }
-  const uint32_t rs1 = (inst >> 15) & 0x1F;
-  const uint32_t base = dut_cpu.gpr[rs1];
-  uint32_t addr = 0;
-  if (opcode == 0x03) {
-    const uint32_t imm12 = (inst >> 20) & 0xFFF;
-    addr = base + sign_extend_12(imm12);
-    dump_addr_snapshot("inst_mem_addr", addr);
-  } else {
-    const uint32_t imm12 = (((inst >> 25) & 0x7F) << 5) | ((inst >> 7) & 0x1F);
-    addr = base + sign_extend_12(imm12);
-    dump_addr_snapshot("inst_store_addr", addr);
-  }
-}
 } // namespace
 
 // relocate the init_difftest function to avoid multiple definition error
@@ -205,8 +170,7 @@ fault:
               p_memory[dut_cpu.gpr[15] >> 2],
               ref_cpu.memory[dut_cpu.gpr[15] >> 2]);
   dump_code_line_snapshot("commit_pc", dut_cpu.commit_pc);
-#if SIM_LSU_MEM_DEBUG_PRINT
-  dump_inst_related_snapshot(dut_cpu.instruction);
+#if defined(LOG_ENABLE) && defined(LOG_LSU_MEM_ENABLE)
   diff_mem_trace::dump_recent();
 #endif
   dump_mem_subsystem_snapshot();

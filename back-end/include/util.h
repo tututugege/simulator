@@ -7,11 +7,11 @@
 extern long long sim_time;
 
 // Unified backend/memory logging helpers.
-// Prefer these macros over scattered `if (LOG) printf(...)`.
+// Prefer these macros over scattered direct domain checks.
 #define BE_LOG(fmt, ...)                                                       \
   do {                                                                         \
     if (BACKEND_LOG) {                                                         \
-      std::printf("[BE][t=%lld] " fmt "\n", (long long)sim_time,              \
+      std::printf("[BE][t=%lld] " fmt "\n", (long long)sim_time,               \
                   ##__VA_ARGS__);                                              \
     }                                                                          \
   } while (0)
@@ -19,7 +19,7 @@ extern long long sim_time;
 #define MEM_LOGF(fmt, ...)                                                     \
   do {                                                                         \
     if (MEM_LOG) {                                                             \
-      std::printf("[MEM][t=%lld] " fmt "\n", (long long)sim_time,             \
+      std::printf("[MEM][t=%lld] " fmt "\n", (long long)sim_time,              \
                   ##__VA_ARGS__);                                              \
     }                                                                          \
   } while (0)
@@ -27,7 +27,7 @@ extern long long sim_time;
 #define DCACHE_LOGF(fmt, ...)                                                  \
   do {                                                                         \
     if (DCACHE_LOG) {                                                          \
-      std::printf("[DCACHE][t=%lld] " fmt "\n", (long long)sim_time,          \
+      std::printf("[DCACHE][t=%lld] " fmt "\n", (long long)sim_time,           \
                   ##__VA_ARGS__);                                              \
     }                                                                          \
   } while (0)
@@ -35,7 +35,7 @@ extern long long sim_time;
 #define MMU_LOGF(fmt, ...)                                                     \
   do {                                                                         \
     if (MMU_LOG) {                                                             \
-      std::printf("[MMU][t=%lld] " fmt "\n", (long long)sim_time,             \
+      std::printf("[MMU][t=%lld] " fmt "\n", (long long)sim_time,              \
                   ##__VA_ARGS__);                                              \
     }                                                                          \
   } while (0)
@@ -133,9 +133,7 @@ inline bool is_load(InstInfo uop) {
   return uop.type == LOAD || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::SC);
 }
 
-inline bool is_load(MicroOp uop) {
-  return uop.op == UOP_LOAD;
-}
+inline bool is_load(MicroOp uop) { return uop.op == UOP_LOAD; }
 
 inline bool is_CSR(InstType type) {
   return (type == CSR || type == MRET || type == ECALL || type == EBREAK);
@@ -190,7 +188,6 @@ inline bool is_load_uop(UopType op) { return op == UOP_LOAD; }
 inline bool is_load_uop(wire<UOP_TYPE_WIDTH> op) {
   return is_load_uop(decode_uop_type(op));
 }
-
 
 inline bool is_page_fault(InstInfo uop) {
   return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;

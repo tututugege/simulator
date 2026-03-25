@@ -54,13 +54,12 @@ void Idu::comb_decode() {
       continue;
 
     out.dec2ren->valid[i] = true;
-    InstInfo decoded = {};
+    auto &decoded = out.dec2ren->uop[i];
+    decoded = {};
     if (entry.page_fault_inst) {
       decoded.diag_val = entry.inst;
       decoded.page_fault_inst = true;
-      decoded.page_fault_load = false;
-      decoded.page_fault_store = false;
-      decoded.type = NOP;
+      decoded.type = encode_inst_type(NOP);
       decoded.src1_en = false;
       decoded.src2_en = false;
       decoded.dest_en = false;
@@ -72,7 +71,6 @@ void Idu::comb_decode() {
     decoded.ftq_idx = entry.ftq_idx;
     decoded.ftq_offset = entry.ftq_offset;
     decoded.ftq_is_last = entry.ftq_is_last;
-    out.dec2ren->uop[i] = DecRenIO::DecRenInst::from_inst_info(decoded);
   }
 
   int br_num = 0;
@@ -248,7 +246,7 @@ void Idu::seq() {
   }
 }
 
-void Idu::decode(InstInfo &uop, uint32_t inst) {
+void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
   // 操作数来源以及type
   // uint32_t imm;
   uop.dbg.instruction = inst;
@@ -273,10 +271,8 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   uop.func7 = number_funct7_unsigned;
   uop.csr_idx = csr_idx;
   uop.page_fault_inst = false;
-  uop.page_fault_load = false;
-  uop.page_fault_store = false;
   uop.illegal_inst = false;
-  uop.type = NOP;
+  uop.type = encode_inst_type(NOP);
   uop.tma.is_cache_miss = false;
   uop.tma.is_ret = false;
   uop.tma.mem_commit_is_load = false;
@@ -291,7 +287,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src1_areg = 0;
     uop.src2_en = false;
-    uop.type = ADD;
+    uop.type = encode_inst_type(ADD);
     uop.func3 = 0;
     uop.imm = immU(inst);
     break;
@@ -301,7 +297,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src1_en = false;
     uop.src2_en = false;
     uop.src1_is_pc = true;
-    uop.type = ADD;
+    uop.type = encode_inst_type(ADD);
     uop.func3 = 0;
     uop.imm = immU(inst);
     break;
@@ -313,7 +309,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src1_is_pc = true;
     uop.src2_is_imm = true;
     uop.func3 = 0;
-    uop.type = JAL;
+    uop.type = encode_inst_type(JAL);
     uop.imm = immJ(inst);
     break;
   }
@@ -324,7 +320,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src1_is_pc = true;
     uop.src2_is_imm = true;
     uop.func3 = 0;
-    uop.type = JALR;
+    uop.type = encode_inst_type(JALR);
     uop.imm = immI(inst);
 
     break;
@@ -333,7 +329,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = true;
     uop.src2_en = true;
-    uop.type = BR;
+    uop.type = encode_inst_type(BR);
     uop.imm = immB(inst);
     break;
   }
@@ -341,7 +337,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = false;
-    uop.type = LOAD;
+    uop.type = encode_inst_type(LOAD);
     uop.imm = immI(inst);
     break;
   }
@@ -349,7 +345,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = true;
     uop.src2_en = true;
-    uop.type = STORE;
+    uop.type = encode_inst_type(STORE);
     uop.imm = immS(inst);
     break;
   }
@@ -359,7 +355,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = false;
-    uop.type = ADD;
+    uop.type = encode_inst_type(ADD);
     uop.imm = immI(inst);
     break;
   }
@@ -371,12 +367,12 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src2_is_imm = false;
     if (number_funct7_unsigned == 1) { // mul div
       if (number_funct3_unsigned & 0b100) {
-        uop.type = DIV;
+        uop.type = encode_inst_type(DIV);
       } else {
-        uop.type = MUL;
+        uop.type = encode_inst_type(MUL);
       }
     } else {
-      uop.type = ADD;
+      uop.type = encode_inst_type(ADD);
     }
     break;
   }
@@ -387,9 +383,9 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
 
     // Check funct3 for FENCE.I (001)
     if (number_funct3_unsigned == 0b001) {
-      uop.type = FENCE_I; // Strict separation
+      uop.type = encode_inst_type(FENCE_I); // Strict separation
     } else {
-      uop.type = NOP; // Ordinary FENCE is NOP
+      uop.type = encode_inst_type(NOP); // Ordinary FENCE is NOP
     }
     break;
   }
@@ -411,7 +407,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
           csr_idx != number_sie && csr_idx != number_sip &&
           csr_idx != number_satp && csr_idx != number_mhartid &&
           csr_idx != number_misa) {
-        uop.type = NOP;
+        uop.type = encode_inst_type(NOP);
         uop.dest_en = false;
         uop.src1_en = false;
         uop.src2_en = false;
@@ -420,7 +416,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
           uop.illegal_inst = true;
 
       } else {
-        uop.type = CSR;
+        uop.type = encode_inst_type(CSR);
         uop.dest_en = true;
         uop.src1_en = true;
         uop.src2_en = !uop.src2_is_imm;
@@ -432,22 +428,22 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
       uop.src2_en = false;
 
       if (inst == INST_ECALL) {
-        uop.type = ECALL;
+        uop.type = encode_inst_type(ECALL);
       } else if (inst == INST_EBREAK) {
-        uop.type = EBREAK;
+        uop.type = encode_inst_type(EBREAK);
       } else if (inst == INST_MRET) {
-        uop.type = MRET;
+        uop.type = encode_inst_type(MRET);
       } else if (inst == INST_WFI) {
-        uop.type = WFI;
+        uop.type = encode_inst_type(WFI);
       } else if (inst == INST_SRET) {
-        uop.type = SRET;
+        uop.type = encode_inst_type(SRET);
       } else if (number_funct7_unsigned == 0b0001001 &&
                  number_funct3_unsigned == 0 && reg_d_index == 0) {
-        uop.type = SFENCE_VMA;
+        uop.type = encode_inst_type(SFENCE_VMA);
         uop.src1_en = true;
         uop.src2_en = true;
       } else {
-        uop.type = NOP;
+        uop.type = encode_inst_type(NOP);
         /*uop[0].illegal_inst = true;*/
         /*cout << hex << inst << endl;*/
         /*Assert(0);*/
@@ -461,7 +457,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src2_en = true;
     uop.imm = 0;
-    uop.type = AMO;
+    uop.type = encode_inst_type(AMO);
     uop.is_atomic = true;
 
     if ((number_funct7_unsigned >> 2) == AmoOp::LR) {
@@ -476,7 +472,7 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src2_en = true;
     uop.src2_is_imm = false;
-    uop.type = FP;
+    uop.type = encode_inst_type(FP);
     break;
   }
 
@@ -484,19 +480,20 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.dest_en = false;
     uop.src1_en = false;
     uop.src2_en = false;
-    uop.type = NOP;
+    uop.type = encode_inst_type(NOP);
     uop.illegal_inst = true;
     break;
   }
   }
 
+  InstType inst_type = decode_inst_type(uop.type);
   uop.tma.is_ret =
-      (uop.type == JALR && uop.src1_areg == 1 && uop.dest_areg == 0 &&
+      (inst_type == JALR && uop.src1_areg == 1 && uop.dest_areg == 0 &&
        uop.imm == 0);
   uop.tma.mem_commit_is_load =
-      (uop.type == LOAD || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::SC));
+      (inst_type == LOAD || (inst_type == AMO && (uop.func7 >> 2) != AmoOp::SC));
   uop.tma.mem_commit_is_store =
-      (uop.type == STORE || (uop.type == AMO && (uop.func7 >> 2) != AmoOp::LR));
+      (inst_type == STORE || (inst_type == AMO && (uop.func7 >> 2) != AmoOp::LR));
   if (uop.tma.mem_commit_is_load) {
     uop.dbg.mem_align_mask =
         (uop.func3 & 0x3) == 0   ? 0
@@ -504,7 +501,8 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
                                  : 3;
   }
 
-  if (uop.type == AMO && uop.dest_areg == 0 && (uop.func7 >> 2) != AmoOp::LR &&
+  if (inst_type == AMO && uop.dest_areg == 0 &&
+      (uop.func7 >> 2) != AmoOp::LR &&
       (uop.func7 >> 2) != AmoOp::SC) {
     uop.dest_areg = 32;
   }

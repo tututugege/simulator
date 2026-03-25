@@ -11,22 +11,6 @@ constexpr const char *kColorLoadReq   = "\033[1;36m"; // Cyan
 constexpr const char *kColorStoreReq  = "\033[1;33m"; // Yellow
 constexpr const char *kColorLoadResp  = "\033[1;32m"; // Green
 constexpr const char *kColorStoreResp = "\033[1;35m"; // Magenta
-constexpr uint32_t kCoremarkFocusAddrBegin1 = 0x87fffa70u;
-constexpr uint32_t kCoremarkFocusAddrEnd1 = 0x87fffa90u;
-constexpr uint32_t kCoremarkFocusAddrBegin2 = 0x87fff5e0;
-constexpr uint32_t kCoremarkFocusAddrEnd2 = 0x87fff600;
-
-inline bool is_coremark_focus_addr(uint32_t addr) {
-    return (addr >= kCoremarkFocusAddrBegin1 && addr < kCoremarkFocusAddrEnd1) ||
-           (addr >= kCoremarkFocusAddrBegin2 && addr < kCoremarkFocusAddrEnd2);
-}
-
-inline bool is_coremark_focus_line(uint32_t addr) {
-    return (addr & ~(DCACHE_LINE_BYTES - 1u)) ==
-           (kCoremarkFocusAddrBegin1 & ~(DCACHE_LINE_BYTES - 1u)) ||
-           (addr & ~(DCACHE_LINE_BYTES - 1u)) ==
-           (kCoremarkFocusAddrBegin2 & ~(DCACHE_LINE_BYTES - 1u));
-}
 
 struct PendingMissLine {
     bool valid = false;
@@ -63,17 +47,6 @@ void pending_miss_add(PendingMissLine *pending_miss_lines,
     pending_miss_count++;
 }
 
-void print_focus_line_words(const char *tag, long long cyc, uint32_t set_idx, int way) {
-    if (way < 0 || way >= DCACHE_WAYS) {
-        return;
-    }
-    LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][%s] cyc=%lld set=%u way=%d words=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-                tag, cyc, set_idx, way, data_array[set_idx][way][0],
-                data_array[set_idx][way][1], data_array[set_idx][way][2],
-                data_array[set_idx][way][3], data_array[set_idx][way][4],
-                data_array[set_idx][way][5], data_array[set_idx][way][6],
-                data_array[set_idx][way][7]);
-}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -720,15 +693,6 @@ void RealDcache::stage2_comb() {
                 dcache2mshr->store_hit_updates[i].data = slot.data;
                 dcache2mshr->store_hit_updates[i].strb = slot.strb;
                 lru_updates_[LSU_LDU_COUNT + i] = {true, slot.set_idx, hit_way};
-                if (is_coremark_focus_addr(slot.addr)) {
-                    uint32_t before = slot.data_snap[hit_way][f.word_off];
-                    uint32_t after = before;
-                    apply_strobe(after, slot.data, slot.strb);
-                    // LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST HIT ENQ] cyc=%lld port=%d req_id=%zu rob=%u addr=0x%08x set=%u way=%d word_off=%u strb=0x%x data=0x%08x before=0x%08x after=0x%08x\n",
-                    //             (long long)sim_time, i, slot.req_id, slot.uop.rob_idx,
-                    //             slot.addr, slot.set_idx, hit_way, f.word_off, slot.strb,
-                    //             slot.data, before, after);
-                }
             }
         } else {
             if(wb2dcache->merge_resp[i].valid){
@@ -909,20 +873,9 @@ void RealDcache::seq() {
     for (int i = 0; i < LSU_STA_COUNT; i++) {
         const PendingWrite &pw = pending_writes_[i];
         if (!pw.valid) continue;
-        uint32_t before_word = data_array[pw.set_idx][pw.way_idx][pw.word_off];
         apply_strobe(data_array[pw.set_idx][pw.way_idx][pw.word_off],
                      pw.data, pw.strb);
-        uint32_t after_word = data_array[pw.set_idx][pw.way_idx][pw.word_off];
         dirty_array[pw.set_idx][pw.way_idx] = true;
-        uint32_t write_addr = get_addr(pw.set_idx, tag_array[pw.set_idx][pw.way_idx],
-                                       pw.word_off);
-        if (is_coremark_focus_line(write_addr)) {
-            // LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][ST HIT APPLY] cyc=%lld port=%d set=%u way=%u word_off=%u addr=0x%08x strb=0x%x data=0x%08x before=0x%08x after=0x%08x\n",
-            //             (long long)sim_time, i, pw.set_idx, pw.way_idx, pw.word_off,
-            //             write_addr, pw.strb, pw.data, before_word, after_word);
-            // print_focus_line_words("ST HIT APPLY", (long long)sim_time, pw.set_idx,
-            //                        static_cast<int>(pw.way_idx));
-        }
     }
 
 
@@ -931,31 +884,10 @@ void RealDcache::seq() {
         LSU_MEM_DBG_PRINTF("[DCACHE FILL] cyc=%lld addr=0x%08x set=%u way=%u%s\n",
                     (long long)sim_time, mshr2dcache->fill.addr,
                    decode(mshr2dcache->fill.addr).set_idx, mshr2dcache->fill.way, kColorReset);
-        if (is_coremark_focus_line(mshr2dcache->fill.addr)) {
-            // LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][FILL APPLY] cyc=%lld line=0x%08x set=%u way=%u fill_words=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-            //             (long long)sim_time, mshr2dcache->fill.addr,
-            //             decode(mshr2dcache->fill.addr).set_idx, mshr2dcache->fill.way,
-            //             mshr2dcache->fill.data[0], mshr2dcache->fill.data[1],
-            //             mshr2dcache->fill.data[2], mshr2dcache->fill.data[3],
-            //             mshr2dcache->fill.data[4], mshr2dcache->fill.data[5],
-            //             mshr2dcache->fill.data[6], mshr2dcache->fill.data[7]);
-        }
         write_dcache_line(decode(mshr2dcache->fill.addr).set_idx,
                           mshr2dcache->fill.way,
                           decode(mshr2dcache->fill.addr).tag,
                           mshr2dcache->fill.data);
-        if (is_coremark_focus_line(mshr2dcache->fill.addr)) {
-            int final_way = -1;
-            AddrFields f = decode(mshr2dcache->fill.addr);
-            for (int w = 0; w < DCACHE_WAYS; w++) {
-                if (valid_array[f.set_idx][w] && tag_array[f.set_idx][w] == f.tag) {
-                    final_way = w;
-                    break;
-                }
-            }
-            // print_focus_line_words("FILL COMMIT", (long long)sim_time, f.set_idx,
-            //                        final_way);
-        }
     }
 
     // 4. Apply LRU updates from hit accesses this cycle.

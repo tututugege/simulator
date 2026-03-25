@@ -28,7 +28,7 @@ public:
         ftq_pc_port(ftq_pc_port) {}
 
 protected:
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     uint32_t operand1, operand2;
     if (inst.src1_is_pc) {
       Assert(ftq_pc_resp != nullptr);
@@ -238,7 +238,7 @@ public:
 
 protected:
   int get_lsu_port_id() override { return this->agu_port_idx; }
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     // 1. 计算虚拟地址 (Common logic)
     // Load 和 Store (STA) 都需要计算地址： Base + Offset
     uint64_t vaddr = inst.src1_rdata + inst.imm;
@@ -251,8 +251,7 @@ protected:
     // 效应
     if (agu_port_idx < LSU_AGU_COUNT) {
       exe2lsu->agu_req[agu_port_idx].valid = true;
-      exe2lsu->agu_req[agu_port_idx].uop =
-          ExeLsuIO::ExeLsuReqUop::from_micro_op(inst);
+      exe2lsu->agu_req[agu_port_idx].uop = inst.to_exe_lsu_req_uop();
       // 这里的 inst 已经包含了刚刚计算好的 result (vaddr)
     }
   }
@@ -272,7 +271,7 @@ public:
 
 protected:
   int get_lsu_port_id() override { return this->sdu_port_idx; }
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     uint32_t result_data = 0;
 
     // === 1. 获取操作数 & 计算 Store Data ===
@@ -329,8 +328,7 @@ protected:
     // === 2. 驱动 LSU IO 接口 ===
     if (sdu_port_idx < LSU_SDU_COUNT) {
       exe2lsu->sdu_req[sdu_port_idx].valid = true;
-      exe2lsu->sdu_req[sdu_port_idx].uop =
-          ExeLsuIO::ExeLsuReqUop::from_micro_op(inst);
+      exe2lsu->sdu_req[sdu_port_idx].uop = inst.to_exe_lsu_req_uop();
     }
   }
 };
@@ -344,7 +342,7 @@ public:
       : FixedLatencyFU(name, port_idx, lat) {}
 
 protected:
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     int64_t s1 = (int64_t)(int32_t)inst.src1_rdata;
     int64_t s2 = (int64_t)(int32_t)inst.src2_rdata;
     uint64_t u1 = (uint32_t)inst.src1_rdata;
@@ -390,7 +388,7 @@ public:
         ftq_pc_port(ftq_pc_port) {}
 
 protected:
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     uint32_t operand1 = inst.src1_rdata;
     uint32_t operand2 = inst.src2_rdata;
     Assert(ftq_pc_resp != nullptr);
@@ -474,7 +472,7 @@ public:
       : IterativeFU(name, port_idx, lat) {}
 
 protected:
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     int32_t dividend = (int32_t)inst.src1_rdata;
     int32_t divisor = (int32_t)inst.src2_rdata;
     uint32_t u_dividend = (uint32_t)inst.src1_rdata;
@@ -544,7 +542,7 @@ public:
       : FixedLatencyFU(name, port_idx, 1), exe2csr(exe2csr), csr2exe(csr2exe) {}
 
 protected:
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     if (exe2csr->re) {
       inst.result = csr2exe->rdata;
     }

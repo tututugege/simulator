@@ -64,17 +64,8 @@ constexpr uint8_t MAXU = 0b11100;
 // [Structs & Classes]
 // ==========================================
 
-// Debug sideband for InstInfo. Keep diag_val in hardware path.
-struct InstDebugMeta {
-  uint32_t instruction;
-  uint32_t pc;
-  uint8_t mem_align_mask;
-  bool difftest_skip;
-  int64_t inst_idx;
-};
-
-// Debug sideband for MicroOp. Keep diag_val in hardware path.
-struct UopDebugMeta {
+// Debug sideband shared by InstInfo/MicroOp. Keep diag_val in hardware path.
+struct DebugMeta {
   wire<32> instruction;
   wire<32> pc;
   uint8_t mem_align_mask;
@@ -82,14 +73,7 @@ struct UopDebugMeta {
   int64_t inst_idx;
 };
 
-struct InstTmaMeta {
-  bool is_cache_miss;
-  bool is_ret;
-  bool mem_commit_is_load;
-  bool mem_commit_is_store;
-};
-
-struct UopTmaMeta {
+struct TmaMeta {
   bool is_cache_miss;
   bool is_ret;
   bool mem_commit_is_load;
@@ -140,8 +124,8 @@ struct InstInfo {
   wire<1> flush_pipe;
 
   InstType type;
-  InstTmaMeta tma;
-  InstDebugMeta dbg;
+  TmaMeta tma;
+  DebugMeta dbg;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
 };
@@ -191,8 +175,8 @@ struct MicroOp {
   wire<1> illegal_inst;
 
   UopType op;
-  UopTmaMeta tma;
-  UopDebugMeta dbg;
+  TmaMeta tma;
+  DebugMeta dbg;
   wire<1> flush_pipe;
   int64_t cplt_time;
 

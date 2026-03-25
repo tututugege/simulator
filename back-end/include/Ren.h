@@ -36,7 +36,8 @@ public:
   void seq();
 
   // register
-  InstEntry inst_r[DECODE_WIDTH];
+  DecRenIO::DecRenInst inst_r[DECODE_WIDTH];
+  reg<1> inst_valid[DECODE_WIDTH];
   reg<PRF_IDX_WIDTH> arch_RAT[ARF_NUM + 1];
   reg<PRF_IDX_WIDTH> spec_RAT[ARF_NUM + 1];
   reg<PRF_IDX_WIDTH> RAT_checkpoint[MAX_BR_NUM][ARF_NUM + 1];
@@ -44,7 +45,8 @@ public:
   reg<1> alloc_checkpoint[MAX_BR_NUM][PRF_NUM];
   reg<1> spec_alloc[PRF_NUM]; // 处于speculative状态分配的寄存器
 
-  InstEntry inst_r_1[DECODE_WIDTH];
+  DecRenIO::DecRenInst inst_r_1[DECODE_WIDTH];
+  wire<1> inst_valid_1[DECODE_WIDTH];
   wire<PRF_IDX_WIDTH> arch_RAT_1[ARF_NUM + 1];
   wire<PRF_IDX_WIDTH> spec_RAT_1[ARF_NUM + 1];
   wire<PRF_IDX_WIDTH> RAT_checkpoint_1[MAX_BR_NUM][ARF_NUM + 1];

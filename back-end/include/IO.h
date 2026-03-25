@@ -1,11 +1,11 @@
 #pragma once
 
-#include "config.h"
 #include "InstructionBuffer.h"
+#include "config.h"
 #include "util.h"
 #include <bitset>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <sys/types.h>
 
 struct DecRenIO {
@@ -19,6 +19,7 @@ struct DecRenIO {
     wire<FTQ_OFFSET_WIDTH> ftq_offset;
     wire<1> ftq_is_last;
 
+    wire<INST_TYPE_WIDTH> type;
     wire<1> dest_en;
     wire<1> src1_en;
     wire<1> src2_en;
@@ -38,76 +39,10 @@ struct DecRenIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    wire<INST_TYPE_WIDTH> type;
-    InstTmaMeta tma;
-    InstDebugMeta dbg;
+    TmaMeta tma;
+    DebugMeta dbg;
 
     DecRenInst() { std::memset(this, 0, sizeof(DecRenInst)); }
-
-    static DecRenInst from_inst_info(const InstInfo &src) {
-      DecRenInst dst;
-      dst.diag_val = src.diag_val;
-      dst.dest_areg = src.dest_areg;
-      dst.src1_areg = src.src1_areg;
-      dst.src2_areg = src.src2_areg;
-      dst.ftq_idx = src.ftq_idx;
-      dst.ftq_offset = src.ftq_offset;
-      dst.ftq_is_last = src.ftq_is_last;
-      dst.dest_en = src.dest_en;
-      dst.src1_en = src.src1_en;
-      dst.src2_en = src.src2_en;
-      dst.is_atomic = src.is_atomic;
-      dst.src1_is_pc = src.src1_is_pc;
-      dst.src2_is_imm = src.src2_is_imm;
-      dst.func3 = src.func3;
-      dst.func7 = src.func7;
-      dst.imm = src.imm;
-      dst.br_id = src.br_id;
-      dst.br_mask = src.br_mask;
-      dst.csr_idx = src.csr_idx;
-      dst.expect_mask = src.expect_mask;
-      dst.cplt_mask = src.cplt_mask;
-      dst.page_fault_inst = src.page_fault_inst;
-      dst.illegal_inst = src.illegal_inst;
-      dst.type = encode_inst_type(src.type);
-      dst.tma = src.tma;
-      dst.dbg = src.dbg;
-      return dst;
-    }
-
-    InstInfo to_inst_info() const {
-      InstInfo dst;
-      dst.diag_val = diag_val;
-      dst.dest_areg = dest_areg;
-      dst.src1_areg = src1_areg;
-      dst.src2_areg = src2_areg;
-      dst.ftq_idx = ftq_idx;
-      dst.ftq_offset = ftq_offset;
-      dst.ftq_is_last = ftq_is_last;
-      dst.dest_en = dest_en;
-      dst.src1_en = src1_en;
-      dst.src2_en = src2_en;
-      dst.is_atomic = is_atomic;
-      dst.src1_is_pc = src1_is_pc;
-      dst.src2_is_imm = src2_is_imm;
-      dst.func3 = func3;
-      dst.func7 = func7;
-      dst.imm = imm;
-      dst.br_id = br_id;
-      dst.br_mask = br_mask;
-      dst.csr_idx = csr_idx;
-      dst.expect_mask = expect_mask;
-      dst.cplt_mask = cplt_mask;
-      dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = false;
-      dst.page_fault_store = false;
-      dst.illegal_inst = illegal_inst;
-      dst.type = decode_inst_type(type);
-      dst.tma = tma;
-      dst.dbg = dbg;
-      return dst;
-    }
-
   };
 
   DecRenInst uop[DECODE_WIDTH];
@@ -119,6 +54,27 @@ struct DecRenIO {
       v = {};
   }
 };
+
+inline bool is_store(const DecRenIO::DecRenInst &uop) {
+  return decode_inst_type(uop.type) == STORE ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::LR);
+}
+
+inline bool is_load(const DecRenIO::DecRenInst &uop) {
+  return decode_inst_type(uop.type) == LOAD ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::SC);
+}
+
+inline bool is_exception(const DecRenIO::DecRenInst &uop) {
+  return uop.page_fault_inst || uop.illegal_inst ||
+         decode_inst_type(uop.type) == ECALL;
+}
+
+inline bool is_flush_inst(const DecRenIO::DecRenInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return type == CSR || type == ECALL || type == MRET || type == SRET ||
+         type == SFENCE_VMA || is_exception(uop) || type == EBREAK;
+}
 
 struct RenDecIO {
 
@@ -218,7 +174,8 @@ struct DecBroadcastIO {
   wire<BR_MASK_WIDTH> br_mask;
   wire<BR_TAG_WIDTH> br_id;
   wire<ROB_IDX_WIDTH> redirect_rob_idx;
-  wire<BR_MASK_WIDTH> clear_mask; // Bits to clear from all in-flight br_masks (resolved branches)
+  wire<BR_MASK_WIDTH> clear_mask; // Bits to clear from all in-flight br_masks
+                                  // (resolved branches)
 
   DecBroadcastIO() {
     mispred = {};
@@ -331,66 +288,35 @@ struct RobCommitIO {
     wire<1> illegal_inst;
 
     wire<INST_TYPE_WIDTH> type;
-    InstTmaMeta tma;
-    InstDebugMeta dbg;
+    TmaMeta tma;
+    DebugMeta dbg;
     wire<1> flush_pipe;
 
     RobCommitInst() { std::memset(this, 0, sizeof(RobCommitInst)); }
 
-    static RobCommitInst from_inst_info(const InstInfo &src) {
-      RobCommitInst dst;
-      dst.diag_val = src.diag_val;
-      dst.dest_areg = src.dest_areg;
-      dst.dest_preg = src.dest_preg;
-      dst.old_dest_preg = src.old_dest_preg;
-      dst.ftq_idx = src.ftq_idx;
-      dst.ftq_offset = src.ftq_offset;
-      dst.ftq_is_last = src.ftq_is_last;
-      dst.mispred = src.mispred;
-      dst.br_taken = src.br_taken;
-      dst.dest_en = src.dest_en;
-      dst.func7 = src.func7;
-      dst.stq_idx = src.stq_idx;
-      dst.page_fault_inst = src.page_fault_inst;
-      dst.page_fault_load = src.page_fault_load;
-      dst.page_fault_store = src.page_fault_store;
-      dst.illegal_inst = src.illegal_inst;
-      dst.type = encode_inst_type(src.type);
-      dst.tma = src.tma;
-      dst.dbg = src.dbg;
-      dst.flush_pipe = src.flush_pipe;
-      return dst;
-    }
-
-    InstInfo to_inst_info() const {
-      InstInfo dst;
-      dst.diag_val = diag_val;
-      dst.dest_areg = dest_areg;
-      dst.dest_preg = dest_preg;
-      dst.old_dest_preg = old_dest_preg;
-      dst.ftq_idx = ftq_idx;
-      dst.ftq_offset = ftq_offset;
-      dst.ftq_is_last = ftq_is_last;
-      dst.mispred = mispred;
-      dst.br_taken = br_taken;
-      dst.dest_en = dest_en;
-      dst.func7 = func7;
-      dst.stq_idx = stq_idx;
-      dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
-      dst.illegal_inst = illegal_inst;
-      dst.type = decode_inst_type(type);
-      dst.tma = tma;
-      dst.dbg = dbg;
-      dst.flush_pipe = flush_pipe;
-      return dst;
-    }
-
     InstEntry to_inst_entry(wire<1> valid) const {
       InstEntry dst;
       dst.valid = valid;
-      dst.uop = to_inst_info();
+      dst.uop.diag_val = diag_val;
+      dst.uop.dest_areg = dest_areg;
+      dst.uop.dest_preg = dest_preg;
+      dst.uop.old_dest_preg = old_dest_preg;
+      dst.uop.ftq_idx = ftq_idx;
+      dst.uop.ftq_offset = ftq_offset;
+      dst.uop.ftq_is_last = ftq_is_last;
+      dst.uop.mispred = mispred;
+      dst.uop.br_taken = br_taken;
+      dst.uop.dest_en = dest_en;
+      dst.uop.func7 = func7;
+      dst.uop.stq_idx = stq_idx;
+      dst.uop.page_fault_inst = page_fault_inst;
+      dst.uop.page_fault_load = page_fault_load;
+      dst.uop.page_fault_store = page_fault_store;
+      dst.uop.illegal_inst = illegal_inst;
+      dst.uop.type = decode_inst_type(type);
+      dst.uop.tma = tma;
+      dst.uop.dbg = dbg;
+      dst.uop.flush_pipe = flush_pipe;
       return dst;
     }
   };
@@ -407,6 +333,28 @@ struct RobCommitIO {
       v = {};
   }
 };
+
+inline bool is_store(const RobCommitIO::RobCommitInst &uop) {
+  return decode_inst_type(uop.type) == STORE ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::LR);
+}
+
+inline bool is_load(const RobCommitIO::RobCommitInst &uop) {
+  return decode_inst_type(uop.type) == LOAD ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::SC);
+}
+
+inline bool is_exception(const RobCommitIO::RobCommitInst &uop) {
+  return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store ||
+         uop.illegal_inst || decode_inst_type(uop.type) == ECALL;
+}
+
+inline bool is_flush_inst(const RobCommitIO::RobCommitInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return type == CSR || type == ECALL || type == MRET || type == SRET ||
+         type == SFENCE_VMA || is_exception(uop) || type == EBREAK ||
+         uop.flush_pipe;
+}
 
 struct RobDisIO {
   struct TmaMeta {
@@ -448,6 +396,7 @@ struct DisRobIO {
     wire<1> mispred;
     wire<1> br_taken;
 
+    wire<INST_TYPE_WIDTH> type;
     wire<1> dest_en;
     wire<1> is_atomic;
     wire<3> func3;
@@ -465,83 +414,12 @@ struct DisRobIO {
 
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
-
-    wire<INST_TYPE_WIDTH> type;
-    InstTmaMeta tma;
-    InstDebugMeta dbg;
     wire<1> flush_pipe;
 
+    TmaMeta tma;
+    DebugMeta dbg;
+
     DisRobInst() { std::memset(this, 0, sizeof(DisRobInst)); }
-
-    static DisRobInst from_inst_info(const InstInfo &src) {
-      DisRobInst dst;
-      dst.diag_val = src.diag_val;
-      dst.dest_areg = src.dest_areg;
-      dst.src1_areg = src.src1_areg;
-      dst.dest_preg = src.dest_preg;
-      dst.old_dest_preg = src.old_dest_preg;
-      dst.ftq_idx = src.ftq_idx;
-      dst.ftq_offset = src.ftq_offset;
-      dst.ftq_is_last = src.ftq_is_last;
-      dst.mispred = src.mispred;
-      dst.br_taken = src.br_taken;
-      dst.dest_en = src.dest_en;
-      dst.is_atomic = src.is_atomic;
-      dst.func3 = src.func3;
-      dst.func7 = src.func7;
-      dst.imm = src.imm;
-      dst.br_mask = src.br_mask;
-      dst.rob_idx = src.rob_idx;
-      dst.stq_idx = src.stq_idx;
-      dst.stq_flag = src.stq_flag;
-      dst.ldq_idx = src.ldq_idx;
-      dst.expect_mask = src.expect_mask;
-      dst.cplt_mask = src.cplt_mask;
-      dst.rob_flag = src.rob_flag;
-      dst.page_fault_inst = src.page_fault_inst;
-      dst.illegal_inst = src.illegal_inst;
-      dst.type = encode_inst_type(src.type);
-      dst.tma = src.tma;
-      dst.dbg = src.dbg;
-      dst.flush_pipe = src.flush_pipe;
-      return dst;
-    }
-
-    InstInfo to_inst_info() const {
-      InstInfo dst;
-      dst.diag_val = diag_val;
-      dst.dest_areg = dest_areg;
-      dst.src1_areg = src1_areg;
-      dst.dest_preg = dest_preg;
-      dst.old_dest_preg = old_dest_preg;
-      dst.ftq_idx = ftq_idx;
-      dst.ftq_offset = ftq_offset;
-      dst.ftq_is_last = ftq_is_last;
-      dst.mispred = mispred;
-      dst.br_taken = br_taken;
-      dst.dest_en = dest_en;
-      dst.is_atomic = is_atomic;
-      dst.func3 = func3;
-      dst.func7 = func7;
-      dst.imm = imm;
-      dst.br_mask = br_mask;
-      dst.rob_idx = rob_idx;
-      dst.stq_idx = stq_idx;
-      dst.stq_flag = stq_flag;
-      dst.ldq_idx = ldq_idx;
-      dst.expect_mask = expect_mask;
-      dst.cplt_mask = cplt_mask;
-      dst.rob_flag = rob_flag;
-      dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = false;
-      dst.page_fault_store = false;
-      dst.illegal_inst = illegal_inst;
-      dst.type = decode_inst_type(type);
-      dst.tma = tma;
-      dst.dbg = dbg;
-      dst.flush_pipe = flush_pipe;
-      return dst;
-    }
   };
 
   DisRobInst uop[DECODE_WIDTH];
@@ -558,6 +436,28 @@ struct DisRobIO {
   }
 };
 
+inline bool is_store(const DisRobIO::DisRobInst &uop) {
+  return decode_inst_type(uop.type) == STORE ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::LR);
+}
+
+inline bool is_load(const DisRobIO::DisRobInst &uop) {
+  return decode_inst_type(uop.type) == LOAD ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::SC);
+}
+
+inline bool is_exception(const DisRobIO::DisRobInst &uop) {
+  return uop.page_fault_inst || uop.illegal_inst ||
+         decode_inst_type(uop.type) == ECALL;
+}
+
+inline bool is_flush_inst(const DisRobIO::DisRobInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return type == CSR || type == ECALL || type == MRET || type == SRET ||
+         type == SFENCE_VMA || is_exception(uop) || type == EBREAK ||
+         uop.flush_pipe;
+}
+
 struct RenDisIO {
   struct RenDisInst {
     wire<32> diag_val;
@@ -573,6 +473,7 @@ struct RenDisIO {
     wire<FTQ_OFFSET_WIDTH> ftq_offset;
     wire<1> ftq_is_last;
 
+    wire<INST_TYPE_WIDTH> type;
     wire<1> dest_en;
     wire<1> src1_en;
     wire<1> src2_en;
@@ -594,22 +495,17 @@ struct RenDisIO {
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
 
-    wire<INST_TYPE_WIDTH> type;
-    InstTmaMeta tma;
-    InstDebugMeta dbg;
+    TmaMeta tma;
+    DebugMeta dbg;
 
     RenDisInst() { std::memset(this, 0, sizeof(RenDisInst)); }
 
-    static RenDisInst from_inst_info(const InstInfo &src) {
+    static RenDisInst from_dec_ren_inst(const DecRenIO::DecRenInst &src) {
       RenDisInst dst;
       dst.diag_val = src.diag_val;
       dst.dest_areg = src.dest_areg;
       dst.src1_areg = src.src1_areg;
       dst.src2_areg = src.src2_areg;
-      dst.dest_preg = src.dest_preg;
-      dst.src1_preg = src.src1_preg;
-      dst.src2_preg = src.src2_preg;
-      dst.old_dest_preg = src.old_dest_preg;
       dst.ftq_idx = src.ftq_idx;
       dst.ftq_offset = src.ftq_offset;
       dst.ftq_is_last = src.ftq_is_last;
@@ -617,8 +513,6 @@ struct RenDisIO {
       dst.src1_en = src.src1_en;
       dst.src2_en = src.src2_en;
       dst.is_atomic = src.is_atomic;
-      dst.src1_busy = src.src1_busy;
-      dst.src2_busy = src.src2_busy;
       dst.src1_is_pc = src.src1_is_pc;
       dst.src2_is_imm = src.src2_is_imm;
       dst.func3 = src.func3;
@@ -631,51 +525,11 @@ struct RenDisIO {
       dst.cplt_mask = src.cplt_mask;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
-      dst.type = encode_inst_type(src.type);
+      dst.type = src.type;
       dst.tma = src.tma;
       dst.dbg = src.dbg;
       return dst;
     }
-
-    InstInfo to_inst_info() const {
-      InstInfo dst;
-      dst.diag_val = diag_val;
-      dst.dest_areg = dest_areg;
-      dst.src1_areg = src1_areg;
-      dst.src2_areg = src2_areg;
-      dst.dest_preg = dest_preg;
-      dst.src1_preg = src1_preg;
-      dst.src2_preg = src2_preg;
-      dst.old_dest_preg = old_dest_preg;
-      dst.ftq_idx = ftq_idx;
-      dst.ftq_offset = ftq_offset;
-      dst.ftq_is_last = ftq_is_last;
-      dst.dest_en = dest_en;
-      dst.src1_en = src1_en;
-      dst.src2_en = src2_en;
-      dst.is_atomic = is_atomic;
-      dst.src1_busy = src1_busy;
-      dst.src2_busy = src2_busy;
-      dst.src1_is_pc = src1_is_pc;
-      dst.src2_is_imm = src2_is_imm;
-      dst.func3 = func3;
-      dst.func7 = func7;
-      dst.imm = imm;
-      dst.br_id = br_id;
-      dst.br_mask = br_mask;
-      dst.csr_idx = csr_idx;
-      dst.expect_mask = expect_mask;
-      dst.cplt_mask = cplt_mask;
-      dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = false;
-      dst.page_fault_store = false;
-      dst.illegal_inst = illegal_inst;
-      dst.type = decode_inst_type(type);
-      dst.tma = tma;
-      dst.dbg = dbg;
-      return dst;
-    }
-
   };
 
   RenDisInst uop[DECODE_WIDTH];
@@ -688,6 +542,27 @@ struct RenDisIO {
       v = {};
   }
 };
+
+inline bool is_store(const RenDisIO::RenDisInst &uop) {
+  return decode_inst_type(uop.type) == STORE ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::LR);
+}
+
+inline bool is_load(const RenDisIO::RenDisInst &uop) {
+  return decode_inst_type(uop.type) == LOAD ||
+         (decode_inst_type(uop.type) == AMO && (uop.func7 >> 2) != AmoOp::SC);
+}
+
+inline bool is_exception(const RenDisIO::RenDisInst &uop) {
+  return uop.page_fault_inst || uop.illegal_inst ||
+         decode_inst_type(uop.type) == ECALL;
+}
+
+inline bool is_flush_inst(const RenDisIO::RenDisInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return type == CSR || type == ECALL || type == MRET || type == SRET ||
+         type == SFENCE_VMA || is_exception(uop) || type == EBREAK;
+}
 
 struct DisRenIO {
 
@@ -737,73 +612,9 @@ struct DisIssIO {
     wire<1> rob_flag;
 
     wire<UOP_TYPE_WIDTH> op;
-    UopDebugMeta dbg;
+    DebugMeta dbg;
 
     DisIssUop() { std::memset(this, 0, sizeof(DisIssUop)); }
-
-    static DisIssUop from_micro_op(const MicroOp &src) {
-      DisIssUop dst;
-      dst.dest_preg = src.dest_preg;
-      dst.src1_preg = src.src1_preg;
-      dst.src2_preg = src.src2_preg;
-      dst.ftq_idx = src.ftq_idx;
-      dst.ftq_offset = src.ftq_offset;
-      dst.is_atomic = src.is_atomic;
-      dst.dest_en = src.dest_en;
-      dst.src1_en = src.src1_en;
-      dst.src2_en = src.src2_en;
-      dst.src1_busy = src.src1_busy;
-      dst.src2_busy = src.src2_busy;
-      dst.src1_is_pc = src.src1_is_pc;
-      dst.src2_is_imm = src.src2_is_imm;
-      dst.func3 = src.func3;
-      dst.func7 = src.func7;
-      dst.imm = src.imm;
-      dst.br_id = src.br_id;
-      dst.br_mask = src.br_mask;
-      dst.csr_idx = src.csr_idx;
-      dst.rob_idx = src.rob_idx;
-      dst.stq_idx = src.stq_idx;
-      dst.stq_flag = src.stq_flag;
-      dst.ldq_idx = src.ldq_idx;
-      dst.rob_flag = src.rob_flag;
-      dst.op = src.op;
-      dst.dbg = src.dbg;
-      return dst;
-    }
-
-    MicroOp to_micro_op() const {
-      MicroOp dst;
-      dst.dest_preg = dest_preg;
-      dst.src1_preg = src1_preg;
-      dst.src2_preg = src2_preg;
-      dst.ftq_idx = ftq_idx;
-      dst.ftq_offset = ftq_offset;
-      dst.is_atomic = is_atomic;
-      dst.dest_en = dest_en;
-      dst.src1_en = src1_en;
-      dst.src2_en = src2_en;
-      dst.src1_busy = src1_busy;
-      dst.src2_busy = src2_busy;
-      dst.src1_is_pc = src1_is_pc;
-      dst.src2_is_imm = src2_is_imm;
-      dst.func3 = func3;
-      dst.func7 = func7;
-      dst.imm = imm;
-      dst.br_id = br_id;
-      dst.br_mask = br_mask;
-      dst.csr_idx = csr_idx;
-      dst.rob_idx = rob_idx;
-      dst.stq_idx = stq_idx;
-      dst.stq_flag = stq_flag;
-      dst.ldq_idx = ldq_idx;
-      dst.rob_flag = rob_flag;
-      dst.page_fault_load = false;
-      dst.page_fault_store = false;
-      dst.op = decode_uop_type(op);
-      dst.dbg = dbg;
-      return dst;
-    }
   };
 
   struct DisIssReq {
@@ -877,7 +688,7 @@ struct RobBroadcastIO {
     interrupt = {};
     trap_val = {};
     pc = {};
-    
+
     head_rob_idx = {};
     head_valid = {};
     head_incomplete_rob_idx = {};
@@ -913,69 +724,9 @@ struct IssPrfIO {
     wire<1> rob_flag;
 
     wire<UOP_TYPE_WIDTH> op;
-    UopDebugMeta dbg;
+    DebugMeta dbg;
 
     IssPrfUop() { std::memset(this, 0, sizeof(IssPrfUop)); }
-
-    static IssPrfUop from_micro_op(const MicroOp &src) {
-      IssPrfUop dst;
-      dst.dest_preg = src.dest_preg;
-      dst.src1_preg = src.src1_preg;
-      dst.src2_preg = src.src2_preg;
-      dst.ftq_idx = src.ftq_idx;
-      dst.ftq_offset = src.ftq_offset;
-      dst.is_atomic = src.is_atomic;
-      dst.dest_en = src.dest_en;
-      dst.src1_en = src.src1_en;
-      dst.src2_en = src.src2_en;
-      dst.src1_is_pc = src.src1_is_pc;
-      dst.src2_is_imm = src.src2_is_imm;
-      dst.func3 = src.func3;
-      dst.func7 = src.func7;
-      dst.imm = src.imm;
-      dst.br_id = src.br_id;
-      dst.br_mask = src.br_mask;
-      dst.csr_idx = src.csr_idx;
-      dst.rob_idx = src.rob_idx;
-      dst.stq_idx = src.stq_idx;
-      dst.stq_flag = src.stq_flag;
-      dst.ldq_idx = src.ldq_idx;
-      dst.rob_flag = src.rob_flag;
-      dst.op = src.op;
-      dst.dbg = src.dbg;
-      return dst;
-    }
-
-    MicroOp to_micro_op() const {
-      MicroOp dst;
-      dst.dest_preg = dest_preg;
-      dst.src1_preg = src1_preg;
-      dst.src2_preg = src2_preg;
-      dst.ftq_idx = ftq_idx;
-      dst.ftq_offset = ftq_offset;
-      dst.is_atomic = is_atomic;
-      dst.dest_en = dest_en;
-      dst.src1_en = src1_en;
-      dst.src2_en = src2_en;
-      dst.src1_is_pc = src1_is_pc;
-      dst.src2_is_imm = src2_is_imm;
-      dst.func3 = func3;
-      dst.func7 = func7;
-      dst.imm = imm;
-      dst.br_id = br_id;
-      dst.br_mask = br_mask;
-      dst.csr_idx = csr_idx;
-      dst.rob_idx = rob_idx;
-      dst.stq_idx = stq_idx;
-      dst.stq_flag = stq_flag;
-      dst.ldq_idx = ldq_idx;
-      dst.rob_flag = rob_flag;
-      dst.page_fault_load = false;
-      dst.page_fault_store = false;
-      dst.op = decode_uop_type(op);
-      dst.dbg = dbg;
-      return dst;
-    }
   };
 
   struct IssPrfEntry {
@@ -1021,7 +772,7 @@ struct PrfExeIO {
     wire<1> rob_flag;
 
     wire<UOP_TYPE_WIDTH> op;
-    UopDebugMeta dbg;
+    DebugMeta dbg;
 
     PrfExeUop() { std::memset(this, 0, sizeof(PrfExeUop)); }
 
@@ -1051,39 +802,6 @@ struct PrfExeIO {
       dst.rob_flag = src.rob_flag;
       dst.op = src.op;
       dst.dbg = src.dbg;
-      return dst;
-    }
-
-    MicroOp to_micro_op() const {
-      MicroOp dst;
-      dst.dest_preg = dest_preg;
-      dst.src1_preg = src1_preg;
-      dst.src2_preg = src2_preg;
-      dst.src1_rdata = src1_rdata;
-      dst.src2_rdata = src2_rdata;
-      dst.ftq_idx = ftq_idx;
-      dst.ftq_offset = ftq_offset;
-      dst.is_atomic = is_atomic;
-      dst.dest_en = dest_en;
-      dst.src1_en = src1_en;
-      dst.src2_en = src2_en;
-      dst.src1_is_pc = src1_is_pc;
-      dst.src2_is_imm = src2_is_imm;
-      dst.func3 = func3;
-      dst.func7 = func7;
-      dst.imm = imm;
-      dst.br_id = br_id;
-      dst.br_mask = br_mask;
-      dst.csr_idx = csr_idx;
-      dst.rob_idx = rob_idx;
-      dst.stq_idx = stq_idx;
-      dst.stq_flag = stq_flag;
-      dst.ldq_idx = ldq_idx;
-      dst.rob_flag = rob_flag;
-      dst.page_fault_load = false;
-      dst.page_fault_store = false;
-      dst.op = decode_uop_type(op);
-      dst.dbg = dbg;
       return dst;
     }
   };
@@ -1118,16 +836,6 @@ struct ExePrfIO {
       dst.br_mask = src.br_mask;
       dst.dest_en = src.dest_en;
       dst.op = encode_uop_type(src.op);
-      return dst;
-    }
-
-    MicroOp to_micro_op() const {
-      MicroOp dst;
-      dst.dest_preg = dest_preg;
-      dst.result = result;
-      dst.br_mask = br_mask;
-      dst.dest_en = dest_en;
-      dst.op = decode_uop_type(op);
       return dst;
     }
   };
@@ -1173,7 +881,7 @@ struct ExuRobIO {
     wire<1> page_fault_load;
     wire<1> page_fault_store;
     wire<UOP_TYPE_WIDTH> op;
-    UopDebugMeta dbg;
+    DebugMeta dbg;
     wire<1> flush_pipe;
 
     ExuRobUop() { std::memset(this, 0, sizeof(ExuRobUop)); }
@@ -1191,22 +899,6 @@ struct ExuRobIO {
       dst.op = encode_uop_type(src.op);
       dst.dbg = src.dbg;
       dst.flush_pipe = src.flush_pipe;
-      return dst;
-    }
-
-    MicroOp to_micro_op() const {
-      MicroOp dst;
-      dst.diag_val = diag_val;
-      dst.result = result;
-      dst.rob_idx = rob_idx;
-      dst.mispred = mispred;
-      dst.br_taken = br_taken;
-      dst.page_fault_inst = page_fault_inst;
-      dst.page_fault_load = page_fault_load;
-      dst.page_fault_store = page_fault_store;
-      dst.op = decode_uop_type(op);
-      dst.dbg = dbg;
-      dst.flush_pipe = flush_pipe;
       return dst;
     }
   };
@@ -1230,8 +922,10 @@ struct ExuIdIO {
   wire<32> redirect_pc;
   wire<ROB_IDX_WIDTH> redirect_rob_idx;
   wire<BR_TAG_WIDTH> br_id;
-  wire<FTQ_IDX_WIDTH> ftq_idx; // FTQ index of mispredicting branch, for tail recovery
-  wire<BR_MASK_WIDTH> clear_mask; // OR of all resolved branches' (1 << br_id) this cycle
+  wire<FTQ_IDX_WIDTH>
+      ftq_idx; // FTQ index of mispredicting branch, for tail recovery
+  wire<BR_MASK_WIDTH>
+      clear_mask; // OR of all resolved branches' (1 << br_id) this cycle
 
   ExuIdIO() {
     mispred = {};
@@ -1414,8 +1108,7 @@ struct MemRespIO {
   }
 };
 
-
-struct PeripheralInIO{
+struct PeripheralInIO {
   wire<1> is_mmio;
   wire<1> wen;
   wire<32> mmio_addr;
@@ -1430,7 +1123,7 @@ struct PeripheralInIO{
     uop = {};
   }
 };
-struct PeripheralOutIO{
+struct PeripheralOutIO {
   wire<1> is_mmio;
   wire<1> ready;
   wire<32> mmio_rdata;
@@ -1442,7 +1135,6 @@ struct PeripheralOutIO{
     mmio_rdata = {};
     uop = {};
   }
-
 };
 
 struct PeripheralIO {
@@ -1452,128 +1144,124 @@ struct PeripheralIO {
 
 // STQ 条目结构（定义在此以供 StoreReq 使用）
 struct StqEntry {
-  bool valid        = false;
-  bool addr_valid   = false;
-  bool data_valid   = false;
-  bool committed    = false;
-  bool done         = false;
-  bool is_mmio      = false;
-  bool send         = false; // Whether the store has been sent to DCache (for replay logic)
+  bool valid = false;
+  bool addr_valid = false;
+  bool data_valid = false;
+  bool committed = false;
+  bool done = false;
+  bool is_mmio = false;
+  bool send =
+      false; // Whether the store has been sent to DCache (for replay logic)
   uint8_t replay = 0;
-  uint32_t addr     = 0;
-  uint32_t p_addr   = 0;
-  uint32_t suppress_write = 0; // For MMIO: bits to suppress in the write (e.g., for LR/SC)
-  uint32_t data     = 0;
-  uint32_t func3    = 0;
-  mask_t   br_mask  = {};
-  uint32_t rob_idx  = 0;
+  uint32_t addr = 0;
+  uint32_t p_addr = 0;
+  uint32_t suppress_write =
+      0; // For MMIO: bits to suppress in the write (e.g., for LR/SC)
+  uint32_t data = 0;
+  uint32_t func3 = 0;
+  mask_t br_mask = {};
+  uint32_t rob_idx = 0;
   uint32_t rob_flag = 0;
 };
 
 struct LoadReq {
-    wire<1> valid;
-    wire<32> addr;
-    MicroOp uop;
-    size_t req_id;
+  wire<1> valid;
+  wire<32> addr;
+  MicroOp uop;
+  size_t req_id;
 
-    LoadReq() : valid(false), addr(0), uop(), req_id(0) {}
+  LoadReq() : valid(false), addr(0), uop(), req_id(0) {}
 };
 
 struct StoreReq {
-    wire<1> valid;
-    wire<32> addr;
-    wire<32> data;
-    wire<8> strb;
-    StqEntry uop;
-    size_t req_id;
+  wire<1> valid;
+  wire<32> addr;
+  wire<32> data;
+  wire<8> strb;
+  StqEntry uop;
+  size_t req_id;
 
-    StoreReq() : valid(false), addr(0), data(0), strb(0xF), uop(), req_id(0) {}
+  StoreReq() : valid(false), addr(0), data(0), strb(0xF), uop(), req_id(0) {}
 };
 
 // Load响应结构
 struct LoadResp {
-    wire<1> valid;
-    wire<32> data;
-    MicroOp uop;
-    size_t req_id;
-    wire<2> replay;
-    LoadResp() : valid(false), data(0), uop(), req_id(0), replay(0) {}
+  wire<1> valid;
+  wire<32> data;
+  MicroOp uop;
+  size_t req_id;
+  wire<2> replay;
+  LoadResp() : valid(false), data(0), uop(), req_id(0), replay(0) {}
 };
 
 // Store响应结构
 struct StoreResp {
-    wire<1> valid;
-    wire<2> replay;         
-    size_t req_id;
-    wire<1> is_cache_miss;
+  wire<1> valid;
+  wire<2> replay;
+  size_t req_id;
+  wire<1> is_cache_miss;
 
-    StoreResp() : valid(false), replay(0), req_id(0), is_cache_miss(false) {}
+  StoreResp() : valid(false), replay(0), req_id(0), is_cache_miss(false) {}
 };
 
 // 请求端口集合（支持4个Load + 4个Store）
 struct DCacheReqPorts {
 
-    LoadReq load_ports[LSU_LDU_COUNT];
-    StoreReq store_ports[LSU_STA_COUNT];
+  LoadReq load_ports[LSU_LDU_COUNT];
+  StoreReq store_ports[LSU_STA_COUNT];
 
-    void clear() {
-        for (int i = 0; i < LSU_LDU_COUNT; i++) {
-            load_ports[i].valid = false;
-        }
-        for (int i = 0; i < LSU_STA_COUNT; i++) {
-            store_ports[i].valid = false;
-        }
+  void clear() {
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      load_ports[i].valid = false;
     }
+    for (int i = 0; i < LSU_STA_COUNT; i++) {
+      store_ports[i].valid = false;
+    }
+  }
 };
-struct ReplayResp{
-    wire<2> replay;
-    size_t replay_addr;
-    wire<8> free_slots;
+struct ReplayResp {
+  wire<2> replay;
+  size_t replay_addr;
+  wire<8> free_slots;
 
-    ReplayResp() : replay(0), replay_addr(0), free_slots(0) {}
+  ReplayResp() : replay(0), replay_addr(0), free_slots(0) {}
 };
 
 // 响应端口集合
 struct DCacheRespPorts {
-    LoadResp load_resps[LSU_LDU_COUNT];
-    StoreResp store_resps[LSU_STA_COUNT];
-    ReplayResp replay_resp;
+  LoadResp load_resps[LSU_LDU_COUNT];
+  StoreResp store_resps[LSU_STA_COUNT];
+  ReplayResp replay_resp;
 
-    void clear() {
-        for (int i = 0; i < LSU_LDU_COUNT; i++) {
-            load_resps[i].valid = false;
-        }
-        for (int i = 0; i < LSU_STA_COUNT; i++) {
-            store_resps[i].valid = false;
-            store_resps[i].replay = 0;
-            store_resps[i].is_cache_miss = false;
-        }
-        replay_resp = ReplayResp();
+  void clear() {
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      load_resps[i].valid = false;
     }
+    for (int i = 0; i < LSU_STA_COUNT; i++) {
+      store_resps[i].valid = false;
+      store_resps[i].replay = 0;
+      store_resps[i].is_cache_miss = false;
+    }
+    replay_resp = ReplayResp();
+  }
 };
 
 struct LsuDcacheIO {
   DCacheReqPorts req_ports;
 
-  LsuDcacheIO() {
-    req_ports.clear();
-  }
+  LsuDcacheIO() { req_ports.clear(); }
 };
 
-struct DcacheLsuIO
-{
+struct DcacheLsuIO {
   DCacheRespPorts resp_ports;
 
-  DcacheLsuIO() {
-    resp_ports.clear();
-  }
-
+  DcacheLsuIO() { resp_ports.clear(); }
 };
 
 struct LsuDisIO {
 
-  wire<STQ_IDX_WIDTH> stq_tail; // 当前分配指针
-  wire<1> stq_tail_flag;        // stq_tail 对应 ring 代际位
+  wire<STQ_IDX_WIDTH> stq_tail;                     // 当前分配指针
+  wire<1> stq_tail_flag;                            // stq_tail 对应 ring 代际位
   wire<bit_width_for_count(STQ_SIZE + 1)> stq_free; // 剩余空闲条目数
   wire<bit_width_for_count(LDQ_SIZE + 1)> ldq_free; // 剩余 Load 队列空闲数
   wire<LDQ_IDX_WIDTH> ldq_alloc_idx[MAX_LDQ_DISPATCH_WIDTH];
@@ -1614,7 +1302,7 @@ struct LsuExeIO {
     wire<1> page_fault_load;
     wire<1> page_fault_store;
     wire<UOP_TYPE_WIDTH> op;
-    UopDebugMeta dbg;
+    DebugMeta dbg;
     wire<1> flush_pipe;
 
     LsuExeRespUop() { std::memset(this, 0, sizeof(LsuExeRespUop)); }
@@ -1721,28 +1409,9 @@ struct ExeLsuIO {
     wire<1> rob_flag;
     wire<1> dest_en;
     wire<UOP_TYPE_WIDTH> op;
-    UopDebugMeta dbg;
+    DebugMeta dbg;
 
     ExeLsuReqUop() { std::memset(this, 0, sizeof(ExeLsuReqUop)); }
-
-    static ExeLsuReqUop from_micro_op(const MicroOp &src) {
-      ExeLsuReqUop dst;
-      dst.result = src.result;
-      dst.dest_preg = src.dest_preg;
-      dst.func3 = src.func3;
-      dst.func7 = src.func7;
-      dst.is_atomic = src.is_atomic;
-      dst.br_mask = src.br_mask;
-      dst.rob_idx = src.rob_idx;
-      dst.stq_idx = src.stq_idx;
-      dst.stq_flag = src.stq_flag;
-      dst.ldq_idx = src.ldq_idx;
-      dst.rob_flag = src.rob_flag;
-      dst.dest_en = src.dest_en;
-      dst.op = encode_uop_type(src.op);
-      dst.dbg = src.dbg;
-      return dst;
-    }
 
     MicroOp to_micro_op() const {
       MicroOp dst;

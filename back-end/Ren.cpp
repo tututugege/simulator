@@ -31,7 +31,10 @@ void Ren::init() {
   }
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    inst_r[i].valid = false;
+    inst_r[i] = {};
+    inst_valid[i] = false;
+    inst_r_1[i] = {};
+    inst_valid_1[i] = false;
   }
 
   memcpy(arch_RAT_1, arch_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
@@ -75,13 +78,13 @@ void Ren::comb_alloc() {
   // 一条指令stall，后面的也stall
   wire<1> stall = false;
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    out.ren2dis->uop[i] = RenDisIO::RenDisInst::from_inst_info(inst_r[i].uop);
+    out.ren2dis->uop[i] = RenDisIO::RenDisInst::from_dec_ren_inst(inst_r[i]);
     out.ren2dis->uop[i].dest_preg = alloc_reg[i];
     // 分配寄存器
-    if (inst_r[i].valid && inst_r[i].uop.dest_en && !stall) {
+    if (inst_valid[i] && inst_r[i].dest_en && !stall) {
       out.ren2dis->valid[i] = alloc_valid[i];
       stall = !alloc_valid[i];
-    } else if (inst_r[i].valid && !inst_r[i].uop.dest_en) {
+    } else if (inst_valid[i] && !inst_r[i].dest_en) {
       out.ren2dis->valid[i] = !stall;
     } else {
       out.ren2dis->valid[i] = false;
@@ -112,9 +115,9 @@ void Ren::comb_rename() {
 
   // 无waw raw的输出 读spec_RAT
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    old_dest_preg_normal[i] = spec_RAT[inst_r[i].uop.dest_areg];
-    src1_preg_normal[i] = spec_RAT[inst_r[i].uop.src1_areg];
-    src2_preg_normal[i] = spec_RAT[inst_r[i].uop.src2_areg];
+    old_dest_preg_normal[i] = spec_RAT[inst_r[i].dest_areg];
+    src1_preg_normal[i] = spec_RAT[inst_r[i].src1_areg];
+    src2_preg_normal[i] = spec_RAT[inst_r[i].src2_areg];
   }
 
   // 针对RAT的raw bypass
@@ -128,24 +131,24 @@ void Ren::comb_rename() {
 
     // bypass选择最近的 3从012中选 2从01中选 1从0中选
     for (int j = 0; j < i; j++) {
-      if (!inst_r[j].valid || !inst_r[j].uop.dest_en)
+      if (!inst_valid[j] || !inst_r[j].dest_en)
         continue;
 
       // Do not bypass from x0 writes (architectural x0 is always 0)
-      if (inst_r[j].uop.dest_areg == 0)
+      if (inst_r[j].dest_areg == 0)
         continue;
 
-      if (inst_r[i].uop.src1_areg == inst_r[j].uop.dest_areg) {
+      if (inst_r[i].src1_areg == inst_r[j].dest_areg) {
         src1_bypass_hit[i] = true;
         src1_preg_bypass[i] = out.ren2dis->uop[j].dest_preg;
       }
 
-      if (inst_r[i].uop.src2_areg == inst_r[j].uop.dest_areg) {
+      if (inst_r[i].src2_areg == inst_r[j].dest_areg) {
         src2_bypass_hit[i] = true;
         src2_preg_bypass[i] = out.ren2dis->uop[j].dest_preg;
       }
 
-      if (inst_r[i].uop.dest_areg == inst_r[j].uop.dest_areg) {
+      if (inst_r[i].dest_areg == inst_r[j].dest_areg) {
         old_dest_bypass_hit[i] = true;
         old_dest_preg_bypass[i] = out.ren2dis->uop[j].dest_preg;
       }
@@ -185,14 +188,14 @@ void Ren::comb_fire() {
       int dest_preg = out.ren2dis->uop[i].dest_preg;
       spec_alloc_normal[dest_preg] = true;
       free_vec_normal[dest_preg] = false;
-      spec_RAT_normal[inst_r[i].uop.dest_areg] = dest_preg;
+      spec_RAT_normal[inst_r[i].dest_areg] = dest_preg;
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][dest_preg] = true;
     }
 
     // 保存检查点 (Checkpoint)
-    if (fire[i] && is_branch(inst_r[i].uop.type)) {
-      const auto br_id = inst_r[i].uop.br_id;
+    if (fire[i] && is_branch(inst_r[i].type)) {
+      const auto br_id = inst_r[i].br_id;
       for (int j = 0; j < ARF_NUM + 1; j++) {
         // 注意这里存在隐藏的旁路 (Bypass)
         // 保存的是本条指令完成后的 spec_RAT，不包括同一周期后续指令对 spec_RAT
@@ -208,7 +211,7 @@ void Ren::comb_fire() {
 
   out.ren2dec->ready = true;
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    out.ren2dec->ready &= fire[i] || !inst_r[i].valid;
+    out.ren2dec->ready &= fire[i] || !inst_valid[i];
   }
 }
 
@@ -254,11 +257,12 @@ void Ren ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (in.rob_commit->commit_entry[i].valid) {
+      const auto &commit_uop = in.rob_commit->commit_entry[i].uop;
       ctx->perf.commit_num++;
-      if (is_load(in.rob_commit->commit_entry[i].uop.to_inst_info())) {
+      if (is_load(commit_uop)) {
         ctx->perf.commit_load_num++;
       }
-      if (is_store(in.rob_commit->commit_entry[i].uop.to_inst_info())) {
+      if (is_store(commit_uop)) {
         ctx->perf.commit_store_num++;
       }
 
@@ -275,8 +279,9 @@ void Ren ::comb_commit() {
         }
       }
 
-      InstInfo commit_inst = in.rob_commit->commit_entry[i].uop.to_inst_info();
-      InstInfo *inst = &commit_inst;
+      InstEntry commit_entry = commit_uop.to_inst_entry(
+          in.rob_commit->commit_entry[i].valid);
+      InstInfo *inst = &commit_entry.uop;
 
       // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
       // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
@@ -293,9 +298,6 @@ void Ren ::comb_commit() {
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
-      InstEntry commit_entry =
-          in.rob_commit->commit_entry[i].uop.to_inst_entry(
-              in.rob_commit->commit_entry[i].valid);
       ctx->run_commit_inst(&commit_entry);
 #ifdef CONFIG_DIFFTEST
       ctx->run_difftest_inst(&commit_entry);
@@ -310,7 +312,7 @@ void Ren ::comb_pipeline() {
 #ifdef CONFIG_PERF_COUNTER
     uint64_t killed = 0;
     for (int i = 0; i < DECODE_WIDTH; i++) {
-      if (inst_r[i].valid) {
+      if (inst_valid[i]) {
         killed++;
       }
     }
@@ -330,21 +332,22 @@ void Ren ::comb_pipeline() {
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (in.rob_bcast->flush || in.dec_bcast->mispred) {
-      inst_r_1[i].valid = false;
+      inst_valid_1[i] = false;
     } else if (out.ren2dec->ready) {
-      inst_r_1[i].valid = in.dec2ren->valid[i];
-      inst_r_1[i].uop = in.dec2ren->uop[i].to_inst_info();
-      inst_r_1[i].uop.br_mask &= ~clear_mask;
+      inst_valid_1[i] = in.dec2ren->valid[i];
+      inst_r_1[i] = in.dec2ren->uop[i];
+      inst_r_1[i].br_mask &= ~clear_mask;
     } else {
-      inst_r_1[i].valid = inst_r[i].valid && !fire[i];
+      inst_valid_1[i] = inst_valid[i] && !fire[i];
+      inst_r_1[i] = inst_r[i];
     }
   }
 
   // Ren 阶段清理：对保留在流水寄存器中的存活条目同步清除已解析分支 bit。
   if (clear_mask) {
     for (int i = 0; i < DECODE_WIDTH; i++) {
-      if (inst_r_1[i].valid) {
-        inst_r_1[i].uop.br_mask &= ~clear_mask;
+      if (inst_valid_1[i]) {
+        inst_r_1[i].br_mask &= ~clear_mask;
       }
     }
   }
@@ -369,7 +372,8 @@ void Ren ::comb_pipeline() {
 
 void Ren ::seq() {
 
-  memcpy(inst_r, inst_r_1, DECODE_WIDTH * sizeof(InstEntry));
+  memcpy(inst_r, inst_r_1, DECODE_WIDTH * sizeof(DecRenIO::DecRenInst));
+  memcpy(inst_valid, inst_valid_1, DECODE_WIDTH * sizeof(reg<1>));
   memcpy(spec_RAT, spec_RAT_1, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
   memcpy(arch_RAT, arch_RAT_1, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
 

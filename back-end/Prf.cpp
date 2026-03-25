@@ -5,14 +5,15 @@
 #include <cstring>
 
 namespace {
-static inline bool is_killed(const MicroOp &uop, const DecBroadcastIO *db) {
+static inline bool is_killed(const ExePrfIO::ExePrfWbUop &uop,
+                             const DecBroadcastIO *db) {
   if (!db->mispred) return false;
   return (uop.br_mask & db->br_mask) != 0;
 }
 
 inline uint32_t read_operand_with_bypass(
-    uint32_t preg, bool src_en, const reg<32> *reg_file, const UopEntry *inst_r,
-    const ExePrfIO *exe2prf) {
+    uint32_t preg, bool src_en, const reg<32> *reg_file,
+    const ExePrfIO::ExePrfEntry *inst_r, const ExePrfIO *exe2prf) {
   if (!src_en) {
     return 0;
   }
@@ -38,6 +39,10 @@ inline uint32_t read_operand_with_bypass(
   }
 
   return data;
+}
+
+static inline bool is_load_wb(const ExePrfIO::ExePrfWbUop &uop) {
+  return decode_uop_type(uop.op) == UOP_LOAD;
 }
 } // namespace
 
@@ -83,7 +88,7 @@ void Prf::comb_awake() {
   int awake_idx = 0;
   // 遍历寻找有效的 Load 唤醒 (支持多端口)
   for (int i = 0; i < ISSUE_WIDTH; i++) {
-    if (inst_r[i].valid && inst_r[i].uop.dest_en && is_load(inst_r[i].uop)) {
+    if (inst_r[i].valid && inst_r[i].uop.dest_en && is_load_wb(inst_r[i].uop)) {
       bool is_squashed = is_killed(inst_r[i].uop, in.dec_bcast);
       if (is_squashed) {
         continue;
@@ -126,7 +131,7 @@ void Prf::comb_pipeline() {
       inst_r_1[i].valid = false;
     } else if (in.exe2prf->entry[i].valid) {
       inst_r_1[i].valid = true;
-      inst_r_1[i].uop = in.exe2prf->entry[i].uop.to_micro_op();
+      inst_r_1[i].uop = in.exe2prf->entry[i].uop;
       if (is_killed(inst_r_1[i].uop, in.dec_bcast)) {
         inst_r_1[i].valid = false;
       } else if (inst_r_1[i].valid && clear) {
