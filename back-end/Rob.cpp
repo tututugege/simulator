@@ -33,6 +33,7 @@ inline bool rob_is_flush_inst(const RobStoredInst &uop) {
          type == SFENCE_VMA || rob_is_exception(uop) || type == EBREAK ||
          uop.flush_pipe;
 }
+
 } // namespace
 
 void Rob::init() {
@@ -62,14 +63,6 @@ void Rob::comb_ready() {
     }
   }
 
-  if (!is_empty() && in.csr2rob->interrupt_req && !in.dec_bcast->mispred) {
-    for (int i = 0; i < ROB_BANK_NUM; i++) {
-      if (entry[i][deq_ptr].valid) {
-        out.rob2csr->interrupt_resp = true;
-        break;
-      }
-    }
-  }
   // Determine Head Status for Memory Bound Calculation (Refined Phase 3.6 -
   // Oldest First) User Feedback: Find the *oldest* incomplete instruction. If
   // entry[0] is a DIV (blocked) and entry[1] is a LOAD (blocked), the stall is
@@ -135,7 +128,10 @@ void Rob::comb_commit() {
       out.rob_bcast->sret = out.rob_bcast->ecall = out.rob_bcast->fence =
           out.rob_bcast->fence_i = false;
 
-  out.rob_bcast->interrupt = out.rob2csr->interrupt_resp;
+  // interrupt_resp must only be raised at a real precise commit point in this
+  // cycle, not in comb_ready().
+  out.rob2csr->interrupt_resp = false;
+  out.rob_bcast->interrupt = false;
 
   out.rob_bcast->page_fault_inst = out.rob_bcast->page_fault_load =
       out.rob_bcast->page_fault_store = out.rob_bcast->illegal_inst = false;
@@ -177,6 +173,7 @@ void Rob::comb_commit() {
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
   bool progress_single_commit = false;
+  bool interrupt_fire = false;
   auto log_incomplete_store_commit = [&](const RobStoredInst &uop,
                                          const char *path, int slot) {
     if (!rob_is_store(uop) || uop.cplt_num == uop.uop_num) {
@@ -191,39 +188,52 @@ void Rob::comb_commit() {
   };
 
   if (!in.dec_bcast->mispred) {
+    const bool interrupt_pending = in.csr2rob->interrupt_req;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if ((entry[i][deq_ptr].valid &&
            rob_is_flush_inst(entry[i][deq_ptr].uop)) ||
-          out.rob2csr->interrupt_resp) {
+          interrupt_pending) {
         single_commit = true;
         break;
       }
     }
 
-    // 看第一个 valid 指令是否完成。即使是 interrupt 触发的 single_commit，
-    // 也必须等待该最老指令完成，避免提交未完成的内存指令。
+    // 看第一个 valid 指令是否完成。
+    bool has_head_valid = false;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
+        has_head_valid = true;
         single_idx = i;
-        if (entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+        const auto &head_uop = entry[i][deq_ptr].uop;
+        if (!interrupt_pending &&
+            head_uop.cplt_num != head_uop.uop_num) {
           single_commit = false;
         }
-        if (decode_inst_type(entry[i][deq_ptr].uop.type) == SFENCE_VMA &&
+        if (!interrupt_pending &&
+            decode_inst_type(head_uop.type) == SFENCE_VMA &&
             in.lsu2rob != nullptr && in.lsu2rob->committed_store_pending) {
           // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
           single_commit = false;
           commit = false;
         }
+        if (single_commit && interrupt_pending) {
+          interrupt_fire = true;
+        }
         break;
       }
+    }
+    if (!has_head_valid) {
+      // Do not single-commit a ghost slot when this ROB line is already empty.
+      // Let normal group-commit path pop the empty line.
+      single_commit = false;
     }
 
     // Forward-progress fallback:
     // If group commit is blocked by younger banks in the same ROB line, allow
     // committing the oldest ready non-flush instruction so older stores can
     // still commit/retire and unblock younger loads that are waiting on them.
-    if (!commit && !single_commit && !out.rob_bcast->interrupt) {
+    if (!commit && !single_commit && !interrupt_pending) {
       for (int i = 0; i < ROB_BANK_NUM; i++) {
         if (!entry[i][deq_ptr].valid) {
           continue;
@@ -239,6 +249,8 @@ void Rob::comb_commit() {
       }
     }
   }
+  out.rob2csr->interrupt_resp = interrupt_fire;
+  out.rob_bcast->interrupt = interrupt_fire;
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     out.rob_commit->commit_entry[i].uop =
@@ -284,7 +296,6 @@ void Rob::comb_commit() {
     if (entry[single_idx][deq_ptr].valid) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       log_incomplete_store_commit(uop, "single", single_idx);
-      // 中断触发的 single_commit 也要求首条指令已经完成。
       if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
           !rob_is_page_fault(uop)) {
         uint32_t alignment_mask = uop.dbg.mem_align_mask;
@@ -422,6 +433,8 @@ void Rob::comb_complete() {
 
       for (int k = 0; k < LSU_STA_COUNT; k++) {
         if (i == IQ_STA_PORT_BASE + k) {
+          // Keep resolved store address in ROB for commit-time policy checks.
+          entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
           if (wb_has_page_fault) {
             entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
             entry_1[bank_idx][line_idx].uop.page_fault_store = true;

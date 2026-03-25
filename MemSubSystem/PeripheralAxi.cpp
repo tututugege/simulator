@@ -1,4 +1,5 @@
 #include "PeripheralAxi.h"
+#include "PeripheralModel.h"
 #include "config.h"
 #include "oracle.h"
 
@@ -154,13 +155,30 @@ void PeripheralAxi::comb_inputs() {
         nxt.uop.dbg.difftest_skip = true;
         return;
       }
+      if (peripheral_model != nullptr &&
+          PeripheralModel::is_modeled_mmio(peripheral_io->in.mmio_addr)) {
+        nxt.busy = false;
+        nxt.write = peripheral_io->in.wen;
+        nxt.req_accepted = false;
+        nxt.resp_valid = true;
+        nxt.addr = peripheral_io->in.mmio_addr;
+        nxt.wdata = peripheral_io->in.mmio_wdata;
+        nxt.func3 = peripheral_io->in.uop.func3;
+        nxt.rdata = peripheral_io->in.wen
+                        ? 0
+                        : peripheral_model->read_load(peripheral_io->in.mmio_addr,
+                                                      nxt.func3);
+        nxt.req_id = 0;
+        nxt.uop = peripheral_io->in.uop;
+        return;
+      }
       nxt.busy = true;
       nxt.write = peripheral_io->in.wen;
       nxt.req_accepted = false;
       nxt.resp_valid = false;
       nxt.addr = peripheral_io->in.mmio_addr;
       nxt.wdata = peripheral_io->in.mmio_wdata;
-      nxt.func3 = static_cast<uint8_t>(peripheral_io->in.mmio_wstrb);
+      nxt.func3 = peripheral_io->in.uop.func3;
       nxt.rdata = 0;
       nxt.req_id = 0;
       nxt.uop = peripheral_io->in.uop;

@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 
+class PeripheralModel;
+
 struct PeripheralAxiReadIn {
   bool req_ready = false;
   bool req_accepted = false;
@@ -64,6 +66,7 @@ struct PeripheralAxiState {
 class PeripheralAxi {
 public:
   PeripheralIO *peripheral_io = nullptr;
+  PeripheralModel *peripheral_model = nullptr;
 
   void init();
   void comb_outputs();

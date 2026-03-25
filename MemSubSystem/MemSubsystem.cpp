@@ -559,7 +559,9 @@ void MemSubsystem::init() {
   mshr_.init();
   wb_.init();
   dcache_.init();
+  peripheral_model_.bind(csr, memory);
   peripheral_axi_.peripheral_io = peripheral_io;
+  peripheral_axi_.peripheral_model = &peripheral_model_;
   peripheral_axi_.init();
 
   ptw_block.init();
@@ -650,51 +652,7 @@ void MemSubsystem::init() {
 }
 
 void MemSubsystem::on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3) {
-  if (memory == nullptr) {
-    return;
-  }
-
-  const bool is_uart = ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE);
-  const bool is_plic = ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
-  if (!is_uart && !is_plic) {
-    return;
-  }
-
-  // Keep MMIO backing memory coherent with the committed store width.
-  const uint32_t byte_off = paddr & 0x3u;
-  uint32_t wstrb = 0;
-  uint32_t wdata = 0;
-  switch (func3 & 0x3u) {
-  case 0:
-    wstrb = (1u << byte_off);
-    wdata = (data & 0xFFu) << (byte_off * 8);
-    break;
-  case 1:
-    wstrb = (0x3u << byte_off);
-    wdata = (data & 0xFFFFu) << (byte_off * 8);
-    break;
-  default:
-    wstrb = 0xFu;
-    wdata = data;
-    break;
-  }
-
-  uint32_t wmask = 0;
-  for (int i = 0; i < 4; i++) {
-    if ((wstrb >> i) & 1u) {
-      wmask |= (0xFFu << (i * 8));
-    }
-  }
-  const uint32_t word_idx = paddr >> 2;
-  const uint32_t old_val = memory[word_idx];
-  const uint32_t new_val = (old_val & ~wmask) | (wdata & wmask);
-  memory[word_idx] = new_val;
-
-  // Keep UART THR backing memory coherent for difftest / software polling.
-  // Host-side character output is produced by the MMIO UART device itself.
-  if (paddr == UART_ADDR_BASE) {
-    memory[UART_ADDR_BASE / 4] &= 0xFFFFFF00u;
-  }
+  peripheral_model_.on_commit_store(paddr, data, func3);
 }
 
 void MemSubsystem::comb() {

@@ -182,6 +182,7 @@ private:
                               uint32_t func3, mask_t br_mask);
   void dump_recent_stq_alloc_traces() const;
 
+  bool has_older_store_pending(const MicroOp &load_uop) const;
   StoreForwardResult check_store_forward(uint32_t p_addr,
                                          const MicroOp &load_uop);
 };

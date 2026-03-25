@@ -1414,14 +1414,13 @@ struct PeripheralInIO{
   wire<1> wen;
   wire<32> mmio_addr;
   wire<32> mmio_wdata;
-  wire<8> mmio_wstrb;
   MicroOp uop;
 
   PeripheralInIO() {
     is_mmio = {};
+    wen = {};
     mmio_addr = {};
     mmio_wdata = {};
-    mmio_wstrb = {};
     uop = {};
   }
 };

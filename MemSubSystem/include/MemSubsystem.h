@@ -4,6 +4,7 @@
 #include "MSHR.h"
 #include "MemPtwBlock.h"
 #include "PeripheralAxi.h"
+#include "PeripheralModel.h"
 #include "MemReadArbBlock.h"
 #include "MemRespRouteBlock.h"
 #include "PtwMemPort.h"
@@ -114,6 +115,7 @@ private:
   MSHR          mshr_;
   WriteBuffer   wb_;
   PeripheralAxi peripheral_axi_;
+  PeripheralModel peripheral_model_;
   MemPtwBlock   ptw_block;
   MemReadArbBlock read_arb_block;
   MemRespRouteBlock resp_route_block;

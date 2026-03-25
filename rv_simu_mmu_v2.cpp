@@ -155,6 +155,7 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
 } // namespace
 void SimCpu::commit_sync(InstInfo *inst) {
   BackTop *back = &this->back;
+  const bool interrupt_commit = back->rob->out.rob_bcast->interrupt;
   if (inst->type == JALR) {
     if (inst->tma.is_ret) {
       this->ctx.perf.ret_br_num++;
@@ -210,6 +211,16 @@ void SimCpu::commit_sync(InstInfo *inst) {
     }
   }
 
+  if (!interrupt_commit && inst->tma.mem_commit_is_store &&
+      !inst->page_fault_store) {
+    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
+    const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
+                               e.rob_idx == inst->rob_idx &&
+                               e.rob_flag == inst->rob_flag;
+    if (!sc_suppressed && e.addr_valid && e.data_valid) {
+      mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
+    }
+  }
 }
 
 void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
@@ -218,6 +229,7 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   Assert(skip != nullptr && "SimCpu::difftest_prepare: skip is null");
   BackTop *back = &this->back;
   InstInfo *inst = &inst_entry->uop;
+  const bool interrupt_commit = back->rob->out.rob_bcast->interrupt;
 
   for (int i = 0; i < ARF_NUM; i++) {
     // With same-cycle EXU->ROB completion, commit-side architectural mapping
@@ -226,7 +238,8 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
     dut_cpu.gpr[i] = back->prf->reg_file_1[back->rename->arch_RAT_1[i]];
   }
 
-  if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
+  if (!interrupt_commit && inst->tma.mem_commit_is_store &&
+      !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
     const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
                                e.rob_idx == inst->rob_idx &&
@@ -277,9 +290,9 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
                    ? inst_entry->uop.diag_val
                    : inst->dbg.pc + 4;
   dut_cpu.instruction = inst->dbg.instruction;
-  dut_cpu.page_fault_inst = inst->page_fault_inst;
-  dut_cpu.page_fault_load = inst->page_fault_load;
-  dut_cpu.page_fault_store = inst->page_fault_store;
+  dut_cpu.page_fault_inst = interrupt_commit ? false : inst->page_fault_inst;
+  dut_cpu.page_fault_load = interrupt_commit ? false : inst->page_fault_load;
+  dut_cpu.page_fault_store = interrupt_commit ? false : inst->page_fault_store;
   dut_cpu.inst_idx = inst->dbg.inst_idx;
   dut_cpu.commit_pc = inst->dbg.pc;
   *skip = inst->dbg.difftest_skip;

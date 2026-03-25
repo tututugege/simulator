@@ -503,15 +503,14 @@ void RealLsu::comb_recv() {
       if (entry.replay_priority == 1 || entry.replay_priority == 2) {
         continue;
       }
-      // MMIO load 必须等到成为 ROB 队头行中最老的未完成指令后才发送，
-      // 这样既不会越过更老的未完成指令，也不会与 ROB 的整行提交
-      // 策略形成循环等待。
+      // MMIO load 必须等到成为 ROB 当前最老的未提交指令后才发送，
+      // 并且这条 load 之前的 store 已经从 STQ 排空，这样前面更老指令的
+      // 提交副作用（尤其是 MMIO store）一定已经生效。
       if (entry.is_mmio_wait) {
         const bool mmio_can_issue =
-            !mmio_req_used && !has_mmio_inflight() &&
-            in.rob_bcast->head_incomplete_valid &&
-            entry.uop.rob_idx ==
-                (uint32_t)in.rob_bcast->head_incomplete_rob_idx &&
+            !mmio_req_used && !has_mmio_inflight() && in.rob_bcast->head_valid &&
+            !has_older_store_pending(entry.uop) &&
+            entry.uop.rob_idx == (uint32_t)in.rob_bcast->head_rob_idx &&
             peripheral_io.out.ready;
         if (!mmio_can_issue) {
           if (ctx != nullptr) {
@@ -527,7 +526,6 @@ void RealLsu::comb_recv() {
         mmio_req.wen = 0; // Load 没有写使能
         mmio_req.mmio_addr = entry.uop.diag_val;
         mmio_req.mmio_wdata = 0; // Load 没有写数据
-        mmio_req.mmio_wstrb = 0;
         mmio_req.uop = mmio_uop;
         LSU_MEM_DBG_PRINTF("[LSU][MMIO][LD ISSUE] cyc=%lld ldq=%d rob=%u "
                            "paddr=0x%08x func3=0x%x\n",
@@ -685,7 +683,6 @@ void RealLsu::comb_recv() {
       mmio_req.wen = 1; // Store 有写使能
       mmio_req.mmio_addr = entry.p_addr;
       mmio_req.mmio_wdata = entry.data;
-      mmio_req.mmio_wstrb = entry.func3;
       mmio_req.uop = {};
       mmio_req.uop.op = UOP_STA;
       // MMIO response path uses uop.rob_idx as STQ slot token.
@@ -1823,6 +1820,32 @@ bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag) {
   } else {
     return s_idx > l_idx;
   }
+}
+
+bool RealLsu::has_older_store_pending(const MicroOp &load_uop) const {
+  int ptr_idx = stq_head;
+  bool ptr_flag = stq_head_flag;
+  const int stop_idx = load_uop.stq_idx;
+  const bool stop_flag = load_uop.stq_flag;
+  int guard = 0;
+
+  while (!(ptr_idx == stop_idx && ptr_flag == stop_flag)) {
+    guard++;
+    Assert(guard <= STQ_SIZE + 1);
+
+    const StqEntry &entry = stq[ptr_idx];
+    if (entry.valid && !entry.suppress_write) {
+      return true;
+    }
+
+    ptr_idx++;
+    if (ptr_idx == STQ_SIZE) {
+      ptr_idx = 0;
+      ptr_flag = !ptr_flag;
+    }
+  }
+
+  return false;
 }
 
 // =========================================================
