@@ -57,6 +57,49 @@ inline uint32_t make_rob_idx(uint32_t line, uint32_t bank) {
   return (line * ROB_BANK_NUM) | bank;
 }
 
+inline uint8_t rob_cplt_popcount(wire<ROB_CPLT_MASK_WIDTH> mask) {
+  return static_cast<uint8_t>(__builtin_popcount(static_cast<unsigned>(mask)));
+}
+
+inline wire<ROB_CPLT_MASK_WIDTH> rob_cplt_mask_from_iq(int iq_id) {
+  switch (iq_id) {
+  case IQ_INT:
+  case IQ_LD:
+    return ROB_CPLT_G0;
+  case IQ_BR:
+  case IQ_STA:
+    return ROB_CPLT_G1;
+  case IQ_STD:
+    return ROB_CPLT_G2;
+  default:
+    Assert(0 && "Unknown IQ id for ROB completion mask");
+    return 0;
+  }
+}
+
+inline wire<ROB_CPLT_MASK_WIDTH> rob_cplt_mask_from_issue_port(int port_idx) {
+  if (port_idx >= IQ_ALU_PORT_BASE && port_idx < IQ_ALU_PORT_BASE + ALU_NUM) {
+    return ROB_CPLT_G0;
+  }
+  if (port_idx >= IQ_LD_PORT_BASE &&
+      port_idx < IQ_LD_PORT_BASE + LSU_LOAD_WB_WIDTH) {
+    return ROB_CPLT_G0;
+  }
+  if (port_idx >= IQ_BR_PORT_BASE && port_idx < IQ_BR_PORT_BASE + BRU_NUM) {
+    return ROB_CPLT_G1;
+  }
+  if (port_idx >= IQ_STA_PORT_BASE &&
+      port_idx < IQ_STA_PORT_BASE + LSU_STA_COUNT) {
+    return ROB_CPLT_G1;
+  }
+  if (port_idx >= IQ_STD_PORT_BASE &&
+      port_idx < IQ_STD_PORT_BASE + GLOBAL_IQ_CONFIG[IQ_STD].port_num) {
+    return ROB_CPLT_G2;
+  }
+  Assert(0 && "Unknown issue port for ROB completion mask");
+  return 0;
+}
+
 inline bool is_branch(InstType type) { return type == BR || type == JALR; }
 
 constexpr wire<INST_TYPE_WIDTH> encode_inst_type(InstType type) {
@@ -147,6 +190,7 @@ inline bool is_load_uop(UopType op) { return op == UOP_LOAD; }
 inline bool is_load_uop(wire<UOP_TYPE_WIDTH> op) {
   return is_load_uop(decode_uop_type(op));
 }
+
 
 inline bool is_page_fault(InstInfo uop) {
   return uop.page_fault_inst || uop.page_fault_load || uop.page_fault_store;

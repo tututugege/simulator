@@ -34,6 +34,10 @@ inline bool rob_is_flush_inst(const RobStoredInst &uop) {
          uop.flush_pipe;
 }
 
+inline bool rob_is_complete(const RobStoredInst &uop) {
+  return uop.cplt_mask == uop.expect_mask;
+}
+
 } // namespace
 
 void Rob::init() {
@@ -74,8 +78,7 @@ void Rob::comb_ready() {
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     if (entry[i][deq_ptr].valid) {
-      bool is_ready =
-          (entry[i][deq_ptr].uop.cplt_num == entry[i][deq_ptr].uop.uop_num);
+      bool is_ready = rob_is_complete(entry[i][deq_ptr].uop);
 
       if (!is_ready) {
         // This is the oldest incomplete instruction. It is the bottleneck.
@@ -153,7 +156,7 @@ void Rob::comb_commit() {
     }
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid &&
-          entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+          !rob_is_complete(entry[i][deq_ptr].uop)) {
         out.rob_bcast->head_incomplete_valid = true;
         out.rob_bcast->head_incomplete_rob_idx = make_rob_idx(deq_ptr, i);
         break;
@@ -164,9 +167,8 @@ void Rob::comb_commit() {
 
   // 检查 BANK 的同一行是否都已完成
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    commit = commit &&
-             (!entry[i][deq_ptr].valid || (entry[i][deq_ptr].uop.cplt_num ==
-                                           entry[i][deq_ptr].uop.uop_num));
+    commit = commit && (!entry[i][deq_ptr].valid ||
+                        rob_is_complete(entry[i][deq_ptr].uop));
   }
 
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
@@ -176,7 +178,7 @@ void Rob::comb_commit() {
   bool interrupt_fire = false;
   auto log_incomplete_store_commit = [&](const RobStoredInst &uop,
                                          const char *path, int slot) {
-    if (!rob_is_store(uop) || uop.cplt_num == uop.uop_num) {
+    if (!rob_is_store(uop) || rob_is_complete(uop)) {
       return;
     }
     // Disabled: dump_all() here fires on every incomplete-store commit,
@@ -205,8 +207,7 @@ void Rob::comb_commit() {
         has_head_valid = true;
         single_idx = i;
         const auto &head_uop = entry[i][deq_ptr].uop;
-        if (!interrupt_pending &&
-            head_uop.cplt_num != head_uop.uop_num) {
+        if (!interrupt_pending && !rob_is_complete(head_uop)) {
           single_commit = false;
         }
         if (!interrupt_pending &&
@@ -239,7 +240,7 @@ void Rob::comb_commit() {
           continue;
         }
         const auto &uop = entry[i][deq_ptr].uop;
-        const bool ready = (uop.cplt_num == uop.uop_num);
+        const bool ready = rob_is_complete(uop);
         if (ready && !rob_is_flush_inst(uop)) {
           single_commit = true;
           single_idx = i;
@@ -264,7 +265,7 @@ void Rob::comb_commit() {
         const auto &uop = entry[i][deq_ptr].uop;
         // 仅在 Load 已完成且非异常语义时检查地址对齐，避免中断单提交/异常路径下
         // 将 diag_val 的其他语义（如指令字、异常地址）误当作物理地址检查。
-        if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+        if (rob_is_load(uop) && rob_is_complete(uop) &&
             !rob_is_page_fault(uop)) {
           uint32_t alignment_mask = uop.dbg.mem_align_mask;
           Assert((uop.diag_val & alignment_mask) == 0 &&
@@ -296,7 +297,7 @@ void Rob::comb_commit() {
     if (entry[single_idx][deq_ptr].valid) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       log_incomplete_store_commit(uop, "single", single_idx);
-      if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+      if (rob_is_load(uop) && rob_is_complete(uop) &&
           !rob_is_page_fault(uop)) {
         uint32_t alignment_mask = uop.dbg.mem_align_mask;
         Assert((uop.diag_val & alignment_mask) == 0 &&
@@ -385,10 +386,11 @@ void Rob::comb_commit() {
     cout << "Rob deq inst:" << endl;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
-        printf("0x%08x: 0x%08x cplt_num: %d  uop_num: %d rob_idx:%d "
+        printf("0x%08x: 0x%08x cplt_mask:0x%x expect_mask:0x%x rob_idx:%d "
                "is_page_fault: %d inst_idx: %lld type: %d\n",
                entry[i][deq_ptr].uop.dbg.pc, entry[i][deq_ptr].uop.diag_val,
-               entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
+               entry[i][deq_ptr].uop.cplt_mask,
+               entry[i][deq_ptr].uop.expect_mask,
                (i + (deq_ptr * ROB_BANK_NUM)),
                rob_is_page_fault(entry[i][deq_ptr].uop),
                (long long)entry[i][deq_ptr].uop.dbg.inst_idx,
@@ -413,11 +415,18 @@ void Rob::comb_complete() {
       int bank_idx = get_rob_bank(wb.rob_idx);
       int line_idx = get_rob_line(wb.rob_idx);
 
-      entry_1[bank_idx][line_idx].uop.cplt_num++;
-      if (entry_1[bank_idx][line_idx].uop.cplt_num >
-          entry_1[bank_idx][line_idx].uop.uop_num) {
-        Assert(0 && "ROB: completion overflow (cplt_num > uop_num)");
-      }
+      const wire<ROB_CPLT_MASK_WIDTH> cplt_bit =
+          rob_cplt_mask_from_issue_port(i);
+      Assert((entry_1[bank_idx][line_idx].uop.cplt_mask & cplt_bit) == 0 &&
+             "ROB: duplicate completion bit set");
+      entry_1[bank_idx][line_idx].uop.cplt_mask |= cplt_bit;
+      Assert((entry_1[bank_idx][line_idx].uop.cplt_mask &
+              ~entry_1[bank_idx][line_idx].uop.expect_mask) == 0 &&
+             "ROB: completion bit outside expected mask");
+      Assert(rob_cplt_popcount(entry_1[bank_idx][line_idx].uop.cplt_mask) <=
+                 rob_cplt_popcount(
+                     entry_1[bank_idx][line_idx].uop.expect_mask) &&
+             "ROB: completion overflow (completed group count > expected)");
 
       for (int k = 0; k < LSU_LDU_COUNT; k++) {
         if (i == IQ_LD_PORT_BASE + k) {
@@ -512,7 +521,7 @@ void Rob::comb_fire() {
         entry_1[i][enq_ptr].valid = true;
         entry_1[i][enq_ptr].uop =
             RobStoredInst::from_dis_rob_inst(in.dis2rob->uop[i]);
-        entry_1[i][enq_ptr].uop.cplt_num = 0;
+        entry_1[i][enq_ptr].uop.cplt_mask = 0;
         enq = true;
       }
     }

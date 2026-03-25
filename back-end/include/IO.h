@@ -32,7 +32,8 @@ struct DecRenIO {
     wire<BR_MASK_WIDTH> br_mask;
     wire<CSR_IDX_WIDTH> csr_idx;
 
-    wire<2> uop_num;
+    wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+    wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
 
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
@@ -64,7 +65,8 @@ struct DecRenIO {
       dst.br_id = src.br_id;
       dst.br_mask = src.br_mask;
       dst.csr_idx = src.csr_idx;
-      dst.uop_num = src.uop_num;
+      dst.expect_mask = src.expect_mask;
+      dst.cplt_mask = src.cplt_mask;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
       dst.type = encode_inst_type(src.type);
@@ -94,7 +96,8 @@ struct DecRenIO {
       dst.br_id = br_id;
       dst.br_mask = br_mask;
       dst.csr_idx = csr_idx;
-      dst.uop_num = uop_num;
+      dst.expect_mask = expect_mask;
+      dst.cplt_mask = cplt_mask;
       dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = false;
       dst.page_fault_store = false;
@@ -456,8 +459,8 @@ struct DisRobIO {
     wire<1> stq_flag;
     wire<LDQ_IDX_WIDTH> ldq_idx;
 
-    wire<2> uop_num;
-    wire<2> cplt_num;
+    wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+    wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
     wire<1> rob_flag;
 
     wire<1> page_fault_inst;
@@ -492,8 +495,8 @@ struct DisRobIO {
       dst.stq_idx = src.stq_idx;
       dst.stq_flag = src.stq_flag;
       dst.ldq_idx = src.ldq_idx;
-      dst.uop_num = src.uop_num;
-      dst.cplt_num = src.cplt_num;
+      dst.expect_mask = src.expect_mask;
+      dst.cplt_mask = src.cplt_mask;
       dst.rob_flag = src.rob_flag;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
@@ -526,8 +529,8 @@ struct DisRobIO {
       dst.stq_idx = stq_idx;
       dst.stq_flag = stq_flag;
       dst.ldq_idx = ldq_idx;
-      dst.uop_num = uop_num;
-      dst.cplt_num = cplt_num;
+      dst.expect_mask = expect_mask;
+      dst.cplt_mask = cplt_mask;
       dst.rob_flag = rob_flag;
       dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = false;
@@ -585,7 +588,8 @@ struct RenDisIO {
     wire<BR_MASK_WIDTH> br_mask;
     wire<CSR_IDX_WIDTH> csr_idx;
 
-    wire<2> uop_num;
+    wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+    wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
 
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
@@ -623,7 +627,8 @@ struct RenDisIO {
       dst.br_id = src.br_id;
       dst.br_mask = src.br_mask;
       dst.csr_idx = src.csr_idx;
-      dst.uop_num = src.uop_num;
+      dst.expect_mask = src.expect_mask;
+      dst.cplt_mask = src.cplt_mask;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
       dst.type = encode_inst_type(src.type);
@@ -659,7 +664,8 @@ struct RenDisIO {
       dst.br_id = br_id;
       dst.br_mask = br_mask;
       dst.csr_idx = csr_idx;
-      dst.uop_num = uop_num;
+      dst.expect_mask = expect_mask;
+      dst.cplt_mask = cplt_mask;
       dst.page_fault_inst = page_fault_inst;
       dst.page_fault_load = false;
       dst.page_fault_store = false;

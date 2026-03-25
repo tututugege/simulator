@@ -60,6 +60,11 @@ enum IQType {
   IQ_NUM,
 };
 
+constexpr int ROB_CPLT_MASK_WIDTH = 3;
+constexpr wire<ROB_CPLT_MASK_WIDTH> ROB_CPLT_G0 = 0x1;
+constexpr wire<ROB_CPLT_MASK_WIDTH> ROB_CPLT_G1 = 0x2;
+constexpr wire<ROB_CPLT_MASK_WIDTH> ROB_CPLT_G2 = 0x4;
+
 struct IssuePortConfigInfo {
   int port_idx;          // 物理端口号 (Out.iss2prf 的下标)
   uint64_t support_mask; // 该端口支持的操作掩码 (Capability)

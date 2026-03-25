@@ -126,9 +126,9 @@ struct InstInfo {
   wire<1> stq_flag;
   wire<LDQ_IDX_WIDTH> ldq_idx;
 
-  // ROB 信息
-  wire<2> uop_num;
-  wire<2> cplt_num;
+  // ROB completion 信息
+  wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+  wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
   wire<1> rob_flag; // 用于对比指令年龄
 
   // 异常信息
@@ -179,8 +179,9 @@ struct MicroOp {
   wire<1> stq_flag;
   wire<LDQ_IDX_WIDTH> ldq_idx;
 
-  // ROB 信息
-  wire<2> uop_num;
+  // ROB completion 信息
+  wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+  wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
   wire<1> rob_flag; // 用于对比指令年龄
 
   // 异常信息
@@ -228,7 +229,8 @@ struct MicroOp {
     this->stq_idx = info.stq_idx;
     this->stq_flag = info.stq_flag;
     this->ldq_idx = info.ldq_idx;
-    this->uop_num = info.uop_num;
+    this->expect_mask = info.expect_mask;
+    this->cplt_mask = info.cplt_mask;
     this->rob_flag = info.rob_flag;
     this->page_fault_inst = info.page_fault_inst;
     this->page_fault_load = info.page_fault_load;

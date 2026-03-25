@@ -102,7 +102,8 @@ void Dispatch::comb_alloc() {
     // 分配 ROB ID (重排序缓存索引)
     inst_alloc[i].uop.rob_idx = make_rob_idx(in.rob2dis->enq_idx, i);
     inst_alloc[i].uop.rob_flag = in.rob2dis->rob_flag;
-    inst_alloc[i].uop.cplt_num = 0; // 初始化完成计数器
+    inst_alloc[i].uop.expect_mask = 0;
+    inst_alloc[i].uop.cplt_mask = 0;
 
     // Load 需要知道之前的 Store
     if (inst_r[i].valid && is_load(inst_r[i].uop)) {
@@ -180,10 +181,23 @@ void Dispatch::comb_dispatch() {
 
     // === 2. 相当于中间变量 存入缓存 ===
     dispatch_cache[i].count = cnt;
-    inst_alloc[i].uop.uop_num = cnt;
+    wire<ROB_CPLT_MASK_WIDTH> expect_mask = 0;
+    for (int k = 0; k < cnt; k++) {
+      expect_mask |= rob_cplt_mask_from_iq(temp_uops[k].iq_id);
+    }
+    if (inst_alloc[i].uop.type == AMO &&
+        ((inst_alloc[i].uop.func7 >> 2) == AmoOp::SC)) {
+      // SC dispatches STA + STD, but its architectural 0/1 result comes back
+      // through the LSU load-like wb path instead of a separate STA-complete
+      // event. So the real completion groups are result(bit0) + STD(bit2).
+      expect_mask = ROB_CPLT_G0 | ROB_CPLT_G2;
+    }
+    inst_alloc[i].uop.expect_mask = expect_mask;
+    inst_alloc[i].uop.cplt_mask = 0;
     for (int k = 0; k < cnt; k++) {
       dispatch_cache[i].iq_ids[k] = temp_uops[k].iq_id;
-      temp_uops[k].uop.uop_num = cnt;
+      temp_uops[k].uop.expect_mask = expect_mask;
+      temp_uops[k].uop.cplt_mask = 0;
     }
 
     // === 3. 检查容量 ===
@@ -203,7 +217,8 @@ void Dispatch::comb_dispatch() {
     // === 4. 提交发射请求 ===
     if (fit) {
       dispatch_success_flags[i] = true;
-      out.dis2rob->uop[i].uop_num = cnt; // 更新 ROB 输出中的 uop_num
+      out.dis2rob->uop[i].expect_mask = expect_mask;
+      out.dis2rob->uop[i].cplt_mask = 0;
       for (int k = 0; k < cnt; k++) {
         int target = temp_uops[k].iq_id;
         int slot = iq_usage[target];
@@ -782,33 +797,22 @@ int Dispatch::decompose_inst(const InstEntry &inst, UopPacket *out_uops) {
       out_uops[0].uop.src2_en = false;
       count = 1;
     } else if ((src_uop.func7 >> 2) == AmoOp::SC) {
-      // SC -> INT(0) + STA + STD
-      out_uops[0].iq_id = IQ_INT;
+      // SC -> STA + STD
+      // SC 的 0/1 返回值由 LSU 在地址阶段决定后，经 LSU load-like wb
+      // 路径返回；这里不再保留 INT 占位 uop。
+      out_uops[0].iq_id = IQ_STA;
       out_uops[0].uop = MicroOp(src_uop);
-      out_uops[0].uop.op =
-          UOP_ADD; // 预设 0 (假定成功，LSU会覆盖? 或者这里仅仅是占位)
-                   // 实际 SC 的返回值由 LSU Writeback 决定，通常是 Store
-                   // 成功与否 如果这里 INT 写了 rd，后面 LSU 可能会再次写 rd
-      out_uops[0].uop.src1_preg = 0; // x0
-      out_uops[0].uop.src1_busy = false;
-      out_uops[0].uop.imm = 0;
-      out_uops[0].uop.src1_en = false;
+      out_uops[0].uop.op = UOP_STA;
       out_uops[0].uop.src2_en = false;
-      out_uops[0].uop.dest_en = false; // SC result must come from LSU, not placeholder INT
+      out_uops[0].uop.dest_en = true; // Reuse LSU STA wb port to write SC result (0/1)
 
-      out_uops[1].iq_id = IQ_STA;
+      out_uops[1].iq_id = IQ_STD;
       out_uops[1].uop = MicroOp(src_uop);
-      out_uops[1].uop.op = UOP_STA;
-      out_uops[1].uop.src2_en = false;
-      out_uops[1].uop.dest_en = true;  // Reuse LSU STA wb port to write SC result (0/1)
-
-      out_uops[2].iq_id = IQ_STD;
-      out_uops[2].uop = MicroOp(src_uop);
-      out_uops[2].uop.op = UOP_STD;
-      out_uops[2].uop.is_atomic = true;
-      out_uops[2].uop.src1_en = false;
-      out_uops[2].uop.dest_en = false; // Fix: STD 不写回寄存器
-      count = 3;
+      out_uops[1].uop.op = UOP_STD;
+      out_uops[1].uop.is_atomic = true;
+      out_uops[1].uop.src1_en = false;
+      out_uops[1].uop.dest_en = false;
+      count = 2;
     } else {
       // AMO RMW -> LOAD + STA + STD
       out_uops[0].iq_id = IQ_LD;

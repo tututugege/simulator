@@ -57,7 +57,6 @@ void Idu::comb_decode() {
     InstInfo decoded = {};
     if (entry.page_fault_inst) {
       decoded.diag_val = entry.inst;
-      decoded.uop_num = 1;
       decoded.page_fault_inst = true;
       decoded.page_fault_load = false;
       decoded.page_fault_store = false;
@@ -252,7 +251,6 @@ void Idu::seq() {
 void Idu::decode(InstInfo &uop, uint32_t inst) {
   // 操作数来源以及type
   // uint32_t imm;
-  int uop_num = 1;
   uop.dbg.instruction = inst;
   uop.dbg.difftest_skip = false;
 
@@ -309,7 +307,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
   case number_2_opcode_jal: { // jal
-    uop_num = 2;              // 前端pre-decode预先解决jal
     uop.dest_en = true;
     uop.src1_en = false;
     uop.src2_en = false;
@@ -321,7 +318,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
   case number_3_opcode_jalr: { // jalr
-    uop_num = 2;
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = false;
@@ -350,7 +346,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     break;
   }
   case number_6_opcode_sb: { // sb, sh, sw
-    uop_num = 2;
     uop.dest_en = false;
     uop.src1_en = true;
     uop.src2_en = true;
@@ -462,7 +457,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   }
 
   case number_11_opcode_lrw: {
-    uop_num = 3;
     uop.dest_en = true;
     uop.src1_en = true;
     uop.src2_en = true;
@@ -471,7 +465,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
     uop.is_atomic = true;
 
     if ((number_funct7_unsigned >> 2) == AmoOp::LR) {
-      uop_num = 1;
       uop.src2_en = false;
     }
 
@@ -497,7 +490,6 @@ void Idu::decode(InstInfo &uop, uint32_t inst) {
   }
   }
 
-  uop.uop_num = uop_num;
   uop.tma.is_ret =
       (uop.type == JALR && uop.src1_areg == 1 && uop.dest_areg == 0 &&
        uop.imm == 0);
