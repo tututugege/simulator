@@ -494,7 +494,20 @@ def main():
         for path, name in zip(args.compare, names):
             benches, geomean_spec = parse_perf_report(path)
             calc_geomean = compute_geomean_from_spec(benches)
-            if calc_geomean is not None:
+            if geomean_spec is not None and np.isfinite(geomean_spec):
+                if calc_geomean is not None and np.isfinite(calc_geomean):
+                    delta = abs(calc_geomean - geomean_spec)
+                    if delta > 1e-3:
+                        print(
+                            f"[INFO] {name}: GEOMEAN from report={geomean_spec:.2f}, "
+                            f"recomputed={calc_geomean:.2f}, delta={delta:.4f}. "
+                            f"Using report value for plotting."
+                        )
+                    else:
+                        print(f"[INFO] {name}: GEOMEAN from report: {geomean_spec:.2f}")
+                else:
+                    print(f"[INFO] {name}: GEOMEAN from report: {geomean_spec:.2f}")
+            elif calc_geomean is not None:
                 geomean_spec = calc_geomean
                 print(f"[INFO] {name}: GEOMEAN computed from per-benchmark SPEC ratios: {geomean_spec:.2f}")
             else:
@@ -506,7 +519,20 @@ def main():
 
     benches, geomean_spec = parse_perf_report(args.input)
     calc_geomean = compute_geomean_from_spec(benches)
-    if calc_geomean is not None:
+    if geomean_spec is not None and np.isfinite(geomean_spec):
+        if calc_geomean is not None and np.isfinite(calc_geomean):
+            delta = abs(calc_geomean - geomean_spec)
+            if delta > 1e-3:
+                print(
+                    f"[INFO] GEOMEAN from report={geomean_spec:.2f}, "
+                    f"recomputed={calc_geomean:.2f}, delta={delta:.4f}. "
+                    f"Using report value for plotting."
+                )
+            else:
+                print(f"[INFO] GEOMEAN from report: {geomean_spec:.2f}")
+        else:
+            print(f"[INFO] GEOMEAN from report: {geomean_spec:.2f}")
+    elif calc_geomean is not None:
         geomean_spec = calc_geomean
         print(f"[INFO] GEOMEAN computed from per-benchmark SPEC ratios: {geomean_spec:.2f}")
     else:
