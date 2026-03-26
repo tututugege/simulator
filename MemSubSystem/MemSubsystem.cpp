@@ -490,6 +490,7 @@ void MemSubsystem::ptw_walk_flush(PtwClient client) {
 }
 
 void MemSubsystem::sync_llc_perf() {
+#if AXI_KIT_RUNTIME_ENABLED
   if (axi_kit_runtime == nullptr) {
     return;
   }
@@ -575,6 +576,9 @@ void MemSubsystem::sync_llc_perf() {
                  llc_perf_shadow_.prefetch_drop_table_hit,
                  ctx->perf.llc_prefetch_drop_table_hit);
   }
+#else
+  return;
+#endif
 }
 
 void MemSubsystem::set_internal_axi_runtime_active(bool active) {

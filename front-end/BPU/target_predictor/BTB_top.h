@@ -966,7 +966,8 @@ private:
   // [Comb] Index Calculation
   static void btb_get_tag_comb(const BtbGetTagCombIn &in, BtbGetTagCombOut &out) {
     out = BtbGetTagCombOut{};
-    out.tag = ((in.pc >> 2) >> BTB_IDX_LEN) & BTB_TAG_MASK;
+    constexpr int kBtbIdxBits = ceil_log2_u32(BTB_ENTRY_NUM);
+    out.tag = ((in.pc >> 2) >> kBtbIdxBits) & BTB_TAG_MASK;
   }
 
   static void btb_get_idx_comb(const BtbGetIdxCombIn &in, BtbGetIdxCombOut &out) {
