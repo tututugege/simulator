@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "ExuTypes.h"
 #include "util.h"
 #include <deque>
 #include <string>
@@ -23,7 +24,7 @@ public:
 
   // === 2. 接收指令 (Issue Stage 调用) ===
   // 动作：塞进去
-  virtual void accept(MicroOp inst) = 0;
+  virtual void accept(ExuInst inst) = 0;
 
   // === 3. 时钟步进 (Execute Stage 调用) ===
   // 动作：内部状态流转一拍
@@ -32,7 +33,7 @@ public:
   // === 4. 获取结果 (Writeback Stage 调用) ===
   // 问：这一拍有做完的指令吗？
   // 注意：返回指针，如果为 nullptr 表示没结果
-  virtual MicroOp *get_finished_uop() = 0;
+  virtual ExuInst *get_finished_uop() = 0;
 
   // 动作：结果被取走了，从 FU 里移除它
   virtual void pop_finished() = 0;
@@ -44,7 +45,7 @@ public:
 class FixedLatencyFU : public AbstractFU {
 protected:
   struct PipeEntry {
-    MicroOp uop;
+    ExuInst uop;
     int64_t done_cycle;
   };
 
@@ -64,7 +65,7 @@ public:
     return pipeline.size() < limit;
   }
 
-  void accept(MicroOp inst) override {
+  void accept(ExuInst inst) override {
     // 1. 立即执行功能计算 (Magic Execution)
     //    虽然硬件是在延迟结束后才出结果，但模拟器里为了方便，
     //    通常在入队时就直接算好结果存在 inst 里。
@@ -107,7 +108,7 @@ public:
     }
   }
 
-  MicroOp *get_finished_uop() override {
+  ExuInst *get_finished_uop() override {
     // For latency=1 FUs, instruction completes in the SAME cycle it's accepted
     // done_cycle = sim_time + latency - 1 = sim_time + 1 - 1 = sim_time
     // The newest instruction (back) is the one that just completed!
@@ -135,12 +136,12 @@ public:
 
 protected:
   // === 核心钩子：子类必须实现具体的计算逻辑 ===
-  virtual void impl_compute(MicroOp &inst) = 0;
+  virtual void impl_compute(ExuInst &inst) = 0;
 };
 
 class IterativeFU : public AbstractFU {
 protected:
-  MicroOp current_inst; // 迭代单元通常是非流水化的，持有一个 latch 即可
+  ExuInst current_inst; // 迭代单元通常是非流水化的，持有一个 latch 即可
   int64_t done_cycle;
   bool busy;
   int max_latency;
@@ -154,7 +155,7 @@ public:
     return !busy; // 忙则拒收
   }
 
-  void accept(MicroOp inst) override {
+  void accept(ExuInst inst) override {
     impl_compute(inst);
     int dyn_latency = calculate_latency(inst);
     current_inst = inst;
@@ -166,7 +167,7 @@ public:
     // 迭代单元的时间推进由 done_cycle 显式表示。
   }
 
-  MicroOp *get_finished_uop() override {
+  ExuInst *get_finished_uop() override {
     if (busy && done_cycle <= sim_time) {
       return &current_inst;
     }
@@ -203,10 +204,10 @@ public:
 
 protected:
   // 1. 负责算“结果是多少” (Common for all FUs)
-  virtual void impl_compute(MicroOp &inst) = 0;
+  virtual void impl_compute(ExuInst &inst) = 0;
 
   // 2. 负责算“耗时多久” (Specific to IterativeFU)
-  virtual int calculate_latency(const MicroOp &inst) {
+  virtual int calculate_latency(const ExuInst &inst) {
     return max_latency; // 默认返回最大延迟
   }
 };

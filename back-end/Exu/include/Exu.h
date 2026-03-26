@@ -1,5 +1,6 @@
 #pragma once
 #include "IO.h"
+#include "ExuTypes.h"
 #include "Fu.h" // 包含具体的 FU 定义
 #include "config.h"
 #include "FTQ.h"
@@ -62,8 +63,8 @@ public:
   std::vector<AbstractFU *> units;
 
   // pipeline registers
-  UopEntry inst_r[ISSUE_WIDTH];   // 当前执行级指令
-  UopEntry inst_r_1[ISSUE_WIDTH]; // 下一周期指令 (Latch)
+  ExuEntry inst_r[ISSUE_WIDTH];   // 当前执行级指令
+  ExuEntry inst_r_1[ISSUE_WIDTH]; // 下一周期指令 (Latch)
                                    //
 private:
   bool issue_stall[ISSUE_WIDTH];

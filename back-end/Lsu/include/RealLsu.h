@@ -84,12 +84,7 @@ private:
   uint64_t ldq_trace_seq[LDQ_SIZE];
   uint64_t stq_trace_seq[STQ_SIZE];
   bool ldq_cache_wait_replay[LDQ_SIZE];
-  bool ldq_fault_deferred_valid[LDQ_SIZE];
   bool stq_cache_wait_replay[STQ_SIZE];
-  MicroOp stq_sta_retry_shadow[STQ_SIZE];
-  bool stq_sta_retry_shadow_valid[STQ_SIZE];
-  bool stq_sta_fault_wb_pending[STQ_SIZE];
-  bool stq_sta_fault_deferred_valid[STQ_SIZE];
 
   bool stq_head_flag; // 用于区分环形缓冲区中的两轮
 
@@ -127,7 +122,7 @@ public:
   void seq() override;
 
   StqEntry get_stq_entry(int stq_idx) override;
-  void dump_debug_state() const override;
+  void dump_debug_state() const;
 
   void set_csr(Csr *c) override { this->csr_module = c; }
   void set_ptw_mem_port(PtwMemPort *port) override {
@@ -138,10 +133,6 @@ public:
     ptw_walk_port = port;
     mmu->set_ptw_walk_port(port);
   }
-  void restore_reservation(bool valid, uint32_t addr) override {
-    reserve_valid = valid;
-    reserve_addr = static_cast<int>(addr);
-  }
 
   // 一致性访存接口 (供 MMU 使用)
   uint32_t coherent_read(uint32_t p_addr) override;
@@ -150,11 +141,7 @@ public:
     int remain = stq_count;
     while (remain > 0) {
       const StqEntry &e = stq[ptr];
-      // A committed store must keep blocking SFENCE.VMA until it fully leaves
-      // the STQ. back.seq() runs before MemSubsystem::seq(), so a store that
-      // is already "done" can still have one cycle where its store-hit update
-      // has not been applied to DCache/PTW-visible state yet.
-      if (e.valid && e.committed) {
+      if (e.valid && e.committed && !e.done) {
         return true;
       }
       ptr = (ptr + 1) % STQ_SIZE;
@@ -172,7 +159,7 @@ private:
   int find_recovery_tail(mask_t br_mask);
   bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag);
   bool reserve_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag,
-                         uint32_t stq_flag, uint32_t func3);
+                         uint32_t func3);
   void consume_stq_alloc_reqs(int &push_count);
   int count_active_stq_entries() const;
   int count_committed_stq_prefix() const;
@@ -182,7 +169,6 @@ private:
                          uint32_t rob_flag);
   void consume_ldq_alloc_reqs();
   void free_ldq_entry(int idx);
-  bool has_older_store_in_stq(const MicroOp &uop) const;
   bool is_mmio_addr(uint32_t paddr) const;
   void change_store_info(StqEntry &entry, int port_idx, int stq_idx);
   void handle_global_flush();
@@ -192,14 +178,11 @@ private:
   void progress_ldq_entries();
   void progress_pending_sta_addr();
   bool finish_store_addr_once(const MicroOp &inst);
-  bool dequeue_ready_sta_wb(MicroOp &emit_uop);
-  bool pending_sta_queue_contains(const MicroOp &inst) const;
-  bool finished_sta_queue_contains(const MicroOp &inst) const;
-  void repair_oldest_pending_sta_addr();
   void record_stq_alloc_trace(int stq_idx, uint32_t rob_idx, uint32_t rob_flag,
                               uint32_t func3, mask_t br_mask);
   void dump_recent_stq_alloc_traces() const;
 
+  bool has_older_store_pending(const MicroOp &load_uop) const;
   StoreForwardResult check_store_forward(uint32_t p_addr,
                                          const MicroOp &load_uop);
 };

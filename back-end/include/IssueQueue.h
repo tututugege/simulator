@@ -56,7 +56,7 @@ struct IqStoredUop {
   wire<1> rob_flag;
 
   wire<UOP_TYPE_WIDTH> op;
-  UopDebugMeta dbg;
+  DebugMeta dbg;
 
   IqStoredUop() { std::memset(this, 0, sizeof(IqStoredUop)); }
 

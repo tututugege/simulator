@@ -2,7 +2,6 @@
 #include "DeadlockDebug.h"
 #include "SimCpu.h"
 #include "config.h"
-#include "host_profile.h"
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
@@ -32,10 +31,6 @@ struct SimConfig {
   // CKPT 模式下，O3 目标 warmup 步数（0~WARMUP，默认 1000 万）
   uint64_t ckpt_warmup_target = 10000000ULL;
   bool ckpt_warmup_target_set = false;
-  // 运行模式下的提交指令上限；0 表示不限制。
-  uint64_t max_commit_inst = MAX_COMMIT_INST;
-  // 周期进度打印间隔；0 表示关闭。
-  uint64_t progress_interval = 10000000ULL;
 };
 
 // 2. 帮助信息更新
@@ -51,11 +46,6 @@ void print_help(char *argv[]) {
   std::cout << "  -w, --warmup <num>  In CKPT mode, target O3 "
                "warmup steps in [0,100000000] (default: 10000000)"
             << std::endl;
-  std::cout << "  -c, --max-commit <num>  Stop after <num> committed instructions"
-            << " in O3 modes (0 = no limit, default: " << MAX_COMMIT_INST << ")"
-            << std::endl;
-  std::cout << "  -p, --progress-interval <num>  Print progress every <num> cycles"
-            << " (0 = disable, default: 10000000)" << std::endl;
   std::cout << "  -h, --help                  Show this message" << std::endl;
   std::cout << "\nExamples:" << std::endl;
   std::cout << "  Run Binary: " << argv[0] << " spec_mem/mcf.bin" << std::endl;
@@ -72,21 +62,6 @@ SimCpu cpu;
 
 namespace {
 volatile std::sig_atomic_t g_sigint_requested = 0;
-
-#ifndef CONFIG_DIFF_FOCUS_ADDR_BEGIN
-#define CONFIG_DIFF_FOCUS_ADDR_BEGIN 0u
-#endif
-
-#ifndef CONFIG_DIFF_FOCUS_ADDR_END
-#define CONFIG_DIFF_FOCUS_ADDR_END 0u
-#endif
-
-void maybe_dump_focus_line(const char *tag) {
-  if (CONFIG_DIFF_FOCUS_ADDR_END <= CONFIG_DIFF_FOCUS_ADDR_BEGIN) {
-    return;
-  }
-  difftest_dump_memory_line(tag, CONFIG_DIFF_FOCUS_ADDR_BEGIN);
-}
 
 void handle_sigint(int signo) {
   if (signo != SIGINT) {
@@ -119,49 +94,13 @@ bool handle_pending_sigint() {
     return false;
   }
 
-#if SIM_LSU_MEM_DEBUG_PRINT
+#if defined(LOG_ENABLE) && defined(LOG_LSU_MEM_ENABLE)
   std::cout << "[sim] SIGINT observed at cycle " << std::dec << sim_time
             << ", printing debug dump." << std::endl;
-  deadlock_debug::dump_all();
+  // deadlock_debug::dump_all();
 #endif
   cpu.ctx.perf.perf_print();
   return true;
-}
-
-void maybe_print_o3_progress(const SimConfig &config, uint64_t &next_progress_cycle,
-                             uint64_t &last_progress_cycle,
-                             uint64_t &last_progress_commit) {
-  if (config.progress_interval == 0) {
-    return;
-  }
-
-  const uint64_t cur_cycle = cpu.ctx.perf.cycle;
-  if (cur_cycle < next_progress_cycle) {
-    return;
-  }
-
-  const uint64_t cur_commit = cpu.ctx.perf.commit_num;
-  const uint64_t window_cycles = cur_cycle - last_progress_cycle;
-  const uint64_t window_commit = cur_commit - last_progress_commit;
-  const double ipc_total =
-      (cur_cycle == 0) ? 0.0
-                       : static_cast<double>(cur_commit) /
-                             static_cast<double>(cur_cycle);
-  const double ipc_window =
-      (window_cycles == 0) ? 0.0
-                           : static_cast<double>(window_commit) /
-                                 static_cast<double>(window_cycles);
-
-  std::cerr << "[Progress] cycle=" << std::dec << cur_cycle
-            << " commit=" << cur_commit
-            << " ipc_total=" << ipc_total
-            << " ipc_window=" << ipc_window << std::endl;
-
-  last_progress_cycle = cur_cycle;
-  last_progress_commit = cur_commit;
-  while (next_progress_cycle <= cur_cycle) {
-    next_progress_cycle += config.progress_interval;
-  }
 }
 } // namespace
 
@@ -172,7 +111,6 @@ void exit_handler() {
   std::cout << "\033[38;5;34m-----------------------------\033[0m" << std::endl;
   std::cout << "Simulation Exited. Printing Perf Stats..." << std::endl;
   cpu.ctx.perf.perf_print();
-  frontend_host_profile::print_summary();
   std::cout << "\033[38;5;34m-----------------------------\033[0m" << std::endl;
 }
 
@@ -187,8 +125,6 @@ int main(int argc, char *argv[]) {
       {"mode", required_argument, 0, 'm'},
       {"fast-forward", required_argument, 0, 'f'}, // 快进参数
       {"warmup", required_argument, 0, 'w'},
-      {"max-commit", required_argument, 0, 'c'},
-      {"progress-interval", required_argument, 0, 'p'},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}};
 
@@ -196,7 +132,7 @@ int main(int argc, char *argv[]) {
   int option_index = 0;
 
   // --- A. 解析命令行参数 ---
-  while ((opt = getopt_long(argc, argv, "m:f:w:c:p:h", long_options,
+  while ((opt = getopt_long(argc, argv, "m:f:w:h", long_options,
                             &option_index)) != -1) {
     switch (opt) {
     case 'm': {
@@ -243,26 +179,6 @@ int main(int argc, char *argv[]) {
         }
       } catch (const std::exception &e) {
         std::cerr << "Error: Invalid number for --warmup: " << optarg
-                  << std::endl;
-        return 1;
-      }
-      break;
-    }
-    case 'c': {
-      try {
-        config.max_commit_inst = std::stoull(optarg);
-      } catch (const std::exception &e) {
-        std::cerr << "Error: Invalid number for --max-commit: " << optarg
-                  << std::endl;
-        return 1;
-      }
-      break;
-    }
-    case 'p': {
-      try {
-        config.progress_interval = std::stoull(optarg);
-      } catch (const std::exception &e) {
-        std::cerr << "Error: Invalid number for --progress-interval: " << optarg
                   << std::endl;
         return 1;
       }
@@ -341,6 +257,7 @@ int main(int argc, char *argv[]) {
       std::cout << "[Step 1] Ref prewarm for " << ref_prewarm_target
                 << " steps..." << std::endl;
       ref_cpu.uart_print = false;
+      ref_cpu.ref_only = true;
       for (; ref_prewarm_done < ref_prewarm_target; ref_prewarm_done++) {
         difftest_step(false);
         if (ref_cpu.sim_end) {
@@ -348,24 +265,19 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
+      ref_cpu.ref_only = false;
       std::cout << "[Step 1] Ref prewarm done: " << ref_prewarm_done
                 << " steps." << std::endl;
     }
 
     std::cout << "[Step 2] Restore DUT from ref snapshot..." << std::endl;
-    maybe_dump_focus_line("ckpt_before_restore");
     cpu.back.restore_from_ref();
-    maybe_dump_focus_line("ckpt_after_restore");
-    cpu.sync_mmio_devices_from_backing();
-    cpu.ctx.special_timer_value = difftest_get_oracle_timer();
-    cpu.reinit_frontend_after_restore();
 #ifndef CONFIG_BPU
     std::cout << "[Oracle] Re-synced with ref snapshot together with DUT in "
                  "Step 2."
               << std::endl;
 #endif
     cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
-    maybe_dump_focus_line("ckpt_after_frontend_reset");
 
     cpu.ctx.is_ckpt = true;
     cpu.ctx.ckpt_warmup_commit_target = warmup_target;
@@ -383,23 +295,19 @@ int main(int argc, char *argv[]) {
 
     cpu.back.load_image(config.target_file);
     ref_cpu.uart_print = true;
+    ref_cpu.ref_only = true;
 
     for (uint64_t i = 0; i < config.fast_forward_count; i++) {
       difftest_step(false);
     }
+    ref_cpu.ref_only = false;
 
-    maybe_dump_focus_line("fast_before_restore");
     cpu.back.restore_from_ref();
-    maybe_dump_focus_line("fast_after_restore");
-    cpu.sync_mmio_devices_from_backing();
-    cpu.ctx.special_timer_value = difftest_get_oracle_timer();
-    cpu.reinit_frontend_after_restore();
 #ifndef CONFIG_BPU
     std::cout << "[Oracle] Synced with ref snapshot before switching to O3."
               << std::endl;
 #endif
     cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
-    maybe_dump_focus_line("fast_after_frontend_reset");
     ref_cpu.uart_print = false;
 
     std::cout << "[Step 2] Run O3 CPU ... " << endl;
@@ -408,6 +316,7 @@ int main(int argc, char *argv[]) {
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.load_image(config.target_file);
     ref_cpu.uart_print = true;
+    ref_cpu.ref_only = true;
 
     std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
 
@@ -423,10 +332,8 @@ int main(int argc, char *argv[]) {
         cpu.ctx.exit_reason = ExitReason::EBREAK;
         break;
       }
-      if (config.progress_interval != 0 &&
-          (static_cast<uint64_t>(sim_time) % config.progress_interval) == 0) {
-        cout << "[Progress][REF] cycle=" << dec
-             << static_cast<uint64_t>(sim_time) << endl;
+      if (sim_time % 10000000 == 0) {
+        cout << dec << sim_time << endl;
       }
     }
     std::cout << "[Debug] Ref Model Run Completed." << std::endl;
@@ -435,38 +342,25 @@ int main(int argc, char *argv[]) {
   }
 
   // 主循环
-  uint64_t next_progress_cycle = config.progress_interval;
-  uint64_t last_progress_cycle = 0;
-  uint64_t last_progress_commit = 0;
   for (sim_time = 0; sim_time < (long long)MAX_SIM_TIME; sim_time++) {
-    if (LOG) {
-      cout << "**************************************************************"
-           << dec << " cycle: " << sim_time
-           << " *************************************************************"
-           << endl;
+    if (sim_time % 10000000 == 0) {
+      cout << dec << sim_time << endl;
     }
+    BE_LOG("************************************************************** cycle: %lld "
+           "*************************************************************",
+           (long long)sim_time);
 
     cpu.cycle();
-    maybe_print_o3_progress(config, next_progress_cycle, last_progress_cycle,
-                            last_progress_commit);
 
     if (handle_pending_sigint()) {
       free(p_memory);
       return 130;
     }
 
-    if (config.max_commit_inst != 0 &&
-        cpu.ctx.perf.commit_num >= config.max_commit_inst) {
+    if (cpu.ctx.perf.commit_num >= static_cast<uint64_t>(MAX_COMMIT_INST)) {
       cpu.ctx.exit_reason = ExitReason::SIMPOINT;
-      std::cout << "[sim] Reached committed instruction limit="
-                << std::dec << config.max_commit_inst
-                << " at cycle=" << cpu.ctx.perf.cycle
-                << " ipc_total="
-                << ((cpu.ctx.perf.cycle == 0)
-                        ? 0.0
-                        : static_cast<double>(cpu.ctx.perf.commit_num) /
-                              static_cast<double>(cpu.ctx.perf.cycle))
-                << std::endl;
+      std::cout << "[sim] Reached MAX_COMMIT_INST=" << std::dec
+                << static_cast<uint64_t>(MAX_COMMIT_INST) << std::endl;
     }
 
     if (cpu.ctx.exit_reason != ExitReason::NONE) {

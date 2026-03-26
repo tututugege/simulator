@@ -1,13 +1,13 @@
 #include "ref.h"
 #include "Csr.h"
 #include "RISCV.h"
-#include "SimCpu.h"
 #include "config.h"
 #include "diff.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include "oracle.h"
 extern "C" {
 #include "softfloat.h"
 }
@@ -17,39 +17,127 @@ extern RefCpu ref_cpu; // Monitor
 namespace {
 DifftestPageFaultWarning g_last_pf_warning = {};
 
-#ifndef CONFIG_DIFF_FOCUS_ADDR_BEGIN
-#define CONFIG_DIFF_FOCUS_ADDR_BEGIN 0u
-#endif
+struct Sv32WalkDebug {
+  bool translation_enabled = false;
+  int eff_priv = RISCV_MODE_M;
+  uint32_t satp = 0;
+  uint32_t mstatus = 0;
+  uint32_t root_ppn = 0;
+  uint32_t l1_pte_addr = 0;
+  uint32_t l1_pte = 0;
+  bool l1_valid = false;
+  bool l1_leaf = false;
+  uint32_t l0_pte_addr = 0;
+  uint32_t l0_pte = 0;
+  bool l0_valid = false;
+  bool l0_leaf = false;
+};
 
-#ifndef CONFIG_DIFF_FOCUS_ADDR_END
-#define CONFIG_DIFF_FOCUS_ADDR_END 0u
-#endif
-
-inline bool ref_focus_addr_match(uint32_t addr) {
-  return CONFIG_DIFF_FOCUS_ADDR_END > CONFIG_DIFF_FOCUS_ADDR_BEGIN &&
-         addr >= CONFIG_DIFF_FOCUS_ADDR_BEGIN && addr < CONFIG_DIFF_FOCUS_ADDR_END;
-}
-
-void dump_ref_focus_line(const char *tag, uint32_t addr, const uint32_t *memory) {
-  const uint32_t line_base =
-      addr & ~(static_cast<uint32_t>(DCACHE_LINE_SIZE) - 1u);
-  const uint32_t start_idx = line_base >> 2;
-  std::printf("[REF][FOCUS][%s] addr=0x%08x line_base=0x%08x\n", tag, addr,
-              line_base);
-  for (int row = 0; row < DCACHE_WORD_NUM; row += 4) {
-    std::printf("[REF][FOCUS][%s] +0x%02x: %08x %08x %08x %08x\n", tag,
-                row * 4, memory[start_idx + row + 0],
-                memory[start_idx + row + 1], memory[start_idx + row + 2],
-                memory[start_idx + row + 3]);
+inline int effective_data_privilege(const CPU_state &state, uint8_t privilege) {
+  const uint32_t mstatus = state.csr[csr_mstatus];
+  if ((mstatus & MSTATUS_MPRV) == 0) {
+    return privilege;
   }
+  return (mstatus >> MSTATUS_MPP_SHIFT) & 0x3;
 }
+
+inline bool data_translation_enabled(const CPU_state &state,
+                                     uint8_t privilege) {
+  return (state.csr[csr_satp] & 0x80000000u) != 0 &&
+         effective_data_privilege(state, privilege) != 3;
 }
+
+inline uint32_t debug_load_word(const uint32_t *mem, uint32_t addr) {
+  return mem[addr >> 2];
+}
+
+Sv32WalkDebug collect_sv32_walk_debug(const CPU_state &state, uint8_t privilege,
+                                      const uint32_t *mem, uint32_t v_addr) {
+  Sv32WalkDebug dbg;
+  dbg.satp = state.csr[csr_satp];
+  dbg.mstatus = state.csr[csr_mstatus];
+  dbg.eff_priv = effective_data_privilege(state, privilege);
+  dbg.translation_enabled = data_translation_enabled(state, privilege);
+  if (!dbg.translation_enabled) {
+    return dbg;
+  }
+
+  dbg.root_ppn = dbg.satp & 0x3FFFFFu;
+  const uint32_t vpn1 = (v_addr >> 22) & 0x3FFu;
+  dbg.l1_pte_addr = (dbg.root_ppn << 12) + vpn1 * 4u;
+  dbg.l1_pte = debug_load_word(mem, dbg.l1_pte_addr);
+  dbg.l1_valid = (dbg.l1_pte & PTE_V) != 0;
+  dbg.l1_leaf = (dbg.l1_pte & (PTE_R | PTE_X)) != 0;
+  if (!dbg.l1_valid || dbg.l1_leaf) {
+    return dbg;
+  }
+
+  const uint32_t l0_ppn = (dbg.l1_pte >> 10) & 0x3FFFFFu;
+  const uint32_t vpn0 = (v_addr >> 12) & 0x3FFu;
+  dbg.l0_pte_addr = (l0_ppn << 12) + vpn0 * 4u;
+  dbg.l0_pte = debug_load_word(mem, dbg.l0_pte_addr);
+  dbg.l0_valid = (dbg.l0_pte & PTE_V) != 0;
+  dbg.l0_leaf = (dbg.l0_pte & (PTE_R | PTE_X)) != 0;
+  return dbg;
+}
+
+void dump_pf_mismatch_debug(uint32_t v_addr, uint32_t type,
+                            const CPU_state &state, uint8_t privilege,
+                            bool dut_expect_pf_inst, bool dut_expect_pf_load,
+                            bool dut_expect_pf_store, bool ref_pf_inst,
+                            bool ref_pf_load, bool ref_pf_store) {
+  const char *kind =
+      (type == 0) ? "inst" : (type == 1) ? "load" : "store";
+  const auto ref_walk =
+      collect_sv32_walk_debug(state, privilege, ref_cpu.memory, v_addr);
+  const auto dut_walk =
+      collect_sv32_walk_debug(state, privilege, p_memory, v_addr);
+
+  std::fprintf(
+      stderr,
+      "[PF-MISMATCH] cyc=%lld kind=%s vaddr=0x%08x dut_inst=0x%08x commit_pc=0x%08x dut_pc=0x%08x ref_pc=0x%08x\n",
+      (long long)sim_time, kind, v_addr, dut_cpu.instruction, dut_cpu.commit_pc,
+      dut_cpu.pc, state.pc);
+  std::fprintf(
+      stderr,
+      "[PF-MISMATCH] dut_expect inst=%d load=%d store=%d ref_fault(inst=%d load=%d store=%d)\n",
+      (int)dut_expect_pf_inst, (int)dut_expect_pf_load,
+      (int)dut_expect_pf_store, (int)ref_pf_inst, (int)ref_pf_load,
+      (int)ref_pf_store);
+  std::fprintf(
+      stderr,
+      "[PF-MISMATCH] ref satp=0x%08x mstatus=0x%08x priv=%u eff_priv=%d translation=%d\n",
+      ref_walk.satp, ref_walk.mstatus, (unsigned)privilege, ref_walk.eff_priv,
+      (int)ref_walk.translation_enabled);
+  std::fprintf(
+      stderr,
+      "[PF-MISMATCH] dut csr satp=0x%08x mstatus=0x%08x\n",
+      dut_cpu.csr[csr_satp], dut_cpu.csr[csr_mstatus]);
+  if (!ref_walk.translation_enabled) {
+    std::fprintf(
+        stderr,
+        "[PF-MISMATCH] translation disabled in REF debug state, mismatch is unexpected\n");
+    return;
+  }
+  std::fprintf(
+      stderr,
+      "[PF-MISMATCH][REF] l1_addr=0x%08x l1_pte=0x%08x valid=%d leaf=%d l0_addr=0x%08x l0_pte=0x%08x valid=%d leaf=%d\n",
+      ref_walk.l1_pte_addr, ref_walk.l1_pte, (int)ref_walk.l1_valid,
+      (int)ref_walk.l1_leaf, ref_walk.l0_pte_addr, ref_walk.l0_pte,
+      (int)ref_walk.l0_valid, (int)ref_walk.l0_leaf);
+  std::fprintf(
+      stderr,
+      "[PF-MISMATCH][DUTMEM] l1_addr=0x%08x l1_pte=0x%08x valid=%d leaf=%d l0_addr=0x%08x l0_pte=0x%08x valid=%d leaf=%d\n",
+      dut_walk.l1_pte_addr, dut_walk.l1_pte, (int)dut_walk.l1_valid,
+      (int)dut_walk.l1_leaf, dut_walk.l0_pte_addr, dut_walk.l0_pte,
+      (int)dut_walk.l0_valid, (int)dut_walk.l0_leaf);
+}
+
+} // namespace
 
 DifftestPageFaultWarning difftest_get_last_pf_warning() {
   return g_last_pf_warning;
 }
-
-uint64_t difftest_get_oracle_timer() { return ref_cpu.oracle_timer; }
 
 // ---------------- 辅助工具 ----------------
 static inline float32_t to_f32(uint32_t v) {
@@ -200,20 +288,13 @@ void RefCpu::init(uint32_t reset_pc) {
   page_fault_inst = false;
   page_fault_load = false;
   page_fault_store = false;
-  dut_pf_check_enable = false;
+  dut_pf_check_enable = true;
+  ref_only = false;
   dut_expect_pf_inst = false;
   dut_expect_pf_load = false;
   dut_expect_pf_store = false;
   state.reserve_valid = false;
   state.reserve_addr = 0;
-}
-
-void RefCpu::set_dut_page_fault_expect(bool enable, bool inst, bool load,
-                                       bool store) {
-  dut_pf_check_enable = enable;
-  dut_expect_pf_inst = inst;
-  dut_expect_pf_load = load;
-  dut_expect_pf_store = store;
 }
 
 void RefCpu::exec() {
@@ -928,7 +1009,7 @@ void RefCpu::RV32A() {
   uint32_t v_addr = reg_rdata1;
   uint32_t p_addr = v_addr;
 
-  if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+  if (data_translation_enabled(state, privilege)) {
     bool page_fault_1 = !va2pa_fix(p_addr, v_addr, 1);
     bool page_fault_2 = !va2pa_fix(p_addr, v_addr, 2);
 
@@ -1132,7 +1213,7 @@ void RefCpu::RV32IM() {
   case number_5_opcode_lb: { // lb, lh, lw, lbu, lhu
     uint32_t v_addr = reg_rdata1 + immI(Instruction);
     uint32_t p_addr = v_addr;
-    if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+    if (data_translation_enabled(state, privilege)) {
       page_fault_load = !va2pa_fix(p_addr, v_addr, 1);
     }
 
@@ -1145,20 +1226,22 @@ void RefCpu::RV32IM() {
                                                       : 3;
       Assert((p_addr & alignment_mask) == 0 && "Load address misaligned!");
       if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
+          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
+          ((p_addr & CLINT_ADDR_MASK) == CLINT_ADDR_BASE)) {
         is_mmio_load = true;
       }
-      // Timer MMIO 特殊处理：使用 oracle_timer 保持与 DUT 同步
+      // Timer MMIO 特殊处理：使用 sim_time (非Oracle自有计数) 并推入FIFO
       uint64_t data_l = (uint64_t)memory[p_addr >> 2];
       uint64_t data_h = (uint64_t)memory[(p_addr >> 2) + 1];
       uint64_t data64 = (data_h << 32) | data_l;
 
       uint32_t data;
-      if (p_addr == 0x1fd0e000) {
-        oracle_timer += 1000;
-        data = oracle_timer;
-      } else if (p_addr == 0x1fd0e004) {
-        data = 0;
+      if (p_addr == OPENSBI_TIMER_LOW_ADDR) {
+        data = sim_time;
+        push_oracle_timer(data);
+      } else if (p_addr == OPENSBI_TIMER_HIGH_ADDR) {
+        data = sim_time >> 32;
+        push_oracle_timer(data);
       } else {
         data = (uint32_t)(data64 >> ((p_addr & 0b11) * 8));
       }
@@ -1190,7 +1273,7 @@ void RefCpu::RV32IM() {
 
     uint32_t v_addr = reg_rdata1 + immS(Instruction);
     uint32_t p_addr = v_addr;
-    if ((state.csr[csr_satp] & 0x80000000) && privilege != 3) {
+    if (data_translation_enabled(state, privilege)) {
       page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
     }
 
@@ -1203,7 +1286,8 @@ void RefCpu::RV32IM() {
                                                       : 3;
       Assert((p_addr & alignment_mask) == 0 && "Store address misaligned!");
       if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
+          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
+          ((p_addr & CLINT_ADDR_MASK) == CLINT_ADDR_BASE)) {
         is_mmio_store = true;
       }
 
@@ -1565,15 +1649,6 @@ void RefCpu::store_data() {
     memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
   }
 
-  if (state.store && ref_focus_addr_match(p_addr)) {
-    std::printf(
-        "[REF][FOCUS][STORE] cycle=%lld pc=0x%08x addr=0x%08x strb=0x%x "
-        "store_data=0x%08x old=0x%08x new=0x%08x\n",
-        sim_time, state.pc, p_addr, state.store_strb, state.store_data, old_data,
-        memory[p_addr / 4]);
-    dump_ref_focus_line("STORE", p_addr, memory);
-  }
-
   if (p_addr == UART_ADDR_BASE) {
     char temp;
     temp = wdata & 0x000000ff;
@@ -1733,7 +1808,7 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
 bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   bool ref_fault = !va2pa(p_addr, v_addr, type);
 
-  if (!dut_pf_check_enable) {
+  if (!dut_pf_check_enable || ref_only) {
     return !ref_fault;
   }
 
@@ -1765,6 +1840,9 @@ bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   if (!dut_fault && ref_fault) {
+    dump_pf_mismatch_debug(v_addr, type, state, privilege, dut_expect_pf_inst,
+                           dut_expect_pf_load, dut_expect_pf_store,
+                           page_fault_inst, page_fault_load, page_fault_store);
     Assert(0 && "DUT has no page fault while REF has page fault.");
   }
 

@@ -27,8 +27,8 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 // ============================================================
 
 #define CONFIG_DIFFTEST
-// #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+#define CONFIG_PERF_COUNTER
+// #define CONFIG_BPU
 #define CONFIG_TLB_MMU
 
 // Replay throttling heuristics.
@@ -144,8 +144,8 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_L2_HIT_LATENCY = 1;
-constexpr int DCACHE_MEM_LATENCY = 1;
+constexpr int DCACHE_L2_HIT_LATENCY = 2;
+constexpr int DCACHE_MEM_LATENCY = 8;
 // Backward-compatible alias; prefer DCACHE_MEM_LATENCY for new code.
 constexpr int DCACHE_MISS_LATENCY = DCACHE_MEM_LATENCY;
 constexpr int DCACHE_WAY_NUM = 2;
@@ -225,12 +225,13 @@ enum { ISSUE_PORT_COUNTER_BASE = __COUNTER__ };
 // CSR is currently hard-bound to Port 0, so Port 0 must include OP_MASK_CSR.
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
-             OP_MASK_CSR), // Port 0: ALU + MUL/DIV + CSR
-    PORT_CFG(OP_MASK_ALU | OP_MASK_DIV | OP_MASK_FP), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
-    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
-    PORT_CFG(OP_MASK_BR)                              // Port 5: Branch
+             OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
+    PORT_CFG(OP_MASK_ALU | OP_MASK_DIV |
+             OP_MASK_FP),                // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_LD),                // Port 2: Load
+    PORT_CFG(OP_MASK_STA),               // Port 3: Store Addr
+    PORT_CFG(OP_MASK_STD),               // Port 4: Store Data
+    PORT_CFG(OP_MASK_BR)                 // Port 5: Branch
 };
 #undef PORT_CFG
 

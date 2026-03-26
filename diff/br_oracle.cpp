@@ -8,8 +8,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <queue>
 
 static RefCpu oracle;
+static std::queue<uint32_t> oracle_timer_queue;
 
 namespace {
 inline void sync_oracle_control_state(const front_top_in &in) {
@@ -49,10 +51,23 @@ inline void sync_oracle_arch_state_from_dut(const front_top_in &in) {
 }
 } // namespace
 
-uint64_t get_oracle_timer() { return oracle.oracle_timer; }
+void push_oracle_timer(uint32_t val) {
+  oracle_timer_queue.push(val);
+}
+
+uint64_t get_oracle_timer() {
+  Assert(!oracle_timer_queue.empty() && "Oracle Timer queue underflow!");
+  uint32_t val = oracle_timer_queue.front();
+  oracle_timer_queue.pop();
+  return val;
+}
 
 void init_oracle(int img_size) {
+  while (!oracle_timer_queue.empty()) {
+    oracle_timer_queue.pop();
+  }
   oracle.init(0);
+  oracle.dut_pf_check_enable = false;
   std::memcpy(oracle.memory + 0x80000000 / 4, p_memory + 0x80000000 / 4,
               img_size * sizeof(uint32_t));
   oracle.memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
@@ -72,16 +87,17 @@ void init_oracle(int img_size) {
 
 void init_oracle_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory,
                       uint8_t privilege) {
+  while (!oracle_timer_queue.empty()) {
+    oracle_timer_queue.pop();
+  }
   oracle.init(0);
+  oracle.dut_pf_check_enable = false;
   oracle.state = ckpt_state;
   oracle.privilege = privilege;
 
   std::memcpy(oracle.memory, ckpt_memory,
               (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
 
-  // Match RefCpu::exec(): instruction translation is only active when SATP is
-  // enabled outside M-mode. A restored snapshot may also legally land on a PC
-  // that faults on the first fetch, so do not assert during oracle bootstrap.
   if ((oracle.state.csr[csr_satp] & 0x80000000u) != 0 &&
       oracle.privilege != RISCV_MODE_M) {
     uint32_t p_addr = 0;
@@ -103,14 +119,10 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
   }
 
   if (in.refetch) {
-    // Backend redirect is authoritative for control state. If the oracle's
-    // speculative execution has already drifted architecturally, snap it back
-    // to the current DUT architectural image before continuing fetch.
     sync_oracle_control_state(in);
     if (!oracle_gpr_matches_dut()) {
       sync_oracle_arch_state_from_dut(in);
     }
-
     stall = false;
   }
 
@@ -133,9 +145,6 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
     out.instructions[i] = oracle.Instruction;
 
 
-    // Serializing events (CSR/MMIO/exception) should terminate the current
-    // fetch bundle. Keep CSR/exception as refetch-stall points, but do not
-    // permanently stall on MMIO since backend may not always generate refetch.
     if (oracle.is_exception || oracle.is_csr || oracle.is_mmio_load ||
         oracle.is_mmio_store) {
       out.predict_dir[i] = false;

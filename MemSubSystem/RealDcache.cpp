@@ -272,27 +272,13 @@ void RealDcache::end_req_track(bool is_store, size_t req_id, uint32_t rob_idx,
 }
 
 bool RealDcache::special_load_addr(uint32_t addr,uint32_t &mem_val,MicroOp &uop){
-    const uint64_t timer_base =
-        (ctx != nullptr) ? ctx->special_timer_value : 0ull;
-    const uint64_t timer_delta =
-        (sim_time >= 0) ? static_cast<uint64_t>(sim_time) : 0ull;
-    const uint64_t timer_value = timer_base + timer_delta;
-
-    if (addr == 0x1fd0e000) {
-        mem_val = static_cast<uint32_t>(timer_value);
-        uop.difftest_skip = true;
-        uop.dbg.difftest_skip = true;
-        return true;
-    } else if (addr == 0x1fd0e004) {
-        mem_val = static_cast<uint32_t>(timer_value >> 32);
-        uop.difftest_skip = true;
-        uop.dbg.difftest_skip = true;
-        return true;
-    } else {
-        uop.difftest_skip = false;
-        uop.dbg.difftest_skip = false;
-        return false;
-    }
+    // Timer addresses (0x1fd0e000, 0x1fd0e004) are classified as MMIO and
+    // should be routed through PeripheralAxi instead of DCache.
+    Assert(addr != OPENSBI_TIMER_LOW_ADDR && addr != OPENSBI_TIMER_HIGH_ADDR &&
+           "Timer address reached DCache! Should be routed via MMIO path.");
+    (void)mem_val;
+    uop.dbg.difftest_skip = false;
+    return false;
 }
 
 RealDcache::CoherentQueryResult
@@ -371,7 +357,7 @@ void RealDcache::stage1_comb() {
                 dcache_focus_line_addr(req.addr)) {
                 LSU_MEM_DBG_PRINTF("[FOCUS][DCACHE][LD REQ] cyc=%lld port=%d req_id=%zu rob=%u pc=0x%08x addr=0x%08x\n",
                             (long long)sim_time, i, req.req_id, req.uop.rob_idx,
-                            req.uop.pc, req.addr);
+                            req.uop.dbg.pc, req.addr);
             }
         }
     }
@@ -551,7 +537,7 @@ void RealDcache::stage2_comb() {
             "hit_way=%d mshr_pending=%d mshr_fill_match=%d fill_valid=%d "
             "fill_line=0x%08x fill_way=%u\n",
             (long long)sim_time, port, src, slot.req_id, slot.uop.rob_idx,
-            slot.uop.pc, slot.addr, static_cast<unsigned>(resp.replay),
+            slot.uop.dbg.pc, slot.addr, static_cast<unsigned>(resp.replay),
             resp.data, hit_way, static_cast<int>(mshr_pending_line),
             static_cast<int>(mshr_fill_match),
             static_cast<int>(mshr2dcache->fill.valid), mshr2dcache->fill.addr,

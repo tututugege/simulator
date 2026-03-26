@@ -1,10 +1,10 @@
 #include "diff.h"
-#include "RISCV.h"
-#include "DiffMemTrace.h"
+#include "Csr.h"
 #include "DcacheConfig.h"
+#include "DiffMemTrace.h"
+#include "RISCV.h"
 #include "config.h"
 #include "util.h"
-#include "Csr.h"
 
 #include <cstring>
 #include <iostream>
@@ -13,49 +13,15 @@ CPU_state dut_cpu;
 RefCpu ref_cpu;
 
 namespace {
-#ifndef CONFIG_DIFF_FOCUS_ADDR_BEGIN
-#define CONFIG_DIFF_FOCUS_ADDR_BEGIN 0u
-#endif
-
-#ifndef CONFIG_DIFF_FOCUS_ADDR_END
-#define CONFIG_DIFF_FOCUS_ADDR_END 0u
-#endif
-
 inline uint32_t sign_extend_12(uint32_t imm12) {
   return static_cast<uint32_t>(static_cast<int32_t>(imm12 << 20) >> 20);
-}
-
-void dump_memory_line_words(const char *tag, const char *domain,
-                            const uint32_t *mem, uint32_t line_base) {
-  const uint32_t start_idx = line_base >> 2;
-  for (int row = 0; row < DCACHE_WORD_NUM; row += 4) {
-    std::printf("[DIFF][MEMLINE][%s][%s] +0x%02x: %08x %08x %08x %08x\n", tag,
-                domain, row * 4, mem[start_idx + row + 0],
-                mem[start_idx + row + 1], mem[start_idx + row + 2],
-                mem[start_idx + row + 3]);
-  }
-}
-
-void dump_addr_snapshot(const char *tag, uint32_t addr) {
-  const uint32_t word_idx = addr >> 2;
-  const AddrFields f = decode(addr);
-  std::printf("[DIFF][ADDR][%s] addr=0x%08x word_idx=%u set=%u tag=0x%x word_off=%u\n",
-              tag, addr, word_idx, f.set_idx, f.tag, f.word_off);
-  std::printf("[DIFF][ADDR][%s] mem dut=0x%08x ref=0x%08x\n", tag,
-              p_memory[word_idx], ref_cpu.memory[word_idx]);
-  for (int w = 0; w < DCACHE_WAYS; ++w) {
-    std::printf(
-        "[DIFF][DCACHE] set=%u way=%d valid=%d dirty=%d tag=0x%x data[word_off]=0x%08x\n",
-        f.set_idx, w, static_cast<int>(valid_array[f.set_idx][w]),
-        static_cast<int>(dirty_array[f.set_idx][w]), tag_array[f.set_idx][w],
-        data_array[f.set_idx][w][f.word_off]);
-  }
 }
 
 void dump_mem_subsystem_snapshot() {
   for (int i = 0; i < MSHR_ENTRIES; ++i) {
     const auto &e = mshr_entries[i];
-    std::printf("[DIFF][MSHR] idx=%d v=%d issued=%d fill=%d set=%u tag=0x%x line=0x%08x\n",
+    std::printf("[DIFF][MSHR] idx=%d v=%d issued=%d fill=%d set=%u tag=0x%x "
+                "line=0x%08x\n",
                 i, static_cast<int>(e.valid), static_cast<int>(e.issued),
                 static_cast<int>(e.fill), e.index, e.tag,
                 get_addr(e.index, e.tag, 0));
@@ -69,103 +35,27 @@ void dump_mem_subsystem_snapshot() {
 }
 
 void dump_code_line_snapshot(const char *tag, uint32_t pc) {
-  const uint32_t line_base = pc & ~(static_cast<uint32_t>(ICACHE_LINE_SIZE) - 1u);
+  const uint32_t line_base =
+      pc & ~(static_cast<uint32_t>(ICACHE_LINE_SIZE) - 1u);
   const uint32_t start_idx = line_base >> 2;
   const uint32_t word_off = (pc - line_base) >> 2;
-  std::printf("[DIFF][ICACHE_LINE][%s] pc=0x%08x line_base=0x%08x word_off=%u\n",
-              tag, pc, line_base, word_off);
-  for (int row = 0; row < ICACHE_WORD_NUM; row += 4) {
-    std::printf(
-        "[DIFF][ICACHE_LINE][%s][DUT] +0x%02x: %08x %08x %08x %08x\n", tag,
-        row * 4, p_memory[start_idx + row + 0], p_memory[start_idx + row + 1],
-        p_memory[start_idx + row + 2], p_memory[start_idx + row + 3]);
-    std::printf(
-        "[DIFF][ICACHE_LINE][%s][REF] +0x%02x: %08x %08x %08x %08x\n", tag,
-        row * 4, ref_cpu.memory[start_idx + row + 0],
-        ref_cpu.memory[start_idx + row + 1], ref_cpu.memory[start_idx + row + 2],
-        ref_cpu.memory[start_idx + row + 3]);
-  }
-}
-
-void dump_phys_line_snapshot(const char *tag, uint32_t p_addr) {
-  const uint32_t line_base =
-      p_addr & ~(static_cast<uint32_t>(ICACHE_LINE_SIZE) - 1u);
-  const uint32_t start_idx = line_base >> 2;
-  std::printf("[DIFF][PHYS_LINE][%s] p_addr=0x%08x line_base=0x%08x\n", tag,
-              p_addr, line_base);
-  for (int row = 0; row < ICACHE_WORD_NUM; row += 4) {
-    std::printf(
-        "[DIFF][PHYS_LINE][%s][DUT] +0x%02x: %08x %08x %08x %08x\n", tag,
-        row * 4, p_memory[start_idx + row + 0], p_memory[start_idx + row + 1],
-        p_memory[start_idx + row + 2], p_memory[start_idx + row + 3]);
-    std::printf(
-        "[DIFF][PHYS_LINE][%s][REF] +0x%02x: %08x %08x %08x %08x\n", tag,
-        row * 4, ref_cpu.memory[start_idx + row + 0],
-        ref_cpu.memory[start_idx + row + 1], ref_cpu.memory[start_idx + row + 2],
-        ref_cpu.memory[start_idx + row + 3]);
-  }
-}
-
-void dump_inst_related_snapshot(uint32_t inst) {
-  const uint32_t opcode = inst & 0x7F;
-  if (opcode != 0x03 && opcode != 0x23) {
-    return;
-  }
-  const uint32_t rs1 = (inst >> 15) & 0x1F;
-  const uint32_t base = dut_cpu.gpr[rs1];
-  uint32_t addr = 0;
-  if (opcode == 0x03) {
-    const uint32_t imm12 = (inst >> 20) & 0xFFF;
-    addr = base + sign_extend_12(imm12);
-    dump_addr_snapshot("inst_mem_addr", addr);
-  } else {
-    const uint32_t imm12 =
-        (((inst >> 25) & 0x7F) << 5) | ((inst >> 7) & 0x1F);
-    addr = base + sign_extend_12(imm12);
-    dump_addr_snapshot("inst_store_addr", addr);
-  }
-}
-
-void dump_inst_translation_snapshot(uint32_t inst) {
-  const uint32_t opcode = inst & 0x7F;
-  if (opcode != 0x03 && opcode != 0x23) {
-    return;
-  }
-
-  const uint32_t rs1 = (inst >> 15) & 0x1F;
-  const uint32_t base = dut_cpu.gpr[rs1];
-  const bool is_load = opcode == 0x03;
-  const uint32_t imm12 = is_load
-                             ? ((inst >> 20) & 0xFFF)
-                             : ((((inst >> 25) & 0x7F) << 5) |
-                                ((inst >> 7) & 0x1F));
-  const uint32_t v_addr = base + sign_extend_12(imm12);
-  uint32_t ref_paddr = 0;
-  const bool ref_ok = ref_cpu.va2pa(ref_paddr, v_addr, is_load ? 1 : 2);
   std::printf(
-      "[DIFF][DATA_PA] opcode=%s rs1=x%u base=0x%08x vaddr=0x%08x ref_%s",
-      is_load ? "LD" : "ST", rs1, base, v_addr,
-      ref_ok ? "paddr_ok" : "paddr_fault");
-  if (ref_ok) {
-    std::printf("=0x%08x", ref_paddr);
-  }
-  std::printf("\n");
-
-  if (ref_ok) {
-    dump_phys_line_snapshot("ref_data_pa", ref_paddr);
+      "[DIFF][ICACHE_LINE][%s] pc=0x%08x line_base=0x%08x word_off=%u\n", tag,
+      pc, line_base, word_off);
+  for (int row = 0; row < ICACHE_WORD_NUM; row += 4) {
+    std::printf("[DIFF][ICACHE_LINE][%s][DUT] +0x%02x: %08x %08x %08x %08x\n",
+                tag, row * 4, p_memory[start_idx + row + 0],
+                p_memory[start_idx + row + 1], p_memory[start_idx + row + 2],
+                p_memory[start_idx + row + 3]);
+    std::printf("[DIFF][ICACHE_LINE][%s][REF] +0x%02x: %08x %08x %08x %08x\n",
+                tag, row * 4, ref_cpu.memory[start_idx + row + 0],
+                ref_cpu.memory[start_idx + row + 1],
+                ref_cpu.memory[start_idx + row + 2],
+                ref_cpu.memory[start_idx + row + 3]);
   }
 }
+
 } // namespace
-
-void difftest_dump_memory_line(const char *tag, uint32_t addr) {
-  const uint32_t line_base =
-      addr & ~(static_cast<uint32_t>(DCACHE_LINE_SIZE) - 1u);
-  const uint32_t word_idx = addr >> 2;
-  std::printf("[DIFF][MEMLINE][%s] addr=0x%08x line_base=0x%08x dut=0x%08x ref=0x%08x\n",
-              tag, addr, line_base, p_memory[word_idx], ref_cpu.memory[word_idx]);
-  dump_memory_line_words(tag, "DUT", p_memory, line_base);
-  dump_memory_line_words(tag, "REF", ref_cpu.memory, line_base);
-}
 
 // relocate the init_difftest function to avoid multiple definition error
 void init_difftest(int img_size) {
@@ -277,32 +167,21 @@ fault:
   std::printf("Commit PC: 0x%08x\tDUT next PC: 0x%08x\tREF next PC: 0x%08x\n",
               dut_cpu.commit_pc, dut_cpu.pc, ref_cpu.state.pc);
   std::printf("[DIFF] p_memory@a5(0x%08x)=0x%08x ref=0x%08x\n", dut_cpu.gpr[15],
-              p_memory[dut_cpu.gpr[15] >> 2], ref_cpu.memory[dut_cpu.gpr[15] >> 2]);
+              p_memory[dut_cpu.gpr[15] >> 2],
+              ref_cpu.memory[dut_cpu.gpr[15] >> 2]);
   dump_code_line_snapshot("commit_pc", dut_cpu.commit_pc);
-  uint32_t ref_inst_paddr = 0;
-  if (ref_cpu.va2pa(ref_inst_paddr, dut_cpu.commit_pc, 0)) {
-    std::printf("[DIFF][INST_PA] commit_pc=0x%08x ref_paddr=0x%08x dut_word=0x%08x ref_word=0x%08x\n",
-                dut_cpu.commit_pc, ref_inst_paddr, p_memory[ref_inst_paddr >> 2],
-                ref_cpu.memory[ref_inst_paddr >> 2]);
-    dump_phys_line_snapshot("commit_pc", ref_inst_paddr);
-  } else {
-    std::printf("[DIFF][INST_PA] commit_pc=0x%08x ref_va2pa_fault\n",
-                dut_cpu.commit_pc);
-  }
-#if SIM_LSU_MEM_DEBUG_PRINT
-  dump_inst_related_snapshot(dut_cpu.instruction);
-  dump_inst_translation_snapshot(dut_cpu.instruction);
+#if defined(LOG_ENABLE) && defined(LOG_LSU_MEM_ENABLE)
   diff_mem_trace::dump_recent();
 #endif
-  difftest_dump_recent_commits();
-  difftest_dump_soc_debug_state();
   dump_mem_subsystem_snapshot();
 
   Assert(0 && "Difftest: Register or Memory mismatch detected.");
 }
 
 void difftest_skip() {
-  ref_cpu.set_dut_page_fault_expect(false, false, false, false);
+  ref_cpu.dut_expect_pf_inst = dut_cpu.page_fault_inst;
+  ref_cpu.dut_expect_pf_load = dut_cpu.page_fault_load;
+  ref_cpu.dut_expect_pf_store = dut_cpu.page_fault_store;
   ref_cpu.exec();
   for (int i = 0; i < 32; i++) {
     ref_cpu.state.gpr[i] = dut_cpu.gpr[i];
@@ -310,14 +189,9 @@ void difftest_skip() {
 }
 
 void difftest_step(bool check) {
-#ifdef CONFIG_BPU
-  ref_cpu.set_dut_page_fault_expect(check, dut_cpu.page_fault_inst,
-                                    dut_cpu.page_fault_load,
-                                    dut_cpu.page_fault_store);
-#else
-  // Non-BPU mode uses oracle-front flow; disable fault injection here.
-  ref_cpu.set_dut_page_fault_expect(false, false, false, false);
-#endif
+  ref_cpu.dut_expect_pf_inst = dut_cpu.page_fault_inst;
+  ref_cpu.dut_expect_pf_load = dut_cpu.page_fault_load;
+  ref_cpu.dut_expect_pf_store = dut_cpu.page_fault_store;
   ref_cpu.exec();
   if (check)
     checkregs();

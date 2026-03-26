@@ -30,7 +30,7 @@ static constexpr uint32_t kFastDiffFocusLine = 0x8fdfd800u;
 
 #define WB_AXI_VLOG(fmt, ...)                                                    \
   do {                                                                           \
-    if (WB_AXI_VERBOSE_LOG && SIM_LSU_MEM_DEBUG_PRINT_ACTIVE) {                  \
+    if (WB_AXI_VERBOSE_LOG && LSU_MEM_LOG) {                                     \
       LSU_MEM_DBG_PRINTF(fmt, ##__VA_ARGS__);                                    \
     }                                                                            \
   } while (0)

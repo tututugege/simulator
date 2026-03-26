@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -63,8 +64,8 @@ constexpr uint8_t MAXU = 0b11100;
 // [Structs & Classes]
 // ==========================================
 
-// Debug sideband for InstInfo. Keep diag_val in hardware path.
-struct InstDebugMeta {
+// Debug sideband shared by InstInfo/MicroOp. Keep diag_val in hardware path.
+struct DebugMeta {
   wire<32> instruction;
   wire<32> pc;
   uint8_t mem_align_mask;
@@ -72,23 +73,7 @@ struct InstDebugMeta {
   int64_t inst_idx;
 };
 
-// Debug sideband for MicroOp. Keep diag_val in hardware path.
-struct UopDebugMeta {
-  wire<32> instruction;
-  wire<32> pc;
-  uint8_t mem_align_mask;
-  bool difftest_skip;
-  int64_t inst_idx;
-};
-
-struct InstTmaMeta {
-  bool is_cache_miss;
-  bool is_ret;
-  bool mem_commit_is_load;
-  bool mem_commit_is_store;
-};
-
-struct UopTmaMeta {
+struct TmaMeta {
   bool is_cache_miss;
   bool is_ret;
   bool mem_commit_is_load;
@@ -125,9 +110,9 @@ struct InstInfo {
   wire<1> stq_flag;
   wire<LDQ_IDX_WIDTH> ldq_idx;
 
-  // ROB 信息
-  wire<2> uop_num;
-  wire<2> cplt_num;
+  // ROB completion 信息
+  wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+  wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
   wire<1> rob_flag; // 用于对比指令年龄
 
   // 异常信息
@@ -136,19 +121,11 @@ struct InstInfo {
   wire<1> page_fault_store;
   wire<1> illegal_inst;
   wire<1> is_atomic;
+  wire<1> flush_pipe;
 
   InstType type;
-  InstTmaMeta tma;
-  bool is_cache_miss;
-
-  // Debug
-  InstDebugMeta dbg;
-  wire<32> instruction;
-  wire<32> pc;
-  uint8_t mem_align_mask;
-  bool difftest_skip;
-  int64_t inst_idx;
-  wire<1> flush_pipe;
+  TmaMeta tma;
+  DebugMeta dbg;
 
   InstInfo() { std::memset(this, 0, sizeof(InstInfo)); }
 };
@@ -186,8 +163,9 @@ struct MicroOp {
   wire<1> stq_flag;
   wire<LDQ_IDX_WIDTH> ldq_idx;
 
-  // ROB 信息
-  wire<2> uop_num;
+  // ROB completion 信息
+  wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+  wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
   wire<1> rob_flag; // 用于对比指令年龄
 
   // 异常信息
@@ -197,16 +175,8 @@ struct MicroOp {
   wire<1> illegal_inst;
 
   UopType op;
-  UopTmaMeta tma;
-  bool is_cache_miss;
-
-  // Debug
-  UopDebugMeta dbg;
-  wire<32> instruction;
-  wire<32> pc;
-  uint8_t mem_align_mask;
-  bool difftest_skip;
-  int64_t inst_idx;
+  TmaMeta tma;
+  DebugMeta dbg;
   wire<1> flush_pipe;
   int64_t cplt_time;
 
@@ -243,7 +213,8 @@ struct MicroOp {
     this->stq_idx = info.stq_idx;
     this->stq_flag = info.stq_flag;
     this->ldq_idx = info.ldq_idx;
-    this->uop_num = info.uop_num;
+    this->expect_mask = info.expect_mask;
+    this->cplt_mask = info.cplt_mask;
     this->rob_flag = info.rob_flag;
     this->page_fault_inst = info.page_fault_inst;
     this->page_fault_load = info.page_fault_load;
@@ -259,12 +230,6 @@ struct MicroOp {
     this->dbg.mem_align_mask = info.dbg.mem_align_mask;
     this->dbg.difftest_skip = info.dbg.difftest_skip;
     this->dbg.inst_idx = info.dbg.inst_idx;
-    this->instruction = this->dbg.instruction;
-    this->pc = this->dbg.pc;
-    this->mem_align_mask = this->dbg.mem_align_mask;
-    this->difftest_skip = this->dbg.difftest_skip;
-    this->inst_idx = this->dbg.inst_idx;
-    this->is_cache_miss = this->tma.is_cache_miss;
     this->cplt_time = 0;
     this->flush_pipe = info.flush_pipe;
   }
@@ -297,10 +262,6 @@ public:
   ExitReason exit_reason = ExitReason::NONE;
   bool is_ckpt = false;
   uint64_t ckpt_warmup_commit_target = WARMUP;
-  // Base value for the special timer MMIO window. In pure RUN mode this stays
-  // at 0; in FAST/CKPT restore paths it is seeded from the ref snapshot so the
-  // O3-visible timer stays monotonic across the handoff.
-  uint64_t special_timer_value = 0;
   SimCpu *cpu = nullptr;
   void run_commit_inst(InstEntry *inst_entry);
   void run_difftest_inst(InstEntry *inst_entry);

@@ -1,4 +1,31 @@
 #include "PeripheralAxi.h"
+#include "PeripheralModel.h"
+#include "config.h"
+#include "oracle.h"
+
+namespace {
+bool is_local_special_read_addr(uint32_t addr) {
+  return addr == OPENSBI_TIMER_LOW_ADDR || addr == OPENSBI_TIMER_HIGH_ADDR;
+}
+
+uint32_t local_special_read_data(uint32_t addr) {
+  if (addr == OPENSBI_TIMER_LOW_ADDR) {
+#ifdef CONFIG_BPU
+    return static_cast<uint32_t>(sim_time);
+#else
+    return static_cast<uint32_t>(get_oracle_timer());
+#endif
+  }
+  if (addr == OPENSBI_TIMER_HIGH_ADDR) {
+#ifdef CONFIG_BPU
+    return static_cast<uint32_t>(sim_time >> 32);
+#else
+    return static_cast<uint32_t>(get_oracle_timer());
+#endif
+  }
+  return 0;
+}
+} // namespace
 
 void PeripheralAxi::init() {
   in = {};
@@ -113,13 +140,45 @@ void PeripheralAxi::comb_inputs() {
 
   if (!cur.busy) {
     if (peripheral_io != nullptr && peripheral_io->in.is_mmio) {
+      if (!peripheral_io->in.wen &&
+          is_local_special_read_addr(peripheral_io->in.mmio_addr)) {
+        nxt.busy = false;
+        nxt.write = false;
+        nxt.req_accepted = false;
+        nxt.resp_valid = true;
+        nxt.addr = peripheral_io->in.mmio_addr;
+        nxt.wdata = 0;
+        nxt.func3 = 0;
+        nxt.rdata = local_special_read_data(peripheral_io->in.mmio_addr);
+        nxt.req_id = 0;
+        nxt.uop = peripheral_io->in.uop;
+        nxt.uop.dbg.difftest_skip = true;
+        return;
+      }
+      if (peripheral_model != nullptr &&
+          PeripheralModel::is_modeled_mmio(peripheral_io->in.mmio_addr)) {
+        nxt.busy = false;
+        nxt.write = peripheral_io->in.wen;
+        nxt.req_accepted = false;
+        nxt.resp_valid = true;
+        nxt.addr = peripheral_io->in.mmio_addr;
+        nxt.wdata = peripheral_io->in.mmio_wdata;
+        nxt.func3 = peripheral_io->in.uop.func3;
+        nxt.rdata = peripheral_io->in.wen
+                        ? 0
+                        : peripheral_model->read_load(peripheral_io->in.mmio_addr,
+                                                      nxt.func3);
+        nxt.req_id = 0;
+        nxt.uop = peripheral_io->in.uop;
+        return;
+      }
       nxt.busy = true;
       nxt.write = peripheral_io->in.wen;
       nxt.req_accepted = false;
       nxt.resp_valid = false;
       nxt.addr = peripheral_io->in.mmio_addr;
       nxt.wdata = peripheral_io->in.mmio_wdata;
-      nxt.func3 = static_cast<uint8_t>(peripheral_io->in.mmio_wstrb);
+      nxt.func3 = peripheral_io->in.uop.func3;
       nxt.rdata = 0;
       nxt.req_id = 0;
       nxt.uop = peripheral_io->in.uop;

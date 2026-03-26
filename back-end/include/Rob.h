@@ -43,8 +43,8 @@ struct RobStoredInst {
   wire<STQ_IDX_WIDTH> stq_idx;
   wire<1> stq_flag;
 
-  wire<2> uop_num;
-  wire<2> cplt_num;
+  wire<ROB_CPLT_MASK_WIDTH> expect_mask;
+  wire<ROB_CPLT_MASK_WIDTH> cplt_mask;
 
   wire<1> page_fault_inst;
   wire<1> page_fault_load;
@@ -53,8 +53,8 @@ struct RobStoredInst {
   wire<1> flush_pipe;
 
   wire<INST_TYPE_WIDTH> type;
-  InstTmaMeta tma;
-  InstDebugMeta dbg;
+  TmaMeta tma;
+  DebugMeta dbg;
 
   RobStoredInst() { std::memset(this, 0, sizeof(RobStoredInst)); }
 
@@ -79,8 +79,8 @@ struct RobStoredInst {
     dst.rob_flag = src.rob_flag;
     dst.stq_idx = src.stq_idx;
     dst.stq_flag = src.stq_flag;
-    dst.uop_num = src.uop_num;
-    dst.cplt_num = src.cplt_num;
+    dst.expect_mask = src.expect_mask;
+    dst.cplt_mask = src.cplt_mask;
     dst.page_fault_inst = src.page_fault_inst;
     dst.page_fault_load = false;
     dst.page_fault_store = false;

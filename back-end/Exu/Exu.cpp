@@ -2,9 +2,21 @@
 #include "FPU.h"
 #include "config.h"
 
+static inline bool is_br_killed(const ExuInst &uop, const DecBroadcastIO *db) {
+  if (!db->mispred) return false;
+  return (uop.br_mask & db->br_mask) != 0;
+}
+
 static inline bool is_br_killed(const MicroOp &uop, const DecBroadcastIO *db) {
   if (!db->mispred) return false;
   return (uop.br_mask & db->br_mask) != 0;
+}
+
+static inline bool cmp_inst_age(const ExuInst &inst1, const ExuInst &inst2) {
+  if (inst1.rob_flag == inst2.rob_flag) {
+    return inst1.rob_idx > inst2.rob_idx;
+  }
+  return inst1.rob_idx < inst2.rob_idx;
 }
 
 Exu::Exu(SimContext *ctx) : ctx(ctx) {
@@ -113,7 +125,7 @@ void Exu::comb_ftq_pc_req() {
       continue;
     }
 
-    const MicroOp &uop = inst_r[p_idx].uop;
+    const ExuInst &uop = inst_r[p_idx].uop;
     if (in.rob_bcast->flush || is_br_killed(uop, in.dec_bcast)) {
       continue;
     }
@@ -240,7 +252,7 @@ void Exu::comb_pipeline() {
       inst_r_1[i] = inst_r[i];
     } else if (in.prf2exe->iss_entry[i].valid) {
       inst_r_1[i].valid = true;
-      inst_r_1[i].uop = in.prf2exe->iss_entry[i].uop.to_micro_op();
+      inst_r_1[i].uop = ExuInst::from_prf_exe_uop(in.prf2exe->iss_entry[i].uop);
     } else {
       inst_r_1[i].valid = false;
     }
@@ -314,12 +326,11 @@ void Exu::comb_exec() {
   int fu_global_idx = 0; // 用于给每个 FU 编号
   // 遍历所有 FU 单元
   for (auto fu : units) {
-    MicroOp *res = fu->get_finished_uop(); // 看看这个 FU 算完没
+    ExuInst *res = fu->get_finished_uop(); // 看看这个 FU 算完没
 
     if (res) {
       // ✅ 无论是否能写回，先广播出去给 Bypass 用！
-      out.exe2prf->bypass[fu_global_idx].uop =
-          ExePrfIO::ExePrfWbUop::from_micro_op(*res);
+      out.exe2prf->bypass[fu_global_idx].uop = res->to_exe_prf_wb_uop();
       out.exe2prf->bypass[fu_global_idx].valid = true;
     }
 
@@ -331,17 +342,17 @@ void Exu::comb_exec() {
   // ==========================================
 
   // 结果收集容器
-  UopEntry int_res[ALU_NUM] = {};
-  UopEntry br_res[BRU_NUM] = {};
+  ExuEntry int_res[ALU_NUM] = {};
+  ExuEntry br_res[BRU_NUM] = {};
 
   // 1. 全局端口扫描与立即分发 (Total Port Scan)
   for (int p_idx = 0; p_idx < ISSUE_WIDTH; p_idx++) {
     AbstractFU *winner_fu = nullptr;
-    MicroOp *u = nullptr;
+    ExuInst *u = nullptr;
 
     // 仲裁：选择该端口的胜出 FU
     for (auto &map_entry : port_mappings[p_idx].entries) {
-      if (MicroOp *res = map_entry.fu->get_finished_uop()) {
+      if (ExuInst *res = map_entry.fu->get_finished_uop()) {
         u = res;
         winner_fu = map_entry.fu;
         break;
@@ -354,7 +365,7 @@ void Exu::comb_exec() {
     // 注意：LOAD/STA 的完成通报由 LSU 回调阶段处理
     if (!flushed && u->op != UOP_LOAD && u->op != UOP_STA) {
       out.exu2rob->entry[p_idx].valid = true;
-      out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(*u);
+      out.exu2rob->entry[p_idx].uop = u->to_exu_rob_uop();
     }
 
     // B. 立即外发 LSU 请求
@@ -362,12 +373,10 @@ void Exu::comb_exec() {
       int lsu_idx = winner_fu->get_lsu_port_id();
       if (u->op == UOP_STA || u->op == UOP_LOAD) {
         out.exe2lsu->agu_req[lsu_idx].valid = true;
-        out.exe2lsu->agu_req[lsu_idx].uop =
-            ExeLsuIO::ExeLsuReqUop::from_micro_op(*u);
+        out.exe2lsu->agu_req[lsu_idx].uop = u->to_exe_lsu_req_uop();
       } else if (u->op == UOP_STD) {
         out.exe2lsu->sdu_req[lsu_idx].valid = true;
-        out.exe2lsu->sdu_req[lsu_idx].uop =
-            ExeLsuIO::ExeLsuReqUop::from_micro_op(*u);
+        out.exe2lsu->sdu_req[lsu_idx].uop = u->to_exe_lsu_req_uop();
       }
     }
 
@@ -397,8 +406,7 @@ void Exu::comb_exec() {
     if (int_res[i].valid) {
       int p_idx = IQ_ALU_PORT_BASE + i;
       out.exe2prf->entry[p_idx].valid = true;
-      out.exe2prf->entry[p_idx].uop =
-          ExePrfIO::ExePrfWbUop::from_micro_op(int_res[i].uop);
+      out.exe2prf->entry[p_idx].uop = int_res[i].uop.to_exe_prf_wb_uop();
     }
   }
 
@@ -438,7 +446,7 @@ void Exu::comb_exec() {
   // 三、分支误预测仲裁 (Early Recovery)
   // ==========================================
   bool mispred = false;
-  MicroOp *mispred_uop = nullptr;
+  ExuInst *mispred_uop = nullptr;
   wire<BR_MASK_WIDTH> clear_mask = 0;
 
   for (int i = 0; i < BRU_NUM; i++) {

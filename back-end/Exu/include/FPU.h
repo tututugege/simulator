@@ -25,7 +25,7 @@ public:
       : FixedLatencyFU(name, port_idx, lat) {}
 
 protected:
-  void impl_compute(MicroOp &inst) override {
+  void impl_compute(ExuInst &inst) override {
     float32_t a,b;
     a.v = inst.src1_rdata;
     b.v = inst.src2_rdata;
@@ -120,7 +120,7 @@ protected:
         return result;
     }
 
-    void impl_compute(MicroOp &inst) override {
+    void impl_compute(ExuInst &inst) override {
         uint32_t a = inst.src1_rdata;
         uint32_t b = inst.src2_rdata;
         uint32_t rm = inst.func3;
@@ -149,4 +149,3 @@ protected:
         }
     }
 };
-

@@ -105,7 +105,7 @@ void record_recent_commit(const SimCpu *cpu, const InstEntry *inst_entry) {
   auto &slot = g_recent_commits[g_recent_commit_next];
   const auto &inst = inst_entry->uop;
   slot.cycle = sim_time;
-  slot.inst_idx = inst.inst_idx;
+  slot.inst_idx = inst.dbg.inst_idx;
   slot.commit_pc = dut_cpu.commit_pc;
   slot.next_pc = dut_cpu.pc;
   slot.inst = dut_cpu.instruction;
@@ -213,7 +213,7 @@ void maybe_trace_page_fault_commit(SimCpu *cpu, const InstEntry *inst_entry) {
       "next_pc=0x%08x inst=0x%08x src1=x%u/0x%08x src2=x%u/0x%08x dest=x%u "
       "imm=0x%08x eff=0x%08x "
       "pf{i=%d l=%d s=%d} satp=0x%08x priv=%u\n",
-      (long long)sim_time, (long long)inst.inst_idx,
+      (long long)sim_time, (long long)inst.dbg.inst_idx,
       static_cast<unsigned>(inst.rob_idx), static_cast<unsigned>(inst.rob_flag),
       (uint32_t)dut_cpu.commit_pc, (uint32_t)dut_cpu.pc, inst_bits,
       static_cast<unsigned>(src1_areg), src1_val,
@@ -289,13 +289,13 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
        i++) {
     cpu.mem_subsystem.mshr_axi_in.resp_data[i] = rport.resp.data[i];
   }
-  if (SIM_LSU_MEM_DEBUG_PRINT_ACTIVE && rport.req.accepted) {
+  if (LSU_MEM_LOG && rport.req.accepted) {
     LSU_MEM_DBG_PRINTF(
         "[AXI->MSHR AR ACCEPT] cyc=%lld slot=%u ready=%d accepted=%d\n",
         (long long)sim_time, static_cast<unsigned>(rport.req.accepted_id),
         static_cast<int>(rport.req.ready), static_cast<int>(rport.req.accepted));
   }
-  if (SIM_LSU_MEM_DEBUG_PRINT_ACTIVE && rport.resp.valid) {
+  if (LSU_MEM_LOG && rport.resp.valid) {
     LSU_MEM_DBG_PRINTF(
         "[AXI->MSHR RESP] cyc=%lld resp_id=%u ready=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
         (long long)sim_time, static_cast<unsigned>(rport.resp.id),
@@ -442,10 +442,15 @@ void SimCpu::commit_sync(InstInfo *inst) {
     }
   }
 
-  // if (is_store(*inst) && !inst->page_fault_store) {
-  //   StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-  //   this->mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
-  // }
+  if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
+    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
+    const bool sc_suppressed =
+        is_amo_sc_inst(*inst) && e.suppress_write &&
+        e.rob_idx == inst->rob_idx && e.rob_flag == inst->rob_flag;
+    if (!sc_suppressed && e.addr_valid && e.data_valid) {
+      mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
+    }
+  }
 }
 
 void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
@@ -515,9 +520,9 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   dut_cpu.page_fault_inst = inst->page_fault_inst;
   dut_cpu.page_fault_load = inst->page_fault_load;
   dut_cpu.page_fault_store = inst->page_fault_store;
-  dut_cpu.inst_idx = inst->inst_idx;
-  dut_cpu.commit_pc = inst->pc;
-  *skip = inst->difftest_skip;
+  dut_cpu.inst_idx = inst->dbg.inst_idx;
+  dut_cpu.commit_pc = inst->dbg.pc;
+  *skip = inst->dbg.difftest_skip;
 }
 
 void SimContext::run_commit_inst(InstEntry *inst_entry) {
@@ -553,7 +558,6 @@ void SimCpu::init() {
   const auto llc_cfg = make_default_llc_config();
 
   // 第一阶段：绑定顶层上下文
-  ctx.special_timer_value = 0;
   ctx.cpu = this;
   g_deadlock_cpu = this;
   deadlock_debug::register_soc_dump_cb(deadlock_dump_soc_cb);
@@ -788,10 +792,10 @@ void SimCpu::front_cycle() {
       back.in.page_fault_inst[j] = front.out.page_fault_inst[j];
       back.in.inst[j] = front.out.instructions[j];
 
-      if (LOG && back.in.valid[j]) {
-        cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-             << front.out.pc[j] << " Inst: " << back.in.inst[j] << endl;
-      }
+      // if (back.in.valid[j]) {
+      //   cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
+      //        << front.out.pc[j] << " Inst: " << back.in.inst[j] << endl;
+      // }
 
       back.in.predict_dir[j] = front.out.predict_dir[j];
       back.in.alt_pred[j] = front.out.alt_pred[j];

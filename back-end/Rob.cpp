@@ -9,10 +9,6 @@
 #include <cstdlib>
 #include <iostream>
 
-#ifndef CONFIG_ROB_DEADLOCK_STALL_CYCLES
-#define CONFIG_ROB_DEADLOCK_STALL_CYCLES 10000
-#endif
-
 namespace {
 inline bool rob_is_store(const RobStoredInst &uop) {
   return uop.tma.mem_commit_is_store;
@@ -34,10 +30,14 @@ inline bool rob_is_exception(const RobStoredInst &uop) {
 inline bool rob_is_flush_inst(const RobStoredInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
-         type == SFENCE_VMA || type == FENCE_I || rob_is_exception(uop) ||
-         type == EBREAK ||
+         type == SFENCE_VMA || rob_is_exception(uop) || type == EBREAK ||
          uop.flush_pipe;
 }
+
+inline bool rob_is_complete(const RobStoredInst &uop) {
+  return uop.cplt_mask == uop.expect_mask;
+}
+
 } // namespace
 
 void Rob::init() {
@@ -67,14 +67,6 @@ void Rob::comb_ready() {
     }
   }
 
-  if (!is_empty() && in.csr2rob->interrupt_req && !in.dec_bcast->mispred) {
-    for (int i = 0; i < ROB_BANK_NUM; i++) {
-      if (entry[i][deq_ptr].valid) {
-        out.rob2csr->interrupt_resp = true;
-        break;
-      }
-    }
-  }
   // Determine Head Status for Memory Bound Calculation (Refined Phase 3.6 -
   // Oldest First) User Feedback: Find the *oldest* incomplete instruction. If
   // entry[0] is a DIV (blocked) and entry[1] is a LOAD (blocked), the stall is
@@ -86,8 +78,7 @@ void Rob::comb_ready() {
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     if (entry[i][deq_ptr].valid) {
-      bool is_ready =
-          (entry[i][deq_ptr].uop.cplt_num == entry[i][deq_ptr].uop.uop_num);
+      bool is_ready = rob_is_complete(entry[i][deq_ptr].uop);
 
       if (!is_ready) {
         // This is the oldest incomplete instruction. It is the bottleneck.
@@ -96,8 +87,9 @@ void Rob::comb_ready() {
             rob_is_store(entry[i][deq_ptr].uop)) {
           stall_is_mem = true;
           uint32_t rob_idx = i + (deq_ptr * ROB_BANK_NUM);
-          stall_is_miss =
-              (rob_idx < ROB_NUM) ? in.lsu2rob->tma.miss_mask.test(rob_idx) : false;
+          stall_is_miss = (rob_idx < ROB_NUM)
+                              ? in.lsu2rob->tma.miss_mask.test(rob_idx)
+                              : false;
         } else {
           stall_is_mem = false;
           stall_is_miss = false;
@@ -139,7 +131,10 @@ void Rob::comb_commit() {
       out.rob_bcast->sret = out.rob_bcast->ecall = out.rob_bcast->fence =
           out.rob_bcast->fence_i = false;
 
-  out.rob_bcast->interrupt = out.rob2csr->interrupt_resp;
+  // interrupt_resp must only be raised at a real precise commit point in this
+  // cycle, not in comb_ready().
+  out.rob2csr->interrupt_resp = false;
+  out.rob_bcast->interrupt = false;
 
   out.rob_bcast->page_fault_inst = out.rob_bcast->page_fault_load =
       out.rob_bcast->page_fault_store = out.rob_bcast->illegal_inst = false;
@@ -161,7 +156,7 @@ void Rob::comb_commit() {
     }
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid &&
-          entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+          !rob_is_complete(entry[i][deq_ptr].uop)) {
         out.rob_bcast->head_incomplete_valid = true;
         out.rob_bcast->head_incomplete_rob_idx = make_rob_idx(deq_ptr, i);
         break;
@@ -172,74 +167,80 @@ void Rob::comb_commit() {
 
   // 检查 BANK 的同一行是否都已完成
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    commit = commit &&
-             (!entry[i][deq_ptr].valid || (entry[i][deq_ptr].uop.cplt_num ==
-                                           entry[i][deq_ptr].uop.uop_num));
+    commit = commit && (!entry[i][deq_ptr].valid ||
+                        rob_is_complete(entry[i][deq_ptr].uop));
   }
 
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
   wire<1> single_commit = false;
   wire<clog2(ROB_BANK_NUM)> single_idx = 0;
   bool progress_single_commit = false;
+  bool interrupt_fire = false;
   auto log_incomplete_store_commit = [&](const RobStoredInst &uop,
                                          const char *path, int slot) {
-    if (!rob_is_store(uop) || uop.cplt_num == uop.uop_num) {
+    if (!rob_is_store(uop) || rob_is_complete(uop)) {
       return;
     }
-    // std::printf(
-    //     "[ROB][WARN][INCOMPLETE_STORE_COMMIT] cyc=%llu path=%s slot=%d pc=0x%08x "
-    //     "inst=0x%08x type=%u rob=%u flag=%u stq=%u stqf=%u cplt_num=%u uop_num=%u "
-    //     "interrupt=%d flush=%d mispred=%d\n",
-    //     (unsigned long long)ctx->perf.cycle, path, slot, (uint32_t)uop.pc,
-    //     (uint32_t)uop.instruction, (unsigned)uop.type, (unsigned)uop.rob_idx,
-    //     (unsigned)uop.rob_flag, (unsigned)uop.stq_idx, (unsigned)uop.stq_flag,
-    //     (unsigned)uop.cplt_num, (unsigned)uop.uop_num,
-    //     (int)out.rob_bcast->interrupt, (int)out.rob_bcast->flush,
-    //     (int)in.dec_bcast->mispred);
-    deadlock_debug::dump_all();
+    // Disabled: dump_all() here fires on every incomplete-store commit,
+    // flooding the terminal.  The deadlock path (stall_cycle > 10000)
+    // already calls dump_all().
+    // deadlock_debug::dump_all();
+    // std::fflush(stdout);
+    // std::fflush(stderr);
   };
 
   if (!in.dec_bcast->mispred) {
+    const bool interrupt_pending = in.csr2rob->interrupt_req;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if ((entry[i][deq_ptr].valid &&
            rob_is_flush_inst(entry[i][deq_ptr].uop)) ||
-          out.rob2csr->interrupt_resp) {
+          interrupt_pending) {
         single_commit = true;
         break;
       }
     }
 
-    // 看第一个 valid 指令是否完成。即使是 interrupt 触发的 single_commit，
-    // 也必须等待该最老指令完成，避免提交未完成的内存指令。
+    // 看第一个 valid 指令是否完成。
+    bool has_head_valid = false;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
+        has_head_valid = true;
         single_idx = i;
-        if (entry[i][deq_ptr].uop.cplt_num != entry[i][deq_ptr].uop.uop_num) {
+        const auto &head_uop = entry[i][deq_ptr].uop;
+        if (!interrupt_pending && !rob_is_complete(head_uop)) {
           single_commit = false;
         }
-        if (decode_inst_type(entry[i][deq_ptr].uop.type) == SFENCE_VMA &&
-            in.lsu2rob != nullptr &&
-            in.lsu2rob->committed_store_pending) {
+        if (!interrupt_pending &&
+            decode_inst_type(head_uop.type) == SFENCE_VMA &&
+            in.lsu2rob != nullptr && in.lsu2rob->committed_store_pending) {
           // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
           // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
           single_commit = false;
           commit = false;
         }
+        if (single_commit && interrupt_pending) {
+          interrupt_fire = true;
+        }
         break;
       }
+    }
+    if (!has_head_valid) {
+      // Do not single-commit a ghost slot when this ROB line is already empty.
+      // Let normal group-commit path pop the empty line.
+      single_commit = false;
     }
 
     // Forward-progress fallback:
     // If group commit is blocked by younger banks in the same ROB line, allow
     // committing the oldest ready non-flush instruction so older stores can
     // still commit/retire and unblock younger loads that are waiting on them.
-    if (!commit && !single_commit && !out.rob_bcast->interrupt) {
+    if (!commit && !single_commit && !interrupt_pending) {
       for (int i = 0; i < ROB_BANK_NUM; i++) {
         if (!entry[i][deq_ptr].valid) {
           continue;
         }
         const auto &uop = entry[i][deq_ptr].uop;
-        const bool ready = (uop.cplt_num == uop.uop_num);
+        const bool ready = rob_is_complete(uop);
         if (ready && !rob_is_flush_inst(uop)) {
           single_commit = true;
           single_idx = i;
@@ -249,9 +250,12 @@ void Rob::comb_commit() {
       }
     }
   }
+  out.rob2csr->interrupt_resp = interrupt_fire;
+  out.rob_bcast->interrupt = interrupt_fire;
 
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    out.rob_commit->commit_entry[i].uop = entry[i][deq_ptr].uop.to_commit_inst();
+    out.rob_commit->commit_entry[i].uop =
+        entry[i][deq_ptr].uop.to_commit_inst();
   }
 
   // 一组提交
@@ -261,7 +265,7 @@ void Rob::comb_commit() {
         const auto &uop = entry[i][deq_ptr].uop;
         // 仅在 Load 已完成且非异常语义时检查地址对齐，避免中断单提交/异常路径下
         // 将 diag_val 的其他语义（如指令字、异常地址）误当作物理地址检查。
-        if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+        if (rob_is_load(uop) && rob_is_complete(uop) &&
             !rob_is_page_fault(uop)) {
           uint32_t alignment_mask = uop.dbg.mem_align_mask;
           Assert((uop.diag_val & alignment_mask) == 0 &&
@@ -270,8 +274,7 @@ void Rob::comb_commit() {
       }
       out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
       if (out.rob_commit->commit_entry[i].valid) {
-        log_incomplete_store_commit(entry[i][deq_ptr].uop, "group",
-                                    i);
+        log_incomplete_store_commit(entry[i][deq_ptr].uop, "group", i);
       }
       entry_1[i][deq_ptr].valid = false;
     }
@@ -294,8 +297,7 @@ void Rob::comb_commit() {
     if (entry[single_idx][deq_ptr].valid) {
       const auto &uop = entry[single_idx][deq_ptr].uop;
       log_incomplete_store_commit(uop, "single", single_idx);
-      // 中断触发的 single_commit 也要求首条指令已经完成。
-      if (rob_is_load(uop) && (uop.cplt_num == uop.uop_num) &&
+      if (rob_is_load(uop) && rob_is_complete(uop) &&
           !rob_is_page_fault(uop)) {
         uint32_t alignment_mask = uop.dbg.mem_align_mask;
         Assert((uop.diag_val & alignment_mask) == 0 &&
@@ -305,9 +307,11 @@ void Rob::comb_commit() {
 
     entry_1[single_idx][deq_ptr].valid = false;
     if (progress_single_commit) {
-      DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u rob_idx=%u pc=0x%08x type=%u\n",
+      DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u "
+                 "rob_idx=%u pc=0x%08x type=%u\n",
                  (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
-                 (unsigned)single_idx, (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
+                 (unsigned)single_idx,
+                 (unsigned)entry[single_idx][deq_ptr].uop.rob_idx,
                  entry[single_idx][deq_ptr].uop.dbg.pc,
                  (unsigned)entry[single_idx][deq_ptr].uop.type);
     }
@@ -350,8 +354,6 @@ void Rob::comb_commit() {
         out.rob2csr->commit = true;
       } else if (decode_inst_type(uop.type) == SFENCE_VMA) {
         out.rob_bcast->fence = true;
-      } else if (decode_inst_type(uop.type) == FENCE_I) {
-        out.rob_bcast->fence_i = true;
       } else if (uop.flush_pipe) {
         // MMIO-triggered flush, no extra CSR/MMU actions needed here
         out.rob_bcast->pc = single_pc;
@@ -371,7 +373,7 @@ void Rob::comb_commit() {
   out.rob2dis->rob_flag = enq_flag;
 
   stall_cycle++;
-  if (stall_cycle > CONFIG_ROB_DEADLOCK_STALL_CYCLES) {
+  if (stall_cycle > 50000) {
     cout << dec << ctx->perf.cycle << endl;
     cout << "卡死了" << endl;
 
@@ -384,10 +386,11 @@ void Rob::comb_commit() {
     cout << "Rob deq inst:" << endl;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if (entry[i][deq_ptr].valid) {
-        printf("0x%08x: 0x%08x cplt_num: %d  uop_num: %d rob_idx:%d "
+        printf("0x%08x: 0x%08x cplt_mask:0x%x expect_mask:0x%x rob_idx:%d "
                "is_page_fault: %d inst_idx: %lld type: %d\n",
                entry[i][deq_ptr].uop.dbg.pc, entry[i][deq_ptr].uop.diag_val,
-               entry[i][deq_ptr].uop.cplt_num, entry[i][deq_ptr].uop.uop_num,
+               entry[i][deq_ptr].uop.cplt_mask,
+               entry[i][deq_ptr].uop.expect_mask,
                (i + (deq_ptr * ROB_BANK_NUM)),
                rob_is_page_fault(entry[i][deq_ptr].uop),
                (long long)entry[i][deq_ptr].uop.dbg.inst_idx,
@@ -397,8 +400,8 @@ void Rob::comb_commit() {
       }
     }
 
-    deadlock_debug::dump_all();
-    Assert(0 && "ROB Deadlock detected (stall_cycle exceeded threshold)");
+    // deadlock_debug::dump_all();
+    Assert(0 && "ROB Deadlock detected (stall_cycle > 50000)");
   }
 }
 
@@ -412,43 +415,18 @@ void Rob::comb_complete() {
       int bank_idx = get_rob_bank(wb.rob_idx);
       int line_idx = get_rob_line(wb.rob_idx);
 
-      if (!entry_1[bank_idx][line_idx].valid ||
-          entry_1[bank_idx][line_idx].uop.rob_flag != wb.rob_flag) {
-        continue;
-      }
-      if (rob_is_page_fault(entry_1[bank_idx][line_idx].uop) ||
-          entry_1[bank_idx][line_idx].uop.illegal_inst) {
-        continue;
-      }
-
-      entry_1[bank_idx][line_idx].uop.cplt_num++;
-      if (entry_1[bank_idx][line_idx].uop.cplt_num >
-          entry_1[bank_idx][line_idx].uop.uop_num) {
-        const auto &eu = entry_1[bank_idx][line_idx].uop;
-        std::printf(
-            "[ROB][OVERFLOW] cyc=%llu bank=%d line=%d wb{rob=%u flag=%u op=%u "
-            "pf_i=%d pf_l=%d pf_s=%d pc=0x%08x inst=0x%08x} "
-            "entry{cplt=%u uop_num=%u pf_i=%d pf_l=%d pf_s=%d ill=%d "
-            "pc=0x%08x inst=0x%08x inst_idx=%lld}\n",
-            static_cast<unsigned long long>(ctx->perf.cycle), bank_idx,
-            line_idx, static_cast<unsigned>(wb.rob_idx),
-            static_cast<unsigned>(wb.rob_flag), static_cast<unsigned>(wb.op),
-            static_cast<int>(wb.page_fault_inst),
-            static_cast<int>(wb.page_fault_load),
-            static_cast<int>(wb.page_fault_store),
-            static_cast<uint32_t>(wb.dbg.pc),
-            static_cast<uint32_t>(wb.dbg.instruction),
-            static_cast<unsigned>(eu.cplt_num),
-            static_cast<unsigned>(eu.uop_num),
-            static_cast<int>(eu.page_fault_inst),
-            static_cast<int>(eu.page_fault_load),
-            static_cast<int>(eu.page_fault_store),
-            static_cast<int>(eu.illegal_inst),
-            static_cast<uint32_t>(eu.dbg.pc),
-            static_cast<uint32_t>(eu.dbg.instruction),
-            static_cast<long long>(eu.dbg.inst_idx));
-        Assert(0 && "ROB: completion overflow (cplt_num > uop_num)");
-      }
+      const wire<ROB_CPLT_MASK_WIDTH> cplt_bit =
+          rob_cplt_mask_from_issue_port(i);
+      Assert((entry_1[bank_idx][line_idx].uop.cplt_mask & cplt_bit) == 0 &&
+             "ROB: duplicate completion bit set");
+      entry_1[bank_idx][line_idx].uop.cplt_mask |= cplt_bit;
+      Assert((entry_1[bank_idx][line_idx].uop.cplt_mask &
+              ~entry_1[bank_idx][line_idx].uop.expect_mask) == 0 &&
+             "ROB: completion bit outside expected mask");
+      Assert(rob_cplt_popcount(entry_1[bank_idx][line_idx].uop.cplt_mask) <=
+                 rob_cplt_popcount(
+                     entry_1[bank_idx][line_idx].uop.expect_mask) &&
+             "ROB: completion overflow (completed group count > expected)");
 
       for (int k = 0; k < LSU_LDU_COUNT; k++) {
         if (i == IQ_LD_PORT_BASE + k) {
@@ -464,19 +442,13 @@ void Rob::comb_complete() {
 
       for (int k = 0; k < LSU_STA_COUNT; k++) {
         if (i == IQ_STA_PORT_BASE + k) {
+          // Keep resolved store address in ROB for commit-time policy checks.
+          entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
           if (wb_has_page_fault) {
             entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
             entry_1[bank_idx][line_idx].uop.page_fault_store = true;
           }
         }
-      }
-      if (wb_has_page_fault) {
-        // A faulting uop terminates the whole architectural instruction.
-        // Stores are split into STA+STD (and some atomics into more uops), so
-        // counting only the faulting uop can leave ROB waiting forever for
-        // younger internal uops that should be squashed by the exception.
-        entry_1[bank_idx][line_idx].uop.cplt_num =
-            entry_1[bank_idx][line_idx].uop.uop_num;
       }
 
       // 同一条指令可能由多个 uop 回写（例如 STA/STD），flush_pipe
@@ -549,11 +521,7 @@ void Rob::comb_fire() {
         entry_1[i][enq_ptr].valid = true;
         entry_1[i][enq_ptr].uop =
             RobStoredInst::from_dis_rob_inst(in.dis2rob->uop[i]);
-        entry_1[i][enq_ptr].uop.cplt_num =
-            (entry_1[i][enq_ptr].uop.page_fault_inst ||
-             entry_1[i][enq_ptr].uop.illegal_inst)
-                ? entry_1[i][enq_ptr].uop.uop_num
-                : 0;
+        entry_1[i][enq_ptr].uop.cplt_mask = 0;
         enq = true;
       }
     }

@@ -35,18 +35,18 @@ public:
       static_cast<size_t>(LDQ_SIZE) + 16;
 
   void init() {
-    cur_ = {};
-    nxt_ = {};
+    reset_state(cur_);
+    reset_state(nxt_);
     cur_.next_ptw_req_id = kFirstDynamicPtwReqId;
     nxt_.next_ptw_req_id = kFirstDynamicPtwReqId;
-    comb_ = {};
+    reset_comb_result(comb_);
   }
 
   void eval_comb(const LsuDcacheIO *lsu_req_io, bool issue_ptw_walk_read,
                  uint32_t ptw_walk_read_addr, bool has_ptw_dtlb,
                  uint32_t ptw_dtlb_addr, bool has_ptw_itlb,
                  uint32_t ptw_itlb_addr) {
-    comb_ = {};
+    reset_comb_result(comb_);
     comb_.dcache_req = {};
     nxt_ = cur_;
 
@@ -126,6 +126,22 @@ private:
   struct State {
     size_t next_ptw_req_id = kFirstDynamicPtwReqId;
   };
+
+  static void reset_state(State &state) {
+    state.next_ptw_req_id = kFirstDynamicPtwReqId;
+  }
+
+  static void reset_comb_result(CombResult &result) {
+    result.dcache_req = LsuDcacheIO{};
+    for (auto &tag : result.issued_tags) {
+      tag = IssuedTag{};
+    }
+    result.preempted_lsu_tag = IssuedTag{};
+    result.granted_owner = Owner::NONE;
+    result.granted = false;
+    result.lsu_port0_preempted = false;
+    result.injected_port = -1;
+  }
 
   static size_t next_ptw_req_id(size_t cur_req_id) {
     const size_t next_req_id = cur_req_id + 1;

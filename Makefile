@@ -36,6 +36,7 @@ endif
 FRONT_DIR := ./front-end
 
 INCLUDES := -I./include/ \
+            -I./libs/include/ \
             -I./back-end/include/ \
             -I./back-end/Exu/include/ \
             -I./back-end/Lsu/include/ \

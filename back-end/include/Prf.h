@@ -31,8 +31,8 @@ public:
   void seq();
 
   reg<32> reg_file[PRF_NUM];
-  UopEntry inst_r[ISSUE_WIDTH];
+  ExePrfIO::ExePrfEntry inst_r[ISSUE_WIDTH];
 
   wire<32> reg_file_1[PRF_NUM];
-  UopEntry inst_r_1[ISSUE_WIDTH];
+  ExePrfIO::ExePrfEntry inst_r_1[ISSUE_WIDTH];
 };

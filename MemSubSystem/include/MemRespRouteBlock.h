@@ -112,15 +112,15 @@ public:
   };
 
   void init() {
-    cur_ = {};
-    nxt_ = {};
-    comb_ = {};
+    reset_state(cur_);
+    reset_state(nxt_);
+    reset_comb_outputs(comb_);
   }
 
   void eval_comb(const DcacheLsuIO *dcache_resp_io,
                  const IssueTag (&issue_tags)[LSU_LDU_COUNT],
                  const replay_resp &replay_bcast) {
-    comb_ = {};
+    reset_comb_outputs(comb_);
     nxt_ = cur_;
     register_ptw_issues(nxt_, issue_tags);
 
@@ -263,6 +263,30 @@ private:
     PtwReqTrack ptw_tracks[kPtwTrackCount] = {};
   };
 
+  static void reset_state(State &state) {
+    for (auto &tag : state.issued_tags) {
+      tag = IssueTag{};
+    }
+    state.dtlb = ReplayTracker{};
+    state.itlb = ReplayTracker{};
+    state.walk = ReplayTracker{};
+    for (auto &track : state.ptw_tracks) {
+      track = PtwReqTrack{};
+    }
+  }
+
+  static void reset_comb_outputs(CombOutputs &outputs) {
+    outputs.lsu_resp = DcacheLsuIO{};
+    outputs.ptw_event = PtwRouteEvent{};
+    for (auto &event : outputs.ptw_events) {
+      event = PtwRouteEvent{};
+    }
+    outputs.ptw_event_count = 0;
+    outputs.wakeup = ReplayWakeup{};
+    outputs.ptw_occupies_port0 = false;
+    outputs.lsu_port0_replayed = false;
+  }
+
   static bool is_ptw_owner(Owner owner) {
     return owner == Owner::PTW_DTLB || owner == Owner::PTW_ITLB ||
            owner == Owner::PTW_WALK;
@@ -385,7 +409,7 @@ private:
           "data=0x%08x uop_pc=0x%08x uop_rob=%u tag_valid=%d tag_owner=%u "
           "tag_req_id=%zu tag_addr=0x%08x\n",
           (long long)sim_time, port, raw.req_id, static_cast<unsigned>(raw.replay),
-          raw.data, raw.uop.pc, static_cast<unsigned>(raw.uop.rob_idx),
+          raw.data, raw.uop.dbg.pc, static_cast<unsigned>(raw.uop.rob_idx),
           static_cast<int>(tag.valid), static_cast<unsigned>(tag.owner),
           tag.req_id, tag.req_addr);
     };
@@ -398,7 +422,7 @@ private:
           "[FOCUS][RESP_ROUTE][OUT] cyc=%lld port=%d owner=%s req_id=%zu "
           "replay=%u data=0x%08x uop_pc=0x%08x uop_rob=%u req_addr=0x%08x\n",
           (long long)sim_time, port, owner, resp.req_id,
-          static_cast<unsigned>(resp.replay), resp.data, resp.uop.pc,
+          static_cast<unsigned>(resp.replay), resp.data, resp.uop.dbg.pc,
           static_cast<unsigned>(resp.uop.rob_idx), resp.req_addr);
     };
 
