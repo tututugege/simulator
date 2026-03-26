@@ -56,6 +56,8 @@ struct UpdateRequest {
   wire1_t reset_we;
   tage_idx_t reset_row_idx;
   wire1_t reset_msb_only;
+  wire1_t use_alt_ctr_we;
+  int8_t use_alt_ctr_wdata;
 };
 
 struct LSFR_Output {
@@ -348,6 +350,7 @@ public:
     wire1_t GHR[GHR_LENGTH];
     wire1_t LSFR[4];
     tage_reset_ctr_t reset_cnt_reg;
+    int8_t use_alt_ctr_reg;
     // input latches
     wire1_t do_pred_latch;
     wire1_t do_upd_latch;
@@ -450,6 +453,8 @@ public:
     UpdateRequest upd_calc_winfo_latch_next;
     wire1_t reset_cnt_reg_we;
     tage_reset_ctr_t reset_cnt_reg_next;
+    wire1_t use_alt_ctr_reg_we;
+    int8_t use_alt_ctr_reg_next;
     wire1_t lsfr_we;
     wire1_t LSFR_next[4];
     wire1_t base_we_commit;
@@ -565,6 +570,7 @@ public:
     TageTableReadData read_data;
     TageIndexTag idx_tag;
     tage_sc_ctr_t sc_ctr;
+    int8_t use_alt_ctr;
   };
 
   struct TagePredSelectCombOut {
@@ -578,6 +584,9 @@ public:
     tage_lsfr_rand_t lsfr_rand;
     tage_sc_ctr_t sc_ctr;
     tage_reset_ctr_t current_reset_cnt;
+    wire1_t sc_used;
+    wire1_t loop_used;
+    int8_t use_alt_ctr;
   };
 
   struct TageUpdateCombOut {
@@ -601,6 +610,7 @@ private:
 
   wire1_t LSFR[4];
   tage_reset_ctr_t reset_cnt_reg;
+  int8_t use_alt_ctr_reg;
 
   // 表项存储 (Memories)
   tage_base_cnt_t base_counter[BASE_ENTRY_NUM];
@@ -682,6 +692,7 @@ public:
     LSFR[2] = 0;
     LSFR[3] = 1;
     reset_cnt_reg = 0;
+    use_alt_ctr_reg = static_cast<int8_t>(TAGE_USE_ALT_CTR_INIT);
 
     memset(base_counter, 0, sizeof(base_counter));
     memset(tag_table, 0, sizeof(tag_table));
@@ -842,6 +853,7 @@ public:
     req.sram_delayed_data_next = rd.sram_delayed_data;
     req.sram_prng_state_next = rd.sram_prng_state;
     req.reset_cnt_reg_next = rd.state_in.reset_cnt_reg;
+    req.use_alt_ctr_reg_next = rd.state_in.use_alt_ctr_reg;
     for (int i = 0; i < 4; ++i) {
       req.LSFR_next[i] = rd.state_in.LSFR[i];
     }
@@ -849,7 +861,8 @@ public:
     if (inp.pred_req && rd.pred_read_valid) {
       TagePredSelectCombOut pred_sel_out{};
       tage_pred_select_comb(
-          TagePredSelectCombIn{rd.pred_read_data, rd.pred_idx_tag, rd.pred_sc_ctr},
+          TagePredSelectCombIn{rd.pred_read_data, rd.pred_idx_tag, rd.pred_sc_ctr,
+                               rd.state_in.use_alt_ctr_reg},
           pred_sel_out);
 
       out.pred_out = pred_sel_out.pred_res.pred;
@@ -974,12 +987,17 @@ public:
       tage_update_comb(
           TageUpdateCombIn{inp.real_dir, last_pred, rd.upd_read_data,
                            lsfr_out.lsfr_out.random_val, rd.upd_sc_ctr,
-                           rd.state_in.reset_cnt_reg},
+                           rd.state_in.reset_cnt_reg, inp.sc_used_in,
+                           inp.loop_used_in, rd.state_in.use_alt_ctr_reg},
           update_out);
       const UpdateRequest &upd_req = update_out.req;
 
       req.reset_cnt_reg_we = true;
       req.reset_cnt_reg_next = rd.state_in.reset_cnt_reg + 1;
+      if (upd_req.use_alt_ctr_we) {
+        req.use_alt_ctr_reg_we = true;
+        req.use_alt_ctr_reg_next = upd_req.use_alt_ctr_wdata;
+      }
 
       if (upd_req.base_we) {
         req.base_we_commit = true;
@@ -1052,6 +1070,7 @@ public:
       rd.state_in.LSFR[i] = LSFR[i];
     }
     rd.state_in.reset_cnt_reg = reset_cnt_reg;
+    rd.state_in.use_alt_ctr_reg = use_alt_ctr_reg;
     rd.state_in.do_pred_latch = do_pred_latch;
     rd.state_in.do_upd_latch = do_upd_latch;
     rd.state_in.upd_real_dir_latch = upd_real_dir_latch;
@@ -1220,6 +1239,9 @@ public:
     if (req.reset_cnt_reg_we) {
       reset_cnt_reg = req.reset_cnt_reg_next;
     }
+    if (req.use_alt_ctr_reg_we) {
+      use_alt_ctr_reg = req.use_alt_ctr_reg_next;
+    }
     if (req.lsfr_we) {
       for (int i = 0; i < 4; ++i) {
         LSFR[i] = req.LSFR_next[i];
@@ -1248,7 +1270,7 @@ public:
     }
 
 #if ENABLE_TAGE_SC_L
-    if (inp.update_en) {
+    if (inp.update_en && inp.sc_used_in) {
       static constexpr uint32_t kSclMask = TAGE_SC_L_ENTRY_NUM - 1;
       static constexpr int8_t kCtrMax = (1 << (TAGE_SC_L_CTR_BITS - 1)) - 1;
       static constexpr int8_t kCtrMin = -(1 << (TAGE_SC_L_CTR_BITS - 1));
@@ -1407,7 +1429,9 @@ private:
       const bool useful_low =
           (read_data.useful[pcpn] <= TAGE_USE_ALT_USEFUL_THRESHOLD);
       if (provider_weak && useful_low) {
-        res.pred = res.alt_pred;
+        const bool prefer_alt =
+            (in.use_alt_ctr <= static_cast<int8_t>(TAGE_USE_ALT_CTR_USE_ALT_THRESHOLD));
+        res.pred = prefer_alt ? res.alt_pred : provider_pred;
       }
 #endif
 #if ENABLE_TAGE_SC_LITE
@@ -1448,10 +1472,15 @@ private:
     // 1. Update Provider / Base
     if (pcpn < TN_MAX) {
       const bool provider_pred_raw = (read_vals.cnt[pcpn] >= 4);
-      const bool alt_used = (pred_dir == pred_res.alt_pred);
+      const bool provider_used = !(in.sc_used || in.loop_used);
+      const bool alt_used = provider_used && (pred_dir == pred_res.alt_pred);
       uint8_t new_u = read_vals.useful[pcpn];
       bool should_write_useful = false;
-      if (!alt_used) {
+      if (!provider_used) {
+        new_u = (provider_pred_raw == real_dir) ? sat_inc_2bit_value(new_u)
+                                                : sat_dec_2bit_value(new_u);
+        should_write_useful = true;
+      } else if (!alt_used) {
         if (pred_dir == real_dir) {
           new_u = sat_inc_2bit_value(new_u);
         } else {
@@ -1474,6 +1503,31 @@ private:
       }
       req.cnt_we[pcpn] = true;
       req.cnt_wdata[pcpn] = new_cnt;
+
+#if ENABLE_TAGE_USE_ALT_ON_NA
+      const bool provider_weak = (read_vals.cnt[pcpn] >= TAGE_PROVIDER_WEAK_LOW) &&
+                                 (read_vals.cnt[pcpn] <= TAGE_PROVIDER_WEAK_HIGH);
+      const bool useful_low =
+          (read_vals.useful[pcpn] <= TAGE_USE_ALT_USEFUL_THRESHOLD);
+      if (provider_weak && useful_low && (provider_pred_raw != pred_res.alt_pred)) {
+        const bool provider_correct = (provider_pred_raw == real_dir);
+        const bool alt_correct = (pred_res.alt_pred == real_dir);
+        if (provider_correct ^ alt_correct) {
+          const int8_t ctr_max =
+              static_cast<int8_t>((1 << (TAGE_USE_ALT_CTR_BITS - 1)) - 1);
+          const int8_t ctr_min =
+              static_cast<int8_t>(-(1 << (TAGE_USE_ALT_CTR_BITS - 1)));
+          int8_t next_ctr = in.use_alt_ctr;
+          if (alt_correct) {
+            next_ctr = scl_sat_dec(next_ctr, ctr_min);
+          } else {
+            next_ctr = scl_sat_inc(next_ctr, ctr_max);
+          }
+          req.use_alt_ctr_we = true;
+          req.use_alt_ctr_wdata = next_ctr;
+        }
+      }
+#endif
     } else {
       int new_base = read_vals.base_cnt;
       if (real_dir == true) {
@@ -1509,7 +1563,7 @@ private:
         }
 
         if (!new_entry_found_j) {
-          for (int i = pcpn + 1; i < TN_MAX; i++) {
+          for (int i = start_search; i < TN_MAX; i++) {
             req.useful_we[i] = true;
             req.useful_wdata[i] = sat_dec_2bit_value(read_vals.useful[i]);
           }
@@ -1536,7 +1590,8 @@ private:
       const uint8_t provider_cnt = read_vals.cnt[pcpn];
       const bool provider_pred_raw = (provider_cnt >= 4);
       const bool alt_pred_raw = pred_res.alt_pred;
-      bool sc_train_en = (provider_pred_raw != alt_pred_raw);
+      const bool provider_used = !(in.sc_used || in.loop_used);
+      bool sc_train_en = provider_used && (provider_pred_raw != alt_pred_raw);
 #if TAGE_SC_USE_WEAK_ONLY
       const bool provider_weak =
           (provider_cnt >= TAGE_SC_PROVIDER_WEAK_LOW) &&
