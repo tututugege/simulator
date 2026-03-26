@@ -108,15 +108,15 @@ public:
   };
 
   void init() {
-    cur_ = {};
-    nxt_ = {};
-    comb_ = {};
+    reset_state(cur_);
+    reset_state(nxt_);
+    reset_comb_outputs(comb_);
   }
 
   void eval_comb(const DcacheLsuIO *dcache_resp_io,
                  const IssueTag (&issue_tags)[LSU_LDU_COUNT],
                  const replay_resp &replay_bcast) {
-    comb_ = {};
+    reset_comb_outputs(comb_);
     nxt_ = cur_;
     register_ptw_issues(nxt_, issue_tags);
 
@@ -258,6 +258,30 @@ private:
     ReplayTracker walk = {};
     PtwReqTrack ptw_tracks[kPtwTrackCount] = {};
   };
+
+  static void reset_state(State &state) {
+    for (auto &tag : state.issued_tags) {
+      tag = IssueTag{};
+    }
+    state.dtlb = ReplayTracker{};
+    state.itlb = ReplayTracker{};
+    state.walk = ReplayTracker{};
+    for (auto &track : state.ptw_tracks) {
+      track = PtwReqTrack{};
+    }
+  }
+
+  static void reset_comb_outputs(CombOutputs &outputs) {
+    outputs.lsu_resp = DcacheLsuIO{};
+    outputs.ptw_event = PtwRouteEvent{};
+    for (auto &event : outputs.ptw_events) {
+      event = PtwRouteEvent{};
+    }
+    outputs.ptw_event_count = 0;
+    outputs.wakeup = ReplayWakeup{};
+    outputs.ptw_occupies_port0 = false;
+    outputs.lsu_port0_replayed = false;
+  }
 
   static bool is_ptw_owner(Owner owner) {
     return owner == Owner::PTW_DTLB || owner == Owner::PTW_ITLB ||
