@@ -1,7 +1,6 @@
-#include "diff.h"
-#include "DeadlockDebug.h"
 #include "SimCpu.h"
 #include "config.h"
+#include "diff.h"
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
@@ -69,20 +68,22 @@ void handle_sigint(int signo) {
   }
 
   if (g_sigint_requested != 0) {
-    const char msg[] =
-        "\n[sim] SIGINT received again, waiting for pending dump to finish...\n";
-    (void)write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    const char msg[] = "\n[sim] SIGINT received again, waiting for pending "
+                       "dump to finish...\n";
+    const ssize_t rc = write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    (void)rc;
     return;
   }
 
   g_sigint_requested = 1;
-  const char msg[] =
-      "\n[sim] SIGINT received, dumping LSU/MemSubsystem state before exit...\n";
-  (void)write(STDERR_FILENO, msg, sizeof(msg) - 1);
+  const char msg[] = "\n[sim] SIGINT received, dumping LSU/MemSubsystem state "
+                     "before exit...\n";
+  const ssize_t rc = write(STDERR_FILENO, msg, sizeof(msg) - 1);
+  (void)rc;
 }
 
 void install_signal_handlers() {
-  struct sigaction sa {};
+  struct sigaction sa{};
   sa.sa_handler = handle_sigint;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = 0;
@@ -346,7 +347,8 @@ int main(int argc, char *argv[]) {
     if (sim_time % 10000000 == 0) {
       cout << dec << sim_time << endl;
     }
-    BE_LOG("************************************************************** cycle: %lld "
+    BE_LOG("************************************************************** "
+           "cycle: %lld "
            "*************************************************************",
            (long long)sim_time);
 

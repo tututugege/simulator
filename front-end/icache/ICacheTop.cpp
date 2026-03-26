@@ -68,9 +68,9 @@ namespace {
 #endif
 
 inline bool icache_focus_vaddr(uint32_t v_addr) {
-  return CONFIG_ICACHE_FOCUS_VADDR_END > CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
-         v_addr >= CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
-         v_addr < CONFIG_ICACHE_FOCUS_VADDR_END;
+  const uint32_t begin = static_cast<uint32_t>(CONFIG_ICACHE_FOCUS_VADDR_BEGIN);
+  const uint32_t end = static_cast<uint32_t>(CONFIG_ICACHE_FOCUS_VADDR_END);
+  return end > begin && (v_addr - begin) < (end - begin);
 }
 
 inline void dump_icache_focus_line(const char *tag, uint32_t fetch_pc,

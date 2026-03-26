@@ -15,8 +15,6 @@ extern "C" {
 extern RefCpu ref_cpu; // Monitor
 
 namespace {
-DifftestPageFaultWarning g_last_pf_warning = {};
-
 struct Sv32WalkDebug {
   bool translation_enabled = false;
   int eff_priv = RISCV_MODE_M;
@@ -134,10 +132,6 @@ void dump_pf_mismatch_debug(uint32_t v_addr, uint32_t type,
 }
 
 } // namespace
-
-DifftestPageFaultWarning difftest_get_last_pf_warning() {
-  return g_last_pf_warning;
-}
 
 // ---------------- 辅助工具 ----------------
 static inline float32_t to_f32(uint32_t v) {
@@ -1826,12 +1820,6 @@ bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   if (dut_fault && !ref_fault) {
-    g_last_pf_warning.valid = true;
-    g_last_pf_warning.cycle = static_cast<uint64_t>(sim_time);
-    g_last_pf_warning.access_type = static_cast<uint8_t>(type);
-    g_last_pf_warning.dut_pc = dut_cpu.pc;
-    g_last_pf_warning.dut_commit_pc = dut_cpu.commit_pc;
-    g_last_pf_warning.dut_inst = dut_cpu.instruction;
     std::cout << "[Difftest Warning] DUT has " << kind
               << " page fault while REF does not at cycle " << std::dec
               << sim_time << ", force REF " << kind << " page fault"

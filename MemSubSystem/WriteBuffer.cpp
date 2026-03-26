@@ -180,14 +180,14 @@ int WriteBuffer::find_wb_entry(uint32_t addr)
 void WriteBuffer::init() {
     std::memset(&cur, 0, sizeof(cur));
     std::memset(&nxt, 0, sizeof(nxt));
-    std::memset(&cur_check, 0, sizeof(cur_check));
-    std::memset(&nxt_check, 0, sizeof(nxt_check));
-    std::memset(&cur_issue, 0, sizeof(cur_issue));
-    std::memset(&nxt_issue, 0, sizeof(nxt_issue));
-    std::memset(&cur_last_issue, 0, sizeof(cur_last_issue));
-    std::memset(&nxt_last_issue, 0, sizeof(nxt_last_issue));
-    std::memset(&cur_last_resp, 0, sizeof(cur_last_resp));
-    std::memset(&nxt_last_resp, 0, sizeof(nxt_last_resp));
+    cur_check = {};
+    nxt_check = {};
+    cur_issue = {};
+    nxt_issue = {};
+    cur_last_issue = {};
+    nxt_last_issue = {};
+    cur_last_resp = {};
+    nxt_last_resp = {};
     std::memset(write_buffer_nxt, 0, sizeof(write_buffer_nxt));
     g_wb_issue_seq = 0;
     g_wb_resp_seq = 0;

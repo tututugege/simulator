@@ -3,7 +3,6 @@
 #include "DcacheConfig.h"
 #include "IO.h"
 #include <cstdint>
-#include <cstring>
 
 class SimContext;
 
@@ -78,7 +77,7 @@ struct WBIn {
     WbAxiIn axi_in;
 
     void clear() {
-        std::memset(this, 0, sizeof(*this));
+        *this = {};
     }
 };
 struct WBOut {
@@ -87,7 +86,7 @@ struct WBOut {
     WbAxiOut axi_out;
 
     void clear() {
-        std::memset(this, 0, sizeof(*this));
+        *this = {};
     }
 };
 // ─────────────────────────────────────────────────────────────────────────────

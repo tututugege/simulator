@@ -18,9 +18,9 @@ inline bool mem_wait_must_drain_on_refetch() {
 #endif
 
 inline bool icache_focus_pc(uint32_t pc) {
-  return CONFIG_ICACHE_FOCUS_VADDR_END > CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
-         pc >= CONFIG_ICACHE_FOCUS_VADDR_BEGIN &&
-         pc < CONFIG_ICACHE_FOCUS_VADDR_END;
+  const uint32_t begin = static_cast<uint32_t>(CONFIG_ICACHE_FOCUS_VADDR_BEGIN);
+  const uint32_t end = static_cast<uint32_t>(CONFIG_ICACHE_FOCUS_VADDR_END);
+  return end > begin && (pc - begin) < (end - begin);
 }
 
 inline bool icache_window_debug_active(long long cycle) {

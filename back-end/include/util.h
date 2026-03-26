@@ -135,6 +135,15 @@ inline bool is_load(InstInfo uop) {
 
 inline bool is_load(MicroOp uop) { return uop.op == UOP_LOAD; }
 
+inline bool is_amo_sc_inst(const InstInfo &inst) {
+  return inst.type == AMO && ((inst.func7 >> 2) == AmoOp::SC);
+}
+
+inline bool is_amo_sc_uop(const MicroOp &uop) {
+  return ((uop.dbg.instruction & 0x7Fu) == 0x2Fu) &&
+         ((uop.func7 >> 2) == AmoOp::SC);
+}
+
 inline bool is_CSR(InstType type) {
   return (type == CSR || type == MRET || type == ECALL || type == EBREAK);
 }

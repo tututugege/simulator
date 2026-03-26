@@ -3,7 +3,6 @@
 #include "DeadlockReplayTrace.h"
 #include "DebugPtwTrace.h"
 #include "config.h"
-#include "diff.h"
 #include "icache/GenericTable.h"
 #include <cinttypes>
 #include <memory>
@@ -319,17 +318,6 @@ struct AxiKitRuntime {};
 namespace {
 MemSubsystem *g_deadlock_mem = nullptr;
 
-const char *ptw_client_name(MemPtwBlock::Client c) {
-  switch (c) {
-  case MemPtwBlock::Client::DTLB:
-    return "DTLB";
-  case MemPtwBlock::Client::ITLB:
-    return "ITLB";
-  default:
-    return "UNK";
-  }
-}
-
 const char *mem_owner_name(uint8_t owner) {
   switch (static_cast<MemReadArbBlock::Owner>(owner)) {
   case MemReadArbBlock::Owner::LSU:
@@ -435,9 +423,6 @@ bool MemSubsystem::ptw_mem_send_read_req(PtwClient client, uint32_t paddr) {
                      static_cast<uint8_t>(MemReadArbBlock::Owner::PTW_DTLB) +
                          static_cast<uint8_t>(ptw_client_idx(client)),
                      paddr, 0, static_cast<uint8_t>(!fire));
-  LSU_MEM_DBG_PRINTF("[MEM][PTW][MEM REQ] cyc=%lld client=%s fire=%d paddr=0x%08x\n",
-             (long long)sim_time, ptw_client_name(block_client),
-             static_cast<int>(fire), paddr);
   refresh_ptw_client_outputs();
   return fire;
 }
@@ -463,10 +448,6 @@ bool MemSubsystem::ptw_walk_send_req(PtwClient client, const PtwWalkReq &req) {
                          static_cast<uint8_t>(ptw_client_idx(client)),
                      req.vaddr, req.satp, static_cast<uint8_t>(!fire),
                      req.access_type);
-  LSU_MEM_DBG_PRINTF(
-      "[MEM][PTW][WALK REQ] cyc=%lld client=%s fire=%d vaddr=0x%08x satp=0x%08x type=%u\n",
-      (long long)sim_time, ptw_client_name(block_client), static_cast<int>(fire),
-      req.vaddr, req.satp, req.access_type);
   refresh_ptw_client_outputs();
   return fire;
 }
@@ -1380,27 +1361,6 @@ void MemSubsystem::dump_recent_debug_events() const {
 void MemSubsystem::dump_failure_analysis() const {
   const auto ptw_dbg = ptw_block.debug_state();
   const auto route_dbg = resp_route_block.debug_state();
-  const auto pf_warn = difftest_get_last_pf_warning();
-
-  if (pf_warn.valid) {
-    const char *kind = "inst";
-    if (pf_warn.access_type == 1) {
-      kind = "load";
-    } else if (pf_warn.access_type == 2) {
-      kind = "store";
-    }
-    std::printf(
-        "[DEADLOCK][MEM][ANALYSIS] last_difftest_pf_mismatch cycle=%" PRIu64
-        " kind=%s dut_pc=0x%08x commit_pc=0x%08x inst=0x%08x\n",
-        pf_warn.cycle, kind, pf_warn.dut_pc, pf_warn.dut_commit_pc,
-        pf_warn.dut_inst);
-    std::printf(
-        "[DEADLOCK][MEM][ANALYSIS] likely_root_cause=The DUT raised a %s page fault that REF did not see. For Linux bring-up this usually means PTW walk data, DCache fill data, or PTW response routing/replay corrupted a kernel pointer before the later panic became visible.\n",
-        kind);
-  } else {
-    std::printf(
-        "[DEADLOCK][MEM][ANALYSIS] no difftest-only page-fault mismatch has been recorded yet.\n");
-  }
 
   if (route_dbg.dtlb.blocked || route_dbg.itlb.blocked || route_dbg.walk.blocked) {
     std::printf(

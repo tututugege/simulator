@@ -4,238 +4,17 @@
 #include "SimCpu.h"
 #include "config.h"
 #include "diff.h"
-#include "front_IO.h"
 #include "front-end/host_profile.h"
+#include "front_IO.h"
 #include "front_module.h"
-#include "oracle.h"
 #include "util.h"
-#include "DebugPtwTrace.h"
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cstdio>
-#include "DeadlockDebug.h"
-#include <iostream>
 
 uint32_t *p_memory;
 namespace {
-SimCpu *g_deadlock_cpu = nullptr;
-
-#ifndef CONFIG_DEBUG_PAGEFAULT_TRACE_MAX
-#define CONFIG_DEBUG_PAGEFAULT_TRACE_MAX 0
-#endif
-
-#ifndef CONFIG_RECENT_COMMIT_TRACE_SIZE
-#define CONFIG_RECENT_COMMIT_TRACE_SIZE 64
-#endif
-
-struct RecentCommitTraceEntry {
-  long long cycle = -1;
-  int64_t inst_idx = -1;
-  uint32_t commit_pc = 0;
-  uint32_t next_pc = 0;
-  uint32_t inst = 0;
-  uint32_t diag_val = 0;
-  uint8_t type = 0;
-  uint32_t rob_idx = 0;
-  uint32_t rob_flag = 0;
-  uint8_t src1_areg = 0;
-  uint8_t src2_areg = 0;
-  uint8_t dest_areg = 0;
-  uint32_t src1_val = 0;
-  uint32_t src2_val = 0;
-  uint32_t dest_val = 0;
-  uint32_t imm = 0;
-  uint32_t eff_addr = 0;
-  bool mispred = false;
-  bool flush = false;
-  bool pf_inst = false;
-  bool pf_load = false;
-  bool pf_store = false;
-};
-
-constexpr size_t kRecentCommitTraceSize =
-    static_cast<size_t>(CONFIG_RECENT_COMMIT_TRACE_SIZE);
-std::array<RecentCommitTraceEntry, kRecentCommitTraceSize> g_recent_commits{};
-size_t g_recent_commit_next = 0;
-bool g_recent_commit_wrapped = false;
-
-inline uint32_t sign_extend_imm12(uint32_t inst) {
-  return static_cast<uint32_t>(static_cast<int32_t>(inst) >> 20);
-}
-
-inline uint32_t sign_extend_store_imm12(uint32_t inst) {
-  const uint32_t imm12 =
-      (((inst >> 25) & 0x7fu) << 5) | ((inst >> 7) & 0x1fu);
-  return static_cast<uint32_t>(static_cast<int32_t>(imm12 << 20) >> 20);
-}
-
-inline uint32_t decode_debug_imm(uint32_t inst) {
-  const uint32_t opcode = inst & 0x7fu;
-  if (opcode == 0x23u) {
-    return sign_extend_store_imm12(inst);
-  }
-  return sign_extend_imm12(inst);
-}
-
-inline uint32_t decode_debug_eff_addr(uint32_t inst, uint32_t src1_val) {
-  const uint32_t opcode = inst & 0x7fu;
-  if (opcode == 0x03u || opcode == 0x23u) {
-    return src1_val + decode_debug_imm(inst);
-  }
-  return src1_val + sign_extend_imm12(inst);
-}
-
-inline bool is_amo_sc_inst(const InstInfo &inst) {
-  return inst.type == AMO && ((inst.func7 >> 2) == AmoOp::SC);
-}
-
-void deadlock_dump_soc_cb() {
-  if (g_deadlock_cpu == nullptr) {
-    return;
-  }
-  g_deadlock_cpu->axi_interconnect.debug_print();
-  g_deadlock_cpu->axi_ddr.print_state();
-}
-
-void record_recent_commit(const SimCpu *cpu, const InstEntry *inst_entry) {
-  if (inst_entry == nullptr) {
-    return;
-  }
-  auto &slot = g_recent_commits[g_recent_commit_next];
-  const auto &inst = inst_entry->uop;
-  slot.cycle = sim_time;
-  slot.inst_idx = inst.dbg.inst_idx;
-  slot.commit_pc = dut_cpu.commit_pc;
-  slot.next_pc = dut_cpu.pc;
-  slot.inst = dut_cpu.instruction;
-  slot.diag_val = inst.diag_val;
-  slot.type = static_cast<uint8_t>(inst.type);
-  slot.rob_idx = inst.rob_idx;
-  slot.rob_flag = inst.rob_flag;
-  slot.src1_areg = static_cast<uint8_t>((slot.inst >> 15) & 0x1f);
-  slot.src2_areg = static_cast<uint8_t>((slot.inst >> 20) & 0x1f);
-  slot.dest_areg = static_cast<uint8_t>((slot.inst >> 7) & 0x1f);
-  slot.src1_val = 0;
-  slot.src2_val = 0;
-  if (cpu != nullptr && cpu->back.prf != nullptr) {
-    if (inst.src1_en) {
-      slot.src1_val = cpu->back.prf->reg_file_1[inst.src1_preg];
-    }
-    if (inst.src2_en) {
-      slot.src2_val = cpu->back.prf->reg_file_1[inst.src2_preg];
-    }
-  } else {
-    slot.src1_val = dut_cpu.gpr[slot.src1_areg];
-    slot.src2_val = dut_cpu.gpr[slot.src2_areg];
-  }
-  if (inst.src1_is_pc) {
-    slot.src1_val = inst.dbg.pc;
-  }
-  slot.dest_val = dut_cpu.gpr[slot.dest_areg];
-  slot.imm = decode_debug_imm(slot.inst);
-  slot.eff_addr = decode_debug_eff_addr(slot.inst, slot.src1_val);
-  slot.mispred = static_cast<bool>(inst.mispred);
-  slot.flush = static_cast<bool>(inst.page_fault_inst || inst.page_fault_load ||
-                                 inst.page_fault_store);
-  slot.pf_inst = static_cast<bool>(inst.page_fault_inst);
-  slot.pf_load = static_cast<bool>(inst.page_fault_load);
-  slot.pf_store = static_cast<bool>(inst.page_fault_store);
-  g_recent_commit_next = (g_recent_commit_next + 1) % g_recent_commits.size();
-  if (g_recent_commit_next == 0) {
-    g_recent_commit_wrapped = true;
-  }
-}
-
-void dump_recent_commits() {
-  const size_t count =
-      g_recent_commit_wrapped ? g_recent_commits.size() : g_recent_commit_next;
-  if (count == 0) {
-    std::printf("[RECENT-COMMIT] no committed instructions recorded\n");
-    return;
-  }
-  const size_t start = g_recent_commit_wrapped ? g_recent_commit_next : 0;
-  std::printf("[RECENT-COMMIT] dumping latest %zu committed instructions\n",
-              count);
-  for (size_t i = 0; i < count; ++i) {
-    const auto &e = g_recent_commits[(start + i) % g_recent_commits.size()];
-    std::printf(
-        "[RECENT-COMMIT] cyc=%lld inst_idx=%lld rob=%u/%u pc=0x%08x next=0x%08x "
-        "inst=0x%08x type=%u src1=x%u/0x%08x src2=x%u/0x%08x dest=x%u/0x%08x "
-        "imm=0x%08x eff=0x%08x diag=0x%08x "
-        "mispred=%d pf{i=%d l=%d s=%d}\n",
-        e.cycle, (long long)e.inst_idx, e.rob_idx, e.rob_flag, e.commit_pc,
-        e.next_pc, e.inst,
-        static_cast<unsigned>(e.type), static_cast<unsigned>(e.src1_areg),
-        e.src1_val, static_cast<unsigned>(e.src2_areg), e.src2_val,
-        static_cast<unsigned>(e.dest_areg), e.dest_val, e.imm, e.eff_addr,
-        e.diag_val,
-        static_cast<int>(e.mispred),
-        static_cast<int>(e.pf_inst), static_cast<int>(e.pf_load),
-        static_cast<int>(e.pf_store));
-  }
-}
-
-void dump_soc_debug_state_impl() {
-  if (g_deadlock_cpu == nullptr) {
-    std::printf("[DIFF][SOC] no active cpu is registered for debug dump\n");
-    return;
-  }
-  std::printf("[DIFF][SOC] dumping LSU/MemSubsystem/AXI state at cycle %lld\n",
-              (long long)sim_time);
-  g_deadlock_cpu->back.lsu->dump_debug_state();
-  g_deadlock_cpu->mem_subsystem.dump_debug_state();
-  g_deadlock_cpu->axi_interconnect.debug_print();
-  g_deadlock_cpu->axi_ddr.print_state();
-}
-
-void maybe_trace_page_fault_commit(SimCpu *cpu, const InstEntry *inst_entry) {
-#if CONFIG_DEBUG_PAGEFAULT_TRACE_MAX > 0
-  static int remaining = CONFIG_DEBUG_PAGEFAULT_TRACE_MAX;
-  if (cpu == nullptr || inst_entry == nullptr || remaining <= 0) {
-    return;
-  }
-  const auto &inst = inst_entry->uop;
-  if (!inst.page_fault_inst && !inst.page_fault_load && !inst.page_fault_store) {
-    return;
-  }
-  --remaining;
-  const uint32_t inst_bits = static_cast<uint32_t>(dut_cpu.instruction);
-  const uint8_t src1_areg = static_cast<uint8_t>((inst_bits >> 15) & 0x1f);
-  const uint8_t src2_areg = static_cast<uint8_t>((inst_bits >> 20) & 0x1f);
-  const uint8_t dest_areg = static_cast<uint8_t>((inst_bits >> 7) & 0x1f);
-  const uint32_t src1_val = dut_cpu.gpr[src1_areg];
-  const uint32_t src2_val = dut_cpu.gpr[src2_areg];
-  const uint32_t imm = decode_debug_imm(inst_bits);
-  const uint32_t eff_addr = decode_debug_eff_addr(inst_bits, src1_val);
-  std::printf(
-      "[PF-TRACE][COMMIT] cyc=%lld inst_idx=%lld rob=%u/%u commit_pc=0x%08x "
-      "next_pc=0x%08x inst=0x%08x src1=x%u/0x%08x src2=x%u/0x%08x dest=x%u "
-      "imm=0x%08x eff=0x%08x "
-      "pf{i=%d l=%d s=%d} satp=0x%08x priv=%u\n",
-      (long long)sim_time, (long long)inst.dbg.inst_idx,
-      static_cast<unsigned>(inst.rob_idx), static_cast<unsigned>(inst.rob_flag),
-      (uint32_t)dut_cpu.commit_pc, (uint32_t)dut_cpu.pc, inst_bits,
-      static_cast<unsigned>(src1_areg), src1_val,
-      static_cast<unsigned>(src2_areg), src2_val,
-      static_cast<unsigned>(dest_areg), imm, eff_addr,
-      static_cast<int>(inst.page_fault_inst),
-      static_cast<int>(inst.page_fault_load),
-      static_cast<int>(inst.page_fault_store),
-      static_cast<uint32_t>(dut_cpu.csr[csr_satp]),
-      static_cast<unsigned>(cpu->back.csr->privilege_1));
-  dump_recent_commits();
-  debug_ptw_trace::dump_recent_satp_writes();
-  debug_ptw_trace::dump_recent_ptw_walk_resps();
-  cpu->axi_interconnect.debug_print();
-  cpu->axi_ddr.print_state();
-  std::fflush(stdout);
-#else
-  (void)cpu;
-  (void)inst_entry;
-#endif
-}
-
 template <typename InterconnectT>
 void clear_axi_master_inputs(InterconnectT &interconnect) {
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
@@ -289,21 +68,6 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
        i++) {
     cpu.mem_subsystem.mshr_axi_in.resp_data[i] = rport.resp.data[i];
   }
-  if (LSU_MEM_LOG && rport.req.accepted) {
-    LSU_MEM_DBG_PRINTF(
-        "[AXI->MSHR AR ACCEPT] cyc=%lld slot=%u ready=%d accepted=%d\n",
-        (long long)sim_time, static_cast<unsigned>(rport.req.accepted_id),
-        static_cast<int>(rport.req.ready), static_cast<int>(rport.req.accepted));
-  }
-  if (LSU_MEM_LOG && rport.resp.valid) {
-    LSU_MEM_DBG_PRINTF(
-        "[AXI->MSHR RESP] cyc=%lld resp_id=%u ready=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-        (long long)sim_time, static_cast<unsigned>(rport.resp.id),
-        static_cast<int>(rport.resp.ready), rport.resp.data[0], rport.resp.data[1],
-        rport.resp.data[2], rport.resp.data[3], rport.resp.data[4],
-        rport.resp.data[5], rport.resp.data[6], rport.resp.data[7]);
-  }
-
   const auto &wport =
       cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_DCACHE_W];
   cpu.mem_subsystem.wb_axi_in.req_ready = wport.req.ready;
@@ -313,19 +77,22 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   const auto &peri_rport =
       cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_EXTRA_R];
   cpu.mem_subsystem.peripheral_axi_read_in.req_ready = peri_rport.req.ready;
-  cpu.mem_subsystem.peripheral_axi_read_in.req_accepted = peri_rport.req.accepted;
+  cpu.mem_subsystem.peripheral_axi_read_in.req_accepted =
+      peri_rport.req.accepted;
   cpu.mem_subsystem.peripheral_axi_read_in.resp_valid = peri_rport.resp.valid;
   cpu.mem_subsystem.peripheral_axi_read_in.resp_id = peri_rport.resp.id;
   for (int i = 0; i < DCACHE_LINE_WORDS &&
                   i < axi_interconnect::MAX_READ_TRANSACTION_WORDS;
        i++) {
-    cpu.mem_subsystem.peripheral_axi_read_in.resp_data[i] = peri_rport.resp.data[i];
+    cpu.mem_subsystem.peripheral_axi_read_in.resp_data[i] =
+        peri_rport.resp.data[i];
   }
 
   const auto &peri_wport =
       cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_EXTRA_W];
   cpu.mem_subsystem.peripheral_axi_write_in.req_ready = peri_wport.req.ready;
-  cpu.mem_subsystem.peripheral_axi_write_in.req_accepted = peri_wport.req.accepted;
+  cpu.mem_subsystem.peripheral_axi_write_in.req_accepted =
+      peri_wport.req.accepted;
   cpu.mem_subsystem.peripheral_axi_write_in.resp_valid = peri_wport.resp.valid;
   cpu.mem_subsystem.peripheral_axi_write_in.resp_id = peri_wport.resp.id;
 }
@@ -351,8 +118,8 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
   for (int i = 0; i < axi_interconnect::CACHELINE_WORDS; i++) {
     wport.req.wdata[i] = 0;
   }
-  for (int i = 0; i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS;
-       i++) {
+  for (int i = 0;
+       i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS; i++) {
     wport.req.wdata[i] = cpu.mem_subsystem.wb_axi_out.req_wdata[i];
   }
   wport.resp.ready = cpu.mem_subsystem.wb_axi_out.resp_ready;
@@ -361,7 +128,8 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
       cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_EXTRA_R];
   peri_rport.req.valid = cpu.mem_subsystem.peripheral_axi_read_out.req_valid;
   peri_rport.req.addr = cpu.mem_subsystem.peripheral_axi_read_out.req_addr;
-  peri_rport.req.total_size = cpu.mem_subsystem.peripheral_axi_read_out.req_total_size;
+  peri_rport.req.total_size =
+      cpu.mem_subsystem.peripheral_axi_read_out.req_total_size;
   peri_rport.req.id = cpu.mem_subsystem.peripheral_axi_read_out.req_id;
   peri_rport.req.bypass = true;
   peri_rport.resp.ready = cpu.mem_subsystem.peripheral_axi_read_out.resp_ready;
@@ -370,23 +138,22 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
       cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_EXTRA_W];
   peri_wport.req.valid = cpu.mem_subsystem.peripheral_axi_write_out.req_valid;
   peri_wport.req.addr = cpu.mem_subsystem.peripheral_axi_write_out.req_addr;
-  peri_wport.req.total_size = cpu.mem_subsystem.peripheral_axi_write_out.req_total_size;
+  peri_wport.req.total_size =
+      cpu.mem_subsystem.peripheral_axi_write_out.req_total_size;
   peri_wport.req.id = cpu.mem_subsystem.peripheral_axi_write_out.req_id;
   peri_wport.req.wstrb = cpu.mem_subsystem.peripheral_axi_write_out.req_wstrb;
   peri_wport.req.bypass = true;
   for (int i = 0; i < axi_interconnect::CACHELINE_WORDS; i++) {
     peri_wport.req.wdata[i] = 0;
   }
-  for (int i = 0; i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS;
-       i++) {
-    peri_wport.req.wdata[i] = cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
+  for (int i = 0;
+       i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS; i++) {
+    peri_wport.req.wdata[i] =
+        cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
   }
   peri_wport.resp.ready = cpu.mem_subsystem.peripheral_axi_write_out.resp_ready;
 }
 } // namespace
-
-void difftest_dump_recent_commits() { dump_recent_commits(); }
-void difftest_dump_soc_debug_state() { dump_soc_debug_state_impl(); }
 
 void SimCpu::commit_sync(InstInfo *inst) {
   BackTop *back = &this->back;
@@ -405,7 +172,8 @@ void SimCpu::commit_sync(InstInfo *inst) {
       if (inst->tma.is_ret) {
         this->ctx.perf.ret_mispred_num++;
         bool pred_taken = false;
-        const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+        const FTQEntry *entry =
+            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -417,7 +185,8 @@ void SimCpu::commit_sync(InstInfo *inst) {
       } else {
         this->ctx.perf.jalr_mispred_num++;
         bool pred_taken = false;
-        const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+        const FTQEntry *entry =
+            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -429,7 +198,8 @@ void SimCpu::commit_sync(InstInfo *inst) {
       }
     } else if (inst->type == BR) {
       bool pred_taken = false;
-      const FTQEntry *entry = back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+      const FTQEntry *entry =
+          back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
       }
@@ -444,9 +214,9 @@ void SimCpu::commit_sync(InstInfo *inst) {
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-    const bool sc_suppressed =
-        is_amo_sc_inst(*inst) && e.suppress_write &&
-        e.rob_idx == inst->rob_idx && e.rob_flag == inst->rob_flag;
+    const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
+                               e.rob_idx == inst->rob_idx &&
+                               e.rob_flag == inst->rob_flag;
     if (!sc_suppressed && e.addr_valid && e.data_valid) {
       mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
     }
@@ -454,7 +224,8 @@ void SimCpu::commit_sync(InstInfo *inst) {
 }
 
 void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
-  Assert(inst_entry != nullptr && "SimCpu::difftest_prepare: inst_entry is null");
+  Assert(inst_entry != nullptr &&
+         "SimCpu::difftest_prepare: inst_entry is null");
   Assert(skip != nullptr && "SimCpu::difftest_prepare: skip is null");
   BackTop *back = &this->back;
   InstInfo *inst = &inst_entry->uop;
@@ -468,21 +239,10 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
-    const bool sc_suppressed =
-        is_amo_sc_inst(*inst) && e.suppress_write &&
-        e.rob_idx == inst->rob_idx && e.rob_flag == inst->rob_flag;
+    const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
+                               e.rob_idx == inst->rob_idx &&
+                               e.rob_flag == inst->rob_flag;
     if (sc_suppressed) {
-      // if (!(e.addr_valid && e.data_valid)) {
-      //   std::fprintf(
-      //       stderr,
-      //       "[DIFFTEST][SC_SUPPRESSED] cyc=%lld inst_idx=%lld pc=0x%08x "
-      //       "inst=0x%08x rob=%u flag=%u stq_idx=%u stq_flag=%u stq_valid=%d\n",
-      //       (long long)sim_time, (long long)inst->inst_idx, (uint32_t)inst->pc,
-      //       (uint32_t)inst->instruction, (unsigned)inst->rob_idx,
-      //       (unsigned)inst->rob_flag, (unsigned)inst->stq_idx,
-      //       (unsigned)inst->stq_flag, (int)e.valid);
-      //   std::fflush(stderr);
-      // }
       dut_cpu.store = false;
     } else {
       if (!(e.addr_valid && e.data_valid)) {
@@ -501,8 +261,8 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
         else
           dut_cpu.store_data = e.data;
 
-        dut_cpu.store_data =
-            dut_cpu.store_data << (dut_cpu.store_addr & 0b11) * 8;
+        dut_cpu.store_data = dut_cpu.store_data
+                             << (dut_cpu.store_addr & 0b11) * 8;
       }
     }
   } else {
@@ -542,8 +302,6 @@ void SimContext::run_difftest_inst(InstEntry *inst_entry) {
          "SimContext::run_difftest_inst: inst_entry is not valid");
   bool skip = false;
   cpu->difftest_prepare(inst_entry, &skip);
-  record_recent_commit(cpu, inst_entry);
-  maybe_trace_page_fault_commit(cpu, inst_entry);
   if (skip) {
     difftest_skip();
   } else {
@@ -559,8 +317,6 @@ void SimCpu::init() {
 
   // 第一阶段：绑定顶层上下文
   ctx.cpu = this;
-  g_deadlock_cpu = this;
-  deadlock_debug::register_soc_dump_cb(deadlock_dump_soc_cb);
 
   // 第二阶段：构建模块对象（生成内部子模块实例）
   back.init();
@@ -577,7 +333,7 @@ void SimCpu::init() {
   back.lsu->ptw_mem_port = mem_subsystem.dtlb_ptw_port;
 
   mem_subsystem.lsu2dcache = back.lsu_dcache_req_io;
-  mem_subsystem.dcache2lsu  = back.lsu_dcache_resp_io;
+  mem_subsystem.dcache2lsu = back.lsu_dcache_resp_io;
 
   front.icache_ptw_walk_port = mem_subsystem.itlb_walk_port;
   front.icache_ptw_mem_port = mem_subsystem.itlb_ptw_port;
@@ -685,7 +441,6 @@ void SimCpu::cycle() {
     FRONTEND_HOST_PROFILE_SCOPE(SimBridgeAxiToMem);
     bridge_axi_to_mem_subsystem(*this);
   }
-
 
   {
     FRONTEND_HOST_PROFILE_SCOPE(SimMemComb);
@@ -821,7 +576,8 @@ void SimCpu::front_cycle() {
 #endif
   }
 #else
-  // Oracle 模式：每拍都执行握手，利用 1-entry pending 防止“当拍后端阻塞”丢指令。
+  // Oracle 模式：每拍都执行握手，利用 1-entry pending
+  // 防止“当拍后端阻塞”丢指令。
   front.in.FIFO_read_enable = true;
   front.in.refetch = (back.out.mispred || back.out.flush);
   front.in.itlb_flush = back.out.itlb_flush;
@@ -849,9 +605,11 @@ void SimCpu::front_cycle() {
 
   bool no_taken = true;
   for (int j = 0; j < FETCH_WIDTH; j++) {
-    back.in.valid[j] = no_taken && front.out.FIFO_valid && front.out.inst_valid[j];
+    back.in.valid[j] =
+        no_taken && front.out.FIFO_valid && front.out.inst_valid[j];
     back.in.pc[j] = front.out.pc[j];
-    back.in.predict_next_fetch_address[j] = front.out.predict_next_fetch_address;
+    back.in.predict_next_fetch_address[j] =
+        front.out.predict_next_fetch_address;
     back.in.page_fault_inst[j] = front.out.page_fault_inst[j];
     back.in.inst[j] = front.out.instructions[j];
     back.in.predict_dir[j] = front.out.predict_dir[j];
@@ -934,7 +692,8 @@ void SimCpu::back2front_comb() {
       uint16_t loop_idx = 0;
       uint16_t loop_tag = 0;
 
-      const FTQEntry *entry = back.pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+      const FTQEntry *entry =
+          back.pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         alt_pred = entry->alt_pred[inst->ftq_offset];

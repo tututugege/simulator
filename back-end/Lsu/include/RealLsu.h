@@ -73,7 +73,7 @@ private:
   int ldq_alloc_tail;
   
   bool reserve_valid;
-  int reserve_addr;
+  uint32_t reserve_addr;
 
   int replay_count_ldq; // 统计重试次数
   int replay_count_stq; // 统计重试次数

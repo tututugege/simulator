@@ -21,11 +21,6 @@ static inline bool is_amo_lr_uop(const MicroOp &uop) {
   return ((uop.dbg.instruction & 0x7Fu) == 0x2Fu) &&
          ((uop.func7 >> 2) == AmoOp::LR);
 }
-
-static inline bool is_amo_sc_uop(const MicroOp &uop) {
-  return ((uop.dbg.instruction & 0x7Fu) == 0x2Fu) &&
-         ((uop.func7 >> 2) == AmoOp::SC);
-}
 namespace {
 RealLsu *g_deadlock_lsu = nullptr;
 

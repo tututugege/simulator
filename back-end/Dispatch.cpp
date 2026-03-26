@@ -255,23 +255,8 @@ void Dispatch::comb_fire() {
   bool pre_fire = false;
   bool serializing_barrier = false;
   int dis2ren_block_reason = DIS2REN_BLOCK_NONE;
+#ifdef CONFIG_PERF_COUNTER
   int dis2ren_dispatch_detail = DIS2REN_DISPATCH_DETAIL_NONE;
-  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
-  bool global_flush =
-      in.rob_bcast->flush || in.dec_bcast->mispred || in.rob2dis->stall;
-
-  std::memcpy(busy_table_1, busy_table, sizeof(busy_table_1));
-  for (int w = 0; w < LSU_LOAD_WB_WIDTH; w++) {
-    if (in.prf_awake->wake[w].valid) {
-      busy_table_1[in.prf_awake->wake[w].preg] = false;
-    }
-  }
-  for (int w = 0; w < MAX_WAKEUP_PORTS; w++) {
-    if (in.iss_awake->wake[w].valid) {
-      busy_table_1[in.iss_awake->wake[w].preg] = false;
-    }
-  }
-
   auto classify_dispatch_block = [&](int slot_idx) -> int {
     if (slot_idx < 0 || slot_idx >= DECODE_WIDTH) {
       return DIS2REN_DISPATCH_DETAIL_OTHER;
@@ -336,6 +321,22 @@ void Dispatch::comb_fire() {
 
     return DIS2REN_DISPATCH_DETAIL_OTHER;
   };
+#endif
+  wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
+  bool global_flush =
+      in.rob_bcast->flush || in.dec_bcast->mispred || in.rob2dis->stall;
+
+  std::memcpy(busy_table_1, busy_table, sizeof(busy_table_1));
+  for (int w = 0; w < LSU_LOAD_WB_WIDTH; w++) {
+    if (in.prf_awake->wake[w].valid) {
+      busy_table_1[in.prf_awake->wake[w].preg] = false;
+    }
+  }
+  for (int w = 0; w < MAX_WAKEUP_PORTS; w++) {
+    if (in.iss_awake->wake[w].valid) {
+      busy_table_1[in.iss_awake->wake[w].preg] = false;
+    }
+  }
 
   // === 步骤 1: 计算 Fire 信号 (确认分派) ===
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -378,7 +379,9 @@ void Dispatch::comb_fire() {
           dis2ren_block_reason = DIS2REN_BLOCK_OLDER;
         } else {
           dis2ren_block_reason = DIS2REN_BLOCK_DISPATCH;
+#ifdef CONFIG_PERF_COUNTER
           dis2ren_dispatch_detail = classify_dispatch_block(i);
+#endif
         }
       }
       pre_stall = true;

@@ -123,7 +123,7 @@ void MSHR::init()
     std::memset(axi_issue_cycle, 0, sizeof(axi_issue_cycle));
     std::memset(axi_issue_cycle_valid, 0, sizeof(axi_issue_cycle_valid));
 
-    std::memset(&out, 0, sizeof(out));
+    out = {};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -246,9 +246,6 @@ int MSHR::entries_add(int set_idx, int tag)
                     (long long)sim_time, alloc_idx, get_addr(set_idx, tag, 0),
                     nxt.mshr_count);
     }
-    LSU_MEM_DBG_PRINTF("[MSHR ALLOC] cyc=%lld idx=%d line=0x%08x count=%u\n",
-               (long long)sim_time, alloc_idx,
-               get_addr(set_idx, tag, 0), nxt.mshr_count);
     return alloc_idx;
 }
 
@@ -313,10 +310,6 @@ void MSHR::comb_inputs()
             dump_mshr_strb_stdout("[MSHR STORE MERGE][STRB] ",
                                   me.merged_store_strb);
         }
-        LSU_MEM_DBG_PRINTF("[MSHR STORE MERGE] cyc=%lld idx=%d line=0x%08x word=%u strb=0x%x data=0x%08x dirty=%d\n",
-                   (long long)sim_time, entry_idx, get_addr(f.set_idx, f.tag, 0),
-                   f.word_off, static_cast<unsigned>(req.strb), req.data,
-                   static_cast<int>(mshr_entries_nxt[entry_idx].merged_store_dirty));
     }
 
     // ── Accept R channel response ─────────────────────────────────────────────
@@ -343,10 +336,6 @@ void MSHR::comb_inputs()
                 bool can_consume_resp = (!need_wb_evict) || in.wbmshr.ready;
                 if (!can_consume_resp)
                 {
-                    LSU_MEM_DBG_PRINTF("[MSHR RESP HOLD] cyc=%lld resp_id=%u line=0x%08x need_wb=%d wb_ready=%d mshr_count=%u\n",
-                               (long long)sim_time, (unsigned)resp_id,
-                               get_addr(mshr_entries[resp_id].index, mshr_entries[resp_id].tag, 0),
-                               (int)need_wb_evict, (int)in.wbmshr.ready, cur.mshr_count);
                 }
                 else
                 {
@@ -401,12 +390,6 @@ void MSHR::comb_inputs()
                                 lru_idx, nxt.wb_data[0], nxt.wb_data[1],
                                 nxt.wb_data[2], nxt.wb_data[3], nxt.wb_data[4],
                                 nxt.wb_data[5], nxt.wb_data[6], nxt.wb_data[7]);
-                        } else {
-                            LSU_MEM_DBG_PRINTF("[MSHR WB] cyc=%lld resp_id=%u evict_line=0x%08x set=%u way=%u data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-                                       (long long)sim_time, (unsigned)resp_id,
-                                       nxt.wb_addr, fill_set, lru_idx,
-                                       nxt.wb_data[0], nxt.wb_data[1], nxt.wb_data[2], nxt.wb_data[3],
-                                       nxt.wb_data[4], nxt.wb_data[5], nxt.wb_data[6], nxt.wb_data[7]);
                         }
                     }
                     if (ctx != nullptr)
@@ -468,13 +451,6 @@ void MSHR::comb_inputs()
                             nxt.fill_data[0], nxt.fill_data[1], nxt.fill_data[2],
                             nxt.fill_data[3], nxt.fill_data[4], nxt.fill_data[5],
                             nxt.fill_data[6], nxt.fill_data[7]);
-                    } else {
-                        LSU_MEM_DBG_PRINTF("[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d dirty=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-                                   (long long)sim_time, (unsigned)resp_id,
-                                   fill_line_addr, fill_set, lru_idx,
-                                   (int)need_wb_evict, (int)nxt.fill_dirty,
-                                   nxt.fill_data[0], nxt.fill_data[1], nxt.fill_data[2], nxt.fill_data[3],
-                                   nxt.fill_data[4], nxt.fill_data[5], nxt.fill_data[6], nxt.fill_data[7]);
                     }
                     if (mshr_focus_family(fill_line_addr)) {
                         dump_mshr_words_stdout("[MSHR FILL FINAL][DATA] ",

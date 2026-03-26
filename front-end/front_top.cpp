@@ -96,8 +96,9 @@ static bool falcon_measurement_window_active() {
 }
 
 static inline bool front_focus_pc(uint32_t pc) {
-  return CONFIG_FRONT_FOCUS_PC_END > CONFIG_FRONT_FOCUS_PC_BEGIN &&
-         pc >= CONFIG_FRONT_FOCUS_PC_BEGIN && pc < CONFIG_FRONT_FOCUS_PC_END;
+  const uint32_t begin = static_cast<uint32_t>(CONFIG_FRONT_FOCUS_PC_BEGIN);
+  const uint32_t end = static_cast<uint32_t>(CONFIG_FRONT_FOCUS_PC_END);
+  return end > begin && (pc - begin) < (end - begin);
 }
 
 static bool front_focus_any_fifo_pc(const instruction_FIFO_out &fifo_out) {
