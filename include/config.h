@@ -257,7 +257,7 @@ constexpr int BPU_LOOP_META_TAG_BITS = 16;
 // [3] I-Cache Config
 // ============================================================
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-constexpr int ICACHE_MISS_LATENCY = 50;
+constexpr int ICACHE_MISS_LATENCY = 20;
 
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
@@ -277,7 +277,7 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 // Enable the shared AXI LLC path.
 // Keep this disabled by default until the fresh-main integration is validated.
 #ifndef CONFIG_AXI_LLC_ENABLE
-#define CONFIG_AXI_LLC_ENABLE 0
+#define CONFIG_AXI_LLC_ENABLE 1
 #endif
 
 #ifndef CONFIG_AXI_LLC_SIZE_BYTES
@@ -297,7 +297,7 @@ constexpr int ICACHE_MISS_LATENCY = 50;
 #endif
 
 #ifndef CONFIG_AXI_LLC_LOOKUP_LATENCY
-#define CONFIG_AXI_LLC_LOOKUP_LATENCY 8u
+#define CONFIG_AXI_LLC_LOOKUP_LATENCY 4u
 #endif
 
 #ifndef CONFIG_AXI_LLC_PREFETCH_ENABLE
@@ -332,12 +332,13 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
 constexpr int DCACHE_L2_HIT_LATENCY = 8;
-constexpr int DCACHE_MEM_LATENCY = 50;
+constexpr int DCACHE_MEM_LATENCY = 20;
 // Backward-compatible alias; prefer DCACHE_MEM_LATENCY for new code.
 constexpr int DCACHE_MISS_LATENCY = DCACHE_MEM_LATENCY;
 constexpr int DCACHE_WAY_NUM = 4;
 constexpr int DCACHE_OFFSET_BITS = clog2(DCACHE_LINE_SIZE);
-constexpr int DCACHE_INDEX_BITS = 8;
+// constexpr int DCACHE_INDEX_BITS = 8;
+constexpr int DCACHE_INDEX_BITS = 11;
 constexpr int DCACHE_SET_NUM = 1 << DCACHE_INDEX_BITS;
 constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
 constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
@@ -366,7 +367,7 @@ constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 256;
+constexpr int ROB_NUM = 1024;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM; // (ROB_NUM / ROB_BANK_NUM)
 
 // ============================================================
@@ -410,20 +411,41 @@ enum { ISSUE_PORT_COUNTER_BASE = __COUNTER__ };
 // 这里的顺序很重要, 后面 IQ 会通过下标索引它
 // 属于同类的请挨在一起，IQ会通过base+offset来绑定port
 // CSR 指令目前硬绑定在 Port 0，如果调整配置，请确保 Port 0 包含 OP_MASK_CSR
+// constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
+//     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
+//              OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
+//     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
+//     PORT_CFG(OP_MASK_ALU | OP_MASK_FP),               // Port 1: Simple ALU
+//     PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
+//     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
+//     PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
+//     PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
+//     PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
+//     PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
+//     PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
+//     PORT_CFG(OP_MASK_BR),                // Port 6: Branch 0
+//     PORT_CFG(OP_MASK_BR)                 // Port 7: Branch 1
+// };
+// #undef PORT_CFG
 constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
-    PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
-             OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
-    PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU | OP_MASK_FP),               // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
-    PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
-    PORT_CFG(OP_MASK_LD),                // Port 3: Load 1
-    PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STA),               // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
-    PORT_CFG(OP_MASK_STD),               // Port 5: Store Data
-    PORT_CFG(OP_MASK_BR),                // Port 6: Branch 0
-    PORT_CFG(OP_MASK_BR)                 // Port 7: Branch 1
+  PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
+            OP_MASK_CSR),               // Port 0: ALU + MUL/DIV + CSR
+  PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: Simple ALU
+  PORT_CFG(OP_MASK_ALU | OP_MASK_FP),               // Port 1: Simple ALU
+  PORT_CFG(OP_MASK_ALU),               // Port 1: Simple ALU
+  PORT_CFG(OP_MASK_LD),  // Port 2: Load 0
+  PORT_CFG(OP_MASK_LD),  // Port 3: Load 1
+  PORT_CFG(OP_MASK_LD),  // Port 4: Load 2
+  PORT_CFG(OP_MASK_LD),  // Port 5: Load 3
+  PORT_CFG(OP_MASK_STA), // Port 6: Store Addr
+  PORT_CFG(OP_MASK_STA), // Port 7: Store Addr
+  PORT_CFG(OP_MASK_STA), // Port 8: Store Addr
+  PORT_CFG(OP_MASK_STA), // Port 9: Store Addr
+  PORT_CFG(OP_MASK_STD), // Port 10: Store Data
+  PORT_CFG(OP_MASK_STD), // Port 10: Store Data
+  PORT_CFG(OP_MASK_STD), // Port 10: Store Data
+  PORT_CFG(OP_MASK_BR),  // Port 11: Branch 0
+  PORT_CFG(OP_MASK_BR)   // Port 12: Branch 1
 };
 #undef PORT_CFG
 
@@ -476,7 +498,8 @@ constexpr int FTQ_ROB_PC_PORT_NUM = 1;
 constexpr int STQ_SIZE = 64;
 constexpr int LDQ_SIZE = 64;
 constexpr int MUL_MAX_LATENCY = 2;
-constexpr int DIV_MAX_LATENCY = 18;
+// constexpr int DIV_MAX_LATENCY = 18;
+constexpr int DIV_MAX_LATENCY = 5;
 
 // LSU / TLB config derived from issue port layout.
 constexpr int LSU_STA_COUNT = count_ports_with_mask(OP_MASK_STA);
@@ -490,6 +513,12 @@ constexpr int DTLB_ENTRIES = 32;
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
     count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
+// constexpr int MAX_WAKEUP_PORTS =
+//     LSU_LOAD_WB_WIDTH +
+//     count_ports_with_mask(OP_MASK_ALU) +
+//     count_ports_with_mask(OP_MASK_MUL) +
+//     count_ports_with_mask(OP_MASK_DIV) +
+//     count_ports_with_mask(OP_MASK_CSR);
 
 // ============================================================
 // [12.1] ISU scheduling policy

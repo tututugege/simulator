@@ -40,6 +40,12 @@ namespace
 #ifndef CONFIG_LSU_FOCUS_LOAD_PC
 #define CONFIG_LSU_FOCUS_LOAD_PC 0x80002520u
 #endif
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE0
+#define CONFIG_AXI_LLC_FOCUS_LINE0 0u
+#endif
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE1
+#define CONFIG_AXI_LLC_FOCUS_LINE1 0u
+#endif
     constexpr uint32_t kCoremarkFocusAddrBegin = CONFIG_LSU_FOCUS_ADDR_BEGIN;
     constexpr uint32_t kCoremarkFocusAddrEnd = CONFIG_LSU_FOCUS_ADDR_END;
     constexpr uint32_t kCoremarkFocusLoadPc = CONFIG_LSU_FOCUS_LOAD_PC;
@@ -107,7 +113,8 @@ namespace
     inline bool stq_entry_matches_uop(const StqEntry &entry, const MicroOp &uop)
     {
         return entry.valid && entry.rob_idx == uop.rob_idx &&
-               entry.rob_flag == uop.rob_flag;
+               entry.rob_flag == uop.rob_flag &&
+               entry.stq_flag == uop.stq_flag;
     }
 
     const char *tlb_retry_reason_name(TlbMmu::RetryReason reason)
@@ -204,6 +211,7 @@ void RealLsu::init()
         stq[i].rob_flag = 0;
         stq[i].func3 = 0;
         stq[i].is_mmio = false;
+        stq[i].stq_flag = 0;
         stq_sta_retry_shadow[i] = {};
         stq_sta_retry_shadow_valid[i] = false;
         stq_sta_fault_wb_pending[i] = false;
@@ -1261,7 +1269,8 @@ void RealLsu::handle_store_data(const MicroOp &inst)
 }
 
 bool RealLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
-                                uint32_t rob_flag, uint32_t func3)
+                                uint32_t rob_flag, uint32_t stq_flag,
+                                uint32_t func3)
 {
     if (stq_count >= STQ_SIZE)
     {
@@ -1283,6 +1292,7 @@ bool RealLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
     stq[alloc_idx].br_mask = br_mask;
     stq[alloc_idx].rob_idx = rob_idx;
     stq[alloc_idx].rob_flag = rob_flag;
+    stq[alloc_idx].stq_flag = stq_flag;
     stq[alloc_idx].func3 = func3;
     stq_sta_retry_shadow[alloc_idx] = {};
     stq_sta_retry_shadow_valid[alloc_idx] = false;
@@ -1350,7 +1360,8 @@ void RealLsu::consume_stq_alloc_reqs(int &push_count)
             continue;
         }
         bool ok = reserve_stq_entry(in.dis2lsu->br_mask[i], in.dis2lsu->rob_idx[i],
-                                    in.dis2lsu->rob_flag[i], in.dis2lsu->func3[i]);
+                                    in.dis2lsu->rob_flag[i], in.dis2lsu->stq_flag[i],
+                                    in.dis2lsu->func3[i]);
         Assert(ok && "STQ allocate overflow");
         push_count++;
     }
@@ -1443,7 +1454,13 @@ void RealLsu::change_store_info(StqEntry &head, int port, int store_index)
     out.lsu2dcache->req_ports.store_ports[port].data = wdata;
     out.lsu2dcache->req_ports.store_ports[port].uop = head;
     out.lsu2dcache->req_ports.store_ports[port].req_id = store_index;
-    if (is_coremark_focus_addr(head.p_addr))
+    const uint32_t store_line_addr = head.p_addr & ~(DCACHE_LINE_BYTES - 1u);
+    const bool focus_llc_line =
+        (CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
+         store_line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0)) ||
+        (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
+         store_line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1));
+    if (is_coremark_focus_addr(head.p_addr) || focus_llc_line)
     {
         std::printf("[FOCUS][LSU][ST ISSUE] cyc=%lld port=%d stq=%d rob=%u paddr=0x%08x func3=0x%x data=0x%08x wdata=0x%08x wstrb=0x%x\n",
                     (long long)sim_time, port, store_index, (unsigned)head.rob_idx,

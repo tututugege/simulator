@@ -237,7 +237,7 @@ public:
     return WalkRespResult::HANDLED;
   }
 
-  WalkRespResult on_walk_mem_replay(size_t req_id) {
+  WalkRespResult on_walk_mem_replay(size_t req_id, uint8_t replay_reason) {
     const bool is_active_req = walk_active && walk_req_id_valid &&
                                (walk_req_id == req_id);
     if (walk_drop_resp_credit > 0 && !is_active_req) {
@@ -253,9 +253,23 @@ public:
 
     auto &wc = walk_clients[client_idx(walk_owner)];
     wc.req_inflight = false;
-    // Keep the walk FSM parked in WAIT_RESP and rely on the replay wakeup
-    // path to re-arm it. Immediate reissue defeats the replay tracker and can
-    // hammer the same blocked line every cycle.
+    // Shared PTW walk is single-threaded. Parking the walker in WAIT_RESP for
+    // replay=2(wait_fill) can lose forward progress if the exact fill wakeup is
+    // consumed before the tracker arms. Re-arm the walk request directly so the
+    // next cycle retries through the normal arbiter path.
+    static constexpr uint8_t kReplayWaitFill = 2;
+    if (replay_reason == kReplayWaitFill) {
+      if (walk_state == WalkState::L1_WAIT_RESP) {
+        walk_state = WalkState::L1_REQ;
+      } else if (walk_state == WalkState::L2_WAIT_RESP) {
+        walk_state = WalkState::L2_REQ;
+      }
+      walk_req_id_valid = false;
+      walk_req_id = 0;
+      return WalkRespResult::HANDLED;
+    }
+
+    // replay=1(MSHR full) still uses the coarse replay wakeup path.
     walk_req_id_valid = false;
     walk_req_id = 0;
     return WalkRespResult::HANDLED;

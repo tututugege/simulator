@@ -11,14 +11,18 @@ extern uint32_t *p_memory;
 WriteBufferEntry write_buffer_nxt[WB_ENTRIES];
 
 namespace {
-// WB->MSHR ready uses a conservative one-slot guard so the ready sampled by
-// MSHR cannot over-commit when WB enqueues an older eviction later in the same
-// cycle (WB comb_inputs runs after WB comb_outputs in MemSubsystem::comb()).
-static constexpr uint32_t kWbMshrSafetyReserve = 1;
 static uint64_t g_wb_issue_seq = 0;
 static uint64_t g_wb_resp_seq = 0;
 static bool g_warned_req_size_gt_32b = false;
 static constexpr uint32_t kFastDiffFocusLine = 0x8fdfd800u;
+
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE0
+#define CONFIG_AXI_LLC_FOCUS_LINE0 0u
+#endif
+
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE1
+#define CONFIG_AXI_LLC_FOCUS_LINE1 0u
+#endif
 
 #ifndef WB_AXI_VERBOSE_LOG
 #define WB_AXI_VERBOSE_LOG 0
@@ -37,6 +41,22 @@ static inline void dump_line_words(const char *tag, const uint32_t *data) {
         LSU_MEM_DBG_PRINTF("%s%08x", (w == 0) ? "" : " ", data[w]);
     }
     LSU_MEM_DBG_PRINTF("]\n");
+}
+
+static inline bool wb_focus_line(uint32_t addr) {
+    const uint32_t line_addr = addr & ~(DCACHE_LINE_BYTES - 1u);
+    return (CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
+            line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0)) ||
+           (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
+            line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1));
+}
+
+static inline void dump_line_words_stdout(const char *tag, const uint32_t *data) {
+    std::printf("%s[", tag);
+    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+        std::printf("%s%08x", (w == 0) ? "" : " ", data[w]);
+    }
+    std::printf("]\n");
 }
 
 static inline int first_word_diff(const uint32_t *a, const uint32_t *b) {
@@ -184,7 +204,11 @@ void WriteBuffer::init() {
 void WriteBuffer::comb_outputs() {
     check_wb_state("comb_outputs.cur", cur);
     check_wb_state("comb_outputs.nxt", nxt);
-    out.wbmshr.ready = ((nxt.count + kWbMshrSafetyReserve) < WB_ENTRIES);
+    // MemSubsystem::comb() calls wb_.comb_outputs() again after wb_.comb_inputs()
+    // and before mshr_.comb_inputs(). The MSHR therefore samples the refreshed
+    // nxt-count view, and producing one victim in the next cycle is safe as
+    // long as there is one actual slot left in the FIFO.
+    out.wbmshr.ready = (nxt.count < WB_ENTRIES);
 
     for(int i=0;i<LSU_LDU_COUNT;i++){
         out.wbdcache.bypass_resp[i].valid = nxt.bypassvalid[i];
@@ -222,6 +246,14 @@ void WriteBuffer::comb_inputs() {
     // would produce false mismatches.
     if (cur_check.valid && p_memory != nullptr) {
 #if CONFIG_AXI_LLC_ENABLE
+        if (wb_focus_line(cur_check.addr)) {
+            std::printf("[WB][CHECK] cyc=%lld line=0x%08x\n", (long long)sim_time,
+                        cur_check.addr);
+            dump_line_words_stdout("[WB][CHECK][EXP] ", cur_check.data);
+            dump_line_words_stdout(
+                "[WB][CHECK][MEM] ",
+                p_memory + (static_cast<uint32_t>(cur_check.addr) >> 2));
+        }
         cur_check.valid = false;
 #else
         const uint32_t line_addr = cur_check.addr;
@@ -352,6 +384,12 @@ void WriteBuffer::comb_inputs() {
             e.send     = false;
             e.addr     = in.mshrwb.addr;
             std::memcpy(e.data, in.mshrwb.data, DCACHE_LINE_WORDS * sizeof(uint32_t));
+            if (wb_focus_line(e.addr)) {
+                std::printf(
+                    "[WB][ENQ] cyc=%lld tail=%u count=%u addr=0x%08x\n",
+                    (long long)sim_time, nxt.tail, nxt.count, e.addr);
+                dump_line_words_stdout("[WB][ENQ][DATA] ", e.data);
+            }
             nxt.tail  = (nxt.tail + 1) % WB_ENTRIES;
             nxt.count++;
         }
@@ -465,6 +503,14 @@ void WriteBuffer::comb_inputs() {
                     (long long)sim_time,
                     static_cast<unsigned>(out.axi_out.req_total_size));
             }
+            if (wb_focus_line(head_e.addr)) {
+                std::printf(
+                    "[WB][ISSUE] cyc=%lld seq=%" PRIu64 " head=%u addr=0x%08x total_size=%u wstrb=0x%016" PRIx64 "\n",
+                    (long long)sim_time, nxt_issue.seq, cur.head, head_e.addr,
+                    static_cast<unsigned>(out.axi_out.req_total_size),
+                    static_cast<uint64_t>(out.axi_out.req_wstrb));
+                dump_line_words_stdout("[WB][ISSUE][DATA] ", nxt_issue.data);
+            }
         } else if (can_issue_head) {
             nxt.send = 0;
             nxt.issue_pending =
@@ -512,6 +558,13 @@ void WriteBuffer::comb_inputs() {
                         (now - cur_issue.issue_cycle);
                     ctx->perf.l1d_axi_write_samples++;
                 }
+            }
+            if (wb_focus_line(head_e.addr)) {
+                std::printf(
+                    "[WB][RESP] cyc=%lld head=%u addr=0x%08x matched_issue_seq=%" PRIu64 " matched_issue_cyc=%" PRIu64 "\n",
+                    (long long)sim_time, cur.head, head_e.addr,
+                    nxt_last_resp.issue_seq, nxt_last_resp.issue_cycle);
+                dump_line_words_stdout("[WB][RESP][DATA] ", head_e.data);
             }
             write_buffer_nxt[cur.head].valid = false;
             write_buffer_nxt[cur.head].send = false;

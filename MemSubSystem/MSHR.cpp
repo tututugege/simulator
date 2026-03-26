@@ -13,6 +13,67 @@ namespace {
 static constexpr uint8_t kCacheLineReqTotalSize =
     static_cast<uint8_t>(DCACHE_LINE_BYTES - 1u);
 
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE0
+#define CONFIG_AXI_LLC_FOCUS_LINE0 0u
+#endif
+
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE1
+#define CONFIG_AXI_LLC_FOCUS_LINE1 0u
+#endif
+
+inline bool mshr_focus_line(uint32_t line_addr) {
+    return (CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
+            line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0)) ||
+           (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
+           line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1));
+}
+
+inline bool mshr_focus_family(uint32_t line_addr) {
+    const uint32_t family_mask = ~0xffu;
+    if (CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
+        (line_addr & family_mask) ==
+            (static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0) & family_mask)) {
+        return true;
+    }
+    if (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
+        (line_addr & family_mask) ==
+            (static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1) & family_mask)) {
+        return true;
+    }
+    return false;
+}
+
+void dump_mshr_words_stdout(const char *tag, const uint32_t *data) {
+    std::printf("%s[", tag);
+    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+        std::printf("%s%08x", (w == 0) ? "" : " ", data[w]);
+    }
+    std::printf("]\n");
+}
+
+void dump_mshr_strb_stdout(const char *tag, const uint8_t *data) {
+    std::printf("%s[", tag);
+    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+        std::printf("%s%02x", (w == 0) ? "" : " ", data[w]);
+    }
+    std::printf("]\n");
+}
+
+bool victim_has_same_cycle_store_hit(const DcacheMSHRIO &dcachemshr,
+                                     uint32_t set_idx, uint32_t way_idx) {
+    for (int p = 0; p < LSU_STA_COUNT; ++p) {
+        const auto &u = dcachemshr.store_hit_updates[p];
+        if (!u.valid) {
+            continue;
+        }
+        if (u.set_idx != set_idx || u.way_idx != way_idx) {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
 int find_next_entry_idx(uint32_t set_idx, uint32_t tag) {
     for (int i = 0; i < MSHR_ENTRIES; i++) {
         const MSHREntry &entry = mshr_entries_nxt[i];
@@ -101,6 +162,12 @@ void MSHR::comb_outputs()
     out.mshrwb.valid = cur.wb_valid;
     out.mshrwb.addr = cur.wb_addr;
     std::memcpy(out.mshrwb.data, cur.wb_data, sizeof(out.mshrwb.data));
+    if (out.mshrwb.valid && mshr_focus_family(out.mshrwb.addr)) {
+        std::printf("[MSHR WB OUT][FOCUS] cyc=%lld addr=0x%08x valid=%d\n",
+                    (long long)sim_time, out.mshrwb.addr,
+                    static_cast<int>(out.mshrwb.valid));
+        dump_mshr_words_stdout("[MSHR WB OUT][DATA] ", out.mshrwb.data);
+    }
 
     // AXI outputs.
     out.axi_out.req_valid = false;
@@ -117,7 +184,11 @@ void MSHR::comb_outputs()
             const MSHREntry &e = mshr_entries[resp_id];
             if (e.valid && e.issued && !e.fill) {
                 const uint32_t lru_idx = choose_lru_victim(e.index);
-                const bool need_wb_evict = dirty_array[e.index][lru_idx];
+                const bool same_cycle_store_hit =
+                    victim_has_same_cycle_store_hit(in.dcachemshr, e.index,
+                                                    lru_idx);
+                const bool need_wb_evict =
+                    dirty_array[e.index][lru_idx] || same_cycle_store_hit;
                 if (need_wb_evict && !in.wbmshr.ready) {
                     out.axi_out.resp_ready = false;
                 }
@@ -170,6 +241,11 @@ int MSHR::entries_add(int set_idx, int tag)
     miss_alloc_cycle_valid[alloc_idx] = true;
     axi_issue_cycle[alloc_idx] = 0;
     axi_issue_cycle_valid[alloc_idx] = false;
+    if (mshr_focus_family(get_addr(set_idx, tag, 0))) {
+        std::printf("[MSHR ALLOC][FOCUS] cyc=%lld idx=%d line=0x%08x count=%u\n",
+                    (long long)sim_time, alloc_idx, get_addr(set_idx, tag, 0),
+                    nxt.mshr_count);
+    }
     LSU_MEM_DBG_PRINTF("[MSHR ALLOC] cyc=%lld idx=%d line=0x%08x count=%u\n",
                (long long)sim_time, alloc_idx,
                get_addr(set_idx, tag, 0), nxt.mshr_count);
@@ -224,6 +300,19 @@ void MSHR::comb_inputs()
             entry_idx = entries_add(f.set_idx, f.tag);
         }
         merge_store_into_entry(mshr_entries_nxt[entry_idx], req);
+        const uint32_t line_addr = get_addr(f.set_idx, f.tag, 0);
+        if (mshr_focus_family(line_addr)) {
+            const MSHREntry &me = mshr_entries_nxt[entry_idx];
+            std::printf(
+                "[MSHR STORE MERGE][FOCUS] cyc=%lld idx=%d line=0x%08x word=%u strb=0x%x data=0x%08x dirty=%d\n",
+                (long long)sim_time, entry_idx, line_addr, f.word_off,
+                static_cast<unsigned>(req.strb), req.data,
+                static_cast<int>(me.merged_store_dirty));
+            dump_mshr_words_stdout("[MSHR STORE MERGE][DATA] ",
+                                   me.merged_store_data);
+            dump_mshr_strb_stdout("[MSHR STORE MERGE][STRB] ",
+                                  me.merged_store_strb);
+        }
         LSU_MEM_DBG_PRINTF("[MSHR STORE MERGE] cyc=%lld idx=%d line=0x%08x word=%u strb=0x%x data=0x%08x dirty=%d\n",
                    (long long)sim_time, entry_idx, get_addr(f.set_idx, f.tag, 0),
                    f.word_off, static_cast<unsigned>(req.strb), req.data,
@@ -239,27 +328,46 @@ void MSHR::comb_inputs()
             const MSHREntry &e_cur = mshr_entries[resp_id];
             if (e_cur.valid && e_cur.issued && !e_cur.fill)
             {
-                uint32_t lru_idx = choose_lru_victim(mshr_entries[resp_id].index);
-                bool need_wb_evict = dirty_array[mshr_entries[resp_id].index][lru_idx];
+                const uint32_t fill_set = mshr_entries[resp_id].index;
+                const uint32_t fill_tag = mshr_entries[resp_id].tag;
+                const uint32_t lru_idx = choose_lru_victim(fill_set);
+                const bool victim_valid = valid_array[fill_set][lru_idx];
+                const uint32_t victim_tag = tag_array[fill_set][lru_idx];
+                const uint32_t victim_line_addr =
+                    victim_valid ? get_addr(fill_set, victim_tag, 0) : 0;
+                const bool same_cycle_store_hit =
+                    victim_has_same_cycle_store_hit(in.dcachemshr, fill_set,
+                                                    lru_idx);
+                bool need_wb_evict =
+                    dirty_array[fill_set][lru_idx] || same_cycle_store_hit;
                 bool can_consume_resp = (!need_wb_evict) || in.wbmshr.ready;
                 if (!can_consume_resp)
                 {
-                    LSU_MEM_DBG_PRINTF("[MSHR RESP HOLD] cyc=%lld resp_id=%u line=0x%08x need_wb=%d wb_ready=%d wb_count=%u\n",
+                    LSU_MEM_DBG_PRINTF("[MSHR RESP HOLD] cyc=%lld resp_id=%u line=0x%08x need_wb=%d wb_ready=%d mshr_count=%u\n",
                                (long long)sim_time, (unsigned)resp_id,
                                get_addr(mshr_entries[resp_id].index, mshr_entries[resp_id].tag, 0),
                                (int)need_wb_evict, (int)in.wbmshr.ready, cur.mshr_count);
                 }
                 else
                 {
-                    const uint32_t fill_line_addr =
-                        get_addr(mshr_entries[resp_id].index, mshr_entries[resp_id].tag, 0);
+                    const uint32_t fill_line_addr = get_addr(fill_set, fill_tag, 0);
+                    if (mshr_focus_line(fill_line_addr) || mshr_focus_line(victim_line_addr))
+                    {
+                        std::printf(
+                            "[MSHR VICTIM] cyc=%lld resp_id=%u fill_line=0x%08x victim_line=0x%08x set=%u way=%u victim_valid=%d victim_dirty=%d same_cycle_store_hit=%d wb_ready=%d\n",
+                            (long long)sim_time, (unsigned)resp_id,
+                            fill_line_addr, victim_line_addr, fill_set, lru_idx,
+                            (int)victim_valid, (int)dirty_array[fill_set][lru_idx],
+                            (int)same_cycle_store_hit,
+                            (int)in.wbmshr.ready);
+                    }
                     if (need_wb_evict)
                     {
                         nxt.wb_valid = true;
-                        nxt.wb_addr = get_addr(mshr_entries[resp_id].index, tag_array[mshr_entries[resp_id].index][lru_idx], 0);
+                        nxt.wb_addr = get_addr(fill_set, victim_tag, 0);
                         for (int w = 0; w < DCACHE_LINE_WORDS; w++)
                         {
-                            nxt.wb_data[w] = data_array[mshr_entries[resp_id].index][lru_idx][w];
+                            nxt.wb_data[w] = data_array[fill_set][lru_idx][w];
                         }
                         // Preserve same-cycle store-hit updates that have not
                         // reached data_array yet (committed in RealDcache::seq()).
@@ -271,7 +379,7 @@ void MSHR::comb_inputs()
                             {
                                 continue;
                             }
-                            if (u.set_idx != mshr_entries[resp_id].index)
+                            if (u.set_idx != fill_set)
                             {
                                 continue;
                             }
@@ -285,11 +393,21 @@ void MSHR::comb_inputs()
                             }
                             apply_strobe(nxt.wb_data[u.word_off], u.data, u.strb);
                         }
-                        LSU_MEM_DBG_PRINTF("[MSHR WB] cyc=%lld resp_id=%u evict_line=0x%08x set=%u way=%u data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-                                   (long long)sim_time, (unsigned)resp_id,
-                                   nxt.wb_addr, mshr_entries[resp_id].index, lru_idx,
-                                   nxt.wb_data[0], nxt.wb_data[1], nxt.wb_data[2], nxt.wb_data[3],
-                                   nxt.wb_data[4], nxt.wb_data[5], nxt.wb_data[6], nxt.wb_data[7]);
+                        if (mshr_focus_line(nxt.wb_addr)) {
+                            std::printf(
+                                "[MSHR WB] cyc=%lld resp_id=%u evict_line=0x%08x set=%u way=%u data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
+                                (long long)sim_time, (unsigned)resp_id,
+                                nxt.wb_addr, fill_set,
+                                lru_idx, nxt.wb_data[0], nxt.wb_data[1],
+                                nxt.wb_data[2], nxt.wb_data[3], nxt.wb_data[4],
+                                nxt.wb_data[5], nxt.wb_data[6], nxt.wb_data[7]);
+                        } else {
+                            LSU_MEM_DBG_PRINTF("[MSHR WB] cyc=%lld resp_id=%u evict_line=0x%08x set=%u way=%u data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
+                                       (long long)sim_time, (unsigned)resp_id,
+                                       nxt.wb_addr, fill_set, lru_idx,
+                                       nxt.wb_data[0], nxt.wb_data[1], nxt.wb_data[2], nxt.wb_data[3],
+                                       nxt.wb_data[4], nxt.wb_data[5], nxt.wb_data[6], nxt.wb_data[7]);
+                        }
                     }
                     if (ctx != nullptr)
                     {
@@ -318,6 +436,19 @@ void MSHR::comb_inputs()
                     nxt.fill_dirty = e_fill.merged_store_dirty;
                     nxt.fill_way = lru_idx;
                     nxt.fill_addr = fill_line_addr;
+                    if (mshr_focus_family(fill_line_addr)) {
+                        std::printf(
+                            "[MSHR RESP RAW][FOCUS] cyc=%lld resp_id=%u line=0x%08x need_wb=%d dirty=%d\n",
+                            (long long)sim_time, (unsigned)resp_id,
+                            fill_line_addr, (int)need_wb_evict,
+                            (int)e_fill.merged_store_dirty);
+                        dump_mshr_words_stdout("[MSHR RESP RAW][AXI] ",
+                                               in.axi_in.resp_data);
+                        dump_mshr_words_stdout("[MSHR RESP RAW][MERGE_DATA] ",
+                                               e_fill.merged_store_data);
+                        dump_mshr_strb_stdout("[MSHR RESP RAW][MERGE_STRB] ",
+                                              e_fill.merged_store_strb);
+                    }
                     for (int w = 0; w < DCACHE_LINE_WORDS; w++)
                     {
                         nxt.fill_data[w] = in.axi_in.resp_data[w];
@@ -328,12 +459,27 @@ void MSHR::comb_inputs()
                         }
                     }
 
-                    LSU_MEM_DBG_PRINTF("[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d dirty=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-                               (long long)sim_time, (unsigned)resp_id,
-                               fill_line_addr, mshr_entries[resp_id].index, lru_idx,
-                               (int)need_wb_evict, (int)nxt.fill_dirty,
-                               nxt.fill_data[0], nxt.fill_data[1], nxt.fill_data[2], nxt.fill_data[3],
-                               nxt.fill_data[4], nxt.fill_data[5], nxt.fill_data[6], nxt.fill_data[7]);
+                    if (mshr_focus_line(fill_line_addr)) {
+                        std::printf(
+                            "[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d dirty=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
+                            (long long)sim_time, (unsigned)resp_id,
+                            fill_line_addr, fill_set,
+                            lru_idx, (int)need_wb_evict, (int)nxt.fill_dirty,
+                            nxt.fill_data[0], nxt.fill_data[1], nxt.fill_data[2],
+                            nxt.fill_data[3], nxt.fill_data[4], nxt.fill_data[5],
+                            nxt.fill_data[6], nxt.fill_data[7]);
+                    } else {
+                        LSU_MEM_DBG_PRINTF("[MSHR FILL] cyc=%lld resp_id=%u line=0x%08x set=%u way=%u need_wb=%d dirty=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x]\n",
+                                   (long long)sim_time, (unsigned)resp_id,
+                                   fill_line_addr, fill_set, lru_idx,
+                                   (int)need_wb_evict, (int)nxt.fill_dirty,
+                                   nxt.fill_data[0], nxt.fill_data[1], nxt.fill_data[2], nxt.fill_data[3],
+                                   nxt.fill_data[4], nxt.fill_data[5], nxt.fill_data[6], nxt.fill_data[7]);
+                    }
+                    if (mshr_focus_family(fill_line_addr)) {
+                        dump_mshr_words_stdout("[MSHR FILL FINAL][DATA] ",
+                                               nxt.fill_data);
+                    }
                     // AXI read-path check: under direct-memory mode, returned
                     // cachelines must match the backing memory. Under LLC
                     // write-back mode, the response may legally come from a

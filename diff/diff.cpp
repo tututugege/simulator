@@ -125,6 +125,36 @@ void dump_inst_related_snapshot(uint32_t inst) {
     dump_addr_snapshot("inst_store_addr", addr);
   }
 }
+
+void dump_inst_translation_snapshot(uint32_t inst) {
+  const uint32_t opcode = inst & 0x7F;
+  if (opcode != 0x03 && opcode != 0x23) {
+    return;
+  }
+
+  const uint32_t rs1 = (inst >> 15) & 0x1F;
+  const uint32_t base = dut_cpu.gpr[rs1];
+  const bool is_load = opcode == 0x03;
+  const uint32_t imm12 = is_load
+                             ? ((inst >> 20) & 0xFFF)
+                             : ((((inst >> 25) & 0x7F) << 5) |
+                                ((inst >> 7) & 0x1F));
+  const uint32_t v_addr = base + sign_extend_12(imm12);
+  uint32_t ref_paddr = 0;
+  const bool ref_ok = ref_cpu.va2pa(ref_paddr, v_addr, is_load ? 1 : 2);
+  std::printf(
+      "[DIFF][DATA_PA] opcode=%s rs1=x%u base=0x%08x vaddr=0x%08x ref_%s",
+      is_load ? "LD" : "ST", rs1, base, v_addr,
+      ref_ok ? "paddr_ok" : "paddr_fault");
+  if (ref_ok) {
+    std::printf("=0x%08x", ref_paddr);
+  }
+  std::printf("\n");
+
+  if (ref_ok) {
+    dump_phys_line_snapshot("ref_data_pa", ref_paddr);
+  }
+}
 } // namespace
 
 void difftest_dump_memory_line(const char *tag, uint32_t addr) {
@@ -261,6 +291,7 @@ fault:
   }
 #if SIM_LSU_MEM_DEBUG_PRINT
   dump_inst_related_snapshot(dut_cpu.instruction);
+  dump_inst_translation_snapshot(dut_cpu.instruction);
   diff_mem_trace::dump_recent();
 #endif
   difftest_dump_recent_commits();

@@ -172,7 +172,7 @@ private:
   int find_recovery_tail(mask_t br_mask);
   bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag);
   bool reserve_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag,
-                         uint32_t func3);
+                         uint32_t stq_flag, uint32_t func3);
   void consume_stq_alloc_reqs(int &push_count);
   int count_active_stq_entries() const;
   int count_committed_stq_prefix() const;

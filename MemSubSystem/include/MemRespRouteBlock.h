@@ -14,6 +14,7 @@ struct load_resp {
   size_t req_id = 0;
   uint8_t replay = 0;
   uint32_t req_addr = 0;
+  uint8_t debug_src = 0;
 
   static load_resp from_io(const LoadResp &resp, uint32_t req_addr = 0) {
     load_resp ret{};
@@ -23,6 +24,7 @@ struct load_resp {
     ret.req_id = resp.req_id;
     ret.replay = resp.replay;
     ret.req_addr = req_addr;
+    ret.debug_src = resp.debug_src;
     return ret;
   }
 
@@ -33,6 +35,8 @@ struct load_resp {
     ret.uop = uop;
     ret.req_id = req_id;
     ret.replay = replay;
+    ret.debug_addr = req_addr;
+    ret.debug_src = debug_src;
     return ret;
   }
 };
@@ -214,7 +218,7 @@ public:
         if (evt.replay == 0) {
           (void)ptw_block->on_walk_mem_resp(evt.req_id, evt.data);
         } else {
-          (void)ptw_block->on_walk_mem_replay(evt.req_id);
+          (void)ptw_block->on_walk_mem_replay(evt.req_id, evt.replay);
         }
         break;
       default:
@@ -371,6 +375,32 @@ private:
     load_resp lsu_candidates[LSU_LDU_COUNT] = {};
     bool has_ptw_event = false;
     bool ptw_resp_on_port0 = false;
+    auto trace_raw_resp = [&](int port, const LoadResp &raw,
+                              const IssueTag &tag) {
+      if (raw.data != 0xccccccccu) {
+        return;
+      }
+      std::printf(
+          "[FOCUS][RESP_ROUTE][RAW] cyc=%lld port=%d req_id=%zu replay=%u "
+          "data=0x%08x uop_pc=0x%08x uop_rob=%u tag_valid=%d tag_owner=%u "
+          "tag_req_id=%zu tag_addr=0x%08x\n",
+          (long long)sim_time, port, raw.req_id, static_cast<unsigned>(raw.replay),
+          raw.data, raw.uop.pc, static_cast<unsigned>(raw.uop.rob_idx),
+          static_cast<int>(tag.valid), static_cast<unsigned>(tag.owner),
+          tag.req_id, tag.req_addr);
+    };
+    auto trace_routed_resp = [&](int port, const load_resp &resp,
+                                 const char *owner) {
+      if (resp.data != 0xccccccccu) {
+        return;
+      }
+      std::printf(
+          "[FOCUS][RESP_ROUTE][OUT] cyc=%lld port=%d owner=%s req_id=%zu "
+          "replay=%u data=0x%08x uop_pc=0x%08x uop_rob=%u req_addr=0x%08x\n",
+          (long long)sim_time, port, owner, resp.req_id,
+          static_cast<unsigned>(resp.replay), resp.data, resp.uop.pc,
+          static_cast<unsigned>(resp.uop.rob_idx), resp.req_addr);
+    };
 
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
       const auto &raw = dcache_resp_io->resp_ports.load_resps[i];
@@ -391,6 +421,7 @@ private:
         // Support same-cycle request+response path (e.g., dcache hit/replay).
         routed_tag = issue_tags[i];
       }
+      trace_raw_resp(i, raw, routed_tag);
 
       if (!routed_tag.valid) {
         // Fallback recovery: if issued-tag tracking is lost but the response
@@ -398,6 +429,7 @@ private:
         // dropping and deadlocking the waiting LDQ entry.
         if (req_is_lsu) {
           lsu_candidates[i] = load_resp::from_io(raw, 0);
+          trace_routed_resp(i, lsu_candidates[i], "fallback_lsu");
           continue;
         }
         continue;
@@ -407,6 +439,7 @@ private:
       switch (routed_tag.owner) {
       case Owner::LSU:
         lsu_candidates[i] = tagged;
+        trace_routed_resp(i, lsu_candidates[i], "lsu");
         break;
       case Owner::PTW_WALK:
       case Owner::PTW_DTLB:
@@ -471,6 +504,15 @@ private:
       return;
     }
 
+    if (evt.owner == Owner::PTW_WALK && evt.replay == REPLAY_WAIT_FILL) {
+      // PTW walk replay=2 is retried directly by MemPtwBlock on the next
+      // cycle. Do not leave a stale wait-fill tracker behind.
+      tracker->blocked = false;
+      tracker->reason = REPLAY_NONE;
+      tracker->req_addr = 0;
+      return;
+    }
+
     tracker->blocked = true;
     tracker->reason = evt.replay;
     tracker->req_addr = evt.req_addr;
@@ -479,7 +521,7 @@ private:
   void eval_replay_wakeup(const replay_resp &replay_bcast) {
     eval_one_tracker(cur_.dtlb, nxt_.dtlb, comb_.wakeup.dtlb, replay_bcast);
     eval_one_tracker(cur_.itlb, nxt_.itlb, comb_.wakeup.itlb, replay_bcast);
-    eval_one_tracker(cur_.walk, nxt_.walk, comb_.wakeup.walk, replay_bcast);
+    eval_walk_tracker(cur_.walk, nxt_.walk, comb_.wakeup.walk, replay_bcast);
   }
 
   static void eval_one_tracker(const ReplayTracker &cur, ReplayTracker &nxt,
@@ -502,6 +544,36 @@ private:
     } else if (cur.reason == REPLAY_WAIT_FILL) {
       wakeup = replay_bcast.replay &&
                cache_line_match(cur.req_addr, replay_bcast.replay_addr);
+    }
+
+    if (wakeup) {
+      nxt.blocked = false;
+      nxt.reason = REPLAY_NONE;
+      nxt.req_addr = 0;
+    }
+  }
+
+  static void eval_walk_tracker(const ReplayTracker &cur, ReplayTracker &nxt,
+                                bool &wakeup,
+                                const replay_resp &replay_bcast) {
+    wakeup = false;
+    nxt = cur;
+
+    if (!cur.blocked) {
+      return;
+    }
+
+    if (cur.reason == REPLAY_STRUCT) {
+      wakeup = true;
+    } else if (cur.reason == REPLAY_MSHR_FULL) {
+      wakeup = replay_bcast.replay;
+    } else if (cur.reason == REPLAY_WAIT_FILL) {
+      // PTW walk has only one active shared walker. After a replayed walk
+      // request parks the FSM in WAIT_RESP with no live req_id, requiring an
+      // exact matching fill broadcast can lose forward progress if the line's
+      // wakeup was consumed before the tracker armed. Any subsequent fill
+      // completion is a safe coarse retry trigger for the walker.
+      wakeup = replay_bcast.replay;
     }
 
     if (wakeup) {

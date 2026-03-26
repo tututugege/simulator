@@ -431,6 +431,7 @@ void Dispatch::comb_fire() {
       out.dis2lsu->br_mask[k] = out.dis2rob->uop[inst_idx].br_mask & ~clear_mask;
       out.dis2lsu->rob_idx[k] = out.dis2rob->uop[inst_idx].rob_idx;
       out.dis2lsu->rob_flag[k] = out.dis2rob->uop[inst_idx].rob_flag;
+      out.dis2lsu->stq_flag[k] = out.dis2rob->uop[inst_idx].stq_flag;
       out.dis2lsu->func3[k] = out.dis2rob->uop[inst_idx].func3;
     }
   }

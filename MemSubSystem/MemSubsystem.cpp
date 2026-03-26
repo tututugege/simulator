@@ -11,6 +11,14 @@
 #include <assert.h>
 #include <cstring>
 
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE0
+#define CONFIG_AXI_LLC_FOCUS_LINE0 0u
+#endif
+
+#ifndef CONFIG_AXI_LLC_FOCUS_LINE1
+#define CONFIG_AXI_LLC_FOCUS_LINE1 0u
+#endif
+
 #if __has_include("UART16550_Device.h") && \
     __has_include("AXI_Interconnect.h") && \
     __has_include("AXI_Router_AXI4.h") && \
@@ -55,6 +63,45 @@ struct AxiLlcTableRuntime {
   axi_interconnect::AXI_LLC_LookupIn_t lookup_in{};
   axi_interconnect::AXI_LLCConfig config{};
   bool enabled = false;
+  bool dbg_meta_read_pending = false;
+  uint32_t dbg_meta_read_index = 0;
+  bool lookup_pending_valid = false;
+  uint32_t lookup_pending_index = 0;
+  uint32_t lookup_delay_left = 0;
+  bool lookup_queued_valid = false;
+  uint32_t lookup_queued_index = 0;
+
+  static bool focus_set_match(const axi_interconnect::AXI_LLCConfig &cfg,
+                              uint32_t set_idx) {
+    if (!cfg.enable || !cfg.valid()) {
+      return false;
+    }
+    return set_idx == axi_interconnect::AXI_LLC::set_index(
+                          cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0)) ||
+           set_idx == axi_interconnect::AXI_LLC::set_index(
+                          cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1));
+  }
+
+  void dump_meta_row(const char *tag, uint32_t set_idx) const {
+    if (!enabled || !focus_set_match(config, set_idx)) {
+      return;
+    }
+    DynamicTablePayload payload;
+    if (!meta.debug_read_row(set_idx, payload)) {
+      return;
+    }
+    std::printf("[AXI-LLC-TBL][%s] cyc=%lld set=%u entries=", tag,
+                (long long)sim_time, set_idx);
+    for (uint32_t way = 0; way < config.ways; ++way) {
+      axi_interconnect::AXI_LLC_Bytes_t row_meta;
+      row_meta.bytes = payload.bytes;
+      const auto entry =
+          axi_interconnect::AXI_LLC::decode_meta(row_meta, way);
+      std::printf("%s{way=%u tag=0x%08x flags=0x%x}", (way == 0) ? "" : " ",
+                  way, entry.tag, static_cast<unsigned>(entry.flags));
+    }
+    std::printf("\n");
+  }
 
   static DynamicTableConfig make_table_config(uint32_t rows, uint32_t row_bytes,
                                               uint32_t latency) {
@@ -105,6 +152,13 @@ struct AxiLlcTableRuntime {
     config = cfg;
     enabled = cfg.enable && cfg.valid();
     lookup_in = {};
+    dbg_meta_read_pending = false;
+    dbg_meta_read_index = 0;
+    lookup_pending_valid = false;
+    lookup_pending_index = 0;
+    lookup_delay_left = 0;
+    lookup_queued_valid = false;
+    lookup_queued_index = 0;
     if (!enabled) {
       return;
     }
@@ -126,16 +180,38 @@ struct AxiLlcTableRuntime {
     if (!enabled) {
       return;
     }
-    DynamicTableReadResp data_resp, meta_resp, repl_resp;
-    data.comb({}, data_resp);
-    meta.comb({}, meta_resp);
-    repl.comb({}, repl_resp);
-    lookup_in.data_valid = data_resp.valid;
-    lookup_in.meta_valid = meta_resp.valid;
-    lookup_in.repl_valid = repl_resp.valid;
-    lookup_in.data.bytes = data_resp.payload.bytes;
-    lookup_in.meta.bytes = meta_resp.payload.bytes;
-    lookup_in.repl.bytes = repl_resp.payload.bytes;
+    if (!lookup_pending_valid || lookup_delay_left != 0) {
+      return;
+    }
+
+    DynamicTablePayload data_payload;
+    DynamicTablePayload meta_payload;
+    DynamicTablePayload repl_payload;
+    lookup_in.data_valid =
+        data.debug_read_row(lookup_pending_index, data_payload);
+    lookup_in.meta_valid =
+        meta.debug_read_row(lookup_pending_index, meta_payload);
+    lookup_in.repl_valid =
+        repl.debug_read_row(lookup_pending_index, repl_payload);
+    lookup_in.data.bytes = data_payload.bytes;
+    lookup_in.meta.bytes = meta_payload.bytes;
+    lookup_in.repl.bytes = repl_payload.bytes;
+
+    if (lookup_in.meta_valid && dbg_meta_read_pending &&
+        dbg_meta_read_index == lookup_pending_index &&
+        focus_set_match(config, dbg_meta_read_index)) {
+      std::printf("[AXI-LLC-TBL][META-RSP] cyc=%lld set=%u entries=",
+                  (long long)sim_time, dbg_meta_read_index);
+      for (uint32_t way = 0; way < config.ways; ++way) {
+        const auto entry =
+            axi_interconnect::AXI_LLC::decode_meta(lookup_in.meta, way);
+        std::printf("%s{way=%u tag=0x%08x flags=0x%x}",
+                    (way == 0) ? "" : " ", way, entry.tag,
+                    static_cast<unsigned>(entry.flags));
+      }
+      std::printf("\n");
+      dbg_meta_read_pending = false;
+    }
   }
 
   void seq(const axi_interconnect::AXI_LLC_TableOut_t &table_out) {
@@ -146,10 +222,15 @@ struct AxiLlcTableRuntime {
       data.reset();
       meta.reset();
       repl.reset();
+      lookup_pending_valid = false;
+      lookup_pending_index = 0;
+      lookup_delay_left = 0;
+      lookup_queued_valid = false;
+      lookup_queued_index = 0;
+      dbg_meta_read_pending = false;
+      dbg_meta_read_index = 0;
+      return;
     }
-    const auto data_read = make_read_req(table_out.data);
-    const auto meta_read = make_read_req(table_out.meta);
-    const auto repl_read = make_read_req(table_out.repl);
     const auto data_write =
         make_write_req(table_out.data, config.ways * config.line_bytes,
                        config.line_bytes);
@@ -159,9 +240,64 @@ struct AxiLlcTableRuntime {
         axi_interconnect::AXI_LLC_META_ENTRY_BYTES);
     const auto repl_write =
         make_write_req(table_out.repl, axi_interconnect::AXI_LLC_REPL_BYTES, 0);
-    data.seq(data_read, data_write);
-    meta.seq(meta_read, meta_write);
-    repl.seq(repl_read, repl_write);
+
+    data.seq({}, data_write);
+    meta.seq({}, meta_write);
+    repl.seq({}, repl_write);
+
+    const bool data_read_en = table_out.data.enable && !table_out.data.write;
+    const bool meta_read_en = table_out.meta.enable && !table_out.meta.write;
+    const bool repl_read_en = table_out.repl.enable && !table_out.repl.write;
+    const bool any_read_en = data_read_en || meta_read_en || repl_read_en;
+    if (any_read_en) {
+      assert(data_read_en && meta_read_en && repl_read_en);
+      assert(table_out.data.index == table_out.meta.index);
+      assert(table_out.data.index == table_out.repl.index);
+    }
+
+    if (lookup_pending_valid) {
+      if (lookup_delay_left > 0) {
+        lookup_delay_left--;
+      } else {
+        lookup_pending_valid = false;
+        lookup_pending_index = 0;
+      }
+    }
+
+    if (any_read_en) {
+      const uint32_t req_index = table_out.data.index;
+      if (!lookup_pending_valid && !lookup_queued_valid) {
+        lookup_pending_valid = true;
+        lookup_pending_index = req_index;
+        lookup_delay_left = config.lookup_latency == 0 ? 0 : (config.lookup_latency - 1);
+      } else if (!lookup_pending_valid) {
+        lookup_pending_valid = true;
+        lookup_pending_index = lookup_queued_index;
+        lookup_delay_left = config.lookup_latency == 0 ? 0 : (config.lookup_latency - 1);
+        lookup_queued_valid = false;
+        lookup_queued_index = 0;
+        lookup_queued_valid = true;
+        lookup_queued_index = req_index;
+      } else if (lookup_pending_index != req_index) {
+        lookup_queued_valid = true;
+        lookup_queued_index = req_index;
+      }
+      if (focus_set_match(config, req_index)) {
+        dbg_meta_read_pending = true;
+        dbg_meta_read_index = req_index;
+        std::printf("[AXI-LLC-TBL][META-REQ] cyc=%lld set=%u\n",
+                    (long long)sim_time, req_index);
+      }
+    } else if (!lookup_pending_valid && lookup_queued_valid) {
+      lookup_pending_valid = true;
+      lookup_pending_index = lookup_queued_index;
+      lookup_delay_left = config.lookup_latency == 0 ? 0 : (config.lookup_latency - 1);
+      lookup_queued_valid = false;
+      lookup_queued_index = 0;
+    }
+    if (meta_write.enable && focus_set_match(config, meta_write.address)) {
+      dump_meta_row("META-STORAGE-AFTER-WRITE", meta_write.address);
+    }
   }
 };
 
@@ -796,6 +932,23 @@ void MemSubsystem::comb() {
   dcache_.prepare_wb_queries_for_stage2();
 
   wb_.in.mshrwb   = mshr_.out.mshrwb;  // eviction push from MSHR current comb
+  if (wb_.in.mshrwb.valid) {
+    const uint32_t line_addr = wb_.in.mshrwb.addr & ~(DCACHE_LINE_BYTES - 1u);
+    if ((CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
+         line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0)) ||
+        (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
+         line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1))) {
+      std::printf(
+          "[MEMSUBSYS][MSHRWB->WB][FOCUS] cyc=%lld addr=0x%08x valid=%d\n",
+          (long long)sim_time, wb_.in.mshrwb.addr,
+          static_cast<int>(wb_.in.mshrwb.valid));
+      std::printf("[MEMSUBSYS][MSHRWB->WB][DATA] [");
+      for (int w = 0; w < DCACHE_LINE_WORDS; ++w) {
+        std::printf("%s%08x", (w == 0) ? "" : " ", wb_.in.mshrwb.data[w]);
+      }
+      std::printf("]\n");
+    }
+  }
   wb_.comb_inputs();
   wb_.comb_outputs();
   mshr_.in.wbmshr = wb_.out.wbmshr;
@@ -909,8 +1062,9 @@ void MemSubsystem::comb() {
         continue;
       }
       record_debug_event(DebugEventKind::LSU_LOAD_RESP,
-                         static_cast<uint8_t>(MemReadArbBlock::Owner::LSU), 0,
-                         resp.data, resp.replay, 0, resp.req_id,
+                         static_cast<uint8_t>(MemReadArbBlock::Owner::LSU),
+                         resp.debug_addr, resp.data, resp.replay, resp.debug_src,
+                         resp.req_id,
                          static_cast<uint8_t>(i));
     }
 
@@ -1211,6 +1365,30 @@ void MemSubsystem::dump_recent_debug_events() const {
       return "unknown";
     }
   };
+  auto load_resp_src_name = [](uint8_t src) {
+    switch (src) {
+    case 1:
+      return "special";
+    case 2:
+      return "mshr_fill";
+    case 3:
+      return "wb_bypass";
+    case 4:
+      return "dcache_hit";
+    case 11:
+      return "replay_bank_conflict";
+    case 12:
+      return "replay_mshr_pending_guard";
+    case 13:
+      return "replay_mshr_hit";
+    case 14:
+      return "replay_mshr_full";
+    case 15:
+      return "replay_first_alloc";
+    default:
+      return "unknown";
+    }
+  };
 
   const size_t start =
       (debug_event_head_ + kDebugEventCapacity - recent_count) %
@@ -1218,12 +1396,22 @@ void MemSubsystem::dump_recent_debug_events() const {
   std::printf("[DEADLOCK][MEM][EVENTS] showing last %zu events\n", recent_count);
   for (size_t i = 0; i < recent_count; i++) {
     const DebugEvent &e = debug_events_[(start + i) % kDebugEventCapacity];
-    std::printf(
-        "[DEADLOCK][MEM][EVENT %02zu] cyc=%" PRIu64
-        " kind=%s owner=%s port=%u replay=%u extra=%u addr=0x%08x data=0x%08x req_id=%zu\n",
-        i, e.cycle, event_name(e.kind), mem_owner_name(e.owner),
-        static_cast<unsigned>(e.port), static_cast<unsigned>(e.replay),
-        static_cast<unsigned>(e.extra), e.addr, e.data, e.req_id);
+    if (e.kind == DebugEventKind::LSU_LOAD_RESP) {
+      std::printf(
+          "[DEADLOCK][MEM][EVENT %02zu] cyc=%" PRIu64
+          " kind=%s owner=%s port=%u replay=%u src=%s(%u) addr=0x%08x data=0x%08x req_id=%zu\n",
+          i, e.cycle, event_name(e.kind), mem_owner_name(e.owner),
+          static_cast<unsigned>(e.port), static_cast<unsigned>(e.replay),
+          load_resp_src_name(e.extra), static_cast<unsigned>(e.extra), e.addr,
+          e.data, e.req_id);
+    } else {
+      std::printf(
+          "[DEADLOCK][MEM][EVENT %02zu] cyc=%" PRIu64
+          " kind=%s owner=%s port=%u replay=%u extra=%u addr=0x%08x data=0x%08x req_id=%zu\n",
+          i, e.cycle, event_name(e.kind), mem_owner_name(e.owner),
+          static_cast<unsigned>(e.port), static_cast<unsigned>(e.replay),
+          static_cast<unsigned>(e.extra), e.addr, e.data, e.req_id);
+    }
   }
 }
 

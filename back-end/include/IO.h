@@ -1514,6 +1514,7 @@ struct StqEntry {
   mask_t   br_mask  = {};
   uint32_t rob_idx  = 0;
   uint32_t rob_flag = 0;
+  uint32_t stq_flag = 0;
 };
 
 struct LoadReq {
@@ -1543,7 +1544,11 @@ struct LoadResp {
     MicroOp uop;
     size_t req_id;
     wire<2> replay;
-    LoadResp() : valid(false), data(0), uop(), req_id(0), replay(0) {}
+    uint32_t debug_addr;
+    uint8_t debug_src;
+    LoadResp()
+        : valid(false), data(0), uop(), req_id(0), replay(0), debug_addr(0),
+          debug_src(0) {}
 };
 
 // Store响应结构
@@ -1730,6 +1735,7 @@ struct DisLsuIO {
   wire<3> func3[MAX_STQ_DISPATCH_WIDTH];
   wire<ROB_IDX_WIDTH> rob_idx[MAX_STQ_DISPATCH_WIDTH];
   wire<1> rob_flag[MAX_STQ_DISPATCH_WIDTH];
+  wire<1> stq_flag[MAX_STQ_DISPATCH_WIDTH];
 
   wire<1> ldq_alloc_req[MAX_LDQ_DISPATCH_WIDTH];
   wire<LDQ_IDX_WIDTH> ldq_idx[MAX_LDQ_DISPATCH_WIDTH];
@@ -1747,6 +1753,8 @@ struct DisLsuIO {
     for (auto &v : rob_idx)
       v = 0;
     for (auto &v : rob_flag)
+      v = 0;
+    for (auto &v : stq_flag)
       v = 0;
     for (auto &v : ldq_alloc_req)
       v = 0;
