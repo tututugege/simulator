@@ -115,6 +115,12 @@ void Exu::init() {
   }
 }
 
+void Exu::comb_begin() {
+  for (int i = 0; i < ISSUE_WIDTH; i++) {
+    inst_r_1[i] = inst_r[i];
+  }
+}
+
 void Exu::comb_ftq_pc_req() {
   for (auto &req : out.ftq_pc_req->req) {
     req = {};
@@ -248,12 +254,10 @@ void Exu::comb_pipeline() {
       continue;
     }
 
-    if (inst_r[i].valid && issue_stall[i]) {
-      inst_r_1[i] = inst_r[i];
-    } else if (in.prf2exe->iss_entry[i].valid) {
+    if (!(inst_r[i].valid && issue_stall[i]) && in.prf2exe->iss_entry[i].valid) {
       inst_r_1[i].valid = true;
       inst_r_1[i].uop = ExuInst::from_prf_exe_uop(in.prf2exe->iss_entry[i].uop);
-    } else {
+    } else if (!(inst_r[i].valid && issue_stall[i])) {
       inst_r_1[i].valid = false;
     }
 

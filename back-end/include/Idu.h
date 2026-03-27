@@ -29,6 +29,7 @@ public:
   void decode(DecRenIO::DecRenInst &uop, uint32_t inst);
 
   void init();
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
   void comb_decode(); // 译码并分配tag
   void comb_branch(); // 分支处理
   void comb_fire();  // 发射握手与分支tag推进

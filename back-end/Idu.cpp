@@ -26,6 +26,15 @@ void Idu::init() {
   br_latch = {};
 }
 
+void Idu::comb_begin() {
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    tag_vec_1[i] = tag_vec[i];
+    br_mask_cp_1[i] = br_mask_cp[i];
+  }
+  now_br_mask_1 = now_br_mask;
+  pending_free_mask_1 = pending_free_mask;
+}
+
 // 译码并分配 Tag
 void Idu::comb_decode() {
   wire<1> alloc_valid[DECODE_WIDTH];
@@ -118,14 +127,6 @@ void Idu::comb_decode() {
 }
 
 void Idu::comb_branch() {
-  // Init next state
-  for (int i = 0; i < MAX_BR_NUM; i++) {
-    tag_vec_1[i] = tag_vec[i];
-    br_mask_cp_1[i] = br_mask_cp[i];
-  }
-  now_br_mask_1 = now_br_mask;
-  pending_free_mask_1 = pending_free_mask;
-
   // 0. 先应用上拍累积的释放请求（延迟一拍生效）
   wire<BR_MASK_WIDTH> matured_free = pending_free_mask;
   for (int i = 1; i < MAX_BR_NUM; i++) {

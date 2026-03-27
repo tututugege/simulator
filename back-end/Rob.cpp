@@ -55,6 +55,18 @@ void Rob::init() {
   }
 }
 
+void Rob::comb_begin() {
+  for (int i = 0; i < ROB_BANK_NUM; i++) {
+    for (int j = 0; j < ROB_LINE_NUM; j++) {
+      entry_1[i][j] = entry[i][j];
+    }
+  }
+  enq_ptr_1 = enq_ptr;
+  deq_ptr_1 = deq_ptr;
+  enq_flag_1 = enq_flag;
+  deq_flag_1 = deq_flag;
+}
+
 void Rob::comb_ready() {
   out.rob2dis->stall = false;
   out.rob2csr->commit = false;

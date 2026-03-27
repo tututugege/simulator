@@ -28,7 +28,7 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 
 #define CONFIG_DIFFTEST
 // #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 #define CONFIG_TLB_MMU
 
 // Replay throttling heuristics.

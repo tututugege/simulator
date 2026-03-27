@@ -22,6 +22,7 @@ public:
   PrfIn in;
   PrfOut out;
 
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
   void comb_complete();
   void comb_awake();
   void comb_read();

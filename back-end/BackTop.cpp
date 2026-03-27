@@ -214,6 +214,14 @@ void BackTop::comb() {
 #endif
 
   pre_idu_queue->comb_begin();
+  idu->comb_begin();
+  rename->comb_begin();
+  dis->comb_begin();
+  isu->comb_begin();
+  prf->comb_begin();
+  exu->comb_begin();
+  rob->comb_begin();
+  csr->comb_begin();
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
     pre_idu_queue->in.front2dec->valid[i] = in.valid[i];

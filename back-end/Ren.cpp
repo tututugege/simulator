@@ -60,6 +60,18 @@ void Ren::init() {
   std::memset(alloc_checkpoint_1, 0, sizeof(alloc_checkpoint_1));
 }
 
+void Ren::comb_begin() {
+  memcpy(inst_r_1, inst_r, DECODE_WIDTH * sizeof(DecRenIO::DecRenInst));
+  memcpy(inst_valid_1, inst_valid, DECODE_WIDTH * sizeof(reg<1>));
+  memcpy(spec_RAT_1, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
+  memcpy(arch_RAT_1, arch_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
+  memcpy(free_vec_1, free_vec, PRF_NUM);
+  memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
+  memcpy(RAT_checkpoint_1, RAT_checkpoint,
+         MAX_BR_NUM * (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
+  memcpy(alloc_checkpoint_1, alloc_checkpoint, MAX_BR_NUM * PRF_NUM);
+}
+
 void Ren::comb_alloc() {
   // 可用寄存器个数 每周期最多使用DECODE_WIDTH个
   wire<PRF_IDX_WIDTH> alloc_reg[DECODE_WIDTH];
@@ -339,7 +351,6 @@ void Ren ::comb_pipeline() {
       inst_r_1[i].br_mask &= ~clear_mask;
     } else {
       inst_valid_1[i] = inst_valid[i] && !fire[i];
-      inst_r_1[i] = inst_r[i];
     }
   }
 

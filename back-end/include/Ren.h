@@ -25,6 +25,7 @@ public:
   RenOut out;
 
   void init();
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
   void comb_select();
   void comb_rename(); // 重命名
   void comb_fire();

@@ -48,6 +48,14 @@ void Dispatch::init() {
   std::memset(busy_table_1, 0, sizeof(busy_table_1));
 }
 
+void Dispatch::comb_begin() {
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    inst_r_1[i] = inst_r[i];
+    inst_valid_1[i] = inst_valid[i];
+  }
+  std::memcpy(busy_table_1, busy_table, sizeof(busy_table_1));
+}
+
 void Dispatch::comb_alloc() {
   int store_alloc_count = 0; // 当前周期已分配的 store 数量
   int load_alloc_count = 0;  // 当前周期已分配的 load 数量
@@ -666,12 +674,6 @@ void Dispatch::comb_pipeline() {
       }
     }
 #endif
-  }
-
-  // 默认保持，再按条件覆盖。
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    inst_r_1[i] = inst_r[i];
-    inst_valid_1[i] = inst_valid[i];
   }
 
   for (int i = 0; i < DECODE_WIDTH; i++) {

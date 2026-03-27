@@ -74,6 +74,14 @@ void Isu::init() {
   }
 }
 
+void Isu::comb_begin() {
+  for (auto &q : iqs) {
+    q.entry_1 = q.entry;
+    q.count_1 = q.count;
+  }
+  latency_pipe_1 = latency_pipe;
+}
+
 
 int Isu::get_latency(UopType uop) {
   if (uop == UOP_MUL)
