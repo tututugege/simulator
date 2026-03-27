@@ -30,10 +30,7 @@ public:
   void comb_rename(); // 重命名
   void comb_fire();
   void comb_alloc(); // 分配寄存器
-  void comb_branch();
-  void comb_commit();
   void comb_pipeline();
-  void comb_flush();
   void seq();
 
   // register
