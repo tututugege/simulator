@@ -75,10 +75,12 @@ struct AxiLlcTableRuntime {
     if (!cfg.enable || !cfg.valid()) {
       return false;
     }
-    return set_idx == axi_interconnect::AXI_LLC::set_index(
-                          cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0)) ||
-           set_idx == axi_interconnect::AXI_LLC::set_index(
-                          cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1));
+    return (CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
+            set_idx == axi_interconnect::AXI_LLC::set_index(
+                           cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0))) ||
+           (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
+            set_idx == axi_interconnect::AXI_LLC::set_index(
+                           cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1)));
   }
 
   void dump_meta_row(const char *tag, uint32_t set_idx) const {
