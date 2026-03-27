@@ -230,22 +230,37 @@ void ICache::seq() {
   io.regs = io.reg_write;
 }
 
-void ICache::lookup_read_set(uint32_t lookup_index, bool gate_valid_with_req) {
-  (void)lookup_index;
+void ICache::capture_lookup_result(uint32_t compare_tag, bool compare_valid) {
+  lookup_hit_valid_w = false;
+  lookup_has_invalid_way_w = false;
+  lookup_first_invalid_way_w = 0;
+  for (uint32_t word = 0; word < word_num; ++word) {
+    lookup_hit_data_w[word] = 0;
+  }
+
   if (!io.lookup_in.lookup_resp_valid) {
     return;
   }
+
   for (uint32_t way = 0; way < way_cnt; ++way) {
+    const bool valid = io.lookup_in.lookup_set_valid[way];
+    if (!valid && !lookup_has_invalid_way_w) {
+      lookup_has_invalid_way_w = true;
+      lookup_first_invalid_way_w = way;
+    }
+
+    if (!compare_valid || lookup_hit_valid_w || !valid) {
+      continue;
+    }
+
+    if (io.lookup_in.lookup_set_tag[way] != compare_tag) {
+      continue;
+    }
+
+    lookup_hit_valid_w = true;
     for (uint32_t word = 0; word < word_num; ++word) {
-      lookup_set_data_w[way][word] =
-          io.lookup_in.lookup_set_data[way][word];
+      lookup_hit_data_w[word] = io.lookup_in.lookup_set_data[way][word];
     }
-    lookup_set_tag_w[way] = io.lookup_in.lookup_set_tag[way];
-    bool valid_bit = io.lookup_in.lookup_set_valid[way];
-    if (gate_valid_with_req) {
-      valid_bit = valid_bit && io.in.ifu_req_valid;
-    }
-    lookup_set_valid_w[way] = valid_bit;
   }
 }
 
@@ -260,12 +275,6 @@ void ICache::lookup(uint32_t index) {
   uint32_t load_pc = io.regs.lookup_pending_r ? io.regs.lookup_pc_r : io.in.pc;
   uint32_t load_index = index;
   bool req_valid_next = io.regs.req_valid_r;
-
-  if (ICACHE_LOOKUP_LATENCY == 0) {
-    lookup_read_set(index, /*gate_valid_with_req=*/false);
-  } else if (io.regs.lookup_pending_r && io.lookup_in.lookup_resp_valid) {
-    lookup_read_set(io.regs.lookup_index_r, /*gate_valid_with_req=*/false);
-  }
 
   if (kill_pipe) {
     req_ready_w = false;
@@ -311,17 +320,6 @@ void ICache::lookup(uint32_t index) {
       io.lookup_in.lookup_resp_valid && slot_idle) {
     sram_load_fire = true;
     lookup_pending_next = false;
-  }
-
-  if (sram_load_fire) {
-    if (io.regs.lookup_pending_r) {
-      load_pc = io.regs.lookup_pc_r;
-      load_index = io.regs.lookup_index_r;
-    } else {
-      load_pc = io.in.pc;
-      load_index = index;
-    }
-    lookup_read_set(load_index, /*gate_valid_with_req=*/false);
   }
 
   if (sram_load_fire) {
@@ -447,19 +445,12 @@ void ICache::eval_state_machine() {
       }
 
       uint32_t index = (io.in.pc >> offset_bits) & (set_num - 1u);
-      lookup_read_set(index, /*gate_valid_with_req=*/false);
-      bool hit = false;
-      for (uint32_t way = 0; way < way_cnt; ++way) {
-        if (lookup_set_valid_w[way] &&
-            lookup_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
-          hit = true;
-          for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = lookup_set_data_w[way][word];
-          }
-          break;
+      (void)index;
+      capture_lookup_result(io.in.ppn & 0xFFFFF, /*compare_valid=*/true);
+      if (lookup_hit_valid_w) {
+        for (uint32_t word = 0; word < word_num; ++word) {
+          io.out.rd_data[word] = lookup_hit_data_w[word];
         }
-      }
-      if (hit) {
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = false;
         if (SIM_DEBUG_PRINT_ACTIVE &&
@@ -497,22 +488,13 @@ void ICache::eval_state_machine() {
         dump_icache_module_ctx("REG_LOOKUP_STALE", sim_time, io, mem_gnt);
       }
 
-      lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
-      bool hit = false;
-      for (uint32_t way = 0; way < way_cnt; ++way) {
-        if (lookup_set_valid_w[way] &&
-            lookup_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
-          hit = true;
-          for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = lookup_set_data_w[way][word];
-          }
-          break;
+      capture_lookup_result(io.in.ppn & 0xFFFFF, /*compare_valid=*/true);
+      io.out.ifu_resp_valid = lookup_hit_valid_w;
+      req_ready_w = lookup_hit_valid_w;
+      if (lookup_hit_valid_w) {
+        for (uint32_t word = 0; word < word_num; ++word) {
+          io.out.rd_data[word] = lookup_hit_data_w[word];
         }
-      }
-
-      io.out.ifu_resp_valid = hit;
-      req_ready_w = hit;
-      if (hit) {
         if (SIM_DEBUG_PRINT_ACTIVE &&
             icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
           dump_icache_module_line("REG_HIT", sim_time, io, mem_gnt,
@@ -533,10 +515,10 @@ void ICache::eval_state_machine() {
             std::printf(
                 " | way%u v=%u tag=0x%05x w0=0x%08x w7=0x%08x",
                 static_cast<unsigned>(way),
-                static_cast<unsigned>(lookup_set_valid_w[way]),
-                static_cast<unsigned>(lookup_set_tag_w[way]),
-                static_cast<unsigned>(lookup_set_data_w[way][0]),
-                static_cast<unsigned>(lookup_set_data_w[way][7]));
+                static_cast<unsigned>(io.lookup_in.lookup_set_valid[way]),
+                static_cast<unsigned>(io.lookup_in.lookup_set_tag[way]),
+                static_cast<unsigned>(io.lookup_in.lookup_set_data[way][0]),
+                static_cast<unsigned>(io.lookup_in.lookup_set_data[way][7]));
           }
           std::printf("\n");
         }
@@ -648,16 +630,10 @@ void ICache::eval_state_machine() {
         for (uint32_t offset = 0; offset < ICACHE_LINE_SIZE / 4; ++offset) {
           mem_resp_data_w[offset] = io.in.mem_resp_data[offset];
         }
-        lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
-        bool found_invalid = false;
-        for (uint32_t way = 0; way < way_cnt; ++way) {
-          if (!lookup_set_valid_w[way]) {
-            replace_idx_next = way;
-            found_invalid = true;
-            break;
-          }
-        }
-        if (!found_invalid) {
+        capture_lookup_result(io.regs.ppn_r & 0xFFFFF, /*compare_valid=*/false);
+        if (lookup_has_invalid_way_w) {
+          replace_idx_next = lookup_first_invalid_way_w;
+        } else {
           replace_idx_next = (io.regs.replace_idx + 1) % way_cnt;
         }
 

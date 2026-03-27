@@ -250,10 +250,13 @@ private:
                               // each word is 4 bytes)
   static uint32_t const way_cnt = ICACHE_V1_WAYS; // N-way set associative cache
 
-  // Current-cycle lookup set view used by the request compare path.
-  uint32_t lookup_set_data_w[way_cnt][word_num] = {{0}};
-  uint32_t lookup_set_tag_w[way_cnt] = {0};
-  bool lookup_set_valid_w[way_cnt] = {false};
+  // Folded lookup view used by the request compare path. The full set view
+  // arrives through `io.lookup_in`; the module keeps only the matched line and
+  // replacement summary for the current comb evaluation.
+  bool lookup_hit_valid_w = false;
+  uint32_t lookup_hit_data_w[word_num] = {0};
+  bool lookup_has_invalid_way_w = false;
+  uint32_t lookup_first_invalid_way_w = 0;
 
   icache_module_n::ICacheState state_next =
       icache_module_n::IDLE; // Next state of the i-cache
@@ -285,9 +288,9 @@ private:
   uint32_t lookup_index_next = 0;
   uint32_t lookup_pc_next = 0;
 
-  // Lookup helpers (stage1 read)
+  // Lookup helpers (current-cycle fold from the table response)
   void lookup(uint32_t index);
-  void lookup_read_set(uint32_t lookup_index, bool gate_valid_with_req);
+  void capture_lookup_result(uint32_t compare_tag, bool compare_valid);
 };
 }; // namespace icache_module_n
 
