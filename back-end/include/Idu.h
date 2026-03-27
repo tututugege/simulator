@@ -33,7 +33,6 @@ public:
   void comb_decode(); // 译码并分配tag
   void comb_branch(); // 分支处理
   void comb_fire();  // 发射握手与分支tag推进
-  void comb_flush(); // flush处理
   void seq();              // 时钟跳变，状态更新
 
   // 状态

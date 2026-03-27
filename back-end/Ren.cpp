@@ -225,6 +225,9 @@ void Ren::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     out.ren2dec->ready &= fire[i] || !inst_valid[i];
   }
+  if (in.rob_bcast->flush || in.dec_bcast->mispred) {
+    out.ren2dec->ready = false;
+  }
 }
 
 // 误预测和刷新 (Flush) 不会同时发生

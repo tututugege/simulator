@@ -127,46 +127,13 @@ void Idu::comb_decode() {
 }
 
 void Idu::comb_branch() {
-  // 0. 先应用上拍累积的释放请求（延迟一拍生效）
-  wire<BR_MASK_WIDTH> matured_free = pending_free_mask;
-  for (int i = 1; i < MAX_BR_NUM; i++) {
-    if ((matured_free >> i) & 1) {
-      tag_vec_1[i] = true;
-      pending_free_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
-    }
-  }
-
-  // 1. 处理 clear_mask: 所有已解析的 branch 立即释放 (IDU 本地状态)
+  // comb_branch 仅负责广播分支结果；IDU本地状态更新统一在 comb_fire 处理。
   wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
-  for (int i = 1; i < MAX_BR_NUM; i++) {
-    if ((clear >> i) & 1) {
-      // 延迟到下一拍再真正释放 tag_vec，避免同拍复用
-      pending_free_mask_1 |= (wire<BR_MASK_WIDTH>(1) << i);
-      now_br_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
-    }
-  }
-
-  // 1.5. 全局更新 br_mask_cp：已解析分支的 bit 从所有快照中清除
-  //      硬件实现：每个 br_mask_cp 寄存器加一个 AND 门，清除 clear_mask
-  //      对应的位 这防止了 tag 被复用后，旧快照仍然"保护"新指令的问题
-  if (clear != 0) {
-    for (int i = 1; i < MAX_BR_NUM; i++) {
-      br_mask_cp_1[i] &= ~clear;
-    }
-  }
-
-  // 2. 处理误预测
   if (br_latch.mispred) {
     out.dec_bcast->mispred = true;
     out.dec_bcast->br_id = br_latch.br_id;
     out.dec_bcast->redirect_rob_idx = br_latch.redirect_rob_idx;
     out.dec_bcast->br_mask = 1ULL << br_latch.br_id;
-
-    // 释放误预测分支之后分配的更年轻的 tag
-    wire<BR_MASK_WIDTH> tags_to_free = now_br_mask & ~br_mask_cp[br_latch.br_id];
-    now_br_mask_1 &= ~tags_to_free;
-    // 同样延迟到下一拍释放空闲位图
-    pending_free_mask_1 |= tags_to_free;
   } else {
     out.dec_bcast->br_mask = 0;
     out.dec_bcast->mispred = false;
@@ -178,8 +145,10 @@ void Idu::comb_branch() {
   out.dec_bcast->clear_mask = clear;
 }
 
-void Idu::comb_flush() {
-  Assert(in.rob_bcast != nullptr && "Idu::comb_flush: rob_bcast is null");
+void Idu::comb_fire() {
+  Assert(in.ren2dec != nullptr && "Idu::comb_fire: ren2dec is null");
+  Assert(in.rob_bcast != nullptr && "Idu::comb_fire: rob_bcast is null");
+  // 0. flush 最高优先级：清空本地分支状态。
   if (in.rob_bcast->flush) {
     for (int i = 1; i < MAX_BR_NUM; i++) {
       tag_vec_1[i] = true;
@@ -187,19 +156,43 @@ void Idu::comb_flush() {
     tag_vec_1[0] = false;
     now_br_mask_1 = 0;
     pending_free_mask_1 = 0;
-  }
-}
-
-void Idu::comb_fire() {
-  Assert(in.ren2dec != nullptr && "Idu::comb_fire: ren2dec is null");
-  Assert(in.rob_bcast != nullptr && "Idu::comb_fire: rob_bcast is null");
-  if (br_latch.mispred || in.rob_bcast->flush) {
-    for (int i = 0; i < DECODE_WIDTH; i++) {
-      out.dec2ren->valid[i] = false;
-    }
     return;
   }
 
+  // 1. 先应用上拍累积的释放请求（延迟一拍生效）
+  wire<BR_MASK_WIDTH> matured_free = pending_free_mask;
+  for (int i = 1; i < MAX_BR_NUM; i++) {
+    if ((matured_free >> i) & 1) {
+      tag_vec_1[i] = true;
+      pending_free_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
+    }
+  }
+
+  // 2. clear_mask 生效：已解析分支从当前运行集合清除，并延迟释放空闲位图。
+  wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
+  for (int i = 1; i < MAX_BR_NUM; i++) {
+    if ((clear >> i) & 1) {
+      pending_free_mask_1 |= (wire<BR_MASK_WIDTH>(1) << i);
+      now_br_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
+    }
+  }
+
+  // 3. 清理所有 checkpoint 中对应 clear_mask 的 bit，避免 tag 复用污染。
+  if (clear != 0) {
+    for (int i = 1; i < MAX_BR_NUM; i++) {
+      br_mask_cp_1[i] &= ~clear;
+    }
+  }
+
+  // 4. 误预测：回收更年轻 tag；本拍不再进行新分支分配。
+  if (br_latch.mispred) {
+    wire<BR_MASK_WIDTH> tags_to_free = now_br_mask & ~br_mask_cp[br_latch.br_id];
+    now_br_mask_1 &= ~tags_to_free;
+    pending_free_mask_1 |= tags_to_free;
+    return;
+  }
+
+  // 5. 正常发射路径：握手成功的分支推进 tag 分配状态。
   int br_num = 0;
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
@@ -211,7 +204,6 @@ void Idu::comb_fire() {
       br_num++;
     }
   }
-
 }
 
 void Idu::seq() {

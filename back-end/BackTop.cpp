@@ -337,7 +337,6 @@ void BackTop::comb() {
   rename->comb_commit();
   rob->comb_flush();
   rename->comb_flush();
-  idu->comb_flush();
   pre_idu_queue->comb_flush_recover();
   isu->comb_flush();
   lsu->comb_flush();
