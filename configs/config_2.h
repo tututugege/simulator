@@ -144,7 +144,6 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_L2_HIT_LATENCY = 2;
 constexpr int DCACHE_MEM_LATENCY = 8;
 // Backward-compatible alias; prefer DCACHE_MEM_LATENCY for new code.
 constexpr int DCACHE_MISS_LATENCY = DCACHE_MEM_LATENCY;
@@ -156,16 +155,6 @@ constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
 constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
 constexpr uint32_t DCACHE_TAG_MASK = (1u << DCACHE_TAG_BITS) - 1u;
 constexpr int DCACHE_MAX_PENDING_REQS = 64;
-constexpr bool DCACHE_L2_ENABLE = false;
-constexpr int DCACHE_L2_LINE_SIZE = DCACHE_LINE_SIZE; // bytes
-constexpr int DCACHE_L2_WAY_NUM = 8;
-constexpr int DCACHE_L2_OFFSET_BITS = clog2(DCACHE_L2_LINE_SIZE);
-constexpr int DCACHE_L2_INDEX_BITS = 11;
-constexpr int DCACHE_L2_SET_NUM = 1 << DCACHE_L2_INDEX_BITS;
-constexpr int DCACHE_L2_WORD_NUM = DCACHE_L2_LINE_SIZE / 4;
-constexpr int DCACHE_L2_TAG_BITS =
-    32 - DCACHE_L2_INDEX_BITS - DCACHE_L2_OFFSET_BITS;
-constexpr uint32_t DCACHE_L2_TAG_MASK = (1u << DCACHE_L2_TAG_BITS) - 1u;
 
 // ============================================================
 // Core Resources
@@ -407,11 +396,6 @@ static_assert((DCACHE_LINE_SIZE % 4) == 0,
               "DCACHE_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
 static_assert(is_power_of_two_u64(DCACHE_LINE_SIZE),
               "DCACHE_LINE_SIZE must be a power of two");
-static_assert(DCACHE_L2_LINE_SIZE > 0, "DCACHE_L2_LINE_SIZE must be positive");
-static_assert((DCACHE_L2_LINE_SIZE % 4) == 0,
-              "DCACHE_L2_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
-static_assert(is_power_of_two_u64(DCACHE_L2_LINE_SIZE),
-              "DCACHE_L2_LINE_SIZE must be a power of two");
 static_assert(DCACHE_WAY_NUM > 0, "DCACHE_WAY_NUM must be positive");
 static_assert(DCACHE_OFFSET_BITS > 0, "DCACHE_OFFSET_BITS must be positive");
 static_assert(DCACHE_INDEX_BITS > 0, "DCACHE_INDEX_BITS must be positive");
@@ -420,16 +404,6 @@ static_assert(DCACHE_WORD_NUM == DCACHE_LINE_SIZE / 4,
 static_assert(DCACHE_TAG_BITS > 0, "DCACHE_TAG_BITS must be positive");
 static_assert(DCACHE_SET_NUM > 0, "DCACHE_SET_NUM must be positive");
 static_assert(DCACHE_TAG_MASK != 0, "DCACHE_TAG_MASK must be non-zero");
-static_assert(DCACHE_L2_WAY_NUM > 0, "DCACHE_L2_WAY_NUM must be positive");
-static_assert(DCACHE_L2_OFFSET_BITS > 0,
-              "DCACHE_L2_OFFSET_BITS must be positive");
-static_assert(DCACHE_L2_INDEX_BITS > 0,
-              "DCACHE_L2_INDEX_BITS must be positive");
-static_assert(DCACHE_L2_WORD_NUM == DCACHE_L2_LINE_SIZE / 4,
-              "DCACHE_L2_WORD_NUM must match DCACHE_L2_LINE_SIZE / 4");
-static_assert(DCACHE_L2_TAG_BITS > 0, "DCACHE_L2_TAG_BITS must be positive");
-static_assert(DCACHE_L2_SET_NUM > 0, "DCACHE_L2_SET_NUM must be positive");
-static_assert(DCACHE_L2_TAG_MASK != 0, "DCACHE_L2_TAG_MASK must be non-zero");
 static_assert(LSU_LDU_COUNT <= LSU_AGU_COUNT,
               "LSU_LDU_COUNT must be <= LSU_AGU_COUNT");
 static_assert(LSU_STA_COUNT <= LSU_AGU_COUNT,

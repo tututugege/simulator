@@ -37,8 +37,6 @@ public:
 
   uint64_t dcache_access_num = 0;
   uint64_t dcache_miss_num = 0;
-  uint64_t dcache_l2_access_num = 0;
-  uint64_t dcache_l2_miss_num = 0;
   // RealDcache detailed counters
   uint64_t l1d_req_initial = 0; // first requests, excluding replay requests
   uint64_t l1d_req_all = 0; // all dcache requests, including replay requests
@@ -388,8 +386,6 @@ public:
     // dcache
     dcache_access_num = 0;
     dcache_miss_num = 0;
-    dcache_l2_access_num = 0;
-    dcache_l2_miss_num = 0;
     l1d_req_initial = 0;
     l1d_req_all = 0;
     l1d_miss_mshr_alloc = 0;
@@ -897,18 +893,6 @@ public:
            (long long)tracked_store_trace.recv_result_time);
     printf("\033[38;5;34m  - exit_stq         : %lld\033[0m\n",
            (long long)tracked_store_trace.exit_q_time);
-    if (DCACHE_L2_ENABLE) {
-      double l2_acc = (dcache_l2_access_num == 0)
-                          ? 1.0
-                          : 1.0 -
-                                dcache_l2_miss_num /
-                                    static_cast<double>(dcache_l2_access_num);
-      printf("\033[38;5;34mdcache l2 acc   : %f\033[0m\n", l2_acc);
-      printf("\033[38;5;34mdcache l2 access: %ld\033[0m\n",
-             dcache_l2_access_num);
-      printf("\033[38;5;34mdcache l2 miss  : %ld\033[0m\n",
-             dcache_l2_miss_num);
-    }
     printf("\n");
   }
 
