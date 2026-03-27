@@ -1,49 +1,69 @@
 # AXI Interconnect Integration
 
-## 简介
-目前模拟器在内存子系统 (`MemSubsystem`) 中引入了 `axi-interconnect-kit`，旨在提供一个标准化的 AXI 互连后端，以取代以往简单理想化的访存方式。这也为后续更精确地模拟总线竞争、延迟和带宽瓶颈打下了基础。
+## Current active topology
 
-## 现状与影响范围
+The repository no longer uses the earlier split design where only icache talked
+to AXI and the rest of the memory subsystem stayed on a legacy private path.
 
-当前阶段（对应 PR `28d02bf` 等），AXI 互连**仅接入了 ICache（指令缓存）**的读数据通路。
+In the current top-level `SimCpu` integration:
 
-- **ICache**：其 Miss 读请求已通过 `axi_interconnect::MASTER_ICACHE` 端口发送至新的 AXI 互连网络。
-- **DCache / PTW**：目前**不受影响**。DCache（基于 `SimpleCache` 实现）的访存请求和 PTW（Page Table Walker）仍然通过原有的简单请求/响应路由逻辑（`dcache_req_mux` 和 `resp_route_block`）直接与后端交互，并没有挂载到 AXI 总线上。
+- `DCache` read traffic is bridged onto `MASTER_DCACHE_R`
+- `DCache` write-back traffic is bridged onto `MASTER_DCACHE_W`
+- peripheral/MMIO traffic is bridged onto `MASTER_EXTRA_R/W`
+- the real icache can use `MASTER_ICACHE` when
+  `CONFIG_ICACHE_USE_AXI_MEM_PORT=1`
 
-## 架构拓扑
-```mermaid
-graph TD;
-    ICache-->|AXI Read Port|AXI_Interconnect;
-    AXI_Interconnect-->AXI_Router;
-    AXI_Router-->|0x10000000|MMIO_Bus;
-    AXI_Router-->|Other|SimDDR;
-    MMIO_Bus-->UART16550;
-    
-    %% Non-AXI Paths
-    DCache-->|Custom IO|MemSubsystem_Legacy_Mux;
-    PTW-->|Custom IO|MemSubsystem_Legacy_Mux;
-    MemSubsystem_Legacy_Mux-->Legacy_Memory_Backend;
-```
+All of those masters connect to the same top-level AXI interconnect, router,
+DDR model, and MMIO bus owned by `SimCpu`.
 
-## 配置指南
+## What still exists but is not the active SoC path
 
-系统提供了相关的宏定义，位于 `include/config.h` 文件中，用于控制 AXI 行为：
+`MemSubsystem` still contains an internal AXI runtime object. That code path is
+kept for local integration support, but the top-level SoC flow disables it with
+`mem_subsystem.set_internal_axi_runtime_active(false)`.
 
-1. **开关 ICache 的 AXI 端口**
-   ```cpp
-   // 开启 (默认)
-   #define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
-   // 关闭
-   #define CONFIG_ICACHE_USE_AXI_MEM_PORT 0
-   ```
+That means the authoritative Linux/SoC runs should be understood as:
 
-2. **AXI 协议标准**
-   ```cpp
-   // 当前仅支持 AXI4
-   #define CONFIG_AXI_PROTOCOL 4
-   ```
+- one top-level shared AXI fabric
+- optional LLC inside that fabric
+- no separate active `MemSubsystem` private AXI runtime
 
-## 初始化顺序注意事项
-为了防止前端发起请求时后端还未初始化的问题，仿真器的初始化顺序已被修改为：
-1. `mem_subsystem.init()`：先初始化 AXI Interconnect、Router、DDR 和 MMIO 设备。
-2. `front.init()`：然后再初始化前端和分支预测等模块。
+## LLC on/off semantics
+
+`CONFIG_AXI_LLC_ENABLE` configures whether the top-level interconnect enables
+its LLC.
+
+- `CONFIG_AXI_LLC_ENABLE=1`: requests go through the shared fabric with LLC
+- `CONFIG_AXI_LLC_ENABLE=0`: the same shared fabric stays in use, but the LLC
+  is disabled and the system falls back to L1 I/D-cache only
+
+This toggle does not swap DCache/PTW/peripheral over to a different interconnect.
+
+## ICache path semantics
+
+`CONFIG_ICACHE_USE_AXI_MEM_PORT` controls how the real icache gets miss data:
+
+- `1`: use the top-level AXI `MASTER_ICACHE` port
+- `0`: use the fixed-latency local read adapter in `ICacheTop`
+
+For Linux matrix work, the recommended quadrant profiles keep this set to `1`
+so the real icache stays on the same SoC fabric and only the LLC enable bit
+changes between `llc0` and `llc1`.
+
+When `CONFIG_BPU` is off, the frontend runs in Oracle mode and the real icache
+model is not stepped. In that case the compiled icache AXI setting is present
+for build consistency but not exercised at runtime.
+
+## Initialization order
+
+The shared-fabric initialization order is:
+
+1. `mem_subsystem.init()`
+2. `axi_interconnect.init()`
+3. `axi_router.init()`
+4. `axi_ddr.init()`
+5. `axi_mmio.init()`
+6. `front.init()`
+
+This keeps the shared AXI fabric ready before the frontend starts issuing
+requests.
