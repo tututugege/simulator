@@ -18,7 +18,7 @@
 static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
 static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #ifndef BPU_BANK_NUM
-#define BPU_BANK_NUM FETCH_WIDTH
+#define BPU_BANK_NUM 16
 #endif
 
 // RAS feature switch:
@@ -48,7 +48,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define TYPE_PRED_AGE_BITS 2
 #endif
 #ifndef Q_DEPTH
-#define Q_DEPTH 500 // UQ depth
+#define Q_DEPTH 5000 // UQ depth
 #endif
 
 // TAGE configs
@@ -56,7 +56,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define BASE_ENTRY_NUM 2048
 #endif
 #ifndef GHR_LENGTH
-#define GHR_LENGTH 512
+#define GHR_LENGTH 256
 #endif
 #ifndef TN_MAX
 #define TN_MAX 4
@@ -197,7 +197,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 
 // BTB configs
 #ifndef BTB_ENTRY_NUM
-#define BTB_ENTRY_NUM 1024
+#define BTB_ENTRY_NUM 512
 #endif
 #ifndef ENABLE_BTB_ALIAS_HASH
 #define ENABLE_BTB_ALIAS_HASH 1

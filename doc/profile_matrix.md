@@ -19,7 +19,7 @@ overwrite them.
 | `default` | 1 | 1 | 1 | real BPU, shared AXI fabric with LLC |
 | `small` | 0 | 0 | 0 | Oracle frontend, reduced frontend/backend resources |
 | `medium` | 0 | 0 | 0 | Oracle frontend, medium-sized resources |
-| `large` | 0 | 0 | 0 | Oracle frontend, large resources matching `default` widths |
+| `large` | 0 | 0 | 0 | Oracle frontend, same quick-check resource class with wider frontend width |
 
 The built-in set does not cover all four `BPU on/off x LLC on/off` combinations.
 Only `default` reaches `bpu1_llc1`; `small/medium/large` all stay in
@@ -35,11 +35,12 @@ these paired profiles:
 - `bpu1_llc0`
 - `bpu1_llc1`
 
-These quadrant profiles intentionally keep the frontend width/resource shape
-aligned with `default`/`large` so the matrix changes only the intended feature
-switches. They also keep `CONFIG_ICACHE_USE_AXI_MEM_PORT=1` in the quadrant
-profiles so the real icache path can stay on the same top-level AXI fabric; the
-only cache-hierarchy toggle between `llc0` and `llc1` is
+These quadrant profiles intentionally restore the wider frontend/backend
+resource shape from `v6_beta3` so performance-sensitive workloads such as
+`dhrystone.bin` and `coremark.bin` do not inherit the repository's quick-check
+resource limits. They also keep `CONFIG_ICACHE_USE_AXI_MEM_PORT=1` in the
+quadrant profiles so the real icache path can stay on the same top-level AXI
+fabric; the only cache-hierarchy toggle between `llc0` and `llc1` is
 `CONFIG_AXI_LLC_ENABLE`.
 
 For `bpu0_*`, the frontend runs in Oracle mode because `CONFIG_BPU` is not
