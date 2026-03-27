@@ -6,7 +6,7 @@ BUILD_DIR := build
 SIM_EXE   := $(BUILD_DIR)/simulator
 IMG     := ./baremetal/memory
 AXI_KIT_DIR := ./axi-interconnect-kit
-PROFILE ?= large
+PROFILE ?= default
 PROFILE_FRONT_SRC = ./front-end/config/frontend_feature_config.h.$(PROFILE)
 PROFILE_INCLUDE_SRC = ./include/config.h.$(PROFILE)
 PROFILE_FRONT_DST = ./front-end/config/frontend_feature_config.h
@@ -86,9 +86,12 @@ DEPS := $(OBJS:.o=.d)
 # Rules
 # ==========================================
 
-.PHONY: all clean run gdb coverage help gdb_linux linux profile-config small medium large
+.PHONY: all clean run gdb coverage help gdb_linux linux profile-config default small medium large
 
 all: $(SIM_EXE)
+
+default: PROFILE := default
+default: all
 
 small: PROFILE := small
 small: all
@@ -145,7 +148,8 @@ clean:
 
 help:
 	@echo "Usage:"
-	@echo "  make          - Build the simulator with large profile"
+	@echo "  make          - Build the simulator with default profile"
+	@echo "  make default  - Build with default profile"
 	@echo "  make large    - Build with large profile"
 	@echo "  make medium   - Build with medium profile"
 	@echo "  make small    - Build with small profile"
