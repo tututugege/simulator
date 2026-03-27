@@ -160,7 +160,11 @@ void RealLsu::comb_lsu2dis_info() {
           : stq_head_flag;
   out.lsu2dis->stq_tail = this->stq_tail;
   out.lsu2dis->stq_tail_flag = stq_tail_flag;
-  out.lsu2dis->stq_free = STQ_SIZE - this->stq_count;
+  // Leave one full commit row of visible headroom. Without this slack, oracle
+  // mode can overfill store-side speculation, which hurts Dhrystone IPC even
+  // though the total STQ capacity is technically not exhausted.
+  const int visible_stq_free_raw = STQ_SIZE - this->stq_count - COMMIT_WIDTH;
+  out.lsu2dis->stq_free = visible_stq_free_raw > 0 ? visible_stq_free_raw : 0;
   out.lsu2dis->ldq_free = LDQ_SIZE - this->ldq_count;
 
   for (auto &v : out.lsu2dis->ldq_alloc_idx) {

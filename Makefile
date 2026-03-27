@@ -86,9 +86,7 @@ DEPS := $(OBJS:.o=.d)
 # Rules
 # ==========================================
 
-.PHONY: all clean run gdb coverage help gdb_linux linux profile-config \
-	default small medium large \
-	bpu0_llc0 bpu0_llc1 bpu1_llc0 bpu1_llc1
+.PHONY: all clean run gdb coverage help gdb_linux linux profile-config default small medium large
 
 all: $(SIM_EXE)
 
@@ -103,18 +101,6 @@ medium: all
 
 large: PROFILE := large
 large: all
-
-bpu0_llc0: PROFILE := bpu0_llc0
-bpu0_llc0: all
-
-bpu0_llc1: PROFILE := bpu0_llc1
-bpu0_llc1: all
-
-bpu1_llc0: PROFILE := bpu1_llc0
-bpu1_llc0: all
-
-bpu1_llc1: PROFILE := bpu1_llc1
-bpu1_llc1: all
 
 # Link
 $(SIM_EXE): profile-config $(OBJS) $(LIBS)
@@ -167,10 +153,6 @@ help:
 	@echo "  make large    - Build with large profile"
 	@echo "  make medium   - Build with medium profile"
 	@echo "  make small    - Build with small profile"
-	@echo "  make bpu0_llc0 - Build four-quadrant profile: Oracle BPU + LLC off"
-	@echo "  make bpu0_llc1 - Build four-quadrant profile: Oracle BPU + LLC on"
-	@echo "  make bpu1_llc0 - Build four-quadrant profile: real BPU + LLC off"
-	@echo "  make bpu1_llc1 - Build four-quadrant profile: real BPU + LLC on"
 	@echo "  make run      - Build and run the simulator"
 	@echo "  make DEBUG=1  - Build with debug symbols"
 	@echo "  make clean    - Clean build files"
