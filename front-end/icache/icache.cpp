@@ -14,6 +14,11 @@
 #define CONFIG_ICACHE_FOCUS_VADDR_END 0u
 #endif
 
+// icache.cpp is the front-end wrapper/orchestrator:
+// - own the external tables used by icache_module
+// - bind the selected ICacheTop glue object into front_top
+// - drive per-cycle seq/perf handoff after the combinational glue is evaluated
+
 // Define global ICache instance
 icache_module_n::ICache icache;
 PtwMemPort *icache_ptw_mem_port = nullptr;
@@ -128,7 +133,97 @@ void dump_focus_read_row(const DataTable &data_table, const TagTable &tag_table,
               static_cast<unsigned>(lookup_index));
   dump_focus_row("READ", data_table, tag_table, valid_table, lookup_index);
 }
+
+struct ICacheLookupTableResp {
+  bool meta_resp_valid = false;
+  bool data_snapshot_valid = false;
+  uint32_t lookup_index = 0;
+  uint32_t set_way_line_snapshot[ICACHE_V1_WAYS][icache_module_n::ICACHE_V1_WORD_NUM] = {{0}};
+  uint32_t set_tag_snapshot[ICACHE_V1_WAYS] = {0};
+  bool set_valid_snapshot[ICACHE_V1_WAYS] = {false};
+};
+
+ICacheLookupTableResp g_lookup_table_resp;
+
+void cache_lookup_table_resp(const DataTable::ReadResp &data_resp,
+                             const TagTable::ReadResp &tag_resp,
+                             const ValidTable::ReadResp &valid_resp,
+                             uint32_t lookup_index) {
+  g_lookup_table_resp = {};
+  g_lookup_table_resp.meta_resp_valid = tag_resp.valid && valid_resp.valid;
+  g_lookup_table_resp.data_snapshot_valid = data_resp.valid;
+  g_lookup_table_resp.lookup_index = lookup_index;
+  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+    g_lookup_table_resp.set_tag_snapshot[way] = tag_resp.payload.chunks[way][0];
+    g_lookup_table_resp.set_valid_snapshot[way] = valid_resp.payload.chunks[way][0];
+    for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+      g_lookup_table_resp.set_way_line_snapshot[way][word] =
+          data_resp.payload.chunks[way][word];
+    }
+  }
+}
+
+void update_icache_perf_counters(const struct icache_in *in,
+                                 const struct icache_out *out) {
+  if (icache_ctx == nullptr || in == nullptr || out == nullptr) {
+    return;
+  }
+
+  if (!in->refetch && out->perf_req_fire) {
+    icache_ctx->perf.icache_access_num++;
+  }
+  if (icache.perf.miss_issue_valid) {
+    icache_ctx->perf.icache_miss_num++;
+  }
+#ifndef USE_IDEAL_ICACHE
+  if (icache.perf.miss_penalty_valid) {
+    icache_ctx->perf.icache_miss_penalty_total_cycles +=
+        static_cast<uint64_t>(icache.perf.miss_penalty_cycles);
+    icache_ctx->perf.icache_miss_penalty_samples++;
+  }
+  if (icache.perf.axi_read_valid) {
+    icache_ctx->perf.icache_axi_read_total_cycles +=
+        static_cast<uint64_t>(icache.perf.axi_read_cycles);
+    icache_ctx->perf.icache_axi_read_samples++;
+  }
+#endif
+}
 } // namespace
+
+void icache_fill_lookup_meta_input(icache_module_n::ICache_lookup_in_t &dst) {
+  dst = {};
+  dst.meta_resp_valid = g_lookup_table_resp.meta_resp_valid;
+  if (!g_lookup_table_resp.meta_resp_valid) {
+    return;
+  }
+
+  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+    dst.lookup_set_tag[way] = g_lookup_table_resp.set_tag_snapshot[way];
+    dst.lookup_set_valid[way] = g_lookup_table_resp.set_valid_snapshot[way];
+  }
+}
+
+void icache_fill_lookup_data_input(icache_module_n::ICache_lookup_in_t &dst,
+                                   bool req_valid, uint32_t req_index,
+                                   uint32_t req_way) {
+  dst.data_resp_valid = false;
+  dst.data_resp_way = 0;
+  for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+    dst.data_resp_line[word] = 0;
+  }
+  if (!req_valid || !g_lookup_table_resp.data_snapshot_valid ||
+      g_lookup_table_resp.lookup_index != req_index ||
+      req_way >= ICACHE_V1_WAYS) {
+    return;
+  }
+
+  dst.data_resp_valid = true;
+  dst.data_resp_way = static_cast<uint8_t>(req_way);
+  for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+    dst.data_resp_line[word] =
+        g_lookup_table_resp.set_way_line_snapshot[req_way][word];
+  }
+}
 
 void icache_seq_read(struct icache_in *in, struct icache_out *out) {
   assert(in != nullptr);
@@ -205,19 +300,9 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
   dump_focus_read_row(data_table, tag_table, valid_table, lookup_pc,
                       lookup_index,
                       data_resp.valid && tag_resp.valid && valid_resp.valid);
-
-  icache.io.lookup_in = {};
-  icache.io.lookup_in.lookup_resp_valid =
-      data_resp.valid && tag_resp.valid && valid_resp.valid;
-  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
-    icache.io.lookup_in.lookup_set_tag[way] = tag_resp.payload.chunks[way][0];
-    icache.io.lookup_in.lookup_set_valid[way] = valid_resp.payload.chunks[way][0];
-    for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
-      icache.io.lookup_in.lookup_set_data[way][word] =
-          data_resp.payload.chunks[way][word];
-    }
-  }
+  cache_lookup_table_resp(data_resp, tag_resp, valid_resp, lookup_index);
   instance->comb();
+  update_icache_perf_counters(in, out);
   instance->seq();
   data_read.enable = icache.io.regs.lookup_pending_r;
   tag_read.enable = data_read.enable;
@@ -260,7 +345,6 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
     dump_focus_row("WRITE", data_table, tag_table, valid_table,
                    static_cast<uint32_t>(icache.io.table_write.index));
   }
-  instance->syncPerf();
 }
 
 void icache_seq_write() {}

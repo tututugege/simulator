@@ -1,3 +1,8 @@
+// ICacheTop is glue logic only:
+// - bind MMU/PTW/AXI runtime objects
+// - translate external table responses into icache_module generalized IO
+// - do not add request/timing/register state here
+
 #include "include/ICacheTop.h"
 
 #include "../front_module.h"
@@ -10,8 +15,6 @@
 #include "TlbMmu.h"
 #include "config.h"
 #include "include/icache_module.h"
-
-constexpr int kFrontendIcacheMissLatency = ICACHE_MISS_LATENCY;
 
 #if __has_include("AXI_Interconnect_IO.h")
 #include "AXI_Interconnect_IO.h"
@@ -49,13 +52,16 @@ struct ReadMasterPort_t {
 #undef ICACHE_MISS_LATENCY
 #endif
 
-#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 
 extern uint32_t *p_memory;
 extern icache_module_n::ICache icache;
+void icache_fill_lookup_meta_input(icache_module_n::ICache_lookup_in_t &dst);
+void icache_fill_lookup_data_input(icache_module_n::ICache_lookup_in_t &dst,
+                                   bool req_valid, uint32_t req_index,
+                                   uint32_t req_way);
 
 namespace {
 
@@ -83,10 +89,8 @@ inline void dump_icache_focus_line(const char *tag, uint32_t fetch_pc,
   std::printf("]\n");
 }
 
-#if CONFIG_ICACHE_USE_AXI_MEM_PORT
 static_assert(ICACHE_LINE_SIZE <= axi_interconnect::MAX_READ_TRANSACTION_BYTES,
               "ICACHE_LINE_SIZE exceeds AXI upstream read transaction limit");
-#endif
 
 uint32_t icache_coherent_read(uint32_t p_addr) { return p_memory[p_addr >> 2]; }
 
@@ -171,85 +175,22 @@ struct MemReadView {
   uint32_t resp_data[ICACHE_LINE_SIZE / 4] = {0};
 };
 
-class FixedLatencyReadPort {
-public:
-  static constexpr int kMaxTxId = 16;
+struct ICacheMmuReqView {
+  bool context_flush = false;
+  bool cancel_pending = false;
+  bool translate_valid = false;
+  uint32_t vaddr = 0;
+  CsrStatusIO *csr_status = nullptr;
+};
 
-  void bind(axi_interconnect::ReadMasterPort_t *port) { (void)port; }
-
-  void reset() {
-    valid_.fill(false);
-    addr_.fill(0);
-    age_.fill(0);
-    req_accepted_ = false;
-    req_accepted_id_ = 0;
-  }
-
-  MemReadView comb_view() const {
-    MemReadView view;
-    view.req_ready = true;
-    view.req_accepted = req_accepted_;
-    view.req_accepted_id = req_accepted_id_;
-    int matured_id = pick_matured_resp_id();
-    if (matured_id >= 0) {
-      view.resp_valid = true;
-      view.resp_id = static_cast<uint8_t>(matured_id & 0xF);
-      uint32_t base = addr_[matured_id] & ~(ICACHE_LINE_SIZE - 1u);
-      for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
-        view.resp_data[i] = p_memory[(base >> 2) + static_cast<uint32_t>(i)];
-      }
-    }
-    return view;
-  }
-
-  void comb_accept(bool, uint32_t, uint8_t, bool) {}
-
-  void seq(bool req_fire, uint32_t req_addr, uint8_t req_id, bool resp_fire,
-           uint8_t resp_id, bool) {
-    req_accepted_ = req_fire;
-    req_accepted_id_ = static_cast<uint8_t>(req_id & 0xF);
-    for (int id = 0; id < kMaxTxId; ++id) {
-      if (valid_[id]) {
-        age_[id]++;
-      }
-    }
-
-    if (req_fire) {
-      uint8_t id = static_cast<uint8_t>(req_id & 0xF);
-      if (valid_[id]) {
-        std::cout << "[icache_top] ERROR: duplicate mem txid " << std::dec
-                  << static_cast<int>(id) << std::endl;
-        std::exit(1);
-      }
-      valid_[id] = true;
-      addr_[id] = req_addr & ~(ICACHE_LINE_SIZE - 1u);
-      age_[id] = 0;
-    }
-
-    if (resp_fire) {
-      uint8_t id = static_cast<uint8_t>(resp_id & 0xF);
-      valid_[id] = false;
-      addr_[id] = 0;
-      age_[id] = 0;
-    }
-  }
-
-private:
-  std::array<bool, kMaxTxId> valid_{};
-  std::array<uint32_t, kMaxTxId> addr_{};
-  std::array<uint32_t, kMaxTxId> age_{};
-  bool req_accepted_ = false;
-  uint8_t req_accepted_id_ = 0;
-
-  int pick_matured_resp_id() const {
-    for (int id = 0; id < kMaxTxId; ++id) {
-      if (valid_[id] &&
-          age_[id] >= static_cast<uint32_t>(kFrontendIcacheMissLatency)) {
-        return id;
-      }
-    }
-    return -1;
-  }
+struct ICacheMmuRespView {
+  bool translate_invoked = false;
+  bool ppn_valid = false;
+  uint32_t ppn = 0;
+  uint32_t paddr = 0;
+  bool page_fault = false;
+  AbstractMmu::Result translate_result = AbstractMmu::Result::OK;
+  TlbMmu::RetryReason retry_reason = TlbMmu::RetryReason::NONE;
 };
 
 class ExternalReadPortAdapter {
@@ -357,7 +298,6 @@ template <typename HW, typename ReadPort> struct TrueIcacheRuntime {
   uint32_t last_satp = 0;
   bool satp_seen = false;
   MemReadView last_mem_view{};
-  bool last_hold_for_recovery = false;
 };
 
 template <typename HW, typename ReadPort>
@@ -424,6 +364,63 @@ void bind_mem_read_port(Runtime &runtime,
   runtime.mem_read_port = port;
 }
 
+template <typename Runtime>
+ICacheMmuRespView comb_mmu_view(Runtime &runtime, SimContext *ctx,
+                                const ICacheMmuReqView &req) {
+  ensure_mmu_model(runtime, ctx);
+  ICacheMmuRespView resp;
+  if (runtime.mmu_model == nullptr) {
+    return resp;
+  }
+
+  if (req.context_flush) {
+    runtime.mmu_model->flush();
+  }
+  if (req.cancel_pending) {
+    runtime.mmu_model->cancel_pending_walk();
+  }
+  if (!req.translate_valid) {
+    return resp;
+  }
+
+  resp.translate_invoked = true;
+  uint32_t p_addr = 0;
+  resp.translate_result =
+      runtime.mmu_model->translate(p_addr, req.vaddr, 0, req.csr_status);
+  if (resp.translate_result == AbstractMmu::Result::OK) {
+    resp.paddr = p_addr;
+    resp.ppn_valid = true;
+    resp.ppn = p_addr >> 12;
+  } else if (resp.translate_result == AbstractMmu::Result::FAULT) {
+    resp.ppn_valid = true;
+    resp.page_fault = true;
+  }
+  if (auto *tlb = dynamic_cast<TlbMmu *>(runtime.mmu_model); tlb != nullptr) {
+    resp.retry_reason = tlb->last_retry_reason();
+  }
+  return resp;
+}
+
+template <typename HW>
+void apply_mmu_resp_view(HW &icache_hw, const ICacheMmuRespView &resp) {
+  icache_hw.io.in.ppn = resp.ppn;
+  icache_hw.io.in.ppn_valid = resp.ppn_valid;
+  icache_hw.io.in.page_fault = resp.page_fault;
+}
+
+template <typename HW>
+void refresh_lookup_meta_input(HW &icache_hw) {
+  icache_fill_lookup_meta_input(icache_hw.io.lookup_in);
+}
+
+template <typename HW>
+void refresh_lookup_data_input(HW &icache_hw) {
+  icache_fill_lookup_data_input(
+      icache_hw.io.lookup_in, icache_hw.io.out.lookup_data_req_valid,
+      static_cast<uint32_t>(icache_hw.io.out.lookup_data_req_index),
+      static_cast<uint32_t>(icache_hw.io.out.lookup_data_req_way));
+}
+
 template <typename HW, typename ReadPort>
 class TrueICacheTopT : public ICacheTop {
 public:
@@ -456,6 +453,11 @@ public:
 
   void dump_debug_state() const override {
     const auto &runtime = true_icache_runtime<HW, ReadPort>();
+    uint32_t cur_satp =
+        (in && in->csr_status) ? static_cast<uint32_t>(in->csr_status->satp) : 0;
+    bool satp_changed = !runtime.satp_seen || cur_satp != runtime.last_satp;
+    bool hold_for_recovery =
+        in && (in->itlb_flush || in->fence_i || in->invalidate_req || satp_changed);
     uint32_t inflight_mask = 0;
     uint32_t canceled_mask = 0;
     for (int i = 0; i < 16; ++i) {
@@ -476,7 +478,7 @@ public:
         static_cast<int>(in && in->invalidate_req),
         static_cast<int>(in && in->fence_i),
         static_cast<int>(in && in->itlb_flush),
-        static_cast<int>(runtime.last_hold_for_recovery),
+        static_cast<int>(hold_for_recovery),
         static_cast<int>(runtime.last_mem_view.req_ready),
         static_cast<int>(runtime.last_mem_view.req_accepted),
         static_cast<unsigned>(runtime.last_mem_view.req_accepted_id & 0xF),
@@ -529,26 +531,20 @@ public:
 
     auto &runtime = true_icache_runtime<HW, ReadPort>();
     auto &read_port = read_port_runtime<ReadPort>();
-    ensure_mmu_model(runtime, ctx);
     read_port.bind(runtime.mem_read_port);
 
     if (in->reset) {
       DEBUG_LOG("[icache] reset\n");
       icache_hw.reset();
       read_port.reset();
-      if (runtime.mmu_model != nullptr) {
-        runtime.mmu_model->flush();
-      }
+      ICacheMmuReqView reset_mmu_req;
+      reset_mmu_req.context_flush = true;
+      (void)comb_mmu_view(runtime, ctx, reset_mmu_req);
       runtime.satp_seen = false;
       runtime.last_satp = 0;
       runtime.last_mem_view = {};
-      runtime.last_hold_for_recovery = false;
       out->icache_read_ready = true;
       return;
-    }
-
-    if (in->refetch && runtime.mmu_model != nullptr) {
-      runtime.mmu_model->cancel_pending_walk();
     }
 
     uint32_t cur_satp =
@@ -559,10 +555,6 @@ public:
     bool cancel_pending_req = in->refetch || in->invalidate_req || in->fence_i;
     bool hold_for_recovery =
         in->itlb_flush || in->fence_i || in->invalidate_req || satp_changed;
-    runtime.last_hold_for_recovery = hold_for_recovery;
-    if (translation_context_flush && runtime.mmu_model != nullptr) {
-      runtime.mmu_model->flush();
-    }
     runtime.satp_seen = true;
     runtime.last_satp = cur_satp;
 
@@ -590,27 +582,24 @@ public:
       icache_hw.io.in.mem_resp_data[i] = mem.resp_data[i];
     }
 
-    icache_hw.comb();
+    refresh_lookup_meta_input(icache_hw);
+    icache_hw.comb_lookup_meta();
 
-    if (!in->refetch &&
-        runtime.mmu_model != nullptr &&
-        icache_hw.io.out.mmu_req_valid) {
-      itlb_translate_invoked = true;
-      uint32_t p_addr = 0;
-      uint32_t v_addr = icache_hw.io.out.mmu_req_vtag << 12;
-      AbstractMmu::Result ret =
-          runtime.mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
-      itlb_translate_ret = ret;
-      if (ret == AbstractMmu::Result::OK) {
-        icache_hw.io.in.ppn = p_addr >> 12;
-        icache_hw.io.in.ppn_valid = true;
-      } else if (ret == AbstractMmu::Result::FAULT) {
-        icache_hw.io.in.ppn_valid = true;
-        icache_hw.io.in.page_fault = true;
-      }
-    }
+    ICacheMmuReqView mmu_req;
+    mmu_req.context_flush = translation_context_flush;
+    mmu_req.cancel_pending = in->refetch;
+    mmu_req.translate_valid = !in->refetch && icache_hw.io.out.mmu_req_valid;
+    mmu_req.vaddr = static_cast<uint32_t>(icache_hw.io.out.mmu_req_vtag) << 12;
+    mmu_req.csr_status = in->csr_status;
+    const ICacheMmuRespView mmu_resp = comb_mmu_view(runtime, ctx, mmu_req);
+    itlb_translate_invoked = mmu_resp.translate_invoked;
+    itlb_translate_ret = mmu_resp.translate_result;
+    apply_mmu_resp_view(icache_hw, mmu_resp);
 
-    icache_hw.comb();
+    refresh_lookup_meta_input(icache_hw);
+    icache_hw.comb_lookup_meta();
+    refresh_lookup_data_input(icache_hw);
+    icache_hw.comb_lookup_data();
 
     read_port.comb_accept(
         icache_hw.io.out.mem_req_valid, icache_hw.io.out.mem_req_addr,
@@ -642,7 +631,7 @@ public:
 
     bool mem_req_fire =
         icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_accepted;
-    bool mem_req_issue = mem_req_fire;
+    bool mem_req_issue = icache_hw.perf.miss_issue_valid;
     if ((mem_req_fire || mem_req_issue) &&
         icache_focus_vaddr(icache_hw.io.regs.lookup_pc_r)) {
       std::printf(
@@ -684,10 +673,7 @@ public:
       } else {
         out->perf_itlb_miss = true;
         out->perf_itlb_retry = true;
-        TlbMmu::RetryReason reason = TlbMmu::RetryReason::LOCAL_WALKER_BUSY;
-        if (auto *tlb = dynamic_cast<TlbMmu *>(runtime.mmu_model); tlb != nullptr) {
-          reason = tlb->last_retry_reason();
-        }
+        TlbMmu::RetryReason reason = mmu_resp.retry_reason;
         switch (reason) {
         case TlbMmu::RetryReason::OTHER_WALK_ACTIVE:
           out->perf_itlb_retry_other_walk = true;
@@ -716,7 +702,6 @@ public:
       return;
     }
 
-    bool req_fire = icache_hw.io.in.ifu_req_valid && icache_hw.io.out.ifu_req_ready;
     bool mem_req_issue =
         icache_hw.io.out.mem_req_valid && icache_hw.io.in.mem_req_accepted;
     bool mem_resp_fire =
@@ -727,13 +712,6 @@ public:
         mem_req_issue, icache_hw.io.out.mem_req_addr,
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF), mem_resp_fire,
         static_cast<uint8_t>(icache_hw.io.in.mem_resp_id & 0xF), in->refetch);
-
-    if (!in->refetch && req_fire) {
-      access_delta++;
-    }
-    if (mem_req_issue) {
-      miss_delta++;
-    }
   }
 
 private:
@@ -803,9 +781,9 @@ public:
 
     if (in->reset) {
       DEBUG_LOG("[icache] reset\n");
-      if (runtime.mmu_model != nullptr) {
-        runtime.mmu_model->flush();
-      }
+      ICacheMmuReqView mmu_req;
+      mmu_req.context_flush = true;
+      (void)comb_mmu_view(runtime, ctx, mmu_req);
       runtime.satp_seen = false;
       runtime.last_satp = 0;
       runtime.pending_req_valid = false;
@@ -818,9 +796,10 @@ public:
       return;
     }
 
-    if ((in->refetch || in->invalidate_req || in->fence_i) &&
-        runtime.mmu_model != nullptr) {
-      runtime.mmu_model->cancel_pending_walk();
+    if (in->refetch || in->invalidate_req || in->fence_i) {
+      ICacheMmuReqView mmu_req;
+      mmu_req.cancel_pending = true;
+      (void)comb_mmu_view(runtime, ctx, mmu_req);
     }
 
     out->icache_read_complete = false;
@@ -840,9 +819,9 @@ public:
     uint32_t cur_satp =
         in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
     if (!runtime.satp_seen || cur_satp != runtime.last_satp || in->itlb_flush) {
-      if (runtime.mmu_model != nullptr) {
-        runtime.mmu_model->flush();
-      }
+      ICacheMmuReqView mmu_req;
+      mmu_req.context_flush = true;
+      (void)comb_mmu_view(runtime, ctx, mmu_req);
       runtime.satp_seen = true;
       runtime.last_satp = cur_satp;
       runtime.pending_req_valid = false;
@@ -882,19 +861,39 @@ public:
       }
       out->inst_valid[i] = true;
 
-      AbstractMmu::Result ret = AbstractMmu::Result::FAULT;
-      if (runtime.mmu_model != nullptr) {
-        ret = runtime.mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
-        for (int spin = 0; spin < 8 && ret == AbstractMmu::Result::RETRY;
-             spin++) {
-          ret = runtime.mmu_model->translate(p_addr, v_addr, 0, in->csr_status);
-        }
+      ICacheMmuReqView mmu_req;
+      mmu_req.translate_valid = true;
+      mmu_req.vaddr = v_addr;
+      mmu_req.csr_status = in->csr_status;
+      ICacheMmuRespView mmu_resp = comb_mmu_view(runtime, ctx, mmu_req);
+      AbstractMmu::Result ret = mmu_resp.translate_result;
+      p_addr = mmu_resp.paddr;
+      for (int spin = 0; spin < 8 && ret == AbstractMmu::Result::RETRY;
+           spin++) {
+        mmu_resp = comb_mmu_view(runtime, ctx, mmu_req);
+        ret = mmu_resp.translate_result;
+        p_addr = mmu_resp.paddr;
       }
 
       if (ret == AbstractMmu::Result::RETRY) {
         out->perf_itlb_miss = true;
         out->perf_itlb_retry = true;
-        out->perf_itlb_retry_local_walker_busy = true;
+        switch (mmu_resp.retry_reason) {
+        case TlbMmu::RetryReason::OTHER_WALK_ACTIVE:
+          out->perf_itlb_retry_other_walk = true;
+          break;
+        case TlbMmu::RetryReason::WALK_REQ_BLOCKED:
+          out->perf_itlb_retry_walk_req_blocked = true;
+          break;
+        case TlbMmu::RetryReason::WAIT_WALK_RESP:
+          out->perf_itlb_retry_wait_walk_resp = true;
+          break;
+        case TlbMmu::RetryReason::LOCAL_WALKER_BUSY:
+        case TlbMmu::RetryReason::NONE:
+        default:
+          out->perf_itlb_retry_local_walker_busy = true;
+          break;
+        }
         out->icache_read_complete = false;
         out->icache_read_ready = false;
         if (!runtime.pending_req_valid) {
@@ -980,7 +979,6 @@ public:
     if (runtime.pend_on_retry_comb) {
       runtime.pending_req_valid = true;
       runtime.pending_fetch_addr = in->fetch_address;
-      access_delta++;
     }
 
     if (runtime.resp_fire_comb) {
@@ -992,28 +990,14 @@ public:
 
 } // namespace
 
-void ICacheTop::syncPerf() {
-  if (ctx) {
-    ctx->perf.icache_access_num += access_delta;
-    ctx->perf.icache_miss_num += miss_delta;
-  }
-  access_delta = 0;
-  miss_delta = 0;
-}
-
 ICacheTop *get_icache_instance() {
   static std::unique_ptr<ICacheTop> instance = nullptr;
   if (!instance) {
 #ifdef USE_IDEAL_ICACHE
     instance = std::make_unique<SimpleICacheTop>();
 #else
-#if CONFIG_ICACHE_USE_AXI_MEM_PORT
     instance = std::make_unique<
         TrueICacheTopT<icache_module_n::ICache, ExternalReadPortAdapter>>(icache);
-#else
-    instance = std::make_unique<
-        TrueICacheTopT<icache_module_n::ICache, FixedLatencyReadPort>>(icache);
-#endif
 #endif
   }
   return instance.get();
