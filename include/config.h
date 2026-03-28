@@ -88,18 +88,13 @@ constexpr int ICACHE_MISS_LATENCY = 8;
     "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
 #endif
 
-// Enable the shared AXI LLC path.
-// Keep this disabled by default until the fresh-main integration is validated.
+// Enable the shared AXI LLC path. The mainline default uses LLC.
 #ifndef CONFIG_AXI_LLC_ENABLE
 #define CONFIG_AXI_LLC_ENABLE 1
 #endif
 
 #ifndef CONFIG_AXI_LLC_SIZE_BYTES
 #define CONFIG_AXI_LLC_SIZE_BYTES (8ull << 20)
-#endif
-
-#ifndef CONFIG_AXI_LLC_LINE_BYTES
-#define CONFIG_AXI_LLC_LINE_BYTES 64u
 #endif
 
 #ifndef CONFIG_AXI_LLC_WAYS
@@ -114,24 +109,9 @@ constexpr int ICACHE_MISS_LATENCY = 8;
 #define CONFIG_AXI_LLC_LOOKUP_LATENCY 8u
 #endif
 
-#ifndef CONFIG_AXI_LLC_PREFETCH_ENABLE
-#define CONFIG_AXI_LLC_PREFETCH_ENABLE 0
-#endif
-
-#ifndef CONFIG_AXI_LLC_PREFETCH_DEGREE
-#define CONFIG_AXI_LLC_PREFETCH_DEGREE 1u
-#endif
-
-#ifndef CONFIG_AXI_LLC_NINE
-#define CONFIG_AXI_LLC_NINE 1
-#endif
-
-#ifndef CONFIG_AXI_LLC_UNIFIED
-#define CONFIG_AXI_LLC_UNIFIED 1
-#endif
-
-#ifndef CONFIG_AXI_LLC_PIPT
-#define CONFIG_AXI_LLC_PIPT 1
+// Keep LLC focused tracing off in the default profile.
+#ifndef CONFIG_AXI_LLC_DEBUG_LOG
+#define CONFIG_AXI_LLC_DEBUG_LOG 0
 #endif
 
 constexpr int ICACHE_WAY_NUM = 4;

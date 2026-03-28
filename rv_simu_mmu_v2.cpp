@@ -43,15 +43,9 @@ axi_interconnect::AXI_LLCConfig make_default_llc_config() {
   axi_interconnect::AXI_LLCConfig llc_cfg;
   llc_cfg.enable = (CONFIG_AXI_LLC_ENABLE != 0);
   llc_cfg.size_bytes = CONFIG_AXI_LLC_SIZE_BYTES;
-  llc_cfg.line_bytes = CONFIG_AXI_LLC_LINE_BYTES;
   llc_cfg.ways = CONFIG_AXI_LLC_WAYS;
   llc_cfg.mshr_num = CONFIG_AXI_LLC_MSHR_NUM;
   llc_cfg.lookup_latency = CONFIG_AXI_LLC_LOOKUP_LATENCY;
-  llc_cfg.prefetch_enable = (CONFIG_AXI_LLC_PREFETCH_ENABLE != 0);
-  llc_cfg.prefetch_degree = CONFIG_AXI_LLC_PREFETCH_DEGREE;
-  llc_cfg.nine = (CONFIG_AXI_LLC_NINE != 0);
-  llc_cfg.unified = (CONFIG_AXI_LLC_UNIFIED != 0);
-  llc_cfg.pipt = (CONFIG_AXI_LLC_PIPT != 0);
   return llc_cfg;
 }
 

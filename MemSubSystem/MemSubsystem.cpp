@@ -10,14 +10,6 @@
 #include <assert.h>
 #include <cstring>
 
-#ifndef CONFIG_AXI_LLC_FOCUS_LINE0
-#define CONFIG_AXI_LLC_FOCUS_LINE0 0u
-#endif
-
-#ifndef CONFIG_AXI_LLC_FOCUS_LINE1
-#define CONFIG_AXI_LLC_FOCUS_LINE1 0u
-#endif
-
 #if __has_include("UART16550_Device.h") && \
     __has_include("AXI_Interconnect.h") && \
     __has_include("AXI_Router_AXI4.h") && \
@@ -62,47 +54,11 @@ struct AxiLlcTableRuntime {
   axi_interconnect::AXI_LLC_LookupIn_t lookup_in{};
   axi_interconnect::AXI_LLCConfig config{};
   bool enabled = false;
-  bool dbg_meta_read_pending = false;
-  uint32_t dbg_meta_read_index = 0;
   bool lookup_pending_valid = false;
   uint32_t lookup_pending_index = 0;
   uint32_t lookup_delay_left = 0;
   bool lookup_queued_valid = false;
   uint32_t lookup_queued_index = 0;
-
-  static bool focus_set_match(const axi_interconnect::AXI_LLCConfig &cfg,
-                              uint32_t set_idx) {
-    if (!cfg.enable || !cfg.valid()) {
-      return false;
-    }
-    return (CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
-            set_idx == axi_interconnect::AXI_LLC::set_index(
-                           cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0))) ||
-           (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
-            set_idx == axi_interconnect::AXI_LLC::set_index(
-                           cfg, static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1)));
-  }
-
-  void dump_meta_row(const char *tag, uint32_t set_idx) const {
-    if (!enabled || !focus_set_match(config, set_idx)) {
-      return;
-    }
-    DynamicTablePayload payload;
-    if (!meta.debug_read_row(set_idx, payload)) {
-      return;
-    }
-    std::printf("[AXI-LLC-TBL][%s] cyc=%lld set=%u entries=", tag,
-                (long long)sim_time, set_idx);
-    for (uint32_t way = 0; way < config.ways; ++way) {
-      axi_interconnect::AXI_LLC_Bytes_t row_meta;
-      row_meta.bytes = payload.bytes;
-      const auto entry =
-          axi_interconnect::AXI_LLC::decode_meta(row_meta, way);
-      std::printf("%s{way=%u tag=0x%08x flags=0x%x}", (way == 0) ? "" : " ",
-                  way, entry.tag, static_cast<unsigned>(entry.flags));
-    }
-    std::printf("\n");
-  }
 
   static DynamicTableConfig make_table_config(uint32_t rows, uint32_t row_bytes,
                                               uint32_t latency) {
@@ -153,8 +109,6 @@ struct AxiLlcTableRuntime {
     config = cfg;
     enabled = cfg.enable && cfg.valid();
     lookup_in = {};
-    dbg_meta_read_pending = false;
-    dbg_meta_read_index = 0;
     lookup_pending_valid = false;
     lookup_pending_index = 0;
     lookup_delay_left = 0;
@@ -197,22 +151,6 @@ struct AxiLlcTableRuntime {
     lookup_in.data.bytes = data_payload.bytes;
     lookup_in.meta.bytes = meta_payload.bytes;
     lookup_in.repl.bytes = repl_payload.bytes;
-
-    if (lookup_in.meta_valid && dbg_meta_read_pending &&
-        dbg_meta_read_index == lookup_pending_index &&
-        focus_set_match(config, dbg_meta_read_index)) {
-      std::printf("[AXI-LLC-TBL][META-RSP] cyc=%lld set=%u entries=",
-                  (long long)sim_time, dbg_meta_read_index);
-      for (uint32_t way = 0; way < config.ways; ++way) {
-        const auto entry =
-            axi_interconnect::AXI_LLC::decode_meta(lookup_in.meta, way);
-        std::printf("%s{way=%u tag=0x%08x flags=0x%x}",
-                    (way == 0) ? "" : " ", way, entry.tag,
-                    static_cast<unsigned>(entry.flags));
-      }
-      std::printf("\n");
-      dbg_meta_read_pending = false;
-    }
   }
 
   void seq(const axi_interconnect::AXI_LLC_TableOut_t &table_out) {
@@ -228,8 +166,6 @@ struct AxiLlcTableRuntime {
       lookup_delay_left = 0;
       lookup_queued_valid = false;
       lookup_queued_index = 0;
-      dbg_meta_read_pending = false;
-      dbg_meta_read_index = 0;
       return;
     }
     const auto data_write =
@@ -283,21 +219,12 @@ struct AxiLlcTableRuntime {
         lookup_queued_valid = true;
         lookup_queued_index = req_index;
       }
-      if (focus_set_match(config, req_index)) {
-        dbg_meta_read_pending = true;
-        dbg_meta_read_index = req_index;
-        std::printf("[AXI-LLC-TBL][META-REQ] cyc=%lld set=%u\n",
-                    (long long)sim_time, req_index);
-      }
     } else if (!lookup_pending_valid && lookup_queued_valid) {
       lookup_pending_valid = true;
       lookup_pending_index = lookup_queued_index;
       lookup_delay_left = config.lookup_latency == 0 ? 0 : (config.lookup_latency - 1);
       lookup_queued_valid = false;
       lookup_queued_index = 0;
-    }
-    if (meta_write.enable && focus_set_match(config, meta_write.address)) {
-      dump_meta_row("META-STORAGE-AFTER-WRITE", meta_write.address);
     }
   }
 };
@@ -726,15 +653,9 @@ void MemSubsystem::init() {
     axi_interconnect::AXI_LLCConfig llc_cfg;
     llc_cfg.enable = (CONFIG_AXI_LLC_ENABLE != 0);
     llc_cfg.size_bytes = CONFIG_AXI_LLC_SIZE_BYTES;
-    llc_cfg.line_bytes = CONFIG_AXI_LLC_LINE_BYTES;
     llc_cfg.ways = CONFIG_AXI_LLC_WAYS;
     llc_cfg.mshr_num = CONFIG_AXI_LLC_MSHR_NUM;
     llc_cfg.lookup_latency = CONFIG_AXI_LLC_LOOKUP_LATENCY;
-    llc_cfg.prefetch_enable = (CONFIG_AXI_LLC_PREFETCH_ENABLE != 0);
-    llc_cfg.prefetch_degree = CONFIG_AXI_LLC_PREFETCH_DEGREE;
-    llc_cfg.nine = (CONFIG_AXI_LLC_NINE != 0);
-    llc_cfg.unified = (CONFIG_AXI_LLC_UNIFIED != 0);
-    llc_cfg.pipt = (CONFIG_AXI_LLC_PIPT != 0);
     set_llc_config(llc_cfg);
   }
   axi_kit_runtime->router.init();
@@ -877,23 +798,6 @@ void MemSubsystem::comb() {
   dcache_.prepare_wb_queries_for_stage2();
 
   wb_.in.mshrwb   = mshr_.out.mshrwb;  // eviction push from MSHR current comb
-  if (wb_.in.mshrwb.valid) {
-    const uint32_t line_addr = wb_.in.mshrwb.addr & ~(DCACHE_LINE_BYTES - 1u);
-    if ((CONFIG_AXI_LLC_FOCUS_LINE0 != 0u &&
-         line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE0)) ||
-        (CONFIG_AXI_LLC_FOCUS_LINE1 != 0u &&
-         line_addr == static_cast<uint32_t>(CONFIG_AXI_LLC_FOCUS_LINE1))) {
-      std::printf(
-          "[MEMSUBSYS][MSHRWB->WB][FOCUS] cyc=%lld addr=0x%08x valid=%d\n",
-          (long long)sim_time, wb_.in.mshrwb.addr,
-          static_cast<int>(wb_.in.mshrwb.valid));
-      std::printf("[MEMSUBSYS][MSHRWB->WB][DATA] [");
-      for (int w = 0; w < DCACHE_LINE_WORDS; ++w) {
-        std::printf("%s%08x", (w == 0) ? "" : " ", wb_.in.mshrwb.data[w]);
-      }
-      std::printf("]\n");
-    }
-  }
   wb_.comb_inputs();
   wb_.comb_outputs();
   mshr_.in.wbmshr = wb_.out.wbmshr;
