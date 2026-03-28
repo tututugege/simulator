@@ -14,9 +14,11 @@
  *    - PC[4:2]: 3-bit Word offset within a cache line
  *    - PC[1:0]: 2-bit Byte offset within a word
  *
- * 当前实现不再显式拆成 comb1/comb2 两级流水线：
- * - 组合逻辑在一个请求上下文上完成 lookup / hit / miss 判断
- * - 时序逻辑只更新请求上下文、ready 状态和 refill 状态
+ * 当前实现显式拆成两段组合逻辑：
+ * - comb_lookup_meta(): 只消费 tag/valid，完成命中路选择和 miss 判断
+ * - comb_lookup_data(): 在命中路确定后消费单路 data，形成最终 hit 响应
+ * - perf 统计单独通过 ICache::perf 导出，不混入广义输入/输出
+ * - seq(): 只更新请求上下文、ready 状态和 refill 状态
  */
 #ifndef ICACHE_MODULE_H
 #define ICACHE_MODULE_H
@@ -99,14 +101,14 @@ enum AXIState {
 // Generalized-IO: lookup inputs (split from external inputs)
 // -----------------------------------------------------------------------------
 struct ICache_lookup_in_t {
-  // Transfer-valid for the lookup set view in this cycle.
-  // - register-style lookup: typically true every cycle
-  // - SRAM-style lookup: asserted only when the read response is ready
-  wire<1> lookup_resp_valid = false;
-  // Set view (WAYS x LINE_WORDS).
-  wire<ICACHE_V1_WORD_BITS> lookup_set_data[ICACHE_V1_WAYS][ICACHE_V1_WORD_NUM] = {{0}};
+  // Tag/valid response for the looked-up set. Tag match stays inside module.
+  wire<1> meta_resp_valid = false;
   wire<20> lookup_set_tag[ICACHE_V1_WAYS] = {0};
   wire<1> lookup_set_valid[ICACHE_V1_WAYS] = {false};
+  // Single-way data response selected after the module finishes tag compare.
+  wire<1> data_resp_valid = false;
+  wire<8> data_resp_way = 0;
+  wire<ICACHE_V1_WORD_BITS> data_resp_line[ICACHE_V1_WORD_NUM] = {0};
 };
 
 // -----------------------------------------------------------------------------
@@ -202,6 +204,18 @@ struct ICache_out_t {
   wire<32> mem_req_addr = 0;     // Address for memory access
   wire<4> mem_req_id = 0;        // Memory transaction ID
   wire<1> mem_resp_ready = false;
+  // External single-way data query generated after internal tag compare.
+  wire<1> lookup_data_req_valid = false;
+  wire<7> lookup_data_req_index = 0;
+  wire<8> lookup_data_req_way = 0;
+};
+
+struct ICache_perf_t {
+  wire<1> miss_issue_valid = false;
+  wire<1> miss_penalty_valid = false;
+  wire<64> miss_penalty_cycles = 0;
+  wire<1> axi_read_valid = false;
+  wire<64> axi_read_cycles = 0;
 };
 
 // cache io
@@ -221,11 +235,14 @@ public:
 
   void reset();
   void comb();
+  void comb_lookup_meta();
+  void comb_lookup_data();
   void eval_state_machine();
   void seq();
 
   // IO ports
   ICache_IO_t io;
+  ICache_perf_t perf;
 
   // Debug
   void log_state();
@@ -250,10 +267,16 @@ private:
                               // each word is 4 bytes)
   static uint32_t const way_cnt = ICACHE_V1_WAYS; // N-way set associative cache
 
-  // Current-cycle lookup set view used by the request compare path.
-  uint32_t lookup_set_data_w[way_cnt][word_num] = {{0}};
-  uint32_t lookup_set_tag_w[way_cnt] = {0};
-  bool lookup_set_valid_w[way_cnt] = {false};
+  // Folded lookup view used by the request compare path.
+  // The module only consumes generalized lookup inputs and never inspects the
+  // backing table's full set payload directly.
+  bool lookup_hit_valid_w = false;
+  bool lookup_data_ready_w = false;
+  uint32_t lookup_hit_way_w = 0;
+  uint32_t lookup_hit_data_w[word_num] = {0};
+  bool lookup_has_invalid_way_w = false;
+  uint32_t lookup_first_invalid_way_w = 0;
+  bool lookup_data_phase_en = false;
 
   icache_module_n::ICacheState state_next =
       icache_module_n::IDLE; // Next state of the i-cache
@@ -285,10 +308,26 @@ private:
   uint32_t lookup_index_next = 0;
   uint32_t lookup_pc_next = 0;
 
-  // Lookup helpers (stage1 read)
+  // Perf bookkeeping is simulator-local state, not architectural/register
+  // state of the hardware model. Keep it out of generalized IO/reg structs.
+  struct PerfState {
+    bool miss_penalty_active = false;
+    uint64_t miss_penalty_start_cycle = 0;
+    bool axi_read_active = false;
+    uint64_t axi_read_start_cycle = 0;
+  };
+  PerfState perf_state = {};
+  PerfState perf_state_next = {};
+
+  // Lookup helpers (current-cycle fold from the table response). The comb entry
+  // points are pure functions of generalized input/registered state and only
+  // differ in whether the second-stage data fold is allowed in that call.
+  void comb_core(bool allow_lookup_data_phase);
   void lookup(uint32_t index);
-  void lookup_read_set(uint32_t lookup_index, bool gate_valid_with_req);
+  void capture_lookup_meta_result(uint32_t compare_tag, bool compare_valid);
+  void capture_lookup_data_result();
 };
+
 }; // namespace icache_module_n
 
 #endif

@@ -59,6 +59,7 @@ public:
   using IssueTag = MemReadArbBlock::IssuedTag;
   static constexpr size_t kPtwReqIdBase = MemReadArbBlock::kPtwReqIdBase;
   static constexpr size_t kPtwTrackCount = 3;
+  static constexpr size_t kLsuReqTrackCount = static_cast<size_t>(LDQ_SIZE);
 
   struct PtwRouteEvent {
     bool valid = false;
@@ -123,6 +124,7 @@ public:
     reset_comb_outputs(comb_);
     nxt_ = cur_;
     register_ptw_issues(nxt_, issue_tags);
+    register_lsu_issues(nxt_, issue_tags);
 
     if (dcache_resp_io != nullptr) {
       comb_.lsu_resp.resp_ports.store_resps[0] = dcache_resp_io->resp_ports.store_resps[0];
@@ -255,12 +257,19 @@ private:
     uint32_t req_addr = 0;
   };
 
+  struct LsuReqTrack {
+    bool valid = false;
+    size_t req_id = 0;
+    uint32_t req_addr = 0;
+  };
+
   struct State {
     IssueTag issued_tags[LSU_LDU_COUNT] = {};
     ReplayTracker dtlb = {};
     ReplayTracker itlb = {};
     ReplayTracker walk = {};
     PtwReqTrack ptw_tracks[kPtwTrackCount] = {};
+    LsuReqTrack lsu_tracks[kLsuReqTrackCount] = {};
   };
 
   static void reset_state(State &state) {
@@ -272,6 +281,9 @@ private:
     state.walk = ReplayTracker{};
     for (auto &track : state.ptw_tracks) {
       track = PtwReqTrack{};
+    }
+    for (auto &track : state.lsu_tracks) {
+      track = LsuReqTrack{};
     }
   }
 
@@ -338,6 +350,25 @@ private:
     }
   }
 
+  static void register_one_lsu_issue(State &state, const IssueTag &tag) {
+    if (!tag.valid || tag.owner != Owner::LSU ||
+        tag.req_id >= kLsuReqTrackCount) {
+      return;
+    }
+
+    auto &track = state.lsu_tracks[tag.req_id];
+    track.valid = true;
+    track.req_id = tag.req_id;
+    track.req_addr = tag.req_addr;
+  }
+
+  static void register_lsu_issues(State &state,
+                                  const IssueTag (&issue_tags)[LSU_LDU_COUNT]) {
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      register_one_lsu_issue(state, issue_tags[i]);
+    }
+  }
+
   static bool lookup_ptw_track(const State &state, size_t req_id,
                                IssueTag &tag) {
     int slot = -1;
@@ -390,6 +421,31 @@ private:
     }
   }
 
+  static bool lookup_lsu_track(const State &state, size_t req_id,
+                               IssueTag &tag) {
+    if (req_id >= kLsuReqTrackCount) {
+      return false;
+    }
+    const auto &track = state.lsu_tracks[req_id];
+    if (!track.valid) {
+      return false;
+    }
+
+    tag = {};
+    tag.valid = true;
+    tag.owner = Owner::LSU;
+    tag.req_id = track.req_id;
+    tag.req_addr = track.req_addr;
+    return true;
+  }
+
+  static void clear_lsu_track(State &state, size_t req_id) {
+    if (req_id >= kLsuReqTrackCount) {
+      return;
+    }
+    state.lsu_tracks[req_id] = {};
+  }
+
   void route_load_responses(const DcacheLsuIO *dcache_resp_io,
                             const IssueTag (&issue_tags)[LSU_LDU_COUNT]) {
     if (dcache_resp_io == nullptr) {
@@ -439,11 +495,18 @@ private:
         } else if (lookup_issue_tag_by_req_id(issue_tags, raw.req_id,
                                               routed_tag)) {
         }
-      } else if (issue_tag_matches_req(cur_.issued_tags[i], true)) {
+      } else if (issue_tag_matches_req(cur_.issued_tags[i], true) &&
+                 cur_.issued_tags[i].req_id == raw.req_id) {
         routed_tag = cur_.issued_tags[i];
-      } else if (issue_tag_matches_req(issue_tags[i], true)) {
+      } else if (issue_tag_matches_req(issue_tags[i], true) &&
+                 issue_tags[i].req_id == raw.req_id) {
         // Support same-cycle request+response path (e.g., dcache hit/replay).
         routed_tag = issue_tags[i];
+      } else if (lookup_issue_tag_by_req_id(cur_.issued_tags, raw.req_id,
+                                            routed_tag)) {
+      } else if (lookup_issue_tag_by_req_id(issue_tags, raw.req_id,
+                                            routed_tag)) {
+      } else if (lookup_lsu_track(cur_, raw.req_id, routed_tag)) {
       }
       trace_raw_resp(i, raw, routed_tag);
 
@@ -463,6 +526,9 @@ private:
       switch (routed_tag.owner) {
       case Owner::LSU:
         lsu_candidates[i] = tagged;
+        if (raw.replay == 0) {
+          clear_lsu_track(nxt_, raw.req_id);
+        }
         trace_routed_resp(i, lsu_candidates[i], "lsu");
         break;
       case Owner::PTW_WALK:

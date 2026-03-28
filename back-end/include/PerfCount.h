@@ -94,6 +94,10 @@ public:
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
+  uint64_t icache_miss_penalty_total_cycles = 0;
+  uint64_t icache_miss_penalty_samples = 0;
+  uint64_t icache_axi_read_total_cycles = 0;
+  uint64_t icache_axi_read_samples = 0;
   uint64_t llc_read_access = 0;
   uint64_t llc_read_hit = 0;
   uint64_t llc_read_miss = 0;
@@ -422,6 +426,10 @@ public:
     reset_mem_op_traces();
     icache_access_num = 0;
     icache_miss_num = 0;
+    icache_miss_penalty_total_cycles = 0;
+    icache_miss_penalty_samples = 0;
+    icache_axi_read_total_cycles = 0;
+    icache_axi_read_samples = 0;
     llc_read_access = 0;
     llc_read_hit = 0;
     llc_read_miss = 0;
@@ -898,13 +906,34 @@ public:
 
   void perf_print_icache() {
     printf("\033[38;5;34m*********ICACHE COUNTER***********\033[0m\n");
-
-    printf("\033[38;5;34micache accuracy : %f\033[0m\n",
-           1 - icache_miss_num / (double)icache_access_num);
+    const double icache_hit_rate =
+        (icache_access_num == 0)
+            ? 1.0
+            : 1.0 - static_cast<double>(icache_miss_num) /
+                        static_cast<double>(icache_access_num);
+    const double icache_miss_rate = 1.0 - icache_hit_rate;
+    const double avg_miss_penalty =
+        (icache_miss_penalty_samples == 0)
+            ? 0.0
+            : static_cast<double>(icache_miss_penalty_total_cycles) /
+                  static_cast<double>(icache_miss_penalty_samples);
+    const double avg_axi_read =
+        (icache_axi_read_samples == 0)
+            ? 0.0
+            : static_cast<double>(icache_axi_read_total_cycles) /
+                  static_cast<double>(icache_axi_read_samples);
+    const double amat = 1.0 + icache_miss_rate * avg_miss_penalty;
+    printf("\033[38;5;34micache accuracy : %f\033[0m\n", icache_hit_rate);
     printf("\033[38;5;34micache access   : %ld\033[0m\n", icache_access_num);
     printf("\033[38;5;34micache hit      : %ld\033[0m\n",
            icache_access_num - icache_miss_num);
     printf("\033[38;5;34micache miss     : %ld\033[0m\n", icache_miss_num);
+    printf("\033[38;5;34mI$ AMAT(cycles) : %.6f (hit=1cy assumption)\033[0m\n",
+           amat);
+    printf("\033[38;5;34mAvg Miss Penalty: %.6f cycles (samples=%ld)\033[0m\n",
+           avg_miss_penalty, icache_miss_penalty_samples);
+    printf("\033[38;5;34mAvg AXI Read    : %.6f cycles (samples=%ld)\033[0m\n",
+           avg_axi_read, icache_axi_read_samples);
     printf("\n");
   }
 

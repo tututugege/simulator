@@ -42,7 +42,8 @@ inline void dump_icache_module_line(const char *tag, long long cycle,
                                     const uint32_t *line_words) {
   std::printf(
       "[ICACHE][MODULE][%s] cyc=%lld state=%u mem_axi=%u req_valid=%u "
-      "lookup_pending=%u lookup_resp=%u req_pc=0x%08x req_idx=%u ppn_r=0x%05x "
+      "lookup_pending=%u meta_resp=%u data_resp=%u data_way=%u "
+      "req_pc=0x%08x req_idx=%u ppn_r=0x%05x "
       "in_ppn_v=%u in_ppn=0x%05x mmu_req_v=%u mmu_vtag=0x%05x "
       "mem_req_v=%u mem_req_addr=0x%08x miss_txid_v=%u miss_txid=%u "
       "mem_req_acc=%u mem_req_acc_id=%u mem_resp_v=%u mem_resp_id=%u "
@@ -51,7 +52,9 @@ inline void dump_icache_module_line(const char *tag, long long cycle,
       static_cast<unsigned>(io.regs.mem_axi_state),
       static_cast<unsigned>(io.regs.req_valid_r),
       static_cast<unsigned>(io.regs.lookup_pending_r),
-      static_cast<unsigned>(io.lookup_in.lookup_resp_valid),
+      static_cast<unsigned>(io.lookup_in.meta_resp_valid),
+      static_cast<unsigned>(io.lookup_in.data_resp_valid),
+      static_cast<unsigned>(io.lookup_in.data_resp_way),
       static_cast<unsigned>(io.regs.req_pc_r),
       static_cast<unsigned>(io.regs.req_index_r),
       static_cast<unsigned>(io.regs.ppn_r),
@@ -79,7 +82,8 @@ inline void dump_icache_module_ctx(const char *tag, long long cycle,
                                    const ICache_IO_t &io, bool mem_gnt) {
   std::printf(
       "[ICACHE][MODULE][%s] cyc=%lld state=%u mem_axi=%u req_valid=%u "
-      "lookup_pending=%u lookup_resp=%u req_pc=0x%08x req_idx=%u ppn_r=0x%05x "
+      "lookup_pending=%u meta_resp=%u data_resp=%u data_way=%u "
+      "req_pc=0x%08x req_idx=%u ppn_r=0x%05x "
       "in_ppn_v=%u in_ppn=0x%05x mmu_req_v=%u mmu_vtag=0x%05x "
       "mem_req_v=%u mem_req_addr=0x%08x miss_txid_v=%u miss_txid=%u "
       "mem_req_acc=%u mem_req_acc_id=%u mem_resp_v=%u mem_resp_id=%u "
@@ -88,7 +92,9 @@ inline void dump_icache_module_ctx(const char *tag, long long cycle,
       static_cast<unsigned>(io.regs.mem_axi_state),
       static_cast<unsigned>(io.regs.req_valid_r),
       static_cast<unsigned>(io.regs.lookup_pending_r),
-      static_cast<unsigned>(io.lookup_in.lookup_resp_valid),
+      static_cast<unsigned>(io.lookup_in.meta_resp_valid),
+      static_cast<unsigned>(io.lookup_in.data_resp_valid),
+      static_cast<unsigned>(io.lookup_in.data_resp_way),
       static_cast<unsigned>(io.regs.req_pc_r),
       static_cast<unsigned>(io.regs.req_index_r),
       static_cast<unsigned>(io.regs.ppn_r),
@@ -146,6 +152,8 @@ ICache::ICache() {
     io.regs.txid_inflight_r[i] = false;
     io.regs.txid_canceled_r[i] = false;
   }
+  perf_state = {};
+  perf_state_next = {};
   mem_gnt = 0;
   io.regs.req_valid_r = false;
   io.regs.req_pc_r = 0;
@@ -177,6 +185,8 @@ void ICache::reset() {
     io.regs.txid_inflight_r[i] = false;
     io.regs.txid_canceled_r[i] = false;
   }
+  perf_state = {};
+  perf_state_next = {};
   mem_gnt = 0;
   io.regs.req_valid_r = false;
   io.regs.req_pc_r = 0;
@@ -194,8 +204,23 @@ void ICache::reset() {
 }
 
 void ICache::comb() {
+  comb_core(/*allow_lookup_data_phase=*/true);
+}
+
+void ICache::comb_lookup_meta() {
+  comb_core(/*allow_lookup_data_phase=*/false);
+}
+
+void ICache::comb_lookup_data() {
+  comb_core(/*allow_lookup_data_phase=*/true);
+}
+
+void ICache::comb_core(bool allow_lookup_data_phase) {
+  lookup_data_phase_en = allow_lookup_data_phase;
   // Initialize generalized outputs at the start of comb().
   io.out = {};
+  perf = {};
+  perf_state_next = perf_state;
   io.table_write = {};
   fast_bypass_fire = false;
   fast_bypass_from_pending = false;
@@ -226,27 +251,57 @@ void ICache::comb() {
   io.out.ifu_req_ready = req_ready_w;
 }
 
-void ICache::seq() {
-  io.regs = io.reg_write;
-}
+void ICache::capture_lookup_meta_result(uint32_t compare_tag,
+                                        bool compare_valid) {
+  lookup_hit_valid_w = false;
+  lookup_data_ready_w = false;
+  lookup_hit_way_w = 0;
+  lookup_has_invalid_way_w = false;
+  lookup_first_invalid_way_w = 0;
+  for (uint32_t word = 0; word < word_num; ++word) {
+    lookup_hit_data_w[word] = 0;
+  }
 
-void ICache::lookup_read_set(uint32_t lookup_index, bool gate_valid_with_req) {
-  (void)lookup_index;
-  if (!io.lookup_in.lookup_resp_valid) {
+  if (!io.lookup_in.meta_resp_valid) {
     return;
   }
-  for (uint32_t way = 0; way < way_cnt; ++way) {
-    for (uint32_t word = 0; word < word_num; ++word) {
-      lookup_set_data_w[way][word] =
-          io.lookup_in.lookup_set_data[way][word];
+
+  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+    const bool valid = io.lookup_in.lookup_set_valid[way];
+    if (!valid && !lookup_has_invalid_way_w) {
+      lookup_has_invalid_way_w = true;
+      lookup_first_invalid_way_w = static_cast<uint8_t>(way);
     }
-    lookup_set_tag_w[way] = io.lookup_in.lookup_set_tag[way];
-    bool valid_bit = io.lookup_in.lookup_set_valid[way];
-    if (gate_valid_with_req) {
-      valid_bit = valid_bit && io.in.ifu_req_valid;
+    if (!compare_valid || lookup_hit_valid_w || !valid) {
+      continue;
     }
-    lookup_set_valid_w[way] = valid_bit;
+    if (io.lookup_in.lookup_set_tag[way] != compare_tag) {
+      continue;
+    }
+    lookup_hit_valid_w = true;
+    lookup_hit_way_w = static_cast<uint8_t>(way);
   }
+}
+
+void ICache::capture_lookup_data_result() {
+  lookup_data_ready_w = false;
+  for (uint32_t word = 0; word < word_num; ++word) {
+    lookup_hit_data_w[word] = 0;
+  }
+
+  if (!lookup_data_phase_en || !lookup_hit_valid_w || !io.lookup_in.data_resp_valid ||
+      (io.lookup_in.data_resp_way != lookup_hit_way_w)) {
+    return;
+  }
+  lookup_data_ready_w = true;
+  for (uint32_t word = 0; word < word_num; ++word) {
+    lookup_hit_data_w[word] = io.lookup_in.data_resp_line[word];
+  }
+}
+
+void ICache::seq() {
+  io.regs = io.reg_write;
+  perf_state = perf_state_next;
 }
 
 void ICache::lookup(uint32_t index) {
@@ -260,12 +315,6 @@ void ICache::lookup(uint32_t index) {
   uint32_t load_pc = io.regs.lookup_pending_r ? io.regs.lookup_pc_r : io.in.pc;
   uint32_t load_index = index;
   bool req_valid_next = io.regs.req_valid_r;
-
-  if (ICACHE_LOOKUP_LATENCY == 0) {
-    lookup_read_set(index, /*gate_valid_with_req=*/false);
-  } else if (io.regs.lookup_pending_r && io.lookup_in.lookup_resp_valid) {
-    lookup_read_set(io.regs.lookup_index_r, /*gate_valid_with_req=*/false);
-  }
 
   if (kill_pipe) {
     req_ready_w = false;
@@ -300,7 +349,7 @@ void ICache::lookup(uint32_t index) {
       lookup_pending_next = true;
       lookup_index_next = index;
       lookup_pc_next = io.in.pc;
-      if (io.lookup_in.lookup_resp_valid) {
+      if (io.lookup_in.meta_resp_valid) {
         sram_load_fire = true;
         lookup_pending_next = false;
       }
@@ -308,20 +357,9 @@ void ICache::lookup(uint32_t index) {
   }
 
   if (use_external_lookup && io.regs.lookup_pending_r &&
-      io.lookup_in.lookup_resp_valid && slot_idle) {
+      io.lookup_in.meta_resp_valid && slot_idle) {
     sram_load_fire = true;
     lookup_pending_next = false;
-  }
-
-  if (sram_load_fire) {
-    if (io.regs.lookup_pending_r) {
-      load_pc = io.regs.lookup_pc_r;
-      load_index = io.regs.lookup_index_r;
-    } else {
-      load_pc = io.in.pc;
-      load_index = index;
-    }
-    lookup_read_set(load_index, /*gate_valid_with_req=*/false);
   }
 
   if (sram_load_fire) {
@@ -388,6 +426,14 @@ void ICache::eval_state_machine() {
   io.out.mem_resp_ready = false;
   io.out.mem_req_valid = false;
   io.out.ifu_resp_valid = false;
+  io.out.lookup_data_req_valid = false;
+  io.out.lookup_data_req_index = 0;
+  io.out.lookup_data_req_way = 0;
+  perf.miss_issue_valid = false;
+  perf.miss_penalty_valid = false;
+  perf.miss_penalty_cycles = 0;
+  perf.axi_read_valid = false;
+  perf.axi_read_cycles = 0;
   io.out.ifu_resp_pc = io.regs.req_pc_r;
   io.out.ifu_page_fault = false;
   io.out.mem_req_id = io.regs.miss_txid_valid_r ? io.regs.miss_txid_r : 0;
@@ -447,19 +493,12 @@ void ICache::eval_state_machine() {
       }
 
       uint32_t index = (io.in.pc >> offset_bits) & (set_num - 1u);
-      lookup_read_set(index, /*gate_valid_with_req=*/false);
-      bool hit = false;
-      for (uint32_t way = 0; way < way_cnt; ++way) {
-        if (lookup_set_valid_w[way] &&
-            lookup_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
-          hit = true;
-          for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = lookup_set_data_w[way][word];
-          }
-          break;
+      capture_lookup_meta_result(io.in.ppn & 0xFFFFF, /*compare_valid=*/true);
+      capture_lookup_data_result();
+      if (lookup_hit_valid_w && lookup_data_ready_w) {
+        for (uint32_t word = 0; word < word_num; ++word) {
+          io.out.rd_data[word] = lookup_hit_data_w[word];
         }
-      }
-      if (hit) {
         io.out.ifu_resp_valid = true;
         io.out.ifu_page_fault = false;
         if (SIM_DEBUG_PRINT_ACTIVE &&
@@ -469,6 +508,13 @@ void ICache::eval_state_machine() {
         }
         req_ready_w = true;
         fast_bypass_fire = true;
+        state_next = IDLE;
+        break;
+      } else if (lookup_hit_valid_w) {
+        io.out.lookup_data_req_valid = true;
+        io.out.lookup_data_req_index = index;
+        io.out.lookup_data_req_way = lookup_hit_way_w;
+        req_ready_w = false;
         state_next = IDLE;
         break;
       }
@@ -493,31 +539,28 @@ void ICache::eval_state_machine() {
 
       if (SIM_DEBUG_PRINT_ACTIVE &&
           icache_trace_pc(io.regs.req_pc_r, sim_time) &&
-          !io.lookup_in.lookup_resp_valid) {
+          !io.lookup_in.meta_resp_valid) {
         dump_icache_module_ctx("REG_LOOKUP_STALE", sim_time, io, mem_gnt);
       }
 
-      lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
-      bool hit = false;
-      for (uint32_t way = 0; way < way_cnt; ++way) {
-        if (lookup_set_valid_w[way] &&
-            lookup_set_tag_w[way] == (io.in.ppn & 0xFFFFF)) {
-          hit = true;
-          for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = lookup_set_data_w[way][word];
-          }
-          break;
+      capture_lookup_meta_result(io.in.ppn & 0xFFFFF, /*compare_valid=*/true);
+      capture_lookup_data_result();
+      io.out.ifu_resp_valid = lookup_hit_valid_w && lookup_data_ready_w;
+      req_ready_w = lookup_hit_valid_w && lookup_data_ready_w;
+      if (lookup_hit_valid_w && lookup_data_ready_w) {
+        for (uint32_t word = 0; word < word_num; ++word) {
+          io.out.rd_data[word] = lookup_hit_data_w[word];
         }
-      }
-
-      io.out.ifu_resp_valid = hit;
-      req_ready_w = hit;
-      if (hit) {
         if (SIM_DEBUG_PRINT_ACTIVE &&
             icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
           dump_icache_module_line("REG_HIT", sim_time, io, mem_gnt,
                                   io.out.rd_data);
         }
+        state_next = IDLE;
+      } else if (lookup_hit_valid_w) {
+        io.out.lookup_data_req_valid = true;
+        io.out.lookup_data_req_index = io.regs.req_index_r;
+        io.out.lookup_data_req_way = lookup_hit_way_w;
         state_next = IDLE;
       } else {
         if (SIM_DEBUG_PRINT_ACTIVE &&
@@ -525,19 +568,13 @@ void ICache::eval_state_machine() {
           dump_icache_module_ctx("REG_MISS", sim_time, io, mem_gnt);
           std::printf(
               "[ICACHE][MODULE][REG_MISS_SET] cyc=%lld req_pc=0x%08x req_idx=%u "
-              "cmp_ppn=0x%05x",
+              "cmp_ppn=0x%05x hit_v=%u has_inv=%u first_inv=%u",
               sim_time, static_cast<unsigned>(io.regs.req_pc_r),
               static_cast<unsigned>(io.regs.req_index_r),
-              static_cast<unsigned>(io.in.ppn & 0xFFFFF));
-          for (uint32_t way = 0; way < way_cnt; ++way) {
-            std::printf(
-                " | way%u v=%u tag=0x%05x w0=0x%08x w7=0x%08x",
-                static_cast<unsigned>(way),
-                static_cast<unsigned>(lookup_set_valid_w[way]),
-                static_cast<unsigned>(lookup_set_tag_w[way]),
-                static_cast<unsigned>(lookup_set_data_w[way][0]),
-                static_cast<unsigned>(lookup_set_data_w[way][7]));
-          }
+              static_cast<unsigned>(io.in.ppn & 0xFFFFF),
+              static_cast<unsigned>(lookup_hit_valid_w),
+              static_cast<unsigned>(lookup_has_invalid_way_w),
+              static_cast<unsigned>(lookup_first_invalid_way_w));
           std::printf("\n");
         }
         int txid = io.regs.miss_txid_valid_r ? static_cast<int>(io.regs.miss_txid_r)
@@ -553,6 +590,11 @@ void ICache::eval_state_machine() {
           io.reg_write.miss_txid_valid_r = true;
           io.reg_write.miss_txid_r = static_cast<uint8_t>(txid & 0xF);
           io.reg_write.miss_ready_seen_r = false;
+          perf_state_next.miss_penalty_active = true;
+          perf_state_next.miss_penalty_start_cycle =
+              static_cast<uint64_t>(sim_time);
+          perf_state_next.axi_read_active = false;
+          perf_state_next.axi_read_start_cycle = 0;
           state_next = SWAP_IN;
         }
       }
@@ -580,6 +622,13 @@ void ICache::eval_state_machine() {
         (mem_axi_state == AXI_IDLE) && io.in.mem_req_accepted &&
         ((io.in.mem_req_accepted_id & 0xF) == (io.regs.miss_txid_r & 0xF)) &&
         io.regs.miss_txid_valid_r;
+    const bool req_issue_now =
+        io.regs.miss_txid_valid_r &&
+        !io.regs.miss_ready_seen_r &&
+        (req_accepted_now || req_ready_seen_now);
+    if (req_issue_now) {
+      perf.miss_issue_valid = true;
+    }
     // Under the ready-first interconnect contract, a miss request may already
     // be committed downstream once req.ready is observed, even if the explicit
     // accepted pulse arrives a cycle later. On a refetch/redirect, dropping the
@@ -604,6 +653,10 @@ void ICache::eval_state_machine() {
         mem_axi_state_next = AXI_IDLE;
         io.reg_write.miss_txid_valid_r = false;
         io.reg_write.miss_ready_seen_r = false;
+        perf_state_next.miss_penalty_active = false;
+        perf_state_next.miss_penalty_start_cycle = 0;
+        perf_state_next.axi_read_active = false;
+        perf_state_next.axi_read_start_cycle = 0;
         req_ready_w = true;
       } else if (req_waiting_accept) {
         state_next = CANCEL_WAIT_ACCEPT;
@@ -615,6 +668,10 @@ void ICache::eval_state_machine() {
         mem_axi_state_next = AXI_IDLE;
         io.reg_write.miss_txid_valid_r = false;
         io.reg_write.miss_ready_seen_r = false;
+        perf_state_next.miss_penalty_active = false;
+        perf_state_next.miss_penalty_start_cycle = 0;
+        perf_state_next.axi_read_active = false;
+        perf_state_next.axi_read_start_cycle = 0;
         req_ready_w = true;
       }
       break;
@@ -634,6 +691,9 @@ void ICache::eval_state_machine() {
         io.out.mem_req_valid = false;
         mem_axi_state_next = AXI_BUSY;
         io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = true;
+        perf_state_next.axi_read_active = true;
+        perf_state_next.axi_read_start_cycle =
+            static_cast<uint64_t>(sim_time);
       } else {
         io.out.mem_req_valid = true;
         mem_axi_state_next = AXI_IDLE;
@@ -645,19 +705,28 @@ void ICache::eval_state_machine() {
       mem_gnt = active_resp && io.out.mem_resp_ready;
       state_next = SWAP_IN;
       if (mem_gnt) {
+        if (perf_state.miss_penalty_active &&
+            static_cast<uint64_t>(sim_time) >= perf_state.miss_penalty_start_cycle) {
+          perf.miss_penalty_valid = true;
+          perf.miss_penalty_cycles =
+              static_cast<uint64_t>(sim_time) -
+              perf_state.miss_penalty_start_cycle;
+        }
+        if (perf_state.axi_read_active &&
+            static_cast<uint64_t>(sim_time) >= perf_state.axi_read_start_cycle) {
+          perf.axi_read_valid = true;
+          perf.axi_read_cycles =
+              static_cast<uint64_t>(sim_time) -
+              perf_state.axi_read_start_cycle;
+        }
         for (uint32_t offset = 0; offset < ICACHE_LINE_SIZE / 4; ++offset) {
           mem_resp_data_w[offset] = io.in.mem_resp_data[offset];
         }
-        lookup_read_set(io.regs.req_index_r, /*gate_valid_with_req=*/false);
-        bool found_invalid = false;
-        for (uint32_t way = 0; way < way_cnt; ++way) {
-          if (!lookup_set_valid_w[way]) {
-            replace_idx_next = way;
-            found_invalid = true;
-            break;
-          }
-        }
-        if (!found_invalid) {
+        capture_lookup_meta_result(io.regs.ppn_r & 0xFFFFF,
+                                   /*compare_valid=*/false);
+        if (lookup_has_invalid_way_w) {
+          replace_idx_next = lookup_first_invalid_way_w;
+        } else {
           replace_idx_next = (io.regs.replace_idx + 1) % way_cnt;
         }
 
@@ -666,6 +735,10 @@ void ICache::eval_state_machine() {
         io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
         io.reg_write.miss_txid_valid_r = false;
         io.reg_write.miss_ready_seen_r = false;
+        perf_state_next.miss_penalty_active = false;
+        perf_state_next.miss_penalty_start_cycle = 0;
+        perf_state_next.axi_read_active = false;
+        perf_state_next.axi_read_start_cycle = 0;
 
         if (!io.in.flush) {
           io.table_write.we = true;
@@ -710,6 +783,10 @@ void ICache::eval_state_machine() {
     mem_axi_state_next = AXI_IDLE;
     io.reg_write.miss_txid_valid_r = false;
     io.reg_write.miss_ready_seen_r = false;
+    perf_state_next.miss_penalty_active = false;
+    perf_state_next.miss_penalty_start_cycle = 0;
+    perf_state_next.axi_read_active = false;
+    perf_state_next.axi_read_start_cycle = 0;
     req_ready_w = true;
     break;
 
@@ -719,6 +796,10 @@ void ICache::eval_state_machine() {
       mem_axi_state_next = AXI_IDLE;
       io.reg_write.miss_txid_valid_r = false;
       io.reg_write.miss_ready_seen_r = false;
+      perf_state_next.miss_penalty_active = false;
+      perf_state_next.miss_penalty_start_cycle = 0;
+      perf_state_next.axi_read_active = false;
+      perf_state_next.axi_read_start_cycle = 0;
       req_ready_w = true;
       break;
     }
@@ -735,6 +816,10 @@ void ICache::eval_state_machine() {
         io.reg_write.miss_txid_valid_r = false;
       }
       io.reg_write.miss_ready_seen_r = false;
+      perf_state_next.miss_penalty_active = false;
+      perf_state_next.miss_penalty_start_cycle = 0;
+      perf_state_next.axi_read_active = false;
+      perf_state_next.axi_read_start_cycle = 0;
       req_ready_w = true;
     } else {
       state_next = DRAIN;

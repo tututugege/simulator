@@ -43,16 +43,57 @@ axi_interconnect::AXI_LLCConfig make_default_llc_config() {
   axi_interconnect::AXI_LLCConfig llc_cfg;
   llc_cfg.enable = (CONFIG_AXI_LLC_ENABLE != 0);
   llc_cfg.size_bytes = CONFIG_AXI_LLC_SIZE_BYTES;
-  llc_cfg.line_bytes = CONFIG_AXI_LLC_LINE_BYTES;
   llc_cfg.ways = CONFIG_AXI_LLC_WAYS;
   llc_cfg.mshr_num = CONFIG_AXI_LLC_MSHR_NUM;
   llc_cfg.lookup_latency = CONFIG_AXI_LLC_LOOKUP_LATENCY;
-  llc_cfg.prefetch_enable = (CONFIG_AXI_LLC_PREFETCH_ENABLE != 0);
-  llc_cfg.prefetch_degree = CONFIG_AXI_LLC_PREFETCH_DEGREE;
-  llc_cfg.nine = (CONFIG_AXI_LLC_NINE != 0);
-  llc_cfg.unified = (CONFIG_AXI_LLC_UNIFIED != 0);
-  llc_cfg.pipt = (CONFIG_AXI_LLC_PIPT != 0);
   return llc_cfg;
+}
+
+void print_soc_config_banner() {
+#ifdef CONFIG_BPU
+  constexpr int kBpuEnabled = 1;
+  const char *bpu_mode = "real-bpu";
+#else
+  constexpr int kBpuEnabled = 0;
+  const char *bpu_mode = "oracle-bpu";
+#endif
+
+#if CONFIG_ICACHE_USE_AXI_MEM_PORT
+  const char *compiled_icache_path = "shared-top-level-axi";
+#else
+  const char *compiled_icache_path = "local-fixed-latency";
+#endif
+
+#if CONFIG_AXI_LLC_ENABLE
+  const char *llc_mode = "enabled";
+  const char *llc_summary = "shared fabric uses LLC";
+#else
+  const char *llc_mode = "disabled";
+  const char *llc_summary = "shared fabric falls back to L1 I/D-cache only";
+#endif
+
+#ifdef CONFIG_BPU
+  const char *runtime_icache_path =
+#if CONFIG_ICACHE_USE_AXI_MEM_PORT
+      "shared-top-level-axi";
+#else
+      "local-fixed-latency";
+#endif
+#else
+  const char *runtime_icache_path = "oracle-frontend-disconnected";
+#endif
+
+  std::printf(
+      "[CONFIG] bpu=%d(%s) llc=%u(%s) icache_axi=%u compiled_icache=%s "
+      "axi_protocol=%u\n",
+      kBpuEnabled, bpu_mode, static_cast<unsigned>(CONFIG_AXI_LLC_ENABLE),
+      llc_mode, static_cast<unsigned>(CONFIG_ICACHE_USE_AXI_MEM_PORT),
+      compiled_icache_path, static_cast<unsigned>(CONFIG_AXI_PROTOCOL));
+  std::printf(
+      "[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi "
+      "memsubsystem_internal_axi_runtime=disabled llc_summary=%s\n",
+      llc_summary);
+  std::printf("[TOPOLOGY] icache_runtime=%s\n", runtime_icache_path);
 }
 
 void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
@@ -343,6 +384,7 @@ void SimCpu::init() {
   // icache model, so it simply leaves the port disconnected instead of falling
   // back to MemSubsystem's legacy private AXI runtime.
   mem_subsystem.set_internal_axi_runtime_active(false);
+  print_soc_config_banner();
 #ifdef CONFIG_BPU
   front.icache_mem_read_port =
       &axi_interconnect.read_ports[axi_interconnect::MASTER_ICACHE];

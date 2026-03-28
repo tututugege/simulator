@@ -1,6 +1,15 @@
 #ifndef ICACHE_TOP_H
 #define ICACHE_TOP_H
 
+// ICacheTop is glue logic only:
+// - it binds MMU/PTW/AXI runtime objects
+// - it folds external table responses into the icache_module interface
+// - it translates external MMU/PTW/AXI views into explicit glue IO
+//
+// Do not add front-end timing/register state here. Request/miss/refill state
+// must stay inside icache_module or dedicated external adapters. Top-level
+// perf/accounting should also stay outside this glue layer.
+
 #include "../../front_IO.h"
 #include <cstdint>
 
@@ -16,8 +25,6 @@ protected:
   struct icache_in *in = nullptr;
   struct icache_out *out = nullptr;
   SimContext *ctx = nullptr;
-  uint64_t access_delta = 0;
-  uint64_t miss_delta = 0;
 
 public:
   void setIO(struct icache_in *in_ptr, struct icache_out *out_ptr) {
@@ -35,14 +42,6 @@ public:
   virtual void set_ptw_walk_port(PtwWalkPort *port) { (void)port; }
   virtual void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) {
     (void)port;
-  }
-
-  void syncPerf();
-
-  virtual void step() {
-    comb();
-    seq();
-    syncPerf();
   }
 
   virtual ~ICacheTop() {}
