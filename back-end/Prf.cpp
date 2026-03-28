@@ -57,6 +57,15 @@ void Prf::init() {
   }
 }
 
+void Prf::comb_begin() {
+  for (int i = 0; i < PRF_NUM; i++) {
+    reg_file_1[i] = reg_file[i];
+  }
+  for (int i = 0; i < ISSUE_WIDTH; i++) {
+    inst_r_1[i] = inst_r[i];
+  }
+}
+
 // ==========================================
 // 1. 寄存器读取（发射前）+ 旁路
 // ==========================================

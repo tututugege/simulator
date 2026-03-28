@@ -214,6 +214,14 @@ void BackTop::comb() {
 #endif
 
   pre_idu_queue->comb_begin();
+  idu->comb_begin();
+  rename->comb_begin();
+  dis->comb_begin();
+  isu->comb_begin();
+  prf->comb_begin();
+  exu->comb_begin();
+  rob->comb_begin();
+  csr->comb_begin();
   // 输出提交的指令
   for (int i = 0; i < FETCH_WIDTH; i++) {
     pre_idu_queue->in.front2dec->valid[i] = in.valid[i];
@@ -284,13 +292,7 @@ void BackTop::comb() {
 
   dis->comb_dispatch();
 
-  dis->comb_fire();
-  rename->comb_fire();
-  rob->comb_fire();
-  idu->comb_fire();
-  pre_idu_queue->comb_consume_issue();
-
-  // 用于调试
+    // 用于调试
   // 修正pc_next 以及difftest对应的pc_next
   out.flush = rob->out.rob_bcast->flush;
   out.fence_i = rob->out.rob_bcast->fence_i;
@@ -325,17 +327,21 @@ void BackTop::comb() {
     }
   }
 
+  dis->comb_fire();
+  rename->comb_fire();
+  rob->comb_fire();
+  idu->comb_fire();
+  pre_idu_queue->comb_consume_issue();
+
+
+
   isu->comb_enq();
-  rename->comb_commit();
   rob->comb_flush();
-  rename->comb_flush();
-  idu->comb_flush();
   pre_idu_queue->comb_flush_recover();
   isu->comb_flush();
   lsu->comb_flush();
   pre_idu_queue->comb_commit_reclaim();
   rob->comb_branch();
-  rename->comb_branch();
   prf->comb_pipeline();
   exu->comb_pipeline();
   dis->comb_pipeline();

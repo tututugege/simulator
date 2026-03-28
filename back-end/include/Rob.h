@@ -129,6 +129,7 @@ public:
   SimContext *ctx;
   void init();
   void seq();
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
   void comb_ready();
   void comb_ftq_pc_req();
   void comb_commit();

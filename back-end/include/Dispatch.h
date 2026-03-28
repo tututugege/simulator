@@ -113,6 +113,7 @@ public:
   DisOut out;
 
   void init();
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
   void comb_alloc();
   void comb_dispatch();
   void comb_wake();

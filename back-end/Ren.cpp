@@ -7,15 +7,7 @@
 
 // 多个comb复用的中间信号
 static wire<1> fire[DECODE_WIDTH];
-static wire<1> spec_alloc_flush[PRF_NUM];
-static wire<1> spec_alloc_mispred[PRF_NUM];
-static wire<1> spec_alloc_normal[PRF_NUM];
-static wire<1> free_vec_flush[PRF_NUM];
-static wire<1> free_vec_mispred[PRF_NUM];
-static wire<1> free_vec_normal[PRF_NUM];
-static wire<PRF_IDX_WIDTH> spec_RAT_flush[ARF_NUM + 1];
-static wire<PRF_IDX_WIDTH> spec_RAT_mispred[ARF_NUM + 1];
-static wire<PRF_IDX_WIDTH> spec_RAT_normal[ARF_NUM + 1];
+static wire<PRF_IDX_WIDTH> alloc_reg[DECODE_WIDTH];
 
 void Ren::init() {
   for (int i = 0; i < PRF_NUM; i++) {
@@ -39,30 +31,26 @@ void Ren::init() {
 
   memcpy(arch_RAT_1, arch_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
   memcpy(spec_RAT_1, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(spec_RAT_normal, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(spec_RAT_mispred, spec_RAT,
-         (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-
-  memcpy(spec_alloc_mispred, spec_alloc, PRF_NUM);
-  memcpy(spec_alloc_flush, spec_alloc, PRF_NUM);
-  memcpy(spec_alloc_normal, spec_alloc, PRF_NUM);
   memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
 
-  memcpy(free_vec_mispred, free_vec, PRF_NUM);
-  memcpy(free_vec_flush, free_vec, PRF_NUM);
-  memcpy(free_vec_normal, free_vec, PRF_NUM);
   memcpy(free_vec_1, free_vec, PRF_NUM);
 
-  std::memset(RAT_checkpoint, 0, sizeof(RAT_checkpoint));
-  std::memset(RAT_checkpoint_1, 0, sizeof(RAT_checkpoint_1));
-  std::memset(alloc_checkpoint, 0, sizeof(alloc_checkpoint));
-  std::memset(alloc_checkpoint_1, 0, sizeof(alloc_checkpoint_1));
+}
+
+void Ren::comb_begin() {
+  memcpy(inst_r_1, inst_r, DECODE_WIDTH * sizeof(DecRenIO::DecRenInst));
+  memcpy(inst_valid_1, inst_valid, DECODE_WIDTH * sizeof(reg<1>));
+  memcpy(spec_RAT_1, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
+  memcpy(arch_RAT_1, arch_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
+  memcpy(free_vec_1, free_vec, PRF_NUM);
+  memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
+  memcpy(RAT_checkpoint_1, RAT_checkpoint,
+         MAX_BR_NUM * (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
+  memcpy(alloc_checkpoint_1, alloc_checkpoint, MAX_BR_NUM * PRF_NUM);
 }
 
 void Ren::comb_alloc() {
   // 可用寄存器个数 每周期最多使用DECODE_WIDTH个
-  wire<PRF_IDX_WIDTH> alloc_reg[DECODE_WIDTH];
   wire<1> alloc_valid[DECODE_WIDTH] = {false};
   int alloc_num = 0;
 
@@ -73,14 +61,14 @@ void Ren::comb_alloc() {
       alloc_num++;
     }
   }
+  for (int i = alloc_num; i < DECODE_WIDTH; i++) {
+    alloc_reg[i] = 0;
+  }
 
   // stall相当于需要查看前一条指令是否stall
   // 一条指令stall，后面的也stall
   wire<1> stall = false;
   for (int i = 0; i < DECODE_WIDTH; i++) {
-    out.ren2dis->uop[i] = RenDisIO::RenDisInst::from_dec_ren_inst(inst_r[i]);
-    out.ren2dis->uop[i].dest_preg = alloc_reg[i];
-    // 分配寄存器
     if (inst_valid[i] && inst_r[i].dest_en && !stall) {
       out.ren2dis->valid[i] = alloc_valid[i];
       stall = !alloc_valid[i];
@@ -115,6 +103,8 @@ void Ren::comb_rename() {
 
   // 无waw raw的输出 读spec_RAT
   for (int i = 0; i < DECODE_WIDTH; i++) {
+    out.ren2dis->uop[i] = RenDisIO::RenDisInst::from_dec_ren_inst(inst_r[i]);
+    out.ren2dis->uop[i].dest_preg = alloc_reg[i];
     old_dest_preg_normal[i] = spec_RAT[inst_r[i].dest_areg];
     src1_preg_normal[i] = spec_RAT[inst_r[i].src1_areg];
     src2_preg_normal[i] = spec_RAT[inst_r[i].src2_areg];
@@ -186,9 +176,9 @@ void Ren::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (fire[i] && out.ren2dis->uop[i].dest_en) {
       int dest_preg = out.ren2dis->uop[i].dest_preg;
-      spec_alloc_normal[dest_preg] = true;
-      free_vec_normal[dest_preg] = false;
-      spec_RAT_normal[inst_r[i].dest_areg] = dest_preg;
+      spec_alloc_1[dest_preg] = true;
+      free_vec_1[dest_preg] = false;
+      spec_RAT_1[inst_r[i].dest_areg] = dest_preg;
       for (int j = 0; j < MAX_BR_NUM; j++)
         alloc_checkpoint_1[j][dest_preg] = true;
     }
@@ -200,7 +190,7 @@ void Ren::comb_fire() {
         // 注意这里存在隐藏的旁路 (Bypass)
         // 保存的是本条指令完成后的 spec_RAT，不包括同一周期后续指令对 spec_RAT
         // 的影响
-        RAT_checkpoint_1[br_id][j] = spec_RAT_normal[j];
+        RAT_checkpoint_1[br_id][j] = spec_RAT_1[j];
       }
 
       for (int j = 0; j < PRF_NUM; j++) {
@@ -213,47 +203,10 @@ void Ren::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     out.ren2dec->ready &= fire[i] || !inst_valid[i];
   }
-}
-
-// 误预测和刷新 (Flush) 不会同时发生
-void Ren::comb_branch() {
-  // 分支处理
-  if (in.dec_bcast
-          ->mispred) { // 硬件永远都会生成相关的误预测和刷新信号，然后进行选择
-                       // 模拟器进行判断是为了减少不必要的开销，运行得快一点
-    const auto br_idx = in.dec_bcast->br_id;
-    Assert(br_idx != 0 && "Ren: mispred br_id should not be zero");
-    // 恢复重命名表
-    for (int i = 0; i < ARF_NUM + 1; i++) {
-      spec_RAT_mispred[i] = RAT_checkpoint[br_idx][i];
-    }
-
-    // 恢复空闲列表 (Free List)
-    for (int j = 0; j < PRF_NUM; j++) {
-      free_vec_mispred[j] = free_vec[j] || alloc_checkpoint[br_idx][j];
-      spec_alloc_mispred[j] =
-          spec_alloc[j] && !alloc_checkpoint[br_idx][j];
-    }
+  if (in.rob_bcast->flush || in.dec_bcast->mispred) {
+    out.ren2dec->ready = false;
   }
-}
 
-void Ren ::comb_flush() {
-  if (in.rob_bcast->flush) {
-    // 恢复重命名表
-    for (int i = 0; i < ARF_NUM + 1; i++) {
-      spec_RAT_flush[i] = arch_RAT_1[i];
-    }
-
-    // 恢复空闲列表 (Free List)
-    for (int j = 0; j < PRF_NUM; j++) {
-      // 使用free_vec_normal  当前周期提交的指令释放的寄存器(例如CSRR)要考虑
-      free_vec_flush[j] = free_vec_normal[j] || spec_alloc_normal[j];
-      spec_alloc_flush[j] = false;
-    }
-  }
-}
-
-void Ren ::comb_commit() {
   // 提交指令修改RAT
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     if (in.rob_commit->commit_entry[i].valid) {
@@ -288,8 +241,8 @@ void Ren ::comb_commit() {
       // 异常指令要看上去没有执行一样
       if (inst->dest_en) {
         if (!is_exception(*inst) && !in.rob_bcast->interrupt) {
-          free_vec_normal[inst->old_dest_preg] = true;
-          spec_alloc_normal[inst->dest_preg] = false;
+          free_vec_1[inst->old_dest_preg] = true;
+          spec_alloc_1[inst->dest_preg] = false;
         }
       }
 
@@ -302,6 +255,29 @@ void Ren ::comb_commit() {
 #ifdef CONFIG_DIFFTEST
       ctx->run_difftest_inst(&commit_entry);
 #endif
+    }
+  }
+
+  // 在 comb_fire 直接决定下一拍 freelist/RAT 状态。
+  if (in.rob_bcast->flush) {
+    for (int i = 0; i < ARF_NUM + 1; i++) {
+      spec_RAT_1[i] = arch_RAT_1[i];
+    }
+    for (int j = 0; j < PRF_NUM; j++) {
+      // 本拍 fire/commit 对 _1 的更新也应被 flush 恢复逻辑看到。
+      const wire<1> was_spec = spec_alloc_1[j];
+      free_vec_1[j] = free_vec_1[j] || was_spec;
+      spec_alloc_1[j] = false;
+    }
+  } else if (in.dec_bcast->mispred) { // flush/mispred 不会同时发生
+    const auto br_idx = in.dec_bcast->br_id;
+    Assert(br_idx != 0 && "Ren: mispred br_id should not be zero");
+    for (int i = 0; i < ARF_NUM + 1; i++) {
+      spec_RAT_1[i] = RAT_checkpoint[br_idx][i];
+    }
+    for (int j = 0; j < PRF_NUM; j++) {
+      free_vec_1[j] = free_vec[j] || alloc_checkpoint[br_idx][j];
+      spec_alloc_1[j] = spec_alloc[j] && !alloc_checkpoint[br_idx][j];
     }
   }
 }
@@ -339,7 +315,6 @@ void Ren ::comb_pipeline() {
       inst_r_1[i].br_mask &= ~clear_mask;
     } else {
       inst_valid_1[i] = inst_valid[i] && !fire[i];
-      inst_r_1[i] = inst_r[i];
     }
   }
 
@@ -352,22 +327,6 @@ void Ren ::comb_pipeline() {
     }
   }
 
-  if (in.rob_bcast->flush) {
-    memcpy(spec_alloc_1, spec_alloc_flush, PRF_NUM);
-    memcpy(free_vec_1, free_vec_flush, PRF_NUM);
-    memcpy(spec_RAT_1, spec_RAT_flush,
-           (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  } else if (in.dec_bcast->mispred) {
-    memcpy(spec_alloc_1, spec_alloc_mispred, PRF_NUM);
-    memcpy(free_vec_1, free_vec_mispred, PRF_NUM);
-    memcpy(spec_RAT_1, spec_RAT_mispred,
-           (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  } else {
-    memcpy(spec_alloc_1, spec_alloc_normal, PRF_NUM);
-    memcpy(free_vec_1, free_vec_normal, PRF_NUM);
-    memcpy(spec_RAT_1, spec_RAT_normal,
-           (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  }
 }
 
 void Ren ::seq() {
@@ -385,16 +344,6 @@ void Ren ::seq() {
   memcpy(alloc_checkpoint, alloc_checkpoint_1,
          MAX_BR_NUM * PRF_NUM * sizeof(reg<1>));
 
-  memcpy(spec_alloc_normal, spec_alloc, PRF_NUM);
-  // memcpy(spec_alloc_mispred, spec_alloc, PRF_NUM);
-  // memcpy(spec_alloc_flush, spec_alloc, PRF_NUM); //
 
-  memcpy(free_vec_normal, free_vec, PRF_NUM);
-  // memcpy(free_vec_mispred, free_vec, PRF_NUM);
-  // memcpy(free_vec_flush, free_vec, PRF_NUM);
 
-  memcpy(spec_RAT_normal, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  // memcpy(spec_RAT_flush, spec_RAT, (ARF_NUM + 1) *
-  // sizeof(reg<PRF_IDX_WIDTH>)); memcpy(spec_RAT_mispred, spec_RAT, (ARF_NUM +
-  // 1) * sizeof(reg<PRF_IDX_WIDTH>));
 }

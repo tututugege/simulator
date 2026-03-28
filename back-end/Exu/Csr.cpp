@@ -53,6 +53,17 @@ void Csr::init() {
   CSR_RegFile_1[csr_misa] = 0x40141103; // U/S/M  RV32I/A/M/B
 }
 
+void Csr::comb_begin() {
+  for (int i = 0; i < CSR_NUM; i++) {
+    CSR_RegFile_1[i] = CSR_RegFile[i];
+  }
+  privilege_1 = privilege;
+  csr_idx_1 = csr_idx;
+  csr_wdata_1 = csr_wdata;
+  csr_wcmd_1 = csr_wcmd;
+  csr_we_1 = csr_we;
+}
+
 void Csr::comb_csr_status() {
   out.csr_status->mstatus = CSR_RegFile[csr_mstatus];
   out.csr_status->sstatus = CSR_RegFile[csr_sstatus];

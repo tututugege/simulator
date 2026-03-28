@@ -44,6 +44,7 @@ public:
   std::vector<PortMapping> port_mappings;
 
   void init();
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
 
   // 组合逻辑
   void comb_ftq_pc_req();

@@ -49,6 +49,7 @@ public:
   IsuOut out;
   Isu(SimContext *ctx);
   void init();
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
 
   // 组合逻辑
   void comb_ready(); // 更新 iss2dis->free_slots

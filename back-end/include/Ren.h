@@ -25,14 +25,12 @@ public:
   RenOut out;
 
   void init();
+  void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
   void comb_select();
   void comb_rename(); // 重命名
   void comb_fire();
   void comb_alloc(); // 分配寄存器
-  void comb_branch();
-  void comb_commit();
   void comb_pipeline();
-  void comb_flush();
   void seq();
 
   // register
