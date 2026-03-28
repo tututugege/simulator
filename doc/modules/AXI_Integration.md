@@ -1,62 +1,57 @@
-# AXI Interconnect Integration
+# AXI 集成说明
 
-## Current active topology
+## 当前生效的拓扑
 
-The repository no longer uses the earlier split design where only icache talked
-to AXI and the rest of the memory subsystem stayed on a legacy private path.
+当前仓库已经不再使用早期那种“只有 `Icache` 走 AXI，而其余访存路径仍停留在私有旧通路”的 split 设计。
 
-In the current top-level `SimCpu` integration:
+在当前顶层 `SimCpu` 集成里：
 
-- `DCache` read traffic is bridged onto `MASTER_DCACHE_R`
-- `DCache` write-back traffic is bridged onto `MASTER_DCACHE_W`
-- peripheral/MMIO traffic is bridged onto `MASTER_EXTRA_R/W`
-- the real icache can use `MASTER_ICACHE` when
-  `CONFIG_ICACHE_USE_AXI_MEM_PORT=1`
+- `DCache` 的读请求接到 `MASTER_DCACHE_R`
+- `DCache` 的写回流量接到 `MASTER_DCACHE_W`
+- 外设与 MMIO 流量接到 `MASTER_EXTRA_R/W`
+- 当 `CONFIG_ICACHE_USE_AXI_MEM_PORT=1` 时，真实 `Icache` 使用 `MASTER_ICACHE`
 
-All of those masters connect to the same top-level AXI interconnect, router,
-DDR model, and MMIO bus owned by `SimCpu`.
+这些 master 最终都连到同一套由 `SimCpu` 持有的顶层 AXI interconnect、router、DDR 模型和 MMIO 总线。
 
-## What still exists but is not the active SoC path
+## 仍然存在但不是当前 SoC 活跃路径的部分
 
-`MemSubsystem` still contains an internal AXI runtime object. That code path is
-kept for local integration support, but the top-level SoC flow disables it with
-`mem_subsystem.set_internal_axi_runtime_active(false)`.
+`MemSubsystem` 内部仍然保留了一套 internal AXI runtime 对象。这个路径还在代码里，主要用于本地集成与兼容，但顶层 SoC 流程会通过：
 
-That means the authoritative Linux/SoC runs should be understood as:
+`mem_subsystem.set_internal_axi_runtime_active(false)`
 
-- one top-level shared AXI fabric
-- optional LLC inside that fabric
-- no separate active `MemSubsystem` private AXI runtime
+把它关闭。
 
-## LLC on/off semantics
+因此，当前 Linux/SoC 主线运行应理解为：
 
-`CONFIG_AXI_LLC_ENABLE` configures whether the top-level interconnect enables
-its LLC.
+- 只有一套顶层 shared AXI fabric
+- LLC 是否开启只影响这套 shared fabric 内部
+- `MemSubsystem` 的 private/internal AXI runtime 不是活跃 SoC 路径
 
-- `CONFIG_AXI_LLC_ENABLE=1`: requests go through the shared fabric with LLC
-- `CONFIG_AXI_LLC_ENABLE=0`: the same shared fabric stays in use, but the LLC
-  is disabled and the system falls back to L1 I/D-cache only
+## LLC 开关语义
 
-This toggle does not swap DCache/PTW/peripheral over to a different interconnect.
+`CONFIG_AXI_LLC_ENABLE` 控制的是顶层 interconnect 是否启用 LLC。
 
-## ICache path semantics
+- `CONFIG_AXI_LLC_ENABLE=1`
+  请求走同一套 shared fabric，并在其中启用 LLC
+- `CONFIG_AXI_LLC_ENABLE=0`
+  请求仍然走同一套 shared fabric，但 LLC 被关闭，系统退化为只依赖一级 `I/D-cache`
 
-`CONFIG_ICACHE_USE_AXI_MEM_PORT` controls how the real icache gets miss data:
+这个开关不会把 `DCache/PTW/peripheral` 切换到另一套不同的 interconnect。
 
-- `1`: use the top-level AXI `MASTER_ICACHE` port
-- `0`: use the fixed-latency local read adapter in `ICacheTop`
+## ICache 路径语义
 
-For Linux matrix work, the recommended quadrant profiles keep this set to `1`
-so the real icache stays on the same SoC fabric and only the LLC enable bit
-changes between `llc0` and `llc1`.
+`CONFIG_ICACHE_USE_AXI_MEM_PORT` 控制真实 `Icache` miss 数据从哪里取回：
 
-When `CONFIG_BPU` is off, the frontend runs in Oracle mode and the real icache
-model is not stepped. In that case the compiled icache AXI setting is present
-for build consistency but not exercised at runtime.
+- `1`：使用顶层 AXI 的 `MASTER_ICACHE`
+- `0`：使用 `ICacheTop` 中的固定延迟本地读适配路径
 
-## Initialization order
+对 Linux 矩阵验证来说，更推荐让四象限 profile 保持 `CONFIG_ICACHE_USE_AXI_MEM_PORT=1`，这样真实 `Icache` 始终挂在同一套 SoC fabric 上，`llc0/llc1` 之间唯一的 cache 层级差异就是 `CONFIG_AXI_LLC_ENABLE`。
 
-The shared-fabric initialization order is:
+当 `CONFIG_BPU` 关闭时，前端运行在 Oracle 模式，真实 `Icache` 模型不会被 step。此时编译期仍可保留 `Icache AXI` 路径相关配置，以保持 build/拓扑一致性，但运行时不会真正走到这条路径。
+
+## 初始化顺序
+
+当前 shared fabric 的初始化顺序为：
 
 1. `mem_subsystem.init()`
 2. `axi_interconnect.init()`
@@ -65,5 +60,4 @@ The shared-fabric initialization order is:
 5. `axi_mmio.init()`
 6. `front.init()`
 
-This keeps the shared AXI fabric ready before the frontend starts issuing
-requests.
+这样可以保证在前端开始发请求之前，shared AXI fabric 已经准备完成。
