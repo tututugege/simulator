@@ -17,8 +17,7 @@ public:
 
   static bool is_modeled_mmio(uint32_t paddr) {
     return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-           ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
-           ((paddr & CLINT_ADDR_MASK) == CLINT_ADDR_BASE);
+           ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
   }
 
   uint32_t read_load(uint32_t paddr, uint8_t func3) const {

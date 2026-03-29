@@ -1220,8 +1220,7 @@ void RefCpu::RV32IM() {
                                                       : 3;
       Assert((p_addr & alignment_mask) == 0 && "Load address misaligned!");
       if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
-          ((p_addr & CLINT_ADDR_MASK) == CLINT_ADDR_BASE)) {
+          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
         is_mmio_load = true;
       }
       // Timer MMIO 特殊处理：使用 sim_time (非Oracle自有计数) 并推入FIFO
@@ -1280,8 +1279,7 @@ void RefCpu::RV32IM() {
                                                       : 3;
       Assert((p_addr & alignment_mask) == 0 && "Store address misaligned!");
       if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
-          ((p_addr & CLINT_ADDR_MASK) == CLINT_ADDR_BASE)) {
+          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
         is_mmio_store = true;
       }
 

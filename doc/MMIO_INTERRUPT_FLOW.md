@@ -8,7 +8,7 @@
 
 1. 本地截断路径
    - 由 `PeripheralModel` 处理。
-   - 当前覆盖 `UART/PLIC/CLINT` 地址段，以及 OpenSBI timer 特殊读。
+   - 当前覆盖 `UART/PLIC` 地址段，以及 OpenSBI timer 特殊读。
    - 这部分请求不会发到外部 AXI。
 
 2. 外部 AXI 路径
@@ -118,7 +118,6 @@ MMIO load 不是地址一出来就发，而是要等到比较严格的条件：
 
 - `UART`
 - `PLIC`
-- `CLINT`
 
 处理方式：
 
@@ -254,7 +253,6 @@ LSU 发出的请求内容：
 2. `PeripheralModel` 覆盖的地址
    - `UART`
    - `PLIC`
-   - `CLINT`
 
 ### 会发 AXI
 

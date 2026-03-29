@@ -1167,7 +1167,6 @@ void RealLsu::consume_ldq_alloc_reqs() {
 bool RealLsu::is_mmio_addr(uint32_t paddr) const {
   return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
          ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
-         ((paddr & CLINT_ADDR_MASK) == CLINT_ADDR_BASE) ||
          (paddr == OPENSBI_TIMER_LOW_ADDR) ||
          (paddr == OPENSBI_TIMER_HIGH_ADDR);
 }

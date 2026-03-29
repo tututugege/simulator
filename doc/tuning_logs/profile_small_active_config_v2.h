@@ -465,7 +465,5 @@ constexpr uint32_t UART_ADDR_MASK = 0xFFFFFFF0;
 constexpr uint32_t PLIC_ADDR_BASE = 0x0c000000;
 constexpr uint32_t PLIC_ADDR_MASK = 0xFC000000;
 constexpr uint32_t PLIC_CLAIM_ADDR = 0x0c201004;
-constexpr uint32_t CLINT_ADDR_BASE = 0x02000000;
-constexpr uint32_t CLINT_ADDR_MASK = 0xFFFF0000;
 
 #include "types.h"
