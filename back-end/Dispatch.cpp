@@ -48,6 +48,13 @@ void Dispatch::init() {
   std::memset(busy_table_1, 0, sizeof(busy_table_1));
 }
 
+/*
+ * comb_begin
+ * 功能: 组合阶段开始时复制流水状态和 busy_table 到 *_1 工作副本。
+ * 输入依赖: inst_r/inst_valid, busy_table。
+ * 输出更新: inst_r_1/inst_valid_1, busy_table_1。
+ * 约束: 仅做镜像，不做资源分配/发射决策。
+ */
 void Dispatch::comb_begin() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     inst_r_1[i] = inst_r[i];
@@ -56,6 +63,13 @@ void Dispatch::comb_begin() {
   std::memcpy(busy_table_1, busy_table, sizeof(busy_table_1));
 }
 
+/*
+ * comb_alloc
+ * 功能: 预分配 ROB/LDQ/STQ 相关元数据，并生成 dis2rob 初始 valid/uop。
+ * 输入依赖: inst_r/inst_valid, in.rob2dis->enq_idx/rob_flag, in.lsu2dis->{stq_tail,stq_tail_flag,stq_free,ldq_free,ldq_alloc_*}, in.dec_bcast->clear_mask。
+ * 输出更新: inst_alloc[], out.dis2rob->valid/uop, stq_port_owner[], ldq_port_owner[], out.dis2lsu 的 alloc 请求初值。
+ * 约束: 资源不足时该槽位 dis2rob->valid 置 0；br_mask 入队前先清除 clear_mask。
+ */
 void Dispatch::comb_alloc() {
   int store_alloc_count = 0; // 当前周期已分配的 store 数量
   int load_alloc_count = 0;  // 当前周期已分配的 load 数量
@@ -131,6 +145,13 @@ void Dispatch::comb_alloc() {
 }
 
 // BusyTable owner: Dispatch
+/*
+ * comb_wake
+ * 功能: 根据 busy_table 与唤醒总线更新 inst_alloc 源操作数 busy 状态。
+ * 输入依赖: busy_table, in.prf_awake, in.iss_awake, inst_alloc, out.dis2rob->valid。
+ * 输出更新: inst_alloc[].src1_busy/src2_busy。
+ * 约束: 同拍更早槽位若写同一 preg，则后续槽位对应源 busy 必须保持 true（防止过早就绪）。
+ */
 void Dispatch::comb_wake() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (!out.dis2rob->valid[i]) {
@@ -160,6 +181,13 @@ void Dispatch::comb_wake() {
   }
 }
 
+/*
+ * comb_dispatch
+ * 功能: 拆分宏指令为 uop 并尝试写入各 IQ 请求端口，同时缓存拆分元数据供 comb_fire 回滚。
+ * 输入依赖: inst_valid, inst_alloc, in.iss2dis->ready_num, GLOBAL_IQ_CONFIG（dispatch_width）, decompose_inst()。
+ * 输出更新: out.dis2iss->req[][], dispatch_success_flags[], dispatch_cache[], out.dis2rob->uop[i].expect_mask/cplt_mask。
+ * 约束: 按槽位顺序分配 IQ 端口；任一槽位不满足容量后停止后续槽位分配。
+ */
 void Dispatch::comb_dispatch() {
   // 1. 清空输出 req
   for (int i = 0; i < IQ_NUM; i++) {
@@ -237,6 +265,13 @@ void Dispatch::comb_dispatch() {
   }
 }
 
+/*
+ * comb_fire
+ * 功能: 计算最终 dis_fire 与 dis2ren.ready，提交 busy_table 更新，并根据 fire 成败确认/回滚 IQ 与 LSU 请求。
+ * 输入依赖: out.dis2rob->valid, dispatch_success_flags, dispatch_cache, inst_valid/inst_r/inst_alloc, in.rob2dis, in.rob_bcast, in.dec_bcast, in.prf_awake, in.iss_awake。
+ * 输出更新: out.dis2rob->dis_fire[], out.dis2ren->ready, out.dis2iss->req[][]（回滚后结果）, out.dis2lsu->{alloc_req/ldq_alloc_req/...}, busy_table_1。
+ * 约束: flush/mispred/stall 阻断发射；CSR/AMO 需满足串行化条件；older 指令阻塞后续槽位发射。
+ */
 void Dispatch::comb_fire() {
   enum Dis2RenBlockReason {
     DIS2REN_BLOCK_NONE = 0,
@@ -651,6 +686,13 @@ void Dispatch::comb_fire() {
 #endif
 }
 
+/*
+ * comb_pipeline
+ * 功能: 推进 Dispatch 流水寄存器，处理 flush/mispred 清空与背压保留项更新。
+ * 输入依赖: in.ren2dis, out.dis2ren->ready, out.dis2rob->dis_fire, inst_valid/inst_r, inst_alloc, in.rob_bcast->flush, in.dec_bcast->{mispred, clear_mask}。
+ * 输出更新: inst_valid_1[], inst_r_1[]（保留项 busy 状态可被同拍唤醒修正）。
+ * 约束: flush/mispred 时全部置无效；ready=1 时采样新输入；保留项及新采样项都需清除 clear_mask。
+ */
 void Dispatch::comb_pipeline() {
   wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
 

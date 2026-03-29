@@ -28,7 +28,7 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 #define CONFIG_TLB_MMU
 
 // Replay throttling heuristics.
@@ -137,13 +137,13 @@ constexpr int DCACHE_MAX_PENDING_REQS = 64;
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 256;
+constexpr int PRF_NUM = 512;
 constexpr int MAX_BR_NUM = 64;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 256;
+constexpr int ROB_NUM = 512;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -157,8 +157,8 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 256;
-constexpr int FTQ_SIZE = 64;
+constexpr int IDU_INST_BUFFER_SIZE = 320;
+constexpr int FTQ_SIZE = 128;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================

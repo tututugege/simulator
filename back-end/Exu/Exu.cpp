@@ -115,12 +115,26 @@ void Exu::init() {
   }
 }
 
+/*
+ * comb_begin
+ * 功能: 组合阶段开始时复制执行级流水寄存器到 *_1 工作副本。
+ * 输入依赖: inst_r[]。
+ * 输出更新: inst_r_1[]。
+ * 约束: 仅做状态镜像，不执行发射/写回/冲刷。
+ */
 void Exu::comb_begin() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     inst_r_1[i] = inst_r[i];
   }
 }
 
+/*
+ * comb_ftq_pc_req
+ * 功能: 为需要 PC 上下文的 ALU/BR 指令生成 FTQ 读请求。
+ * 输入依赖: inst_r[], in.rob_bcast->flush, in.dec_bcast, 端口范围常量（IQ_ALU_PORT_BASE/IQ_BR_PORT_BASE）。
+ * 输出更新: out.ftq_pc_req->req[]。
+ * 约束: 被 flush 或分支 kill 的条目不发请求；仅匹配端口能力与操作类型的条目发起请求。
+ */
 void Exu::comb_ftq_pc_req() {
   for (auto &req : out.ftq_pc_req->req) {
     req = {};
@@ -153,10 +167,13 @@ void Exu::comb_ftq_pc_req() {
   }
 }
 
-// ==========================================
-// 1. 组合逻辑：生成反压与 Ready 信号
-// ==========================================
-//
+/*
+ * comb_ready
+ * 功能: 生成 EXU->ISU 反压信息（端口 ready 与 FU ready mask）。
+ * 输入依赖: inst_r[], issue_stall[], in.rob_bcast->flush, in.dec_bcast, port_mappings[].entries[].fu->can_accept()。
+ * 输出更新: out.exe2iss->ready[], out.exe2iss->fu_ready_mask[]。
+ * 约束: flush 时所有端口 ready 置 0；被 kill 的在飞条目视作可释放端口占用。
+ */
 void Exu::comb_ready() {
   // 异常状态下（Flush/Mispred），Exu 停止接收新指令，防止脏数据进入
   if (in.rob_bcast->flush) {
@@ -189,6 +206,13 @@ void Exu::comb_ready() {
   }
 }
 
+/*
+ * comb_to_csr
+ * 功能: 从 CSR 执行槽提取 CSR 读写请求并驱动 exe2csr 接口。
+ * 输入依赖: inst_r[0], in.rob_bcast->flush, CSR 指令编码字段（func3/csr_idx/src*）。
+ * 输出更新: out.exe2csr->{we,re,idx,wcmd,wdata}。
+ * 约束: 非 CSR 或 flush 场景下输出默认无请求；仅端口 0 的 CSR 指令参与驱动。
+ */
 void Exu::comb_to_csr() {
   out.exe2csr->we = false;
   out.exe2csr->re = false;
@@ -212,10 +236,13 @@ void Exu::comb_to_csr() {
   }
 }
 
-// ==========================================
-// 2. 组合逻辑：流水线控制 (Flush + Latch + Filter)
-// ==========================================
-
+/*
+ * comb_pipeline
+ * 功能: 管理执行级流水寄存器推进，并处理 flush/mispred/clear_mask 相关清理。
+ * 输入依赖: inst_r[], inst_r_1[], issue_stall[], in.prf2exe->iss_entry[], in.rob_bcast->flush, in.dec_bcast->{mispred, br_mask, clear_mask}, units[]。
+ * 输出更新: inst_r_1[]，并对各 FU 执行 flush/clear_br。
+ * 约束: flush 最高优先级直接清空；mispred 先 flush 再 clear；被 kill 条目不保留到下一拍。
+ */
 void Exu::comb_pipeline() {
   // 1. 全局 Flush (最高优先级)
   if (in.rob_bcast->flush) {
@@ -268,9 +295,13 @@ void Exu::comb_pipeline() {
   }
 }
 
-// ==========================================
-// 3. 组合逻辑：执行与写回
-// ==========================================
+/*
+ * comb_exec
+ * 功能: 驱动 FU 接收执行、收集完成结果并完成旁路/写回/LSU 请求/分支仲裁输出。
+ * 输入依赖: inst_r[], issue_stall[], in.rob_bcast, in.dec_bcast, port_mappings, units, in.lsu2exe 回写请求。
+ * 输出更新: out.iss2prf->bypass[], out.exe2prf->entry[], out.exu2rob->entry[], out.exe2lsu->{agu_req,sdu_req}[], out.exu2id->{mispred,clear_mask,redirect_*}，issue_stall[]。
+ * 约束: 被 flush/kill 的结果不产生有效完成；每端口按映射优先命中的 FU 进行仲裁；clear_mask 统一经 exu2id 广播。
+ */
 void Exu::comb_exec() {
 
   for (int i = 0; i < ISSUE_WIDTH; i++)

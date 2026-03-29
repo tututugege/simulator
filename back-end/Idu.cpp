@@ -26,6 +26,13 @@ void Idu::init() {
   br_latch = {};
 }
 
+/*
+ * comb_begin
+ * 功能: 组合阶段开始时，将时序态镜像到 *_1 工作副本，作为本拍组合逻辑的可写基线。
+ * 输入依赖: tag_vec, br_mask_cp, now_br_mask, pending_free_mask。
+ * 输出更新: tag_vec_1, br_mask_cp_1, now_br_mask_1, pending_free_mask_1。
+ * 约束: 仅做状态复制，不分配/释放分支 Tag，不驱动对外接口信号。
+ */
 void Idu::comb_begin() {
   for (int i = 0; i < MAX_BR_NUM; i++) {
     tag_vec_1[i] = tag_vec[i];
@@ -35,7 +42,13 @@ void Idu::comb_begin() {
   pending_free_mask_1 = pending_free_mask;
 }
 
-// 译码并分配 Tag
+/*
+ * comb_decode
+ * 功能: 译码 in.issue 指令并生成 dec2ren uop，同时为分支指令预分配 br_id/br_mask（遇 Tag 不足时截断）。
+ * 输入依赖: in.issue->entries/pc, br_latch.clear_mask, now_br_mask, tag_vec, max_br_per_cycle。
+ * 输出更新: out.dec2ren->valid/uop, alloc_tag（供 comb_fire 在 fire 时提交分配）。
+ * 约束: 每拍最多分配 max_br_per_cycle 个分支 Tag, Tag 不足时后续槽位 valid 置 0。
+ */
 void Idu::comb_decode() {
   wire<1> alloc_valid[DECODE_WIDTH];
   int alloc_num = 0;
@@ -126,6 +139,13 @@ void Idu::comb_decode() {
   }
 }
 
+/*
+ * comb_branch
+ * 功能: 将锁存的分支解析结果打包并广播到 dec_bcast（含 mispred 与 clear_mask）。
+ * 输入依赖: br_latch.{mispred, br_id, redirect_rob_idx, clear_mask}。
+ * 输出更新: out.dec_bcast->mispred, br_id, redirect_rob_idx, br_mask, clear_mask。
+ * 约束: 本函数仅广播，不修改 IDU 本地 Tag/Mask 状态；本地状态更新统一由 comb_fire 处理。
+ */
 void Idu::comb_branch() {
   // comb_branch 仅负责广播分支结果；IDU本地状态更新统一在 comb_fire 处理。
   wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
@@ -145,6 +165,13 @@ void Idu::comb_branch() {
   out.dec_bcast->clear_mask = clear;
 }
 
+/*
+ * comb_fire
+ * 功能: 在 ready/flush/分支解析条件下推进 IDU 分支状态机（Tag 释放、误预测回收、新分支提交分配）。
+ * 输入依赖: in.rob_bcast->flush, in.ren2dec->ready, out.dec2ren->valid/uop, alloc_tag, br_latch, now_br_mask, br_mask_cp, pending_free_mask。
+ * 输出更新: tag_vec_1, now_br_mask_1, br_mask_cp_1, pending_free_mask_1。
+ * 约束: flush 最高优先级并直接返回；mispred 路径不进行新分支分配；仅对 fire 且为分支的槽位提交 Tag 占用。
+ */
 void Idu::comb_fire() {
   Assert(in.ren2dec != nullptr && "Idu::comb_fire: ren2dec is null");
   Assert(in.rob_bcast != nullptr && "Idu::comb_fire: rob_bcast is null");
@@ -186,7 +213,8 @@ void Idu::comb_fire() {
 
   // 4. 误预测：回收更年轻 tag；本拍不再进行新分支分配。
   if (br_latch.mispred) {
-    wire<BR_MASK_WIDTH> tags_to_free = now_br_mask & ~br_mask_cp[br_latch.br_id];
+    wire<BR_MASK_WIDTH> tags_to_free =
+        now_br_mask & ~br_mask_cp[br_latch.br_id];
     now_br_mask_1 &= ~tags_to_free;
     pending_free_mask_1 |= tags_to_free;
     return;
@@ -470,22 +498,21 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
   }
 
   InstType inst_type = decode_inst_type(uop.type);
-  uop.tma.is_ret =
-      (inst_type == JALR && uop.src1_areg == 1 && uop.dest_areg == 0 &&
-       uop.imm == 0);
+  uop.tma.is_ret = (inst_type == JALR && uop.src1_areg == 1 &&
+                    uop.dest_areg == 0 && uop.imm == 0);
   uop.tma.mem_commit_is_load =
-      (inst_type == LOAD || (inst_type == AMO && (uop.func7 >> 2) != AmoOp::SC));
+      (inst_type == LOAD ||
+       (inst_type == AMO && (uop.func7 >> 2) != AmoOp::SC));
   uop.tma.mem_commit_is_store =
-      (inst_type == STORE || (inst_type == AMO && (uop.func7 >> 2) != AmoOp::LR));
+      (inst_type == STORE ||
+       (inst_type == AMO && (uop.func7 >> 2) != AmoOp::LR));
   if (uop.tma.mem_commit_is_load) {
-    uop.dbg.mem_align_mask =
-        (uop.func3 & 0x3) == 0   ? 0
-        : (uop.func3 & 0x3) == 1 ? 1
-                                 : 3;
+    uop.dbg.mem_align_mask = (uop.func3 & 0x3) == 0   ? 0
+                             : (uop.func3 & 0x3) == 1 ? 1
+                                                      : 3;
   }
 
-  if (inst_type == AMO && uop.dest_areg == 0 &&
-      (uop.func7 >> 2) != AmoOp::LR &&
+  if (inst_type == AMO && uop.dest_areg == 0 && (uop.func7 >> 2) != AmoOp::LR &&
       (uop.func7 >> 2) != AmoOp::SC) {
     uop.dest_areg = 32;
   }

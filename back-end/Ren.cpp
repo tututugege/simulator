@@ -37,6 +37,13 @@ void Ren::init() {
 
 }
 
+/*
+ * comb_begin
+ * 功能: 组合阶段开始时，将所有时序状态复制到 *_1 工作副本。
+ * 输入依赖: inst_r/inst_valid, spec_RAT, arch_RAT, free_vec, spec_alloc, RAT_checkpoint, alloc_checkpoint。
+ * 输出更新: inst_r_1/inst_valid_1, spec_RAT_1, arch_RAT_1, free_vec_1, spec_alloc_1, RAT_checkpoint_1, alloc_checkpoint_1。
+ * 约束: 仅做状态镜像，不进行分配/回收决策，不驱动握手输出。
+ */
 void Ren::comb_begin() {
   memcpy(inst_r_1, inst_r, DECODE_WIDTH * sizeof(DecRenIO::DecRenInst));
   memcpy(inst_valid_1, inst_valid, DECODE_WIDTH * sizeof(reg<1>));
@@ -49,6 +56,13 @@ void Ren::comb_begin() {
   memcpy(alloc_checkpoint_1, alloc_checkpoint, MAX_BR_NUM * PRF_NUM);
 }
 
+/*
+ * comb_alloc
+ * 功能: 从 free_vec 预选目的物理寄存器，并生成 ren2dis.valid 的资源可用性结果。
+ * 输入依赖: free_vec, inst_valid, inst_r[].dest_en。
+ * 输出更新: alloc_reg, out.ren2dis->valid[]（以及性能计数器相关统计）。
+ * 约束: 顺序分配且一旦前序指令因寄存器不足 stall，后续槽位同拍全部阻塞。
+ */
 void Ren::comb_alloc() {
   // 可用寄存器个数 每周期最多使用DECODE_WIDTH个
   wire<1> alloc_valid[DECODE_WIDTH] = {false};
@@ -87,6 +101,13 @@ void Ren::comb_alloc() {
 #endif
 }
 
+/*
+ * comb_rename
+ * 功能: 基于 spec_RAT 完成源/目的寄存器重命名，并处理同拍 RAW/WAW 旁路。
+ * 输入依赖: inst_r/inst_valid, spec_RAT, alloc_reg, out.ren2dis->uop[j].dest_preg（同拍前序旁路）。
+ * 输出更新: out.ren2dis->uop[] 的 src1_preg/src2_preg/old_dest_preg/dest_preg。
+ * 约束: 旁路仅来自同拍更早槽位；x0 写入不参与旁路；旁路优先于 spec_RAT 常规查表结果。
+ */
 void Ren::comb_rename() {
 
   wire<PRF_IDX_WIDTH> src1_preg_normal[DECODE_WIDTH];
@@ -168,6 +189,13 @@ void Ren::comb_rename() {
   }
 }
 
+/*
+ * comb_fire
+ * 功能: 在 ren->dis 握手成功时提交重命名状态更新，并处理 commit/flush/mispred 恢复。
+ * 输入依赖: out.ren2dis->valid, in.dis2ren->ready, inst_r, in.rob_commit, in.rob_bcast, in.dec_bcast, arch/spec RAT 与 checkpoint 状态。
+ * 输出更新: spec_RAT_1, arch_RAT_1, free_vec_1, spec_alloc_1, RAT_checkpoint_1, alloc_checkpoint_1, out.ren2dec->ready。
+ * 约束: flush 优先于 mispred；mispred 从 checkpoint 恢复；flush 从 arch_RAT 恢复；分支 fire 时保存 checkpoint。
+ */
 void Ren::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     fire[i] = out.ren2dis->valid[i] && in.dis2ren->ready;
@@ -282,6 +310,13 @@ void Ren::comb_fire() {
   }
 }
 
+/*
+ * comb_pipeline
+ * 功能: 推进 Rename 级流水寄存器，处理 flush/mispred 清空与 clear_mask 清理。
+ * 输入依赖: in.dec2ren, out.ren2dec->ready, fire[], in.rob_bcast->flush, in.dec_bcast->{mispred, clear_mask}, inst_valid/inst_r。
+ * 输出更新: inst_valid_1[], inst_r_1[]。
+ * 约束: flush/mispred 时本级全部无效；ready=1 时从 dec2ren 采样新输入；保留项需清除已解析分支 bit。
+ */
 void Ren ::comb_pipeline() {
   wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
   if (in.rob_bcast->flush || in.dec_bcast->mispred) {

@@ -74,6 +74,13 @@ void Isu::init() {
   }
 }
 
+/*
+ * comb_begin
+ * 功能: 组合阶段开始时复制各 IQ 与延迟唤醒管线状态到 *_1 工作副本。
+ * 输入依赖: iqs[].entry/count, latency_pipe。
+ * 输出更新: iqs[].entry_1/count_1, latency_pipe_1。
+ * 约束: 仅做状态镜像，不执行入队/发射/唤醒决策。
+ */
 void Isu::comb_begin() {
   for (auto &q : iqs) {
     q.entry_1 = q.entry;
@@ -91,9 +98,13 @@ int Isu::get_latency(UopType uop) {
   return 1;                 // 其他指令认为是单周期，走 Fast Wakeup
 }
 
-// =================================================================
-// 1. comb_ready: 告诉 Dispatch 每个 IQ 有多少空位
-// =================================================================
+/*
+ * comb_ready
+ * 功能: 计算每个 IQ 的剩余容量并反馈给 Dispatch。
+ * 输入依赖: iqs[i].size/count。
+ * 输出更新: out.iss2dis->ready_num[i]。
+ * 约束: 仅报告容量，不改变 IQ 内部状态。
+ */
 void Isu::comb_ready() {
   for (int i = 0; i < IQ_NUM; i++) {
     // 直接用 i 索引，因为我们保证了 iqs[i].id == i
@@ -101,9 +112,13 @@ void Isu::comb_ready() {
   }
 }
 
-// =================================================================
-// 2. comb_enq: 批量入队
-// =================================================================
+/*
+ * comb_enq
+ * 功能: 接收 dis2iss 请求并批量写入对应 IQ。
+ * 输入依赖: in.dis2iss->req[][], configs[i].dispatch_width, out.iss_awake（用于入队前叠加唤醒）, 当前 IQ 状态。
+ * 输出更新: iqs[i].entry_1/count_1（通过 enqueue 写入）。
+ * 约束: 仅对 valid 请求入队；入队失败视为设计错误并触发 Assert。
+ */
 void Isu::comb_enq() {
   for (int i = 0; i < IQ_NUM; i++) {
     auto &q = iqs[i];
@@ -131,9 +146,13 @@ void Isu::comb_enq() {
   }
 }
 
-// =================================================================
-// 3. comb_issue: 调度 + 延迟唤醒管理
-// =================================================================
+/*
+ * comb_issue
+ * 功能: 对各 IQ 执行调度选择并向 PRF/EXU 发射指令。
+ * 输入依赖: q.schedule() 结果, in.exe2iss->ready, in.exe2iss->fu_ready_mask, in.rob_bcast->flush, in.dec_bcast->mispred。
+ * 输出更新: out.iss2prf->iss_entry[], 各 IQ 的已发射条目提交结果（commit_issue）。
+ * 约束: 发射需同时满足端口 ready 与 FU 能力掩码；flush/mispred 时禁止新发射。
+ */
 void Isu::comb_issue() {
 
   for (int i = 0; i < ISSUE_WIDTH; i++) {
@@ -172,6 +191,13 @@ void Isu::comb_issue() {
   }
 }
 
+/*
+ * comb_calc_latency_next
+ * 功能: 计算下一拍延迟唤醒管线（旧条目倒计时 + 新发射多周期条目入管线）。
+ * 输入依赖: latency_pipe, out.iss2prf->iss_entry[], get_latency(op)。
+ * 输出更新: latency_pipe_1。
+ * 约束: 仅 latency>1 且 dest_en 指令进入延迟管线；countdown==0 的旧条目不再保留到下一拍。
+ */
 void Isu::comb_calc_latency_next() {
   // 清空 Next State (重新计算)
   latency_pipe_1.clear();
@@ -212,9 +238,13 @@ void Isu::comb_calc_latency_next() {
   }
 }
 
-// =================================================================
-// 4. comb_awake: 统一唤醒逻辑
-// =================================================================
+/*
+ * comb_awake
+ * 功能: 汇总慢速/延迟/快速唤醒源，唤醒 IQ 内等待项并对外广播 iss_awake。
+ * 输入依赖: in.prf_awake, latency_pipe, out.iss2prf->iss_entry, get_latency(op), iqs[]。
+ * 输出更新: iqs[].wakeup(...) 结果, out.iss_awake->wake[]。
+ * 约束: 唤醒端口数不超过 MAX_WAKEUP_PORTS；仅单周期且非 LOAD/STA 的新发射进入快速唤醒。
+ */
 void Isu::comb_awake() {
   std::vector<uint32_t> pregs;
   pregs.reserve(MAX_WAKEUP_PORTS); // 预分配避免重复分配
@@ -266,6 +296,13 @@ void Isu::comb_awake() {
   }
 }
 
+/*
+ * comb_flush
+ * 功能: 处理 flush/mispred 的 IQ 与延迟管线清理，并清除已解析分支 bit。
+ * 输入依赖: in.rob_bcast->flush, in.dec_bcast->{mispred, br_mask, clear_mask}, latency_pipe_1, iqs[]。
+ * 输出更新: iqs[]（flush_all/flush_br/clear_br 后状态）, latency_pipe/latency_pipe_1。
+ * 约束: flush 优先级高于 mispred；clear_mask 在 flush/mispred 处理后作用于存活条目。
+ */
 void Isu::comb_flush() {
   if (in.rob_bcast->flush) {
     for (auto &q : iqs)

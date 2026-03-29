@@ -1,93 +1,104 @@
 # Prf (Physical Register File) 设计文档
 
 ## 1. 概述 (Overview)
-Prf (Physical Register File) 模块是后端数据流的汇聚点。它不仅负责存储物理寄存器的值，还集成了**多级旁路 (Multi-Level Bypass)** 网络，支持在 **Issue 阶段**直接读取最新产生的数据（即使这些数据尚未写入 SRAM）。此外，Prf 还负责在写回阶段 (Writeback) 检测分支误预测并触发流水线冲刷。
+`Prf` 位于 `Isu` 与 `Exu`/写回之间，核心职责：
+
+1. 为发射条目读取源操作数。
+2. 在读阶段提供写回级与执行级旁路。
+3. 接收写回条目并更新物理寄存器堆。
+4. 生成 Load 写回唤醒广播。
+5. 维护一拍写回流水寄存器并处理 flush/mispred。
+
+---
 
 ## 2. 接口定义 (Interface Definition)
 
-### 2.1 核心输入接口
+### 2.1 输入接口
 
-| 信号/字段 | 位宽 (bits) | 方向 | 来源/去向 | 描述 |
-| :--- | :--- | :--- | :--- | :--- |
-| `iss2prf.iss_entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输入 | Isu | 发射阶段的指令请求（包含源 Preg 索引） |
-| `exe2prf.entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输入 | Exu | 执行完成的指令（写回流水线输入） |
-| `exe2prf.bypass` | `TOTAL_FU * sizeof(Entry)` | 输入 | Exu | 来自所有功能单元的运算结果广播 |
+| 信号/字段 | 来源 | 描述 |
+| :--- | :--- | :--- |
+| `iss2prf->iss_entry[]` | Isu | 发射请求（含源/目的 preg 与控制字段） |
+| `exe2prf->entry[]` | Exu | 写回流水输入（上一执行阶段完成结果） |
+| `exe2prf->bypass[]` | Exu | 本拍 FU 完成广播（快速旁路源） |
+| `dec_bcast->{mispred,br_mask,clear_mask}` | Idu/Exu 广播链路 | 分支杀伤与分支位清理 |
+| `rob_bcast->flush` | ROB | 全局冲刷 |
 
-### 2.2 核心输出接口
+### 2.2 输出接口
 
-| 信号/字段 | 位宽 (bits) | 方向 | 来源/去向 | 描述 |
-| :--- | :--- | :--- | :--- | :--- |
-| `prf2exe.iss_entry` | `ISSUE_WIDTH * sizeof(Entry)` | 输出 | Exu | 读出操作数后的指令包 |
-| `prf2dec.mispred` | 1 | 输出 | Idu/Ren | 误预测信号 |
-| `prf2dec.redirect_pc` | 32 | 输出 | Idu | 误预测重定向目标地址 |
-| `prf_awake` | `LSU_WIDTH * sizeof(Wake)` | 输出 | Isu/Ren | Load 写回唤醒信号 |
+| 信号/字段 | 去向 | 描述 |
+| :--- | :--- | :--- |
+| `prf2exe->iss_entry[]` | Exu | 已补齐 `src*_rdata` 的发射条目 |
+| `prf_awake->wake[]` | Isu/Rename | Load 写回唤醒广播 |
 
 ---
 
 ## 3. 微架构设计 (Microarchitecture)
 
-### 3.1 物理寄存器堆 (Register File)
-- **实现方式**: 多端口 RAM (SRAM 或 Register Array)，采用 `reg<32>` 数组模拟。
-- **读端口 (Read Ports)**: `(ISSUE_WIDTH - STA_WIDTH) * 2 + STA_WIDTH * 1`。
-    - 大部分运算指令需要读取 2 个源操作数。
-    - Store Address (STA) 微操作仅需读取 1 个基址寄存器 (Base)。
-- **写端口 (Write Ports)**: `IQ_INT_PORTS + IQ_LD_PORTS`。
-    - 仅 `IQ_INT` (ALU, MUL, DIV, CSR) 和 `IQ_LD` (Load) 的发射端口对应指令需要写回。
-    - `IQ_STA` (Store Addr), `IQ_STD` (Store Data) 和 `IQ_BR` (Branch) 对应的发射端口无需写回。
+### 3.1 状态组织
 
-### 3.2 多级旁路网络 (Bypass Network)
-为了实现背靠背执行，Prf 在 `comb_read` 阶段会并行检查以下数据源，优先级从高到低：
-1.  **Exe Bypass**: 来自本周期功能单元刚刚计算出的结果 (`exe2prf.bypass`)。
-    *   *场景*：指令 A 在 cycle T 执行完毕，指令 B 在 cycle T 发射，B 可以直接拿到 A 的结果。
-2.  **Writeback Bypass**: 来自上一周期执行完毕、本周期正在写回的数据 (`inst_r`)。
-    *   *场景*：指令 A 在 cycle T-1 执行完毕，cycle T正在写寄存器堆；指令 B 在 cycle T 发射。
-3.  **Register File**: 从 SRAM 中读取的稳定数据。
+1. `reg_file[PRF_NUM]`：物理寄存器堆当前态。
+2. `inst_r[ISSUE_WIDTH]`：写回流水寄存器（上一拍 EXU 完成条目）。
+3. `_1` 副本用于组合阶段累积下一拍状态。
+
+### 3.2 读旁路优先级
+`comb_read()` 中每个源操作数按以下顺序解析：
+
+1. `reg_file[preg]` 基值。
+2. `inst_r` 写回级旁路覆盖。
+3. `exe2prf->bypass` 执行级旁路再次覆盖（优先级最高）。
+
+### 3.3 写回与唤醒
+
+1. `comb_write()` 将 `inst_r` 结果写入 `reg_file_1`。
+2. `comb_awake()` 从 `inst_r` 中筛选 Load 且未被杀伤条目输出唤醒。
 
 ---
 
 ## 4. 组合逻辑功能描述 (Combinational Logic)
 
-### 4.1 `comb_read` (操作数读取)
-- **功能描述**：为 **Issue (发射)** 阶段的指令读取源操作数。
-- **逻辑**：实现 3.2 节描述的旁路选择逻辑。对于每个源操作数，并行比较 `src_preg` 与 Bypass 来源的 `dest_preg`。
-- **时序**：在指令从 Issue Queue 发射到 Execute Unit 的过程中进行（Payload 读）。
+### 4.1 `comb_begin`
+- **功能描述**：复制 PRF 当前状态到 `_1` 工作副本。
+- **输入依赖**：`reg_file[]`、`inst_r[]`。
+- **输出更新**：`reg_file_1[]`、`inst_r_1[]`。
+- **约束/优先级**：仅镜像，不进行读/写/旁路决策。
 
-### 4.2 `comb_br_check` (分支检查)
-- **功能描述**：在 Writeback 阶段 (`inst_r`) 检查是否有指令被标记为误预测 (`mispred`)。
-- **仲裁**：如果同一周期有多条分支误预测，选择**最老 (Oldest)** 的一条（根据 ROB ID 比较）作为重定向基准，生成 `redirect_pc` 和 `br_tag`。
+### 4.2 `comb_read`
+- **功能描述**：为本拍发射条目读取源操作数并应用旁路。
+- **输入依赖**：`iss2prf->iss_entry[]`、`reg_file[]`、`inst_r[]`、`exe2prf->bypass[]`。
+- **输出更新**：`prf2exe->iss_entry[]`（含 `src1_rdata/src2_rdata`）。
+- **约束/优先级**：`src_en=0` 时读值为 0；执行级旁路优先级高于写回级与寄存器堆。
 
+### 4.3 `comb_awake`
+- **功能描述**：从写回寄存器筛选 Load 结果并生成唤醒端口。
+- **输入依赖**：`inst_r[]`、`dec_bcast->{mispred,br_mask}`。
+- **输出更新**：`prf_awake->wake[]`。
+- **约束/优先级**：仅 Load 且未被 squash 条目参与；最多输出 `LSU_LOAD_WB_WIDTH` 路。
 
-### 4.4 `comb_awake` (Load 唤醒)
-- **功能描述**：处理 Load 指令的唤醒。
-- **特殊处理**：这部分逻辑虽然在 Prf 中，但主要服务于 Lsu 的 Cache Miss/Hit 唤醒。它会过滤掉被 Squash 的指令，将有效的 Load 结果对应的 Preg 广播给 Isu。
+### 4.4 `comb_complete`
+- **功能描述**：保留阶段接口（当前无额外逻辑）。
+- **输入依赖**：无。
+- **输出更新**：无。
+- **约束/优先级**：用于保持模块阶段调用结构一致。
 
-### 4.5 `comb_write` (寄存器写入)
-- **功能描述**：将 `inst_r` 中的结果实际写入 `reg_file` 数组。
+### 4.5 `comb_write`
+- **功能描述**：将写回级结果写入 `reg_file_1`。
+- **输入依赖**：`inst_r[]` 的 `valid/dest_en/dest_preg/result`。
+- **输出更新**：`reg_file_1[]`。
+- **约束/优先级**：`x0` 恒为 0，不允许被写回覆盖。
+
+### 4.6 `comb_pipeline`
+- **功能描述**：推进 `inst_r` 流水并执行 flush/mispred/clear_mask 处理。
+- **输入依赖**：`rob_bcast->flush`、`exe2prf->entry[]`、`dec_bcast->{mispred,br_mask,clear_mask}`。
+- **输出更新**：`inst_r_1[]`（valid/uop/br_mask）。
+- **约束/优先级**：flush 最高优先；mispred 命中条目无效化；存活条目需清除 `clear_mask`。
 
 ---
 
-## 5. 性能计数器 (Performance Counters)
+## 5. 资源占用 (Resource Usage)
 
-| 计数器名称 | 指标含义 | TMA 层级 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `branch_mispred`| 分支误预测次数 | Bad Speculation | 统计在后端检测到的实际误预测次数 |
-
----
-
-## 6. 资源占用 (Resource Usage)
-
-### 6.1 存储资源 (Storage Resources)
-
-| 寄存器/存储名称 | 规格 (Size/Bits) | 硬件类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `reg_file` | `PRF_NUM * 32` | `reg` array | 物理寄存器堆主体 |
-| `inst_r` | `ISSUE_WIDTH * sizeof(Entry)` | `reg` | 写回级流水线寄存器 (Writeback Latch) |
-
-### 6.2 硬件开销 (Hardware Overhead)
-
-| 资源名称 | 规格 (Ports/Width) | 描述 |
+| 名称 | 规格 | 描述 |
 | :--- | :--- | :--- |
-| Read Ports | `(ISSUE_WIDTH - STA_WIDTH) * 2 + STA_WIDTH * 1` | 寄存器堆读端口 (Store Address 仅需读 1 个操作数) |
-| Write Ports | `IQ_INT_PORTS + IQ_LD_PORTS` | 寄存器堆写端口 (仅 IQ_INT 和 IQ_LD 对应端口需写回) |
-| Bypass Muxes | `ISSUE_WIDTH * 2 * Sources` | 操作数选择多路复用器（规模巨大） |
-| Age Comparator | `BRU_NUM` | 用于选择最早误预测分支的比较器树 (仅需比较 BRU 输出) |
+| `reg_file/reg_file_1` | `PRF_NUM * 32bit` | 物理寄存器堆与下一拍副本 |
+| `inst_r/inst_r_1` | `ISSUE_WIDTH` | 写回流水寄存器与下一拍副本 |
+| 读旁路比较网络 | `ISSUE_WIDTH * 2` 源操作数 | `preg` 匹配与结果选择 |
+| 唤醒输出端口 | `LSU_LOAD_WB_WIDTH` | Load 写回唤醒广播 |

@@ -57,6 +57,10 @@ void Prf::init() {
   }
 }
 
+// 功能：复制 PRF 当前状态到本拍工作副本（*_1）。
+// 输入依赖：reg_file[]、inst_r[]。
+// 输出更新：reg_file_1[]、inst_r_1[]。
+// 约束：仅状态镜像，不进行读/写/旁路决策。
 void Prf::comb_begin() {
   for (int i = 0; i < PRF_NUM; i++) {
     reg_file_1[i] = reg_file[i];
@@ -66,9 +70,10 @@ void Prf::comb_begin() {
   }
 }
 
-// ==========================================
-// 1. 寄存器读取（发射前）+ 旁路
-// ==========================================
+// 功能：为本拍发射条目读取源操作数，并应用写回级与 EXU 广播旁路。
+// 输入依赖：in.iss2prf->iss_entry[]、reg_file[]、inst_r[]、in.exe2prf->bypass[]。
+// 输出更新：out.prf2exe->iss_entry[]（含 src1_rdata/src2_rdata）。
+// 约束：src_en=0 时读值强制为 0；旁路优先级高于寄存器堆读值。
 void Prf::comb_read() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     out.prf2exe->iss_entry[i].valid = in.iss2prf->iss_entry[i].valid;
@@ -86,9 +91,10 @@ void Prf::comb_read() {
   }
 }
 
-// ==========================================
-// 2. 唤醒逻辑
-// ==========================================
+// 功能：从写回流水寄存器中提取可见的 Load 完成事件并生成唤醒广播。
+// 输入依赖：inst_r[]、in.dec_bcast（mispred/br_mask）。
+// 输出更新：out.prf_awake->wake[]。
+// 约束：仅 Load 且未被 squash 的目的寄存器参与唤醒；端口数受 LSU_LOAD_WB_WIDTH 限制。
 void Prf::comb_awake() {
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
     out.prf_awake->wake[i].valid = false;
@@ -112,13 +118,18 @@ void Prf::comb_awake() {
   }
 }
 
+// 功能：保留接口（当前 PRF 无额外 complete 组合逻辑）。
+// 输入依赖：无。
+// 输出更新：无。
+// 约束：函数存在用于保持模块阶段结构一致性。
 void Prf::comb_complete() {
   // 保留接口：当前 PRF 不承载额外 complete 组合逻辑。
 }
 
-// ==========================================
-// 3. 写物理寄存器
-// ==========================================
+// 功能：将写回级结果写入物理寄存器堆下一拍副本。
+// 输入依赖：inst_r[]（valid/dest_en/dest_preg/result）。
+// 输出更新：reg_file_1[]。
+// 约束：x0 不可写，reg_file_1[0] 始终保持 0。
 void Prf::comb_write() {
   // 将写回级结果写入寄存器堆，x0 始终保持为 0。
   for (int i = 0; i < ISSUE_WIDTH; i++) {
@@ -129,9 +140,10 @@ void Prf::comb_write() {
   reg_file_1[0] = 0;
 }
 
-// ==========================================
-// 4. 流水寄存器更新
-// ==========================================
+// 功能：推进 PRF 写回流水寄存器，并处理 flush/mispred/clear_mask。
+// 输入依赖：in.rob_bcast->flush、in.exe2prf->entry[]、in.dec_bcast->{mispred,br_mask,clear_mask}。
+// 输出更新：inst_r_1[]（valid/uop 及 br_mask 清理）。
+// 约束：flush 优先清空；mispred 命中分支掩码的条目被杀；存活条目需清除 clear_mask。
 void Prf::comb_pipeline() {
   bool global_flush = in.rob_bcast->flush;
   wire<BR_MASK_WIDTH> clear = in.dec_bcast->clear_mask;

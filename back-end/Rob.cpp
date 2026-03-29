@@ -55,6 +55,10 @@ void Rob::init() {
   }
 }
 
+// 功能：复制 ROB 当前状态到本拍工作副本（*_1）。
+// 输入依赖：entry[][]、enq_ptr/deq_ptr、enq_flag/deq_flag。
+// 输出更新：entry_1[][]、enq_ptr_1/deq_ptr_1、enq_flag_1/deq_flag_1。
+// 约束：仅状态镜像，不做提交/分配/恢复决策。
 void Rob::comb_begin() {
   for (int i = 0; i < ROB_BANK_NUM; i++) {
     for (int j = 0; j < ROB_LINE_NUM; j++) {
@@ -67,6 +71,10 @@ void Rob::comb_begin() {
   deq_flag_1 = deq_flag;
 }
 
+// 功能：生成 ROB 对 Dispatch/CSR 的就绪与停顿信息，并标注队头阻塞类型。
+// 输入依赖：entry[][deq_ptr]、is_empty()/is_full()、in.lsu2rob->tma.miss_mask。
+// 输出更新：out.rob2dis->{stall,tma,empty,ready}、out.rob2csr->{commit,interrupt_resp}。
+// 约束：队头遇到 flush 类指令时强制 stall；阻塞归因按最老未完成指令判定。
 void Rob::comb_ready() {
   out.rob2dis->stall = false;
   out.rob2csr->commit = false;
@@ -121,6 +129,10 @@ void Rob::comb_ready() {
   out.rob2dis->ready = !is_full();
 }
 
+// 功能：向 FTQ 请求 ROB 队头最老有效指令的 PC。
+// 输入依赖：is_empty()、entry[][deq_ptr].valid 及其 ftq_idx/ftq_offset。
+// 输出更新：out.ftq_pc_req->req[0]。
+// 约束：ROB 为空时不发请求；每拍最多发出 1 条 ROB 侧 PC 请求。
 void Rob::comb_ftq_pc_req() {
   out.ftq_pc_req->req[0] = {};
 
@@ -138,6 +150,10 @@ void Rob::comb_ftq_pc_req() {
   }
 }
 
+// 功能：执行 ROB 提交仲裁（组提交/单提交）、flush/异常/中断广播与提交输出生成。
+// 输入依赖：entry[][deq_ptr]、in.dec_bcast、in.csr2rob、in.ftq_pc_resp、in.lsu2rob。
+// 输出更新：out.rob_commit、out.rob_bcast、out.rob2csr、out.rob2dis->enq_idx/rob_flag，及 entry_1/deq_ptr_1/deq_flag_1。
+// 约束：flush/异常/中断必须在精确提交点触发；特殊指令与中断走单提交路径。
 void Rob::comb_commit() {
   out.rob_bcast->flush = out.rob_bcast->exception = out.rob_bcast->mret =
       out.rob_bcast->sret = out.rob_bcast->ecall = out.rob_bcast->fence =
@@ -417,6 +433,10 @@ void Rob::comb_commit() {
   }
 }
 
+// 功能：接收执行完成回传并更新 ROB 条目的完成位与异常/分支附加信息。
+// 输入依赖：in.exu2rob->entry[]（含 rob_idx、result、diag_val、fault/mispred/flush_pipe 等）。
+// 输出更新：entry_1[bank][line].uop.{cplt_mask,diag_val,page_fault_*,mispred,br_taken,flush_pipe,dbg}。
+// 约束：完成位不可重复置位、不可越界到 expect_mask 之外；多 uop 同指令回传时 flush_pipe 取 OR。
 void Rob::comb_complete() {
   //  执行完毕的标记 (Early Completion Phase 2)
   for (int i = 0; i < ISSUE_WIDTH; i++) {
@@ -477,6 +497,10 @@ void Rob::comb_complete() {
   }
 }
 
+// 功能：处理分支误预测恢复，回退 ROB tail 并失效错误路径条目。
+// 输入依赖：in.dec_bcast->{mispred,redirect_rob_idx}、out.rob_bcast->flush、当前 enq_ptr/enq_flag。
+// 输出更新：enq_ptr_1/enq_flag_1、entry_1[][]（重定向点之后条目 invalid）、redirect 指令 ftq_is_last。
+// 约束：仅在 mispred 且本拍无全局 flush 时生效；需覆盖跨行回滚，避免僵尸提交。
 void Rob::comb_branch() {
   // 分支预测失败
   if (in.dec_bcast->mispred && !out.rob_bcast->flush) {
@@ -524,6 +548,10 @@ void Rob::comb_branch() {
   }
 }
 
+// 功能：接收 Dispatch 发射并向 ROB 入队新条目。
+// 输入依赖：out.rob2dis->ready、in.dis2rob->dis_fire[]、in.dis2rob->uop[]、enq_ptr/enq_flag。
+// 输出更新：entry_1[][enq_ptr]、enq_ptr_1/enq_flag_1。
+// 约束：仅在 ROB ready 时接收入队；有任意槽位入队即推进 tail 一行。
 void Rob::comb_fire() {
   // 入队
   wire<1> enq = false;
@@ -547,6 +575,10 @@ void Rob::comb_fire() {
   }
 }
 
+// 功能：在全局 flush 时清空 ROB 并复位头尾指针。
+// 输入依赖：out.rob_bcast->flush。
+// 输出更新：entry_1[][].valid、enq_ptr_1/deq_ptr_1、enq_flag_1/deq_flag_1。
+// 约束：flush 为最终状态覆盖，生效后 ROB 进入空队列初始态。
 void Rob::comb_flush() {
   if (out.rob_bcast->flush) {
     for (int i = 0; i < ROB_BANK_NUM; i++) {

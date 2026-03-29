@@ -1,101 +1,125 @@
 # Idu (Instruction Decode Unit) 设计文档
 
 ## 1. 概述 (Overview)
-Idu 模块是后端流水线的入口，主要负责将取指阶段获得的指令流并行译码为微指令 (MicroOps)。此外，Idu 还承担了分支标签 (Branch Tag) 的分配与回收、FTQ 条目管理以及与前端的流控握手。
+`Idu` 位于 pre-idu queue 与 rename 之间，负责：
+
+1. 将 `PreIduIssueIO` 中的指令译码为 `DecRenIO::DecRenInst`。
+2. 为分支指令分配 `br_id`，并维护 in-flight 分支集合 `br_mask`。
+3. 接收执行侧分支解析结果（`exu2id`），向下游广播 `mispred/clear_mask`。
+4. 在 `ren2dec->ready` 握手与 `rob_bcast->flush` 条件下推进本地分支状态。
+
+---
 
 ## 2. 接口定义 (Interface Definition)
 
-### 2.1 前端接口
+### 2.1 输入接口 (`IduIn`)
 
-| 信号/字段 | 位宽 (bits) | 方向 | 来源/去向 | 描述 |
-| :--- | :--- | :--- | :--- | :--- |
-| `front2dec.inst` | `FETCH_WIDTH * 32` | 输入 | 前端 | 原始指令机器码 |
-| `front2dec.pc` | `FETCH_WIDTH * 32` | 输入 | 前端 | 指令 PC 及其偏移 |
-| `front2dec.valid` | `FETCH_WIDTH * 1` | 输入 | 前端 | 指令有效位 |
-| `dec2front.ready` | 1 | 输出 | 前端 | 后端就绪信号（反压前端） |
-| `dec2front.fire` | `FETCH_WIDTH * 1` | 输出 | 前端 | 指令确认接收信号 |
+| 信号/字段 | 位宽 | 来源 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `issue->entries[i]` | `InstructionBufferEntry` | PreIduQueue | 待译码指令槽（含 `valid/inst/ftq/page_fault_inst`） |
+| `issue->pc[i]` | 32 | PreIduQueue | 对应槽位 PC |
+| `ren2dec->ready` | 1 | Rename | rename 是否可接收本拍译码输出 |
+| `rob_bcast->flush` | 1 | ROB | 全局冲刷信号（最高优先级） |
+| `exu2id->mispred` | 1 | EXU | 分支误预测标记（在 `seq()` 锁存进 `br_latch`） |
+| `exu2id->br_id` | `BR_TAG_WIDTH` | EXU | 已解析分支 ID |
+| `exu2id->redirect_rob_idx` | `ROB_IDX_WIDTH` | EXU | 重定向对应 ROB 位置 |
+| `exu2id->clear_mask` | `BR_MASK_WIDTH` | EXU | 已解析分支清理掩码 |
 
-### 2.2 后端流水线接口
+### 2.2 输出接口 (`IduOut`)
 
-| 信号/字段 | 位宽 (bits) | 方向 | 来源/去向 | 描述 |
-| :--- | :--- | :--- | :--- | :--- |
-| `dec2ren.uop` | `FETCH_WIDTH * sizeof(Uop)` | 输出 | Rename | 译码后的微指令序列 |
-| `dec2ren.valid` | `FETCH_WIDTH * 1` | 输出 | Rename | 传递给 Rename 的有效位 |
-| `ren2dec.ready` | 1 | 输入 | Rename | Rename 阶段就绪信号 |
-| `exu2id.mispred` | 1 | 输入 | EXU | **早期误预测信号**：执行级直接触发的恢复信号 |
-| `exu2id.br_tag` | `BR_TAG_WIDTH` | 输入 | EXU | 误预测分支的标签 |
-| `exu2id.redirect_pc`| 32 | 输入 | EXU | 误预测跳转目标 PC |
-| `rob_bcast.flush` | 1 | 输入 | ROB | 流水线冲刷信号 |
-| `commit.commit_entry` | `COMMIT_WIDTH * sizeof(Entry)` | 输入 | ROB | 指令提交信息（用于 Tag 回收） |
-
-### 2.3 广播与反馈接口
-
-| 信号/字段 | 位宽 (bits) | 方向 | 来源/去向 | 描述 |
-| :--- | :--- | :--- | :--- | :--- |
-| `dec_bcast.mispred`| 1 | 输出 | 后端广播 | Idu 内部误预测确认 |
-| `dec_bcast.br_mask` | `BR_MASK_WIDTH` | 输出 | 后端广播 | 需要被冲刷的分支掩码 |
-| `dec_bcast.br_tag` | `BR_TAG_WIDTH` | 输出 | 后端广播 | 误预测跳转的分支标签 |
+| 信号/字段 | 位宽 | 去向 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `dec2ren->valid[i]` | 1 | Rename | 槽位有效 |
+| `dec2ren->uop[i]` | `DecRenInst` | Rename | 译码后的 uop（含 `br_id/br_mask`） |
+| `dec_bcast->mispred` | 1 | 全后端广播 | 是否误预测 |
+| `dec_bcast->br_id` | `BR_TAG_WIDTH` | 全后端广播 | 误预测分支 ID |
+| `dec_bcast->redirect_rob_idx` | `ROB_IDX_WIDTH` | 全后端广播 | 重定向 ROB 位置 |
+| `dec_bcast->br_mask` | `BR_MASK_WIDTH` | 全后端广播 | 误预测需冲刷掩码 |
+| `dec_bcast->clear_mask` | `BR_MASK_WIDTH` | 全后端广播 | 已解析分支清理掩码 |
 
 ---
 
 ## 3. 微架构设计 (Microarchitecture)
 
-### 3.1 分支标签管理 (Branch Tag Management)
-IDU 内部维护了一个循环队列 `tag_list` 和一个空闲比特向量 `tag_vec`，用于管理推测执行的分支：
-- **分配逻辑**：指令进入时分配 `now_tag`。如果识别到分支指令，则从 `tag_vec` 中取出一个可用 Tag 作为该分支的唯一标识。
-- **层级掩码**：后端模块通过 `br_mask` 进行层级控制，能够在一个周期内识别并撤销所有由特定分支触发的推测指令。
-- **回收机制**：当分支指令在 ROB 队头成功提交时，回收其占用的 Tag 重新标记为可用。
+### 3.1 分支状态与 Tag 生命周期
+`Idu` 维护以下核心状态：
 
-### 3.2 FTQ 条目管理
-每个取指块在译码阶段会对应一个 FTQ 条目索引（`ftq_idx`），并标记当前指令是否为块内最后一条（`ftq_is_last`），这对于后续的提交和预测训练至关重要。
+1. `tag_vec[MAX_BR_NUM]`：Tag 空闲位图（`1=空闲`，`0=占用`，其中 `tag 0` 保留）。
+2. `now_br_mask`：当前 in-flight 分支集合。
+3. `br_mask_cp[tag]`：每个分支 Tag 对应 checkpoint（用于 mispred 回收更年轻分支）。
+4. `pending_free_mask`：延迟一拍释放集合，避免同拍回收/复用同一 `br_id`。
+5. `br_latch`：上一拍锁存的 EXU 分支解析结果。
+
+### 3.2 组合-时序两阶段更新
+
+1. `comb_begin()`：`*_1 <- *`，建立本拍可写副本。
+2. `comb_decode/comb_branch/comb_fire()`：读取当前态并写 `*_1` / 对外输出。
+3. `seq()`：`*_1 -> *` 提交，并锁存 `exu2id -> br_latch`。
 
 ---
 
 ## 4. 组合逻辑功能描述 (Combinational Logic)
 
-### 4.1 `comb_decode` (译码与 Tag 分配)
-- **功能描述**：并发调用译码逻辑，将原始指令解析为 Uops。同时为分支指令分配新的 `br_tag`。
-- **关键控制**：检测 FTQ 是否已满或 Tag 资源是否耗尽，若发生则触发 Stall 反压前端。
+### 4.1 `comb_begin`
+- **功能描述**：复制状态到本拍工作副本。
+- **输入依赖**：`tag_vec`, `br_mask_cp`, `now_br_mask`, `pending_free_mask`。
+- **输出更新**：`tag_vec_1`, `br_mask_cp_1`, `now_br_mask_1`, `pending_free_mask_1`。
+- **约束/优先级**：仅做镜像复制，不分配/释放 Tag，不驱动外部接口。
 
-### 4.2 `comb_branch` (早期分支误预测处理)
-- **功能描述**：当接收到 `exu2id->mispred`（来自执行单元的早期完成确认）时，立即启动恢复流程。
-- **关键信号**：生成 `dec_bcast->br_mask`，标定所有受影响需要冲刷的分支，回滚 Tag 分配指针，并直接向前端发送 `redirect_pc`。这种早期恢复机制显著降低了误预测惩罚（从退休级提前到执行级）。
+### 4.2 `comb_decode`
+- **功能描述**：译码 `issue` 槽位并产生 `dec2ren`，同时为分支预分配 `alloc_tag`。
+- **输入依赖**：`in.issue->entries/pc`, `tag_vec`, `max_br_per_cycle`, `br_latch.clear_mask`, `now_br_mask`。
+- **输出更新**：`out.dec2ren->valid/uop`, `alloc_tag[]`。
+- **约束/优先级**：
+1. 每拍最多预分配 `max_br_per_cycle` 个分支 Tag。
+2. `clear_mask` 先作用于 `running_mask`（已解析分支不继续传播）。
+3. Tag 不足时置 `stall`，后续槽位 `valid=0`。
 
-### 4.3 `comb_fire` (流控握手)
-- **功能描述**：综合上游取指有效性、下游 Rename 准备状态及内部冲刷/Stall 状态，决定 `fire` 信号。
+### 4.3 `comb_branch`
+- **功能描述**：广播锁存的分支解析结果到 `dec_bcast`。
+- **输入依赖**：`br_latch.{mispred, br_id, redirect_rob_idx, clear_mask}`。
+- **输出更新**：`out.dec_bcast->{mispred, br_id, redirect_rob_idx, br_mask, clear_mask}`。
+- **约束/优先级**：仅广播，不更新本地分支状态；本地状态统一由 `comb_fire` 更新。
 
-### 4.4 `comb_flush` (全流水冲刷)
-- **功能描述**：处理来自 ROB 的 `flush` 信号。全面清空分支标签状态池，复位 FTQ 指针。
-
-### 4.5 `comb_release_tag` (Tag 回收)
-- **功能描述**：监听 ROB 提交阶段。对于已成功提交的分支指令，将其占用的物理 Tag 资源标记回 `tag_vec` 的空闲状态。
+### 4.4 `comb_fire`
+- **功能描述**：在 flush / clear / mispred / fire 条件下推进 Tag 状态。
+- **输入依赖**：`in.rob_bcast->flush`, `in.ren2dec->ready`, `out.dec2ren->valid/uop`, `alloc_tag`, `br_latch`, `now_br_mask`, `br_mask_cp`, `pending_free_mask`。
+- **输出更新**：`tag_vec_1`, `now_br_mask_1`, `br_mask_cp_1`, `pending_free_mask_1`。
+- **约束/优先级**：
+1. `flush` 最高优先级，直接清空分支状态并返回。
+2. 先处理 `pending_free_mask` 的延迟释放，再处理 `clear_mask`。
+3. `mispred` 路径只回收更年轻分支，不执行新分配提交。
+4. 仅对 `fire && is_branch(uop)` 的槽位提交 Tag 占用和 checkpoint。
 
 ---
 
 ## 5. 性能计数器 (Performance Counters)
 
-| 计数器名称 | 指标含义 | TMA 层级 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `idu_tag_stall` | 分支标签耗尽导致暂停 | Frontend Bound | 统计因推测分支超过 `MAX_BR_NUM` 导致的流水线暂停比例 |
+| 计数器名称 | 含义 | 描述 |
+| :--- | :--- | :--- |
+| `idu_tag_stall` | 分支 Tag 不足停顿次数 | `comb_decode` 中无可分配 `alloc_tag` 时递增 |
+| `stall_br_id_cycles` | 因分支 ID 资源不足导致的周期停顿 | 与 `idu_tag_stall` 同场景统计 |
 
 ---
 
 ## 6. 资源占用 (Resource Usage)
 
-### 6.1 存储资源 (Storage Resources)
-记录模块内部定义的持久化状态元素（对应代码中的 `reg` 类型变量）。
+### 6.1 持久状态资源
 
-| 寄存器/存储名称 | 规格 (Size/Bits) | 硬件类型 | 描述 |
+| 名称 | 规格 | 类型 | 描述 |
 | :--- | :--- | :--- | :--- |
-| `tag_list` | `MAX_BR_NUM * BR_TAG_WIDTH` | `reg` array | 记录分支分配顺序的循环队列 |
-| `tag_vec` | `MAX_BR_NUM * 1` | `reg` vector | 分支标签空闲状态位图 (1=空闲) |
-| `enq_ptr` | `BR_TAG_WIDTH` | `reg` | 分支标签入队指针 |
-| `now_tag` | `BR_TAG_WIDTH` | `reg` | 当前正在分配的分支标签 |
+| `tag_vec` | `MAX_BR_NUM` | reg array | Tag 空闲位图 |
+| `now_br_mask` | `BR_MASK_WIDTH` | reg | 当前 in-flight 分支集合 |
+| `br_mask_cp` | `MAX_BR_NUM * BR_MASK_WIDTH` | reg array | 分支 checkpoint |
+| `pending_free_mask` | `BR_MASK_WIDTH` | reg | 延迟释放集合 |
+| `br_latch` | `ExuIdIO` | reg-like latch | 锁存的分支解析结果 |
 
-### 6.2 硬件开销 (Hardware Overhead)
+### 6.2 组合工作信号
 
-| 资源名称 | 规格 (Ports/Width) | 描述 |
-| :--- | :--- | :--- |
-| FTQ Interface | `1 * Entry` | 每周期向 FTQ 申请/更新一个取指块的条目 |
-| Decode Width | `FETCH_WIDTH` | 每周期可并行处理的最大译码指令数 |
-| Tag Mask Logic | `1 * BR_MASK_WIDTH` | 误预测时用于并行冲刷的分支掩码生成逻辑 |
+| 名称 | 规格 | 类型 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `tag_vec_1` | `MAX_BR_NUM` | wire array | 下一拍状态候选 |
+| `now_br_mask_1` | `BR_MASK_WIDTH` | wire | 下一拍状态候选 |
+| `br_mask_cp_1` | `MAX_BR_NUM * BR_MASK_WIDTH` | wire array | 下一拍状态候选 |
+| `pending_free_mask_1` | `BR_MASK_WIDTH` | wire | 下一拍状态候选 |
+| `alloc_tag` | `DECODE_WIDTH * BR_TAG_WIDTH` | static wire | `comb_decode` 预分配结果，供 `comb_fire` 使用 |
