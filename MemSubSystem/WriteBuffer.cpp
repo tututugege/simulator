@@ -1,12 +1,11 @@
 #include "WriteBuffer.h"
+#include "PhysMemory.h"
 #include "config.h"
 #include "types.h"
 #include <cassert>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
-
-extern uint32_t *p_memory;
 
 WriteBufferEntry write_buffer_nxt[WB_ENTRIES];
 
@@ -208,19 +207,18 @@ void WriteBuffer::comb_inputs() {
     // dirty line can legitimately remain newer in LLC than in p_memory until a
     // later LLC eviction reaches memory, so comparing against p_memory here
     // would produce false mismatches.
-    if (cur_check.valid && p_memory != nullptr) {
+    if (cur_check.valid && pmem_ram_ptr() != nullptr) {
 #if CONFIG_AXI_LLC_ENABLE
         cur_check.valid = false;
 #else
         const uint32_t line_addr = cur_check.addr;
-        const uint32_t word_base = (line_addr >> 2);
         bool write_mismatch = false;
         int first_bad = -1;
         uint32_t mem_word = 0;
         uint32_t exp_word = 0;
         uint32_t mem_line[DCACHE_LINE_WORDS] = {};
         for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
-            mem_line[w] = p_memory[word_base + w];
+            mem_line[w] = pmem_read(line_addr + static_cast<uint32_t>(w * 4));
             if (!write_mismatch && mem_line[w] != cur_check.data[w]) {
                 write_mismatch = true;
                 first_bad = w;

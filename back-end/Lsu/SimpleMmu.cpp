@@ -1,10 +1,8 @@
 #include "SimpleMmu.h"
 #include "AbstractLsu.h" // Added for coherent_read
+#include "PhysMemory.h"
 #include "ref.h"         // For PTE_V, etc.
 #include <cstdio>
-
-// Helper extern from main.cpp (or wherever p_memory is defined globally)
-extern uint32_t *p_memory;
 
 SimpleMmu::SimpleMmu(SimContext *ctx, AbstractLsu *lsu) : ctx(ctx), lsu(lsu) {
   // p_memory is extern global, no need to cache it (it's not ready at ctor time
@@ -47,7 +45,7 @@ AbstractMmu::Result SimpleMmu::translate(uint32_t &p_addr, uint32_t v_addr,
     uint32_t vpn = (v_addr >> vpn_shift) & 0x3FF;
 
     uint32_t pte_addr = (ppn << 12) + (vpn * 4);
-    uint32_t pte = lsu ? lsu->coherent_read(pte_addr) : p_memory[pte_addr >> 2];
+    uint32_t pte = lsu ? lsu->coherent_read(pte_addr) : pmem_read(pte_addr);
 
     // B. 有效性检查 (!V 或 !R && W)
     if (!(pte & PTE_V) || (!(pte & PTE_R) && (pte & PTE_W))) {

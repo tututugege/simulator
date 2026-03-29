@@ -66,6 +66,13 @@ inline bool stq_entry_matches_uop(const StqEntry &entry, const MicroOp &uop) {
   return entry.valid && entry.rob_idx == uop.rob_idx &&
          entry.rob_flag == uop.rob_flag;
 }
+
+inline bool addr_in_range(uint32_t addr, uint32_t base, uint32_t size) {
+  if (addr < base) {
+    return false;
+  }
+  return static_cast<uint64_t>(addr - base) < static_cast<uint64_t>(size);
+}
 } // namespace
 
 RealLsu::RealLsu(SimContext *ctx) : AbstractLsu(ctx) {
@@ -1165,10 +1172,9 @@ void RealLsu::consume_ldq_alloc_reqs() {
 }
 
 bool RealLsu::is_mmio_addr(uint32_t paddr) const {
-  return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-         ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
-         (paddr == OPENSBI_TIMER_LOW_ADDR) ||
-         (paddr == OPENSBI_TIMER_HIGH_ADDR);
+  return addr_in_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
+         addr_in_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
+         addr_in_range(paddr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE);
 }
 void RealLsu::change_store_info(StqEntry &head, int port, int store_index) {
 

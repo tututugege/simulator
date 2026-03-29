@@ -2,6 +2,7 @@
 #include "config.h"
 #include <cstdint>
 #include <cstring>
+#include <unordered_map>
 
 #define RISCV_MODE_U 0b00
 #define RISCV_MODE_S 0b01
@@ -86,6 +87,7 @@ typedef struct CPU_state {
 class RefCpu {
 public:
   uint32_t *memory = nullptr;
+  std::unordered_map<uint32_t, uint32_t> io_words;
   uint32_t Instruction;
   CPU_state state;
   uint8_t privilege;
@@ -120,6 +122,8 @@ public:
   void RV32Zfinx();
   void exception(uint32_t trap_val);
   void store_data();
+  uint32_t load_word(uint32_t addr) const;
+  void store_word(uint32_t addr, uint32_t data);
   bool va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
   bool va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type);
 

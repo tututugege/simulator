@@ -1,6 +1,7 @@
 #include "config.h"
 #include "Csr.h"
 #include "diff.h"
+#include "PhysMemory.h"
 #include "front_IO.h"
 #include "frontend.h"
 #include "ref.h"
@@ -14,6 +15,31 @@ static RefCpu oracle;
 static std::queue<uint32_t> oracle_timer_queue;
 
 namespace {
+struct IoRange {
+  uint32_t base;
+  uint32_t size;
+};
+
+constexpr IoRange kCkptIoRanges[] = {
+    {BOOT_IO_BASE, BOOT_IO_SIZE},
+    {UART_ADDR_BASE, UART_MMIO_SIZE},
+    {PLIC_ADDR_BASE, PLIC_MMIO_SIZE},
+    {OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE},
+};
+
+inline void seed_oracle_io_from_backing() {
+  oracle.io_words.clear();
+  for (const auto &range : kCkptIoRanges) {
+    for (uint32_t off = 0; off + 4u <= range.size; off += 4u) {
+      const uint32_t addr = range.base + off;
+      const uint32_t data = pmem_read(addr);
+      if (data != 0u) {
+        oracle.io_words[addr] = data;
+      }
+    }
+  }
+}
+
 inline void sync_oracle_control_state(const front_top_in &in) {
   oracle.state.pc = in.refetch_address;
   if (in.csr_status != nullptr) {
@@ -68,25 +94,16 @@ void init_oracle(int img_size) {
   }
   oracle.init(0);
   oracle.dut_pf_check_enable = false;
-  std::memcpy(oracle.memory + 0x80000000 / 4, p_memory + 0x80000000 / 4,
-              img_size * sizeof(uint32_t));
-  oracle.memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
-  oracle.memory[uint32_t(0x0 / 4)] = 0xf1402573;
-  oracle.memory[uint32_t(0x4 / 4)] = 0x83e005b7;
-  oracle.memory[uint32_t(0x8 / 4)] = 0x800002b7;
-  oracle.memory[uint32_t(0xc / 4)] = 0x00028067;
-  oracle.memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc t0,0
-  oracle.memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi a2,t0,40
-  oracle.memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero
-  oracle.memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw a1,32(t0)
-  oracle.memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw t0,24(t0)
-  oracle.memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
-  oracle.memory[uint32_t(0x00001018 / 4)] = 0x80000000;
-  oracle.memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
+  std::memcpy(oracle.memory, pmem_ram_ptr(), img_size);
+  oracle.store_word(0x10000004, pmem_read(0x10000004));
+  oracle.store_word(0x0, pmem_read(0x0));
+  oracle.store_word(0x4, pmem_read(0x4));
+  oracle.store_word(0x8, pmem_read(0x8));
+  oracle.store_word(0xc, pmem_read(0xc));
+  seed_oracle_io_from_backing();
 }
 
-void init_oracle_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory,
-                      uint8_t privilege) {
+void init_oracle_ckpt(CPU_state ckpt_state, uint8_t privilege) {
   while (!oracle_timer_queue.empty()) {
     oracle_timer_queue.pop();
   }
@@ -95,8 +112,12 @@ void init_oracle_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory,
   oracle.state = ckpt_state;
   oracle.privilege = privilege;
 
+  const uint32_t *ckpt_memory = pmem_ram_ptr();
+  Assert(ckpt_memory != nullptr &&
+         "init_oracle_ckpt: pmem RAM backend is not initialized");
   std::memcpy(oracle.memory, ckpt_memory,
-              (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
+              static_cast<size_t>(PHYSICAL_MEMORY_LENGTH) * sizeof(uint32_t));
+  seed_oracle_io_from_backing();
 
   if ((oracle.state.csr[csr_satp] & 0x80000000u) != 0 &&
       oracle.privilege != RISCV_MODE_M) {

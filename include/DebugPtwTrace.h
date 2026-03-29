@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DcacheConfig.h"
+#include "PhysMemory.h"
 #include "config.h"
 #include "ref.h"
 
@@ -79,9 +80,9 @@ inline void record_ptw_walk_resp_detail(const uint32_t *memory, uint32_t req_add
   slot.backing_valid = (memory != nullptr);
   slot.backing_words.fill(0);
   if (memory != nullptr) {
-    const uint32_t word_base = slot.line_addr >> 2;
     for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
-      slot.backing_words[static_cast<size_t>(w)] = memory[word_base + w];
+      const uint32_t paddr = slot.line_addr + static_cast<uint32_t>(w * 4);
+      slot.backing_words[static_cast<size_t>(w)] = pmem_read(paddr);
     }
   }
   g_ptw_walk_next = (g_ptw_walk_next + 1) % g_ptw_walk_events.size();

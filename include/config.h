@@ -28,7 +28,7 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-// #define CONFIG_BPU
+#define CONFIG_BPU
 #define CONFIG_TLB_MMU
 
 // Replay throttling heuristics.
@@ -40,9 +40,10 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 // ============================================================
 
 constexpr uint64_t VIRTUAL_MEMORY_LENGTH =
-    1ULL * 1024 * 1024 * 1024; // 1G elements = 4GB
+    256ULL * 1024 * 1024; // 256M words = 1GB bytes
 constexpr uint64_t PHYSICAL_MEMORY_LENGTH =
-    1ULL * 1024 * 1024 * 1024;                      // 1G elements = 4GB
+    256ULL * 1024 * 1024;                      // 256M words = 1GB bytes
+constexpr uint64_t RAM_SIZE = PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t); // bytes
 constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 
 // ============================================================
@@ -137,13 +138,13 @@ constexpr int DCACHE_MAX_PENDING_REQS = 64;
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 512;
+constexpr int PRF_NUM = 256;
 constexpr int MAX_BR_NUM = 64;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 512;
+constexpr int ROB_NUM = 256;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -157,8 +158,8 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 320;
-constexpr int FTQ_SIZE = 128;
+constexpr int IDU_INST_BUFFER_SIZE = 256;
+constexpr int FTQ_SIZE = 64;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -422,10 +423,14 @@ constexpr int FTQ_OFFSET_WIDTH = clog2(FETCH_WIDTH);
 // ============================================================
 
 constexpr uint32_t UART_ADDR_BASE = 0x10000000;
-constexpr uint32_t UART_ADDR_MASK = 0xFFFFFFF0;
+constexpr uint32_t UART_MMIO_SIZE = 0x00000100;
 constexpr uint32_t PLIC_ADDR_BASE = 0x0c000000;
-constexpr uint32_t PLIC_ADDR_MASK = 0xFC000000;
+constexpr uint32_t PLIC_MMIO_SIZE = 0x00210000;
 constexpr uint32_t PLIC_CLAIM_ADDR = 0x0c201004;
+constexpr uint32_t BOOT_IO_BASE = 0x00000000;
+constexpr uint32_t BOOT_IO_SIZE = 0x00002000;
+constexpr uint32_t OPENSBI_TIMER_BASE = 0x1fd0e000;
+constexpr uint32_t OPENSBI_TIMER_MMIO_SIZE = 0x00000008;
 constexpr uint32_t OPENSBI_TIMER_LOW_ADDR = 0x1fd0e000;
 constexpr uint32_t OPENSBI_TIMER_HIGH_ADDR = 0x1fd0e004;
 
