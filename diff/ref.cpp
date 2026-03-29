@@ -1,9 +1,7 @@
 #include "ref.h"
 #include "Csr.h"
-#include "PhysMemory.h"
 #include "RISCV.h"
 #include "config.h"
-#include "diff.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -13,28 +11,10 @@ extern "C" {
 #include "softfloat.h"
 }
 
-extern RefCpu ref_cpu; // Monitor
-
 namespace {
 constexpr uint32_t kRamBase = 0x80000000u;
 constexpr uint32_t kRamUpperBound = 0xC0000000u;
 constexpr uint32_t kRamSizeBytes = kRamUpperBound - kRamBase;
-
-struct Sv32WalkDebug {
-  bool translation_enabled = false;
-  int eff_priv = RISCV_MODE_M;
-  uint32_t satp = 0;
-  uint32_t mstatus = 0;
-  uint32_t root_ppn = 0;
-  uint32_t l1_pte_addr = 0;
-  uint32_t l1_pte = 0;
-  bool l1_valid = false;
-  bool l1_leaf = false;
-  uint32_t l0_pte_addr = 0;
-  uint32_t l0_pte = 0;
-  bool l0_valid = false;
-  bool l0_leaf = false;
-};
 
 inline int effective_data_privilege(const CPU_state &state, uint8_t privilege) {
   const uint32_t mstatus = state.csr[csr_mstatus];
@@ -89,101 +69,6 @@ inline bool is_mmio_range(uint32_t addr, uint32_t base, uint32_t size) {
 inline bool is_modeled_mmio_addr(uint32_t paddr) {
   return is_mmio_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
          is_mmio_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE);
-}
-
-inline uint32_t debug_load_word(const uint32_t *mem, uint32_t addr,
-                                bool compact_ram) {
-  const uint32_t word_addr = addr & ~0x3u;
-  if (!compact_ram) {
-    return mem[word_addr >> 2];
-  }
-  if (is_ram_range(word_addr, 4)) {
-    return mem[(word_addr - kRamBase) >> 2];
-  }
-  return 0;
-}
-
-Sv32WalkDebug collect_sv32_walk_debug(const CPU_state &state, uint8_t privilege,
-                                      const uint32_t *mem, uint32_t v_addr,
-                                      bool compact_ram) {
-  Sv32WalkDebug dbg;
-  dbg.satp = state.csr[csr_satp];
-  dbg.mstatus = state.csr[csr_mstatus];
-  dbg.eff_priv = effective_data_privilege(state, privilege);
-  dbg.translation_enabled = data_translation_enabled(state, privilege);
-  if (!dbg.translation_enabled) {
-    return dbg;
-  }
-
-  dbg.root_ppn = dbg.satp & 0x3FFFFFu;
-  const uint32_t vpn1 = (v_addr >> 22) & 0x3FFu;
-  dbg.l1_pte_addr = (dbg.root_ppn << 12) + vpn1 * 4u;
-  dbg.l1_pte = debug_load_word(mem, dbg.l1_pte_addr, compact_ram);
-  dbg.l1_valid = (dbg.l1_pte & PTE_V) != 0;
-  dbg.l1_leaf = (dbg.l1_pte & (PTE_R | PTE_X)) != 0;
-  if (!dbg.l1_valid || dbg.l1_leaf) {
-    return dbg;
-  }
-
-  const uint32_t l0_ppn = (dbg.l1_pte >> 10) & 0x3FFFFFu;
-  const uint32_t vpn0 = (v_addr >> 12) & 0x3FFu;
-  dbg.l0_pte_addr = (l0_ppn << 12) + vpn0 * 4u;
-  dbg.l0_pte = debug_load_word(mem, dbg.l0_pte_addr, compact_ram);
-  dbg.l0_valid = (dbg.l0_pte & PTE_V) != 0;
-  dbg.l0_leaf = (dbg.l0_pte & (PTE_R | PTE_X)) != 0;
-  return dbg;
-}
-
-void dump_pf_mismatch_debug(uint32_t v_addr, uint32_t type,
-                            const CPU_state &state, uint8_t privilege,
-                            bool dut_expect_pf_inst, bool dut_expect_pf_load,
-                            bool dut_expect_pf_store, bool ref_pf_inst,
-                            bool ref_pf_load, bool ref_pf_store) {
-  const char *kind =
-      (type == 0) ? "inst" : (type == 1) ? "load" : "store";
-  const auto ref_walk =
-      collect_sv32_walk_debug(state, privilege, ref_cpu.memory, v_addr, true);
-  const auto dut_walk =
-      collect_sv32_walk_debug(state, privilege, pmem_ram_ptr(), v_addr, true);
-
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] cyc=%lld kind=%s vaddr=0x%08x dut_inst=0x%08x commit_pc=0x%08x dut_pc=0x%08x ref_pc=0x%08x\n",
-      (long long)sim_time, kind, v_addr, dut_cpu.instruction, dut_cpu.commit_pc,
-      dut_cpu.pc, state.pc);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] dut_expect inst=%d load=%d store=%d ref_fault(inst=%d load=%d store=%d)\n",
-      (int)dut_expect_pf_inst, (int)dut_expect_pf_load,
-      (int)dut_expect_pf_store, (int)ref_pf_inst, (int)ref_pf_load,
-      (int)ref_pf_store);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] ref satp=0x%08x mstatus=0x%08x priv=%u eff_priv=%d translation=%d\n",
-      ref_walk.satp, ref_walk.mstatus, (unsigned)privilege, ref_walk.eff_priv,
-      (int)ref_walk.translation_enabled);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] dut csr satp=0x%08x mstatus=0x%08x\n",
-      dut_cpu.csr[csr_satp], dut_cpu.csr[csr_mstatus]);
-  if (!ref_walk.translation_enabled) {
-    std::fprintf(
-        stderr,
-        "[PF-MISMATCH] translation disabled in REF debug state, mismatch is unexpected\n");
-    return;
-  }
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH][REF] l1_addr=0x%08x l1_pte=0x%08x valid=%d leaf=%d l0_addr=0x%08x l0_pte=0x%08x valid=%d leaf=%d\n",
-      ref_walk.l1_pte_addr, ref_walk.l1_pte, (int)ref_walk.l1_valid,
-      (int)ref_walk.l1_leaf, ref_walk.l0_pte_addr, ref_walk.l0_pte,
-      (int)ref_walk.l0_valid, (int)ref_walk.l0_leaf);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH][DUTMEM] l1_addr=0x%08x l1_pte=0x%08x valid=%d leaf=%d l0_addr=0x%08x l0_pte=0x%08x valid=%d leaf=%d\n",
-      dut_walk.l1_pte_addr, dut_walk.l1_pte, (int)dut_walk.l1_valid,
-      (int)dut_walk.l1_leaf, dut_walk.l0_pte_addr, dut_walk.l0_pte,
-      (int)dut_walk.l0_valid, (int)dut_walk.l0_leaf);
 }
 
 } // namespace
@@ -378,7 +263,6 @@ void RefCpu::exec() {
   if (Instruction == INST_EBREAK) {
     state.pc += 4;
     sim_end = true;
-    cout << "sim_time: " << sim_time << endl;
     return;
   }
 
@@ -1914,9 +1798,6 @@ bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   if (!dut_fault && ref_fault) {
-    dump_pf_mismatch_debug(v_addr, type, state, privilege, dut_expect_pf_inst,
-                           dut_expect_pf_load, dut_expect_pf_store,
-                           page_fault_inst, page_fault_load, page_fault_store);
     Assert(0 && "DUT has no page fault while REF has page fault.");
   }
 
