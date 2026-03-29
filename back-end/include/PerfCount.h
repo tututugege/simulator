@@ -136,8 +136,6 @@ public:
   uint64_t ret_dir_mispred = 0;
   uint64_t ret_addr_mispred = 0;
 
-  uint64_t rob_entry_stall = 0;
-  uint64_t idu_br_stall = 0;
   uint64_t ren_reg_stall = 0;
   uint64_t idu_tag_stall = 0;
   uint64_t stall_br_id_cycles = 0;
@@ -158,7 +156,6 @@ public:
   uint64_t dis2ren_not_ready_dispatch_iq_detail[IQ_NUM] = {};
   uint64_t dis2ren_not_ready_dispatch_other_cycles = 0;
 
-  uint64_t len_issued_num = 0;
   uint64_t slots_issued = 0;
   uint64_t slots_backend_bound = 0;
   uint64_t slots_frontend_bound = 0;
@@ -197,15 +194,9 @@ public:
   uint64_t ptw_dtlb_wait_cycle = 0;
   uint64_t ptw_itlb_wait_cycle = 0;
 
-  uint64_t isu_entry_stall[IQ_NUM];
-  uint64_t isu_raw_stall[IQ_NUM];
-  uint64_t isu_ready_num[IQ_NUM];
-
   // Squashed valid instructions on the IDU->Dispatch path
   uint64_t squash_flush_total = 0;
   uint64_t squash_mispred_total = 0;
-  uint64_t squash_flush_idu = 0;
-  uint64_t squash_mispred_idu = 0;
   uint64_t squash_flush_ren = 0;
   uint64_t squash_mispred_ren = 0;
   uint64_t squash_flush_dis = 0;
@@ -468,8 +459,6 @@ public:
 
     ret_dir_mispred = 0;
     ret_addr_mispred = 0;
-    rob_entry_stall = 0;
-    idu_br_stall = 0;
     ren_reg_stall = 0;
     idu_tag_stall = 0;
     stall_br_id_cycles = 0;
@@ -491,7 +480,6 @@ public:
     for (auto &v : dis2ren_not_ready_dispatch_iq_detail)
       v = 0;
 
-    len_issued_num = 0;
     slots_issued = 0;
     slots_backend_bound = 0;
     slots_frontend_bound = 0;
@@ -528,8 +516,6 @@ public:
 
     squash_flush_total = 0;
     squash_mispred_total = 0;
-    squash_flush_idu = 0;
-    squash_mispred_idu = 0;
     squash_flush_ren = 0;
     squash_mispred_ren = 0;
     squash_flush_dis = 0;
@@ -581,6 +567,7 @@ public:
     perf_print_llc();
     perf_print_ptw();
     perf_print_branch();
+    perf_print_squash();
     perf_print_frontend_fetch();
     perf_print_resource_stall();
     perf_print_tma();
@@ -998,24 +985,6 @@ public:
     printf("\033[38;5;34maddr error : %ld\033[0m\n", ret_addr_mispred);
     printf("\033[38;5;34mdir  error : %ld\033[0m\n", ret_dir_mispred);
     printf("\n");
-    // printf("\033[38;5;34m*********STALL COUNTER************\033[0m\n");
-    // printf("\033[38;5;34mrob     stall : %ld\033[0m\n", rob_entry_stall);
-    // printf("\033[38;5;34midu br  stall : %ld\033[0m\n", idu_br_stall);
-    // idu tag stall print removed on request.
-    // printf("\033[38;5;34mren reg stall : %ld\033[0m\n", ren_reg_stall);
-    // printf("\n");
-    // printf("\033[38;5;34m*********Isu COUNTER************\033[0m\n");
-    //
-    // for (int i = 0; i < IQ_NUM; i++) {
-    //   printf("\033[38;5;34miss     stall : %ld\033[0m\n", isu_entry_stall[i]);
-    // }
-    // for (int i = 0; i < IQ_NUM; i++) {
-    //   printf("\033[38;5;34miq%d ready  num : %f\033[0m\n", i,
-    //          isu_ready_num[i] / (double)cycle);
-    // }
-    // for (int i = 0; i < IQ_NUM; i++) {
-    //   printf("\033[38;5;34miq%d raw  num : %ld\033[0m\n", i, isu_raw_stall[i]);
-    // }
   }
   void perf_print_ptw() {
     printf("\033[38;5;34m*********PTW/ARB COUNTER***********\033[0m\n");
@@ -1030,7 +999,24 @@ public:
     printf("\n");
   }
 
-  void perf_print_squash() {}
+  void perf_print_squash() {
+    printf("\033[38;5;34m*********SQUASH COUNTER************\033[0m\n");
+    printf("\033[38;5;34msquash flush total      : %ld\033[0m\n",
+           squash_flush_total);
+    printf("\033[38;5;34m  - from ren            : %ld\033[0m\n",
+           squash_flush_ren);
+    printf("\033[38;5;34m  - from dispatch       : %ld\033[0m\n",
+           squash_flush_dis);
+    printf("\033[38;5;34msquash mispred total    : %ld\033[0m\n",
+           squash_mispred_total);
+    printf("\033[38;5;34m  - from ren            : %ld\033[0m\n",
+           squash_mispred_ren);
+    printf("\033[38;5;34m  - from dispatch       : %ld\033[0m\n",
+           squash_mispred_dis);
+    printf("\033[38;5;34mpending squash slots    : flush=%ld mispred=%ld\033[0m\n",
+           pending_squash_flush_slots, pending_squash_mispred_slots);
+    printf("\n");
+  }
 
   void perf_print_frontend_fetch() {
     printf("\033[38;5;34m*********FRONTEND FETCH***********\033[0m\n");
