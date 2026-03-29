@@ -94,6 +94,64 @@ void print_soc_config_banner() {
       "memsubsystem_internal_axi_runtime=disabled llc_summary=%s\n",
       llc_summary);
   std::printf("[TOPOLOGY] icache_runtime=%s\n", runtime_icache_path);
+
+  constexpr uint64_t icache_capacity_bytes =
+      static_cast<uint64_t>(ICACHE_SET_NUM) * ICACHE_WAY_NUM * ICACHE_LINE_SIZE;
+  constexpr uint64_t dcache_capacity_bytes =
+      static_cast<uint64_t>(DCACHE_SETS) * DCACHE_WAYS * DCACHE_LINE_BYTES;
+  constexpr uint64_t llc_capacity_bytes = CONFIG_AXI_LLC_SIZE_BYTES;
+  const char *schedule_policy =
+      ISSUE_SCHEDULE_POLICY == IssueSchedulePolicy::IQ_SLOT_PRIORITY
+          ? "IQ_SLOT_PRIORITY"
+          : "ROB_OLDEST_FIRST";
+
+  std::printf(
+      "[CFG][WIDTH] fetch=%d decode=%d issue_ports=%d commit=%d "
+      "max_dispatch(iq/ldq/stq)=%d/%d/%d\n",
+      FETCH_WIDTH, DECODE_WIDTH, ISSUE_WIDTH, COMMIT_WIDTH, MAX_IQ_DISPATCH_WIDTH,
+      MAX_LDQ_DISPATCH_WIDTH, MAX_STQ_DISPATCH_WIDTH);
+  std::printf(
+      "[CFG][CACHE] L1I=%lluKB(%d sets x %d ways x %dB) "
+      "L1D=%lluKB(%d sets x %d ways x %dB)\n",
+      static_cast<unsigned long long>(icache_capacity_bytes / 1024),
+      ICACHE_SET_NUM, ICACHE_WAY_NUM, ICACHE_LINE_SIZE,
+      static_cast<unsigned long long>(dcache_capacity_bytes / 1024), DCACHE_SETS,
+      DCACHE_WAYS, DCACHE_LINE_BYTES);
+  std::printf(
+      "[CFG][MEM] hierarchy=L1I/L1D + AXI%s%s LLC=%lluMB(%u ways,mshr=%u,lookup=%u)\n",
+      (CONFIG_ICACHE_USE_AXI_MEM_PORT ? "-icache" : ""),
+      (CONFIG_AXI_LLC_ENABLE ? "+LLC" : ""),
+      static_cast<unsigned long long>(llc_capacity_bytes >> 20),
+      static_cast<unsigned>(CONFIG_AXI_LLC_WAYS),
+      static_cast<unsigned>(CONFIG_AXI_LLC_MSHR_NUM),
+      static_cast<unsigned>(CONFIG_AXI_LLC_LOOKUP_LATENCY));
+  std::printf(
+      "[CFG][BACKEND] rob=%d(rob_bank=%d) prf=%d arf=%d ftq=%d instbuf=%d "
+      "ldq=%d stq=%d schedule=%s\n",
+      ROB_NUM, ROB_BANK_NUM, PRF_NUM, ARF_NUM, FTQ_SIZE, IDU_INST_BUFFER_SIZE,
+      LDQ_SIZE, STQ_SIZE, schedule_policy);
+  std::printf(
+      "[CFG][FU] total=%d alu=%d bru=%d ldu=%d sta=%d sdu=%d wakeup_ports=%d\n",
+      TOTAL_FU_COUNT, ALU_NUM, BRU_NUM, LSU_LDU_COUNT, LSU_STA_COUNT,
+      LSU_SDU_COUNT, MAX_WAKEUP_PORTS);
+  for (int i = 0; i < IQ_NUM; i++) {
+    const auto &iq = GLOBAL_IQ_CONFIG[i];
+    const char *iq_name = "IQ_UNKNOWN";
+    if (iq.id == IQ_INT)
+      iq_name = "IQ_INT";
+    else if (iq.id == IQ_LD)
+      iq_name = "IQ_LD";
+    else if (iq.id == IQ_STA)
+      iq_name = "IQ_STA";
+    else if (iq.id == IQ_STD)
+      iq_name = "IQ_STD";
+    else if (iq.id == IQ_BR)
+      iq_name = "IQ_BR";
+    std::printf(
+        "[CFG][IQ] %s size=%d dispatch=%d issue_ports=[%d..%d] port_num=%d\n",
+        iq_name, iq.size, iq.dispatch_width, iq.port_start_idx,
+        iq.port_start_idx + iq.port_num - 1, iq.port_num);
+  }
 }
 
 void bridge_axi_to_mem_subsystem(SimCpu &cpu) {

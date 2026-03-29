@@ -27,8 +27,8 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 // ============================================================
 
 #define CONFIG_DIFFTEST
-// #define CONFIG_PERF_COUNTER
-// #define CONFIG_BPU
+#define CONFIG_PERF_COUNTER
+#define CONFIG_BPU
 #define CONFIG_TLB_MMU
 
 // Replay throttling heuristics.
@@ -75,7 +75,7 @@ constexpr int ICACHE_MISS_LATENCY = 8;
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
 #ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
-#define CONFIG_ICACHE_USE_AXI_MEM_PORT 0
+#define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
 // AXI protocol flavor for the dedicated icache memory path.
@@ -123,9 +123,6 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
 constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
 constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_MEM_LATENCY = 1;
-// Backward-compatible alias; prefer DCACHE_MEM_LATENCY for new code.
-constexpr int DCACHE_MISS_LATENCY = DCACHE_MEM_LATENCY;
 constexpr int DCACHE_WAY_NUM = 2;
 constexpr int DCACHE_OFFSET_BITS = clog2(DCACHE_LINE_SIZE);
 constexpr int DCACHE_INDEX_BITS = 6;
@@ -146,7 +143,7 @@ constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 32;
+constexpr int ROB_NUM = 64;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -160,7 +157,7 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 16;
+constexpr int IDU_INST_BUFFER_SIZE = 32;
 constexpr int FTQ_SIZE = 16;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
@@ -311,16 +308,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 16, DECODE_WIDTH,
+    {IQ_INT, 32, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 8, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 16, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 8, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 16, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 8, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 16, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 8, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 16, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 constexpr int calculate_max_iq_size() {
