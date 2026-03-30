@@ -30,6 +30,8 @@ struct SimConfig {
   // CKPT 模式下，O3 目标 warmup 步数（0~WARMUP，默认 1000 万）
   uint64_t ckpt_warmup_target = 10000000ULL;
   bool ckpt_warmup_target_set = false;
+  uint64_t max_commit_inst = static_cast<uint64_t>(MAX_COMMIT_INST);
+  bool max_commit_inst_set = false;
 };
 
 // 2. 帮助信息更新
@@ -44,6 +46,9 @@ void print_help(char *argv[]) {
             << std::endl;
   std::cout << "  -w, --warmup <num>  In CKPT mode, target O3 "
                "warmup steps in [0,100000000] (default: 10000000)"
+            << std::endl;
+  std::cout << "  -c, --max-commit <num>  Stop after <num> committed "
+               "instructions (default: compile-time MAX_COMMIT_INST)"
             << std::endl;
   std::cout << "  -h, --help                  Show this message" << std::endl;
   std::cout << "\nExamples:" << std::endl;
@@ -126,6 +131,7 @@ int main(int argc, char *argv[]) {
       {"mode", required_argument, 0, 'm'},
       {"fast-forward", required_argument, 0, 'f'}, // 快进参数
       {"warmup", required_argument, 0, 'w'},
+      {"max-commit", required_argument, 0, 'c'},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}};
 
@@ -133,7 +139,7 @@ int main(int argc, char *argv[]) {
   int option_index = 0;
 
   // --- A. 解析命令行参数 ---
-  while ((opt = getopt_long(argc, argv, "m:f:w:h", long_options,
+  while ((opt = getopt_long(argc, argv, "m:f:w:c:h", long_options,
                             &option_index)) != -1) {
     switch (opt) {
     case 'm': {
@@ -185,6 +191,27 @@ int main(int argc, char *argv[]) {
       }
       break;
     }
+    case 'c': {
+      std::string limit_arg(optarg);
+      if (!limit_arg.empty() && limit_arg[0] == '-') {
+        std::cerr << "Error: --max-commit must be a positive integer, got: "
+                  << optarg << std::endl;
+        return 1;
+      }
+      try {
+        config.max_commit_inst = std::stoull(optarg);
+        config.max_commit_inst_set = true;
+        if (config.max_commit_inst == 0) {
+          std::cerr << "Error: --max-commit must be > 0, got: 0" << std::endl;
+          return 1;
+        }
+      } catch (const std::exception &e) {
+        std::cerr << "Error: Invalid number for --max-commit: " << optarg
+                  << std::endl;
+        return 1;
+      }
+      break;
+    }
     case 'h':
       print_help(argv);
       return 0;
@@ -228,6 +255,11 @@ int main(int argc, char *argv[]) {
                  "mode."
               << std::endl;
   }
+  std::cout << "[CONFIG] max_commit_inst = " << std::dec
+            << config.max_commit_inst
+            << (config.max_commit_inst_set ? " (runtime override)"
+                                           : " (default)")
+            << std::endl;
 
   p_memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
   if (!p_memory) {
@@ -282,12 +314,15 @@ int main(int argc, char *argv[]) {
 
     cpu.ctx.is_ckpt = true;
     cpu.ctx.ckpt_warmup_commit_target = warmup_target;
+    cpu.ctx.ckpt_measure_commit_target = config.max_commit_inst;
     if (cpu.ctx.ckpt_warmup_commit_target == 0) {
       cpu.ctx.perf.perf_reset();
       cpu.ctx.perf.perf_start = true;
     }
     std::cout << "[Step 3] O3 warmup target = "
               << cpu.ctx.ckpt_warmup_commit_target << " steps." << std::endl;
+    std::cout << "[Step 4] O3 measure target = "
+              << cpu.ctx.ckpt_measure_commit_target << " steps." << std::endl;
   } else if (config.mode == SimConfig::FAST) {
     std::cout << "[Mode] FAST: Hybrid Execution Strategy" << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;
@@ -359,10 +394,10 @@ int main(int argc, char *argv[]) {
       return 130;
     }
 
-    if (cpu.ctx.perf.commit_num >= static_cast<uint64_t>(MAX_COMMIT_INST)) {
+    if (cpu.ctx.perf.commit_num >= config.max_commit_inst) {
       cpu.ctx.exit_reason = ExitReason::SIMPOINT;
       std::cout << "[sim] Reached MAX_COMMIT_INST=" << std::dec
-                << static_cast<uint64_t>(MAX_COMMIT_INST) << std::endl;
+                << config.max_commit_inst << std::endl;
     }
 
     if (cpu.ctx.exit_reason != ExitReason::NONE) {
