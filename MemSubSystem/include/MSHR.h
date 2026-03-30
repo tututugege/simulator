@@ -20,6 +20,12 @@ struct MSHR_STATE{
     uint32_t fill_addr;
     uint32_t mshr_count;
 
+    // Hold one blocked AXI read response when WB backpressure prevents
+    // immediate consumption. This register is intentionally bounded to one slot.
+    bool axi_resp_hold_valid;
+    uint8_t axi_resp_hold_id;
+    uint32_t axi_resp_hold_data[DCACHE_LINE_WORDS];
+
     // Registered outputs: produced in comb_inputs(), consumed by comb_outputs()
     // in the next cycle.
     bool fill_valid;
