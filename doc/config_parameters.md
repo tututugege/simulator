@@ -45,7 +45,7 @@
 |----|------|------|
 | `CONFIG_DIFFTEST` | ✅ 启用 | 差分测试功能 |
 | `CONFIG_PERF_COUNTER` | ✅ 启用 | 性能计数器 |
-| `CONFIG_BPU` | ⚠️ 当前 `config.h` 默认关闭（small/medium 为启用） | 分支预测单元 |
+| `CONFIG_BPU` | ⚠️ 当前 stock profile 中 `default/small/medium` 启用，`large` 关闭 | 分支预测单元 |
 | `CONFIG_TLB_MMU` | ✅ 启用 | 统一 I/D 侧 MMU 模型开关（`TlbMmu` / `SimpleMmu`） |
 
 > ICache 模型选择约定：
@@ -59,12 +59,15 @@
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `ICACHE_MISS_LATENCY` | 8 | 1~500 | ICache 缺失延迟（周期数） |
+| `CONFIG_SIM_DDR_LATENCY` | 50 | 1~500 | shared AXI / SimDDR 读延迟（周期数） |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` | 2 | 0~500 | SimDDR 写响应延迟（周期数） |
+| `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 4 | 4/8/16 | 每个 DDR beat 传输字节数 |
 | `VIRTUAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 虚拟内存大小 |
 | `PHYSICAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 物理内存大小 |
 
 > [!NOTE]
-> `ICACHE_MISS_LATENCY` 当前在 `config.h` 中以 `constexpr` 固定定义，通常通过切换配置文件或直接修改配置头来调整。
+> `ICACHE_MISS_LATENCY` 已不再是当前主线 simulator 的 live 配置入口。
+> 真实 icache miss 与 shared LLC miss 的外存延迟统一由 shared AXI / SimDDR 配置建模。
 
 #### 3.1.1 DCache 参数生效来源（重点标记）
 
@@ -81,6 +84,18 @@
 建议：
 1. 调整 DCache 几何时，优先修改 `MemSubSystem/include/DcacheConfig.h`（或对应编译宏）。
 2. 修改后同步检查 `include/config.h` 的同名参数，避免文档值与行为值不一致。
+
+#### 3.1.2 Shared AXI / LLC 参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `CONFIG_AXI_KIT_MAX_OUTSTANDING` | 32 | shared AXI 全局 read outstanding 上限 |
+| `CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER` | 32 | 每个 master 的 read outstanding 上限 |
+| `CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING` | 32 | SimDDR 可接收的 outstanding 上限 |
+| `CONFIG_AXI_LLC_SIZE_BYTES` | 8MB | LLC 总容量 |
+| `CONFIG_AXI_LLC_WAYS` | 16 | LLC associativity |
+| `CONFIG_AXI_LLC_MSHR_NUM` | 8 | LLC 全局共享 MSHR 数量 |
+| `CONFIG_AXI_LLC_LOOKUP_LATENCY` | 3 | LLC lookup 响应可见延迟 |
 
 ### 3.2 流水线宽度
 

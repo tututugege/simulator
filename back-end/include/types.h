@@ -262,6 +262,7 @@ public:
   ExitReason exit_reason = ExitReason::NONE;
   bool is_ckpt = false;
   uint64_t ckpt_warmup_commit_target = WARMUP;
+  uint64_t ckpt_measure_commit_target = SIMPOINT_INTERVAL;
   SimCpu *cpu = nullptr;
   void run_commit_inst(InstEntry *inst_entry);
   void run_difftest_inst(InstEntry *inst_entry);

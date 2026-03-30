@@ -17,7 +17,6 @@
     __has_include("SimDDR.h")
 #define AXI_KIT_HEADERS_AVAILABLE 1
 #include "UART16550_Device.h"
-#if CONFIG_AXI_PROTOCOL == 4
 #include "AXI_Interconnect.h"
 #include "AXI_Router_AXI4.h"
 #include "MMIO_Bus_AXI4.h"
@@ -28,9 +27,6 @@ using DdrImpl = sim_ddr::SimDDR;
 using RouterImpl = axi_interconnect::AXI_Router_AXI4;
 using MmioImpl = mmio::MMIO_Bus_AXI4;
 } // namespace
-#else
-#error "Current axi-interconnect-kit integration supports AXI4 only"
-#endif
 #else
 #define AXI_KIT_HEADERS_AVAILABLE 0
 #if CONFIG_ICACHE_USE_AXI_MEM_PORT
@@ -666,12 +662,20 @@ void MemSubsystem::init() {
   if (!printed_axi_cfg) {
     printed_axi_cfg = true;
     LSU_MEM_DBG_PRINTF(
-        "[MEM][AXI CFG] protocol=%d dcache_line_bytes=%u dcache_line_words=%u "
-        "axi_up_write_words=%u axi_up_read_words=%u\n",
-        CONFIG_AXI_PROTOCOL, static_cast<unsigned>(DCACHE_LINE_BYTES),
+        "[CONFIG][AXI] ddr_read_latency=%ucy ddr_write_resp_latency=%ucy "
+        "ddr_beat=%uB out=%u per_master=%u ddr_out=%u "
+        "dcache_line=%uB(%u words) "
+        "upstream_write_payload=%uB upstream_read_resp=%uB\n",
+        static_cast<unsigned>(sim_ddr::SIM_DDR_LATENCY),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_RESP_LATENCY),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_BEAT_BYTES),
+        static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
+        static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING),
+        static_cast<unsigned>(DCACHE_LINE_BYTES),
         static_cast<unsigned>(DCACHE_LINE_WORDS),
-        static_cast<unsigned>(axi_interconnect::CACHELINE_WORDS),
-        static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_WORDS));
+        static_cast<unsigned>(axi_interconnect::AXI_UPSTREAM_PAYLOAD_BYTES),
+        static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_BYTES));
     if (DCACHE_LINE_WORDS > axi_interconnect::CACHELINE_WORDS) {
       LSU_MEM_DBG_PRINTF(
           "[MEM][AXI CFG][WARN] dcache line (%u words) is wider than AXI upstream "
@@ -1062,8 +1066,8 @@ void MemSubsystem::dump_debug_state() const {
         i, static_cast<int>(cur_e.valid), static_cast<int>(cur_e.issued),
         static_cast<int>(cur_e.fill), cur_e.index, cur_e.tag,
         get_addr(cur_e.index, cur_e.tag, 0), static_cast<int>(nxt_e.valid),
-        static_cast<int>(nxt_e.issued), static_cast<int>(nxt_e.fill), nxt_e.index,
-        nxt_e.tag, get_addr(nxt_e.index, nxt_e.tag, 0));
+        static_cast<int>(nxt_e.issued), static_cast<int>(nxt_e.fill), nxt_e.index, nxt_e.tag,
+        get_addr(nxt_e.index, nxt_e.tag, 0));
   }
 
   if (mshr_.cur.fill_valid) {

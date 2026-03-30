@@ -126,7 +126,11 @@ void MSHR::comb_outputs()
     // consuming the current-cycle AXI read response.
     out.axi_out.resp_ready = true;
 
-    if (in.axi_in.resp_valid) {
+    // While the local hold slot is occupied, block new live R traffic so the
+    // interconnect cannot retire a second response that this MSHR would miss.
+    if (cur.axi_resp_hold_valid) {
+        out.axi_out.resp_ready = false;
+    } else if (in.axi_in.resp_valid) {
         const uint8_t resp_id = in.axi_in.resp_id;
         if (resp_id < MSHR_ENTRIES) {
             const MSHREntry &e = mshr_entries[resp_id];
@@ -206,7 +210,9 @@ void MSHR::comb_inputs()
     std::memset(nxt.wb_data, 0, sizeof(nxt.wb_data));
 
     out.axi_out.resp_ready = true;
-    if (in.axi_in.resp_valid) {
+    if (cur.axi_resp_hold_valid) {
+        out.axi_out.resp_ready = false;
+    } else if (in.axi_in.resp_valid) {
         const uint8_t rid = in.axi_in.resp_id;
         if (rid < MSHR_ENTRIES) {
             const MSHREntry re = mshr_entries[rid];
@@ -243,9 +249,13 @@ void MSHR::comb_inputs()
     }
 
     // ── Accept R channel response ─────────────────────────────────────────────
-    if (in.axi_in.resp_valid)
+    if (cur.axi_resp_hold_valid || in.axi_in.resp_valid)
     {
-        uint8_t resp_id = in.axi_in.resp_id;
+        const bool using_held_resp = cur.axi_resp_hold_valid;
+        uint8_t resp_id =
+            using_held_resp ? cur.axi_resp_hold_id : in.axi_in.resp_id;
+        const uint32_t *resp_data =
+            using_held_resp ? cur.axi_resp_hold_data : in.axi_in.resp_data;
         if (resp_id < MSHR_ENTRIES)
         {
             const MSHREntry &e_cur = mshr_entries[resp_id];
@@ -263,9 +273,17 @@ void MSHR::comb_inputs()
                 bool can_consume_resp = (!need_wb_evict) || in.wbmshr.ready;
                 if (!can_consume_resp)
                 {
+                    if (!cur.axi_resp_hold_valid)
+                    {
+                        nxt.axi_resp_hold_valid = true;
+                        nxt.axi_resp_hold_id = resp_id;
+                        std::memcpy(nxt.axi_resp_hold_data, resp_data,
+                                    sizeof(nxt.axi_resp_hold_data));
+                    }
                 }
                 else
                 {
+                    nxt.axi_resp_hold_valid = false;
                     const uint32_t fill_line_addr = get_addr(fill_set, fill_tag, 0);
                     if (need_wb_evict)
                     {
@@ -329,7 +347,7 @@ void MSHR::comb_inputs()
                     nxt.fill_addr = fill_line_addr;
                     for (int w = 0; w < DCACHE_LINE_WORDS; w++)
                     {
-                        nxt.fill_data[w] = in.axi_in.resp_data[w];
+                        nxt.fill_data[w] = resp_data[w];
                         if (e_fill.merged_store_strb[w] != 0) {
                             apply_strobe(nxt.fill_data[w],
                                          e_fill.merged_store_data[w],
@@ -353,7 +371,7 @@ void MSHR::comb_inputs()
                         for (int w = 0; w < DCACHE_LINE_WORDS; w++)
                         {
                             uint32_t exp = p_memory[word_base + w];
-                            uint32_t got = in.axi_in.resp_data[w];
+                            uint32_t got = resp_data[w];
                             if (got != exp)
                             {
                                 read_mismatch = true;
