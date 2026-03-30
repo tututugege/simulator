@@ -328,7 +328,8 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define FRONTEND_IDEAL_ICACHE_DUAL_REQ_ACTIVE 0
 #endif
 
-// 统一使用全局 config.h 中的 ICACHE_LINE_SIZE / ICACHE_MISS_LATENCY
+// 统一使用全局 config.h 中的 ICACHE_LINE_SIZE。
+// 真实 icache miss 延迟由 shared AXI / SimDDR 配置建模。
 
 // FIFO sizes
 #ifndef INSTRUCTION_FIFO_SIZE

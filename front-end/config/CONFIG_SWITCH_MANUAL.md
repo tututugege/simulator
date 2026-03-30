@@ -151,10 +151,14 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
   - 在 `FRONTEND_ICACHE_MODE==0` 时自动定义。
 - `FRONTEND_IDEAL_ICACHE_DUAL_REQ_ACTIVE`（派生，`0/1`）
   - 仅当 `FRONTEND_ICACHE_MODE==1` 且 `ENABLE_FRONTEND_IDEAL_ICACHE_DUAL_REQ==1` 时为 `1`。
-- `ICACHE_LINE_SIZE`（`32`，字节）
+- `ICACHE_LINE_SIZE`（当前 stock default：`64` 字节）
   - 作用：cache line 大小。
-- `ICACHE_MISS_LATENCY`（`100`，cycle）
-  - 作用：true icache miss 延迟建模参数。
+- `CONFIG_SIM_DDR_LATENCY`（当前 stock default：`50`，cycle）
+  - 作用：shared AXI / SimDDR 读延迟建模参数。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY`（当前 stock default：`2`，cycle）
+  - 作用：SimDDR 写响应延迟建模参数。
+- `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES`（当前 stock default：`4`，bytes）
+  - 作用：每个 DDR beat 传输的数据量。
 
 ### 3.7 FIFO 容量参数
 
@@ -240,4 +244,3 @@ make -j8 EXTRA_CXXFLAGS="-DFRONTEND_ENABLE_RUNTIME_STATS_SUMMARY=1 -DFRONTEND_EN
 - 推荐通过 `EXTRA_CXXFLAGS` 做实验矩阵，不要频繁改默认值。
 - 大多数布尔开关建议统一改为 `#ifndef MACRO` + `#define MACRO 0/1` 风格，便于脚本化覆盖。
 - 派生宏（如 `USE_TRUE_ICACHE`、`FRONTEND_IDEAL_ICACHE_DUAL_REQ_ACTIVE`）不建议手工设置。
-

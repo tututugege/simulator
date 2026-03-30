@@ -662,18 +662,20 @@ void MemSubsystem::init() {
   if (!printed_axi_cfg) {
     printed_axi_cfg = true;
     LSU_MEM_DBG_PRINTF(
-        "[MEM][AXI CFG] ddr_latency=%u ddr_wr_resp_latency=%u out=%u per_master=%u "
-        "ddr_out=%u dcache_line_bytes=%u dcache_line_words=%u "
-        "axi_up_write_words=%u axi_up_read_words=%u\n",
+        "[CONFIG][AXI] ddr_read_latency=%ucy ddr_write_resp_latency=%ucy "
+        "ddr_beat=%uB out=%u per_master=%u ddr_out=%u "
+        "dcache_line=%uB(%u words) "
+        "upstream_write_payload=%uB upstream_read_resp=%uB\n",
         static_cast<unsigned>(sim_ddr::SIM_DDR_LATENCY),
         static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_RESP_LATENCY),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_BEAT_BYTES),
         static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
         static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
         static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING),
         static_cast<unsigned>(DCACHE_LINE_BYTES),
         static_cast<unsigned>(DCACHE_LINE_WORDS),
-        static_cast<unsigned>(axi_interconnect::CACHELINE_WORDS),
-        static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_WORDS));
+        static_cast<unsigned>(axi_interconnect::AXI_UPSTREAM_PAYLOAD_BYTES),
+        static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_BYTES));
     if (DCACHE_LINE_WORDS > axi_interconnect::CACHELINE_WORDS) {
       LSU_MEM_DBG_PRINTF(
           "[MEM][AXI CFG][WARN] dcache line (%u words) is wider than AXI upstream "

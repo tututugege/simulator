@@ -24,8 +24,6 @@ class StressConfig:
     ftq_profile: str
     fu_profile: str
     issue_profile: str
-    ic_miss: int
-    dc_miss: int
     dc_index: int
     dc_way: int
     rob_num: int
@@ -43,8 +41,6 @@ class StressConfig:
 
 
 LINE_PATTERNS: Dict[str, re.Pattern] = {
-    "ic_miss": re.compile(r"^constexpr int ICACHE_MISS_LATENCY = .*?;\s*(?://.*)?$", re.M),
-    "dc_miss": re.compile(r"^constexpr int DCACHE_MEM_LATENCY = .*?;\s*(?://.*)?$", re.M),
     "dc_index": re.compile(r"^constexpr int DCACHE_INDEX_BITS = .*?;\s*(?://.*)?$", re.M),
     "dc_way": re.compile(r"^constexpr int DCACHE_WAY_NUM = .*?;\s*(?://.*)?$", re.M),
     "rob_num": re.compile(r"^constexpr int ROB_NUM = .*?;\s*(?://.*)?$", re.M),
@@ -62,11 +58,11 @@ ISSUE_BLOCK_PATTERN = re.compile(
 
 SECTION_POOL = {
     "cache": {
-        "balanced": {"ic_miss": 60, "dc_miss": 60, "dc_index": 8, "dc_way": 4},
-        "fast": {"ic_miss": 30, "dc_miss": 30, "dc_index": 9, "dc_way": 8},
-        "slow": {"ic_miss": 90, "dc_miss": 90, "dc_index": 7, "dc_way": 2},
-        "ic_pressure": {"ic_miss": 100, "dc_miss": 50, "dc_index": 8, "dc_way": 4},
-        "dc_pressure": {"ic_miss": 50, "dc_miss": 100, "dc_index": 7, "dc_way": 2},
+        "balanced": {"dc_index": 8, "dc_way": 4},
+        "fast": {"dc_index": 9, "dc_way": 8},
+        "slow": {"dc_index": 7, "dc_way": 2},
+        "wide_sets": {"dc_index": 9, "dc_way": 4},
+        "wide_ways": {"dc_index": 8, "dc_way": 8},
     },
     "backend": {
         "base": {"rob_num": 256, "prf_num": 160, "ldq_size": 64, "stq_size": 64},
@@ -100,8 +96,6 @@ SECTION_POOL = {
 
 def replace_one(text: str, key: str, value: int) -> str:
     repl = {
-        "ic_miss": f"constexpr int ICACHE_MISS_LATENCY = {value};",
-        "dc_miss": f"constexpr int DCACHE_MEM_LATENCY = {value};",
         "dc_index": f"constexpr int DCACHE_INDEX_BITS = {value};",
         "dc_way": f"constexpr int DCACHE_WAY_NUM = {value};",
         "rob_num": f"constexpr int ROB_NUM = {value};",
@@ -147,7 +141,7 @@ def build_issue_block(cfg: StressConfig) -> str:
 
 def patch_config(base_text: str, cfg: StressConfig) -> str:
     text = base_text
-    for key in ("ic_miss", "dc_miss", "dc_index", "dc_way", "rob_num", "prf_num", "ldq_size", "stq_size", "ftq_size"):
+    for key in ("dc_index", "dc_way", "rob_num", "prf_num", "ldq_size", "stq_size", "ftq_size"):
         text = replace_one(text, key, getattr(cfg, key))
 
     issue_block = build_issue_block(cfg)
@@ -252,8 +246,6 @@ def sample_configs(num: int, seed: int) -> List[StressConfig]:
             ftq_profile=fk,
             fu_profile=uk,
             issue_profile=ik,
-            ic_miss=m["ic_miss"],
-            dc_miss=m["dc_miss"],
             dc_index=m["dc_index"],
             dc_way=m["dc_way"],
             rob_num=m["rob_num"],
@@ -281,7 +273,7 @@ def sample_configs(num: int, seed: int) -> List[StressConfig]:
 def write_manifest(path: pathlib.Path, rows: List[Tuple[StressConfig, str]]) -> None:
     headers = [
         "name", "status", "cache_profile", "backend_profile", "ftq_profile", "fu_profile", "issue_profile",
-        "ic_miss", "dc_miss", "dc_index", "dc_way", "rob_num", "prf_num", "ldq_size", "stq_size",
+        "dc_index", "dc_way", "rob_num", "prf_num", "ldq_size", "stq_size",
         "ftq_size", "int_alu_ports", "int_muldiv_ports", "alu_simple_ports",
         "ld_ports", "sta_ports", "std_ports", "br_ports",
     ]

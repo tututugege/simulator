@@ -70,12 +70,14 @@ constexpr int BPU_LOOP_META_TAG_BITS = 16;
 // ============================================================
 
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-constexpr int ICACHE_MISS_LATENCY = 8;
 #ifndef CONFIG_SIM_DDR_LATENCY
 #define CONFIG_SIM_DDR_LATENCY 50
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
 #define CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY 2
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES
+#define CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES 4
 #endif
 #ifndef CONFIG_AXI_KIT_MAX_OUTSTANDING
 #define CONFIG_AXI_KIT_MAX_OUTSTANDING 32
@@ -107,7 +109,7 @@ constexpr int ICACHE_MISS_LATENCY = 8;
 #endif
 
 #ifndef CONFIG_AXI_LLC_MSHR_NUM
-#define CONFIG_AXI_LLC_MSHR_NUM 4u
+#define CONFIG_AXI_LLC_MSHR_NUM 8u
 #endif
 
 #ifndef CONFIG_AXI_LLC_LOOKUP_LATENCY

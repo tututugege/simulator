@@ -48,10 +48,6 @@ struct ReadMasterPort_t {
 } // namespace axi_interconnect
 #endif
 
-#ifdef ICACHE_MISS_LATENCY
-#undef ICACHE_MISS_LATENCY
-#endif
-
 #include <cstdlib>
 #include <iostream>
 #include <memory>
