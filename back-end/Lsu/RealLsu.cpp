@@ -1150,7 +1150,6 @@ void RealLsu::commit_stores_from_rob() {
     }
     const auto &commit_uop = in.rob_commit->commit_entry[i].uop;
     if (ctx != nullptr && is_load(commit_uop)) {
-      ctx->perf.trace_load_on_rob_exit(commit_uop.dbg.inst_idx, sim_time);
     }
     if (!is_store(commit_uop)) {
       continue;
