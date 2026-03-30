@@ -101,13 +101,6 @@ constexpr uint64_t MMU_LOG_START = LOG_START;
 // ============================================================
 // Targeted LSU trace (1-based sequence id):
 // 0 = disabled, N = trace the Nth load/store entering LDQ/STQ.
-#ifndef CONFIG_PERF_TRACE_LOAD_N
-#define CONFIG_PERF_TRACE_LOAD_N 0
-#endif
-
-#ifndef CONFIG_PERF_TRACE_STORE_N
-#define CONFIG_PERF_TRACE_STORE_N 0
-#endif
 
 // Perf snapshot at a specific sim-time(cycle):
 // 0 = disabled, N > 0 = capture committed(total/load/store) at cycle N.

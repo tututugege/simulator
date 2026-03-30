@@ -1191,11 +1191,7 @@ struct LoadResp {
   MicroOp uop;
   size_t req_id;
   wire<2> replay;
-  uint32_t debug_addr;
-  uint8_t debug_src;
-  LoadResp()
-      : valid(false), data(0), uop(), req_id(0), replay(0), debug_addr(0),
-        debug_src(0) {}
+  LoadResp() : valid(false), data(0), uop(), req_id(0), replay(0) {}
 };
 
 // Store响应结构

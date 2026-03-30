@@ -6,7 +6,7 @@
 
 class SimContext;
 
-extern WriteBufferEntry write_buffer_nxt[WB_ENTRIES];
+extern WriteBufferEntry write_buffer_nxt[DCACHE_WB_ENTRIES];
 
 struct WBState {
     uint32_t count; // number of valid entries in the buffer
@@ -20,35 +20,6 @@ struct WBState {
 
     bool mergevalid[LSU_STA_COUNT];
     bool mergebusy[LSU_STA_COUNT];
-};
-
-struct WbDeferredCheck {
-    bool valid = false;
-    uint32_t addr = 0;
-    uint32_t data[DCACHE_LINE_WORDS] = {};
-    uint64_t resp_cycle = 0;
-};
-
-struct WbIssueTrace {
-    bool valid = false;
-    uint64_t seq = 0;
-    uint32_t addr = 0;
-    uint32_t head = 0;
-    uint32_t data[DCACHE_LINE_WORDS] = {};
-    uint64_t issue_cycle = 0;
-    uint8_t req_total_size = 0;
-    uint64_t req_wstrb = 0;
-};
-
-struct WbRespTrace {
-    bool valid = false;
-    uint64_t seq = 0;
-    uint32_t addr = 0;
-    uint32_t head = 0;
-    uint32_t data[DCACHE_LINE_WORDS] = {};
-    uint64_t resp_cycle = 0;
-    uint64_t issue_seq = 0;
-    uint64_t issue_cycle = 0;
 };
 
 // AXI write-channel interface signals (IC's write_ports[MASTER_DCACHE_W]).
@@ -123,9 +94,5 @@ public:
     WBOut out;
 
     WBState cur, nxt;
-    WbDeferredCheck cur_check, nxt_check;
-    WbIssueTrace cur_issue, nxt_issue;
-    WbIssueTrace cur_last_issue, nxt_last_issue;
-    WbRespTrace cur_last_resp, nxt_last_resp;
     SimContext *ctx = nullptr;
 };

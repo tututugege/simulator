@@ -18,7 +18,7 @@ inline uint32_t sign_extend_12(uint32_t imm12) {
 }
 
 void dump_mem_subsystem_snapshot() {
-  for (int i = 0; i < MSHR_ENTRIES; ++i) {
+  for (int i = 0; i < DCACHE_MSHR_ENTRIES; ++i) {
     const auto &e = mshr_entries[i];
     std::printf("[DIFF][MSHR] idx=%d v=%d issued=%d fill=%d set=%u tag=0x%x "
                 "line=0x%08x\n",
@@ -26,7 +26,7 @@ void dump_mem_subsystem_snapshot() {
                 static_cast<int>(e.fill), e.index, e.tag,
                 get_addr(e.index, e.tag, 0));
   }
-  for (int i = 0; i < WB_ENTRIES; ++i) {
+  for (int i = 0; i < DCACHE_WB_ENTRIES; ++i) {
     const auto &e = write_buffer[i];
     std::printf("[DIFF][WB] idx=%d v=%d send=%d addr=0x%08x data0=0x%08x\n", i,
                 static_cast<int>(e.valid), static_cast<int>(e.send), e.addr,

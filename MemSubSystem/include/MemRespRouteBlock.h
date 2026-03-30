@@ -5,7 +5,6 @@
 #include "MemReadArbBlock.h"
 #include "IO.h"
 #include "util.h"
-#include <cstdio>
 
 struct load_resp {
   bool valid = false;
@@ -14,7 +13,6 @@ struct load_resp {
   size_t req_id = 0;
   uint8_t replay = 0;
   uint32_t req_addr = 0;
-  uint8_t debug_src = 0;
 
   static load_resp from_io(const LoadResp &resp, uint32_t req_addr = 0) {
     load_resp ret{};
@@ -24,7 +22,6 @@ struct load_resp {
     ret.req_id = resp.req_id;
     ret.replay = resp.replay;
     ret.req_addr = req_addr;
-    ret.debug_src = resp.debug_src;
     return ret;
   }
 
@@ -35,8 +32,6 @@ struct load_resp {
     ret.uop = uop;
     ret.req_id = req_id;
     ret.replay = replay;
-    ret.debug_addr = req_addr;
-    ret.debug_src = debug_src;
     return ret;
   }
 };
@@ -234,11 +229,6 @@ public:
   }
 
 private:
-  static inline bool is_dbg_stuck_load_uop(const MicroOp &uop) {
-    return uop.dbg.pc == 0xc038afd0u || uop.dbg.instruction == 0x04c4a783u ||
-           uop.dbg.pc == 0xc006c620u || uop.dbg.instruction == 0x0144a803u;
-  }
-
   static constexpr uint8_t REPLAY_NONE = 0;
   static constexpr uint8_t REPLAY_MSHR_FULL = 1;
   static constexpr uint8_t REPLAY_WAIT_FILL = 2;
@@ -455,32 +445,6 @@ private:
     load_resp lsu_candidates[LSU_LDU_COUNT] = {};
     bool has_ptw_event = false;
     bool ptw_resp_on_port0 = false;
-    auto trace_raw_resp = [&](int port, const LoadResp &raw,
-                              const IssueTag &tag) {
-      if (raw.data != 0xccccccccu) {
-        return;
-      }
-      std::printf(
-          "[FOCUS][RESP_ROUTE][RAW] cyc=%lld port=%d req_id=%zu replay=%u "
-          "data=0x%08x uop_pc=0x%08x uop_rob=%u tag_valid=%d tag_owner=%u "
-          "tag_req_id=%zu tag_addr=0x%08x\n",
-          (long long)sim_time, port, raw.req_id, static_cast<unsigned>(raw.replay),
-          raw.data, raw.uop.dbg.pc, static_cast<unsigned>(raw.uop.rob_idx),
-          static_cast<int>(tag.valid), static_cast<unsigned>(tag.owner),
-          tag.req_id, tag.req_addr);
-    };
-    auto trace_routed_resp = [&](int port, const load_resp &resp,
-                                 const char *owner) {
-      if (resp.data != 0xccccccccu) {
-        return;
-      }
-      std::printf(
-          "[FOCUS][RESP_ROUTE][OUT] cyc=%lld port=%d owner=%s req_id=%zu "
-          "replay=%u data=0x%08x uop_pc=0x%08x uop_rob=%u req_addr=0x%08x\n",
-          (long long)sim_time, port, owner, resp.req_id,
-          static_cast<unsigned>(resp.replay), resp.data, resp.uop.dbg.pc,
-          static_cast<unsigned>(resp.uop.rob_idx), resp.req_addr);
-    };
 
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
       const auto &raw = dcache_resp_io->resp_ports.load_resps[i];
@@ -508,7 +472,6 @@ private:
                                             routed_tag)) {
       } else if (lookup_lsu_track(cur_, raw.req_id, routed_tag)) {
       }
-      trace_raw_resp(i, raw, routed_tag);
 
       if (!routed_tag.valid) {
         // Fallback recovery: if issued-tag tracking is lost but the response
@@ -516,7 +479,6 @@ private:
         // dropping and deadlocking the waiting LDQ entry.
         if (req_is_lsu) {
           lsu_candidates[i] = load_resp::from_io(raw, 0);
-          trace_routed_resp(i, lsu_candidates[i], "fallback_lsu");
           continue;
         }
         continue;
@@ -529,7 +491,6 @@ private:
         if (raw.replay == 0) {
           clear_lsu_track(nxt_, raw.req_id);
         }
-        trace_routed_resp(i, lsu_candidates[i], "lsu");
         break;
       case Owner::PTW_WALK:
       case Owner::PTW_DTLB:

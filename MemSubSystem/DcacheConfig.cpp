@@ -7,8 +7,8 @@ uint32_t data_array[DCACHE_SETS][DCACHE_WAYS][DCACHE_LINE_WORDS] = {};
 bool valid_array[DCACHE_SETS][DCACHE_WAYS] = {};
 bool dirty_array[DCACHE_SETS][DCACHE_WAYS] = {};
 uint8_t lru_state[DCACHE_SETS][DCACHE_WAYS] = {};
-MSHREntry mshr_entries[MSHR_ENTRIES] = {};
-WriteBufferEntry write_buffer[WB_ENTRIES] = {};
+MSHREntry mshr_entries[DCACHE_MSHR_ENTRIES] = {};
+WriteBufferEntry write_buffer[DCACHE_WB_ENTRIES] = {};
 
 namespace {
 // Maintain per-set LRU ranks in [0, DCACHE_WAYS-1]:
@@ -58,7 +58,7 @@ AddrFields decode(uint32_t addr)
 
 bool find_mshr_entry(uint32_t index, uint32_t tag)
 {
-    for (int i = 0; i < MSHR_ENTRIES; i++)
+    for (int i = 0; i < DCACHE_MSHR_ENTRIES; i++)
     {
         if (mshr_entries[i].valid && mshr_entries[i].index == index && mshr_entries[i].tag == tag)
         {

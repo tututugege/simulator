@@ -78,7 +78,7 @@
 | 参数族 | 当前主要生效源 | 当前值（代码） | 标记 | 说明 |
 |------|------|------|------|------|
 | 几何参数：`DCACHE_SETS / DCACHE_WAYS / DCACHE_LINE_BYTES / DCACHE_LINE_WORDS` | `MemSubSystem/include/DcacheConfig.h` | `256 / 4 / 64 / 16` | `实际生效` | DCache 数组维度、索引拆解、行大小均依赖这些宏 |
-| 队列参数：`MSHR_ENTRIES / WB_ENTRIES` | `MemSubSystem/include/DcacheConfig.h` | `8 / 8`（默认） | `实际生效` | 通过 `CONFIG_DCACHE_MSHR_ENTRIES`、`CONFIG_DCACHE_WB_ENTRIES` 可在编译时覆盖 |
+| 队列参数：`DCACHE_MSHR_ENTRIES / DCACHE_WB_ENTRIES` | `MemSubSystem/include/DcacheConfig.h` | `8 / 8`（默认） | `实际生效` | 通过 `CONFIG_DCACHE_MSHR_ENTRIES`、`CONFIG_DCACHE_WB_ENTRIES` 可在编译时覆盖 |
 | `DCACHE_LINE_SIZE / DCACHE_WAY_NUM / DCACHE_SET_NUM / DCACHE_WORD_NUM / DCACHE_MAX_PENDING_REQS` | `include/config.h` | 见 `config.h` | `当前未直接驱动 DCache 主实现` | 主要用于全局配置与静态检查，不是当前 MemSubSystem DCache 的主读取来源 |
 
 建议：
