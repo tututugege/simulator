@@ -24,7 +24,9 @@ void clear_axi_master_inputs(InterconnectT &interconnect) {
     port.req.total_size = 0;
     port.req.id = 0;
     port.req.bypass = false;
-    port.resp.ready = false;
+    // resp.ready is consumed during axi_interconnect.comb_outputs() before the
+    // top-level bridges re-drive master inputs later in the cycle. Clearing it
+    // here would make a held LLC response observe permanent backpressure.
   }
   for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; i++) {
     auto &port = interconnect.write_ports[i];
@@ -35,7 +37,6 @@ void clear_axi_master_inputs(InterconnectT &interconnect) {
     port.req.total_size = 0;
     port.req.id = 0;
     port.req.bypass = false;
-    port.resp.ready = false;
   }
 }
 
@@ -85,10 +86,15 @@ void print_soc_config_banner() {
 
   std::printf(
       "[CONFIG] bpu=%d(%s) llc=%u(%s) icache_axi=%u compiled_icache=%s "
-      "axi_protocol=%u\n",
+      "sim_ddr_lat=%u sim_ddr_wr_lat=%u beat=%u out=%u per_master=%u ddr_out=%u\n",
       kBpuEnabled, bpu_mode, static_cast<unsigned>(CONFIG_AXI_LLC_ENABLE),
       llc_mode, static_cast<unsigned>(CONFIG_ICACHE_USE_AXI_MEM_PORT),
-      compiled_icache_path, static_cast<unsigned>(CONFIG_AXI_PROTOCOL));
+      compiled_icache_path, static_cast<unsigned>(sim_ddr::SIM_DDR_LATENCY),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_RESP_LATENCY),
+      static_cast<unsigned>(sim_ddr::AXI_DATA_BYTES),
+      static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
+      static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING));
   std::printf(
       "[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi "
       "memsubsystem_internal_axi_runtime=disabled llc_summary=%s\n",
