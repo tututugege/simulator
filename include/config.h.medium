@@ -71,22 +71,29 @@ constexpr int BPU_LOOP_META_TAG_BITS = 16;
 // ============================================================
 
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-constexpr int ICACHE_MISS_LATENCY = 8;
+#ifndef CONFIG_SIM_DDR_LATENCY
+#define CONFIG_SIM_DDR_LATENCY 50
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY 2
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES
+#define CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES 4
+#endif
+#ifndef CONFIG_AXI_KIT_MAX_OUTSTANDING
+#define CONFIG_AXI_KIT_MAX_OUTSTANDING 32
+#endif
+#ifndef CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER
+#define CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER 32
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING
+#define CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING 32
+#endif
 
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
 #ifndef CONFIG_ICACHE_USE_AXI_MEM_PORT
 #define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
-#endif
-
-// AXI protocol flavor for the dedicated icache memory path.
-// Current axi-interconnect-kit integration supports AXI4 only.
-#ifndef CONFIG_AXI_PROTOCOL
-#define CONFIG_AXI_PROTOCOL 4
-#endif
-#if CONFIG_AXI_PROTOCOL != 4
-#error                                                                         \
-    "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
 #endif
 
 // Enable the shared AXI LLC path.
@@ -103,11 +110,11 @@ constexpr int ICACHE_MISS_LATENCY = 8;
 #endif
 
 #ifndef CONFIG_AXI_LLC_MSHR_NUM
-#define CONFIG_AXI_LLC_MSHR_NUM 4u
+#define CONFIG_AXI_LLC_MSHR_NUM 8u
 #endif
 
 #ifndef CONFIG_AXI_LLC_LOOKUP_LATENCY
-#define CONFIG_AXI_LLC_LOOKUP_LATENCY 8u
+#define CONFIG_AXI_LLC_LOOKUP_LATENCY 3u
 #endif
 
 #ifndef CONFIG_AXI_LLC_DEBUG_LOG
@@ -201,7 +208,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
     PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
     PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
-    PORT_CFG(OP_MASK_BR)                              // Port 5: Branch
+    PORT_CFG(OP_MASK_BR),                             // Port 5: Branch
     PORT_CFG(OP_MASK_BR)                              // Port 5: Branch
 };
 #undef PORT_CFG

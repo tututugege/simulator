@@ -65,7 +65,6 @@ public:
   void init();
   void comb();
   void seq();
-  void dump_debug_state() const;
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   void sync_mmio_devices_from_backing();
   axi_interconnect::ReadMasterPort_t *icache_read_port();
@@ -76,8 +75,6 @@ public:
   void llc_seq(const axi_interconnect::AXI_LLC_TableOut_t &table_out,
                const axi_interconnect::AXI_LLCPerfCounters_t &perf);
 
-
-  // Accessors for sub-modules (e.g., for debug/stats).
   MemDcacheImpl  &get_dcache()  { return dcache_; }
   MSHR        &get_mshr()    { return mshr_; }
   WriteBuffer &get_wb()      { return wb_; }
@@ -85,31 +82,6 @@ public:
   const PeripheralAxi &get_peripheral_axi() const { return peripheral_axi_; }
 
 private:
-  enum class DebugEventKind : uint8_t {
-    PTW_MEM_REQ = 0,
-    PTW_MEM_GRANT,
-    PTW_MEM_RESP,
-    PTW_WALK_REQ,
-    PTW_WALK_GRANT,
-    PTW_WALK_RESP,
-    REPLAY_WAKEUP,
-    LSU_PORT0_PREEMPT,
-    LSU_LOAD_RESP,
-    PTW_ROUTE_EVENT,
-  };
-
-  struct DebugEvent {
-    uint64_t cycle = 0;
-    DebugEventKind kind = DebugEventKind::PTW_MEM_REQ;
-    uint8_t owner = 0;
-    uint8_t port = 0;
-    uint8_t replay = 0;
-    uint8_t extra = 0;
-    uint32_t addr = 0;
-    uint32_t data = 0;
-    size_t req_id = 0;
-  };
-
   SimContext *ctx;
 
   // Sub-modules
@@ -144,10 +116,6 @@ private:
 
   std::array<PtwMemRespIO, kPtwClientCount>  ptw_mem_resp_ios{};
   std::array<PtwWalkRespIO, kPtwClientCount> ptw_walk_resp_ios{};
-  static constexpr size_t kDebugEventCapacity = 64;
-  std::array<DebugEvent, kDebugEventCapacity> debug_events_{};
-  size_t debug_event_head_ = 0;
-  size_t debug_event_count_ = 0;
 
   friend class MemSubsystemPtwMemPortAdapter;
   friend class MemSubsystemPtwWalkPortAdapter;
@@ -156,15 +124,6 @@ private:
   std::unique_ptr<PtwMemPort>  itlb_ptw_port_inst;
   std::unique_ptr<PtwWalkPort> dtlb_walk_port_inst;
   std::unique_ptr<PtwWalkPort> itlb_walk_port_inst;
-
-  void record_debug_event(DebugEventKind kind, uint8_t owner, uint32_t addr,
-                          uint32_t data = 0, uint8_t replay = 0,
-                          uint8_t extra = 0, size_t req_id = 0,
-                          uint8_t port = 0);
-  void dump_recent_debug_events() const;
-  void dump_failure_analysis() const;
-  void dump_key_cache_lines() const;
-  void dump_cache_line_for_addr(const char *reason, uint32_t addr) const;
 
   struct LlcPerfShadow {
     uint64_t read_access = 0;

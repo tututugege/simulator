@@ -3,7 +3,6 @@
 #include "FrontTop.h"
 #include "MemSubsystem.h"
 #include "config.h"
-#if CONFIG_AXI_PROTOCOL == 4
 #include "AXI_Interconnect.h"
 #include "AXI_Router_AXI4.h"
 #include "MMIO_Bus_AXI4.h"
@@ -12,18 +11,6 @@ using AxiInterconnectImpl = axi_interconnect::AXI_Interconnect;
 using AxiRouterImpl = axi_interconnect::AXI_Router_AXI4;
 using AxiDdrImpl = sim_ddr::SimDDR;
 using AxiMmioImpl = mmio::MMIO_Bus_AXI4;
-#elif CONFIG_AXI_PROTOCOL == 3
-#include "AXI_Interconnect_AXI3.h"
-#include "AXI_Router_AXI3.h"
-#include "MMIO_Bus_AXI3.h"
-#include "SimDDR_AXI3.h"
-using AxiInterconnectImpl = axi_interconnect::AXI_Interconnect_AXI3;
-using AxiRouterImpl = axi_interconnect::AXI_Router_AXI3;
-using AxiDdrImpl = sim_ddr_axi3::SimDDR_AXI3;
-using AxiMmioImpl = mmio::MMIO_Bus_AXI3;
-#else
-#error "Unsupported CONFIG_AXI_PROTOCOL value"
-#endif
 #include "UART16550_Device.h"
 #include "axi_mmio_map.h"
 #include "front_IO.h"

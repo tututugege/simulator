@@ -255,7 +255,7 @@ void Ren::comb_fire() {
         }
 
         if (ctx->perf.perf_start &&
-            ctx->perf.commit_num >= SIMPOINT_INTERVAL) {
+            ctx->perf.commit_num >= ctx->ckpt_measure_commit_target) {
           ctx->exit_reason = ExitReason::SIMPOINT;
         }
       }

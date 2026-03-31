@@ -44,17 +44,6 @@ private:
     uint32_t data = 0;
   };
 
-  struct StqAllocTrace {
-    bool valid = false;
-    uint64_t cycle = 0;
-    int stq_idx = -1;
-    uint32_t rob_idx = 0;
-    uint32_t rob_flag = 0;
-    uint32_t func3 = 0;
-    mask_t br_mask = 0;
-    uint64_t seq = 0;
-  };
-
   // MMU Instance (Composition)
   std::unique_ptr<AbstractMmu> mmu;
 
@@ -79,13 +68,6 @@ private:
   int replay_count_stq; // 统计重试次数
   int mshr_replay_count_ldq; // 统计 MSHR 重试次数
   int mshr_replay_count_stq; // 统计 MSHR 重试次数
-  uint64_t ldq_seq_counter;
-  uint64_t stq_seq_counter;
-  uint64_t ldq_trace_seq[LDQ_SIZE];
-  uint64_t stq_trace_seq[STQ_SIZE];
-  bool ldq_cache_wait_replay[LDQ_SIZE];
-  bool stq_cache_wait_replay[STQ_SIZE];
-
   bool stq_head_flag; // 用于区分环形缓冲区中的两轮
 
   bool replay_type; // 0 = LDQ, 1 = STQ
@@ -104,9 +86,6 @@ private:
   std::deque<MicroOp> pending_sta_addr_reqs;
   bool pending_mmio_valid = false;
   PeripheralInIO pending_mmio_req{};
-  static constexpr int STQ_ALLOC_TRACE_DEPTH = 16;
-  StqAllocTrace recent_stq_allocs[STQ_ALLOC_TRACE_DEPTH] = {};
-  int recent_stq_alloc_cursor = 0;
 
 public:
   RealLsu(SimContext *ctx);
@@ -122,7 +101,6 @@ public:
   void seq() override;
 
   StqEntry get_stq_entry(int stq_idx) override;
-  void dump_debug_state() const;
 
   void set_csr(Csr *c) override { this->csr_module = c; }
   void set_ptw_mem_port(PtwMemPort *port) override {
@@ -178,9 +156,6 @@ private:
   void progress_ldq_entries();
   void progress_pending_sta_addr();
   bool finish_store_addr_once(const MicroOp &inst);
-  void record_stq_alloc_trace(int stq_idx, uint32_t rob_idx, uint32_t rob_flag,
-                              uint32_t func3, mask_t br_mask);
-  void dump_recent_stq_alloc_traces() const;
 
   bool has_older_store_pending(const MicroOp &load_uop) const;
   StoreForwardResult check_store_forward(uint32_t p_addr,

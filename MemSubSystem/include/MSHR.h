@@ -12,13 +12,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // MSHRState — the latched state of the MSHR (cur/nxt pair).
 // ─────────────────────────────────────────────────────────────────────────────
-extern MSHREntry mshr_entries_nxt[MSHR_ENTRIES];
+extern MSHREntry mshr_entries_nxt[DCACHE_MSHR_ENTRIES];
 
 struct MSHR_STATE{
     // one-cycle replay pulse for LSU after a fill is accepted
     bool fill;
     uint32_t fill_addr;
     uint32_t mshr_count;
+
+    // Hold one blocked AXI read response when WB backpressure prevents
+    // immediate consumption. This register is intentionally bounded to one slot.
+    bool axi_resp_hold_valid;
+    uint8_t axi_resp_hold_id;
+    uint32_t axi_resp_hold_data[DCACHE_LINE_WORDS];
 
     // Registered outputs: produced in comb_inputs(), consumed by comb_outputs()
     // in the next cycle.
@@ -101,10 +107,10 @@ public:
 
     MSHR_STATE cur,nxt;
     SimContext *ctx = nullptr;
-    uint64_t miss_alloc_cycle[MSHR_ENTRIES] = {};
-    bool miss_alloc_cycle_valid[MSHR_ENTRIES] = {};
-    uint64_t axi_issue_cycle[MSHR_ENTRIES] = {};
-    bool axi_issue_cycle_valid[MSHR_ENTRIES] = {};
+    uint64_t miss_alloc_cycle[DCACHE_MSHR_ENTRIES] = {};
+    bool miss_alloc_cycle_valid[DCACHE_MSHR_ENTRIES] = {};
+    uint64_t axi_issue_cycle[DCACHE_MSHR_ENTRIES] = {};
+    bool axi_issue_cycle_valid[DCACHE_MSHR_ENTRIES] = {};
 
     // AXI channel signals — set by the RealDcache bridge before/after comb_inputs().
 

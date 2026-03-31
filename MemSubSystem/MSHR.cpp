@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <cstring>
 
-MSHREntry mshr_entries_nxt[MSHR_ENTRIES];
+MSHREntry mshr_entries_nxt[DCACHE_MSHR_ENTRIES];
 
 namespace {
 static constexpr uint8_t kCacheLineReqTotalSize =
@@ -28,7 +28,7 @@ bool victim_has_same_cycle_store_hit(const DcacheMSHRIO &dcachemshr,
 }
 
 int find_next_entry_idx(uint32_t set_idx, uint32_t tag) {
-    for (int i = 0; i < MSHR_ENTRIES; i++) {
+    for (int i = 0; i < DCACHE_MSHR_ENTRIES; i++) {
         const MSHREntry &entry = mshr_entries_nxt[i];
         if (entry.valid && entry.index == set_idx && entry.tag == tag) {
             return i;
@@ -46,7 +46,7 @@ void merge_store_into_entry(MSHREntry &entry, const StoreReq &req) {
 }
 
 void log_unexpected_resp(uint8_t resp_id, const char *reason, uint32_t mshr_count) {
-    if (resp_id >= MSHR_ENTRIES) {
+    if (resp_id >= DCACHE_MSHR_ENTRIES) {
         LSU_MEM_DBG_PRINTF(
             "[MSHR RESP UNEXPECTED] cyc=%lld resp_id=%u reason=%s count=%u\n",
             (long long)sim_time, static_cast<unsigned>(resp_id), reason,
@@ -87,22 +87,10 @@ void MSHR::init()
 // ─────────────────────────────────────────────────────────────────────────────
 void MSHR::comb_outputs()
 {   
-    out.mshr2dcache.free = MSHR_ENTRIES - cur.mshr_count;
+    out.mshr2dcache.free = DCACHE_MSHR_ENTRIES - cur.mshr_count;
     out.replay_resp.replay = cur.fill; // MSHR full replay code
     out.replay_resp.replay_addr = cur.fill_addr;
     out.replay_resp.free_slots = out.mshr2dcache.free;
-    if (out.replay_resp.replay)
-    {
-        deadlock_replay_trace::record(
-            DeadlockReplayTraceKind::MshrBroadcast, 0,
-            static_cast<uint8_t>(out.replay_resp.replay), 0,
-            static_cast<uint8_t>(cur.fill_valid),
-            static_cast<uint8_t>(cur.fill_way),
-            0, 0, static_cast<uint32_t>(out.replay_resp.replay_addr),
-            static_cast<uint32_t>(out.replay_resp.free_slots),
-            static_cast<uint32_t>(cur.mshr_count));
-    }
-
     // Registered fill output (from previous cycle comb_inputs()).
     out.mshr2dcache.fill.valid = cur.fill_valid;
     out.mshr2dcache.fill.dirty = cur.fill_dirty;
@@ -125,9 +113,13 @@ void MSHR::comb_outputs()
     // consuming the current-cycle AXI read response.
     out.axi_out.resp_ready = true;
 
-    if (in.axi_in.resp_valid) {
+    // While the local hold slot is occupied, block new live R traffic so the
+    // interconnect cannot retire a second response that this MSHR would miss.
+    if (cur.axi_resp_hold_valid) {
+        out.axi_out.resp_ready = false;
+    } else if (in.axi_in.resp_valid) {
         const uint8_t resp_id = in.axi_in.resp_id;
-        if (resp_id < MSHR_ENTRIES) {
+        if (resp_id < DCACHE_MSHR_ENTRIES) {
             const MSHREntry &e = mshr_entries[resp_id];
             if (e.valid && e.issued && !e.fill) {
                 const uint32_t lru_idx = choose_lru_victim(e.index);
@@ -143,7 +135,7 @@ void MSHR::comb_outputs()
         }
     }
 
-    for(int i=0; i<MSHR_ENTRIES; i++){
+    for(int i=0; i<DCACHE_MSHR_ENTRIES; i++){
         const MSHREntry &ce = mshr_entries[i];
         if (!ce.valid || ce.issued)
             continue;
@@ -160,11 +152,11 @@ void MSHR::comb_outputs()
 
 int MSHR::entries_add(int set_idx, int tag)
 {   
-    if(nxt.mshr_count >= MSHR_ENTRIES){
+    if(nxt.mshr_count >= DCACHE_MSHR_ENTRIES){
         Assert(0 && "MSHR full");
     }
     int alloc_idx = -1;
-    for (int off = 0; off < MSHR_ENTRIES; off++)
+    for (int off = 0; off < DCACHE_MSHR_ENTRIES; off++)
     {
         if (!mshr_entries_nxt[off].valid)
         {
@@ -205,9 +197,11 @@ void MSHR::comb_inputs()
     std::memset(nxt.wb_data, 0, sizeof(nxt.wb_data));
 
     out.axi_out.resp_ready = true;
-    if (in.axi_in.resp_valid) {
+    if (cur.axi_resp_hold_valid) {
+        out.axi_out.resp_ready = false;
+    } else if (in.axi_in.resp_valid) {
         const uint8_t rid = in.axi_in.resp_id;
-        if (rid < MSHR_ENTRIES) {
+        if (rid < DCACHE_MSHR_ENTRIES) {
             const MSHREntry re = mshr_entries[rid];
             if (re.valid && re.issued && !re.fill) {
                 const uint32_t lru_idx = choose_lru_victim(re.index);
@@ -242,10 +236,14 @@ void MSHR::comb_inputs()
     }
 
     // ── Accept R channel response ─────────────────────────────────────────────
-    if (in.axi_in.resp_valid)
+    if (cur.axi_resp_hold_valid || in.axi_in.resp_valid)
     {
-        uint8_t resp_id = in.axi_in.resp_id;
-        if (resp_id < MSHR_ENTRIES)
+        const bool using_held_resp = cur.axi_resp_hold_valid;
+        uint8_t resp_id =
+            using_held_resp ? cur.axi_resp_hold_id : in.axi_in.resp_id;
+        const uint32_t *resp_data =
+            using_held_resp ? cur.axi_resp_hold_data : in.axi_in.resp_data;
+        if (resp_id < DCACHE_MSHR_ENTRIES)
         {
             const MSHREntry &e_cur = mshr_entries[resp_id];
             if (e_cur.valid && e_cur.issued && !e_cur.fill)
@@ -262,9 +260,17 @@ void MSHR::comb_inputs()
                 bool can_consume_resp = (!need_wb_evict) || in.wbmshr.ready;
                 if (!can_consume_resp)
                 {
+                    if (!cur.axi_resp_hold_valid)
+                    {
+                        nxt.axi_resp_hold_valid = true;
+                        nxt.axi_resp_hold_id = resp_id;
+                        std::memcpy(nxt.axi_resp_hold_data, resp_data,
+                                    sizeof(nxt.axi_resp_hold_data));
+                    }
                 }
                 else
                 {
+                    nxt.axi_resp_hold_valid = false;
                     const uint32_t fill_line_addr = get_addr(fill_set, fill_tag, 0);
                     if (need_wb_evict)
                     {
@@ -328,7 +334,7 @@ void MSHR::comb_inputs()
                     nxt.fill_addr = fill_line_addr;
                     for (int w = 0; w < DCACHE_LINE_WORDS; w++)
                     {
-                        nxt.fill_data[w] = in.axi_in.resp_data[w];
+                        nxt.fill_data[w] = resp_data[w];
                         if (e_fill.merged_store_strb[w] != 0) {
                             apply_strobe(nxt.fill_data[w],
                                          e_fill.merged_store_data[w],
@@ -397,7 +403,7 @@ void MSHR::comb_inputs()
     // to mark exactly which MSHR slot completed AR handshake.
     if (in.axi_in.req_accepted) {
         const uint8_t acc_id = in.axi_in.req_accepted_id;
-        if (acc_id < MSHR_ENTRIES) {
+        if (acc_id < DCACHE_MSHR_ENTRIES) {
             const MSHREntry &ce = mshr_entries[acc_id];
             if (ce.valid && !ce.issued) {
                 mshr_entries_nxt[acc_id].issued = true;

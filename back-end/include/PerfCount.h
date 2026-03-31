@@ -71,26 +71,6 @@ public:
   uint64_t mmio_head_block_cycles = 0;
   uint64_t ptw_port0_replay_count = 0;
   uint64_t stq_same_addr_block_count = 0;
-  static constexpr int64_t trace_time_unset = -1;
-
-  struct MemOpTrace {
-    uint64_t target_n = 0;
-    uint64_t target_seq = 0;
-    bool tracked = false;
-    bool inst_idx_valid = false;
-    int64_t inst_idx = 0;
-    int mmio = -1;
-    int stlf_success = -1;
-    int dcache_hit = -1;
-    int64_t enter_q_time = trace_time_unset;
-    int64_t issue_req_time = trace_time_unset;
-    int64_t recv_result_time = trace_time_unset;
-    int64_t exit_q_time = trace_time_unset;
-    int64_t exit_rob_time = trace_time_unset;
-  };
-
-  MemOpTrace tracked_load_trace = {CONFIG_PERF_TRACE_LOAD_N};
-  MemOpTrace tracked_store_trace = {CONFIG_PERF_TRACE_STORE_N};
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -227,144 +207,6 @@ public:
   uint64_t ib_blocked_cycles = 0;
   uint64_t ftq_blocked_cycles = 0;
 
-  static inline void set_once(int64_t &slot, int64_t value) {
-    if (slot == trace_time_unset) {
-      slot = value;
-    }
-  }
-
-  void reset_mem_op_traces() {
-    tracked_load_trace = {};
-    tracked_store_trace = {};
-    tracked_load_trace.target_n = CONFIG_PERF_TRACE_LOAD_N;
-    tracked_store_trace.target_n = CONFIG_PERF_TRACE_STORE_N;
-  }
-
-  void trace_load_on_ldq_enter(uint64_t seq, int64_t cycle_now) {
-    if (tracked_load_trace.tracked || tracked_load_trace.target_n == 0 ||
-        seq != tracked_load_trace.target_n) {
-      return;
-    }
-    tracked_load_trace.tracked = true;
-    tracked_load_trace.target_seq = seq;
-    tracked_load_trace.enter_q_time = cycle_now;
-  }
-
-  void trace_load_set_inst_idx(uint64_t seq, int64_t inst_idx) {
-    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq ||
-        tracked_load_trace.inst_idx_valid) {
-      return;
-    }
-    tracked_load_trace.inst_idx = inst_idx;
-    tracked_load_trace.inst_idx_valid = true;
-  }
-
-  void trace_load_set_mmio(uint64_t seq, bool is_mmio) {
-    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq ||
-        tracked_load_trace.mmio != -1) {
-      return;
-    }
-    tracked_load_trace.mmio = is_mmio ? 1 : 0;
-  }
-
-  void trace_load_set_stlf(uint64_t seq, bool stlf_success) {
-    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
-      return;
-    }
-    if (stlf_success) {
-      tracked_load_trace.stlf_success = 1;
-      return;
-    }
-    if (tracked_load_trace.stlf_success == -1) {
-      tracked_load_trace.stlf_success = 0;
-    }
-  }
-
-  void trace_load_set_dcache_hit(uint64_t seq, bool is_hit) {
-    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq ||
-        tracked_load_trace.dcache_hit != -1) {
-      return;
-    }
-    tracked_load_trace.dcache_hit = is_hit ? 1 : 0;
-  }
-
-  void trace_load_on_issue(uint64_t seq, int64_t cycle_now) {
-    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
-      return;
-    }
-    set_once(tracked_load_trace.issue_req_time, cycle_now);
-  }
-
-  void trace_load_on_result(uint64_t seq, int64_t cycle_now) {
-    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
-      return;
-    }
-    set_once(tracked_load_trace.recv_result_time, cycle_now);
-  }
-
-  void trace_load_on_ldq_exit(uint64_t seq, int64_t cycle_now) {
-    if (!tracked_load_trace.tracked || tracked_load_trace.target_seq != seq) {
-      return;
-    }
-    set_once(tracked_load_trace.exit_q_time, cycle_now);
-  }
-
-  void trace_load_on_rob_exit(int64_t inst_idx, int64_t cycle_now) {
-    if (!tracked_load_trace.tracked || !tracked_load_trace.inst_idx_valid ||
-        tracked_load_trace.inst_idx != inst_idx) {
-      return;
-    }
-    set_once(tracked_load_trace.exit_rob_time, cycle_now);
-  }
-
-  void trace_store_on_stq_enter(uint64_t seq, int64_t cycle_now) {
-    if (tracked_store_trace.tracked || tracked_store_trace.target_n == 0 ||
-        seq != tracked_store_trace.target_n) {
-      return;
-    }
-    tracked_store_trace.tracked = true;
-    tracked_store_trace.target_seq = seq;
-    tracked_store_trace.enter_q_time = cycle_now;
-  }
-
-  void trace_store_set_inst_idx(uint64_t seq, int64_t inst_idx) {
-    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq ||
-        tracked_store_trace.inst_idx_valid) {
-      return;
-    }
-    tracked_store_trace.inst_idx = inst_idx;
-    tracked_store_trace.inst_idx_valid = true;
-  }
-
-  void trace_store_set_dcache_hit(uint64_t seq, bool is_hit) {
-    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq ||
-        tracked_store_trace.dcache_hit != -1) {
-      return;
-    }
-    tracked_store_trace.dcache_hit = is_hit ? 1 : 0;
-  }
-
-  void trace_store_on_issue(uint64_t seq, int64_t cycle_now) {
-    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq) {
-      return;
-    }
-    set_once(tracked_store_trace.issue_req_time, cycle_now);
-  }
-
-  void trace_store_on_result(uint64_t seq, int64_t cycle_now) {
-    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq) {
-      return;
-    }
-    set_once(tracked_store_trace.recv_result_time, cycle_now);
-  }
-
-  void trace_store_on_stq_exit(uint64_t seq, int64_t cycle_now) {
-    if (!tracked_store_trace.tracked || tracked_store_trace.target_seq != seq) {
-      return;
-    }
-    set_once(tracked_store_trace.exit_q_time, cycle_now);
-  }
-
   void perf_reset() {
     cycle = 0;
     commit_num = 0;
@@ -414,7 +256,6 @@ public:
     mmio_head_block_cycles = 0;
     ptw_port0_replay_count = 0;
     stq_same_addr_block_count = 0;
-    reset_mem_op_traces();
     icache_access_num = 0;
     icache_miss_num = 0;
     icache_miss_penalty_total_cycles = 0;
@@ -832,52 +673,6 @@ public:
            ptw_port0_replay_count);
     printf("\033[38;5;34mSTQ SameAddr Block   : %ld\033[0m\n",
            stq_same_addr_block_count);
-    printf("\033[38;5;34mTrace Load Target N  : %ld\033[0m\n",
-           tracked_load_trace.target_n);
-    printf("\033[38;5;34m  - tracked          : %d\033[0m\n",
-           tracked_load_trace.tracked ? 1 : 0);
-    printf("\033[38;5;34m  - seq              : %ld\033[0m\n",
-           tracked_load_trace.target_seq);
-    printf("\033[38;5;34m  - inst_idx         : %lld\033[0m\n",
-           tracked_load_trace.inst_idx_valid
-               ? (long long)tracked_load_trace.inst_idx
-               : -1LL);
-    printf("\033[38;5;34m  - is_mmio          : %d\033[0m\n",
-           tracked_load_trace.mmio);
-    printf("\033[38;5;34m  - stlf_success     : %d\033[0m\n",
-           tracked_load_trace.stlf_success);
-    printf("\033[38;5;34m  - dcache_hit       : %d\033[0m\n",
-           tracked_load_trace.dcache_hit);
-    printf("\033[38;5;34m  - enter_ldq        : %lld\033[0m\n",
-           (long long)tracked_load_trace.enter_q_time);
-    printf("\033[38;5;34m  - issue_req        : %lld\033[0m\n",
-           (long long)tracked_load_trace.issue_req_time);
-    printf("\033[38;5;34m  - recv_result      : %lld\033[0m\n",
-           (long long)tracked_load_trace.recv_result_time);
-    printf("\033[38;5;34m  - exit_ldq         : %lld\033[0m\n",
-           (long long)tracked_load_trace.exit_q_time);
-    printf("\033[38;5;34m  - exit_rob         : %lld\033[0m\n",
-           (long long)tracked_load_trace.exit_rob_time);
-    printf("\033[38;5;34mTrace Store Target N : %ld\033[0m\n",
-           tracked_store_trace.target_n);
-    printf("\033[38;5;34m  - tracked          : %d\033[0m\n",
-           tracked_store_trace.tracked ? 1 : 0);
-    printf("\033[38;5;34m  - seq              : %ld\033[0m\n",
-           tracked_store_trace.target_seq);
-    printf("\033[38;5;34m  - inst_idx         : %lld\033[0m\n",
-           tracked_store_trace.inst_idx_valid
-               ? (long long)tracked_store_trace.inst_idx
-               : -1LL);
-    printf("\033[38;5;34m  - dcache_hit       : %d\033[0m\n",
-           tracked_store_trace.dcache_hit);
-    printf("\033[38;5;34m  - enter_stq        : %lld\033[0m\n",
-           (long long)tracked_store_trace.enter_q_time);
-    printf("\033[38;5;34m  - issue_req        : %lld\033[0m\n",
-           (long long)tracked_store_trace.issue_req_time);
-    printf("\033[38;5;34m  - recv_result      : %lld\033[0m\n",
-           (long long)tracked_store_trace.recv_result_time);
-    printf("\033[38;5;34m  - exit_stq         : %lld\033[0m\n",
-           (long long)tracked_store_trace.exit_q_time);
     printf("\n");
   }
 

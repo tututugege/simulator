@@ -4,24 +4,37 @@
 #include "IO.h"
 // ─── Cache geometry (all configurable via -D flags) ───────────────────────────
 // Number of sets; must be a power-of-2.
-#define DCACHE_SETS 256
-#define DCACHE_WAYS 4
-#define DCACHE_OFFSET_BITS 6
-#define DCACHE_LINE_BYTES  64
-#define DCACHE_LINE_WORDS  16
-// log2(DCACHE_SETS) — requires power-of-2.
-#define DCACHE_SET_BITS    (__builtin_ctz(DCACHE_SETS))
-#define DCACHE_TAG_BITS    (32 - DCACHE_SET_BITS - DCACHE_OFFSET_BITS)
 
-#ifndef CONFIG_DCACHE_MSHR_ENTRIES
-#define CONFIG_DCACHE_MSHR_ENTRIES 8
+// Bridge older macro-based DCache geometry names with the newer stock profile
+// constexpr names used by small/medium/large configs.
+#ifndef DCACHE_SETS
+#define DCACHE_SETS DCACHE_SET_NUM
 #endif
-#define MSHR_ENTRIES CONFIG_DCACHE_MSHR_ENTRIES
 
-#ifndef CONFIG_DCACHE_WB_ENTRIES
-#define CONFIG_DCACHE_WB_ENTRIES 8
+#ifndef DCACHE_WAYS
+#define DCACHE_WAYS DCACHE_WAY_NUM
 #endif
-#define WB_ENTRIES CONFIG_DCACHE_WB_ENTRIES
+
+#ifndef DCACHE_LINE_BYTES
+#define DCACHE_LINE_BYTES DCACHE_LINE_SIZE
+#endif
+
+#ifndef DCACHE_LINE_WORDS
+#define DCACHE_LINE_WORDS DCACHE_WORD_NUM
+#endif
+
+#ifndef DCACHE_SET_BITS
+#define DCACHE_SET_BITS DCACHE_INDEX_BITS
+#endif
+
+#ifndef DCACHE_MSHR_ENTRIES
+#define DCACHE_MSHR_ENTRIES 8
+#endif
+
+#ifndef DCACHE_WB_ENTRIES
+#define DCACHE_WB_ENTRIES 8
+#endif
+
 
 #define DCACHE_BANKS 16
 
@@ -141,8 +154,8 @@ struct WriteBufferEntry {
     uint32_t data[DCACHE_LINE_WORDS];
 };
 
-extern MSHREntry mshr_entries[MSHR_ENTRIES];
-extern WriteBufferEntry write_buffer[WB_ENTRIES];
+extern MSHREntry mshr_entries[DCACHE_MSHR_ENTRIES];
+extern WriteBufferEntry write_buffer[DCACHE_WB_ENTRIES];
 
 void init_dcache();
 AddrFields decode(uint32_t addr);

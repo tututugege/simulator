@@ -24,7 +24,9 @@ void clear_axi_master_inputs(InterconnectT &interconnect) {
     port.req.total_size = 0;
     port.req.id = 0;
     port.req.bypass = false;
-    port.resp.ready = false;
+    // resp.ready is consumed during axi_interconnect.comb_outputs() before the
+    // top-level bridges re-drive master inputs later in the cycle. Clearing it
+    // here would make a held LLC response observe permanent backpressure.
   }
   for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; i++) {
     auto &port = interconnect.write_ports[i];
@@ -35,7 +37,6 @@ void clear_axi_master_inputs(InterconnectT &interconnect) {
     port.req.total_size = 0;
     port.req.id = 0;
     port.req.bypass = false;
-    port.resp.ready = false;
   }
 }
 
@@ -83,12 +84,30 @@ void print_soc_config_banner() {
   const char *runtime_icache_path = "oracle-frontend-disconnected";
 #endif
 
+  std::printf("[CONFIG][SOC] bpu=%d(%s) icache_axi=%u compiled_icache=%s\n",
+              kBpuEnabled, bpu_mode,
+              static_cast<unsigned>(CONFIG_ICACHE_USE_AXI_MEM_PORT),
+              compiled_icache_path);
   std::printf(
-      "[CONFIG] bpu=%d(%s) llc=%u(%s) icache_axi=%u compiled_icache=%s "
-      "axi_protocol=%u\n",
-      kBpuEnabled, bpu_mode, static_cast<unsigned>(CONFIG_AXI_LLC_ENABLE),
-      llc_mode, static_cast<unsigned>(CONFIG_ICACHE_USE_AXI_MEM_PORT),
-      compiled_icache_path, static_cast<unsigned>(CONFIG_AXI_PROTOCOL));
+      "[CONFIG][AXI] ddr_read_latency=%ucy ddr_write_resp_latency=%ucy "
+      "ddr_beat=%uB upstream_payload=%uB upstream_read_resp=%uB "
+      "out=%u per_master=%u ddr_out=%u\n",
+      static_cast<unsigned>(sim_ddr::SIM_DDR_LATENCY),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_RESP_LATENCY),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_BEAT_BYTES),
+      static_cast<unsigned>(axi_interconnect::AXI_UPSTREAM_PAYLOAD_BYTES),
+      static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_BYTES),
+      static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
+      static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING));
+  std::printf(
+      "[CONFIG][LLC] enable=%u(%s) capacity=%lluMB ways=%u mshr=%u "
+      "lookup_latency=%ucy\n",
+      static_cast<unsigned>(CONFIG_AXI_LLC_ENABLE), llc_mode,
+      static_cast<unsigned long long>(CONFIG_AXI_LLC_SIZE_BYTES >> 20),
+      static_cast<unsigned>(CONFIG_AXI_LLC_WAYS),
+      static_cast<unsigned>(CONFIG_AXI_LLC_MSHR_NUM),
+      static_cast<unsigned>(CONFIG_AXI_LLC_LOOKUP_LATENCY));
   std::printf(
       "[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi "
       "memsubsystem_internal_axi_runtime=disabled llc_summary=%s\n",
@@ -118,7 +137,7 @@ void print_soc_config_banner() {
       static_cast<unsigned long long>(dcache_capacity_bytes / 1024), DCACHE_SETS,
       DCACHE_WAYS, DCACHE_LINE_BYTES);
   std::printf(
-      "[CFG][MEM] hierarchy=L1I/L1D + AXI%s%s LLC=%lluMB(%u ways,mshr=%u,lookup=%u)\n",
+      "[CFG][MEM] hierarchy=L1I/L1D + AXI%s%s LLC=%lluMB(%u ways,mshr=%u,lookup=%ucy)\n",
       (CONFIG_ICACHE_USE_AXI_MEM_PORT ? "-icache" : ""),
       (CONFIG_AXI_LLC_ENABLE ? "+LLC" : ""),
       static_cast<unsigned long long>(llc_capacity_bytes >> 20),
