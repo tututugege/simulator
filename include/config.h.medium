@@ -74,7 +74,8 @@ constexpr int ICACHE_LINE_SIZE = 64; // bytes
 #define CONFIG_SIM_DDR_LATENCY 50
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY 2
+// Extra full cycles to wait after the final W beat before B can become visible.
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY 1
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES
 #define CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES 32
