@@ -47,9 +47,11 @@ void print_help(char *argv[]) {
   std::cout << "  -w, --warmup <num>  In CKPT mode, target O3 "
                "warmup steps in [0,100000000] (default: 10000000)"
             << std::endl;
-  std::cout << "  -c, --max-commit <num>  Stop after <num> committed "
-               "instructions (default: compile-time MAX_COMMIT_INST)"
-            << std::endl;
+  std::cout
+      << "  -c, --max-commit <num>  Stop after <num> committed instructions "
+         "(default: SIMPOINT_INTERVAL in CKPT mode, compile-time "
+         "MAX_COMMIT_INST otherwise)"
+      << std::endl;
   std::cout << "  -h, --help                  Show this message" << std::endl;
   std::cout << "\nExamples:" << std::endl;
   std::cout << "  Run Binary: " << argv[0] << " spec_mem/mcf.bin" << std::endl;
@@ -254,6 +256,9 @@ int main(int argc, char *argv[]) {
     std::cerr << "Warning: --warmup (-w) is ignored unless in CKPT "
                  "mode."
               << std::endl;
+  }
+  if (config.mode == SimConfig::CKPT && !config.max_commit_inst_set) {
+    config.max_commit_inst = static_cast<uint64_t>(SIMPOINT_INTERVAL);
   }
   std::cout << "[CONFIG] max_commit_inst = " << std::dec
             << config.max_commit_inst
