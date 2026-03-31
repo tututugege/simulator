@@ -157,7 +157,7 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
   - 作用：shared AXI / SimDDR 读延迟建模参数。
 - `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY`（当前 stock default：`2`，cycle）
   - 作用：SimDDR 写响应延迟建模参数。
-- `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES`（当前 stock default：`4`，bytes）
+- `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES`（当前 default profile：`8`，可选：`4/8/16/32`，bytes）
   - 作用：每个 DDR beat 传输的数据量。
 
 ### 3.7 FIFO 容量参数

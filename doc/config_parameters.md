@@ -61,7 +61,7 @@
 |------|--------|----------|------|
 | `CONFIG_SIM_DDR_LATENCY` | `CONFIG_SIM_DDR_LATENCY_CALC`（default profile 下为 43） | 1~500（手动覆盖时） | shared AXI / SimDDR 读延迟（周期数），默认由 DDR 参数自动换算 |
 | `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` | 2 | 0~500 | SimDDR 写响应延迟（周期数） |
-| `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 4 | 4/8/16 | 每个 DDR beat 传输字节数 |
+| `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 8（default profile） | 4/8/16/32 | 每个 DDR beat 传输字节数 |
 | `VIRTUAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 虚拟内存大小 |
 | `PHYSICAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 物理内存大小 |
 
