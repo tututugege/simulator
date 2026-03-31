@@ -195,8 +195,29 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
 #ifndef CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER
 #define CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER 32
 #endif
+#ifndef CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING
+#define CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING CONFIG_AXI_KIT_MAX_OUTSTANDING
+#endif
+#ifndef CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES
+#define CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES 64
+#endif
+#ifndef CONFIG_AXI_KIT_AXI_ID_WIDTH
+#define CONFIG_AXI_KIT_AXI_ID_WIDTH 6
+#endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING
 #define CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING 32
+#endif
+#ifndef CONFIG_AXI_KIT_DEBUG
+#define CONFIG_AXI_KIT_DEBUG 0
+#endif
+#ifndef CONFIG_AXI_KIT_UART_BASE
+#define CONFIG_AXI_KIT_UART_BASE 0x10000000u
+#endif
+#ifndef CONFIG_AXI_KIT_MMIO_BASE
+#define CONFIG_AXI_KIT_MMIO_BASE CONFIG_AXI_KIT_UART_BASE
+#endif
+#ifndef CONFIG_AXI_KIT_MMIO_SIZE
+#define CONFIG_AXI_KIT_MMIO_SIZE 0x00001000u
 #endif
 
 // Enable the dedicated AXI-backed icache memory path.
@@ -493,6 +514,29 @@ static_assert(ICACHE_WORD_NUM == ICACHE_LINE_SIZE / 4,
 static_assert(ICACHE_TAG_BITS > 0, "ICACHE_TAG_BITS must be positive");
 static_assert(ICACHE_SET_NUM > 0, "ICACHE_SET_NUM must be positive");
 static_assert(ICACHE_TAG_MASK != 0, "ICACHE_TAG_MASK must be non-zero");
+static_assert(CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES > 0,
+              "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES must be positive");
+static_assert((CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES % 4) == 0,
+              "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES must be word-aligned");
+static_assert(CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES <= 64,
+              "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES exceeds 64B bridge support");
+static_assert(ICACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
+              "ICACHE_LINE_SIZE exceeds AXI upstream write payload width");
+static_assert(DCACHE_LINE_BYTES <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
+              "DCACHE_LINE_BYTES exceeds AXI upstream write payload width");
+static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH > 0,
+              "CONFIG_AXI_KIT_AXI_ID_WIDTH must be positive");
+static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH <= 7,
+              "CONFIG_AXI_KIT_AXI_ID_WIDTH must stay <= 7; 0xFF is reserved as invalid ID");
+static_assert(CONFIG_AXI_KIT_MAX_OUTSTANDING <=
+                  (1u << CONFIG_AXI_KIT_AXI_ID_WIDTH),
+              "CONFIG_AXI_KIT_MAX_OUTSTANDING exceeds available AXI IDs");
+static_assert(CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER <=
+                  CONFIG_AXI_KIT_MAX_OUTSTANDING,
+              "CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER exceeds total outstanding budget");
+static_assert(CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING <=
+                  (1u << CONFIG_AXI_KIT_AXI_ID_WIDTH),
+              "CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING exceeds available AXI IDs");
 static_assert(DCACHE_LINE_BYTES > 0, "DCACHE_LINE_BYTES must be positive");
 static_assert((DCACHE_LINE_BYTES % 4) == 0,
               "DCACHE_LINE_BYTES must be word-aligned (multiple of 4 bytes)");
