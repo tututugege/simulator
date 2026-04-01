@@ -1260,12 +1260,24 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst) {
 
   if (mmu_ret == AbstractMmu::Result::FAULT) {
     MicroOp fault_op = inst;
-    fault_op.page_fault_store = true;
+    if (is_amo_sc_uop(inst)) {
+      // SC always reports completion on load-like wb path.
+      fault_op.op = UOP_LOAD;
+      fault_op.dest_en = false;
+      fault_op.page_fault_store = true;
+      fault_op.page_fault_load = false;
+    } else {
+      fault_op.page_fault_store = true;
+    }
     fault_op.cplt_time = sim_time;
     if (is_amo_sc_uop(inst)) {
       reserve_valid = false;
     }
-    finished_sta_reqs.push_back(fault_op);
+    if (is_amo_sc_uop(inst)) {
+      finished_loads.push_back(fault_op);
+    } else {
+      finished_sta_reqs.push_back(fault_op);
+    }
     stq[idx].p_addr = pa;
     stq[idx].addr_valid = false;
     return true;
@@ -1279,8 +1291,10 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst) {
     reserve_valid = false;
     success_op.result = sc_success ? 0 : 1;
     success_op.dest_en = true;
-    success_op.op =
-        UOP_LOAD; // Reuse existing LSU load wb/awake path for SC result
+    // SC always returns architectural 0/1 via load-like wb path.
+    success_op.op = UOP_LOAD;
+    success_op.page_fault_store = false;
+    success_op.page_fault_load = false;
     stq[idx].suppress_write = !sc_success;
     finished_loads.push_back(success_op);
     stq[idx].is_mmio = false; // SC 结果不区分 MMIO，始终走正常内存路径

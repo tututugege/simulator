@@ -951,21 +951,15 @@ void RefCpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if (data_translation_enabled(state, privilege)) {
-    bool page_fault_1 = !va2pa_fix(p_addr, v_addr, 1);
-    bool page_fault_2 = !va2pa_fix(p_addr, v_addr, 2);
-
-    if (page_fault_1 || page_fault_2) {
-      if (funct5 == 2) {
-        if (page_fault_1) {
-          page_fault_load = true;
-        }
-      } else if (funct5 == 3) {
-        if (page_fault_2) {
-          page_fault_store = true;
-        }
-      } else {
-        page_fault_store = true;
-      }
+    if (funct5 == 2) { // LR: only load permission matters.
+      page_fault_load = !va2pa_fix(p_addr, v_addr, 1);
+    } else if (funct5 == 3) { // SC: only store permission matters.
+      page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
+    } else {
+      // Non-LR/SC AMO traps are reported as store faults. A legal writable PTE
+      // implies readable in Sv32 (W without R is invalid), so store check is
+      // sufficient here.
+      page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
     }
 
     if (page_fault_load || page_fault_store) {

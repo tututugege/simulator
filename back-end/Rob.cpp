@@ -467,7 +467,18 @@ void Rob::comb_complete() {
 
           if (wb_has_page_fault) {
             entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
-            entry_1[bank_idx][line_idx].uop.page_fault_load = true;
+            entry_1[bank_idx][line_idx].uop.page_fault_load |=
+                wb.page_fault_load;
+            entry_1[bank_idx][line_idx].uop.page_fault_store |=
+                wb.page_fault_store;
+            entry_1[bank_idx][line_idx].uop.page_fault_inst |=
+                wb.page_fault_inst;
+            // For AMO/RMW corner cases, prefer store page fault over load page
+            // fault when both are observed on the same architectural
+            // instruction.
+            if (entry_1[bank_idx][line_idx].uop.page_fault_store) {
+              entry_1[bank_idx][line_idx].uop.page_fault_load = false;
+            }
           }
         }
       }
@@ -478,7 +489,15 @@ void Rob::comb_complete() {
           entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
           if (wb_has_page_fault) {
             entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
-            entry_1[bank_idx][line_idx].uop.page_fault_store = true;
+            entry_1[bank_idx][line_idx].uop.page_fault_load |=
+                wb.page_fault_load;
+            entry_1[bank_idx][line_idx].uop.page_fault_store |=
+                wb.page_fault_store;
+            entry_1[bank_idx][line_idx].uop.page_fault_inst |=
+                wb.page_fault_inst;
+            if (entry_1[bank_idx][line_idx].uop.page_fault_store) {
+              entry_1[bank_idx][line_idx].uop.page_fault_load = false;
+            }
           }
         }
       }
