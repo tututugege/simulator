@@ -1284,10 +1284,12 @@ struct LsuRobIO {
     std::bitset<ROB_NUM> miss_mask;
   } tma;
   wire<1> committed_store_pending;
+  wire<1> translation_pending;
 
   LsuRobIO() {
     tma.miss_mask.reset();
     committed_store_pending = 0;
+    translation_pending = 0;
   }
 };
 

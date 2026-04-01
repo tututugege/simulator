@@ -101,6 +101,8 @@ public:
   void seq() override;
 
   StqEntry get_stq_entry(int stq_idx) override;
+  void dump_debug_state() const override;
+  void dump_mmu_debug(FILE *out) const override;
 
   void set_csr(Csr *c) override { this->csr_module = c; }
   void set_ptw_mem_port(PtwMemPort *port) override {
@@ -114,19 +116,10 @@ public:
 
   // 一致性访存接口 (供 MMU 使用)
   uint32_t coherent_read(uint32_t p_addr) override;
-  bool has_committed_store_pending() const override {
-    int ptr = stq_head;
-    int remain = stq_count;
-    while (remain > 0) {
-      const StqEntry &e = stq[ptr];
-      if (e.valid && e.committed && !e.done) {
-        return true;
-      }
-      ptr = (ptr + 1) % STQ_SIZE;
-      remain--;
-    }
-    return false;
-  }
+  void overlay_committed_store_word(uint32_t p_addr,
+                                    uint32_t &data) override;
+  bool has_translation_store_conflict(uint32_t p_addr) const override;
+  bool has_committed_store_pending() const override;
 
 private:
   Csr *csr_module = nullptr;
@@ -156,6 +149,7 @@ private:
   void progress_ldq_entries();
   void progress_pending_sta_addr();
   bool finish_store_addr_once(const MicroOp &inst);
+  bool committed_store_conflicts_word(uint32_t word_addr) const;
 
   bool has_older_store_pending(const MicroOp &load_uop) const;
   StoreForwardResult check_store_forward(uint32_t p_addr,

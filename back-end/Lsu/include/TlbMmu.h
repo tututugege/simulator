@@ -3,12 +3,12 @@
 #include "AbstractMmu.h"
 #include "PtwWalker.h"
 #include "PtwWalkPort.h"
+#include <array>
 #include <cstdint>
 #include <vector>
 
 class SimContext;
 class PtwMemPort;
-class AbstractLsu;
 
 class TlbMmu : public AbstractMmu {
 public:
@@ -21,13 +21,15 @@ public:
   };
 
   TlbMmu(SimContext *ctx, PtwMemPort *port = nullptr,
-         AbstractLsu *coherent_lsu = nullptr,
          int tlb_entries = DTLB_ENTRIES);
 
   Result translate(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
                    CsrStatusIO *status) override;
   void flush() override;
+  void seq() override;
   void cancel_pending_walk() override;
+  bool translation_pending() const override;
+  void dump_debug(FILE *out) const override;
   void set_ptw_mem_port(PtwMemPort *port) override;
   void set_ptw_walk_port(PtwWalkPort *port) override;
   RetryReason last_retry_reason() const { return last_retry_reason_; }
@@ -45,6 +47,40 @@ public:
   DebugState debug_state() const;
 
 private:
+  enum class TraceSource : uint8_t {
+    NONE = 0,
+    IDENTITY,
+    TLB_HIT,
+    TLB_PERM_FAULT,
+    WALK_SHARED,
+    WALK_LOCAL,
+    FLUSH,
+  };
+
+  struct TraceEntry {
+    bool valid = false;
+    uint64_t cycle = 0;
+    TraceSource source = TraceSource::NONE;
+    Result result = Result::OK;
+    RetryReason retry = RetryReason::NONE;
+    uint32_t v_addr = 0;
+    uint32_t p_addr = 0;
+    uint32_t satp = 0;
+    uint16_t asid = 0;
+    uint8_t type = 0;
+    uint8_t level = 0xff;
+    uint8_t perm = 0;
+    bool walk_active = false;
+    bool walk_req_sent = false;
+  };
+
+  struct TranslateContext {
+    uint32_t satp = 0;
+    int eff_priv = 0;
+    bool mxr = false;
+    bool sum = false;
+  };
+
   struct TlbEntry {
     bool valid;
     bool global;
@@ -59,29 +95,63 @@ private:
   SimContext *ctx;
   PtwWalkPort *walk_port = nullptr;
   PtwWalker walker;
-  std::vector<TlbEntry> dtlb;
-  int tlb_entries;
-  int repl_ptr;
-  bool walk_active = false;
-  uint32_t walk_v_addr = 0;
-  uint32_t walk_type = 0;
-  uint32_t walk_satp = 0;
-  int walk_eff_priv = 0;
-  bool walk_mxr = false;
-  bool walk_sum = false;
-  bool walk_req_sent = false;
+  // Stable TLB register file. translate() only reads from this array; any
+  // refill first lands in refill_comb_ and is committed in seq().
+  std::vector<TlbEntry> tlb_entries_;
+  int tlb_capacity_;
+  int repl_ptr_;
   RetryReason last_retry_reason_ = RetryReason::NONE;
-  AbstractLsu *coherent_lsu_ = nullptr;
 
+  struct WalkRegs {
+    bool active = false;
+    bool req_sent = false;
+    uint32_t v_addr = 0;
+    uint32_t type = 0;
+    uint32_t satp = 0;
+    int eff_priv = 0;
+    bool mxr = false;
+    bool sum = false;
+  };
+
+  struct PendingRefill {
+    bool valid = false;
+    TlbEntry entry{};
+    int slot = 0;
+    int next_repl_ptr = 0;
+  };
+
+  WalkRegs walk_regs_{};
+  // Per-cycle comb shadow for the in-flight miss record. Multiple translate()
+  // calls in the same cycle share and update this view before seq() commits it.
+  WalkRegs walk_comb_{};
+  bool walk_comb_valid_ = false;
+  // Same-cycle refill bypass. This keeps a completed walk visible to later
+  // translate() calls in the same cycle without making the TLB regfile itself
+  // look combinationally writable.
+  PendingRefill refill_comb_{};
+  bool flush_pending_ = false;
+  std::array<TraceEntry, 16> trace_hist_{};
+  size_t trace_hist_head_ = 0;
+
+  const WalkRegs &visible_walk_regs() const;
+  WalkRegs &ensure_walk_comb();
+  static bool trace_watch_vaddr(uint32_t v_addr);
+  void record_trace(TraceSource source, Result result, uint32_t v_addr,
+                    uint32_t p_addr, uint32_t satp, uint16_t asid,
+                    uint32_t type, uint8_t level, uint8_t perm);
+  void clear_tlb_entries();
+  static TranslateContext build_translate_context(uint32_t type,
+                                                  CsrStatusIO *status);
+  bool entry_matches(const TlbEntry &entry, uint32_t v_addr,
+                     uint16_t asid) const;
   bool lookup(uint32_t v_addr, uint16_t asid, TlbEntry &hit) const;
   uint32_t compose_paddr(uint32_t v_addr, const TlbEntry &e) const;
   bool check_perm(uint8_t perm, uint32_t type, int eff_priv, bool sum,
                   bool mxr) const;
-  Result walk_and_refill_coherent(uint32_t &p_addr, uint32_t v_addr,
-                                  uint32_t type, CsrStatusIO *status);
   Result walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr,
                                 uint32_t type, CsrStatusIO *status);
   Result walk_and_refill(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
                          CsrStatusIO *status);
-  void refill(uint32_t v_addr, uint16_t asid, uint8_t level, uint32_t pte);
+  void schedule_refill(uint32_t v_addr, uint16_t asid, uint8_t level,
+                       uint32_t pte, bool global);
 };

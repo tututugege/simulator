@@ -326,7 +326,7 @@ void ensure_mmu_model(Runtime &runtime, SimContext *ctx) {
 #ifdef CONFIG_TLB_MMU
   runtime.mmu_model =
       new TlbMmu(ctx, runtime.ptw_mem_port ? runtime.ptw_mem_port : &ptw_port,
-                 nullptr, ITLB_ENTRIES);
+                 ITLB_ENTRIES);
   if (runtime.ptw_walk_port != nullptr) {
     runtime.mmu_model->set_ptw_walk_port(runtime.ptw_walk_port);
   }
@@ -678,7 +678,11 @@ public:
   }
 
   void seq() override {
+    auto &runtime = true_icache_runtime<HW, ReadPort>();
     if (in->reset) {
+      if (runtime.mmu_model != nullptr) {
+        runtime.mmu_model->seq();
+      }
       return;
     }
 
@@ -692,6 +696,9 @@ public:
         mem_req_issue, icache_hw.io.out.mem_req_addr,
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF), mem_resp_fire,
         static_cast<uint8_t>(icache_hw.io.in.mem_resp_id & 0xF), in->refetch);
+    if (runtime.mmu_model != nullptr) {
+      runtime.mmu_model->seq();
+    }
   }
 
 private:
@@ -945,6 +952,9 @@ public:
       runtime.pending_fetch_addr = 0;
       runtime.pend_on_retry_comb = false;
       runtime.resp_fire_comb = false;
+      if (runtime.mmu_model != nullptr) {
+        runtime.mmu_model->seq();
+      }
       return;
     }
 
@@ -953,6 +963,9 @@ public:
       runtime.pending_fetch_addr = 0;
       runtime.pend_on_retry_comb = false;
       runtime.resp_fire_comb = false;
+      if (runtime.mmu_model != nullptr) {
+        runtime.mmu_model->seq();
+      }
       return;
     }
 
@@ -964,6 +977,9 @@ public:
     if (runtime.resp_fire_comb) {
       runtime.pending_req_valid = false;
       runtime.pending_fetch_addr = 0;
+    }
+    if (runtime.mmu_model != nullptr) {
+      runtime.mmu_model->seq();
     }
   }
 };

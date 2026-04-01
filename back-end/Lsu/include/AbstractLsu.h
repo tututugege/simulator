@@ -1,5 +1,6 @@
 #pragma once
 #include "IO.h"
+#include <cstdio>
 
 class Csr;
 class SimContext;
@@ -65,6 +66,7 @@ public:
   // debug接口
   virtual StqEntry get_stq_entry(int stq_idx) = 0;
   virtual void dump_debug_state() const {}
+  virtual void dump_mmu_debug(FILE *out) const { (void)out; }
 
   virtual void set_csr(Csr *csr) {}
   virtual void set_ptw_mem_port(PtwMemPort *port) { ptw_mem_port = port; }
@@ -76,6 +78,12 @@ public:
 
   // 一致性访存接口 (供 MMU 使用)
   virtual uint32_t coherent_read(uint32_t p_addr) = 0;
+  virtual void overlay_committed_store_word(uint32_t p_addr,
+                                            uint32_t &data) = 0;
+  // 当前是否存在一个已提交 store，会让对同一 32-bit PTE word 的 PTW 读
+  // 看到过旧结果。共享 PTW 只用它来决定“本次响应要不要 retry”，而不是
+  // 直接绕过 DCache 取数。
+  virtual bool has_translation_store_conflict(uint32_t p_addr) const = 0;
   // sfence.vma 提交门控：是否存在“已提交但尚未从 STQ retire”的 store。
   // 注意这必须覆盖 store 已经拿到 dcache resp、但其写命中结果仍要到
   // MemSubsystem::seq()/RealDcache::seq() 才真正对 PTW 可见的窗口。
@@ -98,7 +106,7 @@ public:
   // ==========================================
   // 1. 读对齐助手：从 raw_mem_val 中提取数据
   // ==========================================
-  uint32_t extract_data(uint32_t raw_mem_val, uint32_t addr, int func3) {
+  uint32_t extract_data(uint32_t raw_mem_val, uint32_t addr, int func3) const {
     int bit_offset = (addr & 0x3) * 8; // 0, 8, 16, 24
     uint32_t result = 0;
 
@@ -136,7 +144,7 @@ public:
   // 2. 写对齐助手：把 data 写入 raw_mem_val 的正确位置
   // ==========================================
   uint32_t merge_data_to_word(uint32_t old_word, uint32_t new_data,
-                              uint32_t addr, int func3) {
+                              uint32_t addr, int func3) const {
     int bit_offset = (addr & 0x3) * 8;
     uint32_t mask = 0;
 
