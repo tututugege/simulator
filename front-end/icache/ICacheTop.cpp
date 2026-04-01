@@ -291,9 +291,6 @@ template <typename HW, typename ReadPort> struct TrueIcacheRuntime {
   PtwMemPort *ptw_mem_port = nullptr;
   PtwWalkPort *ptw_walk_port = nullptr;
   axi_interconnect::ReadMasterPort_t *mem_read_port = nullptr;
-  uint32_t last_satp = 0;
-  bool satp_seen = false;
-  MemReadView last_mem_view{};
 };
 
 template <typename HW, typename ReadPort>
@@ -438,22 +435,17 @@ public:
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
     clear_perf_outputs(out);
-    auto &runtime = true_icache_runtime<HW, ReadPort>();
-    uint32_t cur_satp =
-        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
-    bool satp_changed = !runtime.satp_seen || cur_satp != runtime.last_satp;
-    bool hold_for_recovery =
-        in->itlb_flush || in->fence_i || in->invalidate_req || satp_changed;
+    bool hold_for_recovery = in->itlb_flush || in->fence_i || in->invalidate_req;
     out->icache_read_ready = in->reset ? true : comb_visible_ready(hold_for_recovery);
   }
 
   void dump_debug_state() const override {
     const auto &runtime = true_icache_runtime<HW, ReadPort>();
-    uint32_t cur_satp =
-        (in && in->csr_status) ? static_cast<uint32_t>(in->csr_status->satp) : 0;
-    bool satp_changed = !runtime.satp_seen || cur_satp != runtime.last_satp;
+    auto &read_port = read_port_runtime<ReadPort>();
+    read_port.bind(runtime.mem_read_port);
+    const MemReadView mem = read_port.comb_view();
     bool hold_for_recovery =
-        in && (in->itlb_flush || in->fence_i || in->invalidate_req || satp_changed);
+        in && (in->itlb_flush || in->fence_i || in->invalidate_req);
     uint32_t inflight_mask = 0;
     uint32_t canceled_mask = 0;
     for (int i = 0; i < 16; ++i) {
@@ -475,13 +467,13 @@ public:
         static_cast<int>(in && in->fence_i),
         static_cast<int>(in && in->itlb_flush),
         static_cast<int>(hold_for_recovery),
-        static_cast<int>(runtime.last_mem_view.req_ready),
-        static_cast<int>(runtime.last_mem_view.req_accepted),
-        static_cast<unsigned>(runtime.last_mem_view.req_accepted_id & 0xF),
-        static_cast<int>(runtime.last_mem_view.resp_valid),
-        static_cast<unsigned>(runtime.last_mem_view.resp_id & 0xF),
-        static_cast<unsigned>(runtime.last_mem_view.resp_data[0]),
-        static_cast<unsigned>(runtime.last_mem_view.resp_data[7]));
+        static_cast<int>(mem.req_ready),
+        static_cast<int>(mem.req_accepted),
+        static_cast<unsigned>(mem.req_accepted_id & 0xF),
+        static_cast<int>(mem.resp_valid),
+        static_cast<unsigned>(mem.resp_id & 0xF),
+        static_cast<unsigned>(mem.resp_data[0]),
+        static_cast<unsigned>(mem.resp_data[7]));
     std::printf(
         "[DEADLOCK][FRONT][ICACHE_HW] regs state=%u mem_axi=%u ifu_ready_r=%d "
         "req_valid_r=%d req_pc_r=0x%08x req_idx_r=%u lookup_pending=%d "
@@ -536,26 +528,18 @@ public:
       ICacheMmuReqView reset_mmu_req;
       reset_mmu_req.context_flush = true;
       (void)comb_mmu_view(runtime, ctx, reset_mmu_req);
-      runtime.satp_seen = false;
-      runtime.last_satp = 0;
-      runtime.last_mem_view = {};
       out->icache_read_ready = true;
       return;
     }
 
-    uint32_t cur_satp =
-        in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0;
-    bool satp_changed = !runtime.satp_seen || cur_satp != runtime.last_satp;
-    bool translation_context_flush = in->itlb_flush || satp_changed;
+    // satp write itself must not implicitly flush TrueICache translation state.
+    // The architectural shootdown path is explicit SFENCE.VMA -> itlb_flush.
+    bool translation_context_flush = in->itlb_flush;
     bool cache_invalidate = in->fence_i;
     bool cancel_pending_req = in->refetch || in->invalidate_req || in->fence_i;
-    bool hold_for_recovery =
-        in->itlb_flush || in->fence_i || in->invalidate_req || satp_changed;
-    runtime.satp_seen = true;
-    runtime.last_satp = cur_satp;
+    bool hold_for_recovery = in->itlb_flush || in->fence_i || in->invalidate_req;
 
     MemReadView mem = read_port.comb_view();
-    runtime.last_mem_view = mem;
     const bool req_valid = in->icache_read_valid;
     const uint32_t req_pc = in->fetch_address;
     bool itlb_translate_invoked = false;
