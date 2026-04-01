@@ -362,6 +362,10 @@ void MemSubsystem::sync_llc_perf() {
   current.prefetch_drop_mshr_full = perf.prefetch_drop_mshr_full;
   current.prefetch_drop_queue_full = perf.prefetch_drop_queue_full;
   current.prefetch_drop_table_hit = perf.prefetch_drop_table_hit;
+  current.ddr_read_total_cycles = perf.ddr_read_total_cycles;
+  current.ddr_read_samples = perf.ddr_read_samples;
+  current.ddr_write_total_cycles = perf.ddr_write_total_cycles;
+  current.ddr_write_samples = perf.ddr_write_samples;
 
   if (!llc_perf_shadow_valid_) {
     llc_perf_shadow_ = current;
@@ -421,6 +425,16 @@ void MemSubsystem::sync_llc_perf() {
     sync_counter(current.prefetch_drop_table_hit,
                  llc_perf_shadow_.prefetch_drop_table_hit,
                  ctx->perf.llc_prefetch_drop_table_hit);
+    sync_counter(current.ddr_read_total_cycles,
+                 llc_perf_shadow_.ddr_read_total_cycles,
+                 ctx->perf.llc_ddr_read_total_cycles);
+    sync_counter(current.ddr_read_samples, llc_perf_shadow_.ddr_read_samples,
+                 ctx->perf.llc_ddr_read_samples);
+    sync_counter(current.ddr_write_total_cycles,
+                 llc_perf_shadow_.ddr_write_total_cycles,
+                 ctx->perf.llc_ddr_write_total_cycles);
+    sync_counter(current.ddr_write_samples, llc_perf_shadow_.ddr_write_samples,
+                 ctx->perf.llc_ddr_write_samples);
   }
 #else
   return;

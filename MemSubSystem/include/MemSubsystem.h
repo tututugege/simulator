@@ -146,6 +146,10 @@ private:
     uint64_t prefetch_drop_mshr_full = 0;
     uint64_t prefetch_drop_queue_full = 0;
     uint64_t prefetch_drop_table_hit = 0;
+    uint64_t ddr_read_total_cycles = 0;
+    uint64_t ddr_read_samples = 0;
+    uint64_t ddr_write_total_cycles = 0;
+    uint64_t ddr_write_samples = 0;
   };
   void sync_llc_perf();
   LlcPerfShadow llc_perf_shadow_{};

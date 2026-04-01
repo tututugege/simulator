@@ -59,15 +59,20 @@
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `CONFIG_SIM_DDR_LATENCY` | `CONFIG_SIM_DDR_LATENCY_CALC`（default profile 下为 43） | 1~500（手动覆盖时） | shared AXI / SimDDR 读延迟（周期数），默认由 DDR 参数自动换算 |
-| `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` | 2 | 0~500 | SimDDR 写响应延迟（周期数） |
-| `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 4 | 4/8/16 | 每个 DDR beat 传输字节数 |
+| `CONFIG_SIM_DDR_LATENCY` | `default: CONFIG_SIM_DDR_LATENCY_CALC (=43)`；`small/medium/large: 50` | 1~500（手动覆盖时） | shared AXI / SimDDR 读延迟（周期数）；default profile 由 DDR 参数自动换算，其余 stock profile 仍固定为 50 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` | 1 | 0~500 | 最后一个 W beat 握手后，额外等待多少个完整周期，B 通道才首次可见 |
+| `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 32（all profiles） | 4/8/16/32 | 每个 DDR beat 传输字节数 |
 | `VIRTUAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 虚拟内存大小 |
 | `PHYSICAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 物理内存大小 |
 
 > [!NOTE]
 > `ICACHE_MISS_LATENCY` 已不再是当前主线 simulator 的 live 配置入口。
 > 真实 icache miss 与 shared LLC miss 的外存延迟统一由 shared AXI / SimDDR 配置建模。
+
+> [!NOTE]
+> `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前是功能模型里的 `B` 通道可见性旋钮，
+> 不是精确 DDR 控制器时序模型。当前实现仍未细化建模 `AW/W` 路径的更真实
+> backpressure 与写通道调度。
 
 #### 3.1.1 DDR 读延迟参数化模型
 
@@ -114,6 +119,10 @@
 > `CONFIG_SIM_DDR_LATENCY` 仍保留 `#ifndef` 入口：
 > 若外部以编译宏显式定义 `CONFIG_SIM_DDR_LATENCY`，将覆盖自动计算值。
 
+> [!NOTE]
+> 当前只有 `include/config.h.default` 使用参数化 `CONFIG_SIM_DDR_LATENCY_CALC`；
+> `include/config.h.small` / `medium` / `large` 仍保持固定 `50 cycle` 的 stock 默认值。
+
 #### 3.1.2 DCache 参数生效来源（重点标记）
 
 > [!WARNING]
@@ -136,11 +145,19 @@
 |------|--------|------|
 | `CONFIG_AXI_KIT_MAX_OUTSTANDING` | 32 | shared AXI 全局 read outstanding 上限 |
 | `CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER` | 32 | 每个 master 的 read outstanding 上限 |
+| `CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING` | 32 | interconnect 上游 write outstanding 上限 |
+| `CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES` | 64B | 单次上游写事务允许的最大 payload 字节数；编译期要求覆盖 I/D cache line 大小 |
+| `CONFIG_AXI_KIT_AXI_ID_WIDTH` | 6 | shared AXI ID 位宽；编译期要求足以覆盖 read/write outstanding 上界 |
 | `CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING` | 32 | SimDDR 可接收的 outstanding 上限 |
 | `CONFIG_AXI_LLC_SIZE_BYTES` | 8MB | LLC 总容量 |
 | `CONFIG_AXI_LLC_WAYS` | 16 | LLC associativity |
 | `CONFIG_AXI_LLC_MSHR_NUM` | 8 | LLC 全局共享 MSHR 数量 |
 | `CONFIG_AXI_LLC_LOOKUP_LATENCY` | 3 | LLC lookup 响应可见延迟 |
+
+> [!IMPORTANT]
+> 当 parent simulator 集成 `axi-interconnect-kit` 时，上述 `CONFIG_AXI_KIT_*`
+> 参数构成编译期契约。若 `config.h` 缺失关键定义，submodule 会直接编译失败，
+> 不再静默回落到 submodule 内部默认值。
 
 ### 3.2 流水线宽度
 
