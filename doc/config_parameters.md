@@ -59,7 +59,7 @@
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `CONFIG_SIM_DDR_LATENCY` | 50 | 1~500 | shared AXI / SimDDR 读延迟（周期数） |
+| `CONFIG_SIM_DDR_LATENCY` | `CONFIG_SIM_DDR_LATENCY_CALC`（default profile 下为 43） | 1~500（手动覆盖时） | shared AXI / SimDDR 读延迟（周期数），默认由 DDR 参数自动换算 |
 | `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` | 2 | 0~500 | SimDDR 写响应延迟（周期数） |
 | `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 4 | 4/8/16 | 每个 DDR beat 传输字节数 |
 | `VIRTUAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 虚拟内存大小 |
@@ -69,7 +69,52 @@
 > `ICACHE_MISS_LATENCY` 已不再是当前主线 simulator 的 live 配置入口。
 > 真实 icache miss 与 shared LLC miss 的外存延迟统一由 shared AXI / SimDDR 配置建模。
 
-#### 3.1.1 DCache 参数生效来源（重点标记）
+#### 3.1.1 DDR 读延迟参数化模型
+
+`include/config.h.default` 中的 `CONFIG_SIM_DDR_LATENCY` 已由固定值改为“参数化计算值”，计算流程如下：
+
+1. 非 DDR 核心延迟（单位 ns）：
+   `CONFIG_DDR_SOC_LATENCY_NS + CONFIG_DDR_CDC_LATENCY_NS + CONFIG_DDR_CTL_LATENCY_NS + CONFIG_DDR_PHY_LATENCY_NS`
+2. DDR 核心参数：
+   - `CONFIG_DDR_CORE_FREQ_MHZ`（DDR core 频率，用于计算 `tCK`）
+   - `CONFIG_DDR_CL / CONFIG_DDR_TRCD / CONFIG_DDR_TRP`
+   - `CONFIG_DDR_BURST_TRANSFER_BEATS`（默认 4，对应 BL8 传输）
+3. workload 分布（百分比）：
+   `CONFIG_DDR_PAGE_HIT_RATE_PCT / CONFIG_DDR_PAGE_EMPTY_RATE_PCT / CONFIG_DDR_PAGE_MISS_RATE_PCT`
+4. CPU 周期换算：
+   `CONFIG_CPU_FREQ_MHZ` 决定单周期时长，最终将平均读延迟从 ns 换算为周期数并四舍五入。
+
+核心参数列表（`include/config.h.default`）：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `CONFIG_CPU_FREQ_MHZ` | 500 | CPU 频率（MHz） |
+| `CONFIG_DDR_SOC_LATENCY_NS` | 20 | SoC 非 DDR 核心路径延迟（ns） |
+| `CONFIG_DDR_CDC_LATENCY_NS` | 12 | CDC 延迟（ns） |
+| `CONFIG_DDR_CTL_LATENCY_NS` | 15 | DDR Controller 延迟（ns） |
+| `CONFIG_DDR_PHY_LATENCY_NS` | 13 | DDR PHY 延迟（ns） |
+| `CONFIG_DDR_CORE_FREQ_MHZ` | 1600 | DDR core 频率（MHz） |
+| `CONFIG_DDR_CL` | 22 | CAS Latency（cycles） |
+| `CONFIG_DDR_TRCD` | 22 | tRCD（cycles） |
+| `CONFIG_DDR_TRP` | 22 | tRP（cycles） |
+| `CONFIG_DDR_BURST_TRANSFER_BEATS` | 4 | DDR burst 数据传输 beats |
+| `CONFIG_DDR_PAGE_HIT_RATE_PCT` | 50 | 页命中率（%） |
+| `CONFIG_DDR_PAGE_EMPTY_RATE_PCT` | 30 | 页空率（%） |
+| `CONFIG_DDR_PAGE_MISS_RATE_PCT` | 20 | 页冲突率（%） |
+| `CONFIG_SIM_DDR_LATENCY_CALC` | 自动计算 | 参数化模型算出的最终读延迟（cycles） |
+
+> [!IMPORTANT]
+> 默认参数（500MHz CPU、DDR4-3200 对应 1600MHz core、22-22-22、50/30/20）下：
+> `CONFIG_SIM_DDR_LATENCY_CALC = 43`。
+>
+> 当配置为 DDR4-2400 常见时序（1200MHz core、17-17-17，其他不变）时：
+> `CONFIG_SIM_DDR_LATENCY_CALC = 44`。
+
+> [!NOTE]
+> `CONFIG_SIM_DDR_LATENCY` 仍保留 `#ifndef` 入口：
+> 若外部以编译宏显式定义 `CONFIG_SIM_DDR_LATENCY`，将覆盖自动计算值。
+
+#### 3.1.2 DCache 参数生效来源（重点标记）
 
 > [!WARNING]
 > 当前 DCache 参数存在“双源定义”：`include/config.h` 与 `MemSubSystem/include/DcacheConfig.h`。  
@@ -85,7 +130,7 @@
 1. 调整 DCache 几何时，优先修改 `MemSubSystem/include/DcacheConfig.h`（或对应编译宏）。
 2. 修改后同步检查 `include/config.h` 的同名参数，避免文档值与行为值不一致。
 
-#### 3.1.2 Shared AXI / LLC 参数
+#### 3.1.3 Shared AXI / LLC 参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
