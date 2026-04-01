@@ -48,7 +48,7 @@ private:
   struct TlbEntry {
     bool valid;
     bool global;
-    uint8_t asid;
+    uint16_t asid; // Sv32 satp ASID is 9 bits: satp[30:22]
     uint8_t level; // 1: megapage (L1 leaf), 0: normal page (L0 leaf)
     uint16_t vpn1;
     uint16_t vpn0;
@@ -73,7 +73,7 @@ private:
   RetryReason last_retry_reason_ = RetryReason::NONE;
   AbstractLsu *coherent_lsu_ = nullptr;
 
-  bool lookup(uint32_t v_addr, uint8_t asid, TlbEntry &hit) const;
+  bool lookup(uint32_t v_addr, uint16_t asid, TlbEntry &hit) const;
   uint32_t compose_paddr(uint32_t v_addr, const TlbEntry &e) const;
   bool check_perm(uint8_t perm, uint32_t type, int eff_priv, bool sum,
                   bool mxr) const;
@@ -83,5 +83,5 @@ private:
                                 uint32_t type, CsrStatusIO *status);
   Result walk_and_refill(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
                          CsrStatusIO *status);
-  void refill(uint32_t v_addr, uint8_t asid, uint8_t level, uint32_t pte);
+  void refill(uint32_t v_addr, uint16_t asid, uint8_t level, uint32_t pte);
 };

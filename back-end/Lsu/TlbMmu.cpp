@@ -18,6 +18,13 @@ inline bool itlb_focus_vaddr(uint32_t v_addr) {
   return end > begin && (v_addr - begin) < (end - begin);
 }
 
+constexpr uint32_t kSv32AsidShift = 22u;
+constexpr uint32_t kSv32AsidMask = 0x1FFu;
+
+inline uint16_t sv32_asid(uint32_t satp) {
+  return static_cast<uint16_t>((satp >> kSv32AsidShift) & kSv32AsidMask);
+}
+
 inline const char *mmu_result_name(AbstractMmu::Result ret) {
   switch (ret) {
   case AbstractMmu::Result::OK:
@@ -77,7 +84,7 @@ TlbMmu::DebugState TlbMmu::debug_state() const {
   return d;
 }
 
-bool TlbMmu::lookup(uint32_t v_addr, uint8_t asid, TlbEntry &hit) const {
+bool TlbMmu::lookup(uint32_t v_addr, uint16_t asid, TlbEntry &hit) const {
   uint16_t vpn1 = (v_addr >> 22) & 0x3FF;
   uint16_t vpn0 = (v_addr >> 12) & 0x3FF;
   for (const auto &e : dtlb) {
@@ -140,7 +147,7 @@ bool TlbMmu::check_perm(uint8_t perm, uint32_t type, int eff_priv, bool sum,
   return true;
 }
 
-void TlbMmu::refill(uint32_t v_addr, uint8_t asid, uint8_t level,
+void TlbMmu::refill(uint32_t v_addr, uint16_t asid, uint8_t level,
                     uint32_t pte) {
   TlbEntry &e = dtlb[repl_ptr];
   e = {};
@@ -210,7 +217,7 @@ AbstractMmu::Result TlbMmu::walk_and_refill(uint32_t &p_addr, uint32_t v_addr,
     return Result::FAULT;
   }
 
-  uint8_t asid = (walk_satp >> 22) & 0xFF;
+  const uint16_t asid = sv32_asid(walk_satp);
   refill(walk_v_addr, asid, leaf_level, leaf_pte);
   const TlbEntry &e = dtlb[(repl_ptr + tlb_entries - 1) % tlb_entries];
   p_addr = compose_paddr(walk_v_addr, e);
@@ -262,7 +269,7 @@ TlbMmu::walk_and_refill_coherent(uint32_t &p_addr, uint32_t v_addr,
       if (!check_perm(pte & 0xFFu, type, eff_priv, sum, mxr)) {
         return Result::FAULT;
       }
-      const uint8_t asid = (satp >> 22) & 0xFF;
+      const uint16_t asid = sv32_asid(satp);
       refill(v_addr, asid, static_cast<uint8_t>(level), pte);
       const TlbEntry &e = dtlb[(repl_ptr + tlb_entries - 1) % tlb_entries];
       p_addr = compose_paddr(v_addr, e);
@@ -357,7 +364,7 @@ TlbMmu::walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
     return Result::FAULT;
   }
 
-  uint8_t asid = (walk_satp >> 22) & 0xFF;
+  const uint16_t asid = sv32_asid(walk_satp);
   refill(v_addr, asid, wr.leaf_level, wr.leaf_pte);
   const TlbEntry &e = dtlb[(repl_ptr + tlb_entries - 1) % tlb_entries];
   p_addr = compose_paddr(v_addr, e);
@@ -388,7 +395,7 @@ AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
     return Result::OK;
   }
 
-  uint8_t asid = (satp >> 22) & 0xFF;
+  const uint16_t asid = sv32_asid(satp);
   bool mxr = (mstatus & MSTATUS_MXR) != 0;
   bool sum = (mstatus & MSTATUS_SUM) != 0;
 
@@ -399,7 +406,7 @@ AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
       if (itlb_focus_vaddr(v_addr)) {
         std::printf(
             "[ITLB][TRACE] cyc=%lld src=tlb_hit_perm_fault v=0x%08x "
-            "satp=0x%08x asid=0x%02x priv=%d type=%u perm=0x%02x ret=%s\n",
+            "satp=0x%08x asid=0x%03x priv=%d type=%u perm=0x%02x ret=%s\n",
             (long long)sim_time, v_addr, satp, asid, eff_priv, type, hit.perm,
             mmu_result_name(Result::FAULT));
       }
@@ -409,7 +416,7 @@ AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
     if (itlb_focus_vaddr(v_addr)) {
       std::printf(
           "[ITLB][TRACE] cyc=%lld src=tlb_hit v=0x%08x p=0x%08x satp=0x%08x "
-          "asid=0x%02x priv=%d type=%u level=%u perm=0x%02x ret=%s\n",
+          "asid=0x%03x priv=%d type=%u level=%u perm=0x%02x ret=%s\n",
           (long long)sim_time, v_addr, p_addr, satp, asid, eff_priv, type,
           static_cast<unsigned>(hit.level), hit.perm, mmu_result_name(Result::OK));
     }
@@ -420,7 +427,7 @@ AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
     if (itlb_focus_vaddr(v_addr)) {
       std::printf(
           "[ITLB][TRACE] cyc=%lld src=walk_shared v=0x%08x p=0x%08x "
-          "satp=0x%08x asid=0x%02x priv=%d type=%u walk_active=%d "
+          "satp=0x%08x asid=0x%03x priv=%d type=%u walk_active=%d "
           "walk_req_sent=%d ret=%s\n",
           (long long)sim_time, v_addr, p_addr, satp, asid, eff_priv, type,
           static_cast<int>(walk_active), static_cast<int>(walk_req_sent),
@@ -432,7 +439,7 @@ AbstractMmu::Result TlbMmu::translate(uint32_t &p_addr, uint32_t v_addr,
   if (itlb_focus_vaddr(v_addr)) {
     std::printf(
         "[ITLB][TRACE] cyc=%lld src=walk_local v=0x%08x p=0x%08x "
-        "satp=0x%08x asid=0x%02x priv=%d type=%u ret=%s\n",
+        "satp=0x%08x asid=0x%03x priv=%d type=%u ret=%s\n",
         (long long)sim_time, v_addr, p_addr, satp, asid, eff_priv, type,
         mmu_result_name(ret));
   }
