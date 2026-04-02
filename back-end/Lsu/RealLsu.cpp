@@ -1087,8 +1087,12 @@ void RealLsu::retire_stq_head_if_ready(int &pop_count) {
     if (!(head.valid && head.addr_valid && head.data_valid && head.committed)) {
       return;
     }
-    if (!head.done ||
-        (!head.is_mmio && has_translation_store_conflict(head.p_addr))) {
+    // STQ retirement only frees the LSU resource once the store has completed
+    // its cache-side handshake. Translation/SFENCE ordering is enforced
+    // separately via committed_store_pending; otherwise ordinary stores that
+    // are already accepted by the memory hierarchy can pin the STQ head
+    // indefinitely.
+    if (!head.done) {
       return;
     }
   }
