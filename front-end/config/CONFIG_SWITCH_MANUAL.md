@@ -159,6 +159,14 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
     `small/medium/large` 仍固定为 `50 cycle`。
 - `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY`（当前 stock default：`1`，cycle）
   - 作用：最后一个 `W` beat 握手后，额外等待多少个完整周期，`B` 通道才首次可见；`0` 表示下一周期即可见。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH`（当前各 profile 默认：`CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING`，即 `32`）
+  - 作用：SimDDR 最多可缓存多少笔已接收 `AW` 但尚未完全完成的写事务。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP`（当前各 profile 默认：`0`，cycle）
+  - 作用：可选的 `W` 通道额外节流旋钮；保留给 stress/debug 使用，不作为 stock 写 backpressure 主模型。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH`（当前各 profile 默认：`8`，beat）
+  - 作用：SimDDR 写数据缓冲深度；持续写流量会在该 FIFO 用尽 credit 时拉低 `WREADY`。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP`（当前各 profile 默认：`0`，cycle）
+  - 作用：后端每 drain 一个写 beat 后，至少再等待多少个完整周期，才能继续把下一个 beat 写入 backing memory。
 - `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES`（当前各 profile 默认：`32`，可选：`4/8/16/32`，bytes）
   - 作用：每个 DDR beat 传输的数据量。
 - `CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING`（当前各 profile 默认：`32`）
@@ -170,7 +178,9 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
 
 > 注：
 > `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前只建模 `B` 通道首次可见延迟，
-> 不是精确 DDR 控制器时序；`AW/W` 路径更细的 backpressure 行为仍留待后续更精细建模。
+> 不是精确 DDR 控制器时序。当前主线写 backpressure 更接近“有限 write-data FIFO +
+> 固定 drain 节奏”的近似模型；`CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP` 只是保留的
+> stress/debug 旋钮，不是 stock 主模型。
 
 ### 3.7 FIFO 容量参数
 
