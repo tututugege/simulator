@@ -3,6 +3,7 @@
 
 #include "DeadlockDebug.h"
 #include "RISCV.h"
+#include "SimCpu.h"
 #include "config.h"
 #include "util.h"
 #include <cmath>
@@ -240,9 +241,12 @@ void Rob::comb_commit() {
         }
         if (!interrupt_pending &&
             decode_inst_type(head_uop.type) == SFENCE_VMA &&
-            in.lsu2rob != nullptr && in.lsu2rob->committed_store_pending) {
+            in.lsu2rob != nullptr &&
+            (in.lsu2rob->committed_store_pending ||
+             in.lsu2rob->translation_pending)) {
           // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
-          // 未落地时， 必须阻塞提交，不能退化为组提交吞掉该指令。
+          // 未落地，或旧的 DTLB/PTW walk 仍在飞时，必须阻塞提交，不能
+          // 退化为组提交吞掉该指令。
           single_commit = false;
           commit = false;
         }
@@ -428,7 +432,12 @@ void Rob::comb_commit() {
       }
     }
 
-    // deadlock_debug::dump_all();
+    if (ctx != nullptr && ctx->cpu != nullptr) {
+      std::fprintf(stderr, "[ROB DEADLOCK] dumping LSU/MMU state\n");
+      ctx->cpu->back.lsu->dump_debug_state();
+      std::fprintf(stderr, "[ROB DEADLOCK] dumping MemSubsystem state\n");
+      ctx->cpu->mem_subsystem.dump_debug_state(stderr);
+    }
     Assert(0 && "ROB Deadlock detected (stall_cycle > 50000)");
   }
 }
@@ -467,7 +476,12 @@ void Rob::comb_complete() {
 
           if (wb_has_page_fault) {
             entry_1[bank_idx][line_idx].uop.diag_val = wb.result;
-            entry_1[bank_idx][line_idx].uop.page_fault_load = true;
+            entry_1[bank_idx][line_idx].uop.page_fault_inst |=
+                wb.page_fault_inst;
+            entry_1[bank_idx][line_idx].uop.page_fault_load |=
+                wb.page_fault_load;
+            entry_1[bank_idx][line_idx].uop.page_fault_store |=
+                wb.page_fault_store;
           }
         }
       }

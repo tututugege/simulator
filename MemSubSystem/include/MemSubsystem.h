@@ -18,6 +18,7 @@ using MemDcacheImpl = RealDcache;
 
 class SimContext;
 class Csr;
+class AbstractLsu;
 class MemSubsystemPtwMemPortAdapter;
 class MemSubsystemPtwWalkPortAdapter;
 struct AxiKitRuntime;
@@ -67,8 +68,13 @@ public:
   void seq();
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   void sync_mmio_devices_from_backing();
+  void dump_debug_state(FILE *out) const;
   axi_interconnect::ReadMasterPort_t *icache_read_port();
   void set_internal_axi_runtime_active(bool active);
+  void set_ptw_coherent_source(AbstractLsu *lsu) {
+    ptw_coherent_source_ = lsu;
+    ptw_block.bind_coherent_source(lsu);
+  }
   void set_llc_config(const axi_interconnect::AXI_LLCConfig &cfg);
   void llc_comb_outputs();
   const axi_interconnect::AXI_LLC_LookupIn_t &llc_lookup_in() const;
@@ -154,4 +160,5 @@ private:
   void sync_llc_perf();
   LlcPerfShadow llc_perf_shadow_{};
   bool llc_perf_shadow_valid_ = false;
+  AbstractLsu *ptw_coherent_source_ = nullptr;
 };

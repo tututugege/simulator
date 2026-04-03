@@ -213,7 +213,7 @@ public:
         break;
       case Owner::PTW_WALK:
         if (evt.replay == 0) {
-          (void)ptw_block->on_walk_mem_resp(evt.req_id, evt.data);
+          (void)ptw_block->on_walk_mem_resp(evt.req_id, evt.req_addr, evt.data);
         } else {
           (void)ptw_block->on_walk_mem_replay(evt.req_id, evt.replay);
         }

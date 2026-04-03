@@ -2,6 +2,8 @@
 #include "AbstractLsu.h"
 #include "DcacheConfig.h"
 #include "PhysMemory.h"
+#include "RealDcache.h"
+#include "SimCpu.h"
 #include "TlbMmu.h"
 #include "config.h"
 #include "util.h"
@@ -29,7 +31,7 @@ inline bool stq_entry_matches_uop(const StqEntry &entry, const MicroOp &uop) {
 RealLsu::RealLsu(SimContext *ctx) : AbstractLsu(ctx) {
   // Initialize MMU
 #ifdef CONFIG_TLB_MMU
-  mmu = std::make_unique<TlbMmu>(ctx, nullptr, nullptr, DTLB_ENTRIES);
+  mmu = std::make_unique<TlbMmu>(ctx, nullptr, DTLB_ENTRIES);
 #else
   mmu = std::make_unique<SimpleMmu>(ctx, this);
 #endif
@@ -50,6 +52,7 @@ void RealLsu::init() {
   pending_mmio_valid = false;
   pending_mmio_req = {};
   mmu->flush();
+  mmu->seq();
 
   reserve_valid = false;
   reserve_addr = 0;
@@ -142,6 +145,7 @@ void RealLsu::comb_lsu2dis_info() {
   }
   out.lsu2rob->tma.miss_mask = mask;
   out.lsu2rob->committed_store_pending = has_committed_store_pending();
+  out.lsu2rob->translation_pending = mmu->translation_pending();
 }
 
 // =========================================================
@@ -1083,6 +1087,11 @@ void RealLsu::retire_stq_head_if_ready(int &pop_count) {
     if (!(head.valid && head.addr_valid && head.data_valid && head.committed)) {
       return;
     }
+    // STQ retirement only frees the LSU resource once the store has completed
+    // its cache-side handshake. Translation/SFENCE ordering is enforced
+    // separately via committed_store_pending; otherwise ordinary stores that
+    // are already accepted by the memory hierarchy can pin the STQ head
+    // indefinitely.
     if (!head.done) {
       return;
     }
@@ -1258,8 +1267,12 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst) {
     fault_op.cplt_time = sim_time;
     if (is_amo_sc_uop(inst)) {
       reserve_valid = false;
+      fault_op.op = UOP_LOAD;
+      fault_op.dest_en = true;
+      finished_loads.push_back(fault_op);
+    } else {
+      finished_sta_reqs.push_back(fault_op);
     }
-    finished_sta_reqs.push_back(fault_op);
     stq[idx].p_addr = pa;
     stq[idx].addr_valid = false;
     return true;
@@ -1363,6 +1376,7 @@ void RealLsu::seq() {
 
   if (is_flush) {
     mmu->flush();
+    mmu->seq();
     handle_global_flush();
     return;
   }
@@ -1392,6 +1406,7 @@ void RealLsu::seq() {
   }
 
   if (is_mispred) {
+    mmu->seq();
     return;
   }
 
@@ -1437,7 +1452,10 @@ void RealLsu::seq() {
     const StqEntry &head = stq[stq_head];
     const bool head_ready_to_retire = head.valid && head.addr_valid &&
                                       head.data_valid && head.committed &&
-                                      head.done;
+                                      head.done &&
+                                      (head.is_mmio ||
+                                       !has_translation_store_conflict(
+                                           head.p_addr));
     Assert(!head_ready_to_retire &&
            "STQ invariant: retire-ready head was not popped");
   }
@@ -1457,6 +1475,7 @@ void RealLsu::seq() {
   Assert(head_to_commit <= stq_count &&
          "STQ invariant: commit pointer is outside active window");
 #endif
+  mmu->seq();
 }
 
 // =========================================================
@@ -1651,25 +1670,148 @@ StqEntry RealLsu::get_stq_entry(int stq_idx) {
   return stq[stq_idx];
 }
 
-uint32_t RealLsu::coherent_read(uint32_t p_addr) {
-  // 1. 基准值：读物理内存 (假设 p_addr 已对齐到 4)
-  Assert(0 && "coherent_read should not be called in current design!");
-  uint32_t data = pmem_read(p_addr);
+void RealLsu::dump_debug_state() const {
+  std::fprintf(stderr,
+               "[LSU DEBUG] cyc=%lld ldq_count=%d stq_count=%d stq_head=%d "
+               "stq_commit=%d stq_tail=%d pending_sta=%zu finished_ld=%zu "
+               "finished_sta=%zu\n",
+               (long long)sim_time, ldq_count, stq_count, stq_head, stq_commit,
+               stq_tail, pending_sta_addr_reqs.size(), finished_loads.size(),
+               finished_sta_reqs.size());
 
-  // 2. 遍历 STQ 进行覆盖 (Coherent Check)
+  for (int i = 0; i < LDQ_SIZE; i++) {
+    const auto &entry = ldq[i];
+    if (!entry.valid) {
+      continue;
+    }
+    std::fprintf(stderr,
+                 "[LSU DEBUG][LDQ] idx=%d killed=%d sent=%d waiting=%d "
+                 "tlb_retry=%d mmio_wait=%d cplt=%lld rob=%u pc=0x%08x "
+                 "va=0x%08x diag=0x%08x\n",
+                 i, static_cast<int>(entry.killed), static_cast<int>(entry.sent),
+                 static_cast<int>(entry.waiting_resp),
+                 static_cast<int>(entry.tlb_retry),
+                 static_cast<int>(entry.is_mmio_wait),
+                 (long long)entry.uop.cplt_time, entry.uop.rob_idx,
+                 entry.uop.dbg.pc, entry.uop.result, entry.uop.diag_val);
+  }
+
   int ptr = stq_head;
-  int count = stq_count;
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < stq_count; i++) {
     const auto &entry = stq[ptr];
-    if (entry.valid && entry.addr_valid && !entry.suppress_write) {
-      // 只要 Store 的 Word 地址匹配，就进行 merge (假设 aligned Store 不跨
-      // Word)
-      if ((entry.p_addr >> 2) == (p_addr >> 2)) {
-        data = merge_data_to_word(data, entry.data, entry.p_addr, entry.func3);
-      }
+    if (entry.valid) {
+      const bool conflict = entry.addr_valid && !entry.is_mmio &&
+                            has_translation_store_conflict(entry.p_addr);
+      std::fprintf(stderr,
+                   "[LSU DEBUG][STQ] idx=%d valid=%d committed=%d done=%d "
+                   "send=%d suppress=%u addr_v=%d data_v=%d va=0x%08x "
+                   "pa=0x%08x data=0x%08x replay=%u conflict=%d\n",
+                   ptr, static_cast<int>(entry.valid),
+                   static_cast<int>(entry.committed),
+                   static_cast<int>(entry.done),
+                   static_cast<int>(entry.send), entry.suppress_write,
+                   static_cast<int>(entry.addr_valid),
+                   static_cast<int>(entry.data_valid), entry.addr, entry.p_addr,
+                   entry.data, static_cast<unsigned>(entry.replay),
+                   static_cast<int>(conflict));
     }
     ptr = (ptr + 1) % STQ_SIZE;
   }
 
+  dump_mmu_debug(stderr);
+}
+
+void RealLsu::dump_mmu_debug(FILE *out) const {
+  if (mmu == nullptr) {
+    return;
+  }
+  mmu->dump_debug(out);
+}
+
+uint32_t RealLsu::coherent_read(uint32_t p_addr) {
+  uint32_t data = pmem_read(p_addr);
+  overlay_committed_store_word(p_addr, data);
   return data;
+}
+
+bool RealLsu::committed_store_conflicts_word(uint32_t word_addr) const {
+  if (ctx == nullptr || ctx->cpu == nullptr) {
+    return true;
+  }
+
+  uint32_t observed = pmem_read(word_addr);
+  uint32_t dcache_word = 0;
+  const auto q =
+      ctx->cpu->mem_subsystem.get_dcache().query_coherent_word(word_addr,
+                                                               dcache_word);
+  if (q == RealDcache::CoherentQueryResult::Hit) {
+    observed = dcache_word;
+  }
+  uint32_t expected = observed;
+  bool has_match = false;
+
+  int ptr = stq_head;
+  int count = stq_count;
+  for (int i = 0; i < count; i++) {
+    const auto &entry = stq[ptr];
+    if (entry.valid && entry.committed && !entry.suppress_write &&
+        !entry.is_mmio &&
+        entry.addr_valid && entry.data_valid &&
+        ((entry.p_addr & ~0x3u) == word_addr)) {
+      has_match = true;
+      expected = merge_data_to_word(expected, entry.data, entry.p_addr,
+                                    entry.func3);
+    }
+    ptr = (ptr + 1) % STQ_SIZE;
+  }
+
+  if (!has_match) {
+    return false;
+  }
+  if (q == RealDcache::CoherentQueryResult::Retry) {
+    return true;
+  }
+  return expected != observed;
+}
+
+bool RealLsu::has_translation_store_conflict(uint32_t p_addr) const {
+  if (is_mmio_addr(p_addr)) {
+    return false;
+  }
+  return committed_store_conflicts_word(p_addr & ~0x3u);
+}
+
+bool RealLsu::has_committed_store_pending() const {
+  int ptr = stq_head;
+  int remain = stq_count;
+  while (remain > 0) {
+    const StqEntry &e = stq[ptr];
+    if (e.valid && e.committed && !e.suppress_write && !e.is_mmio) {
+      if (!e.addr_valid || !e.data_valid || !e.done) {
+        return true;
+      }
+      if (has_translation_store_conflict(e.p_addr)) {
+        return true;
+      }
+    }
+    ptr = (ptr + 1) % STQ_SIZE;
+    remain--;
+  }
+  return false;
+}
+
+void RealLsu::overlay_committed_store_word(uint32_t p_addr, uint32_t &data) {
+  // Only architecturally committed stores are visible to PTW/MMU coherence.
+  // Younger speculative stores must not affect translation.
+  int ptr = stq_head;
+  int count = stq_count;
+  for (int i = 0; i < count; i++) {
+    const auto &entry = stq[ptr];
+    if (entry.valid && entry.committed && entry.addr_valid && entry.data_valid &&
+        !entry.suppress_write &&
+        ((entry.p_addr >> 2) == (p_addr >> 2))) {
+      data = merge_data_to_word(data, entry.data, entry.p_addr, entry.func3);
+    }
+    ptr = (ptr + 1) % STQ_SIZE;
+  }
 }

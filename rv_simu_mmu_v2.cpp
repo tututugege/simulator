@@ -443,6 +443,7 @@ void SimCpu::init() {
   mem_subsystem.csr = back.csr;
   mem_subsystem.memory = p_memory;
   mem_subsystem.peripheral_io = &back.lsu->peripheral_io;
+  mem_subsystem.set_ptw_coherent_source(back.lsu);
 
   front.in.csr_status = back.csr->out.csr_status;
   front.ctx = &ctx;

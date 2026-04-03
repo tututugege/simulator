@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AbstractLsu.h"
 #include "PtwWalkPort.h"
 #include "ref.h"
 #include "types.h"
@@ -36,6 +37,7 @@ public:
   };
 
   void bind_context(SimContext *c) { ctx = c; }
+  void bind_coherent_source(AbstractLsu *lsu) { coherent_source_ = lsu; }
   void init() {
     ptw_clients = {};
     walk_clients = {};
@@ -148,6 +150,11 @@ public:
 
   void on_mem_resp_client(Client client, uint32_t data) {
     auto &s = ptw_clients[client_idx(client)];
+    if (has_resp_conflict(s.req_addr)) {
+      s.req_inflight = false;
+      s.req_pending = true;
+      return;
+    }
     s.resp_valid = true;
     s.resp_data = data;
     s.req_inflight = false;
@@ -160,7 +167,8 @@ public:
     }
   }
 
-  WalkRespResult on_walk_mem_resp(size_t req_id, uint32_t pte) {
+  WalkRespResult on_walk_mem_resp(size_t req_id, uint32_t req_addr,
+                                  uint32_t pte) {
     const bool is_active_req = walk_active && walk_req_id_valid &&
                                (walk_req_id == req_id);
     if (walk_drop_resp_credit > 0 && !is_active_req) {
@@ -170,10 +178,24 @@ public:
     if (!walk_active) {
       return WalkRespResult::IGNORED;
     }
-    if (walk_req_id_valid && walk_req_id != req_id) {
+    if (!walk_req_id_valid) {
+      return WalkRespResult::IGNORED;
+    }
+    if (walk_req_id != req_id) {
       return WalkRespResult::IGNORED;
     }
     auto &wc = walk_clients[client_idx(walk_owner)];
+    if (has_resp_conflict(req_addr)) {
+      wc.req_inflight = false;
+      if (walk_state == WalkState::L1_WAIT_RESP) {
+        walk_state = WalkState::L1_REQ;
+      } else if (walk_state == WalkState::L2_WAIT_RESP) {
+        walk_state = WalkState::L2_REQ;
+      }
+      walk_req_id_valid = false;
+      walk_req_id = 0;
+      return WalkRespResult::HANDLED;
+    }
     bool v = (pte & PTE_V) != 0;
     bool r = (pte & PTE_R) != 0;
     bool w = (pte & PTE_W) != 0;
@@ -436,7 +458,13 @@ private:
 
   static size_t client_idx(Client c) { return static_cast<size_t>(c); }
 
+  bool has_resp_conflict(uint32_t req_addr) const {
+    return coherent_source_ != nullptr &&
+           coherent_source_->has_translation_store_conflict(req_addr);
+  }
+
   SimContext *ctx = nullptr;
+  AbstractLsu *coherent_source_ = nullptr;
   std::array<PtwClientState, kClientCount> ptw_clients{};
   std::array<WalkClientState, kClientCount> walk_clients{};
   WalkState walk_state = WalkState::IDLE;

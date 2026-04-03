@@ -138,6 +138,7 @@ bool RealDcache::special_load_addr(uint32_t addr,uint32_t &mem_val,MicroOp &uop)
 RealDcache::CoherentQueryResult
 RealDcache::query_coherent_word(uint32_t addr, uint32_t &data) const {
     const AddrFields f = decode(addr);
+    static constexpr uint8_t kFullWordStrb = 0x0Fu;
 
     for (int w = 0; w < DCACHE_WAYS; w++) {
         if (!valid_array[f.set_idx][w] || tag_array[f.set_idx][w] != f.tag) {
@@ -163,6 +164,24 @@ RealDcache::query_coherent_word(uint32_t addr, uint32_t &data) const {
         }
         data = write_buffer[i].data[f.word_off];
         return CoherentQueryResult::Hit;
+    }
+
+    if (mshr2dcache != nullptr && mshr2dcache->fill.valid &&
+        cache_line_match(mshr2dcache->fill.addr, addr)) {
+        data = mshr2dcache->fill.data[f.word_off];
+        return CoherentQueryResult::Hit;
+    }
+
+    for (int i = 0; i < DCACHE_MSHR_ENTRIES; i++) {
+        const auto &e = mshr_entries[i];
+        if (!e.valid || e.index != f.set_idx || e.tag != f.tag) {
+            continue;
+        }
+        if (e.merged_store_strb[f.word_off] == kFullWordStrb) {
+            data = e.merged_store_data[f.word_off];
+            return CoherentQueryResult::Hit;
+        }
+        return CoherentQueryResult::Retry;
     }
 
     if (find_mshr_entry(f.set_idx, f.tag)) {

@@ -1,6 +1,9 @@
 #include "ref.h"
 #include "Csr.h"
+#include "DcacheConfig.h"
+#include "MSHR.h"
 #include "RISCV.h"
+#include "SimCpu.h"
 #include "config.h"
 #include "diff.h"
 #include <cstdint>
@@ -13,6 +16,7 @@ extern "C" {
 }
 
 extern RefCpu ref_cpu; // Monitor
+extern SimCpu cpu;
 
 namespace {
 struct Sv32WalkDebug {
@@ -47,6 +51,89 @@ inline bool data_translation_enabled(const CPU_state &state,
 
 inline uint32_t debug_load_word(const uint32_t *mem, uint32_t addr) {
   return mem[addr >> 2];
+}
+
+void dump_dcache_word_visibility(uint32_t addr) {
+  const AddrFields f = decode(addr);
+  const uint32_t line_addr = addr & ~(DCACHE_LINE_BYTES - 1u);
+  const uint32_t word_off = f.word_off;
+
+  std::fprintf(stderr,
+               "[PF-MISMATCH][DCACHE] addr=0x%08x line=0x%08x set=%u tag=0x%x "
+               "word=%u\n",
+               addr, line_addr, f.set_idx, f.tag, word_off);
+
+  bool cache_hit = false;
+  for (int w = 0; w < DCACHE_WAYS; ++w) {
+    const bool tag_match =
+        valid_array[f.set_idx][w] && tag_array[f.set_idx][w] == f.tag;
+    if (!tag_match) {
+      continue;
+    }
+    cache_hit = true;
+    std::fprintf(stderr,
+                 "[PF-MISMATCH][DCACHE][CACHE] way=%d dirty=%d data=0x%08x\n",
+                 w, static_cast<int>(dirty_array[f.set_idx][w]),
+                 data_array[f.set_idx][w][word_off]);
+  }
+  if (!cache_hit) {
+    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][CACHE] miss\n");
+  }
+
+  bool wb_hit = false;
+  for (int i = 0; i < DCACHE_WB_ENTRIES; ++i) {
+    const auto &e = write_buffer[i];
+    if (!e.valid || e.addr != line_addr) {
+      continue;
+    }
+    wb_hit = true;
+    std::fprintf(stderr,
+                 "[PF-MISMATCH][DCACHE][WB] idx=%d send=%d data=0x%08x\n", i,
+                 static_cast<int>(e.send), e.data[word_off]);
+  }
+  if (!wb_hit) {
+    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][WB] miss\n");
+  }
+
+  bool mshr_hit = false;
+  for (int i = 0; i < DCACHE_MSHR_ENTRIES; ++i) {
+    const auto &e = mshr_entries[i];
+    if (!e.valid || e.index != f.set_idx || e.tag != f.tag) {
+      continue;
+    }
+    mshr_hit = true;
+    std::fprintf(
+        stderr,
+        "[PF-MISMATCH][DCACHE][MSHR-CUR] idx=%d issued=%d fill=%d dirty=%d "
+        "strb=0x%x merged=0x%08x\n",
+        i, static_cast<int>(e.issued), static_cast<int>(e.fill),
+        static_cast<int>(e.merged_store_dirty),
+        static_cast<unsigned>(e.merged_store_strb[word_off]),
+        e.merged_store_data[word_off]);
+  }
+  if (!mshr_hit) {
+    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][MSHR-CUR] miss\n");
+  }
+
+  bool mshr_nxt_hit = false;
+  for (int i = 0; i < DCACHE_MSHR_ENTRIES; ++i) {
+    const auto &e = mshr_entries_nxt[i];
+    if (!e.valid || e.index != f.set_idx || e.tag != f.tag) {
+      continue;
+    }
+    mshr_nxt_hit = true;
+    std::fprintf(
+        stderr,
+        "[PF-MISMATCH][DCACHE][MSHR-NXT] idx=%d issued=%d fill=%d dirty=%d "
+        "strb=0x%x merged=0x%08x\n",
+        i, static_cast<int>(e.issued), static_cast<int>(e.fill),
+        static_cast<int>(e.merged_store_dirty),
+        static_cast<unsigned>(e.merged_store_strb[word_off]),
+        e.merged_store_data[word_off]);
+  }
+  if (!mshr_nxt_hit) {
+    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][MSHR-NXT] miss\n");
+  }
 }
 
 Sv32WalkDebug collect_sv32_walk_debug(const CPU_state &state, uint8_t privilege,
@@ -129,6 +216,13 @@ void dump_pf_mismatch_debug(uint32_t v_addr, uint32_t type,
       dut_walk.l1_pte_addr, dut_walk.l1_pte, (int)dut_walk.l1_valid,
       (int)dut_walk.l1_leaf, dut_walk.l0_pte_addr, dut_walk.l0_pte,
       (int)dut_walk.l0_valid, (int)dut_walk.l0_leaf);
+  dump_dcache_word_visibility(dut_walk.l1_pte_addr);
+  dump_dcache_word_visibility(dut_walk.l0_pte_addr);
+  if (cpu.back.lsu != nullptr) {
+    cpu.back.lsu->dump_debug_state();
+    cpu.back.lsu->dump_mmu_debug(stderr);
+  }
+  cpu.mem_subsystem.dump_debug_state(stderr);
 }
 
 } // namespace
@@ -1004,19 +1098,18 @@ void RefCpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if (data_translation_enabled(state, privilege)) {
-    bool page_fault_1 = !va2pa_fix(p_addr, v_addr, 1);
-    bool page_fault_2 = !va2pa_fix(p_addr, v_addr, 2);
-
-    if (page_fault_1 || page_fault_2) {
-      if (funct5 == 2) {
-        if (page_fault_1) {
-          page_fault_load = true;
-        }
-      } else if (funct5 == 3) {
-        if (page_fault_2) {
-          page_fault_store = true;
-        }
-      } else {
+    if (funct5 == 2) {
+      // LR.W is a load-class access. It must not trigger/store-compare a
+      // store/AMO page-fault path just because the target page is read-only.
+      page_fault_load = !va2pa_fix(p_addr, v_addr, 1);
+    } else if (funct5 == 3) {
+      // SC.W is store/AMO-class and should only be checked against the store
+      // permission path.
+      page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
+    } else {
+      const bool page_fault_load_check = !va2pa_fix(p_addr, v_addr, 1);
+      const bool page_fault_store_check = !va2pa_fix(p_addr, v_addr, 2);
+      if (page_fault_load_check || page_fault_store_check) {
         page_fault_store = true;
       }
     }
@@ -1777,8 +1870,14 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
     bool is_user_page = (pte2 & PTE_U) != 0;
     if (eff_priv == 0 && !is_user_page)
       return false;
-    if (eff_priv == 1 && is_user_page && !sum)
-      return false;
+    if (eff_priv == 1 && is_user_page) {
+      if (type == 0) {
+        return false;
+      }
+      if (!sum) {
+        return false;
+      }
+    }
 
     // A/D 位检查
     if (!(pte2 & PTE_A))
@@ -1818,6 +1917,9 @@ bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   if (dut_fault && !ref_fault) {
+    dump_pf_mismatch_debug(v_addr, type, state, privilege, dut_expect_pf_inst,
+                           dut_expect_pf_load, dut_expect_pf_store,
+                           page_fault_inst, page_fault_load, page_fault_store);
     std::cout << "[Difftest Warning] DUT has " << kind
               << " page fault while REF does not at cycle " << std::dec
               << sim_time << ", force REF " << kind << " page fault"
