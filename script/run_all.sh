@@ -29,7 +29,18 @@ echo "Parallel Jobs:  $MAX_JOBS"
 echo "=================================================="
 
 echo "Scanning for all checkpoint files..."
-ALL_CKPTS=($(find "$CKPT_ROOT" -name "*.gz" | sort))
+mapfile -t SORTED_CKPTS < <(find "$CKPT_ROOT" -name "*.gz" | sort)
+ALL_CKPTS=()
+for ckpt in "${SORTED_CKPTS[@]}"; do
+    if [[ "$ckpt" == *"/429.mcf_ref/"* ]]; then
+        ALL_CKPTS+=("$ckpt")
+    fi
+done
+for ckpt in "${SORTED_CKPTS[@]}"; do
+    if [[ "$ckpt" != *"/429.mcf_ref/"* ]]; then
+        ALL_CKPTS+=("$ckpt")
+    fi
+done
 TOTAL_TASKS=${#ALL_CKPTS[@]}
 
 if [ "$TOTAL_TASKS" -eq 0 ]; then
