@@ -71,6 +71,8 @@ public:
   uint64_t mmio_head_block_cycles = 0;
   uint64_t ptw_port0_replay_count = 0;
   uint64_t stq_same_addr_block_count = 0;
+  uint64_t ld_stlf_check_count = 0;
+  uint64_t ld_stlf_block_unknown_store_addr_count = 0;
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -256,6 +258,8 @@ public:
     mmio_head_block_cycles = 0;
     ptw_port0_replay_count = 0;
     stq_same_addr_block_count = 0;
+    ld_stlf_check_count = 0;
+    ld_stlf_block_unknown_store_addr_count = 0;
     icache_access_num = 0;
     icache_miss_num = 0;
     icache_miss_penalty_total_cycles = 0;
@@ -673,6 +677,15 @@ public:
            ptw_port0_replay_count);
     printf("\033[38;5;34mSTQ SameAddr Block   : %ld\033[0m\n",
            stq_same_addr_block_count);
+    const double ld_stlf_unknown_block_ratio =
+        (ld_stlf_check_count == 0)
+            ? 0.0
+            : static_cast<double>(ld_stlf_block_unknown_store_addr_count) *
+                  100.0 / static_cast<double>(ld_stlf_check_count);
+    printf("\033[38;5;34mLD STLF Check Cnt    : %ld\033[0m\n",
+           ld_stlf_check_count);
+    printf("\033[38;5;34mLD Block Unknown STA : %ld (%.4f%% of checks)\033[0m\n",
+           ld_stlf_block_unknown_store_addr_count, ld_stlf_unknown_block_ratio);
     printf("\n");
   }
 

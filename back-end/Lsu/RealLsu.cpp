@@ -1608,6 +1608,9 @@ bool RealLsu::has_older_store_pending(const MicroOp &load_uop) const {
 
 RealLsu::StoreForwardResult
 RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
+  if (ctx != nullptr) {
+    ctx->perf.ld_stlf_check_count++;
+  }
   uint32_t current_word = 0;
   bool hit_any = false;
   int ptr_idx = stq_head;
@@ -1624,6 +1627,9 @@ RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
     StqEntry &entry = stq[ptr_idx];
     if (entry.valid && !entry.suppress_write) {
       if (!entry.addr_valid) {
+        if (ctx != nullptr) {
+          ctx->perf.ld_stlf_block_unknown_store_addr_count++;
+        }
         return {StoreForwardState::Retry, 0};
       }
 
