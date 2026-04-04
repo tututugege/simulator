@@ -677,16 +677,27 @@ void RealLsu::comb_load_res() {
               entry.uop.dbg.difftest_skip =
                   in.dcache2lsu->resp_ports.load_resps[i].uop.dbg.difftest_skip;
               entry.uop.cplt_time = sim_time;
+              // Keep miss classification sticky for this in-flight load.
+              // DCache may return sideband in uop.tma.is_cache_miss in future,
+              // but current replay-based marking already captures L1D miss
+              // behavior (replay=1/2).
               entry.uop.tma.is_cache_miss =
-                  !in.dcache2lsu->resp_ports.load_resps[i]
-                       .uop.tma.is_cache_miss;
+                  entry.uop.tma.is_cache_miss ||
+                  in.dcache2lsu->resp_ports.load_resps[i]
+                      .uop.tma.is_cache_miss;
               entry.replay_priority = 0;
               finished_loads.push_back(entry.uop);
               free_ldq_entry(idx);
             } else {
               // Handle load replay if needed (e.g., due to MSHR eviction)
-              entry.replay_priority =
+              const uint8_t replay_code =
                   in.dcache2lsu->resp_ports.load_resps[i].replay;
+              entry.replay_priority = replay_code;
+              // replay=1(mshr_full) and replay=2(wait_mshr) both imply
+              // that this load is blocked beyond L1D hit latency.
+              if (replay_code == 1 || replay_code == 2) {
+                entry.uop.tma.is_cache_miss = true;
+              }
               // replay=1(resource full) waits for a free-slot wakeup.
               // replay=2(mshr_hit) waits for matching line fill wakeup.
               entry.sent = false;

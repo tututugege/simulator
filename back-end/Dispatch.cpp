@@ -597,6 +597,22 @@ void Dispatch::comb_fire() {
           is_core_bound_rob[i] = true;
         }
       }
+      // If LSU allocation failed in comb_alloc (LDQ/STQ headroom or per-cycle
+      // dispatch bandwidth), account it as memory pressure first.
+      else if (!out.dis2rob->valid[i]) {
+        if (is_load(inst_r[i])) {
+          is_mem_l1_bound[i] = true;
+          is_mem_ldq_full[i] = true;
+          any_ldq_full_stall = true;
+        } else if (is_store(inst_r[i])) {
+          is_mem_l1_bound[i] = true;
+          is_mem_stq_full[i] = true;
+          any_stq_full_stall = true;
+        } else {
+          is_core_bound_iq[i] = true;
+          any_iq_full_stall = true;
+        }
+      }
       // If Dispatch Logic failed (IQ check or LSU check)
       else if (!dispatch_success_flags[i]) {
         bool lsu_stall = false;

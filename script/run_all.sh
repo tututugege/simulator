@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ================= 配置区域 =================
-SIMULATOR="./sim"
-CKPT_ROOT="/nfs_global/S/houruyao/rv32imab_ckpt"
+SIMULATOR="./build/simulator"
+CKPT_ROOT="/share/personal/S/houruyao/simpoint/rv32imab_ckpt_1gb_ram"
 RESULT_DIR="./results_restore"
 
 # 内存够的话建议等于可用的核心数 不用超线程

@@ -7,7 +7,7 @@ from datetime import datetime
 # ================= 用户配置区域 =================
 CPU_FREQ_GHZ = 1.0
 LOG_ROOT_DIR = "./results_restore"
-WEIGHTS_DIR = "./bbv"
+WEIGHTS_DIR = "/share/personal/S/houruyao/simpoint/rv32imab_bbv_1gb_ram"
 DEBUG = True
 LOG_STATUS_REPORT = LOG_ROOT_DIR + "/log_status_report.txt"
 PERF_REPORT = LOG_ROOT_DIR + "/perf_report.txt"
