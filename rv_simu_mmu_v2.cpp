@@ -90,7 +90,7 @@ void print_soc_config_banner() {
               compiled_icache_path);
   std::printf(
       "[CONFIG][AXI] ddr_read_latency=%ucy ddr_write_resp_latency=%ucy "
-      "ddr_beat=%uB wq=%u wag=%ucy wfifo=%u wdrain=%ucy "
+      "ddr_beat=%uB wq=%u wag=%ucy wfifo=%u wdrain=%ucy whi=%u wlo=%u "
       "upstream_payload=%uB upstream_read_resp=%uB "
       "out=%u per_master=%u ddr_out=%u\n",
       static_cast<unsigned>(sim_ddr::SIM_DDR_LATENCY),
@@ -100,6 +100,8 @@ void print_soc_config_banner() {
       static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_ACCEPT_GAP),
       static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DATA_FIFO_DEPTH),
       static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_GAP),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_LOW_WATERMARK),
       static_cast<unsigned>(axi_interconnect::AXI_UPSTREAM_PAYLOAD_BYTES),
       static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_BYTES),
       static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),

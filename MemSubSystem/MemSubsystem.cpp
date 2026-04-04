@@ -608,7 +608,7 @@ void MemSubsystem::init() {
     printed_axi_cfg = true;
     LSU_MEM_DBG_PRINTF(
         "[CONFIG][AXI] ddr_read_latency=%ucy ddr_write_resp_latency=%ucy "
-        "ddr_beat=%uB wq=%u wag=%ucy wfifo=%u wdrain=%ucy "
+        "ddr_beat=%uB wq=%u wag=%ucy wfifo=%u wdrain=%ucy whi=%u wlo=%u "
         "out=%u per_master=%u ddr_out=%u "
         "dcache_line=%uB(%u words) "
         "upstream_write_payload=%uB upstream_read_resp=%uB\n",
@@ -619,6 +619,8 @@ void MemSubsystem::init() {
         static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_ACCEPT_GAP),
         static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DATA_FIFO_DEPTH),
         static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_GAP),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_LOW_WATERMARK),
         static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
         static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
         static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING),
