@@ -67,6 +67,8 @@
 | `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP` | 0 | 0~32 | 后端每 drain 一个写 beat 后，额外等待多少个完整周期才继续处理下一个 beat |
 | `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK` | `CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH (=8)` | 1~64 | 写数据 FIFO 占用达到该高水位后，SimDDR 进入 write-drain mode，持续 drain 已缓存写数据 |
 | `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK` | 0 | 0~63 | write-drain mode 的退出阈值；FIFO 占用降到该低水位及以下时，`WREADY` 才重新开放 |
+| `CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND` | 0 | 0~64 | 从 read burst service window 切到 write-drain window 前，额外等待的完整周期数 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND` | 0 | 0~64 | 从 write-drain window 切回 read burst service window 前，额外等待的完整周期数 |
 | `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 32（all profiles） | 4/8/16/32 | 每个 DDR beat 传输字节数 |
 | `VIRTUAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 虚拟内存大小 |
 | `PHYSICAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 物理内存大小 |
@@ -78,7 +80,7 @@
 > [!NOTE]
 > `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前是功能模型里的 `B` 通道可见性旋钮，
 > 不是精确 DDR 控制器时序模型。当前写路径主线更接近“有限 write-data FIFO +
-> 高/低水位驱动的 bursty write-drain mode”的近似模型；
+> 高/低水位驱动的 bursty write-drain mode + 可配置 read/write turnaround”的近似模型；
 > `CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP` 只保留为 stress/debug 旋钮。
 
 #### 3.1.1 DDR 读延迟参数化模型
