@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ================= 配置区域 =================
-SIMULATOR="./sim"
-CKPT_ROOT="/nfs_global/S/houruyao/rv32imab_ckpt"
+SIMULATOR="./build/simulator"
+CKPT_ROOT="/share/personal/S/houruyao/simpoint/rv32imab_ckpt_1gb_ram"
 RESULT_DIR="./results_restore"
 
 # 内存够的话建议等于可用的核心数 不用超线程
@@ -29,7 +29,18 @@ echo "Parallel Jobs:  $MAX_JOBS"
 echo "=================================================="
 
 echo "Scanning for all checkpoint files..."
-ALL_CKPTS=($(find "$CKPT_ROOT" -name "*.gz" | sort))
+mapfile -t SORTED_CKPTS < <(find "$CKPT_ROOT" -name "*.gz" | sort)
+ALL_CKPTS=()
+for ckpt in "${SORTED_CKPTS[@]}"; do
+    if [[ "$ckpt" == *"/429.mcf_ref/"* ]]; then
+        ALL_CKPTS+=("$ckpt")
+    fi
+done
+for ckpt in "${SORTED_CKPTS[@]}"; do
+    if [[ "$ckpt" != *"/429.mcf_ref/"* ]]; then
+        ALL_CKPTS+=("$ckpt")
+    fi
+done
 TOTAL_TASKS=${#ALL_CKPTS[@]}
 
 if [ "$TOTAL_TASKS" -eq 0 ]; then

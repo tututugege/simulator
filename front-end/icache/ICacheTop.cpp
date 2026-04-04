@@ -13,6 +13,7 @@
 #include "RISCV.h"
 #include "SimpleMmu.h"
 #include "TlbMmu.h"
+#include "PhysMemory.h"
 #include "config.h"
 #include "include/icache_module.h"
 
@@ -52,7 +53,6 @@ struct ReadMasterPort_t {
 #include <iostream>
 #include <memory>
 
-extern uint32_t *p_memory;
 extern icache_module_n::ICache icache;
 void icache_fill_lookup_meta_input(icache_module_n::ICache_lookup_in_t &dst);
 void icache_fill_lookup_data_input(icache_module_n::ICache_lookup_in_t &dst,
@@ -88,7 +88,7 @@ inline void dump_icache_focus_line(const char *tag, uint32_t fetch_pc,
 static_assert(ICACHE_LINE_SIZE <= axi_interconnect::MAX_READ_TRANSACTION_BYTES,
               "ICACHE_LINE_SIZE exceeds AXI upstream read transaction limit");
 
-uint32_t icache_coherent_read(uint32_t p_addr) { return p_memory[p_addr >> 2]; }
+uint32_t icache_coherent_read(uint32_t p_addr) { return pmem_read(p_addr); }
 
 void clear_secondary_outputs(struct icache_out *out) {
   out->icache_read_ready_2 = false;
@@ -908,7 +908,7 @@ public:
 
       out->page_fault_inst[i] = false;
       out->perf_itlb_hit = true;
-      out->fetch_group[i] = p_memory[p_addr / 4];
+      out->fetch_group[i] = pmem_read(p_addr);
 
       if (DEBUG_PRINT) {
         uint32_t satp =

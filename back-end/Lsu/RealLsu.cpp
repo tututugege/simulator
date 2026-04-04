@@ -26,6 +26,13 @@ inline bool stq_entry_matches_uop(const StqEntry &entry, const MicroOp &uop) {
   return entry.valid && entry.rob_idx == uop.rob_idx &&
          entry.rob_flag == uop.rob_flag;
 }
+
+inline bool addr_in_range(uint32_t addr, uint32_t base, uint32_t size) {
+  if (addr < base) {
+    return false;
+  }
+  return static_cast<uint64_t>(addr - base) < static_cast<uint64_t>(size);
+}
 } // namespace
 
 RealLsu::RealLsu(SimContext *ctx) : AbstractLsu(ctx) {
@@ -670,16 +677,27 @@ void RealLsu::comb_load_res() {
               entry.uop.dbg.difftest_skip =
                   in.dcache2lsu->resp_ports.load_resps[i].uop.dbg.difftest_skip;
               entry.uop.cplt_time = sim_time;
+              // Keep miss classification sticky for this in-flight load.
+              // DCache may return sideband in uop.tma.is_cache_miss in future,
+              // but current replay-based marking already captures L1D miss
+              // behavior (replay=1/2).
               entry.uop.tma.is_cache_miss =
-                  !in.dcache2lsu->resp_ports.load_resps[i]
-                       .uop.tma.is_cache_miss;
+                  entry.uop.tma.is_cache_miss ||
+                  in.dcache2lsu->resp_ports.load_resps[i]
+                      .uop.tma.is_cache_miss;
               entry.replay_priority = 0;
               finished_loads.push_back(entry.uop);
               free_ldq_entry(idx);
             } else {
               // Handle load replay if needed (e.g., due to MSHR eviction)
-              entry.replay_priority =
+              const uint8_t replay_code =
                   in.dcache2lsu->resp_ports.load_resps[i].replay;
+              entry.replay_priority = replay_code;
+              // replay=1(mshr_full) and replay=2(wait_mshr) both imply
+              // that this load is blocked beyond L1D hit latency.
+              if (replay_code == 1 || replay_code == 2) {
+                entry.uop.tma.is_cache_miss = true;
+              }
               // replay=1(resource full) waits for a free-slot wakeup.
               // replay=2(mshr_hit) waits for matching line fill wakeup.
               entry.sent = false;
@@ -952,10 +970,9 @@ void RealLsu::consume_ldq_alloc_reqs() {
 }
 
 bool RealLsu::is_mmio_addr(uint32_t paddr) const {
-  return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-         ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
-         (paddr == OPENSBI_TIMER_LOW_ADDR) ||
-         (paddr == OPENSBI_TIMER_HIGH_ADDR);
+  return addr_in_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
+         addr_in_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
+         addr_in_range(paddr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE);
 }
 void RealLsu::change_store_info(StqEntry &head, int port, int store_index) {
 
@@ -1266,6 +1283,7 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst) {
     fault_op.page_fault_store = true;
     fault_op.cplt_time = sim_time;
     if (is_amo_sc_uop(inst)) {
+      fault_op.page_fault_load = false;
       reserve_valid = false;
       fault_op.op = UOP_LOAD;
       fault_op.dest_en = true;
@@ -1286,8 +1304,10 @@ bool RealLsu::finish_store_addr_once(const MicroOp &inst) {
     reserve_valid = false;
     success_op.result = sc_success ? 0 : 1;
     success_op.dest_en = true;
-    success_op.op =
-        UOP_LOAD; // Reuse existing LSU load wb/awake path for SC result
+    // SC always returns architectural 0/1 via load-like wb path.
+    success_op.op = UOP_LOAD;
+    success_op.page_fault_store = false;
+    success_op.page_fault_load = false;
     stq[idx].suppress_write = !sc_success;
     finished_loads.push_back(success_op);
     stq[idx].is_mmio = false; // SC 结果不区分 MMIO，始终走正常内存路径
@@ -1607,6 +1627,9 @@ bool RealLsu::has_older_store_pending(const MicroOp &load_uop) const {
 
 RealLsu::StoreForwardResult
 RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
+  if (ctx != nullptr) {
+    ctx->perf.ld_stlf_check_count++;
+  }
   uint32_t current_word = 0;
   bool hit_any = false;
   int ptr_idx = stq_head;
@@ -1623,6 +1646,9 @@ RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
     StqEntry &entry = stq[ptr_idx];
     if (entry.valid && !entry.suppress_write) {
       if (!entry.addr_valid) {
+        if (ctx != nullptr) {
+          ctx->perf.ld_stlf_block_unknown_store_addr_count++;
+        }
         return {StoreForwardState::Retry, 0};
       }
 

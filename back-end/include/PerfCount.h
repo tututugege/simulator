@@ -71,6 +71,8 @@ public:
   uint64_t mmio_head_block_cycles = 0;
   uint64_t ptw_port0_replay_count = 0;
   uint64_t stq_same_addr_block_count = 0;
+  uint64_t ld_stlf_check_count = 0;
+  uint64_t ld_stlf_block_unknown_store_addr_count = 0;
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -260,6 +262,8 @@ public:
     mmio_head_block_cycles = 0;
     ptw_port0_replay_count = 0;
     stq_same_addr_block_count = 0;
+    ld_stlf_check_count = 0;
+    ld_stlf_block_unknown_store_addr_count = 0;
     icache_access_num = 0;
     icache_miss_num = 0;
     icache_miss_penalty_total_cycles = 0;
@@ -568,17 +572,7 @@ public:
   }
 
   void perf_print_dcache() {
-    printf("\033[38;5;34m*********DCACHE COUNTER************\033[0m\n");
-    const double dcache_acc =
-        (dcache_access_num == 0)
-            ? 1.0
-            : 1.0 - static_cast<double>(dcache_miss_num) /
-                        static_cast<double>(dcache_access_num);
-    printf("\033[38;5;34mdcache accuracy : %f\033[0m\n", dcache_acc);
-    printf("\033[38;5;34mdcache access   : %ld\033[0m\n", dcache_access_num);
-    printf("\033[38;5;34mdcache hit      : %ld\033[0m\n",
-           dcache_access_num - dcache_miss_num);
-    printf("\033[38;5;34mdcache miss     : %ld\033[0m\n", dcache_miss_num);
+    printf("\033[38;5;34m*********L1D COUNTER***************\033[0m\n");
     const double l1d_hit_rate =
         (l1d_req_initial == 0)
             ? 1.0
@@ -691,11 +685,20 @@ public:
            ptw_port0_replay_count);
     printf("\033[38;5;34mSTQ SameAddr Block   : %ld\033[0m\n",
            stq_same_addr_block_count);
+    const double ld_stlf_unknown_block_ratio =
+        (ld_stlf_check_count == 0)
+            ? 0.0
+            : static_cast<double>(ld_stlf_block_unknown_store_addr_count) *
+                  100.0 / static_cast<double>(ld_stlf_check_count);
+    printf("\033[38;5;34mLD STLF Check Cnt    : %ld\033[0m\n",
+           ld_stlf_check_count);
+    printf("\033[38;5;34mLD Block Unknown STA : %ld (%.4f%% of checks)\033[0m\n",
+           ld_stlf_block_unknown_store_addr_count, ld_stlf_unknown_block_ratio);
     printf("\n");
   }
 
   void perf_print_icache() {
-    printf("\033[38;5;34m*********ICACHE COUNTER***********\033[0m\n");
+    printf("\033[38;5;34m*********L1I COUNTER***************\033[0m\n");
     const double icache_hit_rate =
         (icache_access_num == 0)
             ? 1.0
@@ -713,12 +716,12 @@ public:
             : static_cast<double>(icache_axi_read_total_cycles) /
                   static_cast<double>(icache_axi_read_samples);
     const double amat = 1.0 + icache_miss_rate * avg_miss_penalty;
-    printf("\033[38;5;34micache accuracy : %f\033[0m\n", icache_hit_rate);
-    printf("\033[38;5;34micache access   : %ld\033[0m\n", icache_access_num);
-    printf("\033[38;5;34micache hit      : %ld\033[0m\n",
+    printf("\033[38;5;34mL1I accuracy    : %f\033[0m\n", icache_hit_rate);
+    printf("\033[38;5;34mL1I access      : %ld\033[0m\n", icache_access_num);
+    printf("\033[38;5;34mL1I hit         : %ld\033[0m\n",
            icache_access_num - icache_miss_num);
-    printf("\033[38;5;34micache miss     : %ld\033[0m\n", icache_miss_num);
-    printf("\033[38;5;34mI$ AMAT(cycles) : %.6f (hit=1cy assumption)\033[0m\n",
+    printf("\033[38;5;34mL1I miss        : %ld\033[0m\n", icache_miss_num);
+    printf("\033[38;5;34mL1I AMAT(cycles): %.6f (hit=1cy assumption)\033[0m\n",
            amat);
     printf("\033[38;5;34mAvg Miss Penalty: %.6f cycles (samples=%ld)\033[0m\n",
            avg_miss_penalty, icache_miss_penalty_samples);
@@ -747,9 +750,9 @@ public:
     printf("\033[38;5;34mllc read access : %ld\033[0m\n", llc_read_access);
     printf("\033[38;5;34mllc read hit    : %ld\033[0m\n", llc_read_hit);
     printf("\033[38;5;34mllc read miss   : %ld\033[0m\n", llc_read_miss);
-    printf("\033[38;5;34mllc icache a/h/m: %ld / %ld / %ld\033[0m\n",
+    printf("\033[38;5;34mllc l1i a/h/m   : %ld / %ld / %ld\033[0m\n",
            llc_icache_read_access, llc_icache_read_hit, llc_icache_read_miss);
-    printf("\033[38;5;34mllc dcache a/h/m: %ld / %ld / %ld\033[0m\n",
+    printf("\033[38;5;34mllc l1d a/h/m   : %ld / %ld / %ld\033[0m\n",
            llc_dcache_read_access, llc_dcache_read_hit, llc_dcache_read_miss);
     printf("\033[38;5;34mllc bypass read : %ld\033[0m\n", llc_bypass_read);
     printf("\033[38;5;34mllc refill      : %ld\033[0m\n", llc_refill);

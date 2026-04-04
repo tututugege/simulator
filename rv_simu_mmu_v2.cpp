@@ -1,6 +1,7 @@
 #include "AbstractLsu.h"
 #include "BackTop.h"
 #include "Csr.h"
+#include "PhysMemory.h"
 #include "SimCpu.h"
 #include "config.h"
 #include "diff.h"
@@ -13,7 +14,6 @@
 #include <cstdlib>
 #include <cstring>
 
-uint32_t *p_memory;
 namespace {
 template <typename InterconnectT>
 void clear_axi_master_inputs(InterconnectT &interconnect) {
@@ -453,7 +453,7 @@ void SimCpu::init() {
 
   // 第三阶段：集中完成跨模块连线
   mem_subsystem.csr = back.csr;
-  mem_subsystem.memory = p_memory;
+  mem_subsystem.memory = pmem_ram_ptr();
   mem_subsystem.peripheral_io = &back.lsu->peripheral_io;
   mem_subsystem.set_ptw_coherent_source(back.lsu);
 
@@ -490,7 +490,7 @@ void SimCpu::init() {
   axi_router.init();
   axi_ddr.init();
   axi_mmio.init();
-  axi_mmio.add_device(MMIO_RANGE_BASE, MMIO_RANGE_SIZE, &axi_uart);
+  axi_mmio.add_device(UART_ADDR_BASE, UART_MMIO_SIZE, &axi_uart);
   // In shared-LLC mode, front.init()/front.step_bpu() directly touches the
   // top-level icache AXI port, so the shared interconnect/MMIO/DDRx must be
   // reset before frontend init. Keeping the order uniform is harmless in the
@@ -511,7 +511,7 @@ void SimCpu::reinit_frontend_after_restore() {
 }
 
 void SimCpu::sync_mmio_devices_from_backing() {
-  axi_uart.sync_from_backing(p_memory);
+  axi_uart.sync_from_backing(pmem_ram_ptr());
   mem_subsystem.sync_mmio_devices_from_backing();
 }
 

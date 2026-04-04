@@ -1,11 +1,10 @@
 #pragma once
-#include "BackTop.h"
-#include "FrontTop.h"
-#include "MemSubsystem.h"
-#include "config.h"
 #include "AXI_Interconnect.h"
 #include "AXI_Router_AXI4.h"
+#include "BackTop.h"
+#include "FrontTop.h"
 #include "MMIO_Bus_AXI4.h"
+#include "MemSubsystem.h"
 #include "SimDDR.h"
 using AxiInterconnectImpl = axi_interconnect::AXI_Interconnect;
 using AxiRouterImpl = axi_interconnect::AXI_Router_AXI4;

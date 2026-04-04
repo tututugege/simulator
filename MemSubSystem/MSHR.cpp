@@ -1,10 +1,10 @@
 #include "MSHR.h"
+#include "DeadlockReplayTrace.h"
+#include "PhysMemory.h"
 
 #include <cassert>
 #include <cstdio>
 #include <cstring>
-
-extern uint32_t *p_memory;
 
 MSHREntry mshr_entries_nxt[DCACHE_MSHR_ENTRIES];
 
@@ -347,18 +347,17 @@ void MSHR::comb_inputs()
                     // dirty LLC resident line that has not been written back to
                     // p_memory yet, so this comparison is no longer valid.
 #if !CONFIG_AXI_LLC_ENABLE
-                    if (p_memory != nullptr)
+                    if (pmem_ram_ptr() != nullptr)
                     {
                         const uint32_t line_addr = fill_line_addr;
-                        const uint32_t word_base = (line_addr >> 2);
                         bool read_mismatch = false;
                         int first_bad = -1;
                         uint32_t axi_word = 0;
                         uint32_t mem_word = 0;
                         for (int w = 0; w < DCACHE_LINE_WORDS; w++)
                         {
-                            uint32_t exp = p_memory[word_base + w];
-                            uint32_t got = resp_data[w];
+                            uint32_t exp = pmem_read(line_addr + static_cast<uint32_t>(w * 4));
+                            uint32_t got = in.axi_in.resp_data[w];
                             if (got != exp)
                             {
                                 read_mismatch = true;

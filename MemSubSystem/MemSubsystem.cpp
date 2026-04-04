@@ -601,7 +601,8 @@ void MemSubsystem::init() {
   }
   axi_kit_runtime->router.init();
   axi_kit_runtime->mmio.init();
-  axi_kit_runtime->mmio.add_device(0x10000000u, 0x1000u, &axi_kit_runtime->uart0);
+  axi_kit_runtime->mmio.add_device(UART_ADDR_BASE, UART_MMIO_SIZE,
+                                   &axi_kit_runtime->uart0);
   axi_kit_runtime->ddr.init();
   static bool printed_axi_cfg = false;
   if (!printed_axi_cfg) {

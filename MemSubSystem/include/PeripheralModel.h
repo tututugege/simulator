@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Csr.h"
+#include "PhysMemory.h"
 #include "config.h"
 #include <cstdint>
 #include <iostream>
@@ -16,8 +17,14 @@ public:
   }
 
   static bool is_modeled_mmio(uint32_t paddr) {
-    return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-           ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE);
+    const auto in_range = [](uint32_t addr, uint32_t base, uint32_t size) {
+      if (addr < base) {
+        return false;
+      }
+      return static_cast<uint64_t>(addr - base) < static_cast<uint64_t>(size);
+    };
+    return in_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
+           in_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE);
   }
 
   uint32_t read_load(uint32_t paddr, uint8_t func3) const {
@@ -26,7 +33,7 @@ public:
     }
 
     const uint32_t shift = (paddr & 0x3u) * 8u;
-    uint32_t data = memory[paddr >> 2] >> shift;
+    uint32_t data = pmem_read(paddr) >> shift;
 
     const uint32_t size = func3 & 0x3u;
     uint32_t sign = 0;
@@ -59,11 +66,11 @@ public:
     const uint32_t store_data = mask_store_data(data, func3);
     const uint32_t mask = mask_store_mask(func3) << shift;
     const uint32_t wdata = store_data << shift;
-    uint32_t old_data = memory[paddr / 4];
-    memory[paddr / 4] = (old_data & ~mask) | (wdata & mask);
+    uint32_t old_data = pmem_read(paddr);
+    pmem_write(paddr, (old_data & ~mask) | (wdata & mask));
 
     if (paddr == UART_ADDR_BASE) {
-      memory[UART_ADDR_BASE / 4] &= 0xFFFFFF00u;
+      pmem_write(UART_ADDR_BASE, pmem_read(UART_ADDR_BASE) & 0xFFFFFF00u);
       char temp = static_cast<char>(data & 0xFFu);
       std::cout << temp << std::flush;
       return;
@@ -72,19 +79,19 @@ public:
     if (paddr == (UART_ADDR_BASE + 1u)) {
       const uint8_t cmd = static_cast<uint8_t>(store_data & 0xFFu);
       if (cmd == 7u) {
-        memory[PLIC_CLAIM_ADDR / 4] = 0x0000000Au;
-        memory[UART_ADDR_BASE / 4] &= 0xFFF0FFFFu;
+        pmem_write(PLIC_CLAIM_ADDR, 0x0000000Au);
+        pmem_write(UART_ADDR_BASE, pmem_read(UART_ADDR_BASE) & 0xFFF0FFFFu);
         csr->CSR_RegFile_1[csr_mip] = csr->CSR_RegFile[csr_mip] | (1 << 9);
         csr->CSR_RegFile_1[csr_sip] = csr->CSR_RegFile[csr_sip] | (1 << 9);
       } else if (cmd == 5u) {
-        memory[UART_ADDR_BASE / 4] =
-            (memory[UART_ADDR_BASE / 4] & 0xFFF0FFFFu) | 0x00030000u;
+        pmem_write(UART_ADDR_BASE,
+                   (pmem_read(UART_ADDR_BASE) & 0xFFF0FFFFu) | 0x00030000u);
       }
       return;
     }
 
     if (paddr == PLIC_CLAIM_ADDR && ((store_data & 0xFFu) == 0x0Au)) {
-      memory[PLIC_CLAIM_ADDR / 4] = 0x00000000u;
+      pmem_write(PLIC_CLAIM_ADDR, 0x00000000u);
       csr->CSR_RegFile_1[csr_mip] = csr->CSR_RegFile[csr_mip] & ~(1 << 9);
       csr->CSR_RegFile_1[csr_sip] = csr->CSR_RegFile[csr_sip] & ~(1 << 9);
       return;

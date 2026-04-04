@@ -220,9 +220,8 @@ void Dispatch::comb_dispatch() {
     }
     if (decode_inst_type(inst_alloc[i].type) == AMO &&
         ((inst_alloc[i].func7 >> 2) == AmoOp::SC)) {
-      // SC dispatches STA + STD, but its architectural 0/1 result comes back
-      // through the LSU load-like wb path instead of a separate STA-complete
-      // event. So the real completion groups are result(bit0) + STD(bit2).
+      // SC returns architectural 0/1 through load-like wb path and still has
+      // STD completion.
       expect_mask = ROB_CPLT_G0 | ROB_CPLT_G2;
     }
     inst_alloc[i].expect_mask = expect_mask;
@@ -596,6 +595,22 @@ void Dispatch::comb_fire() {
           }
         } else {
           is_core_bound_rob[i] = true;
+        }
+      }
+      // If LSU allocation failed in comb_alloc (LDQ/STQ headroom or per-cycle
+      // dispatch bandwidth), account it as memory pressure first.
+      else if (!out.dis2rob->valid[i]) {
+        if (is_load(inst_r[i])) {
+          is_mem_l1_bound[i] = true;
+          is_mem_ldq_full[i] = true;
+          any_ldq_full_stall = true;
+        } else if (is_store(inst_r[i])) {
+          is_mem_l1_bound[i] = true;
+          is_mem_stq_full[i] = true;
+          any_stq_full_stall = true;
+        } else {
+          is_core_bound_iq[i] = true;
+          any_iq_full_stall = true;
         }
       }
       // If Dispatch Logic failed (IQ check or LSU check)
