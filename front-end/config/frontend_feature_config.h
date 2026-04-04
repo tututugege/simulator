@@ -25,11 +25,11 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 // - comment out this macro    => disable RAS and fallback to BTB target
 #define ENABLE_BPU_RAS
 #ifndef RAS_DEPTH
-#define RAS_DEPTH 64
+#define RAS_DEPTH 16
 #endif
 
 #ifndef BPU_TYPE_ENTRY_NUM
-#define BPU_TYPE_ENTRY_NUM 4096
+#define BPU_TYPE_ENTRY_NUM 64
 #endif
 #ifndef TYPE_PRED_ENTRY_NUM
 #define TYPE_PRED_ENTRY_NUM BPU_TYPE_ENTRY_NUM
@@ -52,7 +52,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 
 // TAGE configs
 #ifndef BASE_ENTRY_NUM
-#define BASE_ENTRY_NUM 2048
+#define BASE_ENTRY_NUM 64
 #endif
 #ifndef GHR_LENGTH
 #define GHR_LENGTH 512
@@ -61,7 +61,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define TN_MAX 4
 #endif
 #ifndef TN_ENTRY_NUM
-#define TN_ENTRY_NUM 4096
+#define TN_ENTRY_NUM 64
 #endif
 #ifndef FH_N_MAX
 #define FH_N_MAX 3
@@ -144,7 +144,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #endif
 
 #ifndef TAGE_LOOP_ENTRY_NUM
-#define TAGE_LOOP_ENTRY_NUM 1024
+#define TAGE_LOOP_ENTRY_NUM 64
 #endif
 
 #ifndef TAGE_LOOP_TAG_BITS
@@ -168,7 +168,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #endif
 
 #ifndef TAGE_SC_L_ENTRY_NUM
-#define TAGE_SC_L_ENTRY_NUM 1024
+#define TAGE_SC_L_ENTRY_NUM 64
 #endif
 
 #ifndef TAGE_SC_L_CTR_BITS
@@ -196,7 +196,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 
 // BTB configs
 #ifndef BTB_ENTRY_NUM
-#define BTB_ENTRY_NUM 1024
+#define BTB_ENTRY_NUM 64
 #endif
 #ifndef ENABLE_BTB_ALIAS_HASH
 #define ENABLE_BTB_ALIAS_HASH 1
@@ -208,13 +208,13 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define BTB_WAY_NUM 4
 #endif
 #ifndef BTB_TYPE_ENTRY_NUM
-#define BTB_TYPE_ENTRY_NUM 4096
+#define BTB_TYPE_ENTRY_NUM 64
 #endif
 #ifndef BHT_ENTRY_NUM
-#define BHT_ENTRY_NUM 2048
+#define BHT_ENTRY_NUM 64
 #endif
 #ifndef TC_ENTRY_NUM
-#define TC_ENTRY_NUM 2048
+#define TC_ENTRY_NUM 64
 #endif
 #ifndef TC_WAY_NUM
 #define TC_WAY_NUM 2
@@ -333,16 +333,16 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 
 // FIFO sizes
 #ifndef INSTRUCTION_FIFO_SIZE
-#define INSTRUCTION_FIFO_SIZE 32
+#define INSTRUCTION_FIFO_SIZE 8
 #endif
 #ifndef PTAB_SIZE
-#define PTAB_SIZE 32
+#define PTAB_SIZE 8
 #endif
 #ifndef FETCH_ADDR_FIFO_SIZE
-#define FETCH_ADDR_FIFO_SIZE 32
+#define FETCH_ADDR_FIFO_SIZE 8
 #endif
 #ifndef FRONT2BACK_FIFO_SIZE
-#define FRONT2BACK_FIFO_SIZE 64
+#define FRONT2BACK_FIFO_SIZE 8
 #endif
 
 #endif

@@ -153,12 +153,24 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
   - 仅当 `FRONTEND_ICACHE_MODE==1` 且 `ENABLE_FRONTEND_IDEAL_ICACHE_DUAL_REQ==1` 时为 `1`。
 - `ICACHE_LINE_SIZE`（当前 stock default：`64` 字节）
   - 作用：cache line 大小。
-- `CONFIG_SIM_DDR_LATENCY`（当前 stock default：`50`，cycle）
+- `CONFIG_SIM_DDR_LATENCY`
   - 作用：shared AXI / SimDDR 读延迟建模参数。
-- `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY`（当前 stock default：`2`，cycle）
-  - 作用：SimDDR 写响应延迟建模参数。
-- `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES`（当前 stock default：`4`，bytes）
+  - 当前 stock default：`default profile` 使用 `CONFIG_SIM_DDR_LATENCY_CALC`（按当前参数为 `43 cycle`）；
+    `small/medium/large` 仍固定为 `50 cycle`。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY`（当前 stock default：`1`，cycle）
+  - 作用：最后一个 `W` beat 握手后，额外等待多少个完整周期，`B` 通道才首次可见；`0` 表示下一周期即可见。
+- `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES`（当前各 profile 默认：`32`，可选：`4/8/16/32`，bytes）
   - 作用：每个 DDR beat 传输的数据量。
+- `CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING`（当前各 profile 默认：`32`）
+  - 作用：interconnect 上游 write outstanding 排队上限。
+- `CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES`（当前各 profile 默认：`64` 字节）
+  - 作用：单次上游写事务最大 payload；编译期会检查它至少覆盖 I/D cache line 大小。
+- `CONFIG_AXI_KIT_AXI_ID_WIDTH`（当前各 profile 默认：`6`）
+  - 作用：shared AXI ID 位宽；编译期会检查它足以覆盖 read/write outstanding 上界。
+
+> 注：
+> `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前只建模 `B` 通道首次可见延迟，
+> 不是精确 DDR 控制器时序；`AW/W` 路径更细的 backpressure 行为仍留待后续更精细建模。
 
 ### 3.7 FIFO 容量参数
 

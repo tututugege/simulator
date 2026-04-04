@@ -100,6 +100,10 @@ public:
   uint64_t llc_prefetch_drop_mshr_full = 0;
   uint64_t llc_prefetch_drop_queue_full = 0;
   uint64_t llc_prefetch_drop_table_hit = 0;
+  uint64_t llc_ddr_read_total_cycles = 0;
+  uint64_t llc_ddr_read_samples = 0;
+  uint64_t llc_ddr_write_total_cycles = 0;
+  uint64_t llc_ddr_write_samples = 0;
 
   uint64_t cond_br_num = 0;
   uint64_t jalr_br_num = 0;
@@ -286,6 +290,10 @@ public:
     llc_prefetch_drop_mshr_full = 0;
     llc_prefetch_drop_queue_full = 0;
     llc_prefetch_drop_table_hit = 0;
+    llc_ddr_read_total_cycles = 0;
+    llc_ddr_read_samples = 0;
+    llc_ddr_write_total_cycles = 0;
+    llc_ddr_write_samples = 0;
 
     // bpu
     cond_br_num = 0;
@@ -728,6 +736,16 @@ public:
     const double llc_acc =
         llc_read_access ? static_cast<double>(llc_read_hit) / llc_read_access
                         : 1.0;
+    const double llc_ddr_read_avg =
+        llc_ddr_read_samples
+            ? static_cast<double>(llc_ddr_read_total_cycles) /
+                  static_cast<double>(llc_ddr_read_samples)
+            : 0.0;
+    const double llc_ddr_write_avg =
+        llc_ddr_write_samples
+            ? static_cast<double>(llc_ddr_write_total_cycles) /
+                  static_cast<double>(llc_ddr_write_samples)
+            : 0.0;
     printf("\033[38;5;34mllc read acc    : %f\033[0m\n", llc_acc);
     printf("\033[38;5;34mllc read access : %ld\033[0m\n", llc_read_access);
     printf("\033[38;5;34mllc read hit    : %ld\033[0m\n", llc_read_hit);
@@ -748,6 +766,10 @@ public:
            llc_prefetch_drop_inflight, llc_prefetch_drop_mshr_full);
     printf("\033[38;5;34mpf drop queue/hit     : %ld / %ld\033[0m\n",
            llc_prefetch_drop_queue_full, llc_prefetch_drop_table_hit);
+    printf("\033[38;5;34mllc->ddr read avg : %.6f cycles (samples=%ld)\033[0m\n",
+           llc_ddr_read_avg, llc_ddr_read_samples);
+    printf("\033[38;5;34mllc->ddr write avg: %.6f cycles (samples=%ld)\033[0m\n",
+           llc_ddr_write_avg, llc_ddr_write_samples);
 #else
     printf("\033[38;5;34mllc status      : disabled\033[0m\n");
 #endif

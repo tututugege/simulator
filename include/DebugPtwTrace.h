@@ -110,10 +110,10 @@ inline void dump_recent_satp_writes(
   for (size_t n = 0; n < recent; ++n) {
     const auto &e = g_satp_events[(start + n) % g_satp_events.size()];
     std::printf(
-        "[DEADLOCK][PTW_TRACE][SATP] cyc=%lld old=0x%08x new=0x%08x mode=%u asid=0x%02x ppn=0x%05x priv=%u\n",
+        "[DEADLOCK][PTW_TRACE][SATP] cyc=%lld old=0x%08x new=0x%08x mode=%u asid=0x%03x ppn=0x%05x priv=%u\n",
         e.cycle, e.old_satp, e.new_satp,
         static_cast<unsigned>((e.new_satp >> 31) & 0x1),
-        static_cast<unsigned>((e.new_satp >> 22) & 0xff),
+        static_cast<unsigned>((e.new_satp >> 22) & 0x1ff),
         static_cast<unsigned>(e.new_satp & 0x3fffff),
         static_cast<unsigned>(e.privilege));
   }

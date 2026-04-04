@@ -362,6 +362,10 @@ void MemSubsystem::sync_llc_perf() {
   current.prefetch_drop_mshr_full = perf.prefetch_drop_mshr_full;
   current.prefetch_drop_queue_full = perf.prefetch_drop_queue_full;
   current.prefetch_drop_table_hit = perf.prefetch_drop_table_hit;
+  current.ddr_read_total_cycles = perf.ddr_read_total_cycles;
+  current.ddr_read_samples = perf.ddr_read_samples;
+  current.ddr_write_total_cycles = perf.ddr_write_total_cycles;
+  current.ddr_write_samples = perf.ddr_write_samples;
 
   if (!llc_perf_shadow_valid_) {
     llc_perf_shadow_ = current;
@@ -421,6 +425,16 @@ void MemSubsystem::sync_llc_perf() {
     sync_counter(current.prefetch_drop_table_hit,
                  llc_perf_shadow_.prefetch_drop_table_hit,
                  ctx->perf.llc_prefetch_drop_table_hit);
+    sync_counter(current.ddr_read_total_cycles,
+                 llc_perf_shadow_.ddr_read_total_cycles,
+                 ctx->perf.llc_ddr_read_total_cycles);
+    sync_counter(current.ddr_read_samples, llc_perf_shadow_.ddr_read_samples,
+                 ctx->perf.llc_ddr_read_samples);
+    sync_counter(current.ddr_write_total_cycles,
+                 llc_perf_shadow_.ddr_write_total_cycles,
+                 ctx->perf.llc_ddr_write_total_cycles);
+    sync_counter(current.ddr_write_samples, llc_perf_shadow_.ddr_write_samples,
+                 ctx->perf.llc_ddr_write_samples);
   }
 #else
   return;
@@ -655,6 +669,54 @@ void MemSubsystem::sync_mmio_devices_from_backing() {
 #endif
 }
 
+void MemSubsystem::dump_debug_state(FILE *out) const {
+  if (out == nullptr) {
+    return;
+  }
+  const auto ptw = ptw_block.debug_state();
+  std::fprintf(out,
+               "[MEM DEBUG][PTW] walk_active=%d state=%u owner=%u "
+               "req_id_valid=%d req_id=%zu dtlb(req_p=%d req_i=%d resp=%d "
+               "mem_p=%d mem_i=%d) itlb(req_p=%d req_i=%d resp=%d mem_p=%d "
+               "mem_i=%d)\n",
+               static_cast<int>(ptw.walk_active),
+               static_cast<unsigned>(ptw.walk_state),
+               static_cast<unsigned>(ptw.walk_owner),
+               static_cast<int>(ptw.walk_req_id_valid), ptw.walk_req_id,
+               static_cast<int>(ptw.walk_req_pending[0]),
+               static_cast<int>(ptw.walk_req_inflight[0]),
+               static_cast<int>(ptw.walk_resp_valid[0]),
+               static_cast<int>(ptw.mem_req_pending[0]),
+               static_cast<int>(ptw.mem_req_inflight[0]),
+               static_cast<int>(ptw.walk_req_pending[1]),
+               static_cast<int>(ptw.walk_req_inflight[1]),
+               static_cast<int>(ptw.walk_resp_valid[1]),
+               static_cast<int>(ptw.mem_req_pending[1]),
+               static_cast<int>(ptw.mem_req_inflight[1]));
+
+  const auto route = resp_route_block.debug_state();
+  std::fprintf(out,
+               "[MEM DEBUG][ROUTE] ptw_event_count=%u wake(dtlb=%d itlb=%d "
+               "walk=%d) ptw_port0=%d lsu_port0_replayed=%d\n",
+               static_cast<unsigned>(route.ptw_event_count),
+               static_cast<int>(route.wakeup.dtlb),
+               static_cast<int>(route.wakeup.itlb),
+               static_cast<int>(route.wakeup.walk),
+               static_cast<int>(route.ptw_occupies_port0),
+               static_cast<int>(route.lsu_port0_replayed));
+  for (size_t i = 0; i < MemRespRouteBlock::kPtwTrackCount; i++) {
+    const auto &track = route.ptw_tracks[i];
+    if (!track.valid) {
+      continue;
+    }
+    std::fprintf(out,
+                 "[MEM DEBUG][ROUTE][PTWTRACK] idx=%zu owner=%u req_id=%zu "
+                 "addr=0x%08x\n",
+                 i, static_cast<unsigned>(track.owner), track.req_id,
+                 track.req_addr);
+  }
+}
+
 void MemSubsystem::comb() {
 #if AXI_KIT_RUNTIME_ENABLED
   if (internal_axi_runtime_active_) {
@@ -690,24 +752,43 @@ void MemSubsystem::comb() {
   const uint32_t ptw_itlb_addr =
       has_ptw_itlb ? ptw_block.pending_mem_addr(MemPtwBlock::Client::ITLB) : 0;
 
-  bool ptw_walk_direct_hit = false;
+  auto same_cycle_store_conflicts_ptw = [&](uint32_t paddr) {
+    if (lsu2dcache == nullptr) {
+      return false;
+    }
+    for (int i = 0; i < LSU_STA_COUNT; i++) {
+      const auto &store_req = lsu2dcache->req_ports.store_ports[i];
+      if (!store_req.valid) {
+        continue;
+      }
+      if ((static_cast<uint32_t>(store_req.addr) >> 2) == (paddr >> 2)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const bool ptw_dtlb_store_conflict =
+      has_ptw_dtlb && same_cycle_store_conflicts_ptw(ptw_dtlb_addr);
+  const bool ptw_itlb_store_conflict =
+      has_ptw_itlb && same_cycle_store_conflicts_ptw(ptw_itlb_addr);
+
   bool ptw_walk_hold_for_coherence = false;
-  uint32_t ptw_walk_direct_data = 0;
-  if (issue_ptw_walk_read) {
-    const auto q =
-        dcache_.query_coherent_word(ptw_walk_read_addr, ptw_walk_direct_data);
-    ptw_walk_direct_hit = (q == MemDcacheImpl::CoherentQueryResult::Hit);
-    ptw_walk_hold_for_coherence =
-        (q == MemDcacheImpl::CoherentQueryResult::Retry) ||
-        (mshr_.cur.fill_valid &&
-         cache_line_match(mshr_.cur.fill_addr, ptw_walk_read_addr));
+  if (issue_ptw_walk_read && same_cycle_store_conflicts_ptw(ptw_walk_read_addr)) {
+    // PTW reads must not observe the pre-state of a same-cycle committed PTE
+    // store routed into DCache. Hold the walk for one cycle and let the store
+    // update become architecturally visible through the normal DCache seq path
+    // first. Shared PTW intentionally stays on the ordinary DCache request
+    // pipeline instead of sampling a speculative same-cycle view here.
+    ptw_walk_hold_for_coherence = true;
   }
 
   read_arb_block.eval_comb(lsu2dcache,
-                           issue_ptw_walk_read && !ptw_walk_direct_hit &&
-                               !ptw_walk_hold_for_coherence,
+                           issue_ptw_walk_read && !ptw_walk_hold_for_coherence,
                            ptw_walk_read_addr,
-                           has_ptw_dtlb, ptw_dtlb_addr, has_ptw_itlb,
+                           has_ptw_dtlb && !ptw_dtlb_store_conflict,
+                           ptw_dtlb_addr,
+                           has_ptw_itlb && !ptw_itlb_store_conflict,
                            ptw_itlb_addr);
 
   dcache_req_mux_ = read_arb_block.comb_result().dcache_req;
@@ -739,12 +820,6 @@ void MemSubsystem::comb() {
   mshr_.in.wbmshr = wb_.out.wbmshr;
 
   dcache_.stage2_comb();
-
-  if (ptw_walk_direct_hit) {
-    ptw_block.on_walk_read_granted(0);
-    (void)ptw_block.on_walk_mem_resp(0, ptw_walk_direct_data);
-  }
-
   if (read_arb_block.comb_result().granted) {
     switch (read_arb_block.comb_result().granted_owner) {
     case MemReadArbBlock::Owner::PTW_DTLB:
@@ -781,7 +856,60 @@ void MemSubsystem::comb() {
       continue;
     }
   }
-  resp_route_block.apply_ptw_events(&ptw_block);
+  for (uint8_t i = 0; i < route_out.ptw_event_count; i++) {
+    const auto &evt = route_out.ptw_events[i];
+    if (!evt.valid) {
+      continue;
+    }
+
+    uint32_t coherent_data = evt.data;
+    MemDcacheImpl::CoherentQueryResult coherent_q =
+        MemDcacheImpl::CoherentQueryResult::Miss;
+    if (evt.replay == 0) {
+      uint32_t observed = 0;
+      coherent_q = dcache_.query_coherent_word(evt.req_addr, observed);
+      if (coherent_q == MemDcacheImpl::CoherentQueryResult::Hit) {
+        coherent_data = observed;
+      }
+    }
+
+    switch (evt.owner) {
+    case MemReadArbBlock::Owner::PTW_DTLB:
+      if (evt.replay == 0) {
+        if (coherent_q == MemDcacheImpl::CoherentQueryResult::Retry) {
+          ptw_block.retry_mem_req(MemPtwBlock::Client::DTLB);
+        } else {
+          ptw_block.on_mem_resp_client(MemPtwBlock::Client::DTLB,
+                                       coherent_data);
+        }
+      }
+      break;
+    case MemReadArbBlock::Owner::PTW_ITLB:
+      if (evt.replay == 0) {
+        if (coherent_q == MemDcacheImpl::CoherentQueryResult::Retry) {
+          ptw_block.retry_mem_req(MemPtwBlock::Client::ITLB);
+        } else {
+          ptw_block.on_mem_resp_client(MemPtwBlock::Client::ITLB,
+                                       coherent_data);
+        }
+      }
+      break;
+    case MemReadArbBlock::Owner::PTW_WALK:
+      if (evt.replay == 0) {
+        if (coherent_q == MemDcacheImpl::CoherentQueryResult::Retry) {
+          (void)ptw_block.on_walk_mem_replay(evt.req_id, 2);
+        } else {
+          (void)ptw_block.on_walk_mem_resp(evt.req_id, evt.req_addr,
+                                           coherent_data);
+        }
+      } else {
+        (void)ptw_block.on_walk_mem_replay(evt.req_id, evt.replay);
+      }
+      break;
+    default:
+      break;
+    }
+  }
 
   if (route_out.wakeup.dtlb) {
     ptw_block.retry_mem_req(MemPtwBlock::Client::DTLB);

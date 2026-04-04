@@ -2,16 +2,14 @@
 #include "Csr.h"
 #include "RISCV.h"
 #include "config.h"
+#include "oracle.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <iostream>
-#include "oracle.h"
 extern "C" {
 #include "softfloat.h"
 }
 
-namespace {
 constexpr uint32_t kRamBase = 0x80000000u;
 constexpr uint32_t kRamUpperBound = 0xC0000000u;
 constexpr uint32_t kRamSizeBytes = kRamUpperBound - kRamBase;
@@ -69,8 +67,6 @@ inline bool is_mmio_range(uint32_t addr, uint32_t base, uint32_t size) {
 inline bool is_modeled_mmio_addr(uint32_t paddr) {
   return is_mmio_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
          is_mmio_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE);
-}
-
 } // namespace
 
 // ---------------- 辅助工具 ----------------
@@ -951,15 +947,20 @@ void RefCpu::RV32A() {
   uint32_t p_addr = v_addr;
 
   if (data_translation_enabled(state, privilege)) {
-    if (funct5 == 2) { // LR: only load permission matters.
+    if (funct5 == 2) {
+      // LR.W is a load-class access. It must not trigger/store-compare a
+      // store/AMO page-fault path just because the target page is read-only.
       page_fault_load = !va2pa_fix(p_addr, v_addr, 1);
-    } else if (funct5 == 3) { // SC: only store permission matters.
+    } else if (funct5 == 3) {
+      // SC.W is store/AMO-class and should only be checked against the store
+      // permission path.
       page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
     } else {
-      // Non-LR/SC AMO traps are reported as store faults. A legal writable PTE
-      // implies readable in Sv32 (W without R is invalid), so store check is
-      // sufficient here.
-      page_fault_store = !va2pa_fix(p_addr, v_addr, 2);
+      const bool page_fault_load_check = !va2pa_fix(p_addr, v_addr, 1);
+      const bool page_fault_store_check = !va2pa_fix(p_addr, v_addr, 2);
+      if (page_fault_load_check || page_fault_store_check) {
+        page_fault_store = true;
+      }
     }
 
     if (page_fault_load || page_fault_store) {
@@ -1743,8 +1744,14 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
     bool is_user_page = (pte2 & PTE_U) != 0;
     if (eff_priv == 0 && !is_user_page)
       return false;
-    if (eff_priv == 1 && is_user_page && !sum)
-      return false;
+    if (eff_priv == 1 && is_user_page) {
+      if (type == 0) {
+        return false;
+      }
+      if (!sum) {
+        return false;
+      }
+    }
 
     // A/D 位检查
     if (!(pte2 & PTE_A))
