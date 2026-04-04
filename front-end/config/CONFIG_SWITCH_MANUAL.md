@@ -183,6 +183,8 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
   - 作用：单次上游写事务最大 payload；编译期会检查它至少覆盖 I/D cache line 大小。
 - `CONFIG_AXI_KIT_AXI_ID_WIDTH`（当前各 profile 默认：`6`）
   - 作用：shared AXI ID 位宽；编译期会检查它足以覆盖 read/write outstanding 上界。
+- `CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC`（当前各 profile 默认：`0`）
+  - 作用：控制 DCache demand read miss 是否在 LLC install；`0=allocate`，`1=noallocate`。
 
 > 注：
 > `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前只建模 `B` 通道首次可见延迟，

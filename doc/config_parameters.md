@@ -162,6 +162,7 @@
 | `CONFIG_AXI_LLC_WAYS` | 16 | LLC associativity |
 | `CONFIG_AXI_LLC_MSHR_NUM` | 8 | LLC 全局共享 MSHR 数量 |
 | `CONFIG_AXI_LLC_LOOKUP_LATENCY` | 3 | LLC lookup 响应可见延迟 |
+| `CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC` | 0 | DCache demand read miss 是否绕过 LLC install；`0=allocate`，`1=noallocate` |
 
 > [!IMPORTANT]
 > 当 parent simulator 集成 `axi-interconnect-kit` 时，上述 `CONFIG_AXI_KIT_*`

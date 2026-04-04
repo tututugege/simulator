@@ -112,12 +112,14 @@ void print_soc_config_banner() {
       static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING));
   std::printf(
       "[CONFIG][LLC] enable=%u(%s) capacity=%lluMB ways=%u mshr=%u "
-      "lookup_latency=%ucy\n",
+      "lookup_latency=%ucy dcache_read_miss=%s\n",
       static_cast<unsigned>(CONFIG_AXI_LLC_ENABLE), llc_mode,
       static_cast<unsigned long long>(CONFIG_AXI_LLC_SIZE_BYTES >> 20),
       static_cast<unsigned>(CONFIG_AXI_LLC_WAYS),
       static_cast<unsigned>(CONFIG_AXI_LLC_MSHR_NUM),
-      static_cast<unsigned>(CONFIG_AXI_LLC_LOOKUP_LATENCY));
+      static_cast<unsigned>(CONFIG_AXI_LLC_LOOKUP_LATENCY),
+      CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC != 0 ? "noallocate"
+                                                   : "allocate");
   std::printf(
       "[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi "
       "memsubsystem_internal_axi_runtime=disabled llc_summary=%s\n",
