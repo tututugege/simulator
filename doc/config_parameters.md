@@ -61,6 +61,14 @@
 |------|--------|----------|------|
 | `CONFIG_SIM_DDR_LATENCY` | `default: CONFIG_SIM_DDR_LATENCY_CALC (=43)`；`small/medium/large: 50` | 1~500（手动覆盖时） | shared AXI / SimDDR 读延迟（周期数）；default profile 由 DDR 参数自动换算，其余 stock profile 仍固定为 50 |
 | `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` | 1 | 0~500 | 最后一个 W beat 握手后，额外等待多少个完整周期，B 通道才首次可见 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH` | `CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING (=32)` | 1~64 | SimDDR 最多可缓存多少笔已接收 AW 但尚未完全完成的写事务 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP` | 0 | 0~32 | 可选的 W 通道额外节流旋钮；主要用于 stress/debug，不是 stock 主模型 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH` | 8 | 1~64 | SimDDR 写数据缓冲深度；FIFO credit 用尽时会对 W 通道施加 backpressure |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP` | 0 | 0~32 | 后端每 drain 一个写 beat 后，额外等待多少个完整周期才继续处理下一个 beat |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK` | `CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH (=8)` | 1~64 | 写数据 FIFO 占用达到该高水位后，SimDDR 进入 write-drain mode，持续 drain 已缓存写数据 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK` | 0 | 0~63 | write-drain mode 的退出阈值；FIFO 占用降到该低水位及以下时，`WREADY` 才重新开放 |
+| `CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND` | 0 | 0~64 | 从 read burst service window 切到 write-drain window 前，额外等待的完整周期数 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND` | 0 | 0~64 | 从 write-drain window 切回 read burst service window 前，额外等待的完整周期数 |
 | `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 32（all profiles） | 4/8/16/32 | 每个 DDR beat 传输字节数 |
 | `VIRTUAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 虚拟内存大小 |
 | `PHYSICAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 物理内存大小 |
@@ -71,8 +79,9 @@
 
 > [!NOTE]
 > `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前是功能模型里的 `B` 通道可见性旋钮，
-> 不是精确 DDR 控制器时序模型。当前实现仍未细化建模 `AW/W` 路径的更真实
-> backpressure 与写通道调度。
+> 不是精确 DDR 控制器时序模型。当前写路径主线更接近“有限 write-data FIFO +
+> 高/低水位驱动的 bursty write-drain mode + 可配置 read/write turnaround”的近似模型；
+> `CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP` 只保留为 stress/debug 旋钮。
 
 #### 3.1.1 DDR 读延迟参数化模型
 
@@ -153,6 +162,7 @@
 | `CONFIG_AXI_LLC_WAYS` | 16 | LLC associativity |
 | `CONFIG_AXI_LLC_MSHR_NUM` | 8 | LLC 全局共享 MSHR 数量 |
 | `CONFIG_AXI_LLC_LOOKUP_LATENCY` | 3 | LLC lookup 响应可见延迟 |
+| `CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC` | 0 | DCache demand read miss 是否绕过 LLC install；`0=allocate`，`1=noallocate` |
 
 > [!IMPORTANT]
 > 当 parent simulator 集成 `axi-interconnect-kit` 时，上述 `CONFIG_AXI_KIT_*`

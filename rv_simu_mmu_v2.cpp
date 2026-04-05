@@ -90,11 +90,21 @@ void print_soc_config_banner() {
               compiled_icache_path);
   std::printf(
       "[CONFIG][AXI] ddr_read_latency=%ucy ddr_write_resp_latency=%ucy "
-      "ddr_beat=%uB upstream_payload=%uB upstream_read_resp=%uB "
+      "ddr_beat=%uB wq=%u wag=%ucy wfifo=%u wdrain=%ucy whi=%u wlo=%u "
+      "r2w=%ucy w2r=%ucy "
+      "upstream_payload=%uB upstream_read_resp=%uB "
       "out=%u per_master=%u ddr_out=%u\n",
       static_cast<unsigned>(sim_ddr::SIM_DDR_LATENCY),
       static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_RESP_LATENCY),
       static_cast<unsigned>(sim_ddr::SIM_DDR_BEAT_BYTES),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_QUEUE_DEPTH),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_ACCEPT_GAP),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DATA_FIFO_DEPTH),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_GAP),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_LOW_WATERMARK),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_READ_TO_WRITE_TURNAROUND),
+      static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_TO_READ_TURNAROUND),
       static_cast<unsigned>(axi_interconnect::AXI_UPSTREAM_PAYLOAD_BYTES),
       static_cast<unsigned>(axi_interconnect::MAX_READ_TRANSACTION_BYTES),
       static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
@@ -102,12 +112,14 @@ void print_soc_config_banner() {
       static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING));
   std::printf(
       "[CONFIG][LLC] enable=%u(%s) capacity=%lluMB ways=%u mshr=%u "
-      "lookup_latency=%ucy\n",
+      "lookup_latency=%ucy dcache_read_miss=%s\n",
       static_cast<unsigned>(CONFIG_AXI_LLC_ENABLE), llc_mode,
       static_cast<unsigned long long>(CONFIG_AXI_LLC_SIZE_BYTES >> 20),
       static_cast<unsigned>(CONFIG_AXI_LLC_WAYS),
       static_cast<unsigned>(CONFIG_AXI_LLC_MSHR_NUM),
-      static_cast<unsigned>(CONFIG_AXI_LLC_LOOKUP_LATENCY));
+      static_cast<unsigned>(CONFIG_AXI_LLC_LOOKUP_LATENCY),
+      CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC != 0 ? "noallocate"
+                                                   : "allocate");
   std::printf(
       "[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi "
       "memsubsystem_internal_axi_runtime=disabled llc_summary=%s\n",
