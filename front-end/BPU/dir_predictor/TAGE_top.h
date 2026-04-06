@@ -57,7 +57,8 @@ struct UpdateRequest {
   tage_idx_t reset_row_idx;
   wire1_t reset_msb_only;
   wire1_t use_alt_ctr_we;
-  int8_t use_alt_ctr_wdata;
+  // int8_t use_alt_ctr_wdata;
+  tage_use_alt_ctr_t use_alt_ctr_wdata;
 };
 
 struct LSFR_Output {
@@ -136,14 +137,28 @@ static inline tage_sc_idx_t tage_sc_idx_from_pc(pc_t pc) {
 // TAGE-SC-L: Strong Statistical Corrector (SC-L) helpers
 // ----------------------------------------------------------------------------
 
-static inline int16_t scl_abs16(int16_t v) { return (v < 0) ? -v : v; }
-
-static inline int8_t scl_sat_inc(int8_t v, int8_t max_v) {
-  return (v >= max_v) ? max_v : static_cast<int8_t>(v + 1);
+static inline tage_use_alt_ctr_t sat_inc_use_alt(tage_use_alt_ctr_t v,
+                                                 tage_use_alt_ctr_t max_v) {
+  return (v >= max_v) ? max_v : static_cast<tage_use_alt_ctr_t>(v + 1);
 }
 
-static inline int8_t scl_sat_dec(int8_t v, int8_t min_v) {
-  return (v <= min_v) ? min_v : static_cast<int8_t>(v - 1);
+static inline tage_use_alt_ctr_t sat_dec_use_alt(tage_use_alt_ctr_t v,
+                                                 tage_use_alt_ctr_t min_v) {
+  return (v <= min_v) ? min_v : static_cast<tage_use_alt_ctr_t>(v - 1);
+}
+
+static inline tage_scl_ctr_t sat_inc_scl(tage_scl_ctr_t v,
+                                         tage_scl_ctr_t max_v) {
+  return (v >= max_v) ? max_v : static_cast<tage_scl_ctr_t>(v + 1);
+}
+
+static inline tage_scl_ctr_t sat_dec_scl(tage_scl_ctr_t v,
+                                         tage_scl_ctr_t min_v) {
+  return (v <= min_v) ? min_v : static_cast<tage_scl_ctr_t>(v - 1);
+}
+
+static inline wire16_t abs_diff_u16(wire16_t a, wire16_t b) {
+  return (a >= b) ? static_cast<wire16_t>(a - b) : static_cast<wire16_t>(b - a);
 }
 
 static inline uint32_t scl_fold_ghr_idx(const wire1_t ghr[GHR_LENGTH],
@@ -350,7 +365,8 @@ public:
     wire1_t GHR[GHR_LENGTH];
     wire1_t LSFR[4];
     tage_reset_ctr_t reset_cnt_reg;
-    int8_t use_alt_ctr_reg;
+    // int8_t use_alt_ctr_reg;
+    tage_use_alt_ctr_t use_alt_ctr_reg;
     // input latches
     wire1_t do_pred_latch;
     wire1_t do_upd_latch;
@@ -454,7 +470,8 @@ public:
     wire1_t reset_cnt_reg_we;
     tage_reset_ctr_t reset_cnt_reg_next;
     wire1_t use_alt_ctr_reg_we;
-    int8_t use_alt_ctr_reg_next;
+    // int8_t use_alt_ctr_reg_next;
+    tage_use_alt_ctr_t use_alt_ctr_reg_next;
     wire1_t lsfr_we;
     wire1_t LSFR_next[4];
     wire1_t base_we_commit;
@@ -570,7 +587,8 @@ public:
     TageTableReadData read_data;
     TageIndexTag idx_tag;
     tage_sc_ctr_t sc_ctr;
-    int8_t use_alt_ctr;
+    // int8_t use_alt_ctr;
+    tage_use_alt_ctr_t use_alt_ctr;
   };
 
   struct TagePredSelectCombOut {
@@ -586,7 +604,8 @@ public:
     tage_reset_ctr_t current_reset_cnt;
     wire1_t sc_used;
     wire1_t loop_used;
-    int8_t use_alt_ctr;
+    // int8_t use_alt_ctr;
+    tage_use_alt_ctr_t use_alt_ctr;
   };
 
   struct TageUpdateCombOut {
@@ -610,7 +629,8 @@ private:
 
   wire1_t LSFR[4];
   tage_reset_ctr_t reset_cnt_reg;
-  int8_t use_alt_ctr_reg;
+  // int8_t use_alt_ctr_reg;
+  tage_use_alt_ctr_t use_alt_ctr_reg;
 
   // 表项存储 (Memories)
   tage_base_cnt_t base_counter[BASE_ENTRY_NUM];
@@ -621,8 +641,10 @@ private:
 
 #if ENABLE_TAGE_SC_L
   // Strong SC-L tables (multi-table signed counters) + adaptive threshold.
-  int8_t scl_table[BPU_SCL_META_NTABLE][TAGE_SC_L_ENTRY_NUM];
-  int16_t scl_theta;
+  // int8_t scl_table[BPU_SCL_META_NTABLE][TAGE_SC_L_ENTRY_NUM];
+  tage_scl_ctr_t scl_table[BPU_SCL_META_NTABLE][TAGE_SC_L_ENTRY_NUM];
+  // int16_t scl_theta;
+  tage_scl_theta_t scl_theta;
 #endif
 
 #if ENABLE_TAGE_LOOP_PRED
@@ -692,7 +714,8 @@ public:
     LSFR[2] = 0;
     LSFR[3] = 1;
     reset_cnt_reg = 0;
-    use_alt_ctr_reg = static_cast<int8_t>(TAGE_USE_ALT_CTR_INIT);
+    // use_alt_ctr_reg = static_cast<int8_t>(TAGE_USE_ALT_CTR_INIT);
+    use_alt_ctr_reg = static_cast<tage_use_alt_ctr_t>(TAGE_USE_ALT_CTR_INIT);
 
     memset(base_counter, 0, sizeof(base_counter));
     memset(tag_table, 0, sizeof(tag_table));
@@ -700,8 +723,9 @@ public:
     memset(useful_table, 0, sizeof(useful_table));
     std::memset(sc_ctr_table, 1, sizeof(sc_ctr_table));
 #if ENABLE_TAGE_SC_L
-    std::memset(scl_table, 0, sizeof(scl_table));
-    scl_theta = static_cast<int16_t>(TAGE_SC_L_THETA_INIT);
+    std::memset(scl_table, (1u << (TAGE_SC_L_CTR_BITS - 1)), sizeof(scl_table));
+    // scl_theta = static_cast<int16_t>(TAGE_SC_L_THETA_INIT);
+    scl_theta = static_cast<tage_scl_theta_t>(TAGE_SC_L_THETA_INIT);
 #endif
 #if ENABLE_TAGE_LOOP_PRED
     std::memset(loop_table, 0, sizeof(loop_table));
@@ -879,7 +903,8 @@ public:
       static constexpr uint32_t kSclMask = TAGE_SC_L_ENTRY_NUM - 1;
       static constexpr int kHistLen[BPU_SCL_META_NTABLE] = {0, 4, 8, 16, 32, 64, 128, 256};
       static constexpr int kPathHistLen[BPU_SCL_META_NTABLE] = {0, 4, 8, 12, 16, 20, 24, 28};
-      int16_t sum = 0;
+      // int16_t sum = 0;
+      wire16_t sum_raw = 0;
       for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
         const uint32_t folded = scl_fold_ghr_idx(rd.state_in.GHR, kHistLen[t], kSclIdxBits);
         uint32_t mix = (inp.pc_pred_in >> 2);
@@ -895,10 +920,17 @@ public:
 #endif
         const uint32_t idx = mix & kSclMask;
         out.sc_idx_out[t] = static_cast<tage_scl_meta_idx_t>(idx);
-        sum += static_cast<int16_t>(scl_table[t][idx]);
+        // sum += static_cast<int16_t>(scl_table[t][idx]);
+        sum_raw = static_cast<wire16_t>(sum_raw + static_cast<wire16_t>(scl_table[t][idx]));
       }
-      out.sc_sum_out = sum;
-      out.sc_pred_out = (sum >= 0);
+      // out.sc_sum_out = sum;
+      out.sc_sum_out = sum_raw;
+      static constexpr wire16_t kSclCtrBias =
+        static_cast<wire16_t>(1u << (TAGE_SC_L_CTR_BITS - 1));
+      static constexpr wire16_t kSclSumBias =
+        static_cast<wire16_t>(BPU_SCL_META_NTABLE * kSclCtrBias);
+      // out.sc_pred_out = (sum >= 0);
+      out.sc_pred_out = (sum_raw >= kSclSumBias);
       out.sc_used_out = false;
       if (pred_sel_out.pred_res.pcpn < TN_MAX) {
         const uint8_t provider_cnt = rd.pred_read_data.cnt[pred_sel_out.pred_res.pcpn];
@@ -907,7 +939,10 @@ public:
             (provider_cnt >= TAGE_PROVIDER_WEAK_LOW) &&
             (provider_cnt <= TAGE_PROVIDER_WEAK_HIGH);
         const bool sc_disagree = (out.sc_pred_out != provider_pred);
-        const bool margin_ok = (scl_abs16(sum) >= (scl_theta + TAGE_SC_L_OVERRIDE_MARGIN));
+        // const bool margin_ok = (scl_abs16(sum) >= (scl_theta + TAGE_SC_L_OVERRIDE_MARGIN));
+        const wire16_t abs_sum = abs_diff_u16(sum_raw, kSclSumBias);
+        const bool margin_ok =
+          (abs_sum >= static_cast<wire16_t>(scl_theta + TAGE_SC_L_OVERRIDE_MARGIN));
         if (provider_weak && sc_disagree && margin_ok) {
           out.sc_used_out = true;
           out.pred_out = out.sc_pred_out;
@@ -1271,20 +1306,30 @@ public:
 #if ENABLE_TAGE_SC_L
     if (inp.update_en && inp.sc_used_in) {
       static constexpr uint32_t kSclMask = TAGE_SC_L_ENTRY_NUM - 1;
-      static constexpr int8_t kCtrMax = (1 << (TAGE_SC_L_CTR_BITS - 1)) - 1;
-      static constexpr int8_t kCtrMin = -(1 << (TAGE_SC_L_CTR_BITS - 1));
+      // static constexpr int8_t kCtrMax = (1 << (TAGE_SC_L_CTR_BITS - 1)) - 1;
+      // static constexpr int8_t kCtrMin = -(1 << (TAGE_SC_L_CTR_BITS - 1));
+      const tage_scl_ctr_t kCtrMax =
+        static_cast<tage_scl_ctr_t>((1u << TAGE_SC_L_CTR_BITS) - 1u);
+      const tage_scl_ctr_t kCtrMin = static_cast<tage_scl_ctr_t>(0u);
       const bool real_dir = inp.real_dir;
       const bool sc_pred = inp.sc_pred_in;
-      const int16_t sum = inp.sc_sum_in;
-      const int16_t abs_sum = scl_abs16(sum);
+      // const int16_t sum = inp.sc_sum_in;
+      // const int16_t abs_sum = scl_abs16(sum);
+      const wire16_t sum_raw = inp.sc_sum_in;
+      static constexpr wire16_t kSclCtrBias = static_cast<wire16_t>(1u << (TAGE_SC_L_CTR_BITS - 1));
+      static constexpr wire16_t kSclSumBias = static_cast<wire16_t>(BPU_SCL_META_NTABLE * kSclCtrBias);
+      const wire16_t abs_sum = abs_diff_u16(sum_raw, kSclSumBias);
       const bool low_margin = (abs_sum < scl_theta);
       const bool sc_wrong = (sc_pred != real_dir);
       const bool train = sc_wrong || low_margin;
       if (train) {
         for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
           const uint32_t idx = static_cast<uint32_t>(inp.sc_idx_in[t]) & kSclMask;
-          int8_t cur = scl_table[t][idx];
-          cur = real_dir ? scl_sat_inc(cur, kCtrMax) : scl_sat_dec(cur, kCtrMin);
+          // int8_t cur = scl_table[t][idx];
+          // cur = real_dir ? scl_sat_inc(cur, kCtrMax) : scl_sat_dec(cur, kCtrMin);
+          // scl_table[t][idx] = cur;
+          tage_scl_ctr_t cur = scl_table[t][idx];
+          cur = real_dir ? sat_inc_scl(cur, kCtrMax) : sat_dec_scl(cur, kCtrMin);
           scl_table[t][idx] = cur;
         }
       }
@@ -1428,8 +1473,10 @@ private:
       const bool useful_low =
           (read_data.useful[pcpn] <= TAGE_USE_ALT_USEFUL_THRESHOLD);
       if (provider_weak && useful_low) {
+        // const bool prefer_alt =
+        //     (in.use_alt_ctr <= static_cast<int8_t>(TAGE_USE_ALT_CTR_USE_ALT_THRESHOLD));
         const bool prefer_alt =
-            (in.use_alt_ctr <= static_cast<int8_t>(TAGE_USE_ALT_CTR_USE_ALT_THRESHOLD));
+            (in.use_alt_ctr <= static_cast<tage_use_alt_ctr_t>(TAGE_USE_ALT_CTR_USE_ALT_THRESHOLD));
         res.pred = prefer_alt ? res.alt_pred : provider_pred;
       }
 #endif
@@ -1512,15 +1559,19 @@ private:
         const bool provider_correct = (provider_pred_raw == real_dir);
         const bool alt_correct = (pred_res.alt_pred == real_dir);
         if (provider_correct ^ alt_correct) {
-          const int8_t ctr_max =
-              static_cast<int8_t>((1 << (TAGE_USE_ALT_CTR_BITS - 1)) - 1);
-          const int8_t ctr_min =
-              static_cast<int8_t>(-(1 << (TAGE_USE_ALT_CTR_BITS - 1)));
-          int8_t next_ctr = in.use_alt_ctr;
+          // const int8_t ctr_max =
+          //     static_cast<int8_t>((1 << (TAGE_USE_ALT_CTR_BITS - 1)) - 1);
+          // const int8_t ctr_min =
+          //     static_cast<int8_t>(-(1 << (TAGE_USE_ALT_CTR_BITS - 1)));
+          // int8_t next_ctr = in.use_alt_ctr;
+          const tage_use_alt_ctr_t ctr_max =
+            static_cast<tage_use_alt_ctr_t>((1u << TAGE_USE_ALT_CTR_BITS) - 1u);
+          const tage_use_alt_ctr_t ctr_min = static_cast<tage_use_alt_ctr_t>(0u);
+          tage_use_alt_ctr_t next_ctr = in.use_alt_ctr;
           if (alt_correct) {
-            next_ctr = scl_sat_dec(next_ctr, ctr_min);
+            next_ctr = sat_dec_use_alt(next_ctr, ctr_min);
           } else {
-            next_ctr = scl_sat_inc(next_ctr, ctr_max);
+            next_ctr = sat_inc_use_alt(next_ctr, ctr_max);
           }
           req.use_alt_ctr_we = true;
           req.use_alt_ctr_wdata = next_ctr;
