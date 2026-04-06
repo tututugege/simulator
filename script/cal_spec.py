@@ -14,20 +14,38 @@ PERF_REPORT = LOG_ROOT_DIR + "/perf_report.txt"
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 REF_TIMES = {
-    "400.perlbench": 9770, "401.bzip2": 9650, "403.gcc": 8050, "429.mcf": 9120,
-    "445.gobmk": 10490, "456.hmmer": 9270, "458.sjeng": 12100, "462.libquantum": 20700,
-    "464.h264ref": 22100, "471.omnetpp": 6250, "473.astar": 7020, "483.xalancbmk": 6900
+    "400.perlbench": 9770,
+    "401.bzip2": 9650,
+    "403.gcc": 8050,
+    "429.mcf": 9120,
+    "445.gobmk": 10490,
+    "456.hmmer": 9270,
+    "458.sjeng": 12100,
+    "462.libquantum": 20700,
+    "464.h264ref": 22100,
+    "471.omnetpp": 6250,
+    "473.astar": 7020,
+    "483.xalancbmk": 6900,
 }
 
 INST_COUNTS = {
-    "400.perlbench": 0, "401.bzip2": 2232007993519, "403.gcc": 1253567418409, "429.mcf": 293322610121,
-    "445.gobmk": 2131355859079, "456.hmmer": 3616124850901, "458.sjeng": 2630677491559, "462.libquantum": 2229437961871,
-    "464.h264ref": 5355011654218, "471.omnetpp": 1132608900700, "473.astar": 973000063337, "483.xalancbmk": 1061725890164
+    "400.perlbench": 2063973377122,
+    "401.bzip2": 2232007993519,
+    "403.gcc": 1253567418409,
+    "429.mcf": 293322610121,
+    "445.gobmk": 2131355859079,
+    "456.hmmer": 3616124850901,
+    "458.sjeng": 2630677491559,
+    "462.libquantum": 2229437961871,
+    "464.h264ref": 5355011654218,
+    "471.omnetpp": 1132608900700,
+    "473.astar": 973000063337,
+    "483.xalancbmk": 1061725890164,
 }
 
 # 基础正则
 REGEX_INST = re.compile(r"instruction\s+num:\s+(\d+)")
-REGEX_CYC  = re.compile(r"cycle\s+num:\s+(\d+)")
+REGEX_CYC = re.compile(r"cycle\s+num:\s+(\d+)")
 REGEX_CACHE_HIT = re.compile(r"(?<!i)cache\s+hit\s+:\s+(\d+)")
 REGEX_CACHE_ACC = re.compile(r"(?<!i)cache\s+access\s+:\s+(\d+)")
 REGEX_SP_ID = re.compile(r"ckpt_sp(\d+)_")
@@ -170,7 +188,7 @@ def _extract_last_section_lines(clean_lines, header_candidates):
         return []
 
     section_lines = []
-    for line in clean_lines[start_idx + 1:]:
+    for line in clean_lines[start_idx + 1 :]:
         if "*********" in line:
             break
         section_lines.append(line.strip())
@@ -246,7 +264,7 @@ def _replace_clog2_calls(expr, known_numeric):
             if ival <= 0 or (ival & (ival - 1)) != 0:
                 break
             rep = str(ival.bit_length() - 1)
-            expr = expr[:m.start()] + rep + expr[m.end():]
+            expr = expr[: m.start()] + rep + expr[m.end() :]
         except Exception:
             break
     return expr
@@ -254,8 +272,17 @@ def _replace_clog2_calls(expr, known_numeric):
 
 def _safe_eval_expr(expr):
     allowed_binops = (
-        ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod,
-        ast.LShift, ast.RShift, ast.BitOr, ast.BitAnd, ast.BitXor,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.FloorDiv,
+        ast.Mod,
+        ast.LShift,
+        ast.RShift,
+        ast.BitOr,
+        ast.BitAnd,
+        ast.BitXor,
     )
     allowed_unary = (ast.UAdd, ast.USub)
 
@@ -408,11 +435,19 @@ def scan_config_snapshot():
             else "N/A"
         ),
         "L1D_SIZE": _fmt_bytes(l1d_size),
-        "LLC_ENABLE": "ON" if llc_enabled else ("OFF" if llc_enabled is False else "N/A"),
+        "LLC_ENABLE": "ON"
+        if llc_enabled
+        else ("OFF" if llc_enabled is False else "N/A"),
         "LLC_SIZE": _fmt_bytes(llc_size) if llc_enabled is True else "N/A",
-        "LLC_WAYS": str(llc_ways) if llc_enabled is True and llc_ways is not None else "N/A",
-        "LLC_MSHR": str(llc_mshr) if llc_enabled is True and llc_mshr is not None else "N/A",
-        "L1I_MISS_LATENCY": f"{l1i_miss_lat} cyc" if l1i_miss_lat is not None else "N/A",
+        "LLC_WAYS": str(llc_ways)
+        if llc_enabled is True and llc_ways is not None
+        else "N/A",
+        "LLC_MSHR": str(llc_mshr)
+        if llc_enabled is True and llc_mshr is not None
+        else "N/A",
+        "L1I_MISS_LATENCY": f"{l1i_miss_lat} cyc"
+        if l1i_miss_lat is not None
+        else "N/A",
         "DDR_LATENCY": f"{ddr_lat} cyc" if ddr_lat is not None else "N/A",
     }
 
@@ -462,20 +497,32 @@ def parse_cache_counters(content):
     if llc_icache_triplet is None:
         llc_icache_triplet = _extract_last_triplet(content, "llc icache a/h/m")
     if llc_icache_triplet is not None:
-        cache["llc_icache_access"], cache["llc_icache_hit"], cache["llc_icache_miss"] = llc_icache_triplet
+        (
+            cache["llc_icache_access"],
+            cache["llc_icache_hit"],
+            cache["llc_icache_miss"],
+        ) = llc_icache_triplet
 
     llc_dcache_triplet = _extract_last_triplet(content, CACHE_TRIPLET_LABELS["llc_l1d"])
     if llc_dcache_triplet is None:
         llc_dcache_triplet = _extract_last_triplet(content, "llc dcache a/h/m")
     if llc_dcache_triplet is not None:
-        cache["llc_dcache_access"], cache["llc_dcache_hit"], cache["llc_dcache_miss"] = llc_dcache_triplet
+        (
+            cache["llc_dcache_access"],
+            cache["llc_dcache_hit"],
+            cache["llc_dcache_miss"],
+        ) = llc_dcache_triplet
 
     # Backward compatibility with older perf_print naming.
     if cache["l1i_hit"] is None:
         cache["l1i_hit"] = _extract_last_int(content, "icache hit")
     if cache["l1i_access"] is None:
         cache["l1i_access"] = _extract_last_int(content, "icache access")
-    if cache["l1i_miss"] is None and cache["l1i_access"] is not None and cache["l1i_hit"] is not None:
+    if (
+        cache["l1i_miss"] is None
+        and cache["l1i_access"] is not None
+        and cache["l1i_hit"] is not None
+    ):
         cache["l1i_miss"] = max(cache["l1i_access"] - cache["l1i_hit"], 0)
 
     # Older logs may only expose dcache access/miss counters; map them to L1D.
@@ -499,10 +546,18 @@ def parse_cache_counters(content):
     if cache["l1d_miss_mshr_alloc"] is None:
         c_hit_matches = REGEX_CACHE_HIT.findall(content)
         if c_hit_matches and cache["l1d_req_initial"] is not None:
-            cache["l1d_miss_mshr_alloc"] = max(cache["l1d_req_initial"] - int(c_hit_matches[-1]), 0)
+            cache["l1d_miss_mshr_alloc"] = max(
+                cache["l1d_req_initial"] - int(c_hit_matches[-1]), 0
+            )
 
-    if cache["llc_read_miss"] is None and cache["llc_read_access"] is not None and cache["llc_read_hit"] is not None:
-        cache["llc_read_miss"] = max(cache["llc_read_access"] - cache["llc_read_hit"], 0)
+    if (
+        cache["llc_read_miss"] is None
+        and cache["llc_read_access"] is not None
+        and cache["llc_read_hit"] is not None
+    ):
+        cache["llc_read_miss"] = max(
+            cache["llc_read_access"] - cache["llc_read_hit"], 0
+        )
 
     for key in cache.keys():
         if cache[key] is None:
@@ -512,9 +567,7 @@ def parse_cache_counters(content):
 
 
 def parse_latency_counters(clean_lines):
-    latency = {
-        k: {"avg": 0.0, "samples": 0} for k in LATENCY_METRIC_KEYS
-    }
+    latency = {k: {"avg": 0.0, "samples": 0} for k in LATENCY_METRIC_KEYS}
 
     l1d_lines = _extract_last_section_lines(
         clean_lines,
@@ -556,9 +609,11 @@ def parse_latency_counters(clean_lines):
 
     return latency
 
+
 def dbg(msg):
     if DEBUG:
         print(msg)
+
 
 def bench_name_aliases(bench_name):
     aliases = [bench_name]
@@ -581,11 +636,13 @@ def bench_name_aliases(bench_name):
             ordered.append(a)
     return ordered
 
+
 def pick_dict_key(candidates, dct):
     for k in candidates:
         if k in dct:
             return k
     return None
+
 
 def load_weights(bench_name):
     name_candidates = bench_name_aliases(bench_name)
@@ -608,10 +665,11 @@ def load_weights(bench_name):
 
     weights = {}
     try:
-        with open(weight_file, 'r') as f:
+        with open(weight_file, "r") as f:
             for line_idx, line in enumerate(f):
                 parts = line.strip().split()
-                if not parts: continue
+                if not parts:
+                    continue
                 weight_val = float(parts[0])
                 sp_id = int(parts[1]) if len(parts) > 1 else line_idx
                 weights[sp_id] = weight_val
@@ -621,9 +679,10 @@ def load_weights(bench_name):
     dbg(f"  [INFO] weights loaded: {weight_file}, entries={len(weights)}")
     return weights
 
+
 def parse_log_robust(filepath, with_reason=False):
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             lines = [line.strip() for line in f.readlines()]
 
         content = _strip_ansi("\n".join(lines))
@@ -633,13 +692,15 @@ def parse_log_robust(filepath, with_reason=False):
         inst_matches = REGEX_INST.findall(content)
         cyc_matches = REGEX_CYC.findall(content)
         if not inst_matches or not cyc_matches:
-            if with_reason: return None, "missing instruction/cycle counters"
+            if with_reason:
+                return None, "missing instruction/cycle counters"
             return None
 
         inst = int(inst_matches[-1])
         cyc = int(cyc_matches[-1])
         if inst == 0:
-            if with_reason: return None, "instruction num is 0"
+            if with_reason:
+                return None, "instruction num is 0"
             return None
 
         cache = parse_cache_counters(content)
@@ -680,21 +741,29 @@ def parse_log_robust(filepath, with_reason=False):
         tma = parse_tma(content)
 
         data = {
-            "inst": inst, "cyc": cyc, "cpi": cyc / inst,
+            "inst": inst,
+            "cyc": cyc,
+            "cpi": cyc / inst,
             "cache": cache,
             "latency": latency,
-            "cache_hit": max(cache["l1d_req_initial"] - cache["l1d_miss_mshr_alloc"], 0),  # backward compatibility
-            "cache_acc": cache["l1d_req_initial"], # backward compatibility
-            "br_num": br_num_total, "br_miss": br_miss_total,
+            "cache_hit": max(
+                cache["l1d_req_initial"] - cache["l1d_miss_mshr_alloc"], 0
+            ),  # backward compatibility
+            "cache_acc": cache["l1d_req_initial"],  # backward compatibility
+            "br_num": br_num_total,
+            "br_miss": br_miss_total,
             "tma": tma,
         }
-        if with_reason: return data, None
+        if with_reason:
+            return data, None
         return data
 
     except Exception as e:
-        if with_reason: return None, f"parse exception: {e}"
+        if with_reason:
+            return None, f"parse exception: {e}"
         print(f"Error parsing {filepath}: {e}")
         return None
+
 
 def check_log_success(filepath):
     try:
@@ -703,6 +772,7 @@ def check_log_success(filepath):
         return ("Success!!!!" in content), None
     except Exception as e:
         return False, f"open/read failed: {e}"
+
 
 def process_benchmark(bench_path):
     status_lines = []
@@ -800,13 +870,17 @@ def process_benchmark(bench_path):
         sp_match = REGEX_SP_ID.search(filename)
         if not sp_match:
             skipped_bad_log += 1
-            bad_reasons["missing sp id after phase-1 filter"] = bad_reasons.get("missing sp id after phase-1 filter", 0) + 1
+            bad_reasons["missing sp id after phase-1 filter"] = (
+                bad_reasons.get("missing sp id after phase-1 filter", 0) + 1
+            )
             continue
         sp_id = int(sp_match.group(1))
 
         if sp_id not in weights_map:
             skipped_bad_log += 1
-            bad_reasons["sp id not in weights after phase-1 filter"] = bad_reasons.get("sp id not in weights after phase-1 filter", 0) + 1
+            bad_reasons["sp id not in weights after phase-1 filter"] = (
+                bad_reasons.get("sp id not in weights after phase-1 filter", 0) + 1
+            )
             continue
         weight = weights_map[sp_id]
 
@@ -863,8 +937,12 @@ def process_benchmark(bench_path):
     l1i_hit_rate = _safe_pct(w_cache["l1i_hit"], w_cache["l1i_access"])
     l1i_mpki = _safe_div(w_cache["l1i_miss"], w_inst_sum) * 1000.0
     llc_hit_rate = _safe_pct(w_cache["llc_read_hit"], w_cache["llc_read_access"])
-    llc_icache_hit_rate = _safe_pct(w_cache["llc_icache_hit"], w_cache["llc_icache_access"])
-    llc_dcache_hit_rate = _safe_pct(w_cache["llc_dcache_hit"], w_cache["llc_dcache_access"])
+    llc_icache_hit_rate = _safe_pct(
+        w_cache["llc_icache_hit"], w_cache["llc_icache_access"]
+    )
+    llc_dcache_hit_rate = _safe_pct(
+        w_cache["llc_dcache_hit"], w_cache["llc_dcache_access"]
+    )
 
     br_acc = _safe_pct(w_br_hit, w_br_total)
     br_mpki = _safe_div(w_br_miss, w_inst_sum) * 1000.0
@@ -922,16 +1000,34 @@ def process_benchmark(bench_path):
 
     if w_tma_slots > 0:
         p("TMA (Weighted):")
-        p(f"  Frontend Bound:   {tma_slot_sums['frontend_bound'] / w_tma_slots * 100:.2f} %")
-        p(f"    Fetch Latency:  {tma_slot_sums['fetch_latency'] / w_tma_slots * 100:.2f} %")
-        p(f"    Fetch BW:       {tma_slot_sums['fetch_bandwidth'] / w_tma_slots * 100:.2f} %")
-        p(f"  Backend Bound:    {tma_slot_sums['backend_bound'] / w_tma_slots * 100:.2f} %")
-        p(f"    Memory Bound:   {tma_slot_sums['memory_bound'] / w_tma_slots * 100:.2f} %")
+        p(
+            f"  Frontend Bound:   {tma_slot_sums['frontend_bound'] / w_tma_slots * 100:.2f} %"
+        )
+        p(
+            f"    Fetch Latency:  {tma_slot_sums['fetch_latency'] / w_tma_slots * 100:.2f} %"
+        )
+        p(
+            f"    Fetch BW:       {tma_slot_sums['fetch_bandwidth'] / w_tma_slots * 100:.2f} %"
+        )
+        p(
+            f"  Backend Bound:    {tma_slot_sums['backend_bound'] / w_tma_slots * 100:.2f} %"
+        )
+        p(
+            f"    Memory Bound:   {tma_slot_sums['memory_bound'] / w_tma_slots * 100:.2f} %"
+        )
         p(f"      L1 Bound:     {tma_slot_sums['l1_bound'] / w_tma_slots * 100:.2f} %")
-        p(f"      Ext Mem Bound:{tma_slot_sums['ext_memory_bound'] / w_tma_slots * 100:.2f} %")
-        p(f"    Core Bound:     {tma_slot_sums['core_bound'] / w_tma_slots * 100:.2f} %")
-        p(f"  Bad Speculation:  {tma_slot_sums['bad_speculation'] / w_tma_slots * 100:.2f} %")
-        p(f"    Squash Waste:   {tma_slot_sums['squash_waste'] / w_tma_slots * 100:.2f} %")
+        p(
+            f"      Ext Mem Bound:{tma_slot_sums['ext_memory_bound'] / w_tma_slots * 100:.2f} %"
+        )
+        p(
+            f"    Core Bound:     {tma_slot_sums['core_bound'] / w_tma_slots * 100:.2f} %"
+        )
+        p(
+            f"  Bad Speculation:  {tma_slot_sums['bad_speculation'] / w_tma_slots * 100:.2f} %"
+        )
+        p(
+            f"    Squash Waste:   {tma_slot_sums['squash_waste'] / w_tma_slots * 100:.2f} %"
+        )
         p(f"  Retiring:         {tma_slot_sums['retiring'] / w_tma_slots * 100:.2f} %")
     else:
         p("TMA (Weighted):     N/A (Top-Down section not found)")
@@ -940,12 +1036,14 @@ def process_benchmark(bench_path):
         pred_cycles = total_insts * final_cpi
         pred_time = pred_cycles / (CPU_FREQ_GHZ * 1e9)
         ref_time = REF_TIMES.get(bench_key, 0)
-        if pred_time > 0 and ref_time > 0: score = ref_time / pred_time
+        if pred_time > 0 and ref_time > 0:
+            score = ref_time / pred_time
         p(f"SPEC Ratio:         {score:.2f}")
     else:
         p("[Info] Set INST_COUNTS in script to see SPEC Score.")
     p("=" * 65)
     return score, status_lines, perf_lines
+
 
 def main():
     status_report_lines = []
@@ -976,10 +1074,14 @@ def main():
             f.write("\n".join(status_report_lines) + "\n")
         print(f"Wrote status report: {os.path.abspath(LOG_STATUS_REPORT)}")
         return
-    bench_dirs = sorted([d for d in glob.glob(os.path.join(LOG_ROOT_DIR, "*")) if os.path.isdir(d)])
+    bench_dirs = sorted(
+        [d for d in glob.glob(os.path.join(LOG_ROOT_DIR, "*")) if os.path.isdir(d)]
+    )
     status_report_lines.append(f"[INFO] benchmark dirs found: {len(bench_dirs)}")
     if not bench_dirs:
-        status_report_lines.append("[WARN] No benchmark directories under LOG_ROOT_DIR.")
+        status_report_lines.append(
+            "[WARN] No benchmark directories under LOG_ROOT_DIR."
+        )
         with open(LOG_STATUS_REPORT, "w") as f:
             f.write("\n".join(status_report_lines) + "\n")
         print(f"Wrote status report: {os.path.abspath(LOG_STATUS_REPORT)}")
@@ -989,9 +1091,11 @@ def main():
         s, status_lines, perf_lines = process_benchmark(d)
         status_report_lines.extend(status_lines)
         perf_report_lines.extend(perf_lines)
-        if s and s > 0: scores.append(s)
+        if s and s > 0:
+            scores.append(s)
     if scores:
         import functools, operator
+
         geomean = (functools.reduce(operator.mul, scores, 1)) ** (1.0 / len(scores))
         perf_report_lines.append("")
         perf_report_lines.append(f"Final Estimated SPECint2006: {geomean:.2f}")
@@ -1006,6 +1110,7 @@ def main():
 
     print(f"Wrote status report: {os.path.abspath(LOG_STATUS_REPORT)}")
     print(f"Wrote perf report:   {os.path.abspath(PERF_REPORT)}")
+
 
 if __name__ == "__main__":
     main()
