@@ -9,9 +9,11 @@ struct predecode_checker_in {
   // from PTAB
   wire1_t predict_dir[FETCH_WIDTH];
   fetch_addr_t predict_next_fetch_address;
+  br_type_t predicted_br_type[FETCH_WIDTH];
   // from instFIFO
   predecode_type_t predecode_type[FETCH_WIDTH];
   target_addr_t predecode_target_address[FETCH_WIDTH];
+  pc_t pc[FETCH_WIDTH];
   pc_t seq_next_pc;
 };
 
@@ -19,6 +21,9 @@ struct predecode_checker_out {
     wire1_t predict_dir_corrected[FETCH_WIDTH];
     fetch_addr_t predict_next_fetch_address_corrected;
     wire1_t predecode_flush_enable;
+    wire1_t ras_type_mismatch;
+    predecode_type_t predecoded_first_taken_type;
+    pc_t call_return_addr;
 };
 
 struct predecode_checker_read_data {

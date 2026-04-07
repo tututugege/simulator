@@ -4,6 +4,7 @@
 #include "../frontend.h"
 #include "../host_profile.h"
 #include "../wire_types.h"
+#include "../predecode.h"
 #include "./dir_predictor/TAGE_top.h"
 #include "./type_predictor/TypePredictor.h"
 #include "./target_predictor/BTB_top.h"
@@ -118,6 +119,11 @@ public:
     fetch_addr_t refetch_address;
     wire1_t icache_read_ready;
 
+    // Predecode RAS override (for refetch after type mismatch)
+    wire1_t predecode_ras_override;
+    predecode_type_t predecoded_type;
+    pc_t predecode_call_return_addr;
+
     // Update Interface
     pc_t in_update_base_pc[COMMIT_WIDTH];
     wire1_t in_upd_valid[COMMIT_WIDTH];
@@ -162,6 +168,7 @@ public:
     wire1_t out_loop_pred[FETCH_WIDTH];
     tage_loop_meta_idx_t out_loop_idx[FETCH_WIDTH];
     tage_loop_meta_tag_t out_loop_tag[FETCH_WIDTH];
+    br_type_t out_predicted_br_type[FETCH_WIDTH];
     pc_t out_pred_base_pc;
     wire1_t update_queue_full;
     // 2-Ahead Predictor outputs
@@ -1078,6 +1085,7 @@ public:
           out.out.out_sc_idx[i][t] =
               tage_valid ? tage_out[bank_sel].sc_idx_out[t] : 0;
         }
+        out.out.out_predicted_br_type[i] = p_type;
         out.out.out_loop_used[i] = tage_valid ? tage_out[bank_sel].loop_used_out : false;
         out.out.out_loop_hit[i] = tage_valid ? tage_out[bank_sel].loop_hit_out : false;
         out.out.out_loop_pred[i] = tage_valid ? tage_out[bank_sel].loop_pred_out : false;
@@ -1646,6 +1654,15 @@ public:
       std::memcpy(req.Spec_ras_stack_next, req.Arch_ras_stack_next,
                   sizeof(req.Spec_ras_stack_next));
       req.Spec_ras_count_next = req.Arch_ras_count_next;
+      // After restoring Spec_RAS from Arch_RAS, apply predecode-detected CALL/RET
+      if (inp.predecode_ras_override) {
+        if (inp.predecoded_type == PREDECODE_JAL_CALL) {
+          ras_push(req.Spec_ras_stack_next, req.Spec_ras_count_next,
+                   inp.predecode_call_return_addr);
+        } else if (inp.predecoded_type == PREDECODE_JALR_RET) {
+          ras_pop(req.Spec_ras_count_next);
+        }
+      }
 #endif
     } else if (req.going_to_do_pred) {
       req.pc_reg_next = req.next_fetch_addr_calc;

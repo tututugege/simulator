@@ -35,6 +35,9 @@ static bool ptab_full_latch = false;
 static bool ptab_empty_latch = true;
 static bool front2back_fifo_full_latch = false;
 static bool front2back_fifo_empty_latch = true;
+static bool predecode_ras_override = false;
+static predecode_type_t predecoded_type = 0;
+static pc_t predecode_call_return_addr = 0;
 static SimContext *front_ctx = nullptr;
 
 void front_set_context(SimContext *ctx) { front_ctx = ctx; }
@@ -609,7 +612,9 @@ BPU_TOP *g_bpu_top = &bpu_instance;
 
 static void front_bpu_input_comb(const front_top_in &in, wire1_t do_refetch,
                                  fetch_addr_t refetch_addr, wire1_t icache_ready,
-                                 BPU_in &bpu_in);
+                                 BPU_in &bpu_in,
+                                 wire1_t ras_override = false,
+                                 predecode_type_t predecoded_tp = 0);
 
 static void front_global_control_comb(const front_top_in &in,
                                       const FrontReadData &rd,
@@ -717,6 +722,12 @@ static void front_bpu_control_comb(const front_top_in &in, const FrontReadData &
         output.bpu_input.in_loop_idx[i] = output.bpu_in.loop_idx[i];
         output.bpu_input.in_loop_tag[i] = output.bpu_in.loop_tag[i];
     }
+    // Pass predecode RAS override to BPU (only effective on predecode-triggered refetch)
+    if (global_refetch && rd.predecode_refetch_snapshot && rd.predecode_ras_override_snapshot) {
+        output.bpu_input.predecode_ras_override = true;
+        output.bpu_input.predecoded_type = rd.predecoded_type_snapshot;
+        output.bpu_input.predecode_call_return_addr = rd.predecode_call_return_addr_snapshot;
+    }
 }
 
 static void front_ptab_write_comb(const BPU_TOP::OutputPayload &bpu_output,
@@ -753,6 +764,9 @@ static void front_ptab_write_comb(const BPU_TOP::OutputPayload &bpu_output,
         output.ptab_in.loop_idx[i] = bpu_output.out_loop_idx[i];
         output.ptab_in.loop_tag[i] = bpu_output.out_loop_tag[i];
     }
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+        output.ptab_in.predicted_br_type[i] = bpu_output.out_predicted_br_type[i];
+    }
     output.ptab_in.predict_next_fetch_address = bpu_output.predict_next_fetch_address;
     output.ptab_in.need_mini_flush = bpu_output.mini_flush_req;
 }
@@ -763,9 +777,11 @@ static void front_checker_input_comb(const instruction_FIFO_out &fifo_out,
     std::memset(&output, 0, sizeof(output));
     for (int i = 0; i < FETCH_WIDTH; i++) {
         output.checker_in.predict_dir[i] = ptab_out.predict_dir[i];
+        output.checker_in.predicted_br_type[i] = ptab_out.predicted_br_type[i];
         output.checker_in.predecode_type[i] = fifo_out.predecode_type[i];
         output.checker_in.predecode_target_address[i] =
             fifo_out.predecode_target_address[i];
+        output.checker_in.pc[i] = fifo_out.pc[i];
     }
     output.checker_in.seq_next_pc = fifo_out.seq_next_pc;
     output.checker_in.predict_next_fetch_address = ptab_out.predict_next_fetch_address;
@@ -891,7 +907,9 @@ static void front_output_comb(
 // 准备 BPU 输入
 static void front_bpu_input_comb(const front_top_in &in, wire1_t do_refetch,
                                  fetch_addr_t refetch_addr, wire1_t icache_ready,
-                                 BPU_in &bpu_in) {
+                                 BPU_in &bpu_in,
+                                 wire1_t ras_override,
+                                 predecode_type_t predecoded_tp) {
     std::memset(&bpu_in, 0, sizeof(bpu_in));
     bpu_in.reset = in.reset;
     bpu_in.refetch = do_refetch;
@@ -1559,6 +1577,12 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
                 predecode_flush_address =
                     checker_out.predict_next_fetch_address_corrected;
             }
+            // Record RAS type mismatch for BPU override on refetch
+            if (checker_out.ras_type_mismatch) {
+                front_state_req.next_predecode_ras_override = true;
+                front_state_req.next_predecoded_type = checker_out.predecoded_first_taken_type;
+                front_state_req.next_predecode_call_return_addr = checker_out.call_return_addr;
+            }
         }
         
         bool front2back_can_write = predecode_can_run &&
@@ -1814,6 +1838,9 @@ void front_seq_read(const struct front_top_in &inp, FrontReadData &rd) {
   rd.ptab_empty_latch_snapshot = ptab_empty_latch;
   rd.front2back_fifo_full_latch_snapshot = front2back_fifo_full_latch;
   rd.front2back_fifo_empty_latch_snapshot = front2back_fifo_empty_latch;
+  rd.predecode_ras_override_snapshot = predecode_ras_override;
+  rd.predecoded_type_snapshot = predecoded_type;
+  rd.predecode_call_return_addr_snapshot = predecode_call_return_addr;
 
   fetch_address_FIFO_in fetch_addr_in;
   instruction_FIFO_in fifo_in;
@@ -1866,6 +1893,9 @@ void front_seq_write(const struct front_top_in &inp, const FrontUpdateRequest &r
     ptab_empty_latch = req.front_state.next_ptab_empty;
     front2back_fifo_full_latch = req.front_state.next_front2back_fifo_full;
     front2back_fifo_empty_latch = req.front_state.next_front2back_fifo_empty;
+    predecode_ras_override = req.front_state.next_predecode_ras_override;
+    predecoded_type = req.front_state.next_predecoded_type;
+    predecode_call_return_addr = req.front_state.next_predecode_call_return_addr;
   }
 }
 

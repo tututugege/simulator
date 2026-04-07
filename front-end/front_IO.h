@@ -118,6 +118,7 @@ struct BPU_out {
   wire1_t loop_pred[FETCH_WIDTH];
   tage_loop_meta_idx_t loop_idx[FETCH_WIDTH];
   tage_loop_meta_tag_t loop_tag[FETCH_WIDTH];
+  br_type_t predicted_br_type[FETCH_WIDTH];
   // 2-Ahead Predictor outputs
   wire1_t two_ahead_valid;
   fetch_addr_t two_ahead_target;
@@ -228,6 +229,7 @@ struct PTAB_in {
   wire1_t loop_pred[FETCH_WIDTH];
   tage_loop_meta_idx_t loop_idx[FETCH_WIDTH];
   tage_loop_meta_tag_t loop_tag[FETCH_WIDTH];
+  br_type_t predicted_br_type[FETCH_WIDTH];
   // from back-end
   wire1_t read_enable;
   // for 2-Ahead
@@ -258,6 +260,7 @@ struct PTAB_out {
   wire1_t loop_pred[FETCH_WIDTH];
   tage_loop_meta_idx_t loop_idx[FETCH_WIDTH];
   tage_loop_meta_tag_t loop_tag[FETCH_WIDTH];
+  br_type_t predicted_br_type[FETCH_WIDTH];
 };
 
 struct front2back_FIFO_in {

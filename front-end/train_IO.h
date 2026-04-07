@@ -222,6 +222,9 @@ struct PendingFrontState {
   bool next_ptab_empty = true;
   bool next_front2back_fifo_full = false;
   bool next_front2back_fifo_empty = true;
+  bool next_predecode_ras_override = false;
+  predecode_type_t next_predecoded_type = 0;
+  pc_t next_predecode_call_return_addr = 0;
 };
 
 struct FrontReadData {
@@ -241,6 +244,9 @@ struct FrontReadData {
   bool ptab_empty_latch_snapshot = true;
   bool front2back_fifo_full_latch_snapshot = false;
   bool front2back_fifo_empty_latch_snapshot = true;
+  bool predecode_ras_override_snapshot = false;
+  predecode_type_t predecoded_type_snapshot = 0;
+  pc_t predecode_call_return_addr_snapshot = 0;
 };
 
 struct FrontUpdateRequest {

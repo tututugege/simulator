@@ -136,8 +136,8 @@ using br_type_t = wire3_t;
 static constexpr int br_type_t_BITS = 3;
 using pcpn_t = wire3_t;
 static constexpr int pcpn_t_BITS = 3;
-using predecode_type_t = wire2_t;
-static constexpr int predecode_type_t_BITS = 2;
+using predecode_type_t = wire3_t;
+static constexpr int predecode_type_t_BITS = 3;
 
 using tage_tag_t = wire_for_bits_t<TAGE_TAG_WIDTH>;
 static constexpr int tage_tag_t_BITS = TAGE_TAG_WIDTH;

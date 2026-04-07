@@ -28,7 +28,8 @@ void predecode_comb(const struct predecode_read_data *rd,
   const uint32_t opcode = inst & 0x7f;
   switch (opcode) {
   case number_2_opcode_jal: {
-    out->type = PREDECODE_JAL;
+    const uint32_t rd = (inst >> 7) & 0x1f;
+    out->type = (rd == 1) ? PREDECODE_JAL_CALL : PREDECODE_JAL;
     const uint32_t imm20 = (inst >> 31) & 0x1;
     const uint32_t imm10_1 = (inst >> 21) & 0x3ff;
     const uint32_t imm11 = (inst >> 20) & 0x1;
@@ -49,10 +50,19 @@ void predecode_comb(const struct predecode_read_data *rd,
     out->target_address = pc + sign_extend_u32(imm_raw, 13);
     break;
   }
-  case number_3_opcode_jalr:
-    out->type = PREDECODE_JALR;
+  case number_3_opcode_jalr: {
+    const uint32_t rd = (inst >> 7) & 0x1f;
+    const uint32_t rs1 = (inst >> 15) & 0x1f;
+    const uint32_t imm_raw = (inst >> 20) & 0xfff;
+    const uint32_t imm = sign_extend_u32(imm_raw, 12);
+    if (rs1 == 1 && rd == 0 && imm == 0) {
+      out->type = PREDECODE_JALR_RET;
+    } else {
+      out->type = PREDECODE_JALR;
+    }
     out->target_address = 0;
     break;
+  }
   default:
     break;
   }

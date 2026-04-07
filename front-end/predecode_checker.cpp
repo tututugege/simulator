@@ -29,6 +29,8 @@ void predecode_checker_comb(const struct predecode_checker_read_data *rd,
       break;
     case PREDECODE_JALR:
     case PREDECODE_JAL:
+    case PREDECODE_JAL_CALL:
+    case PREDECODE_JALR_RET:
       out->predict_dir_corrected[i] = true;
       break;
     default:
@@ -52,7 +54,8 @@ void predecode_checker_comb(const struct predecode_checker_read_data *rd,
   if (first_taken_index != -1) {
     if (rd->inp_regs.predecode_type[first_taken_index] ==
             PREDECODE_DIRECT_JUMP_NO_JAL ||
-        rd->inp_regs.predecode_type[first_taken_index] == PREDECODE_JAL) {
+        rd->inp_regs.predecode_type[first_taken_index] == PREDECODE_JAL ||
+        rd->inp_regs.predecode_type[first_taken_index] == PREDECODE_JAL_CALL) {
       out->predict_next_fetch_address_corrected =
           rd->inp_regs.predecode_target_address[first_taken_index];
     }
@@ -63,6 +66,31 @@ void predecode_checker_comb(const struct predecode_checker_read_data *rd,
   out->predecode_flush_enable =
       (rd->inp_regs.predict_next_fetch_address !=
        out->predict_next_fetch_address_corrected);
+
+  // CALL/RET type mismatch detection for RAS correction
+  out->ras_type_mismatch = false;
+  out->predecoded_first_taken_type = PREDECODE_NON_BRANCH;
+  if (first_taken_index != -1) {
+    predecode_type_t ptype = rd->inp_regs.predecode_type[first_taken_index];
+    br_type_t bpu_type = rd->inp_regs.predicted_br_type[first_taken_index];
+
+    bool predecode_is_call = (ptype == PREDECODE_JAL_CALL);
+    bool predecode_is_ret = (ptype == PREDECODE_JALR_RET);
+    bool bpu_said_call = (bpu_type == BR_CALL);
+    bool bpu_said_ret = (bpu_type == BR_RET);
+
+    bool type_mismatch = (predecode_is_call != bpu_said_call) ||
+                         (predecode_is_ret != bpu_said_ret);
+
+    if (type_mismatch) {
+      out->predecode_flush_enable = true;
+      out->ras_type_mismatch = true;
+      out->predecoded_first_taken_type = ptype;
+      if (predecode_is_call) {
+        out->call_return_addr = rd->inp_regs.pc[first_taken_index] + 4;
+      }
+    }
+  }
 }
 
 void predecode_checker_seq_write() {}

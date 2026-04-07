@@ -9,6 +9,8 @@ static constexpr predecode_type_t PREDECODE_NON_BRANCH = 0;
 static constexpr predecode_type_t PREDECODE_DIRECT_JUMP_NO_JAL = 1;
 static constexpr predecode_type_t PREDECODE_JALR = 2;
 static constexpr predecode_type_t PREDECODE_JAL = 3;
+static constexpr predecode_type_t PREDECODE_JAL_CALL = 4;
+static constexpr predecode_type_t PREDECODE_JALR_RET = 5;
 
 struct PredecodeResult {
   predecode_type_t type;

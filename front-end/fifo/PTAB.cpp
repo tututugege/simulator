@@ -63,6 +63,7 @@ void PTAB_comb(const PtabCombIn &in, PtabCombOut &out) {
       write_entry.loop_pred[i] = in.inp.loop_pred[i];
       write_entry.loop_idx[i] = in.inp.loop_idx[i];
       write_entry.loop_tag[i] = in.inp.loop_tag[i];
+      write_entry.predicted_br_type[i] = in.inp.predicted_br_type[i];
     }
     write_entry.predict_next_fetch_address = in.inp.predict_next_fetch_address;
     write_entry.need_mini_flush = in.inp.need_mini_flush;
@@ -106,6 +107,7 @@ void PTAB_comb(const PtabCombIn &in, PtabCombOut &out) {
       out.out_regs.loop_pred[i] = read_entry.loop_pred[i];
       out.out_regs.loop_idx[i] = read_entry.loop_idx[i];
       out.out_regs.loop_tag[i] = read_entry.loop_tag[i];
+      out.out_regs.predicted_br_type[i] = read_entry.predicted_br_type[i];
     }
     out.out_regs.predict_next_fetch_address = read_entry.predict_next_fetch_address;
   }
