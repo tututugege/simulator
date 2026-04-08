@@ -306,16 +306,31 @@ public:
     int issued_count = 0;
     if (ISSUE_SCHEDULE_POLICY == IssueSchedulePolicy::IQ_SLOT_PRIORITY) {
       // 固定编号优先：按 IQ 槽位编号从小到大扫描。
+      int seen_valid = 0;
       for (int i = 0; i < size && issued_count < num_ports; i++) {
+        if (entry[i].valid) {
+          seen_valid++;
+        }
         try_issue_entry(i, issued_count);
+        if (seen_valid >= count) {
+          break;
+        }
       }
     } else {
       // ROB oldest-first：按 (rob_flag, rob_idx) 年龄排序后再分配端口。
       std::vector<int> ready_indices;
       ready_indices.reserve(size);
+      int seen_valid = 0;
       for (int i = 0; i < size; i++) {
-        if (entry[i].valid && is_ready(entry[i])) {
+        if (!entry[i].valid) {
+          continue;
+        }
+        seen_valid++;
+        if (is_ready(entry[i])) {
           ready_indices.push_back(i);
+        }
+        if (seen_valid >= count) {
+          break;
         }
       }
 

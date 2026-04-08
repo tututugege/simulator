@@ -34,7 +34,6 @@ void Ren::init() {
   memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
 
   memcpy(free_vec_1, free_vec, PRF_NUM);
-
 }
 
 /*
@@ -185,7 +184,6 @@ void Ren::comb_rename() {
     } else {
       out.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
     }
-
   }
 }
 
@@ -299,7 +297,9 @@ void Ren::comb_fire() {
     }
   } else if (in.dec_bcast->mispred) { // flush/mispred 不会同时发生
     const auto br_idx = in.dec_bcast->br_id;
+#ifdef CONFIG_BPU
     Assert(br_idx != 0 && "Ren: mispred br_id should not be zero");
+#endif
     for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = RAT_checkpoint[br_idx][i];
     }
@@ -361,7 +361,6 @@ void Ren ::comb_pipeline() {
       }
     }
   }
-
 }
 
 void Ren ::seq() {
@@ -378,7 +377,4 @@ void Ren ::seq() {
          MAX_BR_NUM * (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
   memcpy(alloc_checkpoint, alloc_checkpoint_1,
          MAX_BR_NUM * PRF_NUM * sizeof(reg<1>));
-
-
-
 }

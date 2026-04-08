@@ -8,7 +8,9 @@
 #include <cstdlib>
 
 // 中间信号
+#ifdef CONFIG_BPU
 static wire<BR_TAG_WIDTH> alloc_tag[DECODE_WIDTH]; // 分配的新 Tag
+#endif
 
 void Idu::init() {
   for (int i = 0; i < MAX_BR_NUM; i++) {
@@ -50,6 +52,41 @@ void Idu::comb_begin() {
  * 约束: 每拍最多分配 max_br_per_cycle 个分支 Tag, Tag 不足时后续槽位 valid 置 0。
  */
 void Idu::comb_decode() {
+#ifndef CONFIG_BPU
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    out.dec2ren->valid[i] = false;
+    out.dec2ren->uop[i] = {};
+  }
+
+  Assert(in.issue != nullptr && "Idu::comb_decode: issue input is null");
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    const InstructionBufferEntry &entry = in.issue->entries[i];
+    if (!entry.valid)
+      continue;
+
+    out.dec2ren->valid[i] = true;
+    auto &decoded = out.dec2ren->uop[i];
+    decoded = {};
+    if (entry.page_fault_inst) {
+      decoded.diag_val = entry.inst;
+      decoded.page_fault_inst = true;
+      decoded.type = encode_inst_type(NOP);
+      decoded.src1_en = false;
+      decoded.src2_en = false;
+      decoded.dest_en = false;
+      decoded.dbg.instruction = entry.inst;
+    } else {
+      decode(decoded, entry.inst);
+    }
+    decoded.dbg.pc = in.issue->pc[i];
+    decoded.ftq_idx = entry.ftq_idx;
+    decoded.ftq_offset = entry.ftq_offset;
+    decoded.ftq_is_last = entry.ftq_is_last;
+    decoded.br_id = 0;
+    decoded.br_mask = 0;
+  }
+  return;
+#else
   wire<1> alloc_valid[DECODE_WIDTH];
   int alloc_num = 0;
   for (int i = 0; i < MAX_BR_NUM && alloc_num < max_br_per_cycle; i++) {
@@ -137,6 +174,7 @@ void Idu::comb_decode() {
       out.dec2ren->uop[i].br_mask = 0;
     }
   }
+#endif
 }
 
 /*
@@ -221,6 +259,7 @@ void Idu::comb_fire() {
   }
 
   // 5. 正常发射路径：握手成功的分支推进 tag 分配状态。
+#ifdef CONFIG_BPU
   int br_num = 0;
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
@@ -232,6 +271,7 @@ void Idu::comb_fire() {
       br_num++;
     }
   }
+#endif
 }
 
 void Idu::seq() {
