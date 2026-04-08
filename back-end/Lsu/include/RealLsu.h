@@ -101,8 +101,6 @@ public:
   void seq() override;
 
   StqEntry get_stq_entry(int stq_idx) override;
-  void dump_debug_state() const override;
-  void dump_mmu_debug(FILE *out) const override;
 
   void set_csr(Csr *c) override { this->csr_module = c; }
   void set_ptw_mem_port(PtwMemPort *port) override {

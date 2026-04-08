@@ -22,13 +22,17 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
   return n != 0 && ((n & (n - 1)) == 0);
 }
 
+constexpr uint64_t div_round_u64(uint64_t numerator, uint64_t denominator) {
+  return (numerator + denominator / 2) / denominator;
+}
+
 // ============================================================
 // Feature Switches
 // ============================================================
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-// #define CONFIG_BPU
+#define CONFIG_BPU
 #define CONFIG_TLB_MMU
 
 // Replay throttling heuristics.
@@ -70,7 +74,152 @@ constexpr int BPU_LOOP_META_TAG_BITS = 16;
 // ============================================================
 
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-constexpr int ICACHE_MISS_LATENCY = 8;
+#ifndef CONFIG_CPU_FREQ_MHZ
+#define CONFIG_CPU_FREQ_MHZ 500u
+#endif
+
+#ifndef CONFIG_DDR_SOC_LATENCY_NS
+#define CONFIG_DDR_SOC_LATENCY_NS 20u
+#endif
+
+#ifndef CONFIG_DDR_CDC_LATENCY_NS
+#define CONFIG_DDR_CDC_LATENCY_NS 12u
+#endif
+
+#ifndef CONFIG_DDR_CTL_LATENCY_NS
+#define CONFIG_DDR_CTL_LATENCY_NS 15u
+#endif
+
+#ifndef CONFIG_DDR_PHY_LATENCY_NS
+#define CONFIG_DDR_PHY_LATENCY_NS 13u
+#endif
+
+#ifndef CONFIG_DDR_CORE_FREQ_MHZ
+#define CONFIG_DDR_CORE_FREQ_MHZ 1600u
+#endif
+
+#ifndef CONFIG_DDR_CL
+#define CONFIG_DDR_CL 22u
+#endif
+
+#ifndef CONFIG_DDR_TRCD
+#define CONFIG_DDR_TRCD 22u
+#endif
+
+#ifndef CONFIG_DDR_TRP
+#define CONFIG_DDR_TRP 22u
+#endif
+
+#ifndef CONFIG_DDR_BURST_TRANSFER_BEATS
+#define CONFIG_DDR_BURST_TRANSFER_BEATS 4u
+#endif
+
+#ifndef CONFIG_DDR_PAGE_HIT_RATE_PCT
+#define CONFIG_DDR_PAGE_HIT_RATE_PCT 50u
+#endif
+
+#ifndef CONFIG_DDR_PAGE_EMPTY_RATE_PCT
+#define CONFIG_DDR_PAGE_EMPTY_RATE_PCT 30u
+#endif
+
+#ifndef CONFIG_DDR_PAGE_MISS_RATE_PCT
+#define CONFIG_DDR_PAGE_MISS_RATE_PCT 20u
+#endif
+
+static_assert(CONFIG_CPU_FREQ_MHZ > 0, "CONFIG_CPU_FREQ_MHZ must be > 0");
+static_assert(CONFIG_DDR_CORE_FREQ_MHZ > 0,
+              "CONFIG_DDR_CORE_FREQ_MHZ must be > 0");
+
+constexpr uint64_t CONFIG_DDR_NON_CORE_LATENCY_FS =
+    (static_cast<uint64_t>(CONFIG_DDR_SOC_LATENCY_NS) +
+     static_cast<uint64_t>(CONFIG_DDR_CDC_LATENCY_NS) +
+     static_cast<uint64_t>(CONFIG_DDR_CTL_LATENCY_NS) +
+     static_cast<uint64_t>(CONFIG_DDR_PHY_LATENCY_NS)) *
+    1000000ull;
+
+constexpr uint64_t CONFIG_DDR_TCK_FS =
+    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_DDR_CORE_FREQ_MHZ));
+
+constexpr uint64_t CONFIG_DDR_BASE_READ_LATENCY_FS =
+    CONFIG_DDR_NON_CORE_LATENCY_FS +
+    static_cast<uint64_t>(CONFIG_DDR_BURST_TRANSFER_BEATS) * CONFIG_DDR_TCK_FS;
+
+constexpr uint64_t CONFIG_DDR_PAGE_HIT_LATENCY_FS =
+    CONFIG_DDR_BASE_READ_LATENCY_FS +
+    static_cast<uint64_t>(CONFIG_DDR_CL) * CONFIG_DDR_TCK_FS;
+
+constexpr uint64_t CONFIG_DDR_PAGE_EMPTY_LATENCY_FS =
+    CONFIG_DDR_BASE_READ_LATENCY_FS +
+    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD) * CONFIG_DDR_TCK_FS;
+
+constexpr uint64_t CONFIG_DDR_PAGE_MISS_LATENCY_FS =
+    CONFIG_DDR_BASE_READ_LATENCY_FS +
+    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD + CONFIG_DDR_TRP) *
+        CONFIG_DDR_TCK_FS;
+
+constexpr uint64_t CONFIG_DDR_PAGE_RATE_SUM =
+    static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
+    static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
+    static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT);
+
+static_assert(CONFIG_DDR_PAGE_RATE_SUM > 0,
+              "DDR page-hit/empty/miss rates sum must be > 0");
+
+constexpr uint64_t CONFIG_DDR_READ_LATENCY_FS = div_round_u64(
+    CONFIG_DDR_PAGE_HIT_LATENCY_FS *
+            static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
+        CONFIG_DDR_PAGE_EMPTY_LATENCY_FS *
+            static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
+        CONFIG_DDR_PAGE_MISS_LATENCY_FS *
+            static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT),
+    CONFIG_DDR_PAGE_RATE_SUM);
+
+constexpr uint64_t CONFIG_CPU_CYCLE_FS =
+    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_CPU_FREQ_MHZ));
+
+constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
+    div_round_u64(CONFIG_DDR_READ_LATENCY_FS, CONFIG_CPU_CYCLE_FS));
+
+#ifndef CONFIG_SIM_DDR_LATENCY
+#define CONFIG_SIM_DDR_LATENCY CONFIG_SIM_DDR_LATENCY_CALC
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
+// Extra full cycles to wait after the final W beat before B can become visible.
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY 1
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES
+#define CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES 32
+#endif
+#ifndef CONFIG_AXI_KIT_MAX_OUTSTANDING
+#define CONFIG_AXI_KIT_MAX_OUTSTANDING 32
+#endif
+#ifndef CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER
+#define CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER 32
+#endif
+#ifndef CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING
+#define CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING CONFIG_AXI_KIT_MAX_OUTSTANDING
+#endif
+#ifndef CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES
+#define CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES 64
+#endif
+#ifndef CONFIG_AXI_KIT_AXI_ID_WIDTH
+#define CONFIG_AXI_KIT_AXI_ID_WIDTH 6
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING
+#define CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING 32
+#endif
+#ifndef CONFIG_AXI_KIT_DEBUG
+#define CONFIG_AXI_KIT_DEBUG 0
+#endif
+#ifndef CONFIG_AXI_KIT_UART_BASE
+#define CONFIG_AXI_KIT_UART_BASE 0x10000000u
+#endif
+#ifndef CONFIG_AXI_KIT_MMIO_BASE
+#define CONFIG_AXI_KIT_MMIO_BASE CONFIG_AXI_KIT_UART_BASE
+#endif
+#ifndef CONFIG_AXI_KIT_MMIO_SIZE
+#define CONFIG_AXI_KIT_MMIO_SIZE 0x00001000u
+#endif
 
 // Enable the dedicated AXI-backed icache memory path.
 // Keep this disabled when axi-interconnect-kit is not present.
@@ -78,17 +227,7 @@ constexpr int ICACHE_MISS_LATENCY = 8;
 #define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
-// AXI protocol flavor for the dedicated icache memory path.
-// Current axi-interconnect-kit integration supports AXI4 only.
-#ifndef CONFIG_AXI_PROTOCOL
-#define CONFIG_AXI_PROTOCOL 4
-#endif
-#if CONFIG_AXI_PROTOCOL != 4
-#error                                                                         \
-    "This simulator is configured to use AXI4 only (set CONFIG_AXI_PROTOCOL=4)."
-#endif
-
-// Enable the shared AXI LLC path.
+// Enable the shared AXI LLC path. The mainline default uses LLC.
 #ifndef CONFIG_AXI_LLC_ENABLE
 #define CONFIG_AXI_LLC_ENABLE 1
 #endif
@@ -102,11 +241,11 @@ constexpr int ICACHE_MISS_LATENCY = 8;
 #endif
 
 #ifndef CONFIG_AXI_LLC_MSHR_NUM
-#define CONFIG_AXI_LLC_MSHR_NUM 4u
+#define CONFIG_AXI_LLC_MSHR_NUM 8u
 #endif
 
 #ifndef CONFIG_AXI_LLC_LOOKUP_LATENCY
-#define CONFIG_AXI_LLC_LOOKUP_LATENCY 8u
+#define CONFIG_AXI_LLC_LOOKUP_LATENCY 3u
 #endif
 
 #ifndef CONFIG_AXI_LLC_DEBUG_LOG
@@ -121,29 +260,30 @@ constexpr int ICACHE_WORD_NUM = ICACHE_LINE_SIZE / 4;
 constexpr int ICACHE_TAG_BITS = 32 - ICACHE_INDEX_BITS - ICACHE_OFFSET_BITS;
 constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
-constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
-constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_WAY_NUM = 2;
-constexpr int DCACHE_OFFSET_BITS = clog2(DCACHE_LINE_SIZE);
-constexpr int DCACHE_INDEX_BITS = 6;
-constexpr int DCACHE_SET_NUM = 1 << DCACHE_INDEX_BITS;
-constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
-constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
-constexpr uint32_t DCACHE_TAG_MASK = (1u << DCACHE_TAG_BITS) - 1u;
-constexpr int DCACHE_MAX_PENDING_REQS = 64;
+#define DCACHE_SETS 256
+#define DCACHE_WAYS 4
+#define DCACHE_OFFSET_BITS 6
+#define DCACHE_LINE_BYTES  64
+#define DCACHE_LINE_WORDS  16
+#define DCACHE_SET_BITS    (__builtin_ctz(DCACHE_SETS))
+#define DCACHE_TAG_BITS    (32 - DCACHE_SET_BITS - DCACHE_OFFSET_BITS)
+
+#define DCACHE_MSHR_ENTRIES 8
+
+#define DCACHE_WB_ENTRIES 8
 
 // ============================================================
 // Core Resources
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 512;
+constexpr int PRF_NUM = 256;
 constexpr int MAX_BR_NUM = 64;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 512;
+constexpr int ROB_NUM = 256;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -157,8 +297,8 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 320;
-constexpr int FTQ_SIZE = 128;
+constexpr int IDU_INST_BUFFER_SIZE = 256;
+constexpr int FTQ_SIZE = 64;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -375,19 +515,48 @@ static_assert(ICACHE_WORD_NUM == ICACHE_LINE_SIZE / 4,
 static_assert(ICACHE_TAG_BITS > 0, "ICACHE_TAG_BITS must be positive");
 static_assert(ICACHE_SET_NUM > 0, "ICACHE_SET_NUM must be positive");
 static_assert(ICACHE_TAG_MASK != 0, "ICACHE_TAG_MASK must be non-zero");
-static_assert(DCACHE_LINE_SIZE > 0, "DCACHE_LINE_SIZE must be positive");
-static_assert((DCACHE_LINE_SIZE % 4) == 0,
-              "DCACHE_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
-static_assert(is_power_of_two_u64(DCACHE_LINE_SIZE),
-              "DCACHE_LINE_SIZE must be a power of two");
-static_assert(DCACHE_WAY_NUM > 0, "DCACHE_WAY_NUM must be positive");
+static_assert(CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES > 0,
+              "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES must be positive");
+static_assert((CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES % 4) == 0,
+              "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES must be word-aligned");
+static_assert(CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES <= 64,
+              "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES exceeds 64B bridge support");
+static_assert(ICACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
+              "ICACHE_LINE_SIZE exceeds AXI upstream write payload width");
+static_assert(DCACHE_LINE_BYTES <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
+              "DCACHE_LINE_BYTES exceeds AXI upstream write payload width");
+static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH > 0,
+              "CONFIG_AXI_KIT_AXI_ID_WIDTH must be positive");
+static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH <= 7,
+              "CONFIG_AXI_KIT_AXI_ID_WIDTH must stay <= 7; 0xFF is reserved as invalid ID");
+static_assert(CONFIG_AXI_KIT_MAX_OUTSTANDING <=
+                  (1u << CONFIG_AXI_KIT_AXI_ID_WIDTH),
+              "CONFIG_AXI_KIT_MAX_OUTSTANDING exceeds available AXI IDs");
+static_assert(CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER <=
+                  CONFIG_AXI_KIT_MAX_OUTSTANDING,
+              "CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER exceeds total outstanding budget");
+static_assert(CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING <=
+                  (1u << CONFIG_AXI_KIT_AXI_ID_WIDTH),
+              "CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING exceeds available AXI IDs");
+static_assert(DCACHE_LINE_BYTES > 0, "DCACHE_LINE_BYTES must be positive");
+static_assert((DCACHE_LINE_BYTES % 4) == 0,
+              "DCACHE_LINE_BYTES must be word-aligned (multiple of 4 bytes)");
+static_assert(is_power_of_two_u64(DCACHE_LINE_BYTES),
+              "DCACHE_LINE_BYTES must be a power of two");
+static_assert(DCACHE_WAYS > 0, "DCACHE_WAYS must be positive");
+static_assert(DCACHE_SETS > 0, "DCACHE_SETS must be positive");
+static_assert(is_power_of_two_u64(DCACHE_SETS),
+              "DCACHE_SETS must be a power of two");
 static_assert(DCACHE_OFFSET_BITS > 0, "DCACHE_OFFSET_BITS must be positive");
-static_assert(DCACHE_INDEX_BITS > 0, "DCACHE_INDEX_BITS must be positive");
-static_assert(DCACHE_WORD_NUM == DCACHE_LINE_SIZE / 4,
-              "DCACHE_WORD_NUM must match DCACHE_LINE_SIZE / 4");
+static_assert(DCACHE_OFFSET_BITS == clog2(DCACHE_LINE_BYTES),
+              "DCACHE_OFFSET_BITS must match clog2(DCACHE_LINE_BYTES)");
+static_assert(DCACHE_LINE_WORDS == DCACHE_LINE_BYTES / 4,
+              "DCACHE_LINE_WORDS must match DCACHE_LINE_BYTES / 4");
+static_assert(DCACHE_SET_BITS == clog2(DCACHE_SETS),
+              "DCACHE_SET_BITS must match clog2(DCACHE_SETS)");
 static_assert(DCACHE_TAG_BITS > 0, "DCACHE_TAG_BITS must be positive");
-static_assert(DCACHE_SET_NUM > 0, "DCACHE_SET_NUM must be positive");
-static_assert(DCACHE_TAG_MASK != 0, "DCACHE_TAG_MASK must be non-zero");
+static_assert(DCACHE_MSHR_ENTRIES > 0, "DCACHE_MSHR_ENTRIES must be positive");
+static_assert(DCACHE_WB_ENTRIES > 0, "DCACHE_WB_ENTRIES must be positive");
 static_assert(LSU_LDU_COUNT <= LSU_AGU_COUNT,
               "LSU_LDU_COUNT must be <= LSU_AGU_COUNT");
 static_assert(LSU_STA_COUNT <= LSU_AGU_COUNT,
