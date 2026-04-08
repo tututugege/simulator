@@ -1447,7 +1447,14 @@ void RealLsu::seq() {
 
   // Retire after load progress so same-cycle completed stores can still
   // participate in store-to-load forwarding.
-  retire_stq_head_if_ready(pop_count);
+  // Per cycle retire bandwidth is bounded by store pipeline width.
+  for (int i = 0; i < LSU_STA_COUNT; i++) {
+    int pop_before = pop_count;
+    retire_stq_head_if_ready(pop_count);
+    if (pop_count == pop_before) {
+      break;
+    }
+  }
   if (pop_count > stq_count) {
     const int scan_active = count_active_stq_entries();
     const int scan_committed = count_committed_stq_prefix();

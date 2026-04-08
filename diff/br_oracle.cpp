@@ -129,6 +129,11 @@ void init_oracle_ckpt(CPU_state ckpt_state, uint8_t privilege) {
 void get_oracle(struct front_top_in &in, struct front_top_out &out) {
   int i;
   static bool stall = false;
+#ifdef CONFIG_ORACLE_STEADY_FETCH_WIDTH
+  constexpr bool kOracleSteadyFetchWidth = true;
+#else
+  constexpr bool kOracleSteadyFetchWidth = false;
+#endif
 
   if (in.refetch) {
     oracle.sim_end = false;
@@ -157,6 +162,7 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
   }
 
   out.FIFO_valid = true;
+  out.predict_next_fetch_address = oracle.state.pc;
   for (i = 0; i < FETCH_WIDTH; i++) {
     out.inst_valid[i] = true;
     out.pc[i] = oracle.state.pc;
@@ -164,6 +170,7 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
 
     oracle.exec();
     out.instructions[i] = oracle.Instruction;
+    out.predict_next_fetch_address = oracle.state.pc;
 
 
     if (oracle.is_exception || oracle.is_csr || oracle.is_mmio_load ||
@@ -180,22 +187,30 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
     }
 
     if (oracle.is_br) {
-      if (stall) {
-        out.predict_dir[i] = !oracle.br_taken;
-        out.predict_next_fetch_address = 0;
-      } else {
+      if (kOracleSteadyFetchWidth) {
+        // Stress mode: keep branch direction metadata, but do not truncate
+        // this oracle fetch group on taken branches.
         out.predict_dir[i] = oracle.br_taken;
         out.predict_next_fetch_address = oracle.state.pc;
-      }
+      } else {
+        if (stall) {
+          out.predict_dir[i] = !oracle.br_taken;
+          out.predict_next_fetch_address = 0;
+        } else {
+          out.predict_dir[i] = oracle.br_taken;
+          out.predict_next_fetch_address = oracle.state.pc;
+        }
 
-      if (oracle.br_taken || stall)
-        break;
+        if (oracle.br_taken || stall)
+          break;
+      }
     } else {
       out.predict_dir[i] = false;
     }
 
     // Cache line boundary check: truncate if next instruction is in a different line
-    if ((oracle.state.pc ^ out.pc[i]) & ~(ICACHE_LINE_SIZE - 1)) {
+    if (!kOracleSteadyFetchWidth &&
+        ((oracle.state.pc ^ out.pc[i]) & ~(ICACHE_LINE_SIZE - 1))) {
       break;
     }
   }

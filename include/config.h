@@ -34,6 +34,7 @@ constexpr uint64_t div_round_u64(uint64_t numerator, uint64_t denominator) {
 #define CONFIG_PERF_COUNTER
 // #define CONFIG_BPU
 #define CONFIG_TLB_MMU
+#define CONFIG_ORACLE_STEADY_FETCH_WIDTH
 
 // Replay throttling heuristics.
 constexpr int REPLAY_STORE_COUNT_UPPER_BOUND = 32;
@@ -252,7 +253,7 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
 #define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
-// Enable the shared AXI LLC path.
+// Enable the shared AXI LLC path. The mainline default uses LLC.
 #ifndef CONFIG_AXI_LLC_ENABLE
 #define CONFIG_AXI_LLC_ENABLE 1
 #endif
@@ -289,29 +290,30 @@ constexpr int ICACHE_WORD_NUM = ICACHE_LINE_SIZE / 4;
 constexpr int ICACHE_TAG_BITS = 32 - ICACHE_INDEX_BITS - ICACHE_OFFSET_BITS;
 constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
-constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
-constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_WAY_NUM = 2;
-constexpr int DCACHE_OFFSET_BITS = clog2(DCACHE_LINE_SIZE);
-constexpr int DCACHE_INDEX_BITS = 6;
-constexpr int DCACHE_SET_NUM = 1 << DCACHE_INDEX_BITS;
-constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
-constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
-constexpr uint32_t DCACHE_TAG_MASK = (1u << DCACHE_TAG_BITS) - 1u;
-constexpr int DCACHE_MAX_PENDING_REQS = 64;
+#define DCACHE_SETS 256
+#define DCACHE_WAYS 4
+#define DCACHE_OFFSET_BITS 6
+#define DCACHE_LINE_BYTES  64
+#define DCACHE_LINE_WORDS  16
+#define DCACHE_SET_BITS    (__builtin_ctz(DCACHE_SETS))
+#define DCACHE_TAG_BITS    (32 - DCACHE_SET_BITS - DCACHE_OFFSET_BITS)
+
+#define DCACHE_MSHR_ENTRIES 8
+
+#define DCACHE_WB_ENTRIES 8
 
 // ============================================================
 // Core Resources
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 64;
-constexpr int MAX_BR_NUM = 16;
+constexpr int PRF_NUM = 2048;
+constexpr int MAX_BR_NUM = 64;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 64;
+constexpr int ROB_NUM = 2048;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -325,8 +327,8 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 32;
-constexpr int FTQ_SIZE = 16;
+constexpr int IDU_INST_BUFFER_SIZE = 1024;
+constexpr int FTQ_SIZE = 256;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -360,14 +362,28 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR), // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV | OP_MASK_FP), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU | OP_MASK_MUL), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU | OP_MASK_DIV), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
-    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
-    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
-    PORT_CFG(OP_MASK_BR),                              // Port 5: Branch
-    PORT_CFG(OP_MASK_BR)                              // Port 5: Branch
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_STA),                            // Port 4: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
+    PORT_CFG(OP_MASK_BR),                             // Port 8: Branch
+    PORT_CFG(OP_MASK_BR),                             // Port 8: Branch
+    PORT_CFG(OP_MASK_BR),                             // Port 8: Branch
+    PORT_CFG(OP_MASK_BR)                              // Port 9: Branch
 };
 #undef PORT_CFG
 
@@ -416,10 +432,10 @@ constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
 constexpr int FTQ_EXU_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
-constexpr int STQ_SIZE = 16;
-constexpr int LDQ_SIZE = 16;
+constexpr int STQ_SIZE = 512;
+constexpr int LDQ_SIZE = 512;
 constexpr int MUL_MAX_LATENCY = 2;
-constexpr int DIV_MAX_LATENCY = 18;
+constexpr int DIV_MAX_LATENCY = 2;
 
 // LSU / TLB config derived from issue port layout.
 constexpr int LSU_STA_COUNT = count_ports_with_mask(OP_MASK_STA);
@@ -427,8 +443,8 @@ constexpr int LSU_LDU_COUNT = count_ports_with_mask(OP_MASK_LD);
 constexpr int LSU_AGU_COUNT = LSU_STA_COUNT + LSU_LDU_COUNT;
 constexpr int LSU_SDU_COUNT = count_ports_with_mask(OP_MASK_STD);
 constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
-constexpr int ITLB_ENTRIES = 16;
-constexpr int DTLB_ENTRIES = 16;
+constexpr int ITLB_ENTRIES = 64;
+constexpr int DTLB_ENTRIES = 64;
 
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
@@ -480,16 +496,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 32, DECODE_WIDTH,
+    {IQ_INT, 1024, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 16, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 512, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 16, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 512, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 16, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 512, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 16, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 512, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 constexpr int calculate_max_iq_size() {
@@ -546,8 +562,8 @@ static_assert(CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES <= 64,
               "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES exceeds 64B bridge support");
 static_assert(ICACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
               "ICACHE_LINE_SIZE exceeds AXI upstream write payload width");
-static_assert(DCACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
-              "DCACHE_LINE_SIZE exceeds AXI upstream write payload width");
+static_assert(DCACHE_LINE_BYTES <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
+              "DCACHE_LINE_BYTES exceeds AXI upstream write payload width");
 static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH > 0,
               "CONFIG_AXI_KIT_AXI_ID_WIDTH must be positive");
 static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH <= 7,
@@ -561,19 +577,25 @@ static_assert(CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER <=
 static_assert(CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING <=
                   (1u << CONFIG_AXI_KIT_AXI_ID_WIDTH),
               "CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING exceeds available AXI IDs");
-static_assert(DCACHE_LINE_SIZE > 0, "DCACHE_LINE_SIZE must be positive");
-static_assert((DCACHE_LINE_SIZE % 4) == 0,
-              "DCACHE_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
-static_assert(is_power_of_two_u64(DCACHE_LINE_SIZE),
-              "DCACHE_LINE_SIZE must be a power of two");
-static_assert(DCACHE_WAY_NUM > 0, "DCACHE_WAY_NUM must be positive");
+static_assert(DCACHE_LINE_BYTES > 0, "DCACHE_LINE_BYTES must be positive");
+static_assert((DCACHE_LINE_BYTES % 4) == 0,
+              "DCACHE_LINE_BYTES must be word-aligned (multiple of 4 bytes)");
+static_assert(is_power_of_two_u64(DCACHE_LINE_BYTES),
+              "DCACHE_LINE_BYTES must be a power of two");
+static_assert(DCACHE_WAYS > 0, "DCACHE_WAYS must be positive");
+static_assert(DCACHE_SETS > 0, "DCACHE_SETS must be positive");
+static_assert(is_power_of_two_u64(DCACHE_SETS),
+              "DCACHE_SETS must be a power of two");
 static_assert(DCACHE_OFFSET_BITS > 0, "DCACHE_OFFSET_BITS must be positive");
-static_assert(DCACHE_INDEX_BITS > 0, "DCACHE_INDEX_BITS must be positive");
-static_assert(DCACHE_WORD_NUM == DCACHE_LINE_SIZE / 4,
-              "DCACHE_WORD_NUM must match DCACHE_LINE_SIZE / 4");
+static_assert(DCACHE_OFFSET_BITS == clog2(DCACHE_LINE_BYTES),
+              "DCACHE_OFFSET_BITS must match clog2(DCACHE_LINE_BYTES)");
+static_assert(DCACHE_LINE_WORDS == DCACHE_LINE_BYTES / 4,
+              "DCACHE_LINE_WORDS must match DCACHE_LINE_BYTES / 4");
+static_assert(DCACHE_SET_BITS == clog2(DCACHE_SETS),
+              "DCACHE_SET_BITS must match clog2(DCACHE_SETS)");
 static_assert(DCACHE_TAG_BITS > 0, "DCACHE_TAG_BITS must be positive");
-static_assert(DCACHE_SET_NUM > 0, "DCACHE_SET_NUM must be positive");
-static_assert(DCACHE_TAG_MASK != 0, "DCACHE_TAG_MASK must be non-zero");
+static_assert(DCACHE_MSHR_ENTRIES > 0, "DCACHE_MSHR_ENTRIES must be positive");
+static_assert(DCACHE_WB_ENTRIES > 0, "DCACHE_WB_ENTRIES must be positive");
 static_assert(LSU_LDU_COUNT <= LSU_AGU_COUNT,
               "LSU_LDU_COUNT must be <= LSU_AGU_COUNT");
 static_assert(LSU_STA_COUNT <= LSU_AGU_COUNT,

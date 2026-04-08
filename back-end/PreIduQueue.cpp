@@ -12,14 +12,14 @@ static void fill_ftq_pc_resp(FtqPcReadResp &resp, const FTQEntry &entry,
 
   resp.valid = true;
   resp.entry_valid = entry.valid;
-  resp.pc = entry.start_pc + (req.ftq_offset << 2);
+  resp.pc = entry.slot_pc[req.ftq_offset];
   resp.pred_taken = entry.pred_taken_mask[req.ftq_offset];
   resp.next_pc = entry.next_pc;
 }
 
 static inline uint32_t ftq_pc_from_entry(const FTQEntry &entry,
                                          uint32_t ftq_offset) {
-  return entry.start_pc + (ftq_offset << 2);
+  return entry.slot_pc[ftq_offset];
 }
 
 int PreIduQueue::ftq_alloc(const FTQEntry &entry) {
@@ -165,6 +165,7 @@ void PreIduQueue::comb_accept_front() {
   ftq_entry.start_pc = in.front2dec->pc[0];
   ftq_entry.next_pc = in.front2dec->predict_next_fetch_address[0];
   for (int i = 0; i < FETCH_WIDTH; i++) {
+    ftq_entry.slot_pc[i] = in.front2dec->pc[i];
     ftq_entry.pred_taken_mask[i] = in.front2dec->predict_dir[i];
     ftq_entry.alt_pred[i] = in.front2dec->alt_pred[i];
     ftq_entry.altpcpn[i] = in.front2dec->altpcpn[i];
