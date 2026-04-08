@@ -105,7 +105,10 @@ struct RobStoredInst {
     dst.br_taken = br_taken;
     dst.dest_en = dest_en;
     dst.func7 = func7;
+    dst.rob_idx = rob_idx;
+    dst.rob_flag = rob_flag;
     dst.stq_idx = stq_idx;
+    dst.stq_flag = stq_flag;
     dst.page_fault_inst = page_fault_inst;
     dst.page_fault_load = page_fault_load;
     dst.page_fault_store = page_fault_store;

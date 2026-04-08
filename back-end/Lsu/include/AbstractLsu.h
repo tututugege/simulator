@@ -64,7 +64,7 @@ public:
   virtual void seq() = 0; // Update registers & Tick latency
 
   // debug接口
-  virtual StqEntry get_stq_entry(int stq_idx) = 0;
+  virtual StqEntry get_stq_entry(int stq_idx, bool stq_flag) = 0;
   virtual void dump_debug_state() const {}
   virtual void dump_mmu_debug(FILE *out) const { (void)out; }
 

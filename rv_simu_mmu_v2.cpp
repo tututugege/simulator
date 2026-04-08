@@ -331,7 +331,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
   }
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
-    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
+    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
     const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
                                e.rob_idx == inst->rob_idx &&
                                e.rob_flag == inst->rob_flag;
@@ -356,7 +356,7 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   }
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
-    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
+    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
     const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
                                e.rob_idx == inst->rob_idx &&
                                e.rob_flag == inst->rob_flag;

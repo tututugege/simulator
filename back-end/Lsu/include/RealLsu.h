@@ -44,25 +44,46 @@ private:
     uint32_t data = 0;
   };
 
+  struct StoreTag {
+    int idx = 0;
+    bool flag = false;
+  };
+
+  struct StoreNode {
+    StoreTag tag;
+    StqEntry entry;
+  };
+
+  enum class StoreQueueKind : uint8_t {
+    None = 0,
+    Committed = 1,
+    Speculative = 2,
+  };
+
+  struct StoreLocator {
+    bool valid = false;
+    StoreQueueKind kind = StoreQueueKind::None;
+    int pos = 0;
+  };
+
   // MMU Instance (Composition)
   std::unique_ptr<AbstractMmu> mmu;
 
   // === 内部状态寄存器 (对应 seq 更新) ===
 
-  // 1. Store slot table + dual internal queues.
-  StqEntry stq[STQ_SIZE];
-  bool stq_slot_flag[STQ_SIZE];
-  int stq_head; // oldest active slot / next slot to retire
-  int stq_tail; // next slot to allocate
+  // 1. Logical STQ age ring + dual internal entity queues.
+  int stq_head; // oldest active logical tag / next tag to retire
+  int stq_tail; // next logical tag to allocate
   int stq_count;
-  int committed_stq[STQ_SIZE];
+  StoreNode committed_stq[STQ_SIZE];
   int committed_stq_head;
   int committed_stq_tail;
   int committed_stq_count;
-  int speculative_stq[STQ_SIZE];
+  StoreNode speculative_stq[STQ_SIZE];
   int speculative_stq_head;
   int speculative_stq_tail;
   int speculative_stq_count;
+  StoreLocator store_loc[2][STQ_SIZE];
 
   // 2. 显式 LDQ（请求发出后即使被 squash 也要等回包释放）
   LdqEntry ldq[LDQ_SIZE];
@@ -108,7 +129,7 @@ public:
   // 时序逻辑实现
   void seq() override;
 
-  StqEntry get_stq_entry(int stq_idx) override;
+  StqEntry get_stq_entry(int stq_idx, bool stq_flag) override;
 
   void set_csr(Csr *c) override { this->csr_module = c; }
   void set_ptw_mem_port(PtwMemPort *port) override {
@@ -133,14 +154,32 @@ private:
   void handle_load_req(const MicroOp &uop);
   void handle_store_addr(const MicroOp &uop);
   void handle_store_data(const MicroOp &uop);
+  StoreTag make_store_tag(int idx, bool flag) const;
+  StoreTag current_stq_head_tag() const;
+  bool current_stq_tail_flag() const;
+  int encode_store_req_id(const StoreTag &tag) const;
+  StoreTag decode_store_req_id(int req_id) const;
+  StoreLocator &store_locator(const StoreTag &tag);
+  const StoreLocator &store_locator(const StoreTag &tag) const;
+  StoreNode &committed_stq_at(int offset);
+  const StoreNode &committed_stq_at(int offset) const;
+  StoreNode &speculative_stq_at(int offset);
+  const StoreNode &speculative_stq_at(int offset) const;
+  StoreNode *find_store_node(const StoreTag &tag);
+  const StoreNode *find_store_node(const StoreTag &tag) const;
+  StqEntry *find_store_entry(const StoreTag &tag);
+  const StqEntry *find_store_entry(const StoreTag &tag) const;
   bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag) const;
-  void clear_stq_entry(int idx);
-  void committed_stq_push(int idx);
-  int committed_stq_front() const;
+  void clear_store_node(StoreNode &node);
+  void committed_stq_push(const StoreNode &node);
+  StoreNode &committed_stq_front();
+  const StoreNode &committed_stq_front() const;
   void committed_stq_pop();
-  void speculative_stq_push(int idx);
-  int speculative_stq_front() const;
+  void speculative_stq_push(const StoreNode &node);
+  StoreNode &speculative_stq_front();
+  const StoreNode &speculative_stq_front() const;
   void speculative_stq_pop();
+  void move_speculative_front_to_committed();
   bool reserve_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag,
                          uint32_t func3, bool stq_flag);
   void consume_stq_alloc_reqs(int &push_count);
@@ -149,7 +188,7 @@ private:
   void consume_ldq_alloc_reqs();
   void free_ldq_entry(int idx);
   bool is_mmio_addr(uint32_t paddr) const;
-  void change_store_info(StqEntry &entry, int port_idx, int stq_idx);
+  void change_store_info(const StoreNode &node, int port_idx);
   void handle_global_flush();
   void handle_mispred(mask_t mask);
   void retire_stq_head_if_ready(int &pop_count);
