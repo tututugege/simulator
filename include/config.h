@@ -22,10 +22,6 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
   return n != 0 && ((n & (n - 1)) == 0);
 }
 
-constexpr uint64_t div_round_u64(uint64_t numerator, uint64_t denominator) {
-  return (numerator + denominator / 2) / denominator;
-}
-
 // ============================================================
 // Feature Switches
 // ============================================================
@@ -76,114 +72,8 @@ constexpr int BPU_LOOP_META_TAG_BITS = 16;
 // ============================================================
 
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-#ifndef CONFIG_CPU_FREQ_MHZ
-#define CONFIG_CPU_FREQ_MHZ 500u
-#endif
-
-#ifndef CONFIG_DDR_SOC_LATENCY_NS
-#define CONFIG_DDR_SOC_LATENCY_NS 20u
-#endif
-
-#ifndef CONFIG_DDR_CDC_LATENCY_NS
-#define CONFIG_DDR_CDC_LATENCY_NS 12u
-#endif
-
-#ifndef CONFIG_DDR_CTL_LATENCY_NS
-#define CONFIG_DDR_CTL_LATENCY_NS 15u
-#endif
-
-#ifndef CONFIG_DDR_PHY_LATENCY_NS
-#define CONFIG_DDR_PHY_LATENCY_NS 13u
-#endif
-
-#ifndef CONFIG_DDR_CORE_FREQ_MHZ
-#define CONFIG_DDR_CORE_FREQ_MHZ 1600u
-#endif
-
-#ifndef CONFIG_DDR_CL
-#define CONFIG_DDR_CL 22u
-#endif
-
-#ifndef CONFIG_DDR_TRCD
-#define CONFIG_DDR_TRCD 22u
-#endif
-
-#ifndef CONFIG_DDR_TRP
-#define CONFIG_DDR_TRP 22u
-#endif
-
-#ifndef CONFIG_DDR_BURST_TRANSFER_BEATS
-#define CONFIG_DDR_BURST_TRANSFER_BEATS 4u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_HIT_RATE_PCT
-#define CONFIG_DDR_PAGE_HIT_RATE_PCT 50u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_EMPTY_RATE_PCT
-#define CONFIG_DDR_PAGE_EMPTY_RATE_PCT 30u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_MISS_RATE_PCT
-#define CONFIG_DDR_PAGE_MISS_RATE_PCT 20u
-#endif
-
-static_assert(CONFIG_CPU_FREQ_MHZ > 0, "CONFIG_CPU_FREQ_MHZ must be > 0");
-static_assert(CONFIG_DDR_CORE_FREQ_MHZ > 0,
-              "CONFIG_DDR_CORE_FREQ_MHZ must be > 0");
-
-constexpr uint64_t CONFIG_DDR_NON_CORE_LATENCY_FS =
-    (static_cast<uint64_t>(CONFIG_DDR_SOC_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_CDC_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_CTL_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_PHY_LATENCY_NS)) *
-    1000000ull;
-
-constexpr uint64_t CONFIG_DDR_TCK_FS =
-    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_DDR_CORE_FREQ_MHZ));
-
-constexpr uint64_t CONFIG_DDR_BASE_READ_LATENCY_FS =
-    CONFIG_DDR_NON_CORE_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_BURST_TRANSFER_BEATS) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_HIT_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_EMPTY_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_MISS_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD + CONFIG_DDR_TRP) *
-        CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_RATE_SUM =
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT);
-
-static_assert(CONFIG_DDR_PAGE_RATE_SUM > 0,
-              "DDR page-hit/empty/miss rates sum must be > 0");
-
-constexpr uint64_t CONFIG_DDR_READ_LATENCY_FS = div_round_u64(
-    CONFIG_DDR_PAGE_HIT_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
-        CONFIG_DDR_PAGE_EMPTY_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
-        CONFIG_DDR_PAGE_MISS_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT),
-    CONFIG_DDR_PAGE_RATE_SUM);
-
-constexpr uint64_t CONFIG_CPU_CYCLE_FS =
-    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_CPU_FREQ_MHZ));
-
-constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
-    div_round_u64(CONFIG_DDR_READ_LATENCY_FS, CONFIG_CPU_CYCLE_FS));
-
 #ifndef CONFIG_SIM_DDR_LATENCY
-#define CONFIG_SIM_DDR_LATENCY CONFIG_SIM_DDR_LATENCY_CALC
+#define CONFIG_SIM_DDR_LATENCY 50
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
 // Extra full cycles to wait after the final W beat before B can become visible.
@@ -319,10 +209,8 @@ constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 // SimPoint
 // ============================================================
 
-constexpr int WARMUP = 100000000;
-// constexpr int SIMPOINT_INTERVAL = 100000000; // 100M
-// constexpr int SIMPOINT_INTERVAL = 10000000; // 10M
-constexpr int SIMPOINT_INTERVAL = 1000000; // 1M
+constexpr int WARMUP = 10000000;
+constexpr int SIMPOINT_INTERVAL = 10000000;
 
 // ============================================================
 // FTQ/INST BUFFER

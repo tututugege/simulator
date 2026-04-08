@@ -140,11 +140,3 @@
 2. 并入前端的`front2back_FIFO`
 
 ---
-
-## 8. 变更记录 (Change Log)
-
-| 日期 | 变更摘要 |
-| :--- | :--- |
-| 2026-04-08 | 新增 `Pre_Design.md`，与当前 `comb_begin/comb_accept_front/comb_ftq_lookup/comb_fire` 实现对齐。 |
-| 2026-04-08 |  `Pre` 不再维护本地 `br_latch`。 |
-| 2026-04-08 |  整理了接口，将 `PreIduQueue` 正式作为后端的硬件组成 |

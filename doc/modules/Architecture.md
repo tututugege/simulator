@@ -21,6 +21,8 @@
 
 ---
 
+`Isu`采用了两层 class 的结构，`Exu` 为了让不同的 `Fu` 拥有统一的接口使用了 `AbstractFU` 抽象类和虚函数，`Lsu`不在本文档的范围内，其余模块均是比较干净的，高度硬件化描述的。
+
 ## 3. 前后端交互接口
 由于本项目前端与后端由不同风格的代码实现，交互点主要通过 `BackTop` 模块定义的 `Back_in` 和 `Back_out` 进行封装。
 
@@ -94,7 +96,7 @@
 |  | `csr->comb_interrupt` | `L0` 后 CSR 状态。 |
 |  | `rename->comb_alloc` | `L0` 后 freelist/rename 寄存态。 |
 |  | `prf->comb_complete` | `L0` 后 PRF 状态（占位接口）。 |
-|  | `prf->comb_awake` | `L0` 后写回流水态与 `dec_bcast`。 |
+|  | `prf->comb_awake` | `L0` 后写回流水态（`inst_r`）+ 调用点可见的 `dec_bcast`（不依赖本拍稍后 `idu->comb_branch` 的新广播）。 |
 |  | `prf->comb_write` | `L0` 后 PRF 写回流水态。 |
 |  | `isu->comb_ready` | `L0` 后各 IQ 计数。 |
 |  | `lsu->comb_lsu2dis_info` | `L0` 后 LSU 队列状态。 |
@@ -105,7 +107,7 @@
 |  | `lsu->comb_load_res` | `L0` 后 LSU 内部状态 + `dcache2lsu` 响应。 |
 |  | `exu->comb_to_csr` | `L0` 后 EXU 执行槽状态。 |
 | L2 | `pre->comb_ftq_lookup` | `L1` 的 `rob/exu ftq_pc_req`。 |
-|  | `dis->comb_alloc` | `L1` 的 `ren2dis/rob2dis/lsu2dis/iss2dis/dec_bcast`。 |
+|  | `dis->comb_alloc` | `L1` 的 `ren2dis/rob2dis/lsu2dis/dec_bcast`。 |
 |  | `csr->comb_csr_read` | `L1` 的 `exu->comb_to_csr`（`exe2csr.re`）。 |
 |  | `rename->comb_rename` | `L1` 的 `alloc_reg/inst_r`。 |
 | L3 | `rob->comb_commit` | `L2` 的 `ftq_lookup` 响应 + `dec_bcast`。 |
@@ -114,27 +116,24 @@
 | L5 | `rob->comb_complete` | `L4` 的 `exu2rob`。 |
 |  | `exu->comb_ready` | `L4` 的 `issue_stall` 与 `rob_bcast/dec_bcast`。 |
 |  | `csr->comb_csr_write` | `L4` 的 trap/ret 判定 + `L1` 的 `exe2csr`。 |
-| L6 | `isu->comb_issue` | `L5` 的 `exe2iss.ready/mask`。 |
+| L6 | `isu->comb_issue` | `L5` 的 `exe2iss.ready/mask` + `L0` 的各 IQ 状态（`schedule`）+ `L3/L1` 的 `rob_bcast.flush` / `dec_bcast.mispred`。 |
 | L7 | `lsu->comb_recv` | `L6` 的 `exe2lsu`。 |
-|  | `isu->comb_awake` | `L6` 的 `iss2prf` + `L1` 的 `prf_awake`。 |
-|  | `isu->comb_calc_latency_next` | `L6` 的 `iss2prf`。 |
-|  | `prf->comb_read` | `L6` 的 `iss2prf`。 |
-| L8 | `dis->comb_wake` | `L7` 的 `iss_awake` + `L1` 的 `prf_awake`。 |
-| L9 | `dis->comb_dispatch` | `L8` 的 `dis_wake` + `L2` 的 `dis_alloc`。 |
-| L10 | `dis->comb_fire` | `L9` 的 `dis_dispatch` 结果。 |
-| L11 | `rename->comb_fire` | `L10` 的 `dis2ren.ready`。 |
+|  | `isu->comb_awake` | `L6` 的 `iss2prf` + `L1` 的 `prf_awake` + `L0` 的 `latency_pipe`。 |
+|  | `isu->comb_calc_latency_next` | `L6` 的 `iss2prf` + `L0` 的 `latency_pipe`。 |
+|  | `prf->comb_read` | `L6` 的 `iss2prf` + `L0` 的 `reg_file/inst_r` + `L4` 的 `exe2prf.bypass`。 |
+| L8 | `dis->comb_wake` | `L2` 的 `dis_alloc` + `L7` 的 `iss_awake` + `L1` 的 `prf_awake`。 |
+| L9 | `dis->comb_dispatch` | `L8` 的 `dis_wake` + `L2` 的 `dis_alloc` + `L1` 的 `iss2dis.ready_num`。 |
+| L10 | `dis->comb_fire` | `L9` 的 `dispatch_cache/dispatch_success_flags` + `L1` 的 `rob2dis/dec_bcast/prf_awake` + `L3` 的 `rob_bcast` + `L7` 的 `iss_awake`。 |
+| L11 | `rename->comb_fire` | `L10` 的 `dis2ren.ready` + `L1/L2` 的 `ren2dis.valid/uop` + `L3` 的 `rob_commit/rob_bcast/dec_bcast`。 |
 |  | `rob->comb_fire` | `L10` 的 `dis2rob.dis_fire`。 |
-|  | `isu->comb_enq` | `L10` 裁剪后的 `dis2iss.req`。 |
-|  | `dis->comb_pipeline` | `L10` 的 fire + `L8` 的 wake/flush 结果。 |
-| L12 | `idu->comb_fire` | `L11` 可见的 `ren2dec.ready` + `rob_bcast`。 |
-|  | `rename->comb_pipeline` | `L11/L12` 的 ready/fire + flush/mispred。 |
+|  | `isu->comb_enq` | `L10` 裁剪后的 `dis2iss.req` + `L7` 的 `iss_awake`（入队前去 busy）+ `L0` 的 IQ 副本基线。 |
+|  | `dis->comb_pipeline` | `L10` 的 `dis_fire/dis2ren.ready` + `L8` 的 wake 结果 + `L1` 的 `ren2dis/dec_bcast` + `L3` 的 `rob_bcast`。 |
+| L12 | `idu->comb_fire` | `L11` 的 `ren2dec.ready` + `L1` 的 `dec2ren.valid/uop` + `L3` 的 `rob_bcast` + `L4` 的 `exu2id`（写 `br_latch_1`）+ 上一拍 `br_latch`。 |
+|  | `rename->comb_pipeline` | `L11` 的 `ren2dec.ready/fire` + `L1` 的 `dec2ren` + `L3` 的 `rob_bcast` + `L1` 的 `dec_bcast`。 |
 | L13 | `rob->comb_flush` | `L3` 的 `rob_bcast.flush`，且需在 `L11` 的 `rob->comb_fire` 之后覆盖最终 ROB 副本。 |
-|  | `isu->comb_flush` | `L13` 的 `rob_flush` + `dec_bcast`。 |
+|  | `isu->comb_flush` | `L3` 的 `rob_bcast.flush` + `L1` 的 `dec_bcast.{mispred,br_mask,clear_mask}`，并覆盖 `L11` 后的 IQ/`L7` 的 `latency_pipe_1` 副本。 |
 |  | `lsu->comb_flush` | `L13` 的 `rob_flush`。 |
 |  | `pre->comb_fire` | `L12` 的 `idu_consume` + `L3` 的 `rob_commit` + `L1` 的 push 缓存（`push_entries`）+ 上一拍锁存的 `idu_br_latch` + `rob_bcast.flush`。 |
 |  | `rob->comb_branch` | `L13` 后 `dec_bcast.mispred`（且无 rob flush）。 |
-| L14 | `prf->comb_pipeline` | `L13` 后 flush/mispred/clear_mask 最终状态。 |
+| L14 | `prf->comb_pipeline` | `L13` 的 `rob_flush` + `L1` 已广播的 `dec_bcast.{mispred,br_mask,clear_mask}` + `L4` 的 `exe2prf.entry`。 |
 |  | `exu->comb_pipeline` | `L13` 后 `prf_read` 与 flush/mispred/clear_mask 最终状态。 |
-
-> [!IMPORTANT]
-> 以上已按“ASAP 严格拓扑”组织：每个调用都尽量放在可满足硬依赖的最早层；同层内不放置互相依赖的调用。

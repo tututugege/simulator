@@ -36,6 +36,7 @@ void Dispatch::init() {
     dispatch_cache[i].count = 0;
     for (int k = 0; k < MAX_UOPS_PER_INST; k++) {
       dispatch_cache[i].iq_ids[k] = 0;
+      dispatch_cache[i].uops[k] = {};
     }
   }
   for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
@@ -183,19 +184,12 @@ void Dispatch::comb_wake() {
 
 /*
  * comb_dispatch
- * 功能: 拆分宏指令为 uop 并尝试写入各 IQ 请求端口，同时缓存拆分元数据供 comb_fire 回滚。
+ * 功能: 拆分宏指令并进行 IQ 容量可行性检查，缓存拆分结果供 comb_fire 最终落地请求。
  * 输入依赖: inst_valid, inst_alloc, in.iss2dis->ready_num, GLOBAL_IQ_CONFIG（dispatch_width）, decompose_inst()。
- * 输出更新: out.dis2iss->req[][], dispatch_success_flags[], dispatch_cache[], out.dis2rob->uop[i].expect_mask/cplt_mask。
+ * 输出更新: dispatch_success_flags[], dispatch_cache[], out.dis2rob->uop[i].expect_mask/cplt_mask。
  * 约束: 按槽位顺序分配 IQ 端口；任一槽位不满足容量后停止后续槽位分配。
  */
 void Dispatch::comb_dispatch() {
-  // 1. 清空输出 req
-  for (int i = 0; i < IQ_NUM; i++) {
-    for (int w = 0; w < MAX_IQ_DISPATCH_WIDTH; w++) {
-      out.dis2iss->req[i][w].valid = false;
-    }
-  }
-
   int iq_usage[IQ_NUM] = {0};
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -228,6 +222,7 @@ void Dispatch::comb_dispatch() {
     inst_alloc[i].cplt_mask = 0;
     for (int k = 0; k < cnt; k++) {
       dispatch_cache[i].iq_ids[k] = temp_uops[k].iq_id;
+      dispatch_cache[i].uops[k] = temp_uops[k].uop;
     }
 
     // === 3. 检查容量 ===
@@ -244,18 +239,13 @@ void Dispatch::comb_dispatch() {
       }
     }
 
-    // === 4. 提交发射请求 ===
+    // === 4. 记录可行性 ===
     if (fit) {
       dispatch_success_flags[i] = true;
       out.dis2rob->uop[i].expect_mask = expect_mask;
       out.dis2rob->uop[i].cplt_mask = 0;
       for (int k = 0; k < cnt; k++) {
         int target = temp_uops[k].iq_id;
-        int slot = iq_usage[target];
-
-        out.dis2iss->req[target][slot].valid = true;
-        out.dis2iss->req[target][slot].uop = temp_uops[k].uop;
-
         iq_usage[target]++;
       }
     } else {
@@ -266,9 +256,9 @@ void Dispatch::comb_dispatch() {
 
 /*
  * comb_fire
- * 功能: 计算最终 dis_fire 与 dis2ren.ready，提交 busy_table 更新，并根据 fire 成败确认/回滚 IQ 与 LSU 请求。
+ * 功能: 计算最终 dis_fire 与 dis2ren.ready，提交 busy_table 更新，并根据 fire 结果生成 IQ/LSU 请求。
  * 输入依赖: out.dis2rob->valid, dispatch_success_flags, dispatch_cache, inst_valid/inst_r/inst_alloc, in.rob2dis, in.rob_bcast, in.dec_bcast, in.prf_awake, in.iss_awake。
- * 输出更新: out.dis2rob->dis_fire[], out.dis2ren->ready, out.dis2iss->req[][]（回滚后结果）, out.dis2lsu->{alloc_req/ldq_alloc_req/...}, busy_table_1。
+ * 输出更新: out.dis2rob->dis_fire[], out.dis2ren->ready, out.dis2iss->req[][], out.dis2lsu->{alloc_req/ldq_alloc_req/...}, busy_table_1。
  * 约束: flush/mispred/stall 阻断发射；CSR/AMO 需满足串行化条件；older 指令阻塞后续槽位发射。
  */
 void Dispatch::comb_fire() {
@@ -439,6 +429,35 @@ void Dispatch::comb_fire() {
       pre_fire = true;
   }
 
+  // === 步骤 2: 生成最终的 IQ 请求 ===
+  // 注意: dis2iss->req 仅在 comb_fire 写，comb_dispatch 只产出缓存。
+  for (int iq = 0; iq < IQ_NUM; iq++) {
+    for (int w = 0; w < MAX_IQ_DISPATCH_WIDTH; w++) {
+      out.dis2iss->req[iq][w].valid = false;
+      out.dis2iss->req[iq][w].uop = {};
+    }
+  }
+
+  int iq_slot_idx[IQ_NUM] = {0};
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (!inst_valid[i]) {
+      continue;
+    }
+    if (!dispatch_success_flags[i]) {
+      break;
+    }
+    int cnt = dispatch_cache[i].count;
+    for (int k = 0; k < cnt; k++) {
+      int target = dispatch_cache[i].iq_ids[k];
+      int slot = iq_slot_idx[target];
+      if (out.dis2rob->dis_fire[i]) {
+        out.dis2iss->req[target][slot].valid = true;
+        out.dis2iss->req[target][slot].uop = dispatch_cache[i].uops[k];
+      }
+      iq_slot_idx[target]++;
+    }
+  }
+
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (out.dis2rob->dis_fire[i] && inst_r[i].dest_en) {
       busy_table_1[inst_r[i].dest_preg] = true;
@@ -447,37 +466,6 @@ void Dispatch::comb_fire() {
 
   // 更新 Rename 单元的 Ready 信号
   out.dis2ren->ready = !pre_stall;
-
-  // === 步骤 2: 撤销无效的 IQ 请求 (回滚) ===
-  int iq_slot_idx[IQ_NUM] = {0};
-
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (!inst_valid[i])
-      continue;
-    if (!dispatch_success_flags[i])
-      break;
-
-    // 从缓存读取元数据
-    int cnt = dispatch_cache[i].count;
-
-    if (!out.dis2rob->dis_fire[i]) {
-      // Fire 失败 -> 撤销请求
-      for (int k = 0; k < cnt; k++) {
-        // 直接使用缓存的 ID
-        int target = dispatch_cache[i].iq_ids[k];
-        int slot = iq_slot_idx[target];
-
-        out.dis2iss->req[target][slot].valid = false; // 撤销！
-        iq_slot_idx[target]++;
-      }
-    } else {
-      // Fire 成功 -> 跳过
-      for (int k = 0; k < cnt; k++) {
-        int target = dispatch_cache[i].iq_ids[k];
-        iq_slot_idx[target]++;
-      }
-    }
-  }
 
   // === 步骤 3: 更新 STQ 的 Fire 信号 ===
   for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
