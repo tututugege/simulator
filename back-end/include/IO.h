@@ -83,6 +83,15 @@ struct RenDecIO {
   RenDecIO() { ready = {}; }
 };
 
+// IDU -> PreIduQueue consume handshake (only what PreIduQueue needs).
+struct IduConsumeIO {
+  wire<1> fire[DECODE_WIDTH];
+  IduConsumeIO() {
+    for (auto &v : fire)
+      v = {};
+  }
+};
+
 struct DecFrontIO {
 
   wire<1> fire[FETCH_WIDTH];
@@ -168,6 +177,11 @@ struct FrontDecIO {
   }
 };
 
+// Naming aliases to reflect actual topology:
+// Front-end -> PreQueue and PreQueue -> Front-end.
+using FrontPreIO = FrontDecIO;
+using PreFrontIO = DecFrontIO;
+
 struct DecBroadcastIO {
 
   wire<1> mispred;
@@ -250,19 +264,18 @@ struct FtqRobPcRespIO {
   }
 };
 
-struct PreIduIssueIO {
+struct PreIssueIO {
   InstructionBufferEntry entries[DECODE_WIDTH];
-  wire<32> pc[DECODE_WIDTH];
 
-  PreIduIssueIO() {
+  PreIssueIO() {
     for (auto &e : entries) {
       e = {};
     }
-    for (auto &v : pc) {
-      v = {};
-    }
   }
 };
+
+// Backward-compatible alias for existing modules.
+using PreIduIssueIO = PreIssueIO;
 
 struct RobCommitIO {
   struct RobCommitInst {

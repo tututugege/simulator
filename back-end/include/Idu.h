@@ -14,6 +14,7 @@ struct IduIn {
 struct IduOut {
   DecRenIO *dec2ren;
   DecBroadcastIO *dec_bcast;
+  IduConsumeIO *idu_consume;
 };
 
 class Idu {

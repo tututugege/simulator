@@ -106,7 +106,6 @@ void Idu::comb_decode() {
     out.dec2ren->uop[i] = {};
   }
 
-  Assert(in.issue != nullptr && "Idu::comb_decode: issue input is null");
   for (int i = 0; i < DECODE_WIDTH; i++) {
     const InstructionBufferEntry &entry = in.issue->entries[i];
     if (!entry.valid)
@@ -126,7 +125,6 @@ void Idu::comb_decode() {
     } else {
       decode(decoded, entry.inst);
     }
-    decoded.dbg.pc = in.issue->pc[i];
     decoded.ftq_idx = entry.ftq_idx;
     decoded.ftq_offset = entry.ftq_offset;
     decoded.ftq_is_last = entry.ftq_is_last;
@@ -211,8 +209,9 @@ void Idu::comb_branch() {
  * 约束: flush 最高优先级并直接返回；mispred 路径不进行新分支分配；仅对 fire 且为分支的槽位提交 Tag 占用。
  */
 void Idu::comb_fire() {
-  Assert(in.ren2dec != nullptr && "Idu::comb_fire: ren2dec is null");
-  Assert(in.rob_bcast != nullptr && "Idu::comb_fire: rob_bcast is null");
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    out.idu_consume->fire[i] = false;
+  }
   // 0. flush 最高优先级：清空本地分支状态。
   if (in.rob_bcast->flush) {
     for (int i = 1; i < MAX_BR_NUM; i++) {
@@ -263,6 +262,7 @@ void Idu::comb_fire() {
   int br_num = 0;
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
+    out.idu_consume->fire[i] = fire;
     if (fire && is_branch(out.dec2ren->uop[i].type)) {
       wire<BR_TAG_WIDTH> new_tag = alloc_tag[br_num];
       tag_vec_1[new_tag] = false;
@@ -283,8 +283,6 @@ void Idu::seq() {
   }
 
   // Latch Exu Branch Result
-  Assert(in.rob_bcast != nullptr && "Idu::seq: rob_bcast is null");
-  Assert(in.exu2id != nullptr && "Idu::seq: exu2id is null");
   if (!in.rob_bcast->flush) {
     br_latch.mispred = in.exu2id->mispred;
     br_latch.redirect_pc = in.exu2id->redirect_pc;
