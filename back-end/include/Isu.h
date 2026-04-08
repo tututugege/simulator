@@ -1,7 +1,7 @@
 #pragma once
+#include "IO.h"
 #include "IssueQueue.h"
 #include "config.h"
-#include "IO.h"
 #include <cstdint>
 #include <list>
 
@@ -41,10 +41,8 @@ private:
   // 2. 延迟唤醒
   std::list<LatencyEntry> latency_pipe;
   std::list<LatencyEntry> latency_pipe_1; // 用于时序更新
-  std::vector<int> committed_indices_buf[IQ_NUM];
 
 public:
-  uint32_t port_attributes[ISSUE_WIDTH];
   IsuIn in;
   IsuOut out;
   Isu(SimContext *ctx);

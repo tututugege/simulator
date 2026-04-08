@@ -23,7 +23,7 @@
 | `dec_bcast->br_id` | `BR_TAG_WIDTH` | Idu | 误预测分支 ID |
 | `dec_bcast->clear_mask` | `BR_MASK_WIDTH` | Idu | 已解析分支清理掩码 |
 | `rob_bcast->flush` | 1 | ROB | 全局冲刷 |
-| `rob_commit->commit_entry[i]` | `InstEntry` | ROB | 提交信息（更新 arch_RAT、回收旧 preg） |
+| `rob_commit->commit_entry[i]` | `RobCommitIO::RobCommitEntry` | ROB | 提交信息（更新 arch_RAT、回收旧 preg） |
 
 ### 2.2 输出接口 (`RenOut`)
 
@@ -50,6 +50,36 @@
 
 1. `flush`：`spec_RAT <- arch_RAT`，并回收当前推测分配。
 2. `mispred`：从 `RAT_checkpoint[br_id]` 恢复 `spec_RAT`，并通过 `alloc_checkpoint[br_id]` 回收错误路径分配。
+
+### 3.3 基于 `br_id` 的 Checkpoint 恢复机制
+
+该机制的核心是维护每个 in-flight 分支对应的两个恢复快照：
+1. `RAT_checkpoint[br_id]`：该分支建立时的 RAT 视图。
+2. `alloc_checkpoint[br_id]`：该分支之后新分配过的 preg 集合。
+
+机制流程如下：
+
+1. 分支建立（checkpoint 生成）  
+- 当分支指令 `fire` 时，用其 `br_id` 记录当前映射到 `RAT_checkpoint[br_id]`。  
+- 同时把该 `br_id` 的 `alloc_checkpoint[br_id][*]` 清零，作为“该分支之后新增分配”的空集合起点。
+
+2. 推测分配传播（集合累积）  
+- 后续任何 `fire` 且 `dest_en` 的指令分配了 `dest_preg`，都会把该 preg 标到所有活动分支的 `alloc_checkpoint[*][dest_preg]`。  
+- 含义：每个分支都持续追踪“从我开始到现在，新分配过哪些寄存器”。
+
+3. 误预测恢复（按分支局部回滚）  
+- 收到 `mispred + br_id` 时：  
+  `spec_RAT` 回到 `RAT_checkpoint[br_id]`，保证映射精确回到该分支建立点；  
+  `free_vec/spec_alloc` 按 `alloc_checkpoint[br_id]` 回收错误路径新增 preg。  
+- 结果是只回滚该分支错误路径，不影响更老正确路径状态。
+
+4. 全局 flush 恢复（架构态回滚）  
+- `flush` 不走分支局部集合，而是直接回到 `arch_RAT` 并清空推测分配痕迹。  
+- 这对应“抛弃全部推测态”，重建到提交态基线。
+
+5. 优先级与一致性  
+- 恢复优先级为 `flush > mispred`。  
+- `br_id` 与两个 checkpoint 结构共同保证：恢复范围由分支边界精确界定，而不是靠遍历流水条目推断。
 
 ---
 
@@ -98,7 +128,6 @@
 
 ## 6. 资源占用 (Resource Usage)
 
-### 6.1 持久状态资源
 
 | 名称 | 规格 | 类型 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -109,10 +138,3 @@
 | `spec_alloc` | `PRF_NUM` | reg array | 推测分配位图 |
 | `RAT_checkpoint` | `MAX_BR_NUM*(ARF_NUM+1)` | reg array | 分支快照 |
 | `alloc_checkpoint` | `MAX_BR_NUM*PRF_NUM` | reg array | 分支后分配记录 |
-
-### 6.2 组合工作信号
-
-| 名称 | 规格 | 类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `alloc_reg` | `DECODE_WIDTH` | static wire | 本拍目的 preg 预分配结果 |
-| `fire` | `DECODE_WIDTH` | static wire | `ren->dis` 实际握手结果 |

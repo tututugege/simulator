@@ -22,17 +22,13 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
   return n != 0 && ((n & (n - 1)) == 0);
 }
 
-constexpr uint64_t div_round_u64(uint64_t numerator, uint64_t denominator) {
-  return (numerator + denominator / 2) / denominator;
-}
-
 // ============================================================
 // Feature Switches
 // ============================================================
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-// #define CONFIG_BPU
+#define CONFIG_BPU
 #define CONFIG_TLB_MMU
 
 // Replay throttling heuristics.
@@ -53,8 +49,8 @@ constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 // ============================================================
 // Frontend / Backend Width
 // ============================================================
-constexpr int FETCH_WIDTH = 4;
-constexpr int DECODE_WIDTH = 2;
+constexpr int FETCH_WIDTH = 16;
+constexpr int DECODE_WIDTH = 8;
 static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
 static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
@@ -75,114 +71,8 @@ constexpr int BPU_LOOP_META_TAG_BITS = 16;
 // ============================================================
 
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-#ifndef CONFIG_CPU_FREQ_MHZ
-#define CONFIG_CPU_FREQ_MHZ 500u
-#endif
-
-#ifndef CONFIG_DDR_SOC_LATENCY_NS
-#define CONFIG_DDR_SOC_LATENCY_NS 20u
-#endif
-
-#ifndef CONFIG_DDR_CDC_LATENCY_NS
-#define CONFIG_DDR_CDC_LATENCY_NS 12u
-#endif
-
-#ifndef CONFIG_DDR_CTL_LATENCY_NS
-#define CONFIG_DDR_CTL_LATENCY_NS 15u
-#endif
-
-#ifndef CONFIG_DDR_PHY_LATENCY_NS
-#define CONFIG_DDR_PHY_LATENCY_NS 13u
-#endif
-
-#ifndef CONFIG_DDR_CORE_FREQ_MHZ
-#define CONFIG_DDR_CORE_FREQ_MHZ 1600u
-#endif
-
-#ifndef CONFIG_DDR_CL
-#define CONFIG_DDR_CL 22u
-#endif
-
-#ifndef CONFIG_DDR_TRCD
-#define CONFIG_DDR_TRCD 22u
-#endif
-
-#ifndef CONFIG_DDR_TRP
-#define CONFIG_DDR_TRP 22u
-#endif
-
-#ifndef CONFIG_DDR_BURST_TRANSFER_BEATS
-#define CONFIG_DDR_BURST_TRANSFER_BEATS 4u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_HIT_RATE_PCT
-#define CONFIG_DDR_PAGE_HIT_RATE_PCT 50u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_EMPTY_RATE_PCT
-#define CONFIG_DDR_PAGE_EMPTY_RATE_PCT 30u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_MISS_RATE_PCT
-#define CONFIG_DDR_PAGE_MISS_RATE_PCT 20u
-#endif
-
-static_assert(CONFIG_CPU_FREQ_MHZ > 0, "CONFIG_CPU_FREQ_MHZ must be > 0");
-static_assert(CONFIG_DDR_CORE_FREQ_MHZ > 0,
-              "CONFIG_DDR_CORE_FREQ_MHZ must be > 0");
-
-constexpr uint64_t CONFIG_DDR_NON_CORE_LATENCY_FS =
-    (static_cast<uint64_t>(CONFIG_DDR_SOC_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_CDC_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_CTL_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_PHY_LATENCY_NS)) *
-    1000000ull;
-
-constexpr uint64_t CONFIG_DDR_TCK_FS =
-    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_DDR_CORE_FREQ_MHZ));
-
-constexpr uint64_t CONFIG_DDR_BASE_READ_LATENCY_FS =
-    CONFIG_DDR_NON_CORE_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_BURST_TRANSFER_BEATS) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_HIT_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_EMPTY_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_MISS_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD + CONFIG_DDR_TRP) *
-        CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_RATE_SUM =
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT);
-
-static_assert(CONFIG_DDR_PAGE_RATE_SUM > 0,
-              "DDR page-hit/empty/miss rates sum must be > 0");
-
-constexpr uint64_t CONFIG_DDR_READ_LATENCY_FS = div_round_u64(
-    CONFIG_DDR_PAGE_HIT_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
-        CONFIG_DDR_PAGE_EMPTY_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
-        CONFIG_DDR_PAGE_MISS_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT),
-    CONFIG_DDR_PAGE_RATE_SUM);
-
-constexpr uint64_t CONFIG_CPU_CYCLE_FS =
-    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_CPU_FREQ_MHZ));
-
-constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
-    div_round_u64(CONFIG_DDR_READ_LATENCY_FS, CONFIG_CPU_CYCLE_FS));
-
 #ifndef CONFIG_SIM_DDR_LATENCY
-#define CONFIG_SIM_DDR_LATENCY CONFIG_SIM_DDR_LATENCY_CALC
+#define CONFIG_SIM_DDR_LATENCY 50
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
 // Extra full cycles to wait after the final W beat before B can become visible.
@@ -305,13 +195,13 @@ constexpr int DCACHE_MAX_PENDING_REQS = 64;
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 64;
-constexpr int MAX_BR_NUM = 16;
+constexpr int PRF_NUM = 512;
+constexpr int MAX_BR_NUM = 64;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 64;
+constexpr int ROB_NUM = 512;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -325,8 +215,8 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 32;
-constexpr int FTQ_SIZE = 16;
+constexpr int IDU_INST_BUFFER_SIZE = 320;
+constexpr int FTQ_SIZE = 128;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -360,14 +250,19 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR), // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV | OP_MASK_FP), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
-    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
-    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
-    PORT_CFG(OP_MASK_BR),                              // Port 5: Branch
-    PORT_CFG(OP_MASK_BR)                              // Port 5: Branch
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_STA),                            // Port 4: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
+    PORT_CFG(OP_MASK_BR),                             // Port 8: Branch
+    PORT_CFG(OP_MASK_BR)                              // Port 9: Branch
 };
 #undef PORT_CFG
 
@@ -416,8 +311,8 @@ constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
 constexpr int FTQ_EXU_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
-constexpr int STQ_SIZE = 16;
-constexpr int LDQ_SIZE = 16;
+constexpr int STQ_SIZE = 64;
+constexpr int LDQ_SIZE = 64;
 constexpr int MUL_MAX_LATENCY = 2;
 constexpr int DIV_MAX_LATENCY = 18;
 
@@ -427,8 +322,8 @@ constexpr int LSU_LDU_COUNT = count_ports_with_mask(OP_MASK_LD);
 constexpr int LSU_AGU_COUNT = LSU_STA_COUNT + LSU_LDU_COUNT;
 constexpr int LSU_SDU_COUNT = count_ports_with_mask(OP_MASK_STD);
 constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
-constexpr int ITLB_ENTRIES = 16;
-constexpr int DTLB_ENTRIES = 16;
+constexpr int ITLB_ENTRIES = 32;
+constexpr int DTLB_ENTRIES = 32;
 
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
@@ -480,16 +375,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 32, DECODE_WIDTH,
+    {IQ_INT, 128, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 16, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 64, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 16, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 64, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 16, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 64, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 16, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 64, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 constexpr int calculate_max_iq_size() {

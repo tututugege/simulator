@@ -28,7 +28,7 @@
 | 信号/字段 | 去向 | 描述 |
 | :--- | :--- | :--- |
 | `prf2exe->iss_entry[]` | Exu | 已补齐 `src*_rdata` 的发射条目 |
-| `prf_awake->wake[]` | Isu/Rename | Load 写回唤醒广播 |
+| `prf_awake->wake[]` | Isu/Dispatch | Load 写回唤醒广播 |
 
 ---
 
@@ -38,7 +38,6 @@
 
 1. `reg_file[PRF_NUM]`：物理寄存器堆当前态。
 2. `inst_r[ISSUE_WIDTH]`：写回流水寄存器（上一拍 EXU 完成条目）。
-3. `_1` 副本用于组合阶段累积下一拍状态。
 
 ### 3.2 读旁路优先级
 `comb_read()` 中每个源操作数按以下顺序解析：
