@@ -49,12 +49,20 @@ private:
 
   // === 内部状态寄存器 (对应 seq 更新) ===
 
-  // 1. Store Queue (简化的环形缓冲区)
+  // 1. Store slot table + dual internal queues.
   StqEntry stq[STQ_SIZE];
-  int stq_head;   // deq 指针
-  int stq_commit; // commit 指针
-  int stq_tail;   // enq 指针
+  bool stq_slot_flag[STQ_SIZE];
+  int stq_head; // oldest active slot / next slot to retire
+  int stq_tail; // next slot to allocate
   int stq_count;
+  int committed_stq[STQ_SIZE];
+  int committed_stq_head;
+  int committed_stq_tail;
+  int committed_stq_count;
+  int speculative_stq[STQ_SIZE];
+  int speculative_stq_head;
+  int speculative_stq_tail;
+  int speculative_stq_count;
 
   // 2. 显式 LDQ（请求发出后即使被 squash 也要等回包释放）
   LdqEntry ldq[LDQ_SIZE];
@@ -125,15 +133,17 @@ private:
   void handle_load_req(const MicroOp &uop);
   void handle_store_addr(const MicroOp &uop);
   void handle_store_data(const MicroOp &uop);
-  int find_recovery_tail(mask_t br_mask);
-  bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag);
+  bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag) const;
+  void clear_stq_entry(int idx);
+  void committed_stq_push(int idx);
+  int committed_stq_front() const;
+  void committed_stq_pop();
+  void speculative_stq_push(int idx);
+  int speculative_stq_front() const;
+  void speculative_stq_pop();
   bool reserve_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag,
-                         uint32_t func3);
+                         uint32_t func3, bool stq_flag);
   void consume_stq_alloc_reqs(int &push_count);
-  int count_active_stq_entries() const;
-  int count_committed_stq_prefix() const;
-  int count_stq_entries_until(int stop_idx) const;
-  void clear_stq_entries(int start_idx, int count);
   bool reserve_ldq_entry(int idx, mask_t br_mask, uint32_t rob_idx,
                          uint32_t rob_flag);
   void consume_ldq_alloc_reqs();

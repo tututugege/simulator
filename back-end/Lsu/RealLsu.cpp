@@ -38,11 +38,73 @@ RealLsu::RealLsu(SimContext *ctx) : AbstractLsu(ctx) {
   init();
 }
 
+void RealLsu::clear_stq_entry(int idx) {
+  Assert(idx >= 0 && idx < STQ_SIZE);
+  stq[idx].valid = false;
+  stq[idx].addr_valid = false;
+  stq[idx].data_valid = false;
+  stq[idx].committed = false;
+  stq[idx].done = false;
+  stq[idx].is_mmio = false;
+  stq[idx].send = false;
+  stq[idx].replay = 0;
+  stq[idx].addr = 0;
+  stq[idx].p_addr = 0;
+  stq[idx].suppress_write = 0;
+  stq[idx].data = 0;
+  stq[idx].func3 = 0;
+  stq[idx].br_mask = 0;
+  stq[idx].rob_idx = 0;
+  stq[idx].rob_flag = 0;
+  stq_slot_flag[idx] = false;
+}
+
+void RealLsu::committed_stq_push(int idx) {
+  Assert(committed_stq_count < STQ_SIZE);
+  committed_stq[committed_stq_tail] = idx;
+  committed_stq_tail = (committed_stq_tail + 1) % STQ_SIZE;
+  committed_stq_count++;
+}
+
+int RealLsu::committed_stq_front() const {
+  Assert(committed_stq_count > 0);
+  return committed_stq[committed_stq_head];
+}
+
+void RealLsu::committed_stq_pop() {
+  Assert(committed_stq_count > 0);
+  committed_stq_head = (committed_stq_head + 1) % STQ_SIZE;
+  committed_stq_count--;
+}
+
+void RealLsu::speculative_stq_push(int idx) {
+  Assert(speculative_stq_count < STQ_SIZE);
+  speculative_stq[speculative_stq_tail] = idx;
+  speculative_stq_tail = (speculative_stq_tail + 1) % STQ_SIZE;
+  speculative_stq_count++;
+}
+
+int RealLsu::speculative_stq_front() const {
+  Assert(speculative_stq_count > 0);
+  return speculative_stq[speculative_stq_head];
+}
+
+void RealLsu::speculative_stq_pop() {
+  Assert(speculative_stq_count > 0);
+  speculative_stq_head = (speculative_stq_head + 1) % STQ_SIZE;
+  speculative_stq_count--;
+}
+
 void RealLsu::init() {
   stq_head = 0;
   stq_tail = 0;
-  stq_commit = 0;
   stq_count = 0;
+  committed_stq_head = 0;
+  committed_stq_tail = 0;
+  committed_stq_count = 0;
+  speculative_stq_head = 0;
+  speculative_stq_tail = 0;
+  speculative_stq_count = 0;
   ldq_count = 0;
   ldq_alloc_tail = 0;
   stq_head_flag = false;
@@ -70,21 +132,9 @@ void RealLsu::init() {
 
   // 初始化所有 STQ LDQ 条目，防止未初始化内存导致的破坏
   for (int i = 0; i < STQ_SIZE; i++) {
-    stq[i].valid = false;
-    stq[i].addr_valid = false;
-    stq[i].data_valid = false;
-    stq[i].committed = false;
-    stq[i].done = false;
-    stq[i].is_mmio = false;
-    stq[i].send = false;
-    stq[i].replay = 0;
-    stq[i].addr = 0;
-    stq[i].data = 0;
-    stq[i].br_mask = 0;
-    stq[i].rob_idx = 0;
-    stq[i].rob_flag = 0;
-    stq[i].func3 = 0;
-    stq[i].is_mmio = false;
+    clear_stq_entry(i);
+    committed_stq[i] = 0;
+    speculative_stq[i] = 0;
   }
 
   for (int i = 0; i < LDQ_SIZE; i++) {
@@ -279,8 +329,9 @@ void RealLsu::comb_recv() {
       mshr_replay_count_ldq++;
     }
   }
-  for (int i = 0; i < STQ_SIZE; i++) {
-    const auto &e = stq[i];
+  for (int i = 0; i < committed_stq_count; i++) {
+    const int stq_idx = committed_stq[(committed_stq_head + i) % STQ_SIZE];
+    const auto &e = stq[stq_idx];
     if (!e.valid || !e.addr_valid || !e.data_valid || !e.committed || e.done ||
         e.send) {
       continue;
@@ -343,8 +394,9 @@ void RealLsu::comb_recv() {
         has_replay = true;
       }
     }
-    for (int i = 0; i < STQ_SIZE; i++) {
-      auto &entry = stq[(stq_head + i) % STQ_SIZE];
+    for (int i = 0; i < committed_stq_count; i++) {
+      const int stq_idx = committed_stq[(committed_stq_head + i) % STQ_SIZE];
+      auto &entry = stq[stq_idx];
       if (!entry.valid || !entry.addr_valid || !entry.data_valid ||
           !entry.committed || entry.done || entry.send) {
         continue;
@@ -456,8 +508,8 @@ void RealLsu::comb_recv() {
   memset(
       issued_stq_addr_valid_nxt, 0,
       sizeof(issued_stq_addr_valid_nxt)); // Clear next-cycle issued addresses
-  for (int i = 0; i < stq_count && issued_sta < LSU_STA_COUNT; i++) {
-    int stq_idx = (stq_head + i) % STQ_SIZE;
+  for (int i = 0; i < committed_stq_count && issued_sta < LSU_STA_COUNT; i++) {
+    int stq_idx = committed_stq[(committed_stq_head + i) % STQ_SIZE];
     auto &entry = stq[stq_idx];
 
     // Respect store ordering: younger stores cannot bypass an older
@@ -475,7 +527,7 @@ void RealLsu::comb_recv() {
     }
     bool continue_flag = false;
     for (int j = 0; j < i; j++) {
-      int older_stq_idx = (stq_head + j) % STQ_SIZE;
+      int older_stq_idx = committed_stq[(committed_stq_head + j) % STQ_SIZE];
       auto &older_entry = stq[older_stq_idx];
       if (!older_entry.valid || !older_entry.addr_valid ||
           !older_entry.data_valid || !older_entry.committed ||
@@ -746,7 +798,8 @@ void RealLsu::handle_store_data(const MicroOp &inst) {
 }
 
 bool RealLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
-                                uint32_t rob_flag, uint32_t func3) {
+                                uint32_t rob_flag, uint32_t func3,
+                                bool slot_flag) {
   if (stq_count >= STQ_SIZE) {
     return false;
   }
@@ -766,6 +819,8 @@ bool RealLsu::reserve_stq_entry(mask_t br_mask, uint32_t rob_idx,
   stq[alloc_idx].rob_idx = rob_idx;
   stq[alloc_idx].rob_flag = rob_flag;
   stq[alloc_idx].func3 = func3;
+  stq_slot_flag[alloc_idx] = slot_flag;
+  speculative_stq_push(alloc_idx);
   stq_tail = (stq_tail + 1) % STQ_SIZE;
   return true;
 }
@@ -776,7 +831,8 @@ void RealLsu::consume_stq_alloc_reqs(int &push_count) {
       continue;
     }
     bool ok = reserve_stq_entry(in.dis2lsu->br_mask[i], in.dis2lsu->rob_idx[i],
-                                in.dis2lsu->rob_flag[i], in.dis2lsu->func3[i]);
+                                in.dis2lsu->rob_flag[i],
+                                in.dis2lsu->func3[i], in.dis2lsu->stq_flag[i]);
     Assert(ok && "STQ allocate overflow");
     push_count++;
   }
@@ -860,13 +916,18 @@ void RealLsu::change_store_info(StqEntry &head, int port, int store_index) {
 }
 
 void RealLsu::handle_global_flush() {
-  const int active_count = count_active_stq_entries();
-  const int committed_count = count_committed_stq_prefix();
-  const int discard_count = active_count - committed_count;
-
-  stq_tail = stq_commit;
-  stq_count = committed_count;
-  clear_stq_entries(stq_tail, discard_count);
+  if (speculative_stq_count > 0) {
+    stq_tail = speculative_stq_front();
+    for (int i = 0; i < speculative_stq_count; i++) {
+      const int stq_idx =
+          speculative_stq[(speculative_stq_head + i) % STQ_SIZE];
+      clear_stq_entry(stq_idx);
+    }
+    stq_count -= speculative_stq_count;
+    speculative_stq_head = 0;
+    speculative_stq_tail = 0;
+    speculative_stq_count = 0;
+  }
   pending_sta_addr_reqs.clear();
   pending_mmio_valid = false;
   pending_mmio_req = {};
@@ -924,18 +985,35 @@ void RealLsu::handle_mispred(mask_t mask) {
     pending_mmio_req = {};
   }
 
-  int recovery_tail = find_recovery_tail(mask);
-  if (recovery_tail == -1) {
+  int kill_pos = -1;
+  for (int i = 0; i < speculative_stq_count; i++) {
+    const int stq_idx = speculative_stq[(speculative_stq_head + i) % STQ_SIZE];
+    if (stq[stq_idx].valid && (stq[stq_idx].br_mask & mask)) {
+      kill_pos = i;
+      break;
+    }
+  }
+  if (kill_pos == -1) {
     return;
   }
 
-  const int active_count = count_active_stq_entries();
-  stq_tail = recovery_tail;
-  stq_count = count_stq_entries_until(recovery_tail);
-  clear_stq_entries(stq_tail, active_count - stq_count);
+  const int new_tail =
+      speculative_stq[(speculative_stq_head + kill_pos) % STQ_SIZE];
+  for (int i = kill_pos; i < speculative_stq_count; i++) {
+    const int stq_idx = speculative_stq[(speculative_stq_head + i) % STQ_SIZE];
+    clear_stq_entry(stq_idx);
+  }
+  stq_tail = new_tail;
+  stq_count -= (speculative_stq_count - kill_pos);
+  speculative_stq_tail = (speculative_stq_head + kill_pos) % STQ_SIZE;
+  speculative_stq_count = kill_pos;
 }
 void RealLsu::retire_stq_head_if_ready(int &pop_count) {
-  const int retire_idx = stq_head;
+  if (committed_stq_count == 0) {
+    return;
+  }
+  const int retire_idx = committed_stq_front();
+  Assert(retire_idx == stq_head);
   StqEntry &head = stq[retire_idx];
   const uint32_t retired_suppress_write = head.suppress_write;
 
@@ -973,7 +1051,9 @@ void RealLsu::retire_stq_head_if_ready(int &pop_count) {
   // commit-time difftest can still recognize a failed SC that intentionally
   // does not perform a memory write.
   head.suppress_write = retired_suppress_write;
+  stq_slot_flag[retire_idx] = false;
 
+  committed_stq_pop();
   stq_head++;
   if (stq_head == STQ_SIZE) {
     stq_head = 0;
@@ -1025,12 +1105,11 @@ void RealLsu::commit_stores_from_rob() {
     }
     int idx = commit_uop.stq_idx;
     Assert(idx >= 0 && idx < STQ_SIZE);
-    if (idx == stq_commit) {
-      stq[idx].committed = true;
-      stq_commit = (stq_commit + 1) % STQ_SIZE;
-    } else {
-      Assert(0 && "Store commit out of order?");
-    }
+    Assert(speculative_stq_count > 0 && "Store commit without speculative STQ");
+    Assert(idx == speculative_stq_front() && "Store commit out of order?");
+    stq[idx].committed = true;
+    speculative_stq_pop();
+    committed_stq_push(idx);
   }
 }
 
@@ -1290,8 +1369,13 @@ void RealLsu::seq() {
          sizeof(issued_stq_addr_valid));
 
 #if LSU_LIGHT_ASSERT
-  if (pop_count == 0) {
-    const StqEntry &head = stq[stq_head];
+  Assert(committed_stq_count + speculative_stq_count == stq_count &&
+         "STQ invariant: queue counts do not add up");
+  if (pop_count == 0 && committed_stq_count > 0) {
+    const int head_idx = committed_stq_front();
+    Assert(head_idx == stq_head &&
+           "STQ invariant: committed queue front must match stq_head");
+    const StqEntry &head = stq[head_idx];
     const bool head_ready_to_retire = head.valid && head.addr_valid &&
                                       head.data_valid && head.committed &&
                                       head.done &&
@@ -1303,10 +1387,11 @@ void RealLsu::seq() {
   }
   // Lightweight O(1) ring invariants for STQ pointers/count.
   const int head_to_tail = (stq_tail - stq_head + STQ_SIZE) % STQ_SIZE;
-  const int head_to_commit = (stq_commit - stq_head + STQ_SIZE) % STQ_SIZE;
   if (stq_count == 0) {
-    Assert(stq_head == stq_tail && stq_tail == stq_commit &&
+    Assert(stq_head == stq_tail &&
            "STQ invariant: empty queue pointer mismatch");
+    Assert(committed_stq_count == 0 && speculative_stq_count == 0 &&
+           "STQ invariant: empty queue state mismatch");
   } else if (stq_count == STQ_SIZE) {
     Assert(stq_head == stq_tail &&
            "STQ invariant: full queue requires head == tail");
@@ -1314,102 +1399,12 @@ void RealLsu::seq() {
     Assert(head_to_tail == stq_count &&
            "STQ invariant: count != distance(head, tail)");
   }
-  Assert(head_to_commit <= stq_count &&
-         "STQ invariant: commit pointer is outside active window");
 #endif
   mmu->seq();
 }
 
-// =========================================================
-// 辅助：基于 Tag 查找新的 Tail
-// =========================================================
-int RealLsu::find_recovery_tail(mask_t br_mask) {
-  // 从 Commit 指针（安全点）开始，向 Tail 扫描
-  // 我们要找的是“第一个”被误预测影响的指令
-  // 因为是顺序分配，一旦找到一个，后面（更年轻）的肯定也都要丢弃
-
-  int ptr = stq_commit;
-
-  // 修正：正确计算未提交指令数，处理队列已满的情况 (Tail == Commit)
-  // stq_count 追踪总有效条目 (Head -> Tail)。
-  // Head -> Commit 之间的条目已提交。
-  // Commit -> Tail 之间的条目未提交。
-  int committed_count = count_committed_stq_prefix();
-  int active_count = count_active_stq_entries();
-  int uncommitted_count = active_count - committed_count;
-
-  // 安全检查
-  if (uncommitted_count < 0)
-    uncommitted_count = 0; // 不应该发生
-  int count = uncommitted_count;
-
-  for (int i = 0; i < count; i++) {
-    // 检查当前条目是否依赖于被误预测的分支
-    if (stq[ptr].valid && (stq[ptr].br_mask & br_mask)) {
-      // 找到了！这个位置就是错误路径的开始
-      // 新的 Tail 应该回滚到这里
-      return ptr;
-    }
-    ptr = (ptr + 1) % STQ_SIZE;
-  }
-
-  // 扫描完所有未提交指令都没找到相关依赖 -> 不需要回滚
-  return -1;
-}
-
-int RealLsu::count_active_stq_entries() const {
-  int count = 0;
-  int ptr = stq_head;
-  while (count < STQ_SIZE && stq[ptr].valid) {
-    count++;
-    ptr = (ptr + 1) % STQ_SIZE;
-  }
-  return count;
-}
-
-int RealLsu::count_committed_stq_prefix() const {
-  int count = 0;
-  int ptr = stq_head;
-  while (count < STQ_SIZE && stq[ptr].valid && stq[ptr].committed) {
-    count++;
-    ptr = (ptr + 1) % STQ_SIZE;
-  }
-  return count;
-}
-
-int RealLsu::count_stq_entries_until(int stop_idx) const {
-  int count = 0;
-  int ptr = stq_head;
-  while (count < STQ_SIZE && ptr != stop_idx && stq[ptr].valid) {
-    count++;
-    ptr = (ptr + 1) % STQ_SIZE;
-  }
-  return count;
-}
-
-void RealLsu::clear_stq_entries(int start_idx, int count) {
-  int ptr = start_idx;
-  for (int i = 0; i < count; i++) {
-    stq[ptr].valid = false;
-    stq[ptr].addr_valid = false;
-    stq[ptr].data_valid = false;
-    stq[ptr].committed = false;
-    stq[ptr].done = false;
-    stq[ptr].is_mmio = false;
-    stq[ptr].send = false;
-    stq[ptr].replay = 0;
-    stq[ptr].addr = 0;
-    stq[ptr].data = 0;
-    stq[ptr].suppress_write = 0;
-    stq[ptr].br_mask = 0;
-    stq[ptr].rob_idx = 0;
-    stq[ptr].rob_flag = 0;
-    stq[ptr].func3 = 0;
-    ptr = (ptr + 1) % STQ_SIZE;
-  }
-}
-
-bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag) {
+bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx,
+                             int l_flag) const {
   if (s_flag == l_flag) {
     return s_idx < l_idx;
   } else {
@@ -1418,25 +1413,24 @@ bool RealLsu::is_store_older(int s_idx, int s_flag, int l_idx, int l_flag) {
 }
 
 bool RealLsu::has_older_store_pending(const MicroOp &load_uop) const {
-  int ptr_idx = stq_head;
-  bool ptr_flag = stq_head_flag;
   const int stop_idx = load_uop.stq_idx;
   const bool stop_flag = load_uop.stq_flag;
-  int guard = 0;
-
-  while (!(ptr_idx == stop_idx && ptr_flag == stop_flag)) {
-    guard++;
-    Assert(guard <= STQ_SIZE + 1);
-
-    const StqEntry &entry = stq[ptr_idx];
+  for (int i = 0; i < committed_stq_count; i++) {
+    const int stq_idx = committed_stq[(committed_stq_head + i) % STQ_SIZE];
+    const StqEntry &entry = stq[stq_idx];
     if (entry.valid && !entry.suppress_write) {
       return true;
     }
-
-    ptr_idx++;
-    if (ptr_idx == STQ_SIZE) {
-      ptr_idx = 0;
-      ptr_flag = !ptr_flag;
+  }
+  for (int i = 0; i < speculative_stq_count; i++) {
+    const int stq_idx = speculative_stq[(speculative_stq_head + i) % STQ_SIZE];
+    if (!is_store_older(stq_idx, stq_slot_flag[stq_idx], stop_idx,
+                        stop_flag)) {
+      break;
+    }
+    const StqEntry &entry = stq[stq_idx];
+    if (entry.valid && !entry.suppress_write) {
+      return true;
     }
   }
 
@@ -1451,18 +1445,10 @@ RealLsu::StoreForwardResult
 RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
   uint32_t current_word = 0;
   bool hit_any = false;
-  int ptr_idx = stq_head;
-  bool ptr_flag = stq_head_flag;
   const int stop_idx = load_uop.stq_idx;
   const bool stop_flag = load_uop.stq_flag;
-  int guard = 0;
 
-  // Scan [head, load.stop) in ring age order, where stop is (idx,flag).
-  while (!(ptr_idx == stop_idx && ptr_flag == stop_flag)) {
-    guard++;
-    Assert(guard <= STQ_SIZE + 1);
-
-    StqEntry &entry = stq[ptr_idx];
+  auto scan_entry = [&](StqEntry &entry) -> StoreForwardResult {
     if (entry.valid && !entry.suppress_write) {
       if (!entry.addr_valid) {
         return {StoreForwardState::Retry, 0};
@@ -1493,11 +1479,25 @@ RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
         return {StoreForwardState::Retry, 0};
       }
     }
+    return {StoreForwardState::NoHit, 0};
+  };
 
-    ptr_idx++;
-    if (ptr_idx == STQ_SIZE) {
-      ptr_idx = 0;
-      ptr_flag = !ptr_flag;
+  for (int i = 0; i < committed_stq_count; i++) {
+    StqEntry &entry = stq[committed_stq[(committed_stq_head + i) % STQ_SIZE]];
+    auto res = scan_entry(entry);
+    if (res.state == StoreForwardState::Retry) {
+      return res;
+    }
+  }
+  for (int i = 0; i < speculative_stq_count; i++) {
+    const int stq_idx = speculative_stq[(speculative_stq_head + i) % STQ_SIZE];
+    if (!is_store_older(stq_idx, stq_slot_flag[stq_idx], stop_idx,
+                        stop_flag)) {
+      break;
+    }
+    auto res = scan_entry(stq[stq_idx]);
+    if (res.state == StoreForwardState::Retry) {
+      return res;
     }
   }
 
@@ -1534,10 +1534,9 @@ bool RealLsu::committed_store_conflicts_word(uint32_t word_addr) const {
   uint32_t expected = observed;
   bool has_match = false;
 
-  int ptr = stq_head;
-  int count = stq_count;
-  for (int i = 0; i < count; i++) {
-    const auto &entry = stq[ptr];
+  for (int i = 0; i < committed_stq_count; i++) {
+    const int stq_idx = committed_stq[(committed_stq_head + i) % STQ_SIZE];
+    const auto &entry = stq[stq_idx];
     if (entry.valid && entry.committed && !entry.suppress_write &&
         !entry.is_mmio &&
         entry.addr_valid && entry.data_valid &&
@@ -1546,7 +1545,6 @@ bool RealLsu::committed_store_conflicts_word(uint32_t word_addr) const {
       expected = merge_data_to_word(expected, entry.data, entry.p_addr,
                                     entry.func3);
     }
-    ptr = (ptr + 1) % STQ_SIZE;
   }
 
   if (!has_match) {
@@ -1566,10 +1564,9 @@ bool RealLsu::has_translation_store_conflict(uint32_t p_addr) const {
 }
 
 bool RealLsu::has_committed_store_pending() const {
-  int ptr = stq_head;
-  int remain = stq_count;
-  while (remain > 0) {
-    const StqEntry &e = stq[ptr];
+  for (int i = 0; i < committed_stq_count; i++) {
+    const int stq_idx = committed_stq[(committed_stq_head + i) % STQ_SIZE];
+    const StqEntry &e = stq[stq_idx];
     if (e.valid && e.committed && !e.suppress_write && !e.is_mmio) {
       if (!e.addr_valid || !e.data_valid || !e.done) {
         return true;
@@ -1578,8 +1575,6 @@ bool RealLsu::has_committed_store_pending() const {
         return true;
       }
     }
-    ptr = (ptr + 1) % STQ_SIZE;
-    remain--;
   }
   return false;
 }
@@ -1587,15 +1582,13 @@ bool RealLsu::has_committed_store_pending() const {
 void RealLsu::overlay_committed_store_word(uint32_t p_addr, uint32_t &data) {
   // Only architecturally committed stores are visible to PTW/MMU coherence.
   // Younger speculative stores must not affect translation.
-  int ptr = stq_head;
-  int count = stq_count;
-  for (int i = 0; i < count; i++) {
-    const auto &entry = stq[ptr];
+  for (int i = 0; i < committed_stq_count; i++) {
+    const int stq_idx = committed_stq[(committed_stq_head + i) % STQ_SIZE];
+    const auto &entry = stq[stq_idx];
     if (entry.valid && entry.committed && entry.addr_valid && entry.data_valid &&
         !entry.suppress_write &&
         ((entry.p_addr >> 2) == (p_addr >> 2))) {
       data = merge_data_to_word(data, entry.data, entry.p_addr, entry.func3);
     }
-    ptr = (ptr + 1) % STQ_SIZE;
   }
 }
