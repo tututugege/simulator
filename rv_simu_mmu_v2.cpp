@@ -303,7 +303,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         this->ctx.perf.ret_mispred_num++;
         bool pred_taken = false;
         const FTQEntry *entry =
-            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+            back->pre->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -316,7 +316,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         this->ctx.perf.jalr_mispred_num++;
         bool pred_taken = false;
         const FTQEntry *entry =
-            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+            back->pre->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -329,7 +329,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
     } else if (inst->type == BR) {
       bool pred_taken = false;
       const FTQEntry *entry =
-          back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+          back->pre->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
       }
@@ -825,7 +825,7 @@ void SimCpu::back2front_comb() {
       uint16_t loop_tag = 0;
 
       const FTQEntry *entry =
-          back.pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+          back.pre->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         alt_pred = entry->alt_pred[inst->ftq_offset];

@@ -17,7 +17,6 @@
 | 信号/字段 | 位宽 | 来源 | 描述 |
 | :--- | :--- | :--- | :--- |
 | `issue->entries[i]` | `InstructionBufferEntry` | PreIduQueue | 待译码指令槽（含 `valid/inst/ftq/page_fault_inst`） |
-| `issue->pc[i]` | 32 | PreIduQueue | 对应槽位 PC |
 | `ren2dec->ready` | 1 | Rename | rename 是否可接收本拍译码输出 |
 | `rob_bcast->flush` | 1 | ROB | 全局冲刷信号（最高优先级） |
 | `exu2id->mispred` | 1 | EXU | 分支误预测标记（在 `seq()` 锁存进 `br_latch`） |
