@@ -305,15 +305,13 @@ void BackTop::comb() {
 
   dis->comb_fire();
   rename->comb_fire();
-  rob->comb_fire();
   idu->comb_fire();
 
   isu->comb_enq();
-  rob->comb_flush();
+  rob->comb_fire();
   isu->comb_flush();
   lsu->comb_flush();
   pre->comb_fire();
-  rob->comb_branch();
   prf->comb_pipeline();
   exu->comb_pipeline();
   dis->comb_pipeline();

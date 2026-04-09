@@ -127,6 +127,7 @@ void Idu::comb_decode() {
     } else {
       decode(decoded, entry.inst);
     }
+    decoded.dbg.pc = entry.pc;
     decoded.ftq_idx = entry.ftq_idx;
     decoded.ftq_offset = entry.ftq_offset;
     decoded.ftq_is_last = entry.ftq_is_last;

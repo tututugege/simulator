@@ -196,6 +196,7 @@ void PreIduQueue::comb_accept_front() {
     auto &e = push_entries[push_count++];
     e.valid = true;
     e.inst = in.front2pre->inst[i];
+    e.pc = in.front2pre->pc[i];
     e.page_fault_inst = in.front2pre->page_fault_inst[i];
     e.ftq_idx = ftq_alloc_idx;
     e.ftq_offset = i;
