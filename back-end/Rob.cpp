@@ -86,11 +86,7 @@ void Rob::comb_ready() {
     }
   }
 
-  // Determine Head Status for Memory Bound Calculation (Refined Phase 3.6 -
-  // Oldest First) User Feedback: Find the *oldest* incomplete instruction. If
-  // entry[0] is a DIV (blocked) and entry[1] is a LOAD (blocked), the stall is
-  // caused by the DIV (Core Bound), not the LOAD.
-
+  // 为 Memory Bound 归因判定队头状态（细化版：最老优先）。
   bool found_stall = false;
   bool stall_is_mem = false;
   bool stall_is_miss = false;
@@ -100,7 +96,7 @@ void Rob::comb_ready() {
       bool is_ready = rob_is_complete(entry[i][deq_ptr].uop);
 
       if (!is_ready) {
-        // This is the oldest incomplete instruction. It is the bottleneck.
+        // 这是最老的未完成指令，即当前瓶颈来源。
         found_stall = true;
         if (rob_is_load(entry[i][deq_ptr].uop) ||
             rob_is_store(entry[i][deq_ptr].uop)) {
@@ -113,10 +109,9 @@ void Rob::comb_ready() {
           stall_is_mem = false;
           stall_is_miss = false;
         }
-        break; // Stop scanning once the first blocker is found.
+        break; // 找到第一个阻塞项后即可停止扫描。
       }
-      // If valid but ready, it's not the blocker. Continue to the next younger
-      // instruction.
+      // 若该项 valid 且 ready，则它不是阻塞源，继续检查更年轻指令。
     }
   }
 
@@ -158,8 +153,7 @@ void Rob::comb_commit() {
       out.rob_bcast->sret = out.rob_bcast->ecall = out.rob_bcast->fence =
           out.rob_bcast->fence_i = false;
 
-  // interrupt_resp must only be raised at a real precise commit point in this
-  // cycle, not in comb_ready().
+  // interrupt_resp 只能在本拍真实“精确提交点”拉高，不能在 comb_ready() 提前拉高。
   out.rob2csr->interrupt_resp = false;
   out.rob_bcast->interrupt = false;
 
@@ -211,19 +205,6 @@ void Rob::comb_commit() {
     }
   }
 
-  auto log_incomplete_store_commit = [&](const RobStoredInst &uop,
-                                         const char *path, int slot) {
-    if (!rob_is_store(uop) || rob_is_complete(uop)) {
-      return;
-    }
-    // Disabled: dump_all() here fires on every incomplete-store commit,
-    // flooding the terminal.  The deadlock path (stall_cycle > 10000)
-    // already calls dump_all().
-    // deadlock_debug::dump_all();
-    // std::fflush(stdout);
-    // std::fflush(stderr);
-  };
-
   if (!in.dec_bcast->mispred) {
     if (!is_empty() && first_valid_idx < 0) {
       // 当前行已经空了（通常由前一拍部分提交导致），直接推进行指针。
@@ -249,7 +230,6 @@ void Rob::comb_commit() {
             interrupt_fire = interrupt_pending;
             out.rob_commit->commit_entry[single_idx].valid = true;
             any_commit = true;
-            log_incomplete_store_commit(head_uop, "single", single_idx);
             if (rob_is_load(head_uop) && rob_is_complete(head_uop) &&
                 !rob_is_page_fault(head_uop)) {
               uint32_t alignment_mask = head_uop.dbg.mem_align_mask;
@@ -270,7 +250,6 @@ void Rob::comb_commit() {
             }
             out.rob_commit->commit_entry[i].valid = true; // bank i -> port i
             any_commit = true;
-            log_incomplete_store_commit(uop, "prefix", i);
             if (rob_is_load(uop) && !rob_is_page_fault(uop)) {
               uint32_t alignment_mask = uop.dbg.mem_align_mask;
               Assert((uop.diag_val & alignment_mask) == 0 &&
@@ -342,7 +321,7 @@ void Rob::comb_commit() {
       } else if (decode_inst_type(uop.type) == SFENCE_VMA) {
         out.rob_bcast->fence = true;
       } else if (uop.flush_pipe) {
-        // MMIO-triggered flush, no extra CSR/MMU actions needed here
+        // MMIO 触发的 flush，这里不需要额外的 CSR/MMU 动作
         out.rob_bcast->pc = single_pc;
       } else {
         if (decode_inst_type(uop.type) != CSR) {
@@ -399,7 +378,7 @@ void Rob::comb_commit() {
 // 输出更新：entry_1[bank][line].uop.{cplt_mask,diag_val,page_fault_*,mispred,br_taken,flush_pipe,dbg}。
 // 约束：完成位不可重复置位、不可越界到 expect_mask 之外；多 uop 同指令回传时 flush_pipe 取 OR。
 void Rob::comb_complete() {
-  //  执行完毕的标记 (Early Completion Phase 2)
+  // 执行完毕标记（早完成阶段 Phase 2）
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     if (in.exu2rob->entry[i].valid) {
       const auto &wb = in.exu2rob->entry[i].uop;
@@ -464,7 +443,7 @@ void Rob::comb_complete() {
 
       for (int k = 0; k < LSU_STA_COUNT; k++) {
         if (i == IQ_STA_PORT_BASE + k) {
-          // Keep resolved store address in ROB for commit-time policy checks.
+          // 将已解析的 store 地址保存在 ROB 中，供提交阶段策略检查使用。
           entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;
           if (wb_has_page_fault) {
             entry_1[bank_idx][line_idx].uop.diag_val = wb.result;

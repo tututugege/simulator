@@ -49,8 +49,8 @@ constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 // ============================================================
 // Frontend / Backend Width
 // ============================================================
-constexpr int FETCH_WIDTH = 16;
-constexpr int DECODE_WIDTH = 8;
+constexpr int FETCH_WIDTH = 4;
+constexpr int DECODE_WIDTH = 2;
 static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
 static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
@@ -195,13 +195,13 @@ constexpr int DCACHE_MAX_PENDING_REQS = 64;
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 512;
-constexpr int MAX_BR_NUM = 64;
+constexpr int PRF_NUM = 64;
+constexpr int MAX_BR_NUM = 16;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 512;
+constexpr int ROB_NUM = 64;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -215,8 +215,8 @@ constexpr int SIMPOINT_INTERVAL = 100000000;
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 320;
-constexpr int FTQ_SIZE = 128;
+constexpr int IDU_INST_BUFFER_SIZE = 32;
+constexpr int FTQ_SIZE = 16;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -250,19 +250,14 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR), // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV | OP_MASK_FP), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
-    PORT_CFG(OP_MASK_STA),                            // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
-    PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
-    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
-    PORT_CFG(OP_MASK_BR),                             // Port 8: Branch
-    PORT_CFG(OP_MASK_BR)                              // Port 9: Branch
+    PORT_CFG(OP_MASK_LD),                             // Port 2: Load
+    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
+    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
+    PORT_CFG(OP_MASK_BR),                              // Port 5: Branch
+    PORT_CFG(OP_MASK_BR)                              // Port 5: Branch
 };
 #undef PORT_CFG
 
@@ -311,8 +306,8 @@ constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
 constexpr int FTQ_EXU_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
-constexpr int STQ_SIZE = 64;
-constexpr int LDQ_SIZE = 64;
+constexpr int STQ_SIZE = 16;
+constexpr int LDQ_SIZE = 16;
 constexpr int MUL_MAX_LATENCY = 2;
 constexpr int DIV_MAX_LATENCY = 18;
 
@@ -322,8 +317,8 @@ constexpr int LSU_LDU_COUNT = count_ports_with_mask(OP_MASK_LD);
 constexpr int LSU_AGU_COUNT = LSU_STA_COUNT + LSU_LDU_COUNT;
 constexpr int LSU_SDU_COUNT = count_ports_with_mask(OP_MASK_STD);
 constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
-constexpr int ITLB_ENTRIES = 32;
-constexpr int DTLB_ENTRIES = 32;
+constexpr int ITLB_ENTRIES = 16;
+constexpr int DTLB_ENTRIES = 16;
 
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
@@ -375,16 +370,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 128, DECODE_WIDTH,
+    {IQ_INT, 32, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 64, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 16, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 64, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 16, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 64, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 16, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 64, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 16, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 constexpr int calculate_max_iq_size() {

@@ -203,6 +203,8 @@ void Dispatch::comb_dispatch() {
 
     // === 1. 临时拆分 (Full Data) ===
     // 在栈上分配，用完即弃，不占用类成员空间
+    // 对于硬件而言没有所谓的temp_uops，每个inst_r槽位都有到所有iq的硬连线
+    // 而temp_uop的个数就是其中有效uop的个数
     UopPacket temp_uops[MAX_UOPS_PER_INST];
     int cnt = decompose_inst(inst_alloc[i], temp_uops);
 
@@ -214,8 +216,7 @@ void Dispatch::comb_dispatch() {
     }
     if (decode_inst_type(inst_alloc[i].type) == AMO &&
         ((inst_alloc[i].func7 >> 2) == AmoOp::SC)) {
-      // SC returns architectural 0/1 through load-like wb path and still has
-      // STD completion.
+      // 对于SC指令，需要写寄存器，其STA会被伪装成为一个Load Uop走提交路径，所以这里的mask和普通Store不一样
       expect_mask = ROB_CPLT_G0 | ROB_CPLT_G2;
     }
     inst_alloc[i].expect_mask = expect_mask;
@@ -240,6 +241,7 @@ void Dispatch::comb_dispatch() {
     }
 
     // === 4. 记录可行性 ===
+    // 可行性包括：iq容量是否够？同一个inst的多个uop是否能同时被接受？
     if (fit) {
       dispatch_success_flags[i] = true;
       out.dis2rob->uop[i].expect_mask = expect_mask;
@@ -297,7 +299,7 @@ void Dispatch::comb_fire() {
       return DIS2REN_DISPATCH_DETAIL_OTHER;
     }
 
-    // LSU allocation reject in comb_alloc.
+    // LDQ STQ 容量不足
     if (!out.dis2rob->valid[slot_idx]) {
       if (is_load(inst_r[slot_idx])) {
         return DIS2REN_DISPATCH_DETAIL_LDQ;
@@ -307,7 +309,7 @@ void Dispatch::comb_fire() {
       }
     }
 
-    // IQ capacity/port reject in comb_dispatch.
+    // IQ 容量或端口不足
     if (!dispatch_success_flags[slot_idx]) {
       int iq_used[IQ_NUM] = {0};
       for (int j = 0; j < slot_idx; j++) {
@@ -567,12 +569,9 @@ void Dispatch::comb_fire() {
   bool any_ldq_full_stall = false;
   bool any_stq_full_stall = false;
 
-  // Analyze stall reasons for each slot
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (!out.dis2rob->dis_fire[i] && inst_valid[i]) {
 
-      // Priority: ROB > LSU > IQ
-      // If ROB is full/stalled
       if (!in.rob2dis->ready) { // ROB Full
         any_rob_full_stall = true;
         if (in.rob2dis->tma.head_is_memory && in.rob2dis->tma.head_not_ready) {
