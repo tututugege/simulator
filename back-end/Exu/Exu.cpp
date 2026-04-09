@@ -48,7 +48,6 @@ static inline bool cmp_inst_age(const ExuInst &inst1, const ExuInst &inst2) {
 }
 
 Exu::Exu(SimContext *ctx) : ctx(ctx) {
-  // 可以在这里或 init 创建 backend
 }
 
 Exu::~Exu() {
@@ -541,7 +540,7 @@ void Exu::comb_exec() {
     }
   }
 
-  // clear_mask 统一经由 IDU 广播到各模块，EXU 不再本地同拍清除
+  // clear_mask 统一经由 IDU 广播到各模块，EXU 不在本地同拍清除
   out.exu2id->clear_mask = clear_mask;
   out.exu2id->mispred = mispred;
   if (mispred) {

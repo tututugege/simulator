@@ -56,11 +56,8 @@ void Isu::init() {
 
       // 将这个端口绑定到当前 IQ (发射队列)
       // 注意：PortBinding 结构体里需要 port_idx 和 capability_mask
-      // Use GLOBAL_ISSUE_PORT_CONFIG array index as the canonical physical
-      // issue port id. This avoids TU-local __COUNTER__ differences in
-      // config.h causing Isu/Exu port-id mismatch.
       dynamic_cfg.ports.push_back({
-          global_idx,            // Canonical physical port id
+          global_idx,            // port id
           port_info.support_mask // Capability mask
       });
     }

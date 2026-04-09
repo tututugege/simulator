@@ -25,15 +25,15 @@
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `MAX_COMMIT_INST` | 15,000,000,000 | 0~MAX_UINT64 | 最大提交指令数（定义于 `main.cpp`，不在 `config.h`） |
-| `MAX_SIM_TIME` | 1T | 0~MAX_UINT64 | 最大模拟周期数 |
+| `MAX_COMMIT_INST` | 15,000,000,000 | > 0 | 最大提交指令数（定义于 `main.cpp`，不在 `config.h`） |
+| `MAX_SIM_TIME` | 1T | > 0 | 最大模拟周期数 |
 
 ### 1.3 预热与采样
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `WARMUP` | 100,000,000 | 0~100M（建议） | 预热指令数 |
-| `SIMPOINT_INTERVAL` | 100,000,000 | 10M~100M（建议） | SimPoint 采样间隔 |
+| `WARMUP` | 100,000,000 | 0~100M（根据具体的ckpt实现） | 预热指令数 |
+| `SIMPOINT_INTERVAL` | 100,000,000 | 10M~100M（根据具体的ckpt实现） | SimPoint 采样间隔 |
 
 ---
 
@@ -43,14 +43,10 @@
 
 | 宏 | 状态 | 说明 |
 |----|------|------|
-| `CONFIG_DIFFTEST` | ✅ 启用 | 差分测试功能 |
+| `CONFIG_DIFFTEST` | ✅ 启用 | difftest 测试功能 |
 | `CONFIG_PERF_COUNTER` | ✅ 启用 | 性能计数器 |
-| `CONFIG_BPU` | ✅ 默认启用 | 分支预测单元 |
-| `CONFIG_TLB_MMU` | ✅ 启用 | 统一 I/D 侧 MMU 模型开关（`TlbMmu` / `SimpleMmu`） |
-
-> ICache 模型选择约定：
-> - 默认使用真实 ICache 路径（未定义额外宏）
-> - 仅在评估性能上界时定义 `USE_IDEAL_ICACHE`
+| `CONFIG_BPU` | ✅ 默认启用 | 真实分支预测单元 |
+| `CONFIG_TLB_MMU` | ✅ 启用 | TLB 开关（`TlbMmu` / `SimpleMmu`），目前SimpleMmu可能存在问题 |
 ---
 
 ## 3. CPU 参数
@@ -86,10 +82,6 @@
 
 #### 3.1.1 DCache 参数生效来源（重点标记）
 
-> [!WARNING]
-> 当前 DCache 参数存在“双源定义”：`include/config.h` 与 `MemSubSystem/include/DcacheConfig.h`。  
-> 代码实际在 DCache 主路径（`RealDcache/MSHR/WriteBuffer/MemSubsystem`）中主要使用 `DcacheConfig.h` 宏。
-
 | 参数族 | 当前主要生效源 | 当前值（代码） | 标记 | 说明 |
 |------|------|------|------|------|
 | 几何参数：`DCACHE_SETS / DCACHE_WAYS / DCACHE_LINE_BYTES / DCACHE_LINE_WORDS` | `MemSubSystem/include/DcacheConfig.h` | `256 / 4 / 64 / 16` | `实际生效` | DCache 数组维度、索引拆解、行大小均依赖这些宏 |
@@ -116,17 +108,12 @@
 | `CONFIG_AXI_LLC_LOOKUP_LATENCY` | 3 | LLC lookup 响应可见延迟 |
 | `CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC` | 0 | DCache demand read miss 是否绕过 LLC install；`0=allocate`，`1=noallocate` |
 
-> [!IMPORTANT]
-> 当 parent simulator 集成 `axi-interconnect-kit` 时，上述 `CONFIG_AXI_KIT_*`
-> 参数构成编译期契约。若 `config.h` 缺失关键定义，submodule 会直接编译失败，
-> 不再静默回落到 submodule 内部默认值。
-
 ### 3.2 流水线宽度
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `FETCH_WIDTH` | 16 | 4~32 | 前端取指宽度 |
-| `COMMIT_WIDTH` | =`DECODE_WIDTH`（当前为 8） | 2~32 | 提交宽度 |
+| `FETCH_WIDTH` | 16 | 2~32（建议） | 前端取指宽度 |
+| `COMMIT_WIDTH` | =`DECODE_WIDTH`（当前为 8） | 2~32（建议） | 提交宽度 |
 
 > [!WARNING]
 > `FETCH_WIDTH` 应为 2 的幂次方；同时需满足 `DECODE_WIDTH <= FETCH_WIDTH`，且当前实现要求 `ROB_BANK_NUM == DECODE_WIDTH`。
@@ -136,21 +123,21 @@
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
 | `ARF_NUM` | 32 | 32 | 架构寄存器数量（RISC-V 固定为32） |
-| `PRF_NUM` | 512 | 64~512 | 物理寄存器堆大小 |
+| `PRF_NUM` | 512 | > 33 | 物理寄存器堆大小 |
 | `MAX_BR_NUM` | 64 | 1~64 | 最大同时在飞分支数 |
-| `MAX_BR_PER_CYCLE` | 8 | 1~16 | 每周期最大分支处理数 |
+| `MAX_BR_PER_CYCLE` | 8 | > 1 | 每周期最大分支处理数 |
 | `CSR_NUM` | 21 | 21 | CSR 寄存器数量 |
 
 > [!IMPORTANT]
-> - `PRF_NUM` 必须 **≥ ARF_NUM**
+> - `PRF_NUM` 必须 **> ARF_NUM**
 > - `MAX_BR_NUM` 不能超过 **64**（受限于位掩码宽度）
 
 ### 3.4 ROB 配置
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `ROB_NUM` | 512 | 64~1024 | ROB 条目总数 |
-| `ROB_BANK_NUM` | =`DECODE_WIDTH`（当前为 8） | 2~32 | ROB Bank 数量 |
+| `ROB_NUM` | 512 | > 1 | ROB 条目总数 |
+| `ROB_BANK_NUM` | =`DECODE_WIDTH`（当前为 8） | 2~32（建议） | ROB Bank 数量 |
 | `ROB_LINE_NUM` | 64 | 自动计算 | ROB 行数 = ROB_NUM / ROB_BANK_NUM |
 
 > [!CAUTION]
@@ -221,7 +208,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
 
 ### 3.7 发射队列配置
 
-`GLOBAL_IQ_CONFIG` 定义了各发射队列的参数：
+`GLOBAL_IQ_CONFIG` 定义了各发射队列的参数，容量可以自由调节：
 
 | IQ 类型 | 容量 | Dispatch 宽度 | 端口数 |
 |---------|------|---------------|--------|
