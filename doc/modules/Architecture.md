@@ -125,15 +125,13 @@
 | L9 | `dis->comb_dispatch` | `L8` 的 `dis_wake` + `L2` 的 `dis_alloc` + `L1` 的 `iss2dis.ready_num`。 |
 | L10 | `dis->comb_fire` | `L9` 的 `dispatch_cache/dispatch_success_flags` + `L1` 的 `rob2dis/dec_bcast/prf_awake` + `L3` 的 `rob_bcast` + `L7` 的 `iss_awake`。 |
 | L11 | `rename->comb_fire` | `L10` 的 `dis2ren.ready` + `L1/L2` 的 `ren2dis.valid/uop` + `L3` 的 `rob_commit/rob_bcast/dec_bcast`。 |
-|  | `rob->comb_fire` | `L10` 的 `dis2rob.dis_fire`。 |
 |  | `isu->comb_enq` | `L10` 裁剪后的 `dis2iss.req` + `L7` 的 `iss_awake`（入队前去 busy）+ `L0` 的 IQ 副本基线。 |
 |  | `dis->comb_pipeline` | `L10` 的 `dis_fire/dis2ren.ready` + `L8` 的 wake 结果 + `L1` 的 `ren2dis/dec_bcast` + `L3` 的 `rob_bcast`。 |
 | L12 | `idu->comb_fire` | `L11` 的 `ren2dec.ready` + `L1` 的 `dec2ren.valid/uop` + `L3` 的 `rob_bcast` + `L4` 的 `exu2id`（写 `br_latch_1`）+ 上一拍 `br_latch`。 |
 |  | `rename->comb_pipeline` | `L11` 的 `ren2dec.ready/fire` + `L1` 的 `dec2ren` + `L3` 的 `rob_bcast` + `L1` 的 `dec_bcast`。 |
-| L13 | `rob->comb_flush` | `L3` 的 `rob_bcast.flush`，且需在 `L11` 的 `rob->comb_fire` 之后覆盖最终 ROB 副本。 |
+| L13 | `rob->comb_fire` | 统一处理 `flush/mispred/enqueue`（优先级 `flush > mispred > enqueue`）。 |
 |  | `isu->comb_flush` | `L3` 的 `rob_bcast.flush` + `L1` 的 `dec_bcast.{mispred,br_mask,clear_mask}`，并覆盖 `L11` 后的 IQ/`L7` 的 `latency_pipe_1` 副本。 |
 |  | `lsu->comb_flush` | `L13` 的 `rob_flush`。 |
 |  | `pre->comb_fire` | `L12` 的 `idu_consume` + `L3` 的 `rob_commit` + `L1` 的 push 缓存（`push_entries`）+ 上一拍锁存的 `idu_br_latch` + `rob_bcast.flush`。 |
-|  | `rob->comb_branch` | `L13` 后 `dec_bcast.mispred`（且无 rob flush）。 |
 | L14 | `prf->comb_pipeline` | `L13` 的 `rob_flush` + `L1` 已广播的 `dec_bcast.{mispred,br_mask,clear_mask}` + `L4` 的 `exe2prf.entry`。 |
 |  | `exu->comb_pipeline` | `L13` 后 `prf_read` 与 flush/mispred/clear_mask 最终状态。 |

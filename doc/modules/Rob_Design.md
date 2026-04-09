@@ -43,7 +43,7 @@
 
 1. ROB 为 `entry[ROB_BANK_NUM][ROB_LINE_NUM]` 的多 bank 行结构。
 2. `enq_ptr/deq_ptr + enq_flag/deq_flag` 组成 ring 状态；`ptr` 相等时由 flag 区分满空。
-3. 逻辑 `rob_idx = line * ROB_BANK_NUM + bank`。
+3. `rob_idx = line * ROB_BANK_NUM + bank`。
 
 ### 3.2 完成模型
 
@@ -52,9 +52,11 @@
 
 ### 3.3 提交模型
 
-1. 默认路径为组提交：队头整行有效条目均完成才可整行退休。
-2. 特殊场景（flush 类指令、异常、中断、进度兜底）进入单提交。
-3. flush/异常/中断仅在 `comb_commit()` 的精确提交点发出。
+1. 默认路径为前缀提交：在队头行内按 bank 顺序提交“连续可提交前缀”（遇到首个不可提交项即停止）。
+2. 提交端口与 ROB bank 一一对应：`commit_entry[i]` 仅承载 bank `i` 的提交结果，不做紧密重排。
+3. 仅当本拍提交覆盖到该行“最后一个有效 bank”时，`deq_ptr` 才前进；提交不会跨行。
+4. 特殊场景（flush 类指令、异常、中断）进入单提交。
+5. flush/异常/中断仅在 `comb_commit()` 的精确提交点发出。
 
 ---
 
@@ -79,10 +81,10 @@
 - **约束/优先级**：ROB 为空时无请求；每拍最多发 1 路 ROB 侧请求。
 
 ### 4.4 `comb_commit`
-- **功能描述**：执行组提交/单提交仲裁，生成 `rob_commit` 与 `rob_bcast`，并推进 `deq_ptr`。
+- **功能描述**：执行前缀提交/单提交仲裁，生成 `rob_commit` 与 `rob_bcast`，并在命中“行尾提交”时推进 `deq_ptr`。
 - **输入依赖**：`entry[][deq_ptr]`、`dec_bcast`、`csr2rob`、`ftq_pc_resp`、`lsu2rob`。
 - **输出更新**：`rob_commit->commit_entry[]`、`rob_bcast` 全套事件位、`rob2csr`、`rob2dis->{enq_idx,rob_flag}`、`entry_1` 与 `deq_ptr_1/deq_flag_1`。
-- **约束/优先级**：异常/中断/flush 仅在精确提交点触发；特殊指令和中断强制单提交。
+- **约束/优先级**：异常/中断/flush 仅在精确提交点触发；特殊指令和中断强制单提交；普通提交不跨行。
 
 ### 4.5 `comb_complete`
 - **功能描述**：接收执行完成回传并更新对应 ROB 条目完成/异常/分支信息。
@@ -90,23 +92,11 @@
 - **输出更新**：`entry_1[bank][line].uop.{cplt_mask,diag_val,page_fault_*,mispred,br_taken,flush_pipe,dbg}`。
 - **约束/优先级**：完成位不可重复置位，不可超出 `expect_mask`；`flush_pipe` 采用 OR 保持。
 
-### 4.6 `comb_branch`
-- **功能描述**：在误预测时回退 tail 并失效重定向点之后的错误路径条目。
-- **输入依赖**：`dec_bcast->{mispred,redirect_rob_idx}`、`out.rob_bcast->flush`、当前 `enq_ptr/enq_flag`。
-- **输出更新**：`enq_ptr_1/enq_flag_1`、`entry_1[][]` 有效位、重定向分支 `ftq_is_last`。
-- **约束/优先级**：仅在 `mispred && !flush` 生效；需处理跨行回滚。
-
-### 4.7 `comb_fire`
-- **功能描述**：接收 Dispatch 入队请求，写入当前 tail 行并在有入队时推进 tail。
-- **输入依赖**：`rob2dis->ready`、`dis2rob->{dis_fire[],uop[]}`、`enq_ptr/enq_flag`。
-- **输出更新**：`entry_1[][enq_ptr]`、`enq_ptr_1/enq_flag_1`。
-- **约束/优先级**：仅 ready 时入队；同拍任意槽位入队则推进一行。
-
-### 4.8 `comb_flush`
-- **功能描述**：全局 flush 时清空 ROB 并复位 ring 指针。
-- **输入依赖**：`out.rob_bcast->flush`。
-- **输出更新**：`entry_1[][].valid`、`enq_ptr_1/deq_ptr_1`、`enq_flag_1/deq_flag_1`。
-- **约束/优先级**：flush 为最终覆盖状态，生效后 ROB 回到空队列初始态。
+### 4.6 `comb_fire`
+- **功能描述**：统一处理 ROB 的 flush / mispred recover / enqueue。
+- **输入依赖**：`out.rob_bcast->flush`、`dec_bcast->{mispred,redirect_rob_idx}`、`rob2dis->ready`、`dis2rob->{dis_fire[],uop[]}`、`enq_ptr/enq_flag`。
+- **输出更新**：`entry_1[][]`、`enq_ptr_1/deq_ptr_1`、`enq_flag_1/deq_flag_1`。
+- **约束/优先级**：`flush > mispred recover > enqueue`；flush 复位 ROB；mispred 回退 tail 并清理错误路径。
 
 ---
 
@@ -126,4 +116,3 @@
 | `entry/entry_1` | `ROB_BANK_NUM * ROB_LINE_NUM` | ROB 条目与下一拍工作副本 |
 | `enq_ptr/deq_ptr` | `clog2(ROB_LINE_NUM)` | 环形尾/头指针 |
 | `enq_flag/deq_flag` | 1 bit | 满空判定与年龄辅助位 |
-| `stall_cycle` | `int` | 提交停滞监控与死锁保护计数 |
