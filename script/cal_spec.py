@@ -8,7 +8,7 @@ from datetime import datetime
 CPU_FREQ_GHZ = float(os.environ.get("CPU_FREQ_GHZ", "1.0"))
 LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_restore")
 WEIGHTS_DIR = os.environ.get(
-    "WEIGHTS_DIR", "/share/personal/S/houruyao/simpoint/rv32imab_bbv_1gb_ram"
+    "WEIGHTS_DIR", "/share/personal/S/houruyao/simpoint/rv32imab_bbv_10M"
 )
 DEBUG = os.environ.get("DEBUG", "1") not in ("0", "false", "False")
 LOG_STATUS_REPORT = LOG_ROOT_DIR + "/log_status_report.txt"
