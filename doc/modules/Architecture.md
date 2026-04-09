@@ -1,5 +1,4 @@
-# 后端架构总体设计 (Backend Architecture Overview)
-
+# 后端架构总体设计
 ## 1. 概述
 后端实现了基于 **RV32IMABSU** 指令集的乱序执行流水线。其核心设计目标是支持时钟精确 (Cycle-Accurate) 的微架构仿真，能够正确运行 Linux 操作系统，并提供详细的 TMA (Top-Down Microarchitecture Analysis) 性能分析。
 
@@ -9,13 +8,13 @@
 后端由以下核心功能模块组成，各模块通过 `IO.h` 定义的标准接口进行交互：
 
 - **Pre (PreIduQueue，包含 FTQ 与 Inst Buffer)**：后端与前端预测逻辑的桥梁，负责接收解耦的前端指令块与分支预测元数据，维护 FTQ/IBUF，并向 Idu 提供待译码条目。它是后端指令流的起点。
-- **Idu (译码)**：后端的译码阶段。负责将取指阶段获得的原始指令流转换为对应的信息，并分配分支 mask。
+- **Idu (译码)**：后端的译码阶段。负责将取指阶段获得的原始指令流转换为对应的信息，并分配分支 mask，处理Mispred。
 - **Rename (寄存器重命名)**：通过 RAT (Register Alias Table) 将架构寄存器映射到物理寄存器，消除 WAW 和 WAR 相关。
 - **Dispatch (分派)**：将重命名后的指令分派至发射队列 (Issue Queue)、重排序缓存 (ROB) 以及在访存单元 (LSU) 里提前申请位置。
 - **Isu (发射队列)**：实现乱序执行的核心。负责维护就绪状态并根据功能单元可用性选择指令发射执行。
 - **Prf (物理寄存器堆)**：存储所有推测执行的结果，并提供数据转发 (Bypass) 路径。
 - **Exu (执行单元)**：包含 ALU (算术运算)、Mul/Div (乘除法)、BRU (分支验证) 和 CSR (系统指令) 等多种功能单元。
-- **Lsu (访存单元)**：管理所有内存访问，包含 Load Queue 和 Store Queue，确保访存顺序及数据一致性。
+- **Lsu (访存单元)**：管理所有内存访问，包含 Load Queue 和 Store Queue，确保访存顺序及数据一致性（该部分后端文档不详细描述）。
 - **Rob (重排序缓存)**：负责维护指令的程序序。在指令确认无误后按序提交，并处理异常与误预测冲刷。
 - **Csr (Control and Status Registers)**：管理处理器特权级状态、中断与异常。
 
@@ -77,7 +76,7 @@
 
 ---
 
-## 6. 组合逻辑依赖链 (Combinational Dependency Chain)
+## 6. 组合逻辑依赖链
 `BackTop::comb()` 的顺序就是同周期信号传播顺序。若把 `comb_begin` 也计入，并采用“尽量前推（ASAP）”的严格拓扑分层（硬依赖不变，同时保留同模块内部先后约束），则当前实现（`back-end/BackTop.cpp`）可整理为 **15 层流程**（`L0~L14`）：
 
 | 层级 | 调用 (`comb_xxx`) | 依赖上一层的谁（关键上游） |

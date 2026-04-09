@@ -1,6 +1,6 @@
 # Pre (PreIduQueue) 设计文档
 
-## 1. 概述 (Overview)
+## 1. 概述
 `PreIduQueue` 位于前端与 `Idu` 之间，承担后端入口解耦与取指路径元数据管理（可能和前端最后的front2back_FIFO重合，简单看作InstBuffer容量扩充）。
 核心职责：
 
@@ -12,9 +12,8 @@
 
 ---
 
-## 2. 接口定义 (Interface Definition)
-
-### 2.1 输入接口 (`PreIduQueueIn`)
+## 2. 接口定义
+### 2.1 输入接口
 
 | 信号名 | 位宽 | 方向 | 来源 | 描述 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -31,7 +30,7 @@
 | `ftq_exu_pc_req->req[i]` | `FTQ_EXU_PC_PORT_NUM * FtqPcReadReq` | 输入 | Exu | EXU 侧 FTQ 读请求 |
 | `ftq_rob_pc_req->req[i]` | `FTQ_ROB_PC_PORT_NUM * FtqPcReadReq` | 输入 | Rob | ROB 侧 FTQ 读请求 |
 
-### 2.2 输出接口 (`PreIduQueueOut`)
+### 2.2 输出接口
 
 | 信号名 | 位宽 | 方向 | 去向 | 描述 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -43,8 +42,7 @@
 
 ---
 
-## 3. 微架构设计 (Microarchitecture)
-
+## 3. 微架构设计
 ### 3.1 状态组织
 
 1. `ibuf/ibuf_1`：指令缓冲（当前态/下一拍工作副本）。
@@ -65,7 +63,7 @@
 2. `flush/mispred` 时 IBUF 直接清空，不做 pop/push 正常路径。
 3. `flush/recover` 生效拍不做 FTQ commit reclaim。
 
-### 3.4 场景矩阵
+### 3.4 模块行为
 
 | 场景 | 输入特征 | 模块行为 |
 | :--- | :--- | :--- |
@@ -83,8 +81,7 @@
 
 ---
 
-## 4. 组合逻辑功能描述 (Combinational Logic)
-
+## 4. 组合逻辑功能描述
 ### 4.1 `comb_begin`
 - 功能描述：镜像状态并初始化 `issue/pre2front` 默认输出。
 - 输入依赖：`ibuf`、`ftq_head/tail/count`、`ftq_entries`。
@@ -111,8 +108,7 @@
 
 ---
 
-## 5. 性能计数器 (Performance Counters)
-
+## 5. 性能计数器
 | 计数器名称 | 含义 | 触发位置 |
 | :--- | :--- | :--- |
 | `ib_consume_available_slots` | IBUF 可供 IDU 消费的槽位累计 | `comb_begin` |
@@ -124,8 +120,7 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
-
+## 6. 资源占用
 | 名称 | 规格 | 描述 |
 | :--- | :--- | :--- |
 | `ibuf/ibuf_1` | `INSTRUCTION_BUFFER_SIZE` | 指令缓冲当前态与工作副本 |
@@ -134,8 +129,7 @@
 
 ---
 
-## 7. 已知限制与后续优化 (Known Limitations / Future Work)
-
+## 7. 附录：已知限制与后续优化
 1. `push_entries/push_count` 目前为文件级 `static`，单实例模型成立，多实例并行仿真不安全。
 2. 并入前端的`front2back_FIFO`
 
