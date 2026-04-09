@@ -410,9 +410,9 @@ void Rob::comb_commit() {
     cout << "卡死了" << endl;
 
     // 详细 ROB 调试信息
-    printf("[ROB DEBUG] is_empty=%d, deq_ptr=%d, enq_ptr=%d, commit=%d, "
-           "single_commit=%d\n",
-           is_empty(), deq_ptr, enq_ptr, (int)commit, (int)single_commit);
+    // printf("[ROB DEBUG] is_empty=%d, deq_ptr=%d, enq_ptr=%d, commit=%d, "
+    //        "single_commit=%d\n",
+    //        is_empty(), deq_ptr, enq_ptr, (int)commit, (int)single_commit);
 
     // 打印Rob出队行指令 看是哪条指令卡死
     cout << "Rob deq inst:" << endl;
@@ -439,6 +439,7 @@ void Rob::comb_commit() {
       ctx->cpu->mem_subsystem.dump_debug_state(stderr);
     }
     Assert(0 && "ROB Deadlock detected (stall_cycle > 50000)");
+    exit(1);
   }
 }
 

@@ -59,7 +59,8 @@ public:
   PtwMemPort  *itlb_ptw_port  = nullptr;
   PtwWalkPort *dtlb_walk_port = nullptr;
   PtwWalkPort *itlb_walk_port = nullptr;
-  PeripheralIO *peripheral_io = nullptr;
+  PeripheralReqIO *peripheral_req = nullptr;
+  PeripheralRespIO *peripheral_resp = nullptr;
   Csr         *csr            = nullptr;
   uint32_t    *memory         = nullptr;
 

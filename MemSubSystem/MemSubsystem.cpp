@@ -540,7 +540,8 @@ MemSubsystem::~MemSubsystem() = default;
 void MemSubsystem::init() {
   Assert(lsu2dcache != nullptr && "MemSubsystem: lsu2dcache is not connected");
   Assert(dcache2lsu  != nullptr && "MemSubsystem: dcache2lsu is not connected");
-  Assert(peripheral_io != nullptr && "MemSubsystem: peripheral_io is not connected");
+  Assert(peripheral_req != nullptr && "MemSubsystem: peripheral_req is not connected");
+  Assert(peripheral_resp != nullptr && "MemSubsystem: peripheral_resp is not connected");
   Assert(csr    != nullptr && "MemSubsystem: csr is not connected");
   Assert(memory != nullptr && "MemSubsystem: memory is not connected");
   
@@ -566,7 +567,8 @@ void MemSubsystem::init() {
   wb_.init();
   dcache_.init();
   peripheral_model_.bind(csr, memory);
-  peripheral_axi_.peripheral_io = peripheral_io;
+  peripheral_axi_.peripheral_req = peripheral_req;
+  peripheral_axi_.peripheral_resp = peripheral_resp;
   peripheral_axi_.peripheral_model = &peripheral_model_;
   peripheral_axi_.init();
 

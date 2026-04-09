@@ -65,7 +65,8 @@ struct PeripheralAxiState {
 
 class PeripheralAxi {
 public:
-  PeripheralIO *peripheral_io = nullptr;
+  PeripheralReqIO *peripheral_req = nullptr;
+  PeripheralRespIO *peripheral_resp = nullptr;
   PeripheralModel *peripheral_model = nullptr;
 
   void init();
