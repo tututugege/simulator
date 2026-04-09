@@ -12,6 +12,82 @@ constexpr const char *kColorStoreReq  = "\033[1;33m"; // Yellow
 constexpr const char *kColorLoadResp  = "\033[1;32m"; // Green
 constexpr const char *kColorStoreResp = "\033[1;35m"; // Magenta
 
+#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE0
+#define CONFIG_DEBUG_FOCUS_DCACHE_LINE0 0u
+#endif
+
+#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE1
+#define CONFIG_DEBUG_FOCUS_DCACHE_LINE1 0u
+#endif
+
+#ifndef CONFIG_DEBUG_FOCUS_LOAD_PC0
+#define CONFIG_DEBUG_FOCUS_LOAD_PC0 0u
+#endif
+
+#ifndef CONFIG_DEBUG_FOCUS_LOAD_VADDR0
+#define CONFIG_DEBUG_FOCUS_LOAD_VADDR0 0u
+#endif
+
+inline uint32_t cache_line_base(uint32_t addr) {
+    return addr & ~static_cast<uint32_t>(DCACHE_LINE_BYTES - 1u);
+}
+
+bool focus_dcache_line(uint32_t addr) {
+    const uint32_t line = cache_line_base(addr);
+    return (CONFIG_DEBUG_FOCUS_DCACHE_LINE0 != 0u &&
+            line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE0)) ||
+           (CONFIG_DEBUG_FOCUS_DCACHE_LINE1 != 0u &&
+            line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE1));
+}
+
+bool focus_dcache_load_uop(const MicroOp &uop) {
+    return (CONFIG_DEBUG_FOCUS_LOAD_PC0 != 0u &&
+            uop.dbg.pc == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_LOAD_PC0)) ||
+           (CONFIG_DEBUG_FOCUS_LOAD_VADDR0 != 0u &&
+            uop.result == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_LOAD_VADDR0));
+}
+
+bool focus_dcache_load(uint32_t addr, const MicroOp &uop) {
+    return focus_dcache_line(addr) || focus_dcache_load_uop(uop);
+}
+
+void log_focus_line_word(const char *tag, uint32_t addr, int set_idx, int way,
+                         int word_off, uint32_t data, uint8_t strb = 0) {
+    if (!focus_dcache_line(addr)) {
+        return;
+    }
+    std::printf(
+        "[FOCUS][DCACHE][%s] cyc=%lld addr=0x%08x line=0x%08x set=%d way=%d word=%d data=0x%08x strb=0x%x\n",
+        tag, (long long)sim_time, addr, cache_line_base(addr), set_idx, way,
+        word_off, data, static_cast<unsigned>(strb));
+}
+
+void log_focus_line_words(const char *tag, uint32_t addr, int set_idx, int way,
+                          const uint32_t *words) {
+    if (!focus_dcache_line(addr)) {
+        return;
+    }
+    std::printf(
+        "[FOCUS][DCACHE][%s] cyc=%lld line=0x%08x set=%d way=%d data=[%08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x]\n",
+        tag, (long long)sim_time, cache_line_base(addr), set_idx, way,
+        words[0], words[1], words[2], words[3], words[4], words[5], words[6],
+        words[7], words[8], words[9], words[10], words[11], words[12],
+        words[13], words[14], words[15]);
+}
+
+void log_focus_load_word(const char *tag, uint32_t addr, const MicroOp &uop,
+                         int set_idx, int way, int word_off, uint32_t data,
+                         uint8_t strb = 0) {
+    if (!focus_dcache_load(addr, uop)) {
+        return;
+    }
+    std::printf(
+        "[FOCUS][DCACHE][%s] cyc=%lld pc=0x%08x vaddr=0x%08x paddr=0x%08x line=0x%08x set=%d way=%d word=%d data=0x%08x strb=0x%x\n",
+        tag, (long long)sim_time, uop.dbg.pc, uop.result, addr,
+        cache_line_base(addr), set_idx, way, word_off, data,
+        static_cast<unsigned>(strb));
+}
+
 struct PendingMissLine {
     bool valid = false;
     uint32_t set_idx = 0;
@@ -357,6 +433,50 @@ void RealDcache::stage2_comb() {
     AddrFields mshr_f = decode(mshr2dcache->fill.addr);
     PendingMissLine pending_miss_lines[LSU_LDU_COUNT + LSU_STA_COUNT] = {};
     int pending_miss_count = 0;
+    PendingMissLine same_cycle_store_alloc_lines[LSU_STA_COUNT] = {};
+    int same_cycle_store_alloc_count = 0;
+
+    {
+        uint32_t store_probe_free_entries = mshr_free_entries;
+        for (int i = 0; i < LSU_STA_COUNT; i++) {
+            const S1S2Reg::StoreSlot &slot = s1s2_cur.stores[i];
+            if (!slot.valid || slot.replayed) {
+                continue;
+            }
+
+            const AddrFields f = decode(slot.addr);
+            const uint32_t tag_expected = f.tag;
+
+            int hit_way = -1;
+            for (int w = 0; w < DCACHE_WAYS; w++) {
+                if (slot.valid_snap[w] && slot.tag_snap[w] == tag_expected) {
+                    hit_way = w;
+                    break;
+                }
+            }
+
+            const bool wb_merge_valid = wb2dcache->merge_resp[i].valid;
+            const bool wb_merge_busy = wb2dcache->merge_resp[i].busy;
+            const bool fill_match =
+                mshr2dcache->fill.valid && mshr_f.set_idx == slot.set_idx &&
+                mshr_f.tag == tag_expected;
+            const bool store_has_existing_owner =
+                pending_miss_contains(same_cycle_store_alloc_lines,
+                                      same_cycle_store_alloc_count,
+                                      slot.set_idx, tag_expected) ||
+                slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected);
+
+            if (hit_way >= 0 || wb_merge_valid || wb_merge_busy || fill_match ||
+                store_has_existing_owner || store_probe_free_entries == 0) {
+                continue;
+            }
+
+            pending_miss_add(same_cycle_store_alloc_lines,
+                             same_cycle_store_alloc_count, LSU_STA_COUNT,
+                             slot.set_idx, tag_expected);
+            store_probe_free_entries--;
+        }
+    }
 
     // ── Load ports ────────────────────────────────────────────────────────────
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
@@ -398,10 +518,15 @@ void RealDcache::stage2_comb() {
 
         AddrFields f          = decode(slot.addr);
         uint32_t tag_expected = f.tag;
+        const bool same_cycle_store_alloc =
+            pending_miss_contains(same_cycle_store_alloc_lines,
+                                  same_cycle_store_alloc_count, slot.set_idx,
+                                  tag_expected);
         const bool mshr_pending_line =
             pending_miss_contains(pending_miss_lines, pending_miss_count,
                                   slot.set_idx, tag_expected) ||
-            slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected);
+            same_cycle_store_alloc || slot.mshr_hit ||
+            find_mshr_entry(slot.set_idx, tag_expected);
 
         uint32_t mem_val = 0;
         MicroOp response_uop = slot.uop;
@@ -419,12 +544,29 @@ void RealDcache::stage2_comb() {
             mshr2dcache->fill.valid && mshr_f.set_idx == slot.set_idx &&
             mshr_f.tag == tag_expected;
 
+        if (focus_dcache_load(slot.addr, slot.uop)) {
+            std::printf(
+                "[FOCUS][DCACHE][LD-SLOT] cyc=%lld port=%d req_id=%zu rob=%u pc=0x%08x vaddr=0x%08x paddr=0x%08x set=%u word=%u hit_way=%d mshr_pending=%d fill_match=%d same_cycle_store_alloc=%d wb_bypass=%d special=%d replayed=%d\n",
+                (long long)sim_time, i, slot.req_id, slot.uop.rob_idx,
+                slot.uop.dbg.pc, slot.uop.result, slot.addr,
+                static_cast<unsigned>(slot.set_idx),
+                static_cast<unsigned>(f.word_off), hit_way,
+                static_cast<int>(mshr_pending_line),
+                static_cast<int>(mshr_fill_match),
+                static_cast<int>(same_cycle_store_alloc),
+                static_cast<int>(wb2dcache->bypass_resp[i].valid),
+                static_cast<int>(is_special), static_cast<int>(slot.replayed));
+        }
+
         if(is_special){
             resp.valid = true;
             resp.data = mem_val;
             resp.uop = response_uop;
             resp.replay = 0;
             resp.req_id = slot.req_id;
+            log_focus_load_word("LD-SPECIAL", slot.addr, slot.uop,
+                                static_cast<int>(slot.set_idx), -1,
+                                static_cast<int>(f.word_off), resp.data);
             end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
         }
         else if (mshr_pending_line && mshr_fill_match) {
@@ -433,6 +575,10 @@ void RealDcache::stage2_comb() {
             resp.uop = slot.uop;
             resp.replay = 0;
             resp.req_id = slot.req_id;
+            log_focus_load_word("LD-FILL-FWD", slot.addr, slot.uop,
+                                static_cast<int>(slot.set_idx),
+                                static_cast<int>(mshr2dcache->fill.way),
+                                static_cast<int>(f.word_off), resp.data);
             end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
         }
         else if (mshr_pending_line) {
@@ -463,6 +609,9 @@ void RealDcache::stage2_comb() {
             resp.data = wb2dcache->bypass_resp[i].data;
             resp.uop = slot.uop;
             resp.req_id = slot.req_id;
+            log_focus_load_word("LD-WB-BYPASS", slot.addr, slot.uop,
+                                static_cast<int>(slot.set_idx), -1,
+                                static_cast<int>(f.word_off), resp.data);
             end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
         }
         else if (hit_way >= 0 ) {
@@ -472,6 +621,9 @@ void RealDcache::stage2_comb() {
             resp.data   = slot.data_snap[hit_way][f.word_off];
             resp.uop    = slot.uop;
             resp.req_id = slot.req_id;
+            log_focus_load_word("LD-HIT", slot.addr, slot.uop,
+                                static_cast<int>(slot.set_idx), hit_way,
+                                static_cast<int>(f.word_off), resp.data);
             end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
             lru_updates_[i] = {true, slot.set_idx, hit_way};
         } else {
@@ -481,6 +633,10 @@ void RealDcache::stage2_comb() {
                 resp.uop = slot.uop;
                 resp.replay = 0; // waiting for fill to complete, replay next cycle
                 resp.req_id = slot.req_id;
+                log_focus_load_word("LD-FILL-LATE", slot.addr, slot.uop,
+                                    static_cast<int>(slot.set_idx),
+                                    static_cast<int>(mshr2dcache->fill.way),
+                                    static_cast<int>(f.word_off), resp.data);
                 end_req_track(false, slot.req_id, slot.uop.rob_idx, slot.uop.rob_flag);
             }
             else if (mshr_pending_line) {
@@ -653,6 +809,10 @@ void RealDcache::stage2_comb() {
                     slot.data,
                     slot.strb
                 };
+                log_focus_line_word("ST-HIT-ACCEPT", slot.addr,
+                                    static_cast<int>(slot.set_idx), hit_way,
+                                    static_cast<int>(f.word_off), slot.data,
+                                    slot.strb);
                 dcache2mshr->store_hit_updates[i].valid = true;
                 dcache2mshr->store_hit_updates[i].set_idx = slot.set_idx;
                 dcache2mshr->store_hit_updates[i].way_idx =
@@ -792,14 +952,31 @@ void RealDcache::seq() {
     for (int i = 0; i < LSU_STA_COUNT; i++) {
         const PendingWrite &pw = pending_writes_[i];
         if (!pw.valid) continue;
+        const uint32_t line_addr =
+            get_addr(pw.set_idx, tag_array[pw.set_idx][pw.way_idx], 0);
+        const uint32_t old_data = data_array[pw.set_idx][pw.way_idx][pw.word_off];
         apply_strobe(data_array[pw.set_idx][pw.way_idx][pw.word_off],
                      pw.data, pw.strb);
+        log_focus_line_word("ST-HIT-COMMIT-OLD", line_addr,
+                            static_cast<int>(pw.set_idx),
+                            static_cast<int>(pw.way_idx),
+                            static_cast<int>(pw.word_off), old_data, pw.strb);
+        log_focus_line_word("ST-HIT-COMMIT-NEW", line_addr,
+                            static_cast<int>(pw.set_idx),
+                            static_cast<int>(pw.way_idx),
+                            static_cast<int>(pw.word_off),
+                            data_array[pw.set_idx][pw.way_idx][pw.word_off],
+                            pw.strb);
         dirty_array[pw.set_idx][pw.way_idx] = true;
     }
 
 
     // 2. Apply store hits.
     if (mshr2dcache->fill.valid) {
+        log_focus_line_words("FILL-COMMIT", mshr2dcache->fill.addr,
+                             static_cast<int>(decode(mshr2dcache->fill.addr).set_idx),
+                             static_cast<int>(mshr2dcache->fill.way),
+                             mshr2dcache->fill.data);
         write_dcache_line(decode(mshr2dcache->fill.addr).set_idx,
                           mshr2dcache->fill.way,
                           decode(mshr2dcache->fill.addr).tag,

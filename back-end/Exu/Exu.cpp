@@ -2,6 +2,34 @@
 #include "FPU.h"
 #include "config.h"
 
+namespace {
+#ifndef CONFIG_DEBUG_FOCUS_LOAD_PADDR0
+#define CONFIG_DEBUG_FOCUS_LOAD_PADDR0 0u
+#endif
+
+int g_focus_load_dest_preg = -1;
+long long g_focus_load_inst_idx = -1;
+
+bool is_focus_load_wb(const MicroOp &uop) {
+  return CONFIG_DEBUG_FOCUS_LOAD_PADDR0 != 0u &&
+         decode_uop_type(uop.op) == UOP_LOAD &&
+         uop.diag_val == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_LOAD_PADDR0);
+}
+
+void maybe_log_focus_preg_write(const char *tag, int port_idx,
+                                const MicroOp &uop) {
+  if (g_focus_load_dest_preg < 0 ||
+      static_cast<int>(uop.dest_preg) != g_focus_load_dest_preg) {
+    return;
+  }
+  std::printf(
+      "[FOCUS][EXU][%s] cyc=%lld port=%d preg=%d inst_idx=%lld pc=0x%08x op=%u result=0x%08x diag=0x%08x rob=%u flag=%u\n",
+      tag, (long long)sim_time, port_idx, g_focus_load_dest_preg,
+      (long long)uop.dbg.inst_idx, uop.dbg.pc, (unsigned)uop.op, uop.result,
+      uop.diag_val, (unsigned)uop.rob_idx, (unsigned)uop.rob_flag);
+}
+} // namespace
+
 static inline bool is_br_killed(const ExuInst &uop, const DecBroadcastIO *db) {
   if (!db->mispred) return false;
   return (uop.br_mask & db->br_mask) != 0;
@@ -451,13 +479,24 @@ void Exu::comb_exec() {
     if (in.lsu2exe->wb_req[i].valid) {
       int p_idx = IQ_LD_PORT_BASE + i;
       MicroOp u = in.lsu2exe->wb_req[i].uop.to_micro_op();
+      if (is_focus_load_wb(u)) {
+        g_focus_load_dest_preg = static_cast<int>(u.dest_preg);
+        g_focus_load_inst_idx = static_cast<long long>(u.dbg.inst_idx);
+        std::printf(
+            "[FOCUS][EXU][CAPTURE] cyc=%lld port=%d preg=%d inst_idx=%lld pc=0x%08x result=0x%08x diag=0x%08x rob=%u flag=%u\n",
+            (long long)sim_time, p_idx, g_focus_load_dest_preg,
+            g_focus_load_inst_idx, u.dbg.pc, u.result, u.diag_val,
+            (unsigned)u.rob_idx, (unsigned)u.rob_flag);
+      }
       bool flushed = in.rob_bcast->flush || is_br_killed(u, in.dec_bcast);
       Assert(!out.exe2prf->entry[p_idx].valid);
       out.exe2prf->entry[p_idx].valid = true;
       out.exe2prf->entry[p_idx].uop = ExePrfIO::ExePrfWbUop::from_micro_op(u);
+      maybe_log_focus_preg_write("PRF-WB", p_idx, u);
       if (!flushed) {
         out.exu2rob->entry[p_idx].valid = true;
         out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(u);
+        maybe_log_focus_preg_write("ROB-WB", p_idx, u);
       }
     }
   }
@@ -470,9 +509,11 @@ void Exu::comb_exec() {
       Assert(!out.exe2prf->entry[p_idx].valid);
       out.exe2prf->entry[p_idx].valid = true;
       out.exe2prf->entry[p_idx].uop = ExePrfIO::ExePrfWbUop::from_micro_op(u);
+      maybe_log_focus_preg_write("PRF-WB", p_idx, u);
       if (!flushed) {
         out.exu2rob->entry[p_idx].valid = true;
         out.exu2rob->entry[p_idx].uop = ExuRobIO::ExuRobUop::from_micro_op(u);
+        maybe_log_focus_preg_write("ROB-WB", p_idx, u);
       }
     }
   }

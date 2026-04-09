@@ -197,6 +197,17 @@ fault:
          dut_cpu.instruction);
   std::printf("Commit PC: 0x%08x\tDUT next PC: 0x%08x\tREF next PC: 0x%08x\n",
               dut_cpu.commit_pc, dut_cpu.pc, ref_cpu.state.pc);
+  if (dut_cpu.commit_pc == 0x00140184u && dut_cpu.instruction == 0x00872583u) {
+    const uint32_t focus_vaddr = dut_cpu.gpr[14] + 8u;
+    uint32_t ref_paddr = 0;
+    const bool ref_xlate_ok = ref_cpu.va2pa(ref_paddr, focus_vaddr, 1);
+    std::printf(
+        "[DIFF][FOCUS][XLATE] vaddr=0x%08x ref_ok=%d ref_paddr=0x%08x ref_word=0x%08x dut_word=0x%08x satp=0x%08x a4_ref=0x%08x a4_dut=0x%08x\n",
+        focus_vaddr, static_cast<int>(ref_xlate_ok), ref_paddr,
+        ref_xlate_ok ? ref_cpu.load_word(ref_paddr) : 0u,
+        ref_xlate_ok ? pmem_read(ref_paddr) : 0u, ref_cpu.state.csr[csr_satp],
+        ref_cpu.state.gpr[14], dut_cpu.gpr[14]);
+  }
   std::printf("[DIFF] p_memory@a5(0x%08x)=0x%08x ref=0x%08x\n", dut_cpu.gpr[15],
               pmem_read(dut_cpu.gpr[15]),
               ref_cpu.load_word(dut_cpu.gpr[15]));

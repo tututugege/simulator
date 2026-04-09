@@ -12,6 +12,26 @@ namespace {
 static constexpr uint8_t kCacheLineReqTotalSize =
     static_cast<uint8_t>(DCACHE_LINE_BYTES - 1u);
 
+#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE0
+#define CONFIG_DEBUG_FOCUS_DCACHE_LINE0 0u
+#endif
+
+#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE1
+#define CONFIG_DEBUG_FOCUS_DCACHE_LINE1 0u
+#endif
+
+inline uint32_t cache_line_base(uint32_t addr) {
+    return addr & ~static_cast<uint32_t>(DCACHE_LINE_BYTES - 1u);
+}
+
+bool focus_dcache_line(uint32_t addr) {
+    const uint32_t line = cache_line_base(addr);
+    return (CONFIG_DEBUG_FOCUS_DCACHE_LINE0 != 0u &&
+            line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE0)) ||
+           (CONFIG_DEBUG_FOCUS_DCACHE_LINE1 != 0u &&
+            line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE1));
+}
+
 static constexpr uint64_t full_line_wstrb_mask() {
     uint64_t mask = 0;
     for (uint32_t i = 0; i < DCACHE_LINE_BYTES && i < 64; i++) {
@@ -162,14 +182,34 @@ void WriteBuffer::comb_inputs() {
                     nxt.mergevalid[i] = true;
                     uint32_t word_off = decode(in.dcachewb.merge_req[i].addr).word_off;
                     uint32_t strb = in.dcachewb.merge_req[i].strb;
+                    const uint32_t old_data = e.data[word_off];
                     apply_strobe(e.data[word_off], in.dcachewb.merge_req[i].data, strb);
+                    if (focus_dcache_line(in.dcachewb.merge_req[i].addr)) {
+                        std::printf(
+                            "[FOCUS][WB][MERGE] cyc=%lld line=0x%08x word=%u old=0x%08x data=0x%08x new=0x%08x strb=0x%x\n",
+                            (long long)sim_time,
+                            cache_line_base(in.dcachewb.merge_req[i].addr),
+                            static_cast<unsigned>(word_off), old_data,
+                            in.dcachewb.merge_req[i].data, e.data[word_off],
+                            static_cast<unsigned>(strb));
+                    }
                 }
             }
             else if(cache_line_match(in.dcachewb.merge_req[i].addr,in.mshrwb.addr)&&in.mshrwb.valid){
                 nxt.mergevalid[i] = true;
                 uint32_t word_off = decode(in.dcachewb.merge_req[i].addr).word_off;
                 uint32_t strb = in.dcachewb.merge_req[i].strb;
+                const uint32_t old_data = in.mshrwb.data[word_off];
                 apply_strobe(in.mshrwb.data[word_off], in.dcachewb.merge_req[i].data, strb);
+                if (focus_dcache_line(in.dcachewb.merge_req[i].addr)) {
+                    std::printf(
+                        "[FOCUS][WB][MERGE-MSHRWB] cyc=%lld line=0x%08x word=%u old=0x%08x data=0x%08x new=0x%08x strb=0x%x\n",
+                        (long long)sim_time,
+                        cache_line_base(in.dcachewb.merge_req[i].addr),
+                        static_cast<unsigned>(word_off), old_data,
+                        in.dcachewb.merge_req[i].data, in.mshrwb.data[word_off],
+                        static_cast<unsigned>(strb));
+                }
             }
             
         }
@@ -183,6 +223,14 @@ void WriteBuffer::comb_inputs() {
             e.send     = false;
             e.addr     = in.mshrwb.addr;
             std::memcpy(e.data, in.mshrwb.data, DCACHE_LINE_WORDS * sizeof(uint32_t));
+            if (focus_dcache_line(in.mshrwb.addr)) {
+                std::printf(
+                    "[FOCUS][WB][PUSH] cyc=%lld line=0x%08x tail=%u count=%u data13=0x%08x\n",
+                    (long long)sim_time, cache_line_base(in.mshrwb.addr),
+                    static_cast<unsigned>(nxt.tail),
+                    static_cast<unsigned>(nxt.count),
+                    e.data[13]);
+            }
             nxt.tail  = (nxt.tail + 1) % DCACHE_WB_ENTRIES;
             nxt.count++;
         }
@@ -199,11 +247,27 @@ void WriteBuffer::comb_inputs() {
             if(wb_idx != -1){
                 nxt.bypassvalid[i] = true;
                 nxt.bypassdata[i] = write_buffer_nxt[wb_idx].data[decode(in.dcachewb.bypass_req[i].addr).word_off];
+                if (focus_dcache_line(in.dcachewb.bypass_req[i].addr)) {
+                    std::printf(
+                        "[FOCUS][WB][BYPASS] cyc=%lld line=0x%08x word=%u data=0x%08x wb_idx=%d\n",
+                        (long long)sim_time,
+                        cache_line_base(in.dcachewb.bypass_req[i].addr),
+                        static_cast<unsigned>(decode(in.dcachewb.bypass_req[i].addr).word_off),
+                        nxt.bypassdata[i], wb_idx);
+                }
             }
             else if(cache_line_match(in.dcachewb.bypass_req[i].addr,in.mshrwb.addr)&&in.mshrwb.valid){
                 // Bypass from the MSHR fill data if the requested line matches the line being filled by the MSHR.
                 nxt.bypassvalid[i] = true;
                 nxt.bypassdata[i] = in.mshrwb.data[decode(in.dcachewb.bypass_req[i].addr).word_off];
+                if (focus_dcache_line(in.dcachewb.bypass_req[i].addr)) {
+                    std::printf(
+                        "[FOCUS][WB][BYPASS-MSHRWB] cyc=%lld line=0x%08x word=%u data=0x%08x\n",
+                        (long long)sim_time,
+                        cache_line_base(in.dcachewb.bypass_req[i].addr),
+                        static_cast<unsigned>(decode(in.dcachewb.bypass_req[i].addr).word_off),
+                        nxt.bypassdata[i]);
+                }
             }
         }
     }
