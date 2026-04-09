@@ -1,6 +1,6 @@
 # Rob (Reorder Buffer) 设计文档
 
-## 1. 概述 (Overview)
+## 1. 概述
 `Rob` 负责维护乱序执行到按序提交之间的全局顺序语义，核心职责：
 
 1. 接收 `Dispatch` 分配的指令并按行入队。
@@ -11,8 +11,7 @@
 
 ---
 
-## 2. 接口定义 (Interface Definition)
-
+## 2. 接口定义
 ### 2.1 输入接口
 
 | 信号/字段 | 来源 | 描述 |
@@ -37,8 +36,7 @@
 
 ---
 
-## 3. 微架构设计 (Microarchitecture)
-
+## 3. 微架构设计
 ### 3.1 组织方式
 
 1. ROB 为 `entry[ROB_BANK_NUM][ROB_LINE_NUM]` 的多 bank 行结构。
@@ -58,10 +56,21 @@
 4. 特殊场景（flush 类指令、异常、中断）进入单提交。
 5. flush/异常/中断仅在 `comb_commit()` 的精确提交点发出。
 
+### 3.4 `diag_val` 语义
+`diag_val` 是随 uop/inst 在后端流动的复用字段，不同类型指令在不同阶段承载不同语义。
+
+硬件语义（ROB 相关）：
+1. Load/Store 路径：`comb_complete()` 接收 LSU 回传后，`diag_val` 记录访存地址语义（正常时为已解析地址，fault 时为 fault VA），用于提交阶段对齐检查与 trap 值生成。
+2. Branch/JAL 路径：`diag_val` 记录实际 `next_pc`，用于提交侧/训练侧读取真实目标。
+3. 非法指令路径：`illegal_inst` 在 `comb_commit()` 触发异常时，`rob_bcast.trap_val = uop.diag_val`。在当前实现下，这里的 `diag_val` 来自译码阶段的指令字（inst）。
+
+仿真/观测语义（非硬件功能）：
+1. 为了 difftest 在 flush 场景读到统一的 next-pc，`BackTop` 会在 flush 当拍把所有 `commit_entry[i].uop.diag_val` 覆写为 `redirect_pc`。
+2. 上述覆写属于仿真对拍辅助行为，不应当解读为硬件在提交路径上“改写指令语义字段”。
+
 ---
 
-## 4. 组合逻辑功能描述 (Combinational Logic)
-
+## 4. 组合逻辑功能描述
 ### 4.1 `comb_begin`
 - **功能描述**：复制 ROB 当前状态到 `_1` 工作副本。
 - **输入依赖**：`entry[][]`、`enq_ptr/deq_ptr`、`enq_flag/deq_flag`。
@@ -100,8 +109,7 @@
 
 ---
 
-## 5. 性能计数器 (Performance Counters)
-
+## 5. 性能计数器
 | 计数器名称 | 含义 | 描述 |
 | :--- | :--- | :--- |
 | `slots_core_bound_rob` | ROB 相关阻塞 | Dispatch 因 ROB 不可接收或队头序列化导致的后端阻塞 |
@@ -109,8 +117,7 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
-
+## 6. 资源占用
 | 名称 | 规格 | 描述 |
 | :--- | :--- | :--- |
 | `entry/entry_1` | `ROB_BANK_NUM * ROB_LINE_NUM` | ROB 条目与下一拍工作副本 |

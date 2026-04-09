@@ -1,6 +1,6 @@
 # Ren (Rename) 设计文档
 
-## 1. 概述 (Overview)
+## 1. 概述
 `Ren` 模块位于 `Idu` 与 `Dispatch` 之间，负责：
 
 1. 为源/目的寄存器完成物理寄存器重命名。
@@ -10,9 +10,8 @@
 
 ---
 
-## 2. 接口定义 (Interface Definition)
-
-### 2.1 输入接口 (`RenIn`)
+## 2. 接口定义
+### 2.1 输入接口
 
 | 信号/字段 | 位宽 | 来源 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -25,7 +24,7 @@
 | `rob_bcast->flush` | 1 | ROB | 全局冲刷 |
 | `rob_commit->commit_entry[i]` | `RobCommitIO::RobCommitEntry` | ROB | 提交信息（更新 arch_RAT、回收旧 preg） |
 
-### 2.2 输出接口 (`RenOut`)
+### 2.2 输出接口
 
 | 信号/字段 | 位宽 | 去向 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -35,8 +34,7 @@
 
 ---
 
-## 3. 微架构设计 (Microarchitecture)
-
+## 3. 微架构设计
 ### 3.1 映射与分配状态
 
 1. `spec_RAT[ARF_NUM+1]`：推测态 RAT，供 rename 实时查表。
@@ -83,8 +81,7 @@
 
 ---
 
-## 4. 组合逻辑功能描述 (Combinational Logic)
-
+## 4. 组合逻辑功能描述
 ### 4.1 `comb_begin`
 - **功能描述**：复制全部状态到 `_1` 工作副本。
 - **输入依赖**：`inst_r/inst_valid`, `spec_RAT`, `arch_RAT`, `free_vec`, `spec_alloc`, `RAT_checkpoint`, `alloc_checkpoint`。
@@ -117,8 +114,7 @@
 
 ---
 
-## 5. 性能计数器 (Performance Counters)
-
+## 5. 性能计数器
 | 计数器名称 | 含义 | 描述 |
 | :--- | :--- | :--- |
 | `ren_reg_stall` | 物理寄存器不足停顿次数 | `comb_alloc` 分配失败时递增 |
@@ -126,9 +122,7 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
-
-
+## 6. 资源占用
 | 名称 | 规格 | 类型 | 描述 |
 | :--- | :--- | :--- | :--- |
 | `inst_r` / `inst_valid` | `DECODE_WIDTH` | reg array | rename 流水寄存器 |

@@ -1,6 +1,6 @@
 # Idu (Instruction Decode Unit) 设计文档
 
-## 1. 概述 (Overview)
+## 1. 概述
 `Idu` 位于 pre-idu queue 与 rename 之间，负责：
 
 1. 将 `PreIduIssueIO` 中的指令译码为 `DecRenIO::DecRenInst`。
@@ -10,9 +10,8 @@
 
 ---
 
-## 2. 接口定义 (Interface Definition)
-
-### 2.1 输入接口 (`IduIn`)
+## 2. 接口定义
+### 2.1 输入接口
 
 | 信号/字段 | 位宽 | 来源 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -24,7 +23,7 @@
 | `exu2id->redirect_rob_idx` | `ROB_IDX_WIDTH` | EXU | 重定向对应 ROB 位置 |
 | `exu2id->clear_mask` | `BR_MASK_WIDTH` | EXU | 已解析分支清理掩码 |
 
-### 2.2 输出接口 (`IduOut`)
+### 2.2 输出接口
 
 | 信号/字段 | 位宽 | 去向 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -38,9 +37,8 @@
 
 ---
 
-## 3. 微架构设计 (Microarchitecture)
-
-### 分支状态与 Tag 生命周期
+## 3. 微架构设计
+### 3.1 分支状态与 Tag 生命周期
 `Idu` 维护以下核心状态：
 
 1. `tag_vec[MAX_BR_NUM]`：Tag 空闲位图（`1=空闲`，`0=占用`，其中 `tag 0` 保留）。
@@ -51,8 +49,7 @@
 
 ---
 
-## 4. 组合逻辑功能描述 (Combinational Logic)
-
+## 4. 组合逻辑功能描述
 ### 4.1 `comb_begin`
 - **功能描述**：复制状态到本拍工作副本。
 - **输入依赖**：`tag_vec`, `br_mask_cp`, `now_br_mask`, `pending_free_mask`, `br_latch`。
@@ -86,8 +83,7 @@
 
 ---
 
-## 5. 性能计数器 (Performance Counters)
-
+## 5. 性能计数器
 | 计数器名称 | 含义 | 描述 |
 | :--- | :--- | :--- |
 | `idu_tag_stall` | 分支 Tag 不足停顿次数 | `comb_decode` 中无可分配 `alloc_tag` 时递增 |
@@ -95,8 +91,7 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
-
+## 6. 资源占用
 | 名称 | 规格 | 类型 | 描述 |
 | :--- | :--- | :--- | :--- |
 | `tag_vec` | `MAX_BR_NUM` | reg array | Tag 空闲位图 |
@@ -107,7 +102,7 @@
 
 ---
 
-## 7. 基于 `br_id`/`br_mask` 的分支恢复机制
+## 7. 附录：基于 `br_id`/`br_mask` 的分支恢复机制
 
 ### 7.1 基本语义
 1. `br_id`：为每条分支分配的唯一 Tag。
