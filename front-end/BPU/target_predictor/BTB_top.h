@@ -253,6 +253,7 @@ public:
 
   struct BtbPredReadReqCombOut {
     wire1_t pred_read_valid;
+    pc_t pred_pc;
     btb_idx_t pred_btb_idx;
     btb_type_idx_t pred_type_idx;
     bht_idx_t pred_bht_idx;
@@ -266,6 +267,10 @@ public:
 
   struct BtbUpdReadReqCombOut {
     wire1_t upd_read_valid;
+    pc_t upd_pc;
+    target_addr_t upd_actual_addr;
+    br_type_t upd_br_type_in;
+    wire1_t upd_actual_dir;
     btb_idx_t upd_btb_idx;
     btb_type_idx_t upd_type_idx;
     bht_idx_t upd_bht_idx;
@@ -617,11 +622,11 @@ public:
     }
 
     out.pred_read_valid = true;
+    out.pred_pc = in.inp.pred_pc;
     out.pred_btb_idx = btb_get_idx_value(in.inp.pred_pc);
-      out.pred_bht_idx = bht_get_idx_value(in.inp.pred_pc);
+    out.pred_bht_idx = bht_get_idx_value(in.inp.pred_pc);
     out.pred_tag = btb_get_tag_value(in.inp.pred_pc);
-    const uint32_t pred_bht_data = mem_bht[out.pred_bht_idx];
-    out.pred_tc_idx = tc_get_idx_value(in.inp.pred_pc, pred_bht_data);
+    out.pred_tc_idx = 0;
   }
 
   void btb_upd_read_req_comb(const BtbUpdReadReqCombIn &in,
@@ -633,20 +638,17 @@ public:
     }
 
     out.upd_read_valid = true;
+    out.upd_pc = in.inp.upd_pc;
+    out.upd_actual_addr = in.inp.upd_actual_addr;
+    out.upd_br_type_in = in.inp.upd_br_type_in;
+    out.upd_actual_dir = in.inp.upd_actual_dir;
     out.upd_btb_idx = btb_get_idx_value(in.inp.upd_pc);
     out.upd_bht_idx = bht_get_idx_value(in.inp.upd_pc);
     out.upd_tag = btb_get_tag_value(in.inp.upd_pc);
-    const uint32_t upd_bht_data = mem_bht[out.upd_bht_idx];
-    out.upd_next_bht_data =
-        (in.inp.upd_br_type_in != BR_NONCTL)
-            ? bht_next_state_value(upd_bht_data, in.inp.upd_br_type_in,
-                                   in.inp.upd_actual_dir, in.inp.upd_actual_addr)
-            : upd_bht_data;
-    if (in.inp.upd_actual_dir && in.inp.upd_br_type_in == BR_IDIRECT) {
-      out.upd_tc_read_valid = true;
-      out.upd_tc_write_idx = tc_get_idx_value(in.inp.upd_pc, out.upd_next_bht_data);
-      out.upd_tc_write_tag = tc_get_tag_value(in.inp.upd_pc);
-    }
+    out.upd_next_bht_data = 0;
+    out.upd_tc_read_valid = false;
+    out.upd_tc_write_idx = 0;
+    out.upd_tc_write_tag = 0;
   }
 
   void btb_pre_read_comb(const BtbPreReadCombIn &in,
@@ -812,9 +814,10 @@ public:
     rd.pred_btb_idx = in.pred_req.pred_btb_idx;
     rd.pred_bht_idx = in.pred_req.pred_bht_idx;
     rd.pred_tag = in.pred_req.pred_tag;
-    rd.pred_tc_idx = in.pred_req.pred_tc_idx;
+    rd.pred_tc_idx = 0;
     if (in.pred_req.pred_read_valid) {
       rd.pred_bht_data = mem_bht[rd.pred_bht_idx];
+      rd.pred_tc_idx = tc_get_idx_value(in.pred_req.pred_pc, rd.pred_bht_data);
       for (int w = 0; w < BTB_WAY_NUM; ++w) {
         rd.pred_btb_set.tag[w] = mem_btb_tag[w][rd.pred_btb_idx];
         rd.pred_btb_set.bta[w] = mem_btb_bta[w][rd.pred_btb_idx];
@@ -833,12 +836,23 @@ public:
     rd.upd_btb_idx = in.upd_req.upd_btb_idx;
     rd.upd_bht_idx = in.upd_req.upd_bht_idx;
     rd.upd_tag = in.upd_req.upd_tag;
-    rd.upd_next_bht_data = in.upd_req.upd_next_bht_data;
-    rd.upd_tc_read_valid = in.upd_req.upd_tc_read_valid;
-    rd.upd_tc_write_idx = in.upd_req.upd_tc_write_idx;
-    rd.upd_tc_write_tag = in.upd_req.upd_tc_write_tag;
+    rd.upd_next_bht_data = 0;
+    rd.upd_tc_read_valid = false;
+    rd.upd_tc_write_idx = 0;
+    rd.upd_tc_write_tag = 0;
     if (in.upd_req.upd_read_valid) {
       rd.upd_bht_data = mem_bht[rd.upd_bht_idx];
+      rd.upd_next_bht_data =
+          (in.upd_req.upd_br_type_in != BR_NONCTL)
+              ? bht_next_state_value(rd.upd_bht_data, in.upd_req.upd_br_type_in,
+                                     in.upd_req.upd_actual_dir,
+                                     in.upd_req.upd_actual_addr)
+              : rd.upd_bht_data;
+      if (in.upd_req.upd_actual_dir && in.upd_req.upd_br_type_in == BR_IDIRECT) {
+        rd.upd_tc_read_valid = true;
+        rd.upd_tc_write_idx = tc_get_idx_value(in.upd_req.upd_pc, rd.upd_next_bht_data);
+        rd.upd_tc_write_tag = tc_get_tag_value(in.upd_req.upd_pc);
+      }
       for (int w = 0; w < BTB_WAY_NUM; ++w) {
         rd.upd_btb_set.tag[w] = mem_btb_tag[w][rd.upd_btb_idx];
         rd.upd_btb_set.bta[w] = mem_btb_bta[w][rd.upd_btb_idx];
