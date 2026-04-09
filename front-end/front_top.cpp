@@ -1390,7 +1390,7 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
                         predecode_read_data predecode_rd{};
                         PredecodeResult result{};
                         predecode_seq_read(&predecode_inp, &predecode_rd);
-                        predecode_comb(&predecode_rd, &result);
+                        predecode_comb(predecode_rd, result);
                         bypass_fifo_out.predecode_type[i] = result.type;
                         bypass_fifo_out.predecode_target_address[i] = result.target_address;
                     } else {
@@ -1444,7 +1444,7 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
                     predecode_read_data predecode_rd{};
                     PredecodeResult result{};
                     predecode_seq_read(&predecode_inp, &predecode_rd);
-                    predecode_comb(&predecode_rd, &result);
+                    predecode_comb(predecode_rd, result);
                     fifo_in.predecode_type[i] = result.type;
                     fifo_in.predecode_target_address[i] = result.target_address;
                     DEBUG_LOG_SMALL_4("[icache_out] sim_time: %d, pc: %x, inst: %x\n",
@@ -1483,7 +1483,7 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
                     predecode_read_data predecode_rd{};
                     PredecodeResult result{};
                     predecode_seq_read(&predecode_inp, &predecode_rd);
-                    predecode_comb(&predecode_rd, &result);
+                    predecode_comb(predecode_rd, result);
                     fifo_in.predecode_type[i] = result.type;
                     fifo_in.predecode_target_address[i] = result.target_address;
                     DEBUG_LOG_SMALL_4("[icache_out] sim_time: %d, pc: %x, inst: %x\n",
@@ -1547,7 +1547,7 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             front_checker_input_comb(saved_fifo_out, saved_ptab_out, checker_input_out);
             predecode_checker_read_data checker_rd{};
             predecode_checker_seq_read(&checker_input_out.checker_in, &checker_rd);
-            predecode_checker_comb(&checker_rd, &checker_out);
+            predecode_checker_comb(checker_rd, checker_out);
             
             DEBUG_LOG_SMALL_4("[predecode on] seq_next_pc: %x, predict_next: %x\n",
                               saved_fifo_out.seq_next_pc,
