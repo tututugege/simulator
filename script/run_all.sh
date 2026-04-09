@@ -2,7 +2,7 @@
 
 # ================= 配置区域 =================
 SIMULATOR="./build/simulator"
-CKPT_ROOT="/share/personal/S/houruyao/simpoint/rv32imab_ckpt_1gb_ram"
+CKPT_ROOT="/share/personal/S/houruyao/simpoint/rv32imab_ckpt_10M"
 RESULT_DIR="./results_restore"
 
 # 内存够的话建议等于可用的核心数 不用超线程
@@ -56,48 +56,59 @@ for ckpt_file in "${ALL_CKPTS[@]}"; do
     mkdir -p "$RESULT_DIR/$bench_name"
 done
 
-# ================= 核心魔法：无死锁 FIFO 任务队列 =================
 
-# 创建命名管道文件
+# ================= 奈奈子终极改良版核心魔法：真·无死锁 FIFO =================
+
+# 1. 建立队列管道
 FIFO_FILE="/tmp/sim_queue_$$"
 mkfifo "$FIFO_FILE"
-
-# [终极修复] 使用 <> (读写双向模式) 打开，Linux 内核就不会阻塞我们啦！
 exec 3<> "$FIFO_FILE"
-
-# 绑定完毕后立刻隐藏删除（进程退出自动回收）
 rm "$FIFO_FILE"
 
-echo "Populating task queue..."
-# [生产者] 将所有任务路径一次性塞入队列
-for ckpt_file in "${ALL_CKPTS[@]}"; do
-    echo "$ckpt_file" >&3
-done
+# 2. 建立锁文件（注意：这里先不要 rm，保留物理文件让 Worker 去打开）
+LOCK_FILE="/tmp/sim_lock_$$"
+touch "$LOCK_FILE"
 
-# [新增魔法] 塞入 128 颗“毒药药丸(Poison Pill)”
-# 这样 128 个 Worker 只要读到这个信号，就知道任务干完了，自然退出
-for ((i=0; i<MAX_JOBS; i++)); do
-    echo "EOF_SIGNAL" >&3
-done
+echo "Populating task queue..."
+# [生产者] 放入后台独立运行
+(
+    for ckpt_file in "${ALL_CKPTS[@]}"; do
+        echo "$ckpt_file" >&3
+    done
+
+    # 塞入 64 颗“毒药药丸”
+    for ((i=0; i<MAX_JOBS; i++)); do
+        echo "EOF_SIGNAL" >&3
+    done
+) & 
 
 echo "Launching $MAX_JOBS dedicated workers pinned to cores 0-$((MAX_JOBS-1))..."
 
-# [消费者] 启动 128 个长期存活的 Worker 进程
+# [消费者] 启动 64 个 Worker
 for ((core=0; core<MAX_JOBS; core++)); do
     (
-        # 大家一起从 3 号文件描述符抢任务
-        while read -u 3 ckpt_file; do
+        # 【终极修复】：在 Worker 进程内部独立打开锁文件！获取专属的 file description
+        exec 4< "$LOCK_FILE"
 
-            # 吃到毒药，打卡下班！
+        while true; do
+            # 现在锁终于可以生效了！
+            flock -x 4
+            read -r -u 3 ckpt_file
+            flock -u 4
+
             if [ "$ckpt_file" == "EOF_SIGNAL" ]; then
                 break
+            fi
+
+            if [ -z "$ckpt_file" ]; then
+                continue
             fi
 
             bench_name=$(basename "$(dirname "$ckpt_file")")
             ckpt_basename=$(basename "$ckpt_file" .gz)
             log_file="$RESULT_DIR/$bench_name/${ckpt_basename}.log"
 
-            # 强行绑定物理核，开跑！
+            # 强行绑定物理核开跑
             taskset -c "$core" $SIMULATOR --mode ckpt -w 10000000 "$ckpt_file" > "$log_file" 2>&1
 
             if [ $? -eq 0 ]; then
@@ -109,8 +120,11 @@ for ((core=0; core<MAX_JOBS; core++)); do
     ) &
 done
 
-# 等待所有 128 个后台 Worker 执行完毕
+# 等待所有后台 Worker 执行完毕
 wait
+
+# 大家干完活了，再清理掉锁文件
+rm -f "$LOCK_FILE"
 # ================================================================
 
 # ================= 统计 =================

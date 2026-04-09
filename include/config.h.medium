@@ -208,8 +208,8 @@ constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 // SimPoint
 // ============================================================
 
-constexpr int WARMUP = 100000000;
-constexpr int SIMPOINT_INTERVAL = 100000000;
+constexpr int WARMUP = 10000000;
+constexpr int SIMPOINT_INTERVAL = 10000000;
 
 // ============================================================
 // FTQ/INST BUFFER
