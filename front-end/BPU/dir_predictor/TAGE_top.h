@@ -199,17 +199,18 @@ static inline uint32_t loop_idx_from_pc(pc_t pc) {
   return mixed & (TAGE_LOOP_ENTRY_NUM - 1);
 }
 
-static inline uint16_t loop_tag_from_pc(pc_t pc) {
+static inline tage_loop_tag_t loop_tag_from_pc(pc_t pc) {
   const uint32_t value = (pc >> 2) ^ (pc >> (2 + TAGE_LOOP_TAG_BITS));
-  return static_cast<uint16_t>(value & ((1u << TAGE_LOOP_TAG_BITS) - 1u));
+  return static_cast<tage_loop_tag_t>(value & ((1u << TAGE_LOOP_TAG_BITS) - 1u));
 }
 
-static inline uint16_t loop_sat_inc(uint16_t v, uint16_t max_v) {
-  return (v >= max_v) ? max_v : static_cast<uint16_t>(v + 1);
+static inline tage_loop_iter_t loop_sat_inc(tage_loop_iter_t v,
+                                             tage_loop_iter_t max_v) {
+  return (v >= max_v) ? max_v : static_cast<tage_loop_iter_t>(v + 1);
 }
 
-static inline uint16_t loop_sat_dec(uint16_t v) {
-  return (v == 0) ? 0 : static_cast<uint16_t>(v - 1);
+static inline tage_loop_iter_t loop_sat_dec(tage_loop_iter_t v) {
+  return (v == 0) ? 0 : static_cast<tage_loop_iter_t>(v - 1);
 }
 
 // ============================================================================
@@ -424,10 +425,10 @@ public:
     tage_scl_ctr_t pred_scl_ctr[BPU_SCL_META_NTABLE];
     wire1_t pred_loop_entry_valid;
     tage_loop_meta_tag_t pred_loop_entry_tag;
-    uint16_t pred_loop_entry_iter_count;
-    uint16_t pred_loop_entry_iter_limit;
-    uint8_t pred_loop_entry_conf;
-    uint8_t pred_loop_entry_age;
+    tage_loop_iter_t pred_loop_entry_iter_count;
+    tage_loop_iter_t pred_loop_entry_iter_limit;
+    tage_loop_conf_t pred_loop_entry_conf;
+    tage_loop_age_t pred_loop_entry_age;
     wire1_t pred_loop_entry_dir;
     tage_loop_meta_idx_t pred_loop_idx;
     tage_loop_meta_tag_t pred_loop_tag;
@@ -440,10 +441,10 @@ public:
     tage_scl_ctr_t upd_scl_ctr[BPU_SCL_META_NTABLE];
     wire1_t upd_loop_entry_valid;
     tage_loop_meta_tag_t upd_loop_entry_tag;
-    uint16_t upd_loop_entry_iter_count;
-    uint16_t upd_loop_entry_iter_limit;
-    uint8_t upd_loop_entry_conf;
-    uint8_t upd_loop_entry_age;
+    tage_loop_iter_t upd_loop_entry_iter_count;
+    tage_loop_iter_t upd_loop_entry_iter_limit;
+    tage_loop_conf_t upd_loop_entry_conf;
+    tage_loop_age_t upd_loop_entry_age;
     wire1_t upd_loop_entry_dir;
     tage_loop_meta_idx_t upd_loop_idx;
     tage_loop_meta_tag_t upd_loop_tag;
@@ -525,10 +526,10 @@ public:
     tage_loop_meta_idx_t loop_wr_idx;
     wire1_t loop_valid_commit;
     tage_loop_meta_tag_t loop_tag_commit;
-    uint16_t loop_iter_count_commit;
-    uint16_t loop_iter_limit_commit;
-    uint8_t loop_conf_commit;
-    uint8_t loop_age_commit;
+    tage_loop_iter_t loop_iter_count_commit;
+    tage_loop_iter_t loop_iter_limit_commit;
+    tage_loop_conf_t loop_conf_commit;
+    tage_loop_age_t loop_age_commit;
     wire1_t loop_dir_commit;
   };
 
@@ -694,11 +695,11 @@ private:
 #if ENABLE_TAGE_LOOP_PRED
   struct LoopEntry {
     wire1_t valid;
-    uint16_t tag;
-    uint16_t iter_count;
-    uint16_t iter_limit;
-    uint8_t conf;
-    uint8_t age;
+    tage_loop_tag_t tag;
+    tage_loop_iter_t iter_count;
+    tage_loop_iter_t iter_limit;
+    tage_loop_conf_t conf;
+    tage_loop_age_t age;
     wire1_t dir;
   };
   LoopEntry loop_table[TAGE_LOOP_ENTRY_NUM];
@@ -1210,8 +1211,9 @@ public:
 
 #if ENABLE_TAGE_LOOP_PRED
       {
-        const uint16_t ltag = static_cast<uint16_t>(rd.upd_loop_tag) &
-                              static_cast<uint16_t>((1u << TAGE_LOOP_TAG_BITS) - 1u);
+        const tage_loop_tag_t ltag =
+            static_cast<tage_loop_tag_t>(rd.upd_loop_tag) &
+            static_cast<tage_loop_tag_t>((1u << TAGE_LOOP_TAG_BITS) - 1u);
         LoopEntry next_loop{};
         next_loop.valid = rd.upd_loop_entry_valid;
         next_loop.tag = rd.upd_loop_entry_tag;
@@ -1220,9 +1222,12 @@ public:
         next_loop.conf = rd.upd_loop_entry_conf;
         next_loop.age = rd.upd_loop_entry_age;
         next_loop.dir = rd.upd_loop_entry_dir;
-        const uint8_t conf_max = (1u << TAGE_LOOP_CONF_BITS) - 1u;
-        const uint8_t age_max = (1u << TAGE_LOOP_AGE_BITS) - 1u;
-        const uint16_t iter_max = (1u << TAGE_LOOP_ITER_BITS) - 1u;
+        const tage_loop_conf_t conf_max =
+            static_cast<tage_loop_conf_t>((1u << TAGE_LOOP_CONF_BITS) - 1u);
+        const tage_loop_age_t age_max =
+            static_cast<tage_loop_age_t>((1u << TAGE_LOOP_AGE_BITS) - 1u);
+        const tage_loop_iter_t iter_max =
+            static_cast<tage_loop_iter_t>((1u << TAGE_LOOP_ITER_BITS) - 1u);
 
         if (!next_loop.valid || next_loop.tag != ltag) {
           next_loop.valid = true;
@@ -1240,11 +1245,12 @@ public:
             next_loop.iter_count = loop_sat_inc(next_loop.iter_count, iter_max);
           } else {
             if (next_loop.iter_limit != 0 && next_loop.iter_count == next_loop.iter_limit) {
-              next_loop.conf = static_cast<uint8_t>(
+              next_loop.conf = static_cast<tage_loop_conf_t>(
                   (next_loop.conf >= conf_max) ? conf_max : (next_loop.conf + 1));
               next_loop.age = age_max;
             } else {
-              next_loop.conf = static_cast<uint8_t>(next_loop.conf ? (next_loop.conf - 1) : 0);
+              next_loop.conf = static_cast<tage_loop_conf_t>(
+                  next_loop.conf ? (next_loop.conf - 1) : 0);
               next_loop.iter_limit =
                   (next_loop.iter_count == 0) ? 0 : next_loop.iter_count;
             }

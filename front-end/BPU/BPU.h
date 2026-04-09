@@ -735,10 +735,12 @@ public:
 #endif
   }
 
-  void bpu_pre_read_req_comb(const InputPayload &inp, const ReadData &rd,
+  void bpu_pre_read_req_comb(const BpuPreReadReqCombIn &in,
                              BpuPreReadReqCombOut &out) const {
     FRONTEND_HOST_PROFILE_SCOPE(BpuPreReadReq);
     out = BpuPreReadReqCombOut{};
+    const InputPayload &inp = in.inp;
+    const ReadData &rd = in.rd;
 
 #ifdef ENABLE_BPU_RAS
     out.use_arch_ras_snapshot = inp.refetch;
@@ -883,10 +885,12 @@ public:
     }
   }
 
-  void bpu_post_read_req_comb(const InputPayload &inp, const ReadData &rd,
+  void bpu_post_read_req_comb(const BpuPostReadReqCombIn &in,
                               BpuPostReadReqCombOut &out) const {
     FRONTEND_HOST_PROFILE_SCOPE(BpuPostReadReq);
     out = BpuPostReadReqCombOut{};
+    const InputPayload &inp = in.inp;
+    const ReadData &rd = in.rd;
 
 #ifdef SPECULATIVE_ON
     const bool *ghr_src = rd.Spec_GHR_snapshot;
@@ -999,11 +1003,12 @@ public:
     }
   }
 
-  void bpu_submodule_bind_comb(const ReadData &rd,
-                               const BpuPostReadReqCombOut &post_req,
-                               const TypePredictor::OutputPayload &type_out,
+  void bpu_submodule_bind_comb(const BpuSubmoduleBindCombIn &in,
                                BpuSubmoduleBindCombOut &out) const {
     std::memset(&out, 0, sizeof(out));
+    const ReadData &rd = in.rd;
+    const BpuPostReadReqCombOut &post_req = in.post_req;
+    const TypePredictor::OutputPayload &type_out = in.type_out;
     for (int i = 0; i < BPU_BANK_NUM; ++i) {
       out.btb_in_with_type[i] = post_req.btb_in[i];
     }
@@ -1548,7 +1553,11 @@ public:
     TAGE_TOP::OutputPayload tage_out[BPU_BANK_NUM];
     BTB_TOP::OutputPayload btb_out[BPU_BANK_NUM];
     BpuSubmoduleBindCombOut bind_out{};
-    bpu_submodule_bind_comb(rd, post_req, type_out, bind_out);
+    BpuSubmoduleBindCombIn bind_in{};
+    bind_in.rd = rd;
+    bind_in.post_req = post_req;
+    bind_in.type_out = type_out;
+    bpu_submodule_bind_comb(bind_in, bind_out);
     {
       FRONTEND_HOST_PROFILE_SCOPE(BpuTageComb);
       for (int i = 0; i < BPU_BANK_NUM; i++) {
@@ -1896,9 +1905,9 @@ public:
     BpuPreReadReqCombOut pre_read_req{};
     BpuPostReadReqCombOut post_read_req{};
     BpuCombOut comb_out{};
-    bpu_pre_read_req_comb(inp, rd, pre_read_req);
+    bpu_pre_read_req_comb(BpuPreReadReqCombIn{inp, rd}, pre_read_req);
     bpu_data_seq_read(pre_read_req, rd);
-    bpu_post_read_req_comb(inp, rd, post_read_req);
+    bpu_post_read_req_comb(BpuPostReadReqCombIn{inp, rd}, post_read_req);
     bpu_submodule_seq_read(post_read_req, rd);
     bpu_core_comb_calc(inp, rd, post_read_req, comb_out);
     out = comb_out.out_regs;

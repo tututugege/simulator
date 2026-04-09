@@ -286,6 +286,27 @@ public:
     BtbUpdReadReqCombOut upd_req;
   };
 
+  struct BtbPostReadReqCombIn {
+    InputPayload inp;
+    ReadData rd;
+  };
+
+  struct BtbPostReadReqCombOut {
+    wire1_t pred_tc_read_valid;
+    tc_idx_t pred_tc_idx;
+    bht_hist_t upd_next_bht_data;
+    wire1_t upd_tc_read_valid;
+    tc_idx_t upd_tc_write_idx;
+    tc_tag_t upd_tc_write_tag;
+  };
+
+  struct BtbTcDataSeqReadIn {
+    wire1_t pred_tc_read_valid;
+    tc_idx_t pred_tc_idx;
+    wire1_t upd_tc_read_valid;
+    tc_idx_t upd_tc_write_idx;
+  };
+
   struct BtbPreReadCombIn {
     InputPayload inp;
   };
@@ -658,6 +679,32 @@ public:
     btb_upd_read_req_comb(BtbUpdReadReqCombIn{in.inp}, out.upd_req);
   }
 
+  void btb_post_read_req_comb(const BtbPostReadReqCombIn &in,
+                              BtbPostReadReqCombOut &out) const {
+    std::memset(&out, 0, sizeof(BtbPostReadReqCombOut));
+
+    if (in.rd.pred_read_valid) {
+      out.pred_tc_read_valid = true;
+      out.pred_tc_idx = tc_get_idx_value(in.inp.pred_pc, in.rd.pred_bht_data);
+    }
+
+    if (!in.rd.upd_read_valid) {
+      return;
+    }
+
+    out.upd_next_bht_data =
+        (in.inp.upd_br_type_in != BR_NONCTL)
+            ? bht_next_state_value(in.rd.upd_bht_data, in.inp.upd_br_type_in,
+                                   in.inp.upd_actual_dir, in.inp.upd_actual_addr)
+            : in.rd.upd_bht_data;
+
+    if (in.inp.upd_actual_dir && in.inp.upd_br_type_in == BR_IDIRECT) {
+      out.upd_tc_read_valid = true;
+      out.upd_tc_write_idx = tc_get_idx_value(in.inp.upd_pc, out.upd_next_bht_data);
+      out.upd_tc_write_tag = tc_get_tag_value(in.inp.upd_pc);
+    }
+  }
+
   // ------------------------------------------------------------------------
   // 组合逻辑函数 - 计算部分
   // ------------------------------------------------------------------------
@@ -817,18 +864,11 @@ public:
     rd.pred_tc_idx = 0;
     if (in.pred_req.pred_read_valid) {
       rd.pred_bht_data = mem_bht[rd.pred_bht_idx];
-      rd.pred_tc_idx = tc_get_idx_value(in.pred_req.pred_pc, rd.pred_bht_data);
       for (int w = 0; w < BTB_WAY_NUM; ++w) {
         rd.pred_btb_set.tag[w] = mem_btb_tag[w][rd.pred_btb_idx];
         rd.pred_btb_set.bta[w] = mem_btb_bta[w][rd.pred_btb_idx];
         rd.pred_btb_set.valid[w] = mem_btb_valid[w][rd.pred_btb_idx];
         rd.pred_btb_set.useful[w] = mem_btb_useful[w][rd.pred_btb_idx];
-      }
-      for (int w = 0; w < TC_WAY_NUM; ++w) {
-        rd.pred_tc_set.target[w] = mem_tc_target[w][rd.pred_tc_idx];
-        rd.pred_tc_set.tag[w] = mem_tc_tag[w][rd.pred_tc_idx];
-        rd.pred_tc_set.valid[w] = mem_tc_valid[w][rd.pred_tc_idx];
-        rd.pred_tc_set.useful[w] = mem_tc_useful[w][rd.pred_tc_idx];
       }
     }
 
@@ -842,30 +882,11 @@ public:
     rd.upd_tc_write_tag = 0;
     if (in.upd_req.upd_read_valid) {
       rd.upd_bht_data = mem_bht[rd.upd_bht_idx];
-      rd.upd_next_bht_data =
-          (in.upd_req.upd_br_type_in != BR_NONCTL)
-              ? bht_next_state_value(rd.upd_bht_data, in.upd_req.upd_br_type_in,
-                                     in.upd_req.upd_actual_dir,
-                                     in.upd_req.upd_actual_addr)
-              : rd.upd_bht_data;
-      if (in.upd_req.upd_actual_dir && in.upd_req.upd_br_type_in == BR_IDIRECT) {
-        rd.upd_tc_read_valid = true;
-        rd.upd_tc_write_idx = tc_get_idx_value(in.upd_req.upd_pc, rd.upd_next_bht_data);
-        rd.upd_tc_write_tag = tc_get_tag_value(in.upd_req.upd_pc);
-      }
       for (int w = 0; w < BTB_WAY_NUM; ++w) {
         rd.upd_btb_set.tag[w] = mem_btb_tag[w][rd.upd_btb_idx];
         rd.upd_btb_set.bta[w] = mem_btb_bta[w][rd.upd_btb_idx];
         rd.upd_btb_set.valid[w] = mem_btb_valid[w][rd.upd_btb_idx];
         rd.upd_btb_set.useful[w] = mem_btb_useful[w][rd.upd_btb_idx];
-      }
-      if (in.upd_req.upd_tc_read_valid) {
-        for (int w = 0; w < TC_WAY_NUM; ++w) {
-          rd.upd_tc_set.target[w] = mem_tc_target[w][rd.upd_tc_write_idx];
-          rd.upd_tc_set.tag[w] = mem_tc_tag[w][rd.upd_tc_write_idx];
-          rd.upd_tc_set.valid[w] = mem_tc_valid[w][rd.upd_tc_write_idx];
-          rd.upd_tc_set.useful[w] = mem_tc_useful[w][rd.upd_tc_write_idx];
-        }
       }
     }
 
@@ -875,12 +896,47 @@ public:
     std::memset(&rd.mem_2, 0, sizeof(rd.mem_2));
   }
 
+  void btb_tc_data_seq_read(const BtbTcDataSeqReadIn &in, ReadData &rd) const {
+    std::memset(&rd.pred_tc_set, 0, sizeof(rd.pred_tc_set));
+    std::memset(&rd.upd_tc_set, 0, sizeof(rd.upd_tc_set));
+
+    if (in.pred_tc_read_valid) {
+      for (int w = 0; w < TC_WAY_NUM; ++w) {
+        rd.pred_tc_set.target[w] = mem_tc_target[w][in.pred_tc_idx];
+        rd.pred_tc_set.tag[w] = mem_tc_tag[w][in.pred_tc_idx];
+        rd.pred_tc_set.valid[w] = mem_tc_valid[w][in.pred_tc_idx];
+        rd.pred_tc_set.useful[w] = mem_tc_useful[w][in.pred_tc_idx];
+      }
+    }
+
+    if (in.upd_tc_read_valid) {
+      for (int w = 0; w < TC_WAY_NUM; ++w) {
+        rd.upd_tc_set.target[w] = mem_tc_target[w][in.upd_tc_write_idx];
+        rd.upd_tc_set.tag[w] = mem_tc_tag[w][in.upd_tc_write_idx];
+        rd.upd_tc_set.valid[w] = mem_tc_valid[w][in.upd_tc_write_idx];
+        rd.upd_tc_set.useful[w] = mem_tc_useful[w][in.upd_tc_write_idx];
+      }
+    }
+  }
+
   void btb_comb_calc(const InputPayload &inp, ReadData &rd,
                      OutputPayload &out, CombResult &req) const {
     BtbPreReadCombOut pre_read_out{};
     btb_pre_read_comb(BtbPreReadCombIn{inp}, pre_read_out);
+    BtbPostReadReqCombOut post_read_out{};
     BtbCombOut comb_out{};
     btb_data_seq_read(BtbDataSeqReadIn{pre_read_out.pred_req, pre_read_out.upd_req}, rd);
+    btb_post_read_req_comb(BtbPostReadReqCombIn{inp, rd}, post_read_out);
+    rd.pred_tc_idx = post_read_out.pred_tc_idx;
+    rd.upd_next_bht_data = post_read_out.upd_next_bht_data;
+    rd.upd_tc_read_valid = post_read_out.upd_tc_read_valid;
+    rd.upd_tc_write_idx = post_read_out.upd_tc_write_idx;
+    rd.upd_tc_write_tag = post_read_out.upd_tc_write_tag;
+    btb_tc_data_seq_read(BtbTcDataSeqReadIn{post_read_out.pred_tc_read_valid,
+                                            post_read_out.pred_tc_idx,
+                                            post_read_out.upd_tc_read_valid,
+                                            post_read_out.upd_tc_write_idx},
+                         rd);
     btb_comb(BtbCombIn{inp, rd}, comb_out);
     out = comb_out.out_regs;
     req = comb_out.req;
