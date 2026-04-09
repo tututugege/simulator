@@ -27,8 +27,8 @@ struct predecode_checker_read_data {
 
 void predecode_checker_seq_read(struct predecode_checker_in *in,
                                 struct predecode_checker_read_data *rd);
-void predecode_checker_comb(const struct predecode_checker_read_data *rd,
-                            struct predecode_checker_out *out);
+void predecode_checker_comb(const predecode_checker_read_data &input,
+                            predecode_checker_out &output);
 void predecode_checker_seq_write();
 
 #endif
