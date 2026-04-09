@@ -1,6 +1,7 @@
 #include "BackTop.h"
 #include "Csr.h"
 #include "IO.h"
+#include "PhysMemory.h"
 #include "RealLsu.h"
 #include "config.h"
 #include "diff.h"
@@ -8,15 +9,15 @@
 #include "ref.h"
 #include "util.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <vector>
 #include <zlib.h>
 
-void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory);
-
 void BackTop::init() {
-  pre_idu_queue = new PreIduQueue(ctx);
+  pre = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
   rename = new Ren(ctx);
   dis = new Dispatch(ctx);
@@ -26,23 +27,25 @@ void BackTop::init() {
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new RealLsu(ctx);
+  
+  out.fire = pre2front.fire;
 
-  pre_idu_queue->out.dec2front = &dec2front;
-  pre_idu_queue->out.issue = &pre_idu_issue;
-  pre_idu_queue->out.ftq_exu_pc_resp = &ftq_exu_pc_resp;
-  pre_idu_queue->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
-  pre_idu_queue->in.front2dec = &front2dec;
-  pre_idu_queue->in.ren2dec = &ren2dec;
-  pre_idu_queue->in.idu_dec2ren = &dec2ren;
-  pre_idu_queue->in.rob_bcast = &rob_bcast;
-  pre_idu_queue->in.rob_commit = &rob_commit;
-  pre_idu_queue->in.exu2id = &exu2id;
-  pre_idu_queue->in.ftq_exu_pc_req = &ftq_exu_pc_req;
-  pre_idu_queue->in.ftq_rob_pc_req = &ftq_rob_pc_req;
+  pre->out.pre2front = &pre2front;
+  pre->out.issue = &pre_issue;
+  pre->out.ftq_exu_pc_resp = &ftq_exu_pc_resp;
+  pre->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
+  pre->in.front2pre = &in;
+  pre->in.idu_consume = &idu_consume;
+  pre->in.rob_bcast = &rob_bcast;
+  pre->in.rob_commit = &rob_commit;
+  pre->in.idu_br_latch = &idu->br_latch;
+  pre->in.ftq_exu_pc_req = &ftq_exu_pc_req;
+  pre->in.ftq_rob_pc_req = &ftq_rob_pc_req;
 
   idu->out.dec2ren = &dec2ren;
   idu->out.dec_bcast = &dec_bcast;
-  idu->in.issue = &pre_idu_issue;
+  idu->out.idu_consume = &idu_consume;
+  idu->in.issue = &pre_issue;
   idu->in.ren2dec = &ren2dec;
   idu->in.rob_bcast = &rob_bcast;
   idu->in.exu2id = &exu2id;
@@ -141,7 +144,7 @@ void BackTop::init() {
   lsu->out.peripheral_req = &peripheral_req_io;
   lsu->out.lsu2dcache = &lsu2dcache_io;
 
-  pre_idu_queue->init();
+  pre->init();
   idu->init();
   rename->init();
   dis->init();
@@ -166,8 +169,8 @@ void BackTop::comb() {
 #if CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
   // Diagnostic mode: clear backend internal stage IOs to expose hidden
   // dependence on previous-cycle combinational values.
-  dec2front = {};
-  pre_idu_issue = {};
+  pre2front = {};
+  pre_issue = {};
   ftq_exu_pc_req = {};
   ftq_exu_pc_resp = {};
   ftq_rob_pc_req = {};
@@ -177,6 +180,7 @@ void BackTop::comb() {
   dec_bcast = {};
 
   ren2dec = {};
+  idu_consume = {};
   ren2dis = {};
 
   dis2ren = {};
@@ -216,7 +220,7 @@ void BackTop::comb() {
   lsu2dcache_io = {};
 #endif
 
-  pre_idu_queue->comb_begin();
+  pre->comb_begin();
   idu->comb_begin();
   rename->comb_begin();
   dis->comb_begin();
@@ -225,37 +229,9 @@ void BackTop::comb() {
   exu->comb_begin();
   rob->comb_begin();
   csr->comb_begin();
-  // 输出提交的指令
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    pre_idu_queue->in.front2dec->valid[i] = in.valid[i];
-    pre_idu_queue->in.front2dec->pc[i] = in.pc[i];
-    pre_idu_queue->in.front2dec->inst[i] = in.inst[i];
-    pre_idu_queue->in.front2dec->predict_dir[i] = in.predict_dir[i];
-    pre_idu_queue->in.front2dec->alt_pred[i] = in.alt_pred[i];
-    pre_idu_queue->in.front2dec->altpcpn[i] = in.altpcpn[i];
-    pre_idu_queue->in.front2dec->pcpn[i] = in.pcpn[i];
-    pre_idu_queue->in.front2dec->sc_used[i] = in.sc_used[i];
-    pre_idu_queue->in.front2dec->sc_pred[i] = in.sc_pred[i];
-    pre_idu_queue->in.front2dec->sc_sum[i] = in.sc_sum[i];
-    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-      pre_idu_queue->in.front2dec->sc_idx[i][t] = in.sc_idx[i][t];
-    }
-    pre_idu_queue->in.front2dec->loop_used[i] = in.loop_used[i];
-    pre_idu_queue->in.front2dec->loop_hit[i] = in.loop_hit[i];
-    pre_idu_queue->in.front2dec->loop_pred[i] = in.loop_pred[i];
-    pre_idu_queue->in.front2dec->loop_idx[i] = in.loop_idx[i];
-    pre_idu_queue->in.front2dec->loop_tag[i] = in.loop_tag[i];
-    pre_idu_queue->in.front2dec->predict_next_fetch_address[i] =
-        in.predict_next_fetch_address[i];
-    pre_idu_queue->in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
-    for (int j = 0; j < 4; j++) { // TN_MAX = 4
-      pre_idu_queue->in.front2dec->tage_idx[i][j] = in.tage_idx[i][j];
-      pre_idu_queue->in.front2dec->tage_tag[i][j] = in.tage_tag[i][j];
-    }
-  }
 
   // 每个空行表示分层  下层会依赖上层产生的某个信号
-  pre_idu_queue->comb_accept_front();
+  pre->comb_accept_front();
   idu->comb_decode();
   csr->comb_interrupt();
   rename->comb_alloc();
@@ -271,7 +247,7 @@ void BackTop::comb() {
   rob->comb_ready();
   rob->comb_ftq_pc_req();
   exu->comb_ftq_pc_req();
-  pre_idu_queue->comb_ftq_lookup();
+  pre->comb_ftq_lookup();
   rob->comb_commit();
 
   dis->comb_alloc();
@@ -296,7 +272,7 @@ void BackTop::comb() {
 
   dis->comb_dispatch();
 
-    // 用于调试
+  // 用于调试
   // 修正pc_next 以及difftest对应的pc_next
   out.flush = rob->out.rob_bcast->flush;
   out.fence_i = rob->out.rob_bcast->fence_i;
@@ -305,7 +281,7 @@ void BackTop::comb() {
   // 1. Normal case (No Rob flush)
   if (!rob->out.rob_bcast->flush) {
     out.mispred = idu->out.dec_bcast->mispred;
-    out.stall = !dec2front.ready;
+    out.stall = !pre2front.ready;
     out.redirect_pc = idu->br_latch.redirect_pc;
   } else {
     out.mispred = true;
@@ -320,8 +296,9 @@ void BackTop::comb() {
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    out.commit_entry[i] = rob->out.rob_commit->commit_entry[i].uop.to_inst_entry(
-        rob->out.rob_commit->commit_entry[i].valid);
+    out.commit_entry[i] =
+        rob->out.rob_commit->commit_entry[i].uop.to_inst_entry(
+            rob->out.rob_commit->commit_entry[i].valid);
     if (out.commit_entry[i].valid && out.flush) {
       // Flush: override extra_data.pc_next with redirect_pc for ALL
       // instructions so Difftest can read the correct next-PC (trap vector,
@@ -333,19 +310,13 @@ void BackTop::comb() {
 
   dis->comb_fire();
   rename->comb_fire();
-  rob->comb_fire();
   idu->comb_fire();
-  pre_idu_queue->comb_consume_issue();
-
-
 
   isu->comb_enq();
-  rob->comb_flush();
-  pre_idu_queue->comb_flush_recover();
+  rob->comb_fire();
   isu->comb_flush();
   lsu->comb_flush();
-  pre_idu_queue->comb_commit_reclaim();
-  rob->comb_branch();
+  pre->comb_fire();
   prf->comb_pipeline();
   exu->comb_pipeline();
   dis->comb_pipeline();
@@ -355,7 +326,7 @@ void BackTop::comb() {
 void BackTop::seq() {
   // rename -> isu/stq/rob
   // exu -> prf
-  pre_idu_queue->seq();
+  pre->seq();
   rename->seq();
   dis->seq();
   idu->seq();
@@ -365,9 +336,6 @@ void BackTop::seq() {
   rob->seq();
   csr->seq();
   lsu->seq();
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    out.fire[i] = dec2front.fire[i];
-  }
 }
 
 // --- 辅助函数：简化 zlib 读写 POD 类型 ---
@@ -383,8 +351,52 @@ template <typename T> void gz_read_pod(gzFile file, T &data) {
   }
 }
 
+namespace {
+constexpr uint64_t kCkptSimpointRamBytes = RAM_SIZE;
+constexpr uint64_t kGzChunkSize = 1ULL * 1024 * 1024 * 1024;
+constexpr uint32_t kCkptMagic = 0x006d6552u; // "Rem\0" little-endian
+constexpr uint32_t kCkptVersion = 2u;
+
+typedef struct CkptHeader {
+  uint32_t magic;
+  uint32_t version;
+  uint32_t ram_size;
+  uint32_t io_range_count;
+} CkptHeader;
+
+typedef struct CkptIoRange {
+  uint32_t base;
+  uint32_t size;
+} CkptIoRange;
+
+constexpr std::array<CkptIoRange, 4> kExpectedIoLayout = {
+    CkptIoRange{BOOT_IO_BASE, BOOT_IO_SIZE},
+    CkptIoRange{UART_ADDR_BASE, UART_MMIO_SIZE},
+    CkptIoRange{PLIC_ADDR_BASE, PLIC_MMIO_SIZE},
+    CkptIoRange{OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE},
+};
+
+void gz_read_exact(gzFile file, uint8_t *dst, uint64_t total_bytes) {
+  uint64_t remain = total_bytes;
+  while (remain > 0) {
+    const unsigned int chunk = static_cast<unsigned int>(
+        remain > kGzChunkSize ? kGzChunkSize : remain);
+    const int read_bytes = gzread(file, dst, chunk);
+    if (read_bytes < 0) {
+      Assert(0 && "Error: gzread failed during checkpoint restore.");
+    }
+    if (read_bytes == 0) {
+      Assert(0 && "Error: Unexpected EOF during checkpoint restore.");
+    }
+    dst += read_bytes;
+    remain -= static_cast<uint64_t>(read_bytes);
+  }
+}
+
+} // namespace
+
 void BackTop::load_image(const std::string &filename) {
-  std::ifstream inst_data(filename, std::ios::in);
+  std::ifstream inst_data(filename, std::ios::binary);
   if (!inst_data.is_open()) {
     Assert(0 && "Error: Image does not exist");
   }
@@ -393,26 +405,20 @@ void BackTop::load_image(const std::string &filename) {
   std::streamsize size = inst_data.tellg();
   inst_data.seekg(0, std::ios::beg);
 
-  if (!inst_data.read(reinterpret_cast<char *>(p_memory + 0x80000000 / 4),
-                      size)) {
+  if (size < 0 || static_cast<uint64_t>(size) > RAM_SIZE) {
+    Assert(0 && "Image too large for configured RAM window.");
+  }
+  if (!inst_data.read(reinterpret_cast<char *>(pmem_ram_ptr()), size)) {
     Assert(0 && "读取文件失败！");
   }
 
   inst_data.close();
 
-  p_memory[uint32_t(0x0 / 4)] = 0xf1402573;
-  p_memory[uint32_t(0x4 / 4)] = 0x83e005b7;
-  p_memory[uint32_t(0x8 / 4)] = 0x800002b7;
-  p_memory[uint32_t(0xc / 4)] = 0x00028067;
-  p_memory[0x10000004 / 4] = 0x00006000;           // 和进入 OpenSBI 相关
-  p_memory[uint32_t(0x00001000 / 4)] = 0x00000297; // auipc t0,0
-  p_memory[uint32_t(0x00001004 / 4)] = 0x02828613; // addi a2,t0,40
-  p_memory[uint32_t(0x00001008 / 4)] = 0xf1402573; // csrrs a0,mhartid,zero
-  p_memory[uint32_t(0x0000100c / 4)] = 0x0202a583; // lw a1,32(t0)
-  p_memory[uint32_t(0x00001010 / 4)] = 0x0182a283; // lw t0,24(t0)
-  p_memory[uint32_t(0x00001014 / 4)] = 0x00028067; // jr              t0
-  p_memory[uint32_t(0x00001018 / 4)] = 0x80000000;
-  p_memory[uint32_t(0x00001020 / 4)] = 0x8fe00000;
+  pmem_write(0x0, 0xf1402573);
+  pmem_write(0x4, 0x83e005b7);
+  pmem_write(0x8, 0x800002b7);
+  pmem_write(0xc, 0x00028067);
+  pmem_write(0x10000004, 0x00006000); // 和进入 OpenSBI 相关
 
 #ifdef CONFIG_DIFFTEST
   init_difftest(size);
@@ -426,7 +432,7 @@ void BackTop::load_image(const std::string &filename) {
 void BackTop::restore_from_ref() {
   CPU_state state;
   uint8_t privilege;
-  get_state(state, privilege, p_memory);
+  get_state(state, privilege);
   number_PC = state.pc;
 
   csr->privilege = csr->privilege_1 = privilege;
@@ -459,7 +465,7 @@ void BackTop::restore_from_ref() {
 #ifndef CONFIG_BPU
   // FAST 模式从 ref 切换到 O3+oracle 时，oracle 也必须恢复到同一状态，
   // 否则首拍 refetch 会因为 PC 不一致触发断言。
-  init_oracle_ckpt(state, p_memory, privilege);
+  init_oracle_ckpt(state, privilege);
 #endif
 }
 
@@ -492,9 +498,19 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   } Ckpt_CPU_state;
 
   Ckpt_CPU_state ckpt_state;
+  CkptHeader ckpt_header = {};
   uint64_t interval_inst_count;
 
-  // 1. 恢复状态
+  // 1. 恢复 header + 状态
+  gz_read_pod(file, ckpt_header);
+  Assert(ckpt_header.magic == kCkptMagic && "Error: Invalid checkpoint magic.");
+  Assert(ckpt_header.version == kCkptVersion &&
+         "Error: Unsupported checkpoint version.");
+  Assert(ckpt_header.ram_size == static_cast<uint32_t>(kCkptSimpointRamBytes) &&
+         "Error: Checkpoint RAM size mismatch.");
+  Assert(ckpt_header.io_range_count == kExpectedIoLayout.size() &&
+         "Error: Checkpoint IO layout count mismatch.");
+
   gz_read_pod(file, ckpt_state);
   gz_read_pod(file, interval_inst_count);
 
@@ -544,40 +560,44 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   lsu->restore_reservation(state.reserve_valid, state.reserve_addr);
 
   // 2. 恢复内存
-  if (p_memory == nullptr) {
+  if (pmem_ram_ptr() == nullptr) {
     Assert(0 && "Error: Memory not allocated during checkpoint restore.");
   }
+  pmem_clear_all();
 
-  // [重要] 计算总字节数 (checkpoint 为 4GB)
-  uint64_t total_bytes = 4ULL * 1024 * 1024 * 1024;
-  uint8_t *byte_ptr = reinterpret_cast<uint8_t *>(p_memory);
-  uint64_t remain = total_bytes;
+  std::cout << "Restoring Memory... format=simpoint-v2(header+ranges)"
+            << std::endl;
 
-  std::cout << "Restoring Memory..." << std::endl;
+  uint8_t *ram_dst = reinterpret_cast<uint8_t *>(pmem_ram_ptr());
+  gz_read_exact(file, ram_dst, kCkptSimpointRamBytes);
 
-  const uint64_t GZ_CHUNK_SIZE = 1ULL * 1024 * 1024 * 1024;
-  while (remain > 0) {
-    unsigned int chunk = (remain > GZ_CHUNK_SIZE) ? (unsigned int)GZ_CHUNK_SIZE
-                                                  : (unsigned int)remain;
+  // 3. 恢复并校验 IO 布局（range descriptor + raw bytes）
+  for (uint32_t i = 0; i < ckpt_header.io_range_count; ++i) {
+    CkptIoRange range = {};
+    gz_read_pod(file, range);
+    const auto &expected = kExpectedIoLayout[i];
+    Assert(range.base == expected.base && range.size == expected.size &&
+           "Error: Checkpoint IO layout mismatch.");
 
-    int read_bytes = gzread(file, byte_ptr, chunk);
-    if (read_bytes < 0) {
-      Assert(0 && "Error: gzread failed during checkpoint restore.");
+    std::vector<uint8_t> io_bytes(range.size, 0);
+    gz_read_exact(file, io_bytes.data(), io_bytes.size());
+    for (uint32_t off = 0; off + 4 <= range.size; off += 4) {
+      const uint32_t word = static_cast<uint32_t>(io_bytes[off + 0]) |
+                            (static_cast<uint32_t>(io_bytes[off + 1]) << 8) |
+                            (static_cast<uint32_t>(io_bytes[off + 2]) << 16) |
+                            (static_cast<uint32_t>(io_bytes[off + 3]) << 24);
+      if (word != 0) {
+        pmem_write(range.base + off, word);
+      }
     }
-    if (read_bytes == 0) {
-      Assert(0 && "Error: Unexpected EOF during checkpoint restore.");
-    }
-
-    byte_ptr += read_bytes;
-    remain -= read_bytes;
   }
 
   gzclose(file);
   std::cout << "Checkpoint restored from " << final_name << std::endl;
 
-  init_diff_ckpt(state, p_memory);
+  init_diff_ckpt(state);
 #ifndef CONFIG_BPU
-  init_oracle_ckpt(state, p_memory, RISCV_MODE_U);
+  init_oracle_ckpt(state, RISCV_MODE_U);
 #endif
 
   // Ensure the pipeline starts with a refetch from the restored PC

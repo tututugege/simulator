@@ -29,11 +29,25 @@ def parse_perf_report(path: str):
 
     benches: List[Dict[str, float]] = []
     geomean_spec = None
+    config_meta: Dict[str, str] = {}
 
     cur = None
     in_tma = None
+    in_config_snapshot = False
     for line in lines:
         if not line:
+            continue
+
+        if line == "CONFIG_SNAPSHOT_BEGIN":
+            in_config_snapshot = True
+            continue
+        if line == "CONFIG_SNAPSHOT_END":
+            in_config_snapshot = False
+            continue
+        if in_config_snapshot:
+            if "=" in line:
+                k, v = line.split("=", 1)
+                config_meta[k.strip()] = v.strip()
             continue
 
         if line.startswith("Benchmark:"):
@@ -150,7 +164,7 @@ def parse_perf_report(path: str):
             and np.isnan(b["backend"])
         )
     ]
-    return valid, geomean_spec
+    return valid, geomean_spec, config_meta
 
 
 def compute_geomean_from_spec(benches: List[Dict[str, float]]) -> Optional[float]:
@@ -164,7 +178,12 @@ def compute_geomean_from_spec(benches: List[Dict[str, float]]) -> Optional[float
     return math.exp(sum(math.log(v) for v in vals) / len(vals))
 
 
-def plot_report(benches: List[Dict[str, float]], geomean_spec: Optional[float], out_png: str):
+def plot_report(
+    benches: List[Dict[str, float]],
+    geomean_spec: Optional[float],
+    out_png: str,
+    config_meta: Optional[Dict[str, str]] = None,
+):
     if not benches:
         raise RuntimeError("No benchmark data parsed from perf report.")
 
@@ -248,6 +267,39 @@ def plot_report(benches: List[Dict[str, float]], geomean_spec: Optional[float], 
     ax.set_xticks(x)
     # Keep aligned ticks but hide top labels for cleaner view.
     ax.set_xticklabels([])
+
+    if config_meta:
+        ordered_keys = [
+            "FETCH_WIDTH",
+            "DECODE_WIDTH",
+            "ROB_NUM",
+            "CACHE_HIERARCHY",
+            "L1I_GEOM",
+            "L1I_SIZE",
+            "L1D_GEOM",
+            "L1D_SIZE",
+            "LLC_ENABLE",
+            "LLC_SIZE",
+            "LLC_WAYS",
+            "LLC_MSHR",
+            "L1I_MISS_LATENCY",
+            "DDR_LATENCY",
+        ]
+        config_lines = []
+        for key in ordered_keys:
+            if key in config_meta:
+                config_lines.append(f"{key}: {config_meta[key]}")
+        if config_lines:
+            ax.text(
+                0.01,
+                0.98,
+                "\n".join(config_lines),
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7.5,
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.82, edgecolor="#666666"),
+            )
 
     handles1, labels1 = ax.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
@@ -492,7 +544,7 @@ def main():
 
         reports = []
         for path, name in zip(args.compare, names):
-            benches, geomean_spec = parse_perf_report(path)
+            benches, geomean_spec, config_meta = parse_perf_report(path)
             calc_geomean = compute_geomean_from_spec(benches)
             if geomean_spec is not None and np.isfinite(geomean_spec):
                 if calc_geomean is not None and np.isfinite(calc_geomean):
@@ -512,12 +564,19 @@ def main():
                 print(f"[INFO] {name}: GEOMEAN computed from per-benchmark SPEC ratios: {geomean_spec:.2f}")
             else:
                 print(f"[WARN] {name}: Cannot compute GEOMEAN from SPEC ratios.")
-            reports.append({"name": name, "benches": benches, "geomean_spec": geomean_spec})
+            reports.append(
+                {
+                    "name": name,
+                    "benches": benches,
+                    "geomean_spec": geomean_spec,
+                    "config_meta": config_meta,
+                }
+            )
 
         plot_compare_reports(reports, args.output)
         return
 
-    benches, geomean_spec = parse_perf_report(args.input)
+    benches, geomean_spec, config_meta = parse_perf_report(args.input)
     calc_geomean = compute_geomean_from_spec(benches)
     if geomean_spec is not None and np.isfinite(geomean_spec):
         if calc_geomean is not None and np.isfinite(calc_geomean):
@@ -537,7 +596,7 @@ def main():
         print(f"[INFO] GEOMEAN computed from per-benchmark SPEC ratios: {geomean_spec:.2f}")
     else:
         print("[WARN] Cannot compute GEOMEAN: no valid positive SPEC Ratio values found.")
-    plot_report(benches, geomean_spec, args.output)
+    plot_report(benches, geomean_spec, args.output, config_meta=config_meta)
 
 
 if __name__ == "__main__":

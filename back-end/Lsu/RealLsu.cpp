@@ -1025,8 +1025,9 @@ void RealLsu::comb_load_res() {
               entry.uop.dbg.difftest_skip =
                   in.dcache2lsu->resp_ports.load_resps[i].uop.dbg.difftest_skip;
               entry.uop.tma.is_cache_miss =
-                  !in.dcache2lsu->resp_ports.load_resps[i]
-                       .uop.tma.is_cache_miss;
+                  entry.uop.tma.is_cache_miss ||
+                  in.dcache2lsu->resp_ports.load_resps[i]
+                      .uop.tma.is_cache_miss;
               entry.replay_priority = 0;
               ring_queue_push(finished_loads, finished_loads_head,
                               finished_loads_tail, finished_loads_count,
@@ -1034,8 +1035,14 @@ void RealLsu::comb_load_res() {
               free_ldq_entry(state, idx);
             } else {
               // Handle load replay if needed (e.g., due to MSHR eviction)
-              entry.replay_priority =
+              const uint8_t replay_code =
                   in.dcache2lsu->resp_ports.load_resps[i].replay;
+              entry.replay_priority = replay_code;
+              // replay=1(mshr_full) and replay=2(wait_mshr) both imply
+              // that this load is blocked beyond L1D hit latency.
+              if (replay_code == 1 || replay_code == 2) {
+                entry.uop.tma.is_cache_miss = true;
+              }
               // replay=1(resource full) waits for a free-slot wakeup.
               // replay=2(mshr_hit) waits for matching line fill wakeup.
               entry.sent = false;
@@ -1303,10 +1310,9 @@ void RealLsu::consume_ldq_alloc_reqs(LsuState &state) {
 }
 
 bool RealLsu::is_mmio_addr(uint32_t paddr) const {
-  return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-         ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
-         (paddr == OPENSBI_TIMER_LOW_ADDR) ||
-         (paddr == OPENSBI_TIMER_HIGH_ADDR);
+  return addr_in_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
+         addr_in_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
+         addr_in_range(paddr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE);
 }
 void RealLsu::change_store_info(const StoreNode &node, int port) {
   const auto &head = node.entry;
@@ -1587,6 +1593,7 @@ bool RealLsu::finish_store_addr_once(LsuState &state, const MicroOp &inst) {
     MicroOp fault_op = inst;
     fault_op.page_fault_store = true;
     if (is_amo_sc_uop(inst)) {
+      fault_op.page_fault_load = false;
       reserve_valid = false;
       fault_op.op = UOP_LOAD;
       fault_op.dest_en = true;
@@ -1864,6 +1871,9 @@ RealLsu::check_store_forward(const LsuState &state, uint32_t p_addr,
   auto scan_entry = [&](const StqEntry &entry) -> StoreForwardResult {
     if (entry.valid && !entry.suppress_write) {
       if (!entry.addr_valid) {
+        if (ctx != nullptr) {
+          ctx->perf.ld_stlf_block_unknown_store_addr_count++;
+        }
         return {StoreForwardState::Retry, 0};
       }
 

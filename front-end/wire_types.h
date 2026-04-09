@@ -185,12 +185,21 @@ static constexpr int tage_reset_ctr_t_BITS = TAGE_IDX_WIDTH + 11;
 using tage_lsfr_rand_t = wire2_t;
 static constexpr int tage_lsfr_rand_t_BITS = 2;
 
+using tage_use_alt_ctr_t = wire_for_bits_t<TAGE_USE_ALT_CTR_BITS>;
+static constexpr int tage_use_alt_ctr_t_BITS = TAGE_USE_ALT_CTR_BITS;
+
+using tage_scl_ctr_t = wire_for_bits_t<TAGE_SC_L_CTR_BITS>;
+static constexpr int tage_scl_ctr_t_BITS = TAGE_SC_L_CTR_BITS;
+
+using tage_scl_theta_t = wire16_t;
+static constexpr int tage_scl_theta_t_BITS = 16;
+
 // -----------------------------------------------------------------------------
 // TAGE-SC-L metadata plumbing types (predict -> FTQ -> commit -> BPU)
 // -----------------------------------------------------------------------------
 using tage_scl_meta_idx_t = wire_for_bits_t<BPU_SCL_META_IDX_BITS>;
 static constexpr int tage_scl_meta_idx_t_BITS = BPU_SCL_META_IDX_BITS;
-using tage_scl_meta_sum_t = int16_t;
+using tage_scl_meta_sum_t = wire16_t;
 static constexpr int tage_scl_meta_sum_t_BITS = 16;
 
 using tage_loop_meta_idx_t = wire_for_bits_t<BPU_LOOP_META_IDX_BITS>;

@@ -603,19 +603,30 @@ void MemSubsystem::init() {
   }
   axi_kit_runtime->router.init();
   axi_kit_runtime->mmio.init();
-  axi_kit_runtime->mmio.add_device(0x10000000u, 0x1000u, &axi_kit_runtime->uart0);
+  axi_kit_runtime->mmio.add_device(UART_ADDR_BASE, UART_MMIO_SIZE,
+                                   &axi_kit_runtime->uart0);
   axi_kit_runtime->ddr.init();
   static bool printed_axi_cfg = false;
   if (!printed_axi_cfg) {
     printed_axi_cfg = true;
     LSU_MEM_DBG_PRINTF(
         "[CONFIG][AXI] ddr_read_latency=%ucy ddr_write_resp_latency=%ucy "
-        "ddr_beat=%uB out=%u per_master=%u ddr_out=%u "
+        "ddr_beat=%uB wq=%u wag=%ucy wfifo=%u wdrain=%ucy whi=%u wlo=%u "
+        "r2w=%ucy w2r=%ucy "
+        "out=%u per_master=%u ddr_out=%u "
         "dcache_line=%uB(%u words) "
         "upstream_write_payload=%uB upstream_read_resp=%uB\n",
         static_cast<unsigned>(sim_ddr::SIM_DDR_LATENCY),
         static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_RESP_LATENCY),
         static_cast<unsigned>(sim_ddr::SIM_DDR_BEAT_BYTES),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_QUEUE_DEPTH),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_ACCEPT_GAP),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DATA_FIFO_DEPTH),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_GAP),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_DRAIN_LOW_WATERMARK),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_READ_TO_WRITE_TURNAROUND),
+        static_cast<unsigned>(sim_ddr::SIM_DDR_WRITE_TO_READ_TURNAROUND),
         static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
         static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
         static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING),

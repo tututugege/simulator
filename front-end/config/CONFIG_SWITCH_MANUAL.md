@@ -159,6 +159,22 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
     `small/medium/large` 仍固定为 `50 cycle`。
 - `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY`（当前 stock default：`1`，cycle）
   - 作用：最后一个 `W` beat 握手后，额外等待多少个完整周期，`B` 通道才首次可见；`0` 表示下一周期即可见。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH`（当前各 profile 默认：`CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING`，即 `32`）
+  - 作用：SimDDR 最多可缓存多少笔已接收 `AW` 但尚未完全完成的写事务。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP`（当前各 profile 默认：`0`，cycle）
+  - 作用：可选的 `W` 通道额外节流旋钮；保留给 stress/debug 使用，不作为 stock 写 backpressure 主模型。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH`（当前各 profile 默认：`8`，beat）
+  - 作用：SimDDR 写数据缓冲深度；持续写流量会在该 FIFO 用尽 credit 时拉低 `WREADY`。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP`（当前各 profile 默认：`0`，cycle）
+  - 作用：后端每 drain 一个写 beat 后，至少再等待多少个完整周期，才能继续把下一个 beat 写入 backing memory。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK`（当前各 profile 默认：`CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH`，即 `8`，beat）
+  - 作用：写数据 FIFO 占用达到该高水位后，SimDDR 进入 write-drain mode，持续压低 `WREADY` 让后端成段 drain 已缓存写数据。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK`（当前各 profile 默认：`0`，beat）
+  - 作用：write-drain mode 退出阈值；FIFO 占用降到该低水位及以下时，`WREADY` 才重新开放。
+- `CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND`（当前各 profile 默认：`0`，cycle）
+  - 作用：从 read burst service window 切到 write-drain window 前，额外等待多少个完整周期。
+- `CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND`（当前各 profile 默认：`0`，cycle）
+  - 作用：从 write-drain window 切回 read burst service window 前，额外等待多少个完整周期。
 - `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES`（当前各 profile 默认：`32`，可选：`4/8/16/32`，bytes）
   - 作用：每个 DDR beat 传输的数据量。
 - `CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING`（当前各 profile 默认：`32`）
@@ -167,10 +183,14 @@ make -j8 EXTRA_CXXFLAGS="-DSRAM_DELAY_ENABLE -DBPU_BANK_NUM=8 -DFRONTEND_DISABLE
   - 作用：单次上游写事务最大 payload；编译期会检查它至少覆盖 I/D cache line 大小。
 - `CONFIG_AXI_KIT_AXI_ID_WIDTH`（当前各 profile 默认：`6`）
   - 作用：shared AXI ID 位宽；编译期会检查它足以覆盖 read/write outstanding 上界。
+- `CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC`（当前各 profile 默认：`0`）
+  - 作用：控制 DCache demand read miss 是否在 LLC install；`0=allocate`，`1=noallocate`。
 
 > 注：
 > `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前只建模 `B` 通道首次可见延迟，
-> 不是精确 DDR 控制器时序；`AW/W` 路径更细的 backpressure 行为仍留待后续更精细建模。
+> 不是精确 DDR 控制器时序。当前主线写 backpressure 更接近“有限 write-data FIFO +
+> 高/低水位驱动的 bursty write-drain mode + 可配置 read/write turnaround”的近似模型；`CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP`
+> 只是保留的 stress/debug 旋钮，不是 stock 主模型。
 
 ### 3.7 FIFO 容量参数
 

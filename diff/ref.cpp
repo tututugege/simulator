@@ -1,39 +1,18 @@
 #include "ref.h"
 #include "Csr.h"
-#include "DcacheConfig.h"
-#include "MSHR.h"
 #include "RISCV.h"
-#include "SimCpu.h"
 #include "config.h"
-#include "diff.h"
+#include "oracle.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <iostream>
-#include "oracle.h"
 extern "C" {
 #include "softfloat.h"
 }
 
-extern RefCpu ref_cpu; // Monitor
-extern SimCpu cpu;
-
-namespace {
-struct Sv32WalkDebug {
-  bool translation_enabled = false;
-  int eff_priv = RISCV_MODE_M;
-  uint32_t satp = 0;
-  uint32_t mstatus = 0;
-  uint32_t root_ppn = 0;
-  uint32_t l1_pte_addr = 0;
-  uint32_t l1_pte = 0;
-  bool l1_valid = false;
-  bool l1_leaf = false;
-  uint32_t l0_pte_addr = 0;
-  uint32_t l0_pte = 0;
-  bool l0_valid = false;
-  bool l0_leaf = false;
-};
+constexpr uint32_t kRamBase = 0x80000000u;
+constexpr uint32_t kRamUpperBound = 0xC0000000u;
+constexpr uint32_t kRamSizeBytes = kRamUpperBound - kRamBase;
 
 inline int effective_data_privilege(const CPU_state &state, uint8_t privilege) {
   const uint32_t mstatus = state.csr[csr_mstatus];
@@ -49,182 +28,45 @@ inline bool data_translation_enabled(const CPU_state &state,
          effective_data_privilege(state, privilege) != 3;
 }
 
-inline uint32_t debug_load_word(const uint32_t *mem, uint32_t addr) {
-  return mem[addr >> 2];
-}
-
-void dump_dcache_word_visibility(uint32_t addr) {
-  const AddrFields f = decode(addr);
-  const uint32_t line_addr = addr & ~(DCACHE_LINE_BYTES - 1u);
-  const uint32_t word_off = f.word_off;
-
+[[noreturn]] void mem_oob_fatal(const char *op, uint32_t addr, uint32_t size) {
   std::fprintf(stderr,
-               "[PF-MISMATCH][DCACHE] addr=0x%08x line=0x%08x set=%u tag=0x%x "
-               "word=%u\n",
-               addr, line_addr, f.set_idx, f.tag, word_off);
-
-  bool cache_hit = false;
-  for (int w = 0; w < DCACHE_WAYS; ++w) {
-    const bool tag_match =
-        valid_array[f.set_idx][w] && tag_array[f.set_idx][w] == f.tag;
-    if (!tag_match) {
-      continue;
-    }
-    cache_hit = true;
-    std::fprintf(stderr,
-                 "[PF-MISMATCH][DCACHE][CACHE] way=%d dirty=%d data=0x%08x\n",
-                 w, static_cast<int>(dirty_array[f.set_idx][w]),
-                 data_array[f.set_idx][w][word_off]);
-  }
-  if (!cache_hit) {
-    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][CACHE] miss\n");
-  }
-
-  bool wb_hit = false;
-  for (int i = 0; i < DCACHE_WB_ENTRIES; ++i) {
-    const auto &e = write_buffer[i];
-    if (!e.valid || e.addr != line_addr) {
-      continue;
-    }
-    wb_hit = true;
-    std::fprintf(stderr,
-                 "[PF-MISMATCH][DCACHE][WB] idx=%d send=%d data=0x%08x\n", i,
-                 static_cast<int>(e.send), e.data[word_off]);
-  }
-  if (!wb_hit) {
-    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][WB] miss\n");
-  }
-
-  bool mshr_hit = false;
-  for (int i = 0; i < DCACHE_MSHR_ENTRIES; ++i) {
-    const auto &e = mshr_entries[i];
-    if (!e.valid || e.index != f.set_idx || e.tag != f.tag) {
-      continue;
-    }
-    mshr_hit = true;
-    std::fprintf(
-        stderr,
-        "[PF-MISMATCH][DCACHE][MSHR-CUR] idx=%d issued=%d fill=%d dirty=%d "
-        "strb=0x%x merged=0x%08x\n",
-        i, static_cast<int>(e.issued), static_cast<int>(e.fill),
-        static_cast<int>(e.merged_store_dirty),
-        static_cast<unsigned>(e.merged_store_strb[word_off]),
-        e.merged_store_data[word_off]);
-  }
-  if (!mshr_hit) {
-    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][MSHR-CUR] miss\n");
-  }
-
-  bool mshr_nxt_hit = false;
-  for (int i = 0; i < DCACHE_MSHR_ENTRIES; ++i) {
-    const auto &e = mshr_entries_nxt[i];
-    if (!e.valid || e.index != f.set_idx || e.tag != f.tag) {
-      continue;
-    }
-    mshr_nxt_hit = true;
-    std::fprintf(
-        stderr,
-        "[PF-MISMATCH][DCACHE][MSHR-NXT] idx=%d issued=%d fill=%d dirty=%d "
-        "strb=0x%x merged=0x%08x\n",
-        i, static_cast<int>(e.issued), static_cast<int>(e.fill),
-        static_cast<int>(e.merged_store_dirty),
-        static_cast<unsigned>(e.merged_store_strb[word_off]),
-        e.merged_store_data[word_off]);
-  }
-  if (!mshr_nxt_hit) {
-    std::fprintf(stderr, "[PF-MISMATCH][DCACHE][MSHR-NXT] miss\n");
-  }
+               "[RefCpu] %s out-of-bounds: addr=0x%08x size=%u "
+               "(require addr+size <= 0x100000000)\n",
+               op, addr, size);
+  std::exit(1);
 }
 
-Sv32WalkDebug collect_sv32_walk_debug(const CPU_state &state, uint8_t privilege,
-                                      const uint32_t *mem, uint32_t v_addr) {
-  Sv32WalkDebug dbg;
-  dbg.satp = state.csr[csr_satp];
-  dbg.mstatus = state.csr[csr_mstatus];
-  dbg.eff_priv = effective_data_privilege(state, privilege);
-  dbg.translation_enabled = data_translation_enabled(state, privilege);
-  if (!dbg.translation_enabled) {
-    return dbg;
-  }
-
-  dbg.root_ppn = dbg.satp & 0x3FFFFFu;
-  const uint32_t vpn1 = (v_addr >> 22) & 0x3FFu;
-  dbg.l1_pte_addr = (dbg.root_ppn << 12) + vpn1 * 4u;
-  dbg.l1_pte = debug_load_word(mem, dbg.l1_pte_addr);
-  dbg.l1_valid = (dbg.l1_pte & PTE_V) != 0;
-  dbg.l1_leaf = (dbg.l1_pte & (PTE_R | PTE_X)) != 0;
-  if (!dbg.l1_valid || dbg.l1_leaf) {
-    return dbg;
-  }
-
-  const uint32_t l0_ppn = (dbg.l1_pte >> 10) & 0x3FFFFFu;
-  const uint32_t vpn0 = (v_addr >> 12) & 0x3FFu;
-  dbg.l0_pte_addr = (l0_ppn << 12) + vpn0 * 4u;
-  dbg.l0_pte = debug_load_word(mem, dbg.l0_pte_addr);
-  dbg.l0_valid = (dbg.l0_pte & PTE_V) != 0;
-  dbg.l0_leaf = (dbg.l0_pte & (PTE_R | PTE_X)) != 0;
-  return dbg;
-}
-
-void dump_pf_mismatch_debug(uint32_t v_addr, uint32_t type,
-                            const CPU_state &state, uint8_t privilege,
-                            bool dut_expect_pf_inst, bool dut_expect_pf_load,
-                            bool dut_expect_pf_store, bool ref_pf_inst,
-                            bool ref_pf_load, bool ref_pf_store) {
-  const char *kind =
-      (type == 0) ? "inst" : (type == 1) ? "load" : "store";
-  const auto ref_walk =
-      collect_sv32_walk_debug(state, privilege, ref_cpu.memory, v_addr);
-  const auto dut_walk =
-      collect_sv32_walk_debug(state, privilege, p_memory, v_addr);
-
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] cyc=%lld kind=%s vaddr=0x%08x dut_inst=0x%08x commit_pc=0x%08x dut_pc=0x%08x ref_pc=0x%08x\n",
-      (long long)sim_time, kind, v_addr, dut_cpu.instruction, dut_cpu.commit_pc,
-      dut_cpu.pc, state.pc);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] dut_expect inst=%d load=%d store=%d ref_fault(inst=%d load=%d store=%d)\n",
-      (int)dut_expect_pf_inst, (int)dut_expect_pf_load,
-      (int)dut_expect_pf_store, (int)ref_pf_inst, (int)ref_pf_load,
-      (int)ref_pf_store);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] ref satp=0x%08x mstatus=0x%08x priv=%u eff_priv=%d translation=%d\n",
-      ref_walk.satp, ref_walk.mstatus, (unsigned)privilege, ref_walk.eff_priv,
-      (int)ref_walk.translation_enabled);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH] dut csr satp=0x%08x mstatus=0x%08x\n",
-      dut_cpu.csr[csr_satp], dut_cpu.csr[csr_mstatus]);
-  if (!ref_walk.translation_enabled) {
-    std::fprintf(
-        stderr,
-        "[PF-MISMATCH] translation disabled in REF debug state, mismatch is unexpected\n");
+inline void check_mem_range_or_die(const char *op, uint32_t addr,
+                                   uint32_t size) {
+  if (size == 0) {
     return;
   }
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH][REF] l1_addr=0x%08x l1_pte=0x%08x valid=%d leaf=%d l0_addr=0x%08x l0_pte=0x%08x valid=%d leaf=%d\n",
-      ref_walk.l1_pte_addr, ref_walk.l1_pte, (int)ref_walk.l1_valid,
-      (int)ref_walk.l1_leaf, ref_walk.l0_pte_addr, ref_walk.l0_pte,
-      (int)ref_walk.l0_valid, (int)ref_walk.l0_leaf);
-  std::fprintf(
-      stderr,
-      "[PF-MISMATCH][DUTMEM] l1_addr=0x%08x l1_pte=0x%08x valid=%d leaf=%d l0_addr=0x%08x l0_pte=0x%08x valid=%d leaf=%d\n",
-      dut_walk.l1_pte_addr, dut_walk.l1_pte, (int)dut_walk.l1_valid,
-      (int)dut_walk.l1_leaf, dut_walk.l0_pte_addr, dut_walk.l0_pte,
-      (int)dut_walk.l0_valid, (int)dut_walk.l0_leaf);
-  dump_dcache_word_visibility(dut_walk.l1_pte_addr);
-  dump_dcache_word_visibility(dut_walk.l0_pte_addr);
-  if (cpu.back.lsu != nullptr) {
-    cpu.back.lsu->dump_debug_state();
-    cpu.back.lsu->dump_mmu_debug(stderr);
+  const uint64_t end =
+      static_cast<uint64_t>(addr) + static_cast<uint64_t>(size);
+  if (end > (1ull << 32)) {
+    mem_oob_fatal(op, addr, size);
   }
-  cpu.mem_subsystem.dump_debug_state(stderr);
 }
 
+inline bool is_ram_range(uint32_t addr, uint32_t size) {
+  if (size == 0 || addr < kRamBase) {
+    return false;
+  }
+  const uint64_t end =
+      static_cast<uint64_t>(addr) + static_cast<uint64_t>(size) - 1u;
+  return end < kRamUpperBound;
+}
+
+inline bool is_mmio_range(uint32_t addr, uint32_t base, uint32_t size) {
+  if (addr < base) {
+    return false;
+  }
+  return static_cast<uint64_t>(addr - base) < static_cast<uint64_t>(size);
+}
+
+inline bool is_modeled_mmio_addr(uint32_t paddr) {
+  return is_mmio_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
+         is_mmio_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE);
 } // namespace
 
 // ---------------- 辅助工具 ----------------
@@ -359,8 +201,10 @@ void RefCpu::init(uint32_t reset_pc) {
     free(memory);
     memory = nullptr;
   }
-  memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
+  const uint32_t ram_words = kRamSizeBytes / sizeof(uint32_t);
+  memory = (uint32_t *)calloc(ram_words, sizeof(uint32_t));
   Assert(memory != nullptr && "RefCpu::init: memory allocation failed");
+  io_words.clear();
   for (int i = 0; i < 32; i++) {
     state.gpr[i] = 0;
   }
@@ -383,6 +227,12 @@ void RefCpu::init(uint32_t reset_pc) {
   dut_expect_pf_store = false;
   state.reserve_valid = false;
   state.reserve_addr = 0;
+
+  store_word(0x10000004, 0x00006000);
+  store_word(0x0, 0xf1402573);
+  store_word(0x4, 0x83e005b7);
+  store_word(0x8, 0x800002b7);
+  store_word(0xc, 0x00028067);
 }
 
 void RefCpu::exec() {
@@ -400,16 +250,15 @@ void RefCpu::exec() {
       exception(state.pc);
       return;
     } else {
-      Instruction = memory[p_addr >> 2];
+      Instruction = load_word(p_addr);
     }
   } else {
-    Instruction = memory[p_addr >> 2];
+    Instruction = load_word(p_addr);
   }
 
   if (Instruction == INST_EBREAK) {
     state.pc += 4;
     sim_end = true;
-    cout << "sim_time: " << sim_time << endl;
     return;
   }
 
@@ -1134,17 +983,18 @@ void RefCpu::RV32A() {
 
   switch (funct5) {
   case 0: { // amoadd.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] + reg_rdata2;
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = old + reg_rdata2;
     break;
   }
   case 1: { // amoswap.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
+    state.gpr[reg_d_index] = load_word(p_addr);
     state.store_data = reg_rdata2;
     break;
   }
   case 2: { // lr.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
+    state.gpr[reg_d_index] = load_word(p_addr);
     state.reserve_valid = true;
     state.reserve_addr = p_addr;
     break;
@@ -1162,46 +1012,45 @@ void RefCpu::RV32A() {
     break;
   }
   case 4: { // amoxor.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] ^ reg_rdata2;
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = old ^ reg_rdata2;
     break;
   }
   case 8: { // amoor.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] | reg_rdata2;
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = old | reg_rdata2;
     break;
   }
   case 12: { // amoand.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = memory[p_addr >> 2] & reg_rdata2;
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = old & reg_rdata2;
     break;
   }
   case 16: { // amomin.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = ((int32_t)memory[p_addr >> 2] > (int32_t)reg_rdata2)
-                           ? reg_rdata2
-                           : memory[p_addr >> 2];
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = ((int32_t)old > (int32_t)reg_rdata2) ? reg_rdata2 : old;
     break;
   }
   case 20: { // amomax.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = ((int32_t)memory[p_addr >> 2] > (int32_t)reg_rdata2)
-                           ? memory[p_addr >> 2]
-                           : reg_rdata2;
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = ((int32_t)old > (int32_t)reg_rdata2) ? old : reg_rdata2;
     break;
   }
   case 24: { // amominu.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = ((uint32_t)memory[p_addr >> 2] < (uint32_t)reg_rdata2)
-                           ? memory[p_addr >> 2]
-                           : reg_rdata2;
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = ((uint32_t)old < (uint32_t)reg_rdata2) ? old : reg_rdata2;
     break;
   }
   case 28: { // amomaxu.w
-    state.gpr[reg_d_index] = memory[p_addr >> 2];
-    state.store_data = ((uint32_t)memory[p_addr >> 2] > (uint32_t)reg_rdata2)
-                           ? memory[p_addr >> 2]
-                           : reg_rdata2;
+    uint32_t old = load_word(p_addr);
+    state.gpr[reg_d_index] = old;
+    state.store_data = ((uint32_t)old > (uint32_t)reg_rdata2) ? old : reg_rdata2;
     break;
   }
   default: {
@@ -1312,13 +1161,13 @@ void RefCpu::RV32IM() {
                                 : (funct3 & 0x3) == 1 ? 1
                                                       : 3;
       Assert((p_addr & alignment_mask) == 0 && "Load address misaligned!");
-      if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
+      if (is_modeled_mmio_addr(p_addr) ||
+          is_mmio_range(p_addr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE)) {
         is_mmio_load = true;
       }
       // Timer MMIO 特殊处理：使用 sim_time (非Oracle自有计数) 并推入FIFO
-      uint64_t data_l = (uint64_t)memory[p_addr >> 2];
-      uint64_t data_h = (uint64_t)memory[(p_addr >> 2) + 1];
+      uint64_t data_l = (uint64_t)load_word(p_addr & ~0x3u);
+      uint64_t data_h = (uint64_t)load_word((p_addr & ~0x3u) + 4u);
       uint64_t data64 = (data_h << 32) | data_l;
 
       uint32_t data;
@@ -1371,8 +1220,8 @@ void RefCpu::RV32IM() {
                                 : (funct3 & 0x3) == 1 ? 1
                                                       : 3;
       Assert((p_addr & alignment_mask) == 0 && "Store address misaligned!");
-      if (((p_addr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
-          ((p_addr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE)) {
+      if (is_modeled_mmio_addr(p_addr) ||
+          is_mmio_range(p_addr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE)) {
         is_mmio_store = true;
       }
 
@@ -1708,6 +1557,30 @@ void RefCpu::RV32IM() {
   state.pc = next_pc;
 }
 
+uint32_t RefCpu::load_word(uint32_t addr) const {
+  const uint32_t word_addr = addr & ~0x3u;
+  if (is_ram_range(word_addr, 4)) {
+    return memory[(word_addr - kRamBase) >> 2];
+  }
+  check_mem_range_or_die("word load", word_addr, 4);
+  auto it = io_words.find(word_addr);
+  return (it == io_words.end()) ? 0 : it->second;
+}
+
+void RefCpu::store_word(uint32_t addr, uint32_t data) {
+  const uint32_t word_addr = addr & ~0x3u;
+  if (is_ram_range(word_addr, 4)) {
+    memory[(word_addr - kRamBase) >> 2] = data;
+    return;
+  }
+  check_mem_range_or_die("word store", word_addr, 4);
+  if (data == 0u) {
+    io_words.erase(word_addr);
+  } else {
+    io_words[word_addr] = data;
+  }
+}
+
 void RefCpu::store_data() {
 
   uint32_t p_addr = state.store_addr;
@@ -1718,7 +1591,7 @@ void RefCpu::store_data() {
   int offset = p_addr & 0x3;
   uint32_t wstrb = state.store_strb << offset;
   uint32_t wdata = state.store_data << (offset * 8);
-  uint32_t old_data = memory[p_addr / 4];
+  uint32_t old_data = load_word(p_addr);
   uint32_t mask = 0;
 
   if (wstrb & 0b1)
@@ -1731,31 +1604,32 @@ void RefCpu::store_data() {
     mask |= 0xFF000000;
 
   if (state.store) {
-    memory[p_addr / 4] = (mask & wdata) | (~mask & old_data);
+    store_word(p_addr, (mask & wdata) | (~mask & old_data));
   }
 
   if (p_addr == UART_ADDR_BASE) {
     char temp;
     temp = wdata & 0x000000ff;
-    memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xffffff00;
+    store_word(UART_ADDR_BASE, load_word(UART_ADDR_BASE) & 0xffffff00u);
     if (uart_print)
       cout << temp;
   }
 
   if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 7) {
-    memory[0xc201004 / 4] = 0xa;
-    memory[0x10000000 / 4] = memory[0x10000000 / 4] & 0xfff0ffff;
+    store_word(PLIC_CLAIM_ADDR, 0x0000000Au);
+    store_word(UART_ADDR_BASE, load_word(UART_ADDR_BASE) & 0xfff0ffffu);
 
     state.csr[csr_mip] = state.csr[csr_mip] | (1 << 9);
     state.csr[csr_sip] = state.csr[csr_sip] | (1 << 9);
   }
 
   if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 5) {
-    memory[0x10000000 / 4] = (memory[0x10000000 / 4] & 0xfff0ffff) | 0x00030000;
+    store_word(UART_ADDR_BASE,
+               (load_word(UART_ADDR_BASE) & 0xfff0ffffu) | 0x00030000u);
   }
 
-  if (p_addr == 0xc201004 && (state.store_data & 0x000000ff) == 0xa) {
-    memory[0xc201004 / 4] = 0x0;
+  if (p_addr == PLIC_CLAIM_ADDR && (state.store_data & 0x000000ff) == 0xa) {
+    store_word(PLIC_CLAIM_ADDR, 0x0);
     state.csr[csr_mip] = state.csr[csr_mip] & ~(1 << 9);
     state.csr[csr_sip] = state.csr[csr_sip] & ~(1 << 9);
   }
@@ -1791,7 +1665,7 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   uint32_t pte1_addr = (ppn_root << 12) | (vpn1 << 2);
 
   // 直接读取，注意这里需要确保 memory 是按字寻址还是字节寻址
-  uint32_t pte1 = memory[pte1_addr >> 2];
+  uint32_t pte1 = load_word(pte1_addr);
 
   // 3. 检查 PTE 有效性
   // !V 或者 (!R && W) 都是无效的
@@ -1847,7 +1721,7 @@ bool RefCpu::va2pa(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   uint32_t vpn0 = (v_addr >> 12) & 0x3FF;
   uint32_t pte2_addr = (ppn1 << 12) | (vpn0 << 2);
 
-  uint32_t pte2 = memory[pte2_addr >> 2];
+  uint32_t pte2 = load_word(pte2_addr);
 
   // 重复有效性检查
   if (!(pte2 & PTE_V) || (!(pte2 & PTE_R) && (pte2 & PTE_W))) {
@@ -1917,9 +1791,6 @@ bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   if (dut_fault && !ref_fault) {
-    dump_pf_mismatch_debug(v_addr, type, state, privilege, dut_expect_pf_inst,
-                           dut_expect_pf_load, dut_expect_pf_store,
-                           page_fault_inst, page_fault_load, page_fault_store);
     std::cout << "[Difftest Warning] DUT has " << kind
               << " page fault while REF does not at cycle " << std::dec
               << sim_time << ", force REF " << kind << " page fault"
@@ -1928,9 +1799,6 @@ bool RefCpu::va2pa_fix(uint32_t &p_addr, uint32_t v_addr, uint32_t type) {
   }
 
   if (!dut_fault && ref_fault) {
-    dump_pf_mismatch_debug(v_addr, type, state, privilege, dut_expect_pf_inst,
-                           dut_expect_pf_load, dut_expect_pf_store,
-                           page_fault_inst, page_fault_load, page_fault_store);
     Assert(0 && "DUT has no page fault while REF has page fault.");
   }
 

@@ -1,11 +1,10 @@
 #include "WriteBuffer.h"
+#include "PhysMemory.h"
 #include "config.h"
 #include "types.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
-
-extern uint32_t *p_memory;
 
 WriteBufferEntry write_buffer_nxt[DCACHE_WB_ENTRIES];
 

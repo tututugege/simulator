@@ -1,4 +1,5 @@
 #include "SimCpu.h"
+#include "PhysMemory.h"
 #include "config.h"
 #include "diff.h"
 #include <csignal>
@@ -27,8 +28,8 @@ struct SimConfig {
   std::string target_file;
   // 存储 Fast-forward 的指令数/周期数
   uint64_t fast_forward_count = 0;
-  // CKPT 模式下，O3 目标 warmup 步数（0~WARMUP，默认 1000 万）
-  uint64_t ckpt_warmup_target = 10000000ULL;
+  // CKPT 模式下，O3 目标 warmup 步数（0~WARMUP，默认 WARMUP）
+  uint64_t ckpt_warmup_target = static_cast<uint64_t>(WARMUP);
   bool ckpt_warmup_target_set = false;
   uint64_t max_commit_inst = static_cast<uint64_t>(MAX_COMMIT_INST);
   bool max_commit_inst_set = false;
@@ -45,8 +46,8 @@ void print_help(char *argv[]) {
                "fast-forward (only for fast mode)"
             << std::endl;
   std::cout << "  -w, --warmup <num>  In CKPT mode, target O3 "
-               "warmup steps in [0,100000000] (default: 10000000)"
-            << std::endl;
+               "warmup steps in [0,"
+            << WARMUP << "] (default: " << WARMUP << ")" << std::endl;
   std::cout
       << "  -c, --max-commit <num>  Stop after <num> committed instructions "
          "(default: SIMPOINT_INTERVAL in CKPT mode, compile-time "
@@ -266,8 +267,7 @@ int main(int argc, char *argv[]) {
                                            : " (default)")
             << std::endl;
 
-  p_memory = (uint32_t *)calloc(PHYSICAL_MEMORY_LENGTH, sizeof(uint32_t));
-  if (!p_memory) {
+  if (!pmem_init()) {
     std::cerr << "Error: Failed to allocate memory!" << std::endl;
     exit(1);
   }
@@ -366,7 +366,7 @@ int main(int argc, char *argv[]) {
       difftest_step(false);
       sim_time++;
       if (handle_pending_sigint()) {
-        free(p_memory);
+        pmem_release();
         return 130;
       }
       if (ref_cpu.sim_end) {
@@ -378,7 +378,7 @@ int main(int argc, char *argv[]) {
       }
     }
     std::cout << "[Debug] Ref Model Run Completed." << std::endl;
-    free(p_memory);
+    pmem_release();
     return 0;
   }
 
@@ -395,7 +395,7 @@ int main(int argc, char *argv[]) {
     cpu.cycle();
 
     if (handle_pending_sigint()) {
-      free(p_memory);
+      pmem_release();
       return 130;
     }
 
@@ -410,7 +410,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  free(p_memory);
+  pmem_release();
 
   if (sim_time != MAX_SIM_TIME) {
     cout << "\033[38;5;34m-----------------------------\033[0m" << endl;

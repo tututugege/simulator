@@ -2,6 +2,7 @@
 #include "Csr.h"
 #include "DcacheConfig.h"
 #include "DiffMemTrace.h"
+#include "PhysMemory.h"
 #include "RISCV.h"
 #include "config.h"
 #include "util.h"
@@ -15,6 +16,31 @@ RefCpu ref_cpu;
 namespace {
 inline uint32_t sign_extend_12(uint32_t imm12) {
   return static_cast<uint32_t>(static_cast<int32_t>(imm12 << 20) >> 20);
+}
+
+struct IoRange {
+  uint32_t base;
+  uint32_t size;
+};
+
+constexpr IoRange kCkptIoRanges[] = {
+    {BOOT_IO_BASE, BOOT_IO_SIZE},
+    {UART_ADDR_BASE, UART_MMIO_SIZE},
+    {PLIC_ADDR_BASE, PLIC_MMIO_SIZE},
+    {OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE},
+};
+
+inline void seed_ref_io_from_backing() {
+  ref_cpu.io_words.clear();
+  for (const auto &range : kCkptIoRanges) {
+    for (uint32_t off = 0; off + 4u <= range.size; off += 4u) {
+      const uint32_t addr = range.base + off;
+      const uint32_t data = pmem_read(addr);
+      if (data != 0u) {
+        ref_cpu.io_words[addr] = data;
+      }
+    }
+  }
 }
 
 void dump_mem_subsystem_snapshot() {
@@ -37,21 +63,21 @@ void dump_mem_subsystem_snapshot() {
 void dump_code_line_snapshot(const char *tag, uint32_t pc) {
   const uint32_t line_base =
       pc & ~(static_cast<uint32_t>(ICACHE_LINE_SIZE) - 1u);
-  const uint32_t start_idx = line_base >> 2;
   const uint32_t word_off = (pc - line_base) >> 2;
   std::printf(
       "[DIFF][ICACHE_LINE][%s] pc=0x%08x line_base=0x%08x word_off=%u\n", tag,
       pc, line_base, word_off);
   for (int row = 0; row < ICACHE_WORD_NUM; row += 4) {
     std::printf("[DIFF][ICACHE_LINE][%s][DUT] +0x%02x: %08x %08x %08x %08x\n",
-                tag, row * 4, p_memory[start_idx + row + 0],
-                p_memory[start_idx + row + 1], p_memory[start_idx + row + 2],
-                p_memory[start_idx + row + 3]);
+                tag, row * 4, pmem_read(line_base + (row + 0) * 4u),
+                pmem_read(line_base + (row + 1) * 4u),
+                pmem_read(line_base + (row + 2) * 4u),
+                pmem_read(line_base + (row + 3) * 4u));
     std::printf("[DIFF][ICACHE_LINE][%s][REF] +0x%02x: %08x %08x %08x %08x\n",
-                tag, row * 4, ref_cpu.memory[start_idx + row + 0],
-                ref_cpu.memory[start_idx + row + 1],
-                ref_cpu.memory[start_idx + row + 2],
-                ref_cpu.memory[start_idx + row + 3]);
+                tag, row * 4, ref_cpu.load_word(line_base + (row + 0) * 4u),
+                ref_cpu.load_word(line_base + (row + 1) * 4u),
+                ref_cpu.load_word(line_base + (row + 2) * 4u),
+                ref_cpu.load_word(line_base + (row + 3) * 4u));
   }
 }
 
@@ -60,23 +86,22 @@ void dump_code_line_snapshot(const char *tag, uint32_t pc) {
 // relocate the init_difftest function to avoid multiple definition error
 void init_difftest(int img_size) {
   ref_cpu.init(0);
-  std::memcpy(ref_cpu.memory + 0x80000000 / 4, p_memory + 0x80000000 / 4,
-              img_size);
-  ref_cpu.memory[0x10000004 / 4] = 0x00006000; // 和进入 OpenSBI 相关
-  ref_cpu.memory[uint32_t(0x0 / 4)] = 0xf1402573;
-  ref_cpu.memory[uint32_t(0x4 / 4)] = 0x83e005b7;
-  ref_cpu.memory[uint32_t(0x8 / 4)] = 0x800002b7;
-  ref_cpu.memory[uint32_t(0xc / 4)] = 0x00028067;
+  std::memcpy(ref_cpu.memory, pmem_ram_ptr(), img_size);
+  seed_ref_io_from_backing();
 }
 
-void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
+void init_diff_ckpt(CPU_state ckpt_state) {
   std::cout << "Restore for ref cpu " << std::endl;
   ref_cpu.init(0);
   ref_cpu.state = ckpt_state;
   ref_cpu.privilege = RISCV_MODE_U;
 
+  const uint32_t *ckpt_memory = pmem_ram_ptr();
+  Assert(ckpt_memory != nullptr &&
+         "init_diff_ckpt: pmem RAM backend is not initialized");
   std::memcpy(ref_cpu.memory, ckpt_memory,
-              (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
+              static_cast<size_t>(PHYSICAL_MEMORY_LENGTH) * sizeof(uint32_t));
+  seed_ref_io_from_backing();
 
   // Keep checkpoint bootstrap aligned with RefCpu::exec(): only probe a
   // translation when SATP is active, and do not require the restored PC to be
@@ -88,11 +113,17 @@ void init_diff_ckpt(CPU_state ckpt_state, uint32_t *ckpt_memory) {
   }
 }
 
-void get_state(CPU_state &dut_state, uint8_t &privilege, uint32_t *dut_memory) {
+void get_state(CPU_state &dut_state, uint8_t &privilege) {
   dut_state = ref_cpu.state;
   privilege = ref_cpu.privilege;
-  memcpy(dut_memory, ref_cpu.memory,
-         (uint64_t)PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t));
+  uint32_t *dut_memory = pmem_ram_ptr();
+  Assert(dut_memory != nullptr &&
+         "get_state: pmem RAM backend is not initialized");
+  std::memcpy(dut_memory, ref_cpu.memory,
+              static_cast<size_t>(PHYSICAL_MEMORY_LENGTH) * sizeof(uint32_t));
+  for (const auto &kv : ref_cpu.io_words) {
+    pmem_write(kv.first, kv.second);
+  }
 }
 
 static void checkregs() {
@@ -167,8 +198,8 @@ fault:
   std::printf("Commit PC: 0x%08x\tDUT next PC: 0x%08x\tREF next PC: 0x%08x\n",
               dut_cpu.commit_pc, dut_cpu.pc, ref_cpu.state.pc);
   std::printf("[DIFF] p_memory@a5(0x%08x)=0x%08x ref=0x%08x\n", dut_cpu.gpr[15],
-              p_memory[dut_cpu.gpr[15] >> 2],
-              ref_cpu.memory[dut_cpu.gpr[15] >> 2]);
+              pmem_read(dut_cpu.gpr[15]),
+              ref_cpu.load_word(dut_cpu.gpr[15]));
   dump_code_line_snapshot("commit_pc", dut_cpu.commit_pc);
 #if defined(LOG_ENABLE) && defined(LOG_LSU_MEM_ENABLE)
   diff_mem_trace::dump_recent();

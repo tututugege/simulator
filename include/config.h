@@ -44,16 +44,17 @@ constexpr int REPLAY_STORE_COUNT_LOWER_BOUND = 4;
 // ============================================================
 
 constexpr uint64_t VIRTUAL_MEMORY_LENGTH =
-    1ULL * 1024 * 1024 * 1024; // 1G elements = 4GB
+    256ULL * 1024 * 1024; // 256M words = 1GB bytes
 constexpr uint64_t PHYSICAL_MEMORY_LENGTH =
-    1ULL * 1024 * 1024 * 1024;                      // 1G elements = 4GB
+    256ULL * 1024 * 1024;                      // 256M words = 1GB bytes
+constexpr uint64_t RAM_SIZE = PHYSICAL_MEMORY_LENGTH * sizeof(uint32_t); // bytes
 constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 
 // ============================================================
 // Frontend / Backend Width
 // ============================================================
-constexpr int FETCH_WIDTH = 16;
-constexpr int DECODE_WIDTH = 8;
+constexpr int FETCH_WIDTH = 4;
+constexpr int DECODE_WIDTH = 2;
 static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
 static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
@@ -74,118 +75,36 @@ constexpr int BPU_LOOP_META_TAG_BITS = 16;
 // ============================================================
 
 constexpr int ICACHE_LINE_SIZE = 64; // bytes
-#ifndef CONFIG_CPU_FREQ_MHZ
-#define CONFIG_CPU_FREQ_MHZ 500u
-#endif
-
-#ifndef CONFIG_DDR_SOC_LATENCY_NS
-#define CONFIG_DDR_SOC_LATENCY_NS 20u
-#endif
-
-#ifndef CONFIG_DDR_CDC_LATENCY_NS
-#define CONFIG_DDR_CDC_LATENCY_NS 12u
-#endif
-
-#ifndef CONFIG_DDR_CTL_LATENCY_NS
-#define CONFIG_DDR_CTL_LATENCY_NS 15u
-#endif
-
-#ifndef CONFIG_DDR_PHY_LATENCY_NS
-#define CONFIG_DDR_PHY_LATENCY_NS 13u
-#endif
-
-#ifndef CONFIG_DDR_CORE_FREQ_MHZ
-#define CONFIG_DDR_CORE_FREQ_MHZ 1600u
-#endif
-
-#ifndef CONFIG_DDR_CL
-#define CONFIG_DDR_CL 22u
-#endif
-
-#ifndef CONFIG_DDR_TRCD
-#define CONFIG_DDR_TRCD 22u
-#endif
-
-#ifndef CONFIG_DDR_TRP
-#define CONFIG_DDR_TRP 22u
-#endif
-
-#ifndef CONFIG_DDR_BURST_TRANSFER_BEATS
-#define CONFIG_DDR_BURST_TRANSFER_BEATS 4u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_HIT_RATE_PCT
-#define CONFIG_DDR_PAGE_HIT_RATE_PCT 50u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_EMPTY_RATE_PCT
-#define CONFIG_DDR_PAGE_EMPTY_RATE_PCT 30u
-#endif
-
-#ifndef CONFIG_DDR_PAGE_MISS_RATE_PCT
-#define CONFIG_DDR_PAGE_MISS_RATE_PCT 20u
-#endif
-
-static_assert(CONFIG_CPU_FREQ_MHZ > 0, "CONFIG_CPU_FREQ_MHZ must be > 0");
-static_assert(CONFIG_DDR_CORE_FREQ_MHZ > 0,
-              "CONFIG_DDR_CORE_FREQ_MHZ must be > 0");
-
-constexpr uint64_t CONFIG_DDR_NON_CORE_LATENCY_FS =
-    (static_cast<uint64_t>(CONFIG_DDR_SOC_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_CDC_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_CTL_LATENCY_NS) +
-     static_cast<uint64_t>(CONFIG_DDR_PHY_LATENCY_NS)) *
-    1000000ull;
-
-constexpr uint64_t CONFIG_DDR_TCK_FS =
-    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_DDR_CORE_FREQ_MHZ));
-
-constexpr uint64_t CONFIG_DDR_BASE_READ_LATENCY_FS =
-    CONFIG_DDR_NON_CORE_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_BURST_TRANSFER_BEATS) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_HIT_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_EMPTY_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD) * CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_MISS_LATENCY_FS =
-    CONFIG_DDR_BASE_READ_LATENCY_FS +
-    static_cast<uint64_t>(CONFIG_DDR_CL + CONFIG_DDR_TRCD + CONFIG_DDR_TRP) *
-        CONFIG_DDR_TCK_FS;
-
-constexpr uint64_t CONFIG_DDR_PAGE_RATE_SUM =
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
-    static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT);
-
-static_assert(CONFIG_DDR_PAGE_RATE_SUM > 0,
-              "DDR page-hit/empty/miss rates sum must be > 0");
-
-constexpr uint64_t CONFIG_DDR_READ_LATENCY_FS = div_round_u64(
-    CONFIG_DDR_PAGE_HIT_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_HIT_RATE_PCT) +
-        CONFIG_DDR_PAGE_EMPTY_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_EMPTY_RATE_PCT) +
-        CONFIG_DDR_PAGE_MISS_LATENCY_FS *
-            static_cast<uint64_t>(CONFIG_DDR_PAGE_MISS_RATE_PCT),
-    CONFIG_DDR_PAGE_RATE_SUM);
-
-constexpr uint64_t CONFIG_CPU_CYCLE_FS =
-    div_round_u64(1000000000ull, static_cast<uint64_t>(CONFIG_CPU_FREQ_MHZ));
-
-constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
-    div_round_u64(CONFIG_DDR_READ_LATENCY_FS, CONFIG_CPU_CYCLE_FS));
-
 #ifndef CONFIG_SIM_DDR_LATENCY
-#define CONFIG_SIM_DDR_LATENCY CONFIG_SIM_DDR_LATENCY_CALC
+#define CONFIG_SIM_DDR_LATENCY 50
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
 // Extra full cycles to wait after the final W beat before B can become visible.
 #define CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY 1
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP 0
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH 8
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP 0
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK 0
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND
+#define CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND 0
+#endif
+#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND
+#define CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND 0
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES
 #define CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES 32
@@ -227,7 +146,7 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
 #define CONFIG_ICACHE_USE_AXI_MEM_PORT 1
 #endif
 
-// Enable the shared AXI LLC path. The mainline default uses LLC.
+// Enable the shared AXI LLC path.
 #ifndef CONFIG_AXI_LLC_ENABLE
 #define CONFIG_AXI_LLC_ENABLE 1
 #endif
@@ -246,6 +165,10 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
 
 #ifndef CONFIG_AXI_LLC_LOOKUP_LATENCY
 #define CONFIG_AXI_LLC_LOOKUP_LATENCY 3u
+#endif
+
+#ifndef CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC
+#define CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC 0
 #endif
 
 #ifndef CONFIG_AXI_LLC_DEBUG_LOG
@@ -277,28 +200,28 @@ constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 256;
-constexpr int MAX_BR_NUM = 64;
+constexpr int PRF_NUM = 64;
+constexpr int MAX_BR_NUM = 16;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 256;
+constexpr int ROB_NUM = 64;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
 // SimPoint
 // ============================================================
 
-constexpr int WARMUP = 100000000;
-constexpr int SIMPOINT_INTERVAL = 100000000;
+constexpr int WARMUP = 10000000;
+constexpr int SIMPOINT_INTERVAL = 10000000;
 
 // ============================================================
 // FTQ/INST BUFFER
 // ============================================================
 
-constexpr int IDU_INST_BUFFER_SIZE = 256;
-constexpr int FTQ_SIZE = 64;
+constexpr int IDU_INST_BUFFER_SIZE = 32;
+constexpr int FTQ_SIZE = 16;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -332,19 +255,14 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU | OP_MASK_MUL |
              OP_MASK_CSR), // Port 0: ALU + MUL/DIV + CSR
     PORT_CFG(OP_MASK_ALU | OP_MASK_DIV | OP_MASK_FP), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
-    PORT_CFG(OP_MASK_STA),                            // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
-    PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
-    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
-    PORT_CFG(OP_MASK_BR),                             // Port 8: Branch
-    PORT_CFG(OP_MASK_BR)                              // Port 9: Branch
+    PORT_CFG(OP_MASK_LD),                             // Port 2: Load
+    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 3: Store Addr
+    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 4: Store Data
+    PORT_CFG(OP_MASK_BR),                              // Port 5: Branch
+    PORT_CFG(OP_MASK_BR)                              // Port 5: Branch
 };
 #undef PORT_CFG
 
@@ -393,8 +311,8 @@ constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
 constexpr int FTQ_EXU_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
-constexpr int STQ_SIZE = 64;
-constexpr int LDQ_SIZE = 64;
+constexpr int STQ_SIZE = 16;
+constexpr int LDQ_SIZE = 16;
 constexpr int MUL_MAX_LATENCY = 2;
 constexpr int DIV_MAX_LATENCY = 18;
 
@@ -404,8 +322,8 @@ constexpr int LSU_LDU_COUNT = count_ports_with_mask(OP_MASK_LD);
 constexpr int LSU_AGU_COUNT = LSU_STA_COUNT + LSU_LDU_COUNT;
 constexpr int LSU_SDU_COUNT = count_ports_with_mask(OP_MASK_STD);
 constexpr int LSU_LOAD_WB_WIDTH = LSU_LDU_COUNT;
-constexpr int ITLB_ENTRIES = 32;
-constexpr int DTLB_ENTRIES = 32;
+constexpr int ITLB_ENTRIES = 16;
+constexpr int DTLB_ENTRIES = 16;
 
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
@@ -457,16 +375,16 @@ constexpr int TOTAL_FU_COUNT = calculate_total_fu_count();
 // ============================================================
 
 constexpr IQStaticConfig GLOBAL_IQ_CONFIG[] = {
-    {IQ_INT, 128, DECODE_WIDTH,
+    {IQ_INT, 32, DECODE_WIDTH,
      OP_MASK_ALU | OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR, IQ_ALU_PORT_BASE,
      count_ports_with_mask(OP_MASK_ALU)},
-    {IQ_LD, 64, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
+    {IQ_LD, 16, DECODE_WIDTH, OP_MASK_LD, IQ_LD_PORT_BASE,
      count_ports_with_mask(OP_MASK_LD)},
-    {IQ_STA, 64, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
+    {IQ_STA, 16, DECODE_WIDTH, OP_MASK_STA, IQ_STA_PORT_BASE,
      count_ports_with_mask(OP_MASK_STA)},
-    {IQ_STD, 64, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
+    {IQ_STD, 16, DECODE_WIDTH, OP_MASK_STD, IQ_STD_PORT_BASE,
      count_ports_with_mask(OP_MASK_STD)},
-    {IQ_BR, 64, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
+    {IQ_BR, 16, DECODE_WIDTH, OP_MASK_BR, IQ_BR_PORT_BASE,
      count_ports_with_mask(OP_MASK_BR)}};
 
 constexpr int calculate_max_iq_size() {
@@ -523,8 +441,8 @@ static_assert(CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES <= 64,
               "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES exceeds 64B bridge support");
 static_assert(ICACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
               "ICACHE_LINE_SIZE exceeds AXI upstream write payload width");
-static_assert(DCACHE_LINE_BYTES <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
-              "DCACHE_LINE_BYTES exceeds AXI upstream write payload width");
+static_assert(DCACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
+              "DCACHE_LINE_SIZE exceeds AXI upstream write payload width");
 static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH > 0,
               "CONFIG_AXI_KIT_AXI_ID_WIDTH must be positive");
 static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH <= 7,
@@ -538,15 +456,12 @@ static_assert(CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER <=
 static_assert(CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING <=
                   (1u << CONFIG_AXI_KIT_AXI_ID_WIDTH),
               "CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING exceeds available AXI IDs");
-static_assert(DCACHE_LINE_BYTES > 0, "DCACHE_LINE_BYTES must be positive");
-static_assert((DCACHE_LINE_BYTES % 4) == 0,
-              "DCACHE_LINE_BYTES must be word-aligned (multiple of 4 bytes)");
-static_assert(is_power_of_two_u64(DCACHE_LINE_BYTES),
-              "DCACHE_LINE_BYTES must be a power of two");
-static_assert(DCACHE_WAYS > 0, "DCACHE_WAYS must be positive");
-static_assert(DCACHE_SETS > 0, "DCACHE_SETS must be positive");
-static_assert(is_power_of_two_u64(DCACHE_SETS),
-              "DCACHE_SETS must be a power of two");
+static_assert(DCACHE_LINE_SIZE > 0, "DCACHE_LINE_SIZE must be positive");
+static_assert((DCACHE_LINE_SIZE % 4) == 0,
+              "DCACHE_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
+static_assert(is_power_of_two_u64(DCACHE_LINE_SIZE),
+              "DCACHE_LINE_SIZE must be a power of two");
+static_assert(DCACHE_WAY_NUM > 0, "DCACHE_WAY_NUM must be positive");
 static_assert(DCACHE_OFFSET_BITS > 0, "DCACHE_OFFSET_BITS must be positive");
 static_assert(DCACHE_OFFSET_BITS == clog2(DCACHE_LINE_BYTES),
               "DCACHE_OFFSET_BITS must match clog2(DCACHE_LINE_BYTES)");
@@ -591,10 +506,14 @@ constexpr int FTQ_OFFSET_WIDTH = clog2(FETCH_WIDTH);
 // ============================================================
 
 constexpr uint32_t UART_ADDR_BASE = 0x10000000;
-constexpr uint32_t UART_ADDR_MASK = 0xFFFFFFF0;
+constexpr uint32_t UART_MMIO_SIZE = 0x00000100;
 constexpr uint32_t PLIC_ADDR_BASE = 0x0c000000;
-constexpr uint32_t PLIC_ADDR_MASK = 0xFC000000;
+constexpr uint32_t PLIC_MMIO_SIZE = 0x00210000;
 constexpr uint32_t PLIC_CLAIM_ADDR = 0x0c201004;
+constexpr uint32_t BOOT_IO_BASE = 0x00000000;
+constexpr uint32_t BOOT_IO_SIZE = 0x00002000;
+constexpr uint32_t OPENSBI_TIMER_BASE = 0x1fd0e000;
+constexpr uint32_t OPENSBI_TIMER_MMIO_SIZE = 0x00000008;
 constexpr uint32_t OPENSBI_TIMER_LOW_ADDR = 0x1fd0e000;
 constexpr uint32_t OPENSBI_TIMER_HIGH_ADDR = 0x1fd0e004;
 

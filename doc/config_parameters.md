@@ -25,15 +25,15 @@
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `MAX_COMMIT_INST` | 15,000,000,000 | 0~MAX_UINT64 | 最大提交指令数（定义于 `main.cpp`，不在 `config.h`） |
-| `MAX_SIM_TIME` | 1T | 0~MAX_UINT64 | 最大模拟周期数 |
+| `MAX_COMMIT_INST` | 15,000,000,000 | > 0 | 最大提交指令数（定义于 `main.cpp`，不在 `config.h`） |
+| `MAX_SIM_TIME` | 1T | > 0 | 最大模拟周期数 |
 
 ### 1.3 预热与采样
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `WARMUP` | 100,000,000 | 1M~500M（建议） | 预热指令数 |
-| `SIMPOINT_INTERVAL` | 100,000,000 | 10M~1B（建议） | SimPoint 采样间隔 |
+| `WARMUP` | 100,000,000 | 0~100M（根据具体的ckpt实现） | 预热指令数 |
+| `SIMPOINT_INTERVAL` | 100,000,000 | 10M~100M（根据具体的ckpt实现） | SimPoint 采样间隔 |
 
 ---
 
@@ -43,14 +43,10 @@
 
 | 宏 | 状态 | 说明 |
 |----|------|------|
-| `CONFIG_DIFFTEST` | ✅ 启用 | 差分测试功能 |
+| `CONFIG_DIFFTEST` | ✅ 启用 | difftest 测试功能 |
 | `CONFIG_PERF_COUNTER` | ✅ 启用 | 性能计数器 |
-| `CONFIG_BPU` | ⚠️ 当前 stock profile 中 `default/small/medium` 启用，`large` 关闭 | 分支预测单元 |
-| `CONFIG_TLB_MMU` | ✅ 启用 | 统一 I/D 侧 MMU 模型开关（`TlbMmu` / `SimpleMmu`） |
-
-> ICache 模型选择约定：
-> - 默认使用真实 ICache 路径（未定义额外宏）
-> - 仅在评估性能上界时定义 `USE_IDEAL_ICACHE`
+| `CONFIG_BPU` | ✅ 默认启用 | 真实分支预测单元 |
+| `CONFIG_TLB_MMU` | ✅ 启用 | TLB 开关（`TlbMmu` / `SimpleMmu`），目前SimpleMmu可能存在问题 |
 ---
 
 ## 3. CPU 参数
@@ -59,8 +55,16 @@
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `CONFIG_SIM_DDR_LATENCY` | `default: CONFIG_SIM_DDR_LATENCY_CALC (=43)`；`small/medium/large: 50` | 1~500（手动覆盖时） | shared AXI / SimDDR 读延迟（周期数）；default profile 由 DDR 参数自动换算，其余 stock profile 仍固定为 50 |
+| `CONFIG_SIM_DDR_LATENCY` | 50 | 1~500（手动覆盖时） | shared AXI / SimDDR 读延迟（周期数）；默认配置固定为 50 |
 | `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` | 1 | 0~500 | 最后一个 W beat 握手后，额外等待多少个完整周期，B 通道才首次可见 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH` | `CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING (=32)` | 1~64 | SimDDR 最多可缓存多少笔已接收 AW 但尚未完全完成的写事务 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP` | 0 | 0~32 | 可选的 W 通道额外节流旋钮；主要用于 stress/debug，不是 stock 主模型 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH` | 8 | 1~64 | SimDDR 写数据缓冲深度；FIFO credit 用尽时会对 W 通道施加 backpressure |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP` | 0 | 0~32 | 后端每 drain 一个写 beat 后，额外等待多少个完整周期才继续处理下一个 beat |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK` | `CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH (=8)` | 1~64 | 写数据 FIFO 占用达到该高水位后，SimDDR 进入 write-drain mode，持续 drain 已缓存写数据 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK` | 0 | 0~63 | write-drain mode 的退出阈值；FIFO 占用降到该低水位及以下时，`WREADY` 才重新开放 |
+| `CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND` | 0 | 0~64 | 从 read burst service window 切到 write-drain window 前，额外等待的完整周期数 |
+| `CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND` | 0 | 0~64 | 从 write-drain window 切回 read burst service window 前，额外等待的完整周期数 |
 | `CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES` | 32（all profiles） | 4/8/16/32 | 每个 DDR beat 传输字节数 |
 | `VIRTUAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 虚拟内存大小 |
 | `PHYSICAL_MEMORY_LENGTH` | 1GB | 256MB~8GB | 物理内存大小 |
@@ -71,63 +75,12 @@
 
 > [!NOTE]
 > `CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY` 当前是功能模型里的 `B` 通道可见性旋钮，
-> 不是精确 DDR 控制器时序模型。当前实现仍未细化建模 `AW/W` 路径的更真实
-> backpressure 与写通道调度。
+> 不是精确 DDR 控制器时序模型。当前写路径主线更接近“有限 write-data FIFO +
+> 高/低水位驱动的 bursty write-drain mode + 可配置 read/write turnaround”的近似模型；
+> `CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP` 只保留为 stress/debug 旋钮。
 
-#### 3.1.1 DDR 读延迟参数化模型
 
-`include/config.h.default` 中的 `CONFIG_SIM_DDR_LATENCY` 已由固定值改为“参数化计算值”，计算流程如下：
-
-1. 非 DDR 核心延迟（单位 ns）：
-   `CONFIG_DDR_SOC_LATENCY_NS + CONFIG_DDR_CDC_LATENCY_NS + CONFIG_DDR_CTL_LATENCY_NS + CONFIG_DDR_PHY_LATENCY_NS`
-2. DDR 核心参数：
-   - `CONFIG_DDR_CORE_FREQ_MHZ`（DDR core 频率，用于计算 `tCK`）
-   - `CONFIG_DDR_CL / CONFIG_DDR_TRCD / CONFIG_DDR_TRP`
-   - `CONFIG_DDR_BURST_TRANSFER_BEATS`（默认 4，对应 BL8 传输）
-3. workload 分布（百分比）：
-   `CONFIG_DDR_PAGE_HIT_RATE_PCT / CONFIG_DDR_PAGE_EMPTY_RATE_PCT / CONFIG_DDR_PAGE_MISS_RATE_PCT`
-4. CPU 周期换算：
-   `CONFIG_CPU_FREQ_MHZ` 决定单周期时长，最终将平均读延迟从 ns 换算为周期数并四舍五入。
-
-核心参数列表（`include/config.h.default`）：
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `CONFIG_CPU_FREQ_MHZ` | 500 | CPU 频率（MHz） |
-| `CONFIG_DDR_SOC_LATENCY_NS` | 20 | SoC 非 DDR 核心路径延迟（ns） |
-| `CONFIG_DDR_CDC_LATENCY_NS` | 12 | CDC 延迟（ns） |
-| `CONFIG_DDR_CTL_LATENCY_NS` | 15 | DDR Controller 延迟（ns） |
-| `CONFIG_DDR_PHY_LATENCY_NS` | 13 | DDR PHY 延迟（ns） |
-| `CONFIG_DDR_CORE_FREQ_MHZ` | 1600 | DDR core 频率（MHz） |
-| `CONFIG_DDR_CL` | 22 | CAS Latency（cycles） |
-| `CONFIG_DDR_TRCD` | 22 | tRCD（cycles） |
-| `CONFIG_DDR_TRP` | 22 | tRP（cycles） |
-| `CONFIG_DDR_BURST_TRANSFER_BEATS` | 4 | DDR burst 数据传输 beats |
-| `CONFIG_DDR_PAGE_HIT_RATE_PCT` | 50 | 页命中率（%） |
-| `CONFIG_DDR_PAGE_EMPTY_RATE_PCT` | 30 | 页空率（%） |
-| `CONFIG_DDR_PAGE_MISS_RATE_PCT` | 20 | 页冲突率（%） |
-| `CONFIG_SIM_DDR_LATENCY_CALC` | 自动计算 | 参数化模型算出的最终读延迟（cycles） |
-
-> [!IMPORTANT]
-> 默认参数（500MHz CPU、DDR4-3200 对应 1600MHz core、22-22-22、50/30/20）下：
-> `CONFIG_SIM_DDR_LATENCY_CALC = 43`。
->
-> 当配置为 DDR4-2400 常见时序（1200MHz core、17-17-17，其他不变）时：
-> `CONFIG_SIM_DDR_LATENCY_CALC = 44`。
-
-> [!NOTE]
-> `CONFIG_SIM_DDR_LATENCY` 仍保留 `#ifndef` 入口：
-> 若外部以编译宏显式定义 `CONFIG_SIM_DDR_LATENCY`，将覆盖自动计算值。
-
-> [!NOTE]
-> 当前只有 `include/config.h.default` 使用参数化 `CONFIG_SIM_DDR_LATENCY_CALC`；
-> `include/config.h.small` / `medium` / `large` 仍保持固定 `50 cycle` 的 stock 默认值。
-
-#### 3.1.2 DCache 参数生效来源（重点标记）
-
-> [!WARNING]
-> 当前 DCache 参数存在“双源定义”：`include/config.h` 与 `MemSubSystem/include/DcacheConfig.h`。  
-> 代码实际在 DCache 主路径（`RealDcache/MSHR/WriteBuffer/MemSubsystem`）中主要使用 `DcacheConfig.h` 宏。
+#### 3.1.1 DCache 参数生效来源（重点标记）
 
 | 参数族 | 当前主要生效源 | 当前值（代码） | 标记 | 说明 |
 |------|------|------|------|------|
@@ -139,7 +92,7 @@
 1. 调整 DCache 几何时，优先修改 `MemSubSystem/include/DcacheConfig.h`（或对应编译宏）。
 2. 修改后同步检查 `include/config.h` 的同名参数，避免文档值与行为值不一致。
 
-#### 3.1.3 Shared AXI / LLC 参数
+#### 3.1.2 Shared AXI / LLC 参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
@@ -153,18 +106,14 @@
 | `CONFIG_AXI_LLC_WAYS` | 16 | LLC associativity |
 | `CONFIG_AXI_LLC_MSHR_NUM` | 8 | LLC 全局共享 MSHR 数量 |
 | `CONFIG_AXI_LLC_LOOKUP_LATENCY` | 3 | LLC lookup 响应可见延迟 |
-
-> [!IMPORTANT]
-> 当 parent simulator 集成 `axi-interconnect-kit` 时，上述 `CONFIG_AXI_KIT_*`
-> 参数构成编译期契约。若 `config.h` 缺失关键定义，submodule 会直接编译失败，
-> 不再静默回落到 submodule 内部默认值。
+| `CONFIG_AXI_LLC_DCACHE_READ_MISS_NOALLOC` | 0 | DCache demand read miss 是否绕过 LLC install；`0=allocate`，`1=noallocate` |
 
 ### 3.2 流水线宽度
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `FETCH_WIDTH` | 16 | 4~32 | 前端取指宽度 |
-| `COMMIT_WIDTH` | =`DECODE_WIDTH`（当前为 8） | 2~32 | 提交宽度 |
+| `FETCH_WIDTH` | 16 | 2~32（建议） | 前端取指宽度 |
+| `COMMIT_WIDTH` | =`DECODE_WIDTH`（当前为 8） | 2~32（建议） | 提交宽度 |
 
 > [!WARNING]
 > `FETCH_WIDTH` 应为 2 的幂次方；同时需满足 `DECODE_WIDTH <= FETCH_WIDTH`，且当前实现要求 `ROB_BANK_NUM == DECODE_WIDTH`。
@@ -174,21 +123,21 @@
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
 | `ARF_NUM` | 32 | 32 | 架构寄存器数量（RISC-V 固定为32） |
-| `PRF_NUM` | 512 | 64~512 | 物理寄存器堆大小 |
+| `PRF_NUM` | 512 | > 33 | 物理寄存器堆大小 |
 | `MAX_BR_NUM` | 64 | 1~64 | 最大同时在飞分支数 |
-| `MAX_BR_PER_CYCLE` | 8 | 1~16 | 每周期最大分支处理数 |
+| `MAX_BR_PER_CYCLE` | 8 | > 1 | 每周期最大分支处理数 |
 | `CSR_NUM` | 21 | 21 | CSR 寄存器数量 |
 
 > [!IMPORTANT]
-> - `PRF_NUM` 必须 **≥ ARF_NUM**
+> - `PRF_NUM` 必须 **> ARF_NUM**
 > - `MAX_BR_NUM` 不能超过 **64**（受限于位掩码宽度）
 
 ### 3.4 ROB 配置
 
 | 参数 | 默认值 | 可调范围 | 说明 |
 |------|--------|----------|------|
-| `ROB_NUM` | 512 | 64~1024 | ROB 条目总数 |
-| `ROB_BANK_NUM` | =`DECODE_WIDTH`（当前为 8） | 2~32 | ROB Bank 数量 |
+| `ROB_NUM` | 512 | > 1 | ROB 条目总数 |
+| `ROB_BANK_NUM` | =`DECODE_WIDTH`（当前为 8） | 2~32（建议） | ROB Bank 数量 |
 | `ROB_LINE_NUM` | 64 | 自动计算 | ROB 行数 = ROB_NUM / ROB_BANK_NUM |
 
 > [!CAUTION]
@@ -259,7 +208,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
 
 ### 3.7 发射队列配置
 
-`GLOBAL_IQ_CONFIG` 定义了各发射队列的参数：
+`GLOBAL_IQ_CONFIG` 定义了各发射队列的参数，容量可以自由调节：
 
 | IQ 类型 | 容量 | Dispatch 宽度 | 端口数 |
 |---------|------|---------------|--------|
