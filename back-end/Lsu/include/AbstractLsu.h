@@ -54,6 +54,7 @@ public:
 
   // 组合逻辑 (按数据流向分为不同阶段)
   virtual void init() = 0;
+  virtual void comb_cal() = 0;         // -> Internal State (Execute Stage)
   virtual void comb_lsu2dis_info() = 0; // -> lsu2dis (Dispatch Stage)
   virtual void comb_recv() = 0;         // -> Internal State (Execute Stage)
   virtual void comb_load_res() = 0;     // -> lsu2exe (Writeback Stage)

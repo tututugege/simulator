@@ -263,6 +263,7 @@ void BackTop::comb() {
   prf->comb_awake();
   prf->comb_write();
   isu->comb_ready();
+  lsu->comb_cal();
   lsu->comb_lsu2dis_info();
 
   idu->comb_branch();

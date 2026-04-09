@@ -4,7 +4,6 @@
 #include "SimpleMmu.h"
 #include "config.h"
 #include <cstdint>
-#include <deque>
 #include <memory>
 
 class Csr;
@@ -13,6 +12,32 @@ class PtwWalkPort;
 
 class RealLsu : public AbstractLsu {
 private:
+#ifndef CONFIG_REAL_LSU_RANDOM_TEST
+#define CONFIG_REAL_LSU_RANDOM_TEST 0
+#endif
+  static constexpr int FINISHED_LOADS_QUEUE_SIZE = ROB_NUM;
+  static constexpr int FINISHED_STA_QUEUE_SIZE = ROB_NUM;
+  static constexpr int PENDING_STA_ADDR_QUEUE_SIZE = STQ_SIZE;
+  static constexpr int LOAD_STATE_COUNT = 5;
+  static constexpr int LOAD_RESP_WAIT_CYCLES_LIMIT = 150;
+  static constexpr int STQ_COUNT_WIDTH = bit_width_for_count(STQ_SIZE + 1);
+  static constexpr int LDQ_COUNT_WIDTH = bit_width_for_count(LDQ_SIZE + 1);
+  static constexpr int FINISHED_LOADS_QUEUE_IDX_WIDTH =
+      bit_width_for_count(FINISHED_LOADS_QUEUE_SIZE);
+  static constexpr int FINISHED_LOADS_QUEUE_COUNT_WIDTH =
+      bit_width_for_count(FINISHED_LOADS_QUEUE_SIZE + 1);
+  static constexpr int FINISHED_STA_QUEUE_IDX_WIDTH =
+      bit_width_for_count(FINISHED_STA_QUEUE_SIZE);
+  static constexpr int FINISHED_STA_QUEUE_COUNT_WIDTH =
+      bit_width_for_count(FINISHED_STA_QUEUE_SIZE + 1);
+  static constexpr int PENDING_STA_ADDR_QUEUE_IDX_WIDTH =
+      bit_width_for_count(PENDING_STA_ADDR_QUEUE_SIZE);
+  static constexpr int PENDING_STA_ADDR_QUEUE_COUNT_WIDTH =
+      bit_width_for_count(PENDING_STA_ADDR_QUEUE_SIZE + 1);
+  static constexpr int LOAD_REPLAY_PRIORITY_WIDTH = bit_width_for_count(6);
+  static constexpr int LOAD_RESP_WAIT_CYCLES_WIDTH =
+      bit_width_for_count(LOAD_RESP_WAIT_CYCLES_LIMIT + 1);
+
   enum class LoadState : uint8_t {
     WaitExec = 0,
     WaitSend = 1,
@@ -22,14 +47,16 @@ private:
   };
 
   struct LdqEntry {
-    bool valid;
-    bool killed;
-    bool sent;
-    bool waiting_resp;
-    uint64_t wait_resp_since;
-    bool tlb_retry;
-    bool is_mmio_wait;
-    uint8_t replay_priority;
+    reg<1> valid;
+    reg<1> killed;
+    reg<1> sent;
+    reg<1> waiting_resp;
+    LoadState load_state;
+    reg<1> ready_delay;
+    reg<LOAD_RESP_WAIT_CYCLES_WIDTH> resp_wait_cycles;
+    reg<1> tlb_retry;
+    reg<1> is_mmio_wait;
+    reg<LOAD_REPLAY_PRIORITY_WIDTH> replay_priority;
     MicroOp uop;
   };
 
@@ -45,8 +72,8 @@ private:
   };
 
   struct StoreTag {
-    int idx = 0;
-    bool flag = false;
+    reg<STQ_IDX_WIDTH> idx = 0;
+    reg<1> flag = false;
   };
 
   struct StoreNode {
@@ -58,31 +85,28 @@ private:
     StoreTag empty_stq_tag{};
 
     StoreNode committed_stq[STQ_SIZE];
-    int committed_stq_head = 0;
-    int committed_stq_tail = 0;
-    int committed_stq_count = 0;
+    reg<STQ_IDX_WIDTH> committed_stq_head = 0;
+    reg<STQ_COUNT_WIDTH> committed_stq_count = 0;
     StoreNode speculative_stq[STQ_SIZE];
-    int speculative_stq_head = 0;
-    int speculative_stq_tail = 0;
-    int speculative_stq_count = 0;
+    reg<STQ_IDX_WIDTH> speculative_stq_head = 0;
+    reg<STQ_COUNT_WIDTH> speculative_stq_count = 0;
 
     LdqEntry ldq[LDQ_SIZE];
-    int ldq_count = 0;
-    int ldq_alloc_tail = 0;
+    reg<1> reserve_valid = false;
+    reg<32> reserve_addr = 0;
 
-    bool reserve_valid = false;
-    uint32_t reserve_addr = 0;
+    reg<1> replay_type = false;
 
-    int replay_count_ldq = 0;
-    int replay_count_stq = 0;
-    int mshr_replay_count_ldq = 0;
-    int mshr_replay_count_stq = 0;
-    bool replay_type = false;
-
-    std::deque<MicroOp> finished_loads;
-    std::deque<MicroOp> finished_sta_reqs;
-    std::deque<MicroOp> pending_sta_addr_reqs;
-    bool pending_mmio_valid = false;
+    MicroOp finished_loads[FINISHED_LOADS_QUEUE_SIZE];
+    reg<FINISHED_LOADS_QUEUE_IDX_WIDTH> finished_loads_head = 0;
+    reg<FINISHED_LOADS_QUEUE_COUNT_WIDTH> finished_loads_count = 0;
+    MicroOp finished_sta_reqs[FINISHED_STA_QUEUE_SIZE];
+    reg<FINISHED_STA_QUEUE_IDX_WIDTH> finished_sta_reqs_head = 0;
+    reg<FINISHED_STA_QUEUE_COUNT_WIDTH> finished_sta_reqs_count = 0;
+    MicroOp pending_sta_addr_reqs[PENDING_STA_ADDR_QUEUE_SIZE];
+    reg<PENDING_STA_ADDR_QUEUE_IDX_WIDTH> pending_sta_addr_reqs_head = 0;
+    reg<PENDING_STA_ADDR_QUEUE_COUNT_WIDTH> pending_sta_addr_reqs_count = 0;
+    reg<1> pending_mmio_valid = false;
     PeripheralReqIO pending_mmio_req{};
   };
 
@@ -94,6 +118,7 @@ public:
   RealLsu(SimContext *ctx);
 
   void init() override;
+  void comb_cal() override;
   void comb_lsu2dis_info() override;
   void comb_recv() override;
   void comb_load_res() override;
@@ -166,6 +191,11 @@ private:
   bool finish_store_addr_once(LsuState &state, const MicroOp &inst);
   bool committed_store_conflicts_word(const LsuState &state,
                                       uint32_t word_addr) const;
+  void set_load_state(LdqEntry &entry, LoadState state);
+  void set_load_ready(LdqEntry &entry, uint8_t delay);
+  void begin_load_response_wait(LdqEntry &entry);
+  void sanitize_state_for_random_test(LsuState &state);
+  void prepare_runtime_state(LsuState &state);
 
   bool has_older_store_pending(const LsuState &state,
                                const MicroOp &load_uop) const;
