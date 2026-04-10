@@ -315,7 +315,11 @@ void BackTop::comb() {
   idu->comb_fire();
 
   isu->comb_enq();
+  // Rob recovery was split out of comb_fire(); keep the original priority:
+  // branch rollback happens before enqueue, and global flush overrides both.
+  rob->comb_branch();
   rob->comb_fire();
+  rob->comb_flush();
   isu->comb_flush();
   lsu->comb_flush();
   pre->comb_fire();

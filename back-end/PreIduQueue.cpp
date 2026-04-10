@@ -15,7 +15,7 @@ static void fill_ftq_pc_resp(FtqPcReadResp &resp, const FTQEntry &entry,
 
   resp.valid = true;
   resp.entry_valid = entry.valid;
-  resp.pc = entry.start_pc + (req.ftq_offset << 2);
+  resp.pc = entry.slot_pc[req.ftq_offset];
   resp.pred_taken = entry.pred_taken_mask[req.ftq_offset];
   resp.next_pc = entry.next_pc;
 }
