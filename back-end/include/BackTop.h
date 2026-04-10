@@ -15,28 +15,7 @@
 
 class SimContext;
 
-struct Back_in {
-  uint32_t inst[FETCH_WIDTH];
-  uint32_t pc[FETCH_WIDTH];
-  bool valid[FETCH_WIDTH];
-  bool predict_dir[FETCH_WIDTH];
-  bool alt_pred[FETCH_WIDTH];
-  uint8_t altpcpn[FETCH_WIDTH];
-  uint8_t pcpn[FETCH_WIDTH];
-  uint32_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
-  uint32_t tage_tag[FETCH_WIDTH][4]; // TN_MAX = 4
-  bool sc_used[FETCH_WIDTH];
-  bool sc_pred[FETCH_WIDTH];
-  int16_t sc_sum[FETCH_WIDTH];
-  uint16_t sc_idx[FETCH_WIDTH][BPU_SCL_META_NTABLE];
-  bool loop_used[FETCH_WIDTH];
-  bool loop_hit[FETCH_WIDTH];
-  bool loop_pred[FETCH_WIDTH];
-  uint16_t loop_idx[FETCH_WIDTH];
-  uint16_t loop_tag[FETCH_WIDTH];
-  uint32_t predict_next_fetch_address[FETCH_WIDTH];
-  bool page_fault_inst[FETCH_WIDTH];
-};
+using Back_in = FrontPreIO;
 
 struct Back_out {
   // to front-end
@@ -45,7 +24,7 @@ struct Back_out {
   bool flush;
   bool fence_i;
   bool itlb_flush;
-  bool fire[FETCH_WIDTH];
+  wire<1> *fire;
   uint32_t redirect_pc;
   InstEntry commit_entry[COMMIT_WIDTH];
 
@@ -69,8 +48,8 @@ class MemSubsystem;
 
 class BackTop {
 private:
-  FrontDecIO front2dec;
-  DecFrontIO dec2front;
+  FrontPreIO front2pre;
+  PreFrontIO pre2front;
 
   DecRenIO dec2ren;
   DecBroadcastIO dec_bcast;
@@ -101,6 +80,8 @@ private:
   LsuExeIO lsu2exe;
   LsuDisIO lsu2dis;
   LsuRobIO lsu2rob;
+  PeripheralReqIO peripheral_req_io;
+  PeripheralRespIO peripheral_resp_io;
   LsuDcacheIO lsu2dcache_io;   // LSU → DCache multi-port request bus
   DcacheLsuIO dcache2lsu_io;   // DCache → LSU multi-port response bus
 
@@ -116,12 +97,13 @@ private:
   CsrFrontIO csr2front;
   CsrStatusIO csr_status;
   ExeCsrIO exe2csr;
-  PreIduIssueIO pre_idu_issue;
+  PreIssueIO pre_issue;
+  IduConsumeIO idu_consume;
 
 public:
   SimContext *ctx;
 
-  PreIduQueue *pre_idu_queue;
+  PreIduQueue *pre;
   Idu *idu;
   Ren *rename;
   Dispatch *dis;
@@ -134,6 +116,8 @@ public:
 
   Back_in in;
   Back_out out;
+  PeripheralReqIO *lsu_peripheral_req_io;    // → &peripheral_req_io
+  PeripheralRespIO *lsu_peripheral_resp_io;  // → &peripheral_resp_io
   LsuDcacheIO *lsu_dcache_req_io;   // → &lsu2dcache_io  (for MemSubsystem)
   DcacheLsuIO *lsu_dcache_resp_io;  // → &dcache2lsu_io  (for MemSubsystem)
   void init();
@@ -143,13 +127,16 @@ public:
 
   BackTop(SimContext *ctx) {
     this->ctx = ctx;
-    pre_idu_queue = nullptr;
+    pre = nullptr;
+    out.fire = nullptr;
     
+    lsu_peripheral_req_io = &peripheral_req_io;
+    lsu_peripheral_resp_io = &peripheral_resp_io;
     lsu_dcache_req_io  = &lsu2dcache_io;
     lsu_dcache_resp_io = &dcache2lsu_io;
   };
   ~BackTop() {
-    delete pre_idu_queue;
+    delete pre;
     delete rename;
     delete dis;
     delete idu;

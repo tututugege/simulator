@@ -19,6 +19,7 @@ typedef struct {
   CsrStatusIO *csr_status;
   DisLsuIO *dis2lsu;
   ExeLsuIO *exe2lsu;
+  PeripheralRespIO *peripheral_resp;
   // MemRespIO *dcache_resp;
   // MemReadyIO *dcache_wready;
   
@@ -30,6 +31,7 @@ typedef struct {
   LsuDisIO *lsu2dis;
   LsuRobIO *lsu2rob;
   LsuExeIO *lsu2exe;
+  PeripheralReqIO *peripheral_req;
   // MemReqIO *dcache_req;
   // MemReqIO *dcache_wreq;
   LsuDcacheIO *lsu2dcache;
@@ -48,13 +50,11 @@ public:
   // IO 端口
   LsuIn in;
   LsuOut out;
-  PeripheralIO peripheral_io; // 供外设访问的 IO 端口
   SimContext *ctx;
-  PtwMemPort *ptw_mem_port = nullptr;
-  PtwWalkPort *ptw_walk_port = nullptr;
 
   // 组合逻辑 (按数据流向分为不同阶段)
   virtual void init() = 0;
+  virtual void comb_cal() = 0;         // -> Internal State (Execute Stage)
   virtual void comb_lsu2dis_info() = 0; // -> lsu2dis (Dispatch Stage)
   virtual void comb_recv() = 0;         // -> Internal State (Execute Stage)
   virtual void comb_load_res() = 0;     // -> lsu2exe (Writeback Stage)
@@ -64,13 +64,13 @@ public:
   virtual void seq() = 0; // Update registers & Tick latency
 
   // debug接口
-  virtual StqEntry get_stq_entry(int stq_idx) = 0;
+  virtual StqEntry get_stq_entry(int stq_idx, bool stq_flag) = 0;
   virtual void dump_debug_state() const {}
   virtual void dump_mmu_debug(FILE *out) const { (void)out; }
 
-  virtual void set_csr(Csr *csr) {}
-  virtual void set_ptw_mem_port(PtwMemPort *port) { ptw_mem_port = port; }
-  virtual void set_ptw_walk_port(PtwWalkPort *port) { ptw_walk_port = port; }
+  virtual void set_csr(Csr *csr) { (void)csr; }
+  virtual void set_ptw_mem_port(PtwMemPort *port) { (void)port; }
+  virtual void set_ptw_walk_port(PtwWalkPort *port) { (void)port; }
   virtual void restore_reservation(bool valid, uint32_t addr) {
     (void)valid;
     (void)addr;

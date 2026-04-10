@@ -9,9 +9,9 @@
 #include "ref.h"
 #include "util.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
-#include <array>
 #include <fstream>
 #include <vector>
 #include <zlib.h>
@@ -19,7 +19,7 @@
 void init_diff_ckpt(CPU_state ckpt_state);
 
 void BackTop::init() {
-  pre_idu_queue = new PreIduQueue(ctx);
+  pre = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
   rename = new Ren(ctx);
   dis = new Dispatch(ctx);
@@ -29,24 +29,25 @@ void BackTop::init() {
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new RealLsu(ctx);
-  lsu->set_csr(csr);
+  
+  out.fire = pre2front.fire;
 
-  pre_idu_queue->out.dec2front = &dec2front;
-  pre_idu_queue->out.issue = &pre_idu_issue;
-  pre_idu_queue->out.ftq_exu_pc_resp = &ftq_exu_pc_resp;
-  pre_idu_queue->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
-  pre_idu_queue->in.front2dec = &front2dec;
-  pre_idu_queue->in.ren2dec = &ren2dec;
-  pre_idu_queue->in.idu_dec2ren = &dec2ren;
-  pre_idu_queue->in.rob_bcast = &rob_bcast;
-  pre_idu_queue->in.rob_commit = &rob_commit;
-  pre_idu_queue->in.exu2id = &exu2id;
-  pre_idu_queue->in.ftq_exu_pc_req = &ftq_exu_pc_req;
-  pre_idu_queue->in.ftq_rob_pc_req = &ftq_rob_pc_req;
+  pre->out.pre2front = &pre2front;
+  pre->out.issue = &pre_issue;
+  pre->out.ftq_exu_pc_resp = &ftq_exu_pc_resp;
+  pre->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
+  pre->in.front2pre = &in;
+  pre->in.idu_consume = &idu_consume;
+  pre->in.rob_bcast = &rob_bcast;
+  pre->in.rob_commit = &rob_commit;
+  pre->in.idu_br_latch = &idu->br_latch;
+  pre->in.ftq_exu_pc_req = &ftq_exu_pc_req;
+  pre->in.ftq_rob_pc_req = &ftq_rob_pc_req;
 
   idu->out.dec2ren = &dec2ren;
   idu->out.dec_bcast = &dec_bcast;
-  idu->in.issue = &pre_idu_issue;
+  idu->out.idu_consume = &idu_consume;
+  idu->in.issue = &pre_issue;
   idu->in.ren2dec = &ren2dec;
   idu->in.rob_bcast = &rob_bcast;
   idu->in.exu2id = &exu2id;
@@ -136,14 +137,16 @@ void BackTop::init() {
   lsu->in.rob_bcast = &rob_bcast;
   lsu->in.dec_bcast = &dec_bcast;
   lsu->in.rob_commit = &rob_commit;
+  lsu->in.peripheral_resp = &peripheral_resp_io;
   lsu->in.dcache2lsu  = &dcache2lsu_io;
 
   lsu->out.lsu2exe = &lsu2exe;
   lsu->out.lsu2dis = &lsu2dis;
   lsu->out.lsu2rob = &lsu2rob;
+  lsu->out.peripheral_req = &peripheral_req_io;
   lsu->out.lsu2dcache = &lsu2dcache_io;
 
-  pre_idu_queue->init();
+  pre->init();
   idu->init();
   rename->init();
   dis->init();
@@ -168,8 +171,8 @@ void BackTop::comb() {
 #if CONFIG_BE_IO_CLEAR_AT_COMB_BEGIN
   // Diagnostic mode: clear backend internal stage IOs to expose hidden
   // dependence on previous-cycle combinational values.
-  dec2front = {};
-  pre_idu_issue = {};
+  pre2front = {};
+  pre_issue = {};
   ftq_exu_pc_req = {};
   ftq_exu_pc_resp = {};
   ftq_rob_pc_req = {};
@@ -179,6 +182,7 @@ void BackTop::comb() {
   dec_bcast = {};
 
   ren2dec = {};
+  idu_consume = {};
   ren2dis = {};
 
   dis2ren = {};
@@ -213,10 +217,12 @@ void BackTop::comb() {
   lsu2exe = {};
   lsu2dis = {};
   lsu2rob = {};
+  peripheral_req_io = {};
+  peripheral_resp_io = {};
   lsu2dcache_io = {};
 #endif
 
-  pre_idu_queue->comb_begin();
+  pre->comb_begin();
   idu->comb_begin();
   rename->comb_begin();
   dis->comb_begin();
@@ -225,37 +231,9 @@ void BackTop::comb() {
   exu->comb_begin();
   rob->comb_begin();
   csr->comb_begin();
-  // 输出提交的指令
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    pre_idu_queue->in.front2dec->valid[i] = in.valid[i];
-    pre_idu_queue->in.front2dec->pc[i] = in.pc[i];
-    pre_idu_queue->in.front2dec->inst[i] = in.inst[i];
-    pre_idu_queue->in.front2dec->predict_dir[i] = in.predict_dir[i];
-    pre_idu_queue->in.front2dec->alt_pred[i] = in.alt_pred[i];
-    pre_idu_queue->in.front2dec->altpcpn[i] = in.altpcpn[i];
-    pre_idu_queue->in.front2dec->pcpn[i] = in.pcpn[i];
-    pre_idu_queue->in.front2dec->sc_used[i] = in.sc_used[i];
-    pre_idu_queue->in.front2dec->sc_pred[i] = in.sc_pred[i];
-    pre_idu_queue->in.front2dec->sc_sum[i] = in.sc_sum[i];
-    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-      pre_idu_queue->in.front2dec->sc_idx[i][t] = in.sc_idx[i][t];
-    }
-    pre_idu_queue->in.front2dec->loop_used[i] = in.loop_used[i];
-    pre_idu_queue->in.front2dec->loop_hit[i] = in.loop_hit[i];
-    pre_idu_queue->in.front2dec->loop_pred[i] = in.loop_pred[i];
-    pre_idu_queue->in.front2dec->loop_idx[i] = in.loop_idx[i];
-    pre_idu_queue->in.front2dec->loop_tag[i] = in.loop_tag[i];
-    pre_idu_queue->in.front2dec->predict_next_fetch_address[i] =
-        in.predict_next_fetch_address[i];
-    pre_idu_queue->in.front2dec->page_fault_inst[i] = in.page_fault_inst[i];
-    for (int j = 0; j < 4; j++) { // TN_MAX = 4
-      pre_idu_queue->in.front2dec->tage_idx[i][j] = in.tage_idx[i][j];
-      pre_idu_queue->in.front2dec->tage_tag[i][j] = in.tage_tag[i][j];
-    }
-  }
 
   // 每个空行表示分层  下层会依赖上层产生的某个信号
-  pre_idu_queue->comb_accept_front();
+  pre->comb_accept_front();
   idu->comb_decode();
   csr->comb_interrupt();
   rename->comb_alloc();
@@ -263,6 +241,7 @@ void BackTop::comb() {
   prf->comb_awake();
   prf->comb_write();
   isu->comb_ready();
+  lsu->comb_cal();
   lsu->comb_lsu2dis_info();
 
   idu->comb_branch();
@@ -270,7 +249,7 @@ void BackTop::comb() {
   rob->comb_ready();
   rob->comb_ftq_pc_req();
   exu->comb_ftq_pc_req();
-  pre_idu_queue->comb_ftq_lookup();
+  pre->comb_ftq_lookup();
   rob->comb_commit();
 
   dis->comb_alloc();
@@ -295,7 +274,7 @@ void BackTop::comb() {
 
   dis->comb_dispatch();
 
-    // 用于调试
+  // 用于调试
   // 修正pc_next 以及difftest对应的pc_next
   out.flush = rob->out.rob_bcast->flush;
   out.fence_i = rob->out.rob_bcast->fence_i;
@@ -304,7 +283,7 @@ void BackTop::comb() {
   // 1. Normal case (No Rob flush)
   if (!rob->out.rob_bcast->flush) {
     out.mispred = idu->out.dec_bcast->mispred;
-    out.stall = !dec2front.ready;
+    out.stall = !pre2front.ready;
     out.redirect_pc = idu->br_latch.redirect_pc;
   } else {
     out.mispred = true;
@@ -319,8 +298,9 @@ void BackTop::comb() {
   }
 
   for (int i = 0; i < COMMIT_WIDTH; i++) {
-    out.commit_entry[i] = rob->out.rob_commit->commit_entry[i].uop.to_inst_entry(
-        rob->out.rob_commit->commit_entry[i].valid);
+    out.commit_entry[i] =
+        rob->out.rob_commit->commit_entry[i].uop.to_inst_entry(
+            rob->out.rob_commit->commit_entry[i].valid);
     if (out.commit_entry[i].valid && out.flush) {
       // Flush: override extra_data.pc_next with redirect_pc for ALL
       // instructions so Difftest can read the correct next-PC (trap vector,
@@ -332,19 +312,13 @@ void BackTop::comb() {
 
   dis->comb_fire();
   rename->comb_fire();
-  rob->comb_fire();
   idu->comb_fire();
-  pre_idu_queue->comb_consume_issue();
-
-
 
   isu->comb_enq();
-  rob->comb_flush();
-  pre_idu_queue->comb_flush_recover();
+  rob->comb_fire();
   isu->comb_flush();
   lsu->comb_flush();
-  pre_idu_queue->comb_commit_reclaim();
-  rob->comb_branch();
+  pre->comb_fire();
   prf->comb_pipeline();
   exu->comb_pipeline();
   dis->comb_pipeline();
@@ -354,7 +328,7 @@ void BackTop::comb() {
 void BackTop::seq() {
   // rename -> isu/stq/rob
   // exu -> prf
-  pre_idu_queue->seq();
+  pre->seq();
   rename->seq();
   dis->seq();
   idu->seq();
@@ -364,9 +338,6 @@ void BackTop::seq() {
   rob->seq();
   csr->seq();
   lsu->seq();
-  for (int i = 0; i < FETCH_WIDTH; i++) {
-    out.fire[i] = dec2front.fire[i];
-  }
 }
 
 // --- 辅助函数：简化 zlib 读写 POD 类型 ---

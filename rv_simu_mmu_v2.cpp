@@ -303,7 +303,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         this->ctx.perf.ret_mispred_num++;
         bool pred_taken = false;
         const FTQEntry *entry =
-            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+            back->pre->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -316,7 +316,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         this->ctx.perf.jalr_mispred_num++;
         bool pred_taken = false;
         const FTQEntry *entry =
-            back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+            back->pre->lookup_ftq_entry(inst->ftq_idx);
         if (entry != nullptr && entry->valid) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
@@ -329,7 +329,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
     } else if (inst->type == BR) {
       bool pred_taken = false;
       const FTQEntry *entry =
-          back->pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+          back->pre->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
       }
@@ -343,7 +343,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
   }
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
-    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
+    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
     const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
                                e.rob_idx == inst->rob_idx &&
                                e.rob_flag == inst->rob_flag;
@@ -368,7 +368,7 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   }
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
-    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx);
+    StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
     const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
                                e.rob_idx == inst->rob_idx &&
                                e.rob_flag == inst->rob_flag;
@@ -453,15 +453,16 @@ void SimCpu::init() {
 
   // 第三阶段：集中完成跨模块连线
   mem_subsystem.csr = back.csr;
-  mem_subsystem.memory = pmem_ram_ptr();
-  mem_subsystem.peripheral_io = &back.lsu->peripheral_io;
+  mem_subsystem.memory = p_memory;
+  mem_subsystem.peripheral_req = back.lsu_peripheral_req_io;
+  mem_subsystem.peripheral_resp = back.lsu_peripheral_resp_io;
   mem_subsystem.set_ptw_coherent_source(back.lsu);
 
   front.in.csr_status = back.csr->out.csr_status;
   front.ctx = &ctx;
 
-  back.lsu->ptw_walk_port = mem_subsystem.dtlb_walk_port;
-  back.lsu->ptw_mem_port = mem_subsystem.dtlb_ptw_port;
+  back.lsu->set_ptw_walk_port(mem_subsystem.dtlb_walk_port);
+  back.lsu->set_ptw_mem_port(mem_subsystem.dtlb_ptw_port);
 
   mem_subsystem.lsu2dcache = back.lsu_dcache_req_io;
   mem_subsystem.dcache2lsu = back.lsu_dcache_resp_io;
@@ -832,8 +833,7 @@ void SimCpu::back2front_comb() {
       uint16_t loop_idx = 0;
       uint16_t loop_tag = 0;
 
-      const FTQEntry *entry =
-          back.pre_idu_queue->lookup_ftq_entry(inst->ftq_idx);
+      const FTQEntry *entry = back.pre->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         alt_pred = entry->alt_pred[inst->ftq_offset];

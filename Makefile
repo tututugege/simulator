@@ -31,7 +31,12 @@ LDFLAGS := -L$(ZLIB_LIBDIR) $(LDFLAGS)
 endif
 
 # Debug Flags (Use 'make DEBUG=1' to enable)
-ifdef DEBUG
+DEBUG_ENABLED := 0
+ifneq ($(filter 1 true TRUE yes YES on ON,$(DEBUG)),)
+DEBUG_ENABLED := 1
+endif
+
+ifeq ($(DEBUG_ENABLED),1)
     CXXFLAGS += -g -O0
 else
     CXXFLAGS += -DNDEBUG

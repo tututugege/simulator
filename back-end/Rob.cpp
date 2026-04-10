@@ -437,6 +437,7 @@ void Rob::comb_commit() {
       ctx->cpu->mem_subsystem.dump_debug_state(stderr);
     }
     Assert(0 && "ROB Deadlock detected (stall_cycle > 50000)");
+    exit(1);
   }
 }
 

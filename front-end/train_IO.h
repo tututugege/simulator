@@ -202,45 +202,45 @@ struct FrontRuntimeStats {
 };
 
 struct PendingBpuSeqTxn {
-  bool valid = false;
-  bool reset = false;
+  wire1_t valid = false;
+  wire1_t reset = false;
   BPU_TOP::InputPayload inp;
   BPU_TOP::UpdateRequest req;
 };
 
 struct PendingFrontState {
-  bool valid = false;
-  uint32_t next_front_sim_time = 0;
+  wire1_t valid = false;
+  wire32_t next_front_sim_time = 0;
   FrontRuntimeStats next_front_stats{};
-  bool next_predecode_refetch = false;
-  uint32_t next_predecode_refetch_address = 0;
-  bool next_fetch_addr_fifo_full = false;
-  bool next_fetch_addr_fifo_empty = true;
-  bool next_fifo_full = false;
-  bool next_fifo_empty = true;
-  bool next_ptab_full = false;
-  bool next_ptab_empty = true;
-  bool next_front2back_fifo_full = false;
-  bool next_front2back_fifo_empty = true;
+  wire1_t next_predecode_refetch = false;
+  fetch_addr_t next_predecode_refetch_address = 0;
+  wire1_t next_fetch_addr_fifo_full = false;
+  wire1_t next_fetch_addr_fifo_empty = true;
+  wire1_t next_fifo_full = false;
+  wire1_t next_fifo_empty = true;
+  wire1_t next_ptab_full = false;
+  wire1_t next_ptab_empty = true;
+  wire1_t next_front2back_fifo_full = false;
+  wire1_t next_front2back_fifo_empty = true;
 };
 
 struct FrontReadData {
-  bool predecode_refetch_snapshot = false;
-  uint32_t predecode_refetch_address_snapshot = 0;
-  uint32_t front_sim_time_snapshot = 0;
+  wire1_t predecode_refetch_snapshot = false;
+  fetch_addr_t predecode_refetch_address_snapshot = 0;
+  wire32_t front_sim_time_snapshot = 0;
   FrontRuntimeStats front_stats_snapshot{};
   fetch_address_FIFO_read_data fetch_addr_fifo_rd_snapshot{};
   instruction_FIFO_read_data fifo_rd_snapshot{};
   PTAB_read_data ptab_rd_snapshot{};
   front2back_FIFO_read_data front2back_fifo_rd_snapshot{};
-  bool fetch_addr_fifo_full_latch_snapshot = false;
-  bool fetch_addr_fifo_empty_latch_snapshot = true;
-  bool fifo_full_latch_snapshot = false;
-  bool fifo_empty_latch_snapshot = true;
-  bool ptab_full_latch_snapshot = false;
-  bool ptab_empty_latch_snapshot = true;
-  bool front2back_fifo_full_latch_snapshot = false;
-  bool front2back_fifo_empty_latch_snapshot = true;
+  wire1_t fetch_addr_fifo_full_latch_snapshot = false;
+  wire1_t fetch_addr_fifo_empty_latch_snapshot = true;
+  wire1_t fifo_full_latch_snapshot = false;
+  wire1_t fifo_empty_latch_snapshot = true;
+  wire1_t ptab_full_latch_snapshot = false;
+  wire1_t ptab_empty_latch_snapshot = true;
+  wire1_t front2back_fifo_full_latch_snapshot = false;
+  wire1_t front2back_fifo_empty_latch_snapshot = true;
 };
 
 struct FrontUpdateRequest {
@@ -254,7 +254,7 @@ struct FrontUpdateRequest {
 };
 
 struct FrontBpuInputCombIn {
-  front_top_in in;
+  BPU_in bpu_seed;
   wire1_t do_refetch;
   fetch_addr_t refetch_addr;
   wire1_t icache_ready;
@@ -265,8 +265,11 @@ struct FrontBpuInputCombOut {
 };
 
 struct FrontGlobalControlCombIn {
-  front_top_in in;
-  FrontReadData rd;
+  wire1_t reset;
+  wire1_t backend_refetch;
+  fetch_addr_t backend_refetch_address;
+  wire1_t predecode_refetch_snapshot;
+  fetch_addr_t predecode_refetch_address_snapshot;
 };
 
 struct FrontGlobalControlCombOut {
@@ -276,8 +279,11 @@ struct FrontGlobalControlCombOut {
 };
 
 struct FrontReadEnableCombIn {
-  front_top_in in;
-  FrontReadData rd;
+  wire1_t backend_fifo_read_enable;
+  wire1_t fetch_addr_fifo_empty_latch_snapshot;
+  wire1_t fifo_empty_latch_snapshot;
+  wire1_t ptab_empty_latch_snapshot;
+  wire1_t front2back_fifo_full_latch_snapshot;
   wire1_t global_reset;
   wire1_t global_refetch;
   wire1_t icache_ready;
@@ -294,7 +300,7 @@ struct FrontReadEnableCombOut {
 };
 
 struct FrontReadStageInputCombIn {
-  front_top_in in;
+  wire1_t backend_refetch;
   wire1_t global_reset;
   wire1_t global_refetch;
   wire1_t fetch_addr_fifo_read_enable_slot0;
@@ -311,8 +317,9 @@ struct FrontReadStageInputCombOut {
 };
 
 struct FrontBpuControlCombIn {
-  front_top_in in;
-  FrontReadData rd;
+  BPU_in bpu_in_seed;
+  wire1_t fetch_addr_fifo_full_latch_snapshot;
+  wire1_t ptab_full_latch_snapshot;
   wire1_t global_reset;
   wire1_t global_refetch;
   fetch_addr_t refetch_address;
@@ -335,7 +342,7 @@ struct FrontBpuOutputCombOut {
 };
 
 struct FrontPtabWriteCombIn {
-  BPU_out bpu_out;
+  BPU_TOP::OutputPayload bpu_output;
   wire1_t global_reset;
   wire1_t global_refetch;
   wire1_t ptab_can_write;

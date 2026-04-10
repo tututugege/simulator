@@ -290,14 +290,25 @@ constexpr int ICACHE_WORD_NUM = ICACHE_LINE_SIZE / 4;
 constexpr int ICACHE_TAG_BITS = 32 - ICACHE_INDEX_BITS - ICACHE_OFFSET_BITS;
 constexpr uint32_t ICACHE_TAG_MASK = (1u << ICACHE_TAG_BITS) - 1u;
 
-constexpr int DCACHE_LINE_SIZE = ICACHE_LINE_SIZE; // bytes
+#define DCACHE_SETS 256
+#define DCACHE_WAYS 4
+#define DCACHE_OFFSET_BITS 6
+#define DCACHE_LINE_BYTES 64
+#define DCACHE_LINE_WORDS 16
+#define DCACHE_SET_BITS (__builtin_ctz(DCACHE_SETS))
+#define DCACHE_TAG_BITS (32 - DCACHE_SET_BITS - DCACHE_OFFSET_BITS)
+
+#define DCACHE_MSHR_ENTRIES 8
+
+#define DCACHE_WB_ENTRIES 8
+
+// Compatibility aliases for local code that still refers to the legacy names.
+constexpr int DCACHE_LINE_SIZE = DCACHE_LINE_BYTES;
 constexpr int DCACHE_HIT_LATENCY = 1;
-constexpr int DCACHE_WAY_NUM = 4;
-constexpr int DCACHE_OFFSET_BITS = clog2(DCACHE_LINE_SIZE);
-constexpr int DCACHE_INDEX_BITS = 8;
-constexpr int DCACHE_SET_NUM = 1 << DCACHE_INDEX_BITS;
-constexpr int DCACHE_WORD_NUM = DCACHE_LINE_SIZE / 4;
-constexpr int DCACHE_TAG_BITS = 32 - DCACHE_INDEX_BITS - DCACHE_OFFSET_BITS;
+constexpr int DCACHE_WAY_NUM = DCACHE_WAYS;
+constexpr int DCACHE_INDEX_BITS = DCACHE_SET_BITS;
+constexpr int DCACHE_SET_NUM = DCACHE_SETS;
+constexpr int DCACHE_WORD_NUM = DCACHE_LINE_WORDS;
 constexpr uint32_t DCACHE_TAG_MASK = (1u << DCACHE_TAG_BITS) - 1u;
 constexpr int DCACHE_MAX_PENDING_REQS = 64;
 
@@ -563,8 +574,8 @@ static_assert(CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES <= 64,
               "CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES exceeds 64B bridge support");
 static_assert(ICACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
               "ICACHE_LINE_SIZE exceeds AXI upstream write payload width");
-static_assert(DCACHE_LINE_SIZE <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
-              "DCACHE_LINE_SIZE exceeds AXI upstream write payload width");
+static_assert(DCACHE_LINE_BYTES <= CONFIG_AXI_KIT_MAX_WRITE_TRANSACTION_BYTES,
+              "DCACHE_LINE_BYTES exceeds AXI upstream write payload width");
 static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH > 0,
               "CONFIG_AXI_KIT_AXI_ID_WIDTH must be positive");
 static_assert(CONFIG_AXI_KIT_AXI_ID_WIDTH <= 7,
@@ -578,18 +589,22 @@ static_assert(CONFIG_AXI_KIT_MAX_READ_OUTSTANDING_PER_MASTER <=
 static_assert(CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING <=
                   (1u << CONFIG_AXI_KIT_AXI_ID_WIDTH),
               "CONFIG_AXI_KIT_MAX_WRITE_OUTSTANDING exceeds available AXI IDs");
-static_assert(DCACHE_LINE_SIZE > 0, "DCACHE_LINE_SIZE must be positive");
-static_assert((DCACHE_LINE_SIZE % 4) == 0,
-              "DCACHE_LINE_SIZE must be word-aligned (multiple of 4 bytes)");
-static_assert(is_power_of_two_u64(DCACHE_LINE_SIZE),
-              "DCACHE_LINE_SIZE must be a power of two");
-static_assert(DCACHE_WAY_NUM > 0, "DCACHE_WAY_NUM must be positive");
+static_assert(DCACHE_LINE_BYTES > 0, "DCACHE_LINE_BYTES must be positive");
+static_assert((DCACHE_LINE_BYTES % 4) == 0,
+              "DCACHE_LINE_BYTES must be word-aligned (multiple of 4 bytes)");
+static_assert(is_power_of_two_u64(DCACHE_LINE_BYTES),
+              "DCACHE_LINE_BYTES must be a power of two");
+static_assert(DCACHE_WAYS > 0, "DCACHE_WAYS must be positive");
 static_assert(DCACHE_OFFSET_BITS > 0, "DCACHE_OFFSET_BITS must be positive");
-static_assert(DCACHE_INDEX_BITS > 0, "DCACHE_INDEX_BITS must be positive");
-static_assert(DCACHE_WORD_NUM == DCACHE_LINE_SIZE / 4,
-              "DCACHE_WORD_NUM must match DCACHE_LINE_SIZE / 4");
+static_assert(DCACHE_OFFSET_BITS == clog2(DCACHE_LINE_BYTES),
+              "DCACHE_OFFSET_BITS must match clog2(DCACHE_LINE_BYTES)");
+static_assert(DCACHE_LINE_WORDS == DCACHE_LINE_BYTES / 4,
+              "DCACHE_LINE_WORDS must match DCACHE_LINE_BYTES / 4");
+static_assert(DCACHE_SET_BITS == clog2(DCACHE_SETS),
+              "DCACHE_SET_BITS must match clog2(DCACHE_SETS)");
 static_assert(DCACHE_TAG_BITS > 0, "DCACHE_TAG_BITS must be positive");
-static_assert(DCACHE_SET_NUM > 0, "DCACHE_SET_NUM must be positive");
+static_assert(DCACHE_MSHR_ENTRIES > 0, "DCACHE_MSHR_ENTRIES must be positive");
+static_assert(DCACHE_WB_ENTRIES > 0, "DCACHE_WB_ENTRIES must be positive");
 static_assert(DCACHE_TAG_MASK != 0, "DCACHE_TAG_MASK must be non-zero");
 static_assert(LSU_LDU_COUNT <= LSU_AGU_COUNT,
               "LSU_LDU_COUNT must be <= LSU_AGU_COUNT");

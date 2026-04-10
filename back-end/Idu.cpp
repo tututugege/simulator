@@ -26,13 +26,14 @@ void Idu::init() {
   pending_free_mask = 0;
   pending_free_mask_1 = 0;
   br_latch = {};
+  br_latch_1 = {};
 }
 
 /*
  * comb_begin
  * 功能: 组合阶段开始时，将时序态镜像到 *_1 工作副本，作为本拍组合逻辑的可写基线。
- * 输入依赖: tag_vec, br_mask_cp, now_br_mask, pending_free_mask。
- * 输出更新: tag_vec_1, br_mask_cp_1, now_br_mask_1, pending_free_mask_1。
+ * 输入依赖: tag_vec, br_mask_cp, now_br_mask, pending_free_mask, br_latch。
+ * 输出更新: tag_vec_1, br_mask_cp_1, now_br_mask_1, pending_free_mask_1, br_latch_1。
  * 约束: 仅做状态复制，不分配/释放分支 Tag，不驱动对外接口信号。
  */
 void Idu::comb_begin() {
@@ -42,6 +43,7 @@ void Idu::comb_begin() {
   }
   now_br_mask_1 = now_br_mask;
   pending_free_mask_1 = pending_free_mask;
+  br_latch_1 = br_latch;
 }
 
 /*
@@ -78,7 +80,7 @@ void Idu::comb_decode() {
     } else {
       decode(decoded, entry.inst);
     }
-    decoded.dbg.pc = in.issue->pc[i];
+    decoded.dbg.pc = entry.pc;
     decoded.ftq_idx = entry.ftq_idx;
     decoded.ftq_offset = entry.ftq_offset;
     decoded.ftq_is_last = entry.ftq_is_last;
@@ -106,7 +108,6 @@ void Idu::comb_decode() {
     out.dec2ren->uop[i] = {};
   }
 
-  Assert(in.issue != nullptr && "Idu::comb_decode: issue input is null");
   for (int i = 0; i < DECODE_WIDTH; i++) {
     const InstructionBufferEntry &entry = in.issue->entries[i];
     if (!entry.valid)
@@ -126,7 +127,7 @@ void Idu::comb_decode() {
     } else {
       decode(decoded, entry.inst);
     }
-    decoded.dbg.pc = in.issue->pc[i];
+    decoded.dbg.pc = entry.pc;
     decoded.ftq_idx = entry.ftq_idx;
     decoded.ftq_offset = entry.ftq_offset;
     decoded.ftq_is_last = entry.ftq_is_last;
@@ -207,12 +208,20 @@ void Idu::comb_branch() {
  * comb_fire
  * 功能: 在 ready/flush/分支解析条件下推进 IDU 分支状态机（Tag 释放、误预测回收、新分支提交分配）。
  * 输入依赖: in.rob_bcast->flush, in.ren2dec->ready, out.dec2ren->valid/uop, alloc_tag, br_latch, now_br_mask, br_mask_cp, pending_free_mask。
- * 输出更新: tag_vec_1, now_br_mask_1, br_mask_cp_1, pending_free_mask_1。
+ * 输出更新: tag_vec_1, now_br_mask_1, br_mask_cp_1, pending_free_mask_1, br_latch_1。
  * 约束: flush 最高优先级并直接返回；mispred 路径不进行新分支分配；仅对 fire 且为分支的槽位提交 Tag 占用。
  */
 void Idu::comb_fire() {
-  Assert(in.ren2dec != nullptr && "Idu::comb_fire: ren2dec is null");
-  Assert(in.rob_bcast != nullptr && "Idu::comb_fire: rob_bcast is null");
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    out.idu_consume->fire[i] = false;
+  }
+
+  if (!in.rob_bcast->flush) {
+    br_latch_1 = *in.exu2id;
+  } else {
+    br_latch_1 = {};
+  }
+
   // 0. flush 最高优先级：清空本地分支状态。
   if (in.rob_bcast->flush) {
     for (int i = 1; i < MAX_BR_NUM; i++) {
@@ -259,10 +268,10 @@ void Idu::comb_fire() {
   }
 
   // 5. 正常发射路径：握手成功的分支推进 tag 分配状态。
-#ifdef CONFIG_BPU
   int br_num = 0;
   for (int i = 0; i < DECODE_WIDTH; i++) {
     wire<1> fire = out.dec2ren->valid[i] && in.ren2dec->ready;
+    out.idu_consume->fire[i] = fire;
     if (fire && is_branch(out.dec2ren->uop[i].type)) {
       wire<BR_TAG_WIDTH> new_tag = alloc_tag[br_num];
       tag_vec_1[new_tag] = false;
@@ -271,7 +280,6 @@ void Idu::comb_fire() {
       br_num++;
     }
   }
-#endif
 }
 
 void Idu::seq() {
@@ -281,20 +289,7 @@ void Idu::seq() {
     tag_vec[i] = tag_vec_1[i];
     br_mask_cp[i] = br_mask_cp_1[i];
   }
-
-  // Latch Exu Branch Result
-  Assert(in.rob_bcast != nullptr && "Idu::seq: rob_bcast is null");
-  Assert(in.exu2id != nullptr && "Idu::seq: exu2id is null");
-  if (!in.rob_bcast->flush) {
-    br_latch.mispred = in.exu2id->mispred;
-    br_latch.redirect_pc = in.exu2id->redirect_pc;
-    br_latch.redirect_rob_idx = in.exu2id->redirect_rob_idx;
-    br_latch.br_id = in.exu2id->br_id;
-    br_latch.ftq_idx = in.exu2id->ftq_idx;
-    br_latch.clear_mask = in.exu2id->clear_mask;
-  } else {
-    br_latch = {};
-  }
+  br_latch = br_latch_1;
 }
 
 void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {

@@ -13,56 +13,54 @@ void predecode_checker_seq_read(struct predecode_checker_in *in,
   rd->inp_regs = *in;
 }
 
-void predecode_checker_comb(const struct predecode_checker_read_data *rd,
-                            struct predecode_checker_out *out) {
-  assert(rd);
-  assert(out);
-  std::memset(out, 0, sizeof(predecode_checker_out));
+void predecode_checker_comb(const predecode_checker_read_data &input,
+                            predecode_checker_out &output) {
+  std::memset(&output, 0, sizeof(predecode_checker_out));
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    switch (rd->inp_regs.predecode_type[i]) {
+    switch (input.inp_regs.predecode_type[i]) {
     case PREDECODE_NON_BRANCH:
-      out->predict_dir_corrected[i] = false;
+      output.predict_dir_corrected[i] = false;
       break;
     case PREDECODE_DIRECT_JUMP_NO_JAL:
-      out->predict_dir_corrected[i] = rd->inp_regs.predict_dir[i];
+      output.predict_dir_corrected[i] = input.inp_regs.predict_dir[i];
       break;
     case PREDECODE_JALR:
     case PREDECODE_JAL:
-      out->predict_dir_corrected[i] = true;
+      output.predict_dir_corrected[i] = true;
       break;
     default:
       std::printf("ERROR!!: predecode_type[%d] = %d\n", i,
-                  rd->inp_regs.predecode_type[i]);
+                  input.inp_regs.predecode_type[i]);
       std::exit(1);
     }
   }
 
   int first_taken_index = -1;
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    if (out->predict_dir_corrected[i]) {
+    if (output.predict_dir_corrected[i]) {
       first_taken_index = i;
       break;
     }
   }
 
-  out->predict_next_fetch_address_corrected =
-      rd->inp_regs.predict_next_fetch_address;
+  output.predict_next_fetch_address_corrected =
+      input.inp_regs.predict_next_fetch_address;
 
   if (first_taken_index != -1) {
-    if (rd->inp_regs.predecode_type[first_taken_index] ==
+    if (input.inp_regs.predecode_type[first_taken_index] ==
             PREDECODE_DIRECT_JUMP_NO_JAL ||
-        rd->inp_regs.predecode_type[first_taken_index] == PREDECODE_JAL) {
-      out->predict_next_fetch_address_corrected =
-          rd->inp_regs.predecode_target_address[first_taken_index];
+        input.inp_regs.predecode_type[first_taken_index] == PREDECODE_JAL) {
+      output.predict_next_fetch_address_corrected =
+          input.inp_regs.predecode_target_address[first_taken_index];
     }
   } else {
-    out->predict_next_fetch_address_corrected = rd->inp_regs.seq_next_pc;
+    output.predict_next_fetch_address_corrected = input.inp_regs.seq_next_pc;
   }
 
-  out->predecode_flush_enable =
-      (rd->inp_regs.predict_next_fetch_address !=
-       out->predict_next_fetch_address_corrected);
+  output.predecode_flush_enable =
+      (input.inp_regs.predict_next_fetch_address !=
+       output.predict_next_fetch_address_corrected);
 }
 
 void predecode_checker_seq_write() {}

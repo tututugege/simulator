@@ -83,6 +83,15 @@ struct RenDecIO {
   RenDecIO() { ready = {}; }
 };
 
+// IDU -> PreIduQueue consume handshake (only what PreIduQueue needs).
+struct IduConsumeIO {
+  wire<1> fire[DECODE_WIDTH];
+  IduConsumeIO() {
+    for (auto &v : fire)
+      v = {};
+  }
+};
+
 struct DecFrontIO {
 
   wire<1> fire[FETCH_WIDTH];
@@ -168,6 +177,11 @@ struct FrontDecIO {
   }
 };
 
+// Naming aliases to reflect actual topology:
+// Front-end -> PreQueue and PreQueue -> Front-end.
+using FrontPreIO = FrontDecIO;
+using PreFrontIO = DecFrontIO;
+
 struct DecBroadcastIO {
 
   wire<1> mispred;
@@ -250,19 +264,18 @@ struct FtqRobPcRespIO {
   }
 };
 
-struct PreIduIssueIO {
+struct PreIssueIO {
   InstructionBufferEntry entries[DECODE_WIDTH];
-  wire<32> pc[DECODE_WIDTH];
 
-  PreIduIssueIO() {
+  PreIssueIO() {
     for (auto &e : entries) {
       e = {};
     }
-    for (auto &v : pc) {
-      v = {};
-    }
   }
 };
+
+// Backward-compatible alias for existing modules.
+using PreIduIssueIO = PreIssueIO;
 
 struct RobCommitIO {
   struct RobCommitInst {
@@ -280,7 +293,10 @@ struct RobCommitIO {
 
     wire<1> dest_en;
     wire<7> func7;
+    wire<ROB_IDX_WIDTH> rob_idx;
+    wire<1> rob_flag;
     wire<STQ_IDX_WIDTH> stq_idx;
+    wire<1> stq_flag;
 
     wire<1> page_fault_inst;
     wire<1> page_fault_load;
@@ -308,7 +324,10 @@ struct RobCommitIO {
       dst.uop.br_taken = br_taken;
       dst.uop.dest_en = dest_en;
       dst.uop.func7 = func7;
+      dst.uop.rob_idx = rob_idx;
+      dst.uop.rob_flag = rob_flag;
       dst.uop.stq_idx = stq_idx;
+      dst.uop.stq_flag = stq_flag;
       dst.uop.page_fault_inst = page_fault_inst;
       dst.uop.page_fault_load = page_fault_load;
       dst.uop.page_fault_store = page_fault_store;
@@ -1108,14 +1127,14 @@ struct MemRespIO {
   }
 };
 
-struct PeripheralInIO {
+struct PeripheralReqIO {
   wire<1> is_mmio;
   wire<1> wen;
   wire<32> mmio_addr;
   wire<32> mmio_wdata;
   MicroOp uop;
 
-  PeripheralInIO() {
+  PeripheralReqIO() {
     is_mmio = {};
     wen = {};
     mmio_addr = {};
@@ -1123,23 +1142,18 @@ struct PeripheralInIO {
     uop = {};
   }
 };
-struct PeripheralOutIO {
+struct PeripheralRespIO {
   wire<1> is_mmio;
   wire<1> ready;
   wire<32> mmio_rdata;
   MicroOp uop;
 
-  PeripheralOutIO() {
+  PeripheralRespIO() {
     is_mmio = {};
     ready = {};
     mmio_rdata = {};
     uop = {};
   }
-};
-
-struct PeripheralIO {
-  PeripheralInIO in;
-  PeripheralOutIO out;
 };
 
 // STQ 条目结构（定义在此以供 StoreReq 使用）

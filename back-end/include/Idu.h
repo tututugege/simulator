@@ -14,6 +14,7 @@ struct IduIn {
 struct IduOut {
   DecRenIO *dec2ren;
   DecBroadcastIO *dec_bcast;
+  IduConsumeIO *idu_consume;
 };
 
 class Idu {
@@ -47,4 +48,5 @@ public:
   wire<BR_MASK_WIDTH> br_mask_cp_1[MAX_BR_NUM];
   wire<BR_MASK_WIDTH> pending_free_mask_1;
   wire<1> tag_vec_1[MAX_BR_NUM];
+  ExuIdIO br_latch_1;
 };
