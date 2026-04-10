@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 
 #if CONFIG_REAL_LSU_RANDOM_TEST
 #undef Assert
@@ -111,6 +112,19 @@ void ring_queue_remove_if(MicroOp (&queue)[N], HeadT &head, TailT &tail,
   head = 0;
   count = kept_count;
   tail = kept_count % static_cast<int>(N);
+}
+
+template <typename T>
+inline void zero_trivial_object(T &obj) {
+  static_assert(std::is_trivially_copyable_v<T>);
+  std::memset(static_cast<void *>(&obj), 0, sizeof(T));
+}
+
+template <typename T>
+inline void copy_trivial_object(T &dst, const T &src) {
+  static_assert(std::is_trivially_copyable_v<T>);
+  std::memcpy(static_cast<void *>(&dst), static_cast<const void *>(&src),
+              sizeof(T));
 }
 } // namespace
 
@@ -404,13 +418,13 @@ void RealLsu::move_speculative_front_to_committed(LsuState &state) {
 }
 
 void RealLsu::init() {
-  cur = {};
-  nxt = {};
+  zero_trivial_object(cur);
+  zero_trivial_object(nxt);
   {
     auto &state = cur;
     empty_stq_tag = make_store_tag(0, false);
   }
-  nxt = cur;
+  copy_trivial_object(nxt, cur);
   mmu->flush();
   mmu->seq();
 }
@@ -580,7 +594,7 @@ void RealLsu::begin_load_response_wait(LdqEntry &entry) {
 
 void RealLsu::comb_lsu2dis_info() {
   prepare_runtime_state(cur);
-  nxt = cur;
+  copy_trivial_object(nxt, cur);
   const auto &state = cur;
   const StoreTag tail_tag = current_stq_tail_tag(state);
   out.lsu2dis->stq_tail = tail_tag.idx;
