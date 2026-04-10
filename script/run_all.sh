@@ -111,6 +111,11 @@ for ((worker=0; worker<MAX_JOBS; worker++)); do
             ckpt_basename=$(basename "$ckpt_file" .gz)
             log_file="$RESULT_DIR/$bench_name/${ckpt_basename}.log"
 
+            if [ -f "$log_file" ] && grep -q 'Success!!!!' "$log_file"; then
+                echo "[Skip] Core $(printf "%03d" $core) | $bench_name/$ckpt_basename"
+                continue
+            fi
+
             taskset -c "$core" $SIMULATOR --mode ckpt -w "$MAX_COMMIT_INST" "$ckpt_file" > "$log_file" 2>&1
 
             if [ $? -eq 0 ]; then

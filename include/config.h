@@ -28,7 +28,7 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 #define CONFIG_TLB_MMU
 #define CONFIG_ORACLE_STEADY_FETCH_WIDTH
 
@@ -50,8 +50,8 @@ constexpr uint64_t MAX_SIM_TIME = 1000000000000ULL; // 1T cycles (very large)
 // ============================================================
 // Frontend / Backend Width
 // ============================================================
-constexpr int FETCH_WIDTH = 4;
-constexpr int DECODE_WIDTH = 2;
+constexpr int FETCH_WIDTH = 16;
+constexpr int DECODE_WIDTH = 8;
 static_assert(FETCH_WIDTH > 0, "FETCH_WIDTH must be positive");
 static_assert(DECODE_WIDTH > 0, "DECODE_WIDTH must be positive");
 static_assert(DECODE_WIDTH <= FETCH_WIDTH,
