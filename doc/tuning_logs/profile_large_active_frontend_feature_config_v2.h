@@ -94,10 +94,10 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define TAGE_USE_ALT_CTR_BITS 4
 #endif
 #ifndef TAGE_USE_ALT_CTR_INIT
-#define TAGE_USE_ALT_CTR_INIT ((1 << (TAGE_USE_ALT_CTR_BITS - 1)) - 1)
+#define TAGE_USE_ALT_CTR_INIT -1
 #endif
 #ifndef TAGE_USE_ALT_CTR_USE_ALT_THRESHOLD
-#define TAGE_USE_ALT_CTR_USE_ALT_THRESHOLD (1 << (TAGE_USE_ALT_CTR_BITS - 1))
+#define TAGE_USE_ALT_CTR_USE_ALT_THRESHOLD 0
 #endif
 #ifndef TAGE_PROVIDER_WEAK_LOW
 #define TAGE_PROVIDER_WEAK_LOW 3
@@ -328,8 +328,7 @@ static_assert(COMMIT_WIDTH > 0, "COMMIT_WIDTH must be positive");
 #define FRONTEND_IDEAL_ICACHE_DUAL_REQ_ACTIVE 0
 #endif
 
-// 统一使用全局 config.h 中的 ICACHE_LINE_SIZE。
-// 真实 icache miss 延迟由 shared AXI / SimDDR 配置建模。
+// 统一使用全局 config.h 中的 ICACHE_LINE_SIZE / ICACHE_MISS_LATENCY
 
 // FIFO sizes
 #ifndef INSTRUCTION_FIFO_SIZE

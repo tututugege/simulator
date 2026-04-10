@@ -357,6 +357,50 @@ void RealDcache::stage2_comb() {
     AddrFields mshr_f = decode(mshr2dcache->fill.addr);
     PendingMissLine pending_miss_lines[LSU_LDU_COUNT + LSU_STA_COUNT] = {};
     int pending_miss_count = 0;
+    PendingMissLine same_cycle_store_alloc_lines[LSU_STA_COUNT] = {};
+    int same_cycle_store_alloc_count = 0;
+
+    {
+        uint32_t store_probe_free_entries = mshr_free_entries;
+        for (int i = 0; i < LSU_STA_COUNT; i++) {
+            const S1S2Reg::StoreSlot &slot = s1s2_cur.stores[i];
+            if (!slot.valid || slot.replayed) {
+                continue;
+            }
+
+            const AddrFields f = decode(slot.addr);
+            const uint32_t tag_expected = f.tag;
+
+            int hit_way = -1;
+            for (int w = 0; w < DCACHE_WAYS; w++) {
+                if (slot.valid_snap[w] && slot.tag_snap[w] == tag_expected) {
+                    hit_way = w;
+                    break;
+                }
+            }
+
+            const bool wb_merge_valid = wb2dcache->merge_resp[i].valid;
+            const bool wb_merge_busy = wb2dcache->merge_resp[i].busy;
+            const bool fill_match =
+                mshr2dcache->fill.valid && mshr_f.set_idx == slot.set_idx &&
+                mshr_f.tag == tag_expected;
+            const bool store_has_existing_owner =
+                pending_miss_contains(same_cycle_store_alloc_lines,
+                                      same_cycle_store_alloc_count,
+                                      slot.set_idx, tag_expected) ||
+                slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected);
+
+            if (hit_way >= 0 || wb_merge_valid || wb_merge_busy || fill_match ||
+                store_has_existing_owner || store_probe_free_entries == 0) {
+                continue;
+            }
+
+            pending_miss_add(same_cycle_store_alloc_lines,
+                             same_cycle_store_alloc_count, LSU_STA_COUNT,
+                             slot.set_idx, tag_expected);
+            store_probe_free_entries--;
+        }
+    }
 
     // ── Load ports ────────────────────────────────────────────────────────────
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
@@ -398,10 +442,15 @@ void RealDcache::stage2_comb() {
 
         AddrFields f          = decode(slot.addr);
         uint32_t tag_expected = f.tag;
+        const bool same_cycle_store_alloc =
+            pending_miss_contains(same_cycle_store_alloc_lines,
+                                  same_cycle_store_alloc_count, slot.set_idx,
+                                  tag_expected);
         const bool mshr_pending_line =
             pending_miss_contains(pending_miss_lines, pending_miss_count,
                                   slot.set_idx, tag_expected) ||
-            slot.mshr_hit || find_mshr_entry(slot.set_idx, tag_expected);
+            same_cycle_store_alloc || slot.mshr_hit ||
+            find_mshr_entry(slot.set_idx, tag_expected);
 
         uint32_t mem_val = 0;
         MicroOp response_uop = slot.uop;

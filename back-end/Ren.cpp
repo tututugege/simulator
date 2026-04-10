@@ -34,7 +34,6 @@ void Ren::init() {
   memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
 
   memcpy(free_vec_1, free_vec, PRF_NUM);
-
 }
 
 /*
@@ -109,6 +108,7 @@ void Ren::comb_alloc() {
  * 约束: 旁路仅来自同拍更早槽位；x0 写入不参与旁路；旁路优先于 spec_RAT 常规查表结果。
  */
 void Ren::comb_rename() {
+
   wire<PRF_IDX_WIDTH> src1_preg_normal[DECODE_WIDTH];
   wire<PRF_IDX_WIDTH> src1_preg_bypass[DECODE_WIDTH];
   wire<1> src1_bypass_hit[DECODE_WIDTH];
@@ -144,7 +144,7 @@ void Ren::comb_rename() {
       if (!inst_valid[j] || !inst_r[j].dest_en)
         continue;
 
-      // 架构寄存器0不能bypass
+      // Do not bypass from x0 writes (architectural x0 is always 0)
       if (inst_r[j].dest_areg == 0)
         continue;
 
@@ -165,7 +165,7 @@ void Ren::comb_rename() {
     }
   }
 
-  // 根据是否需要bypass选择 
+  // 重命名 (Rename)
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (src1_bypass_hit[i]) {
       out.ren2dis->uop[i].src1_preg = src1_preg_bypass[i];
@@ -184,7 +184,6 @@ void Ren::comb_rename() {
     } else {
       out.ren2dis->uop[i].old_dest_preg = old_dest_preg_normal[i];
     }
-
   }
 }
 
@@ -298,7 +297,9 @@ void Ren::comb_fire() {
     }
   } else if (in.dec_bcast->mispred) { // flush/mispred 不会同时发生
     const auto br_idx = in.dec_bcast->br_id;
+#ifdef CONFIG_BPU
     Assert(br_idx != 0 && "Ren: mispred br_id should not be zero");
+#endif
     for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = RAT_checkpoint[br_idx][i];
     }
@@ -360,10 +361,10 @@ void Ren ::comb_pipeline() {
       }
     }
   }
-
 }
 
 void Ren ::seq() {
+
   memcpy(inst_r, inst_r_1, DECODE_WIDTH * sizeof(DecRenIO::DecRenInst));
   memcpy(inst_valid, inst_valid_1, DECODE_WIDTH * sizeof(reg<1>));
   memcpy(spec_RAT, spec_RAT_1, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));

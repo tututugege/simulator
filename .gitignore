@@ -30,7 +30,6 @@ compile_commands.json
 
 # Cache and temporary files
 .cache/
-.codex
 .DS_Store
 *.tmp
 *.swp

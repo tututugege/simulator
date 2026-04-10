@@ -736,10 +736,16 @@ void SimCpu::front_cycle() {
     front.out = oracle_pending_out;
   }
 
+ #ifndef CONFIG_ORACLE_STEADY_FETCH_WIDTH
   bool no_taken = true;
+#endif
   for (int j = 0; j < FETCH_WIDTH; j++) {
+#ifdef CONFIG_ORACLE_STEADY_FETCH_WIDTH
+    back.in.valid[j] = front.out.FIFO_valid && front.out.inst_valid[j];
+#else
     back.in.valid[j] =
         no_taken && front.out.FIFO_valid && front.out.inst_valid[j];
+#endif
     back.in.pc[j] = front.out.pc[j];
     back.in.predict_next_fetch_address[j] =
         front.out.predict_next_fetch_address;
@@ -764,9 +770,11 @@ void SimCpu::front_cycle() {
       back.in.tage_idx[j][k] = front.out.tage_idx[j][k];
       back.in.tage_tag[j][k] = front.out.tage_tag[j][k];
     }
+#ifndef CONFIG_ORACLE_STEADY_FETCH_WIDTH
     if (back.in.valid[j] && front.out.predict_dir[j]) {
       no_taken = false;
     }
+#endif
   }
   perf_account_front_supply();
 #endif
@@ -825,8 +833,7 @@ void SimCpu::back2front_comb() {
       uint16_t loop_idx = 0;
       uint16_t loop_tag = 0;
 
-      const FTQEntry *entry =
-          back.pre->lookup_ftq_entry(inst->ftq_idx);
+      const FTQEntry *entry = back.pre->lookup_ftq_entry(inst->ftq_idx);
       if (entry != nullptr && entry->valid) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         alt_pred = entry->alt_pred[inst->ftq_offset];

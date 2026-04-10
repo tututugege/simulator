@@ -5,6 +5,7 @@
 
 struct FTQEntry {
   wire<32> start_pc;
+  wire<32> slot_pc[FETCH_WIDTH];
   wire<32> next_pc; // Predicted Target of the block
   wire<1> pred_taken_mask[FETCH_WIDTH];
   wire<32> tage_idx[FETCH_WIDTH][4]; // Moved from InstUop
@@ -30,6 +31,9 @@ struct FTQEntry {
   FTQEntry() {
     valid = false;
     start_pc = 0;
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      slot_pc[i] = 0;
+    }
     next_pc = 0;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       pred_taken_mask[i] = false;

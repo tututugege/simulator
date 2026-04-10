@@ -16,6 +16,8 @@
 #include <vector>
 #include <zlib.h>
 
+void init_diff_ckpt(CPU_state ckpt_state);
+
 void BackTop::init() {
   pre = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
@@ -313,7 +315,11 @@ void BackTop::comb() {
   idu->comb_fire();
 
   isu->comb_enq();
+  // Rob recovery was split out of comb_fire(); keep the original priority:
+  // branch rollback happens before enqueue, and global flush overrides both.
+  rob->comb_branch();
   rob->comb_fire();
+  rob->comb_flush();
   isu->comb_flush();
   lsu->comb_flush();
   pre->comb_fire();
@@ -503,7 +509,8 @@ void BackTop::restore_checkpoint(const std::string &filename) {
 
   // 1. 恢复 header + 状态
   gz_read_pod(file, ckpt_header);
-  Assert(ckpt_header.magic == kCkptMagic && "Error: Invalid checkpoint magic.");
+  Assert(ckpt_header.magic == kCkptMagic &&
+         "Error: Invalid checkpoint magic.");
   Assert(ckpt_header.version == kCkptVersion &&
          "Error: Unsupported checkpoint version.");
   Assert(ckpt_header.ram_size == static_cast<uint32_t>(kCkptSimpointRamBytes) &&
@@ -582,10 +589,11 @@ void BackTop::restore_checkpoint(const std::string &filename) {
     std::vector<uint8_t> io_bytes(range.size, 0);
     gz_read_exact(file, io_bytes.data(), io_bytes.size());
     for (uint32_t off = 0; off + 4 <= range.size; off += 4) {
-      const uint32_t word = static_cast<uint32_t>(io_bytes[off + 0]) |
-                            (static_cast<uint32_t>(io_bytes[off + 1]) << 8) |
-                            (static_cast<uint32_t>(io_bytes[off + 2]) << 16) |
-                            (static_cast<uint32_t>(io_bytes[off + 3]) << 24);
+      const uint32_t word =
+          static_cast<uint32_t>(io_bytes[off + 0]) |
+          (static_cast<uint32_t>(io_bytes[off + 1]) << 8) |
+          (static_cast<uint32_t>(io_bytes[off + 2]) << 16) |
+          (static_cast<uint32_t>(io_bytes[off + 3]) << 24);
       if (word != 0) {
         pmem_write(range.base + off, word);
       }

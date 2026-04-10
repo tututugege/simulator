@@ -1,6 +1,6 @@
 # Prf (Physical Register File) 设计文档
 
-## 1. 概述
+## 1. 概述 (Overview)
 `Prf` 位于 `Isu` 与 `Exu`/写回之间，核心职责：
 
 1. 为发射条目读取源操作数。
@@ -11,7 +11,8 @@
 
 ---
 
-## 2. 接口定义
+## 2. 接口定义 (Interface Definition)
+
 ### 2.1 输入接口
 
 | 信号/字段 | 来源 | 描述 |
@@ -27,15 +28,17 @@
 | 信号/字段 | 去向 | 描述 |
 | :--- | :--- | :--- |
 | `prf2exe->iss_entry[]` | Exu | 已补齐 `src*_rdata` 的发射条目 |
-| `prf_awake->wake[]` | Isu/Dispatch | Load 写回唤醒广播 |
+| `prf_awake->wake[]` | Isu/Rename | Load 写回唤醒广播 |
 
 ---
 
-## 3. 微架构设计
+## 3. 微架构设计 (Microarchitecture)
+
 ### 3.1 状态组织
 
 1. `reg_file[PRF_NUM]`：物理寄存器堆当前态。
 2. `inst_r[ISSUE_WIDTH]`：写回流水寄存器（上一拍 EXU 完成条目）。
+3. `_1` 副本用于组合阶段累积下一拍状态。
 
 ### 3.2 读旁路优先级
 `comb_read()` 中每个源操作数按以下顺序解析：
@@ -51,7 +54,8 @@
 
 ---
 
-## 4. 组合逻辑功能描述
+## 4. 组合逻辑功能描述 (Combinational Logic)
+
 ### 4.1 `comb_begin`
 - **功能描述**：复制 PRF 当前状态到 `_1` 工作副本。
 - **输入依赖**：`reg_file[]`、`inst_r[]`。
@@ -90,12 +94,8 @@
 
 ---
 
-## 5. 性能计数器
-当前 `Prf` 代码中未新增模块内专属计数器字段；相关统计复用全局性能统计路径。
+## 5. 资源占用 (Resource Usage)
 
----
-
-## 6. 资源占用
 | 名称 | 规格 | 描述 |
 | :--- | :--- | :--- |
 | `reg_file/reg_file_1` | `PRF_NUM * 32bit` | 物理寄存器堆与下一拍副本 |

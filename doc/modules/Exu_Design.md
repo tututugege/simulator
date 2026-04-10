@@ -1,6 +1,6 @@
 # Exu (Execution Unit) 设计文档
 
-## 1. 概述
+## 1. 概述 (Overview)
 `Exu` 负责执行来自 ISU/PRF 的 uop，并输出：
 
 1. 端口反压（`exe2iss`）
@@ -11,7 +11,8 @@
 
 ---
 
-## 2. 接口定义
+## 2. 接口定义 (Interface Definition)
+
 ### 2.1 输入接口
 
 | 信号/字段 | 来源 | 描述 |
@@ -39,36 +40,22 @@
 
 ---
 
-## 3. 微架构设计
+## 3. 微架构设计 (Microarchitecture)
+
 ### 3.1 FU 构建与端口映射
 `init()` 按 `GLOBAL_ISSUE_PORT_CONFIG` 为每个物理端口构建 FU 列表：
 
 1. `MUL/DIV/ALU/BRU/AGU/SDU/CSR/FP` 按 capability mask 挂载。
 2. `port_mappings[port].entries` 保存 `<fu, support_mask>` 路由项。
-3. 运行时按 `uop.op` 在该端口的固定候选集合中进行组合选择。
+3. 运行时按 `uop.op` 在该端口路由表中选择目标 FU。
 
-### 3.2 软件配置与硬件的关系
-`Exu` 代码里使用 `GLOBAL_ISSUE_PORT_CONFIG` 和 `port_mappings`，这是**模拟器实现手段**，不是硬件运行时“查配置表再决定连线”。
-
-1. **每个端口连接哪些 FU**  
-   在硬件里是固定连线（编译期/综合期确定）。  
-   `init()` 的查表只是在软件里一次性构建这组固定关系。
-
-2. **`comb_exec` 的 FU 选择**  
-   在硬件语义上等价于“端口已知候选 FU 上的组合仲裁/选择逻辑”，  
-   不是访问可编程配置 RAM 的运行时查表行为。
-
-3. **`support_mask` 的语义**  
-   在硬件里可视作常量门控条件（译码后进入组合网络），  
-   在软件里以字段方式表达，便于参数化维护。
-
-### 3.3 三类结果路径
+### 3.2 三类结果路径
 
 1. FU 完成结果 -> `bypass`（优先广播）。
 2. 常规整数写回 + LSU 回调 -> `exe2prf->entry`。
-3. 非 killed 完成 -> `exu2rob->entry`（含来自 LSU 的 `wb_req/sta_wb_req` 回调在存活条件下同步回传 ROB）。
+3. 非 killed 完成 -> `exu2rob->entry`。
 
-### 3.4 分支恢复
+### 3.3 分支恢复
 
 1. BR 结果先汇总 `clear_mask`（所有已解析分支）。
 2. 若存在 mispred，选最老误预测分支作为重定向源。
@@ -76,7 +63,8 @@
 
 ---
 
-## 4. 组合逻辑功能描述
+## 4. 组合逻辑功能描述 (Combinational Logic)
+
 ### 4.1 `comb_begin`
 - **功能描述**：复制执行流水寄存器到 `_1` 工作副本。
 - **输入依赖**：`inst_r[]`。
@@ -99,7 +87,7 @@
 - **功能描述**：驱动 CSR 读写请求字段。
 - **输入依赖**：`inst_r[0]`, `rob_bcast->flush`, CSR 指令字段。
 - **输出更新**：`out.exe2csr->{we,re,idx,wcmd,wdata}`。
-- **约束/优先级**：非 CSR/flush 场景输出默认无请求；仅端口 0 的 CSR 指令参与驱动。
+- **约束/优先级**：非 CSR/flush 场景输出默认无请求。
 
 ### 4.5 `comb_pipeline`
 - **功能描述**：推进执行流水并处理 flush/mispred/clear。
@@ -115,23 +103,20 @@
 
 ---
 
-## 5. 性能计数器
-当前 `Exu` 代码中未新增模块内专属计数器字段；相关统计复用全局性能统计路径。
+## 5. FU 建模说明（特殊）
+`Exu` 下的各 FU 当前采用“软件对象 + 行为接口”建模：
+
+1. 统一继承 `AbstractFU`，通过 `can_accept/accept/get_finished_uop/pop_finished/tick` 建模时序行为。
+2. `port_mappings` 动态路由更接近“行为级端口交换矩阵”，非固定 RTL 结构网表。
+3. 文档中的 `FU` 应理解为周期准确行为模块，不等价于最终门级划分。
 
 ---
 
-## 6. 资源占用
+## 6. 资源占用 (Resource Usage)
+
 | 名称 | 规格 | 描述 |
 | :--- | :--- | :--- |
 | `inst_r`/`inst_r_1` | `ISSUE_WIDTH` | 执行级流水寄存器 |
 | `units` | 与配置相关 | 各类 FU 对象实例 |
-
----
-
-## 7. 附录：FU 建模说明（特殊）
-`Exu` 下的各 FU 当前采用“软件对象 + 行为接口”建模；其硬件语义应理解为固定端口拓扑上的执行与仲裁：
-
-1. 统一继承 `AbstractFU`，通过 `can_accept/accept/get_finished_uop/pop_finished/tick` 建模时序行为。
-2. `port_mappings` 在软件里是容器表示；在硬件语义里对应固定连线集合，而非运行时可变路由表。
-3. 文档中的 `FU` 应理解为周期准确行为模块，不等价于最终门级划分。
-4. 理论上我们希望 “指令交给FU -> FU执行 -> 接收FU结果” 这三个过程是解耦合的。
+| `port_mappings` | `ISSUE_WIDTH` | 端口到 FU 的能力路由表 |
+| `issue_stall` | `ISSUE_WIDTH` | 每端口发射阻塞标记 |

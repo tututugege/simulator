@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 
 #if CONFIG_REAL_LSU_RANDOM_TEST
 #undef Assert
@@ -30,6 +31,13 @@ namespace {
 inline bool stq_entry_matches_uop(const StqEntry &entry, const MicroOp &uop) {
   return entry.valid && entry.rob_idx == uop.rob_idx &&
          entry.rob_flag == uop.rob_flag;
+}
+
+inline bool addr_in_range(uint32_t addr, uint32_t base, uint32_t size) {
+  if (addr < base) {
+    return false;
+  }
+  return static_cast<uint64_t>(addr - base) < static_cast<uint64_t>(size);
 }
 
 template <size_t N>
@@ -104,6 +112,19 @@ void ring_queue_remove_if(MicroOp (&queue)[N], HeadT &head, TailT &tail,
   head = 0;
   count = kept_count;
   tail = kept_count % static_cast<int>(N);
+}
+
+template <typename T>
+inline void zero_trivial_object(T &obj) {
+  static_assert(std::is_trivially_copyable_v<T>);
+  std::memset(static_cast<void *>(&obj), 0, sizeof(T));
+}
+
+template <typename T>
+inline void copy_trivial_object(T &dst, const T &src) {
+  static_assert(std::is_trivially_copyable_v<T>);
+  std::memcpy(static_cast<void *>(&dst), static_cast<const void *>(&src),
+              sizeof(T));
 }
 } // namespace
 
@@ -397,13 +418,13 @@ void RealLsu::move_speculative_front_to_committed(LsuState &state) {
 }
 
 void RealLsu::init() {
-  cur = {};
-  nxt = {};
+  zero_trivial_object(cur);
+  zero_trivial_object(nxt);
   {
     auto &state = cur;
     empty_stq_tag = make_store_tag(0, false);
   }
-  nxt = cur;
+  copy_trivial_object(nxt, cur);
   mmu->flush();
   mmu->seq();
 }
@@ -573,7 +594,7 @@ void RealLsu::begin_load_response_wait(LdqEntry &entry) {
 
 void RealLsu::comb_lsu2dis_info() {
   prepare_runtime_state(cur);
-  nxt = cur;
+  copy_trivial_object(nxt, cur);
   const auto &state = cur;
   const StoreTag tail_tag = current_stq_tail_tag(state);
   out.lsu2dis->stq_tail = tail_tag.idx;
@@ -943,11 +964,13 @@ void RealLsu::comb_recv() {
           older_entry.done || older_entry.suppress_write) {
         continue;
       }
-      // Preserve program order for same-address stores until the older
-      // store is fully acknowledged. Otherwise a bank-conflict replay can
-      // let an older store reissue after a younger one and overwrite the
-      // newer value.
-      if (older_entry.p_addr == entry.p_addr) {
+      // Preserve program order for overlapping stores within the same
+      // 32-bit word until the older store is fully acknowledged. Exact
+      // address equality is not enough: an older `sw @0x...b4` and a
+      // younger `sb @0x...b7` still overlap architecturally, and letting
+      // the younger merge first can make a later replayed `sw` clobber the
+      // byte update.
+      if ((older_entry.p_addr & ~0x3u) == (entry.p_addr & ~0x3u)) {
         continue_flag = true;
         break;
       }

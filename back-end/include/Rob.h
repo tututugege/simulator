@@ -138,6 +138,8 @@ public:
   void comb_commit();
   void comb_complete();
   void comb_fire();
+  void comb_branch();
+  void comb_flush();
 
   RobIn in;
   RobOut out;

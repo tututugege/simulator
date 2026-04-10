@@ -109,31 +109,10 @@ void MSHR::comb_outputs()
     out.axi_out.req_addr = 0;
     out.axi_out.req_total_size = 0;
     out.axi_out.req_id = 0;
-    // Default to ready; may be deasserted when WB backpressure prevents
-    // consuming the current-cycle AXI read response.
+    // Default to ready. The final next-cycle credit is refined again in
+    // comb_inputs() after we know whether a live response was captured into the
+    // local hold slot or whether a held response was successfully consumed.
     out.axi_out.resp_ready = true;
-
-    // While the local hold slot is occupied, block new live R traffic so the
-    // interconnect cannot retire a second response that this MSHR would miss.
-    if (cur.axi_resp_hold_valid) {
-        out.axi_out.resp_ready = false;
-    } else if (in.axi_in.resp_valid) {
-        const uint8_t resp_id = in.axi_in.resp_id;
-        if (resp_id < DCACHE_MSHR_ENTRIES) {
-            const MSHREntry &e = mshr_entries[resp_id];
-            if (e.valid && e.issued && !e.fill) {
-                const uint32_t lru_idx = choose_lru_victim(e.index);
-                const bool same_cycle_store_hit =
-                    victim_has_same_cycle_store_hit(in.dcachemshr, e.index,
-                                                    lru_idx);
-                const bool need_wb_evict =
-                    dirty_array[e.index][lru_idx] || same_cycle_store_hit;
-                if (need_wb_evict && !in.wbmshr.ready) {
-                    out.axi_out.resp_ready = false;
-                }
-            }
-        }
-    }
 
     for(int i=0; i<DCACHE_MSHR_ENTRIES; i++){
         const MSHREntry &ce = mshr_entries[i];
@@ -196,22 +175,12 @@ void MSHR::comb_inputs()
     nxt.wb_addr = 0;
     std::memset(nxt.wb_data, 0, sizeof(nxt.wb_data));
 
-    out.axi_out.resp_ready = true;
-    if (cur.axi_resp_hold_valid) {
-        out.axi_out.resp_ready = false;
-    } else if (in.axi_in.resp_valid) {
-        const uint8_t rid = in.axi_in.resp_id;
-        if (rid < DCACHE_MSHR_ENTRIES) {
-            const MSHREntry re = mshr_entries[rid];
-            if (re.valid && re.issued && !re.fill) {
-                const uint32_t lru_idx = choose_lru_victim(re.index);
-                const bool need_wb_evict = dirty_array[re.index][lru_idx];
-                if (need_wb_evict && !in.wbmshr.ready) {
-                    out.axi_out.resp_ready = false;
-                }
-            }
-        }
-    }
+    // This ready is sampled by the interconnect in the next cycle. If we
+    // capture a live response into the local hold slot this cycle, keep ready
+    // asserted so the interconnect can retire the duplicated live copy on the
+    // following cycle. Once hold is still occupied in a later cycle and we
+    // still cannot consume it, deassert ready to block subsequent responses.
+    out.axi_out.resp_ready = !cur.axi_resp_hold_valid;
 
     // ── Process alloc and secondary requests ─────────────────────────────────
     for (int i = 0; i < LSU_LDU_COUNT; i++)
@@ -266,11 +235,21 @@ void MSHR::comb_inputs()
                         nxt.axi_resp_hold_id = resp_id;
                         std::memcpy(nxt.axi_resp_hold_data, resp_data,
                                     sizeof(nxt.axi_resp_hold_data));
+                        // The live copy is now safely buffered locally. Keep
+                        // next-cycle ready asserted once so the interconnect
+                        // can retire that live copy instead of replaying it
+                        // after hold is eventually released.
+                        out.axi_out.resp_ready = true;
+                    }
+                    else
+                    {
+                        out.axi_out.resp_ready = false;
                     }
                 }
                 else
                 {
                     nxt.axi_resp_hold_valid = false;
+                    out.axi_out.resp_ready = true;
                     const uint32_t fill_line_addr = get_addr(fill_set, fill_tag, 0);
                     if (need_wb_evict)
                     {

@@ -298,10 +298,10 @@ LSU 发出的请求内容：
 
 ### 7.1 什么时候进入 single commit
 
-当前实现只看 ROB 队头行里“最老 valid 指令”（first valid bank）：
+只要满足以下任一条件，ROB 当前出队行就转成 single-commit：
 
-1. 若该最老指令是 flush 类指令，则走 single-commit
-2. 或 `interrupt_pending = in.csr2rob->interrupt_req`，也走 single-commit
+1. 该行里有 flush 类指令
+2. `interrupt_pending = in.csr2rob->interrupt_req`
 
 ### 7.2 当前 interrupt 的优先级
 
@@ -398,29 +398,26 @@ LSU 发出的请求内容：
 
 这条指令的寄存器结果不会表现为“已经执行”
 
-### 10.2 commit_sync 的 store side-effect 边界（现状）
+### 10.2 commit_sync 不做 store side-effect
 
 - [rv_simu_mmu_v2.cpp](/home/tututu/qimeng/simulator/rv_simu_mmu_v2.cpp)
   - `SimCpu::commit_sync()`
 
-当前代码没有单独的 `interrupt_commit` 开关分支；`on_commit_store()` 是否调用取决于：
+当 `interrupt_commit == true` 时：
 
-1. 该提交项被视为 store（`mem_commit_is_store`）
-2. 非 store page fault
-3. STQ 条目 `addr_valid && data_valid`（以及 SC 抑制等约束）
+- 不调用 `mem_subsystem.on_commit_store()`
 
-因此 interrupt 语义下“是否产生 store side-effect”是通过 ROB/LSU 提交与 STQ 有效性共同约束实现，而不是在 `commit_sync()` 里显式用 `interrupt_commit` 直接短路。
+所以 interrupt 截断的指令不会在 commit 阶段产生 MMIO store 副作用。
 
 ### 10.3 difftest 不暴露 store/page-fault
 
 - [rv_simu_mmu_v2.cpp](/home/tututu/qimeng/simulator/rv_simu_mmu_v2.cpp)
   - `SimCpu::difftest_prepare()`
 
-当前实现也没有 `interrupt_commit` 专用分支。difftest sideband 的主要约束是：
+当 `interrupt_commit == true` 时：
 
-1. store sideband 仅在提交项被识别为 store 且 STQ `addr_valid && data_valid` 时输出；
-2. 当 sideband 尚未就绪时，使用 `*skip = true` 跳过该条逐条比对；
-3. `page_fault_*` 直接来自提交项本身字段，不在这里因 interrupt 额外强制清零。
+- 不向 difftest 暴露 store sideband
+- 强制 `page_fault_inst/load/store = false`
 
 因此当前 interrupt 语义更接近：
 

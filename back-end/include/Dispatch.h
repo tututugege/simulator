@@ -99,9 +99,8 @@ private:
   int ldq_port_owner[MAX_LDQ_DISPATCH_WIDTH];
 
   struct DispatchCache {
-    int count; // 拆分数量
-    int iq_ids[MAX_UOPS_PER_INST];
-    DisIssIO::DisIssUop uops[MAX_UOPS_PER_INST];
+    int count;                     // 拆分数量
+    int iq_ids[MAX_UOPS_PER_INST]; // 仅保存目标 IQ 的 ID
   };
 
   // 用于在 comb_dispatch 和 comb_fire 之间传递数据

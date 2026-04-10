@@ -28,8 +28,9 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+// #define CONFIG_BPU
 #define CONFIG_TLB_MMU
+// #define CONFIG_ORACLE_STEADY_FETCH_WIDTH
 
 // Replay throttling heuristics.
 constexpr int REPLAY_STORE_COUNT_UPPER_BOUND = 32;
@@ -208,8 +209,8 @@ constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 // SimPoint
 // ============================================================
 
-constexpr int WARMUP = 10000000;
-constexpr int SIMPOINT_INTERVAL = 10000000;
+constexpr int WARMUP = 100000000;
+constexpr int SIMPOINT_INTERVAL = 100000000;
 
 // ============================================================
 // FTQ/INST BUFFER

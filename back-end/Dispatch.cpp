@@ -36,7 +36,6 @@ void Dispatch::init() {
     dispatch_cache[i].count = 0;
     for (int k = 0; k < MAX_UOPS_PER_INST; k++) {
       dispatch_cache[i].iq_ids[k] = 0;
-      dispatch_cache[i].uops[k] = {};
     }
   }
   for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
@@ -184,12 +183,19 @@ void Dispatch::comb_wake() {
 
 /*
  * comb_dispatch
- * 功能: 拆分宏指令并进行 IQ 容量可行性检查，缓存拆分结果供 comb_fire 最终落地请求。
+ * 功能: 拆分宏指令为 uop 并尝试写入各 IQ 请求端口，同时缓存拆分元数据供 comb_fire 回滚。
  * 输入依赖: inst_valid, inst_alloc, in.iss2dis->ready_num, GLOBAL_IQ_CONFIG（dispatch_width）, decompose_inst()。
- * 输出更新: dispatch_success_flags[], dispatch_cache[], out.dis2rob->uop[i].expect_mask/cplt_mask。
+ * 输出更新: out.dis2iss->req[][], dispatch_success_flags[], dispatch_cache[], out.dis2rob->uop[i].expect_mask/cplt_mask。
  * 约束: 按槽位顺序分配 IQ 端口；任一槽位不满足容量后停止后续槽位分配。
  */
 void Dispatch::comb_dispatch() {
+  // 1. 清空输出 req
+  for (int i = 0; i < IQ_NUM; i++) {
+    for (int w = 0; w < MAX_IQ_DISPATCH_WIDTH; w++) {
+      out.dis2iss->req[i][w].valid = false;
+    }
+  }
+
   int iq_usage[IQ_NUM] = {0};
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
@@ -203,8 +209,6 @@ void Dispatch::comb_dispatch() {
 
     // === 1. 临时拆分 (Full Data) ===
     // 在栈上分配，用完即弃，不占用类成员空间
-    // 对于硬件而言没有所谓的temp_uops，每个inst_r槽位都有到所有iq的硬连线
-    // 而temp_uop的个数就是其中有效uop的个数
     UopPacket temp_uops[MAX_UOPS_PER_INST];
     int cnt = decompose_inst(inst_alloc[i], temp_uops);
 
@@ -216,14 +220,14 @@ void Dispatch::comb_dispatch() {
     }
     if (decode_inst_type(inst_alloc[i].type) == AMO &&
         ((inst_alloc[i].func7 >> 2) == AmoOp::SC)) {
-      // 对于SC指令，需要写寄存器，其STA会被伪装成为一个Load Uop走提交路径，所以这里的mask和普通Store不一样
+      // SC returns architectural 0/1 through load-like wb path and still has
+      // STD completion.
       expect_mask = ROB_CPLT_G0 | ROB_CPLT_G2;
     }
     inst_alloc[i].expect_mask = expect_mask;
     inst_alloc[i].cplt_mask = 0;
     for (int k = 0; k < cnt; k++) {
       dispatch_cache[i].iq_ids[k] = temp_uops[k].iq_id;
-      dispatch_cache[i].uops[k] = temp_uops[k].uop;
     }
 
     // === 3. 检查容量 ===
@@ -240,14 +244,18 @@ void Dispatch::comb_dispatch() {
       }
     }
 
-    // === 4. 记录可行性 ===
-    // 可行性包括：iq容量是否够？同一个inst的多个uop是否能同时被接受？
+    // === 4. 提交发射请求 ===
     if (fit) {
       dispatch_success_flags[i] = true;
       out.dis2rob->uop[i].expect_mask = expect_mask;
       out.dis2rob->uop[i].cplt_mask = 0;
       for (int k = 0; k < cnt; k++) {
         int target = temp_uops[k].iq_id;
+        int slot = iq_usage[target];
+
+        out.dis2iss->req[target][slot].valid = true;
+        out.dis2iss->req[target][slot].uop = temp_uops[k].uop;
+
         iq_usage[target]++;
       }
     } else {
@@ -258,9 +266,9 @@ void Dispatch::comb_dispatch() {
 
 /*
  * comb_fire
- * 功能: 计算最终 dis_fire 与 dis2ren.ready，提交 busy_table 更新，并根据 fire 结果生成 IQ/LSU 请求。
+ * 功能: 计算最终 dis_fire 与 dis2ren.ready，提交 busy_table 更新，并根据 fire 成败确认/回滚 IQ 与 LSU 请求。
  * 输入依赖: out.dis2rob->valid, dispatch_success_flags, dispatch_cache, inst_valid/inst_r/inst_alloc, in.rob2dis, in.rob_bcast, in.dec_bcast, in.prf_awake, in.iss_awake。
- * 输出更新: out.dis2rob->dis_fire[], out.dis2ren->ready, out.dis2iss->req[][], out.dis2lsu->{alloc_req/ldq_alloc_req/...}, busy_table_1。
+ * 输出更新: out.dis2rob->dis_fire[], out.dis2ren->ready, out.dis2iss->req[][]（回滚后结果）, out.dis2lsu->{alloc_req/ldq_alloc_req/...}, busy_table_1。
  * 约束: flush/mispred/stall 阻断发射；CSR/AMO 需满足串行化条件；older 指令阻塞后续槽位发射。
  */
 void Dispatch::comb_fire() {
@@ -299,7 +307,7 @@ void Dispatch::comb_fire() {
       return DIS2REN_DISPATCH_DETAIL_OTHER;
     }
 
-    // LDQ STQ 容量不足
+    // LSU allocation reject in comb_alloc.
     if (!out.dis2rob->valid[slot_idx]) {
       if (is_load(inst_r[slot_idx])) {
         return DIS2REN_DISPATCH_DETAIL_LDQ;
@@ -309,7 +317,7 @@ void Dispatch::comb_fire() {
       }
     }
 
-    // IQ 容量或端口不足
+    // IQ capacity/port reject in comb_dispatch.
     if (!dispatch_success_flags[slot_idx]) {
       int iq_used[IQ_NUM] = {0};
       for (int j = 0; j < slot_idx; j++) {
@@ -431,35 +439,6 @@ void Dispatch::comb_fire() {
       pre_fire = true;
   }
 
-  // === 步骤 2: 生成最终的 IQ 请求 ===
-  // 注意: dis2iss->req 仅在 comb_fire 写，comb_dispatch 只产出缓存。
-  for (int iq = 0; iq < IQ_NUM; iq++) {
-    for (int w = 0; w < MAX_IQ_DISPATCH_WIDTH; w++) {
-      out.dis2iss->req[iq][w].valid = false;
-      out.dis2iss->req[iq][w].uop = {};
-    }
-  }
-
-  int iq_slot_idx[IQ_NUM] = {0};
-  for (int i = 0; i < DECODE_WIDTH; i++) {
-    if (!inst_valid[i]) {
-      continue;
-    }
-    if (!dispatch_success_flags[i]) {
-      break;
-    }
-    int cnt = dispatch_cache[i].count;
-    for (int k = 0; k < cnt; k++) {
-      int target = dispatch_cache[i].iq_ids[k];
-      int slot = iq_slot_idx[target];
-      if (out.dis2rob->dis_fire[i]) {
-        out.dis2iss->req[target][slot].valid = true;
-        out.dis2iss->req[target][slot].uop = dispatch_cache[i].uops[k];
-      }
-      iq_slot_idx[target]++;
-    }
-  }
-
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (out.dis2rob->dis_fire[i] && inst_r[i].dest_en) {
       busy_table_1[inst_r[i].dest_preg] = true;
@@ -468,6 +447,37 @@ void Dispatch::comb_fire() {
 
   // 更新 Rename 单元的 Ready 信号
   out.dis2ren->ready = !pre_stall;
+
+  // === 步骤 2: 撤销无效的 IQ 请求 (回滚) ===
+  int iq_slot_idx[IQ_NUM] = {0};
+
+  for (int i = 0; i < DECODE_WIDTH; i++) {
+    if (!inst_valid[i])
+      continue;
+    if (!dispatch_success_flags[i])
+      break;
+
+    // 从缓存读取元数据
+    int cnt = dispatch_cache[i].count;
+
+    if (!out.dis2rob->dis_fire[i]) {
+      // Fire 失败 -> 撤销请求
+      for (int k = 0; k < cnt; k++) {
+        // 直接使用缓存的 ID
+        int target = dispatch_cache[i].iq_ids[k];
+        int slot = iq_slot_idx[target];
+
+        out.dis2iss->req[target][slot].valid = false; // 撤销！
+        iq_slot_idx[target]++;
+      }
+    } else {
+      // Fire 成功 -> 跳过
+      for (int k = 0; k < cnt; k++) {
+        int target = dispatch_cache[i].iq_ids[k];
+        iq_slot_idx[target]++;
+      }
+    }
+  }
 
   // === 步骤 3: 更新 STQ 的 Fire 信号 ===
   for (int k = 0; k < MAX_STQ_DISPATCH_WIDTH; k++) {
@@ -569,9 +579,12 @@ void Dispatch::comb_fire() {
   bool any_ldq_full_stall = false;
   bool any_stq_full_stall = false;
 
+  // Analyze stall reasons for each slot
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (!out.dis2rob->dis_fire[i] && inst_valid[i]) {
 
+      // Priority: ROB > LSU > IQ
+      // If ROB is full/stalled
       if (!in.rob2dis->ready) { // ROB Full
         any_rob_full_stall = true;
         if (in.rob2dis->tma.head_is_memory && in.rob2dis->tma.head_not_ready) {
