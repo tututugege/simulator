@@ -27,7 +27,7 @@ void BackTop::init() {
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new RealLsu(ctx);
-  lsu->set_csr(csr);
+  
   out.fire = pre2front.fire;
 
   pre->out.pre2front = &pre2front;
@@ -135,11 +135,13 @@ void BackTop::init() {
   lsu->in.rob_bcast = &rob_bcast;
   lsu->in.dec_bcast = &dec_bcast;
   lsu->in.rob_commit = &rob_commit;
-  lsu->in.dcache2lsu = &dcache2lsu_io;
+  lsu->in.peripheral_resp = &peripheral_resp_io;
+  lsu->in.dcache2lsu  = &dcache2lsu_io;
 
   lsu->out.lsu2exe = &lsu2exe;
   lsu->out.lsu2dis = &lsu2dis;
   lsu->out.lsu2rob = &lsu2rob;
+  lsu->out.peripheral_req = &peripheral_req_io;
   lsu->out.lsu2dcache = &lsu2dcache_io;
 
   pre->init();
@@ -213,6 +215,8 @@ void BackTop::comb() {
   lsu2exe = {};
   lsu2dis = {};
   lsu2rob = {};
+  peripheral_req_io = {};
+  peripheral_resp_io = {};
   lsu2dcache_io = {};
 #endif
 
@@ -235,6 +239,7 @@ void BackTop::comb() {
   prf->comb_awake();
   prf->comb_write();
   isu->comb_ready();
+  lsu->comb_cal();
   lsu->comb_lsu2dis_info();
 
   idu->comb_branch();

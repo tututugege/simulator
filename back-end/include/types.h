@@ -178,7 +178,6 @@ struct MicroOp {
   TmaMeta tma;
   DebugMeta dbg;
   wire<1> flush_pipe;
-  int64_t cplt_time;
 
   MicroOp() { std::memset(this, 0, sizeof(MicroOp)); }
 
@@ -230,7 +229,6 @@ struct MicroOp {
     this->dbg.mem_align_mask = info.dbg.mem_align_mask;
     this->dbg.difftest_skip = info.dbg.difftest_skip;
     this->dbg.inst_idx = info.dbg.inst_idx;
-    this->cplt_time = 0;
     this->flush_pipe = info.flush_pipe;
   }
 };

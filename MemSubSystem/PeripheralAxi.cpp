@@ -32,8 +32,8 @@ void PeripheralAxi::init() {
   out = {};
   cur = {};
   nxt = {};
-  if (peripheral_io != nullptr) {
-    peripheral_io->out = {};
+  if (peripheral_resp != nullptr) {
+    *peripheral_resp = {};
   }
 }
 
@@ -92,13 +92,13 @@ uint32_t PeripheralAxi::extract_read_data(uint32_t raw, uint8_t func3) {
 void PeripheralAxi::comb_outputs() {
   out = {};
 
-  if (peripheral_io != nullptr) {
-    peripheral_io->out = {};
-    peripheral_io->out.ready = !cur.busy;
+  if (peripheral_resp != nullptr) {
+    *peripheral_resp = {};
+    peripheral_resp->ready = !cur.busy;
     if (cur.resp_valid) {
-      peripheral_io->out.is_mmio = 1;
-      peripheral_io->out.mmio_rdata = cur.rdata;
-      peripheral_io->out.uop = cur.uop;
+      peripheral_resp->is_mmio = 1;
+      peripheral_resp->mmio_rdata = cur.rdata;
+      peripheral_resp->uop = cur.uop;
     }
   }
 
@@ -139,49 +139,49 @@ void PeripheralAxi::comb_inputs() {
   }
 
   if (!cur.busy) {
-    if (peripheral_io != nullptr && peripheral_io->in.is_mmio) {
-      if (!peripheral_io->in.wen &&
-          is_local_special_read_addr(peripheral_io->in.mmio_addr)) {
+    if (peripheral_req != nullptr && peripheral_req->is_mmio) {
+      if (!peripheral_req->wen &&
+          is_local_special_read_addr(peripheral_req->mmio_addr)) {
         nxt.busy = false;
         nxt.write = false;
         nxt.req_accepted = false;
         nxt.resp_valid = true;
-        nxt.addr = peripheral_io->in.mmio_addr;
+        nxt.addr = peripheral_req->mmio_addr;
         nxt.wdata = 0;
         nxt.func3 = 0;
-        nxt.rdata = local_special_read_data(peripheral_io->in.mmio_addr);
+        nxt.rdata = local_special_read_data(peripheral_req->mmio_addr);
         nxt.req_id = 0;
-        nxt.uop = peripheral_io->in.uop;
+        nxt.uop = peripheral_req->uop;
         nxt.uop.dbg.difftest_skip = true;
         return;
       }
       if (peripheral_model != nullptr &&
-          PeripheralModel::is_modeled_mmio(peripheral_io->in.mmio_addr)) {
+          PeripheralModel::is_modeled_mmio(peripheral_req->mmio_addr)) {
         nxt.busy = false;
-        nxt.write = peripheral_io->in.wen;
+        nxt.write = peripheral_req->wen;
         nxt.req_accepted = false;
         nxt.resp_valid = true;
-        nxt.addr = peripheral_io->in.mmio_addr;
-        nxt.wdata = peripheral_io->in.mmio_wdata;
-        nxt.func3 = peripheral_io->in.uop.func3;
-        nxt.rdata = peripheral_io->in.wen
+        nxt.addr = peripheral_req->mmio_addr;
+        nxt.wdata = peripheral_req->mmio_wdata;
+        nxt.func3 = peripheral_req->uop.func3;
+        nxt.rdata = peripheral_req->wen
                         ? 0
-                        : peripheral_model->read_load(peripheral_io->in.mmio_addr,
+                        : peripheral_model->read_load(peripheral_req->mmio_addr,
                                                       nxt.func3);
         nxt.req_id = 0;
-        nxt.uop = peripheral_io->in.uop;
+        nxt.uop = peripheral_req->uop;
         return;
       }
       nxt.busy = true;
-      nxt.write = peripheral_io->in.wen;
+      nxt.write = peripheral_req->wen;
       nxt.req_accepted = false;
       nxt.resp_valid = false;
-      nxt.addr = peripheral_io->in.mmio_addr;
-      nxt.wdata = peripheral_io->in.mmio_wdata;
-      nxt.func3 = peripheral_io->in.uop.func3;
+      nxt.addr = peripheral_req->mmio_addr;
+      nxt.wdata = peripheral_req->mmio_wdata;
+      nxt.func3 = peripheral_req->uop.func3;
       nxt.rdata = 0;
       nxt.req_id = 0;
-      nxt.uop = peripheral_io->in.uop;
+      nxt.uop = peripheral_req->uop;
     }
     return;
   }
@@ -213,8 +213,8 @@ void PeripheralAxi::comb_inputs() {
     nxt.rdata = extract_read_data(in.read.resp_data[0], cur.func3);
   }
 
-  if (peripheral_io != nullptr) {
-    peripheral_io->out.ready = !nxt.busy;
+  if (peripheral_resp != nullptr) {
+    peripheral_resp->ready = !nxt.busy;
   }
 }
 

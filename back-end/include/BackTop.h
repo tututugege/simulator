@@ -80,6 +80,8 @@ private:
   LsuExeIO lsu2exe;
   LsuDisIO lsu2dis;
   LsuRobIO lsu2rob;
+  PeripheralReqIO peripheral_req_io;
+  PeripheralRespIO peripheral_resp_io;
   LsuDcacheIO lsu2dcache_io;   // LSU → DCache multi-port request bus
   DcacheLsuIO dcache2lsu_io;   // DCache → LSU multi-port response bus
 
@@ -114,6 +116,8 @@ public:
 
   Back_in in;
   Back_out out;
+  PeripheralReqIO *lsu_peripheral_req_io;    // → &peripheral_req_io
+  PeripheralRespIO *lsu_peripheral_resp_io;  // → &peripheral_resp_io
   LsuDcacheIO *lsu_dcache_req_io;   // → &lsu2dcache_io  (for MemSubsystem)
   DcacheLsuIO *lsu_dcache_resp_io;  // → &dcache2lsu_io  (for MemSubsystem)
   void init();
@@ -126,6 +130,8 @@ public:
     pre = nullptr;
     out.fire = nullptr;
     
+    lsu_peripheral_req_io = &peripheral_req_io;
+    lsu_peripheral_resp_io = &peripheral_resp_io;
     lsu_dcache_req_io  = &lsu2dcache_io;
     lsu_dcache_resp_io = &dcache2lsu_io;
   };

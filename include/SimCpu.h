@@ -18,10 +18,10 @@ class SimCpu {
   // 性能计数器
 public:
   SimCpu() : back(&this->ctx), mem_subsystem(&this->ctx) {};
+  SimContext ctx;
   BackTop back;
   FrontTop front;
   MemSubsystem mem_subsystem;
-  SimContext ctx;
   AxiInterconnectImpl axi_interconnect;
   AxiRouterImpl axi_router;
   AxiDdrImpl axi_ddr;

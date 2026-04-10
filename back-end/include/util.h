@@ -40,16 +40,24 @@ extern long long sim_time;
     }                                                                          \
   } while (0)
 
-// Custom Assert Macro to avoid WSL2 issues
+// Custom Assert Macro to avoid WSL2 issues.
+// Respect NDEBUG so release builds do not pay hot-path assertion cost.
+#ifdef NDEBUG
 #define Assert(cond)                                                           \
   do {                                                                         \
-    if (!(cond)) {                                                             \
+    (void)sizeof(cond);                                                        \
+  } while (0)
+#else
+#define Assert(cond)                                                           \
+  do {                                                                         \
+    if (__builtin_expect(!(cond), 0)) {                                        \
       printf("\033[1;31mAssertion failed: %s, file %s, line %d, cycle "        \
              "%lld\033[0m\n",                                                  \
              #cond, __FILE__, __LINE__, sim_time);                             \
       exit(1);                                                                 \
     }                                                                          \
   } while (0)
+#endif
 
 inline int get_rob_line(uint32_t rob_idx) { return rob_idx / ROB_BANK_NUM; }
 inline int get_rob_bank(uint32_t rob_idx) { return rob_idx % ROB_BANK_NUM; }
