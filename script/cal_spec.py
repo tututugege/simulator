@@ -5,12 +5,10 @@ import ast
 from datetime import datetime
 
 # ================= 用户配置区域 =================
-CPU_FREQ_GHZ = float(os.environ.get("CPU_FREQ_GHZ", "1.0"))
-LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_restore")
-WEIGHTS_DIR = os.environ.get(
-    "WEIGHTS_DIR", "/share/personal/S/houruyao/simpoint/rv32imab_bbv_10M"
-)
-DEBUG = os.environ.get("DEBUG", "1") not in ("0", "false", "False")
+CPU_FREQ_GHZ = 1.0
+LOG_ROOT_DIR = "./results_restore"
+WEIGHTS_DIR = "/share/personal/S/houruyao/simpoint/rv32imab_bbv_10M"
+DEBUG = True
 LOG_STATUS_REPORT = LOG_ROOT_DIR + "/log_status_report.txt"
 PERF_REPORT = LOG_ROOT_DIR + "/perf_report.txt"
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

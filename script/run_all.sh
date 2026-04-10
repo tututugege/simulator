@@ -1,15 +1,13 @@
 #!/bin/bash
 
 # ================= 配置区域 =================
-SIMULATOR="${SIMULATOR:-./build/simulator}"
-CKPT_ROOT="${CKPT_ROOT:-/share/personal/S/houruyao/simpoint/rv32imab_ckpt_10M}"
-RESULT_DIR="${RESULT_DIR:-./results_restore}"
-MAX_COMMIT_INST="${MAX_COMMIT_INST:-10000000}"
-CORE_START="${CORE_START:-0}"
+SIMULATOR="./build/simulator"
+CKPT_ROOT="/share/personal/S/houruyao/simpoint/rv32imab_ckpt_10M"
+RESULT_DIR="./results_restore"
 
 # 内存够的话建议等于可用的核心数 不用超线程
 # 一个进程需要8GB 开完美分支预测需要12GB
-MAX_JOBS="${MAX_JOBS:-64}"
+MAX_JOBS=64
 # ===========================================
 
 # 基础检查
@@ -28,8 +26,6 @@ echo "=================================================="
 echo "Start Time:     $(date)"
 echo "Mode:           Strict Physical Core Binding (FIFO Queue)"
 echo "Parallel Jobs:  $MAX_JOBS"
-echo "Core Range:     $CORE_START-$((CORE_START + MAX_JOBS - 1))"
-echo "Max Commit:     $MAX_COMMIT_INST"
 echo "=================================================="
 
 echo "Scanning for all checkpoint files..."
@@ -86,15 +82,16 @@ echo "Populating task queue..."
     done
 ) & 
 
-echo "Launching $MAX_JOBS dedicated workers pinned to cores $CORE_START-$((CORE_START + MAX_JOBS - 1))..."
+echo "Launching $MAX_JOBS dedicated workers pinned to cores 0-$((MAX_JOBS-1))..."
 
-for ((worker=0; worker<MAX_JOBS; worker++)); do
+# [消费者] 启动 64 个 Worker
+for ((core=0; core<MAX_JOBS; core++)); do
     (
-        core=$((CORE_START + worker))
-        # 每个 worker 独立持有锁文件描述符，避免 FIFO 读任务时串台。
+        # 【终极修复】：在 Worker 进程内部独立打开锁文件！获取专属的 file description
         exec 4< "$LOCK_FILE"
 
         while true; do
+            # 现在锁终于可以生效了！
             flock -x 4
             read -r -u 3 ckpt_file
             flock -u 4
@@ -111,12 +108,8 @@ for ((worker=0; worker<MAX_JOBS; worker++)); do
             ckpt_basename=$(basename "$ckpt_file" .gz)
             log_file="$RESULT_DIR/$bench_name/${ckpt_basename}.log"
 
-            if [ -f "$log_file" ] && grep -q 'Success!!!!' "$log_file"; then
-                echo "[Skip] Core $(printf "%03d" $core) | $bench_name/$ckpt_basename"
-                continue
-            fi
-
-            taskset -c "$core" $SIMULATOR --mode ckpt -w "$MAX_COMMIT_INST" "$ckpt_file" > "$log_file" 2>&1
+            # 强行绑定物理核开跑
+            taskset -c "$core" $SIMULATOR --mode ckpt -w 10000000 "$ckpt_file" > "$log_file" 2>&1
 
             if [ $? -eq 0 ]; then
                 echo "[Done] Core $(printf "%03d" $core) | $bench_name/$ckpt_basename"

@@ -199,17 +199,18 @@ static inline uint32_t loop_idx_from_pc(pc_t pc) {
   return mixed & (TAGE_LOOP_ENTRY_NUM - 1);
 }
 
-static inline uint16_t loop_tag_from_pc(pc_t pc) {
+static inline tage_loop_tag_t loop_tag_from_pc(pc_t pc) {
   const uint32_t value = (pc >> 2) ^ (pc >> (2 + TAGE_LOOP_TAG_BITS));
-  return static_cast<uint16_t>(value & ((1u << TAGE_LOOP_TAG_BITS) - 1u));
+  return static_cast<tage_loop_tag_t>(value & ((1u << TAGE_LOOP_TAG_BITS) - 1u));
 }
 
-static inline uint16_t loop_sat_inc(uint16_t v, uint16_t max_v) {
-  return (v >= max_v) ? max_v : static_cast<uint16_t>(v + 1);
+static inline tage_loop_iter_t loop_sat_inc(tage_loop_iter_t v,
+                                             tage_loop_iter_t max_v) {
+  return (v >= max_v) ? max_v : static_cast<tage_loop_iter_t>(v + 1);
 }
 
-static inline uint16_t loop_sat_dec(uint16_t v) {
-  return (v == 0) ? 0 : static_cast<uint16_t>(v - 1);
+static inline tage_loop_iter_t loop_sat_dec(tage_loop_iter_t v) {
+  return (v == 0) ? 0 : static_cast<tage_loop_iter_t>(v - 1);
 }
 
 // ============================================================================
@@ -367,6 +368,9 @@ public:
     tage_reset_ctr_t reset_cnt_reg;
     // int8_t use_alt_ctr_reg;
     tage_use_alt_ctr_t use_alt_ctr_reg;
+#if ENABLE_TAGE_SC_L
+    tage_scl_theta_t scl_theta_reg;
+#endif
     // input latches
     wire1_t do_pred_latch;
     wire1_t do_upd_latch;
@@ -418,12 +422,32 @@ public:
     TageIndexTag pred_idx_tag;
     TageTableReadData pred_read_data;
     tage_sc_ctr_t pred_sc_ctr;
+    tage_scl_ctr_t pred_scl_ctr[BPU_SCL_META_NTABLE];
+    wire1_t pred_loop_entry_valid;
+    tage_loop_meta_tag_t pred_loop_entry_tag;
+    tage_loop_iter_t pred_loop_entry_iter_count;
+    tage_loop_iter_t pred_loop_entry_iter_limit;
+    tage_loop_conf_t pred_loop_entry_conf;
+    tage_loop_age_t pred_loop_entry_age;
+    wire1_t pred_loop_entry_dir;
+    tage_loop_meta_idx_t pred_loop_idx;
+    tage_loop_meta_tag_t pred_loop_tag;
 
     wire1_t upd_read_valid;
     tage_base_idx_t upd_base_idx;
     tage_sc_idx_t upd_sc_idx;
     tage_sc_ctr_t upd_sc_ctr;
     TageTableReadData upd_read_data;
+    tage_scl_ctr_t upd_scl_ctr[BPU_SCL_META_NTABLE];
+    wire1_t upd_loop_entry_valid;
+    tage_loop_meta_tag_t upd_loop_entry_tag;
+    tage_loop_iter_t upd_loop_entry_iter_count;
+    tage_loop_iter_t upd_loop_entry_iter_limit;
+    tage_loop_conf_t upd_loop_entry_conf;
+    tage_loop_age_t upd_loop_entry_age;
+    wire1_t upd_loop_entry_dir;
+    tage_loop_meta_idx_t upd_loop_idx;
+    tage_loop_meta_tag_t upd_loop_tag;
 
     wire1_t upd_reset_row_valid;
     tage_idx_t upd_reset_row_idx;
@@ -493,6 +517,20 @@ public:
     wire1_t sc_we_commit;
     tage_sc_idx_t sc_wr_idx;
     tage_sc_ctr_t sc_wdata_commit;
+    wire1_t scl_we_commit[BPU_SCL_META_NTABLE];
+    tage_scl_meta_idx_t scl_wr_idx[BPU_SCL_META_NTABLE];
+    tage_scl_ctr_t scl_wdata_commit[BPU_SCL_META_NTABLE];
+    wire1_t scl_theta_we_commit;
+    tage_scl_theta_t scl_theta_wdata_commit;
+    wire1_t loop_we_commit;
+    tage_loop_meta_idx_t loop_wr_idx;
+    wire1_t loop_valid_commit;
+    tage_loop_meta_tag_t loop_tag_commit;
+    tage_loop_iter_t loop_iter_count_commit;
+    tage_loop_iter_t loop_iter_limit_commit;
+    tage_loop_conf_t loop_conf_commit;
+    tage_loop_age_t loop_age_commit;
+    wire1_t loop_dir_commit;
   };
 
   struct TageGenIndexCombIn {
@@ -512,6 +550,9 @@ public:
     wire1_t pred_read_valid;
     TageIndexTag pred_idx_tag;
     tage_sc_idx_t pred_sc_idx;
+    tage_scl_meta_idx_t pred_scl_idx[BPU_SCL_META_NTABLE];
+    tage_loop_meta_idx_t pred_loop_idx;
+    tage_loop_meta_tag_t pred_loop_tag;
   };
 
   struct TageUpdReadReqCombIn {
@@ -524,6 +565,10 @@ public:
     tage_base_idx_t upd_base_idx;
     tage_sc_idx_t upd_sc_idx;
     tage_idx_t upd_tage_idx_flat[TN_MAX];
+    tage_scl_meta_idx_t upd_scl_idx[BPU_SCL_META_NTABLE];
+    tage_loop_meta_idx_t upd_loop_idx;
+    tage_loop_meta_tag_t upd_loop_tag;
+    wire1_t upd_loop_read_valid;
     wire1_t upd_reset_row_valid;
     tage_idx_t upd_reset_row_idx;
   };
@@ -650,11 +695,11 @@ private:
 #if ENABLE_TAGE_LOOP_PRED
   struct LoopEntry {
     wire1_t valid;
-    uint16_t tag;
-    uint16_t iter_count;
-    uint16_t iter_limit;
-    uint8_t conf;
-    uint8_t age;
+    tage_loop_tag_t tag;
+    tage_loop_iter_t iter_count;
+    tage_loop_iter_t iter_limit;
+    tage_loop_conf_t conf;
+    tage_loop_age_t age;
     wire1_t dir;
   };
   LoopEntry loop_table[TAGE_LOOP_ENTRY_NUM];
@@ -812,6 +857,33 @@ public:
     out.pred_read_valid = true;
     out.pred_idx_tag = pred_index_out.index_tag;
     out.pred_sc_idx = tage_sc_idx_from_pc(in.inp.pc_pred_in);
+#if ENABLE_TAGE_SC_L
+    static constexpr int kSclIdxBits = ceil_log2_u32(TAGE_SC_L_ENTRY_NUM);
+    static constexpr uint32_t kSclMask = TAGE_SC_L_ENTRY_NUM - 1;
+    static constexpr int kHistLen[BPU_SCL_META_NTABLE] = {0, 4, 8, 16, 32, 64, 128, 256};
+    static constexpr int kPathHistLen[BPU_SCL_META_NTABLE] = {0, 4, 8, 12, 16, 20, 24, 28};
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      const uint32_t folded =
+          scl_fold_ghr_idx(in.inp.ghr_in, kHistLen[t], kSclIdxBits);
+      uint32_t mix = (in.inp.pc_pred_in >> 2);
+      mix ^= (mix >> 11);
+      mix ^= (mix >> 19);
+      mix ^= folded;
+      mix ^= (folded << 1);
+#if ENABLE_TAGE_SC_PATH
+      const uint32_t path_folded =
+          scl_fold_path_idx(in.inp.path_in, kPathHistLen[t], kSclIdxBits);
+      mix ^= path_folded;
+      mix ^= (path_folded << 2);
+      mix ^= (path_folded >> 1);
+#endif
+      out.pred_scl_idx[t] = static_cast<tage_scl_meta_idx_t>(mix & kSclMask);
+    }
+#endif
+#if ENABLE_TAGE_LOOP_PRED
+    out.pred_loop_idx = static_cast<tage_loop_meta_idx_t>(loop_idx_from_pc(in.inp.pc_pred_in));
+    out.pred_loop_tag = static_cast<tage_loop_meta_tag_t>(loop_tag_from_pc(in.inp.pc_pred_in));
+#endif
   }
 
   void tage_upd_read_req_comb(const TageUpdReadReqCombIn &in,
@@ -828,6 +900,16 @@ public:
     for (int i = 0; i < TN_MAX; ++i) {
       out.upd_tage_idx_flat[i] = in.inp.tage_idx_flat_in[i];
     }
+#if ENABLE_TAGE_SC_L
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      out.upd_scl_idx[t] = in.inp.sc_idx_in[t];
+    }
+#endif
+#if ENABLE_TAGE_LOOP_PRED
+    out.upd_loop_read_valid = true;
+    out.upd_loop_idx = in.inp.loop_idx_in;
+    out.upd_loop_tag = in.inp.loop_tag_in;
+#endif
 
     const uint32_t u_cnt = in.state_in.reset_cnt_reg & 0x7ff;
     if (u_cnt == 0) {
@@ -920,8 +1002,8 @@ public:
 #endif
         const uint32_t idx = mix & kSclMask;
         out.sc_idx_out[t] = static_cast<tage_scl_meta_idx_t>(idx);
-        // sum += static_cast<int16_t>(scl_table[t][idx]);
-        sum_raw = static_cast<wire16_t>(sum_raw + static_cast<wire16_t>(scl_table[t][idx]));
+        sum_raw =
+            static_cast<wire16_t>(sum_raw + static_cast<wire16_t>(rd.pred_scl_ctr[t]));
       }
       // out.sc_sum_out = sum;
       out.sc_sum_out = sum_raw;
@@ -942,7 +1024,8 @@ public:
         // const bool margin_ok = (scl_abs16(sum) >= (scl_theta + TAGE_SC_L_OVERRIDE_MARGIN));
         const wire16_t abs_sum = abs_diff_u16(sum_raw, kSclSumBias);
         const bool margin_ok =
-          (abs_sum >= static_cast<wire16_t>(scl_theta + TAGE_SC_L_OVERRIDE_MARGIN));
+            (abs_sum >= static_cast<wire16_t>(rd.state_in.scl_theta_reg +
+                                              TAGE_SC_L_OVERRIDE_MARGIN));
         if (provider_weak && sc_disagree && margin_ok) {
           out.sc_used_out = true;
           out.pred_out = out.sc_pred_out;
@@ -959,18 +1042,19 @@ public:
 
 #if ENABLE_TAGE_LOOP_PRED
       {
-        const uint32_t lidx = loop_idx_from_pc(inp.pc_pred_in);
-        const uint16_t ltag = loop_tag_from_pc(inp.pc_pred_in);
-        const LoopEntry &le = loop_table[lidx];
-        const bool hit = le.valid && (le.tag == ltag);
+        const bool hit = rd.pred_loop_entry_valid &&
+                         (rd.pred_loop_entry_tag == rd.pred_loop_tag);
         out.loop_hit_out = hit;
-        out.loop_idx_out = static_cast<tage_loop_meta_idx_t>(lidx);
-        out.loop_tag_out = static_cast<tage_loop_meta_tag_t>(ltag);
+        out.loop_idx_out = rd.pred_loop_idx;
+        out.loop_tag_out = rd.pred_loop_tag;
         out.loop_used_out = false;
         out.loop_pred_out = false;
-        if (hit && le.conf >= TAGE_LOOP_CONF_THRESHOLD) {
-          const bool exit_now = (le.iter_limit != 0) && ((le.iter_count + 1) == le.iter_limit);
-          const bool lp = exit_now ? !static_cast<bool>(le.dir) : static_cast<bool>(le.dir);
+        if (hit && rd.pred_loop_entry_conf >= TAGE_LOOP_CONF_THRESHOLD) {
+          const bool exit_now = (rd.pred_loop_entry_iter_limit != 0) &&
+                                ((rd.pred_loop_entry_iter_count + 1) ==
+                                 rd.pred_loop_entry_iter_limit);
+          const bool lp = exit_now ? !static_cast<bool>(rd.pred_loop_entry_dir)
+                                   : static_cast<bool>(rd.pred_loop_entry_dir);
           out.loop_pred_out = lp;
           // Conservative override: only when TAGE is weak (provider weak).
           if (pred_sel_out.pred_res.pcpn < TN_MAX) {
@@ -1080,6 +1164,111 @@ public:
           req.useful_reset_wdata_commit[i] = upd_req.reset_msb_only ? (cur & 0x1) : (cur & 0x2);
         }
       }
+
+#if ENABLE_TAGE_SC_L
+      if (inp.sc_used_in) {
+        static constexpr uint32_t kSclMask = TAGE_SC_L_ENTRY_NUM - 1;
+        const tage_scl_ctr_t kCtrMax =
+            static_cast<tage_scl_ctr_t>((1u << TAGE_SC_L_CTR_BITS) - 1u);
+        const tage_scl_ctr_t kCtrMin = static_cast<tage_scl_ctr_t>(0u);
+        const bool real_dir = inp.real_dir;
+        const bool sc_pred = inp.sc_pred_in;
+        const wire16_t sum_raw = inp.sc_sum_in;
+        static constexpr wire16_t kSclCtrBias =
+            static_cast<wire16_t>(1u << (TAGE_SC_L_CTR_BITS - 1));
+        static constexpr wire16_t kSclSumBias =
+            static_cast<wire16_t>(BPU_SCL_META_NTABLE * kSclCtrBias);
+        const wire16_t abs_sum = abs_diff_u16(sum_raw, kSclSumBias);
+        tage_scl_theta_t next_theta = rd.state_in.scl_theta_reg;
+        const bool low_margin = (abs_sum < rd.state_in.scl_theta_reg);
+        const bool sc_wrong = (sc_pred != real_dir);
+        const bool train = sc_wrong || low_margin;
+        if (train) {
+          for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+            tage_scl_ctr_t cur = rd.upd_scl_ctr[t];
+            cur = real_dir ? sat_inc_scl(cur, kCtrMax) : sat_dec_scl(cur, kCtrMin);
+            req.scl_we_commit[t] = true;
+            req.scl_wr_idx[t] =
+                static_cast<tage_scl_meta_idx_t>(inp.sc_idx_in[t] & kSclMask);
+            req.scl_wdata_commit[t] = cur;
+          }
+        }
+        if (sc_wrong && (abs_sum >= rd.state_in.scl_theta_reg)) {
+          if (next_theta < TAGE_SC_L_THETA_MAX) {
+            next_theta = static_cast<tage_scl_theta_t>(next_theta + 1);
+          }
+        } else if (!sc_wrong && low_margin) {
+          if (next_theta > TAGE_SC_L_THETA_MIN) {
+            next_theta = static_cast<tage_scl_theta_t>(next_theta - 1);
+          }
+        }
+        if (next_theta != rd.state_in.scl_theta_reg) {
+          req.scl_theta_we_commit = true;
+          req.scl_theta_wdata_commit = next_theta;
+        }
+      }
+#endif
+
+#if ENABLE_TAGE_LOOP_PRED
+      {
+        const tage_loop_tag_t ltag =
+            static_cast<tage_loop_tag_t>(rd.upd_loop_tag) &
+            static_cast<tage_loop_tag_t>((1u << TAGE_LOOP_TAG_BITS) - 1u);
+        LoopEntry next_loop{};
+        next_loop.valid = rd.upd_loop_entry_valid;
+        next_loop.tag = rd.upd_loop_entry_tag;
+        next_loop.iter_count = rd.upd_loop_entry_iter_count;
+        next_loop.iter_limit = rd.upd_loop_entry_iter_limit;
+        next_loop.conf = rd.upd_loop_entry_conf;
+        next_loop.age = rd.upd_loop_entry_age;
+        next_loop.dir = rd.upd_loop_entry_dir;
+        const tage_loop_conf_t conf_max =
+            static_cast<tage_loop_conf_t>((1u << TAGE_LOOP_CONF_BITS) - 1u);
+        const tage_loop_age_t age_max =
+            static_cast<tage_loop_age_t>((1u << TAGE_LOOP_AGE_BITS) - 1u);
+        const tage_loop_iter_t iter_max =
+            static_cast<tage_loop_iter_t>((1u << TAGE_LOOP_ITER_BITS) - 1u);
+
+        if (!next_loop.valid || next_loop.tag != ltag) {
+          next_loop.valid = true;
+          next_loop.tag = ltag;
+          next_loop.iter_count = 0;
+          next_loop.iter_limit = 0;
+          next_loop.conf = 0;
+          next_loop.age = age_max;
+          next_loop.dir = true;
+        }
+
+        if (next_loop.valid && next_loop.tag == ltag) {
+          const bool real_dir = inp.real_dir;
+          if (real_dir == static_cast<bool>(next_loop.dir)) {
+            next_loop.iter_count = loop_sat_inc(next_loop.iter_count, iter_max);
+          } else {
+            if (next_loop.iter_limit != 0 && next_loop.iter_count == next_loop.iter_limit) {
+              next_loop.conf = static_cast<tage_loop_conf_t>(
+                  (next_loop.conf >= conf_max) ? conf_max : (next_loop.conf + 1));
+              next_loop.age = age_max;
+            } else {
+              next_loop.conf = static_cast<tage_loop_conf_t>(
+                  next_loop.conf ? (next_loop.conf - 1) : 0);
+              next_loop.iter_limit =
+                  (next_loop.iter_count == 0) ? 0 : next_loop.iter_count;
+            }
+            next_loop.iter_count = 0;
+          }
+        }
+
+        req.loop_we_commit = true;
+        req.loop_wr_idx = rd.upd_loop_idx;
+        req.loop_valid_commit = next_loop.valid;
+        req.loop_tag_commit = static_cast<tage_loop_meta_tag_t>(next_loop.tag);
+        req.loop_iter_count_commit = next_loop.iter_count;
+        req.loop_iter_limit_commit = next_loop.iter_limit;
+        req.loop_conf_commit = next_loop.conf;
+        req.loop_age_commit = next_loop.age;
+        req.loop_dir_commit = next_loop.dir;
+      }
+#endif
       out.tage_update_done = true;
     }
 
@@ -1106,6 +1295,9 @@ public:
     }
     rd.state_in.reset_cnt_reg = reset_cnt_reg;
     rd.state_in.use_alt_ctr_reg = use_alt_ctr_reg;
+#if ENABLE_TAGE_SC_L
+    rd.state_in.scl_theta_reg = scl_theta;
+#endif
     rd.state_in.do_pred_latch = do_pred_latch;
     rd.state_in.do_upd_latch = do_upd_latch;
     rd.state_in.upd_real_dir_latch = upd_real_dir_latch;
@@ -1140,11 +1332,31 @@ public:
     std::memset(&rd.pred_idx_tag, 0, sizeof(rd.pred_idx_tag));
     std::memset(&rd.pred_read_data, 0, sizeof(rd.pred_read_data));
     rd.pred_sc_ctr = 0;
+    std::memset(rd.pred_scl_ctr, 0, sizeof(rd.pred_scl_ctr));
+    rd.pred_loop_entry_valid = false;
+    rd.pred_loop_entry_tag = 0;
+    rd.pred_loop_entry_iter_count = 0;
+    rd.pred_loop_entry_iter_limit = 0;
+    rd.pred_loop_entry_conf = 0;
+    rd.pred_loop_entry_age = 0;
+    rd.pred_loop_entry_dir = false;
+    rd.pred_loop_idx = 0;
+    rd.pred_loop_tag = 0;
     rd.upd_read_valid = false;
     rd.upd_base_idx = 0;
     rd.upd_sc_idx = 0;
     rd.upd_sc_ctr = 0;
     std::memset(&rd.upd_read_data, 0, sizeof(rd.upd_read_data));
+    std::memset(rd.upd_scl_ctr, 0, sizeof(rd.upd_scl_ctr));
+    rd.upd_loop_entry_valid = false;
+    rd.upd_loop_entry_tag = 0;
+    rd.upd_loop_entry_iter_count = 0;
+    rd.upd_loop_entry_iter_limit = 0;
+    rd.upd_loop_entry_conf = 0;
+    rd.upd_loop_entry_age = 0;
+    rd.upd_loop_entry_dir = false;
+    rd.upd_loop_idx = 0;
+    rd.upd_loop_tag = 0;
     rd.upd_reset_row_valid = false;
     rd.upd_reset_row_idx = 0;
     std::memset(rd.upd_reset_row_data, 0, sizeof(rd.upd_reset_row_data));
@@ -1162,6 +1374,25 @@ public:
         rd.pred_read_data.useful[i] = useful_table[i][mem_idx];
       }
       rd.pred_sc_ctr = sc_ctr_table[in.pred_req.pred_sc_idx];
+#if ENABLE_TAGE_SC_L
+      for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+        const uint32_t idx = static_cast<uint32_t>(in.pred_req.pred_scl_idx[t]) &
+                             (TAGE_SC_L_ENTRY_NUM - 1);
+        rd.pred_scl_ctr[t] = scl_table[t][idx];
+      }
+#endif
+#if ENABLE_TAGE_LOOP_PRED
+      rd.pred_loop_idx = in.pred_req.pred_loop_idx;
+      rd.pred_loop_tag = in.pred_req.pred_loop_tag;
+      const LoopEntry &pred_loop_entry = loop_table[rd.pred_loop_idx];
+      rd.pred_loop_entry_valid = pred_loop_entry.valid;
+      rd.pred_loop_entry_tag = pred_loop_entry.tag;
+      rd.pred_loop_entry_iter_count = pred_loop_entry.iter_count;
+      rd.pred_loop_entry_iter_limit = pred_loop_entry.iter_limit;
+      rd.pred_loop_entry_conf = pred_loop_entry.conf;
+      rd.pred_loop_entry_age = pred_loop_entry.age;
+      rd.pred_loop_entry_dir = pred_loop_entry.dir;
+#endif
     }
 
     rd.upd_read_valid = in.upd_req.upd_read_valid;
@@ -1183,6 +1414,27 @@ public:
           rd.upd_reset_row_data[i] = useful_table[i][rd.upd_reset_row_idx];
         }
       }
+#if ENABLE_TAGE_SC_L
+      for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+        const uint32_t idx = static_cast<uint32_t>(in.upd_req.upd_scl_idx[t]) &
+                             (TAGE_SC_L_ENTRY_NUM - 1);
+        rd.upd_scl_ctr[t] = scl_table[t][idx];
+      }
+#endif
+#if ENABLE_TAGE_LOOP_PRED
+      if (in.upd_req.upd_loop_read_valid) {
+        rd.upd_loop_idx = in.upd_req.upd_loop_idx;
+        rd.upd_loop_tag = in.upd_req.upd_loop_tag;
+        const LoopEntry &upd_loop_entry = loop_table[rd.upd_loop_idx];
+        rd.upd_loop_entry_valid = upd_loop_entry.valid;
+        rd.upd_loop_entry_tag = upd_loop_entry.tag;
+        rd.upd_loop_entry_iter_count = upd_loop_entry.iter_count;
+        rd.upd_loop_entry_iter_limit = upd_loop_entry.iter_limit;
+        rd.upd_loop_entry_conf = upd_loop_entry.conf;
+        rd.upd_loop_entry_age = upd_loop_entry.age;
+        rd.upd_loop_entry_dir = upd_loop_entry.dir;
+      }
+#endif
     }
 
     rd.useful_reset_row_data_valid = in.useful_reset_req.useful_reset_row_data_valid;
@@ -1252,6 +1504,7 @@ public:
       this->reset();
       return;
     }
+    (void)inp;
     do_pred_latch = req.do_pred_latch_next;
     do_upd_latch = req.do_upd_latch_next;
     upd_real_dir_latch = req.upd_real_dir_latch_next;
@@ -1304,85 +1557,31 @@ public:
     }
 
 #if ENABLE_TAGE_SC_L
-    if (inp.update_en && inp.sc_used_in) {
-      static constexpr uint32_t kSclMask = TAGE_SC_L_ENTRY_NUM - 1;
-      // static constexpr int8_t kCtrMax = (1 << (TAGE_SC_L_CTR_BITS - 1)) - 1;
-      // static constexpr int8_t kCtrMin = -(1 << (TAGE_SC_L_CTR_BITS - 1));
-      const tage_scl_ctr_t kCtrMax =
-        static_cast<tage_scl_ctr_t>((1u << TAGE_SC_L_CTR_BITS) - 1u);
-      const tage_scl_ctr_t kCtrMin = static_cast<tage_scl_ctr_t>(0u);
-      const bool real_dir = inp.real_dir;
-      const bool sc_pred = inp.sc_pred_in;
-      // const int16_t sum = inp.sc_sum_in;
-      // const int16_t abs_sum = scl_abs16(sum);
-      const wire16_t sum_raw = inp.sc_sum_in;
-      static constexpr wire16_t kSclCtrBias = static_cast<wire16_t>(1u << (TAGE_SC_L_CTR_BITS - 1));
-      static constexpr wire16_t kSclSumBias = static_cast<wire16_t>(BPU_SCL_META_NTABLE * kSclCtrBias);
-      const wire16_t abs_sum = abs_diff_u16(sum_raw, kSclSumBias);
-      const bool low_margin = (abs_sum < scl_theta);
-      const bool sc_wrong = (sc_pred != real_dir);
-      const bool train = sc_wrong || low_margin;
-      if (train) {
-        for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-          const uint32_t idx = static_cast<uint32_t>(inp.sc_idx_in[t]) & kSclMask;
-          // int8_t cur = scl_table[t][idx];
-          // cur = real_dir ? scl_sat_inc(cur, kCtrMax) : scl_sat_dec(cur, kCtrMin);
-          // scl_table[t][idx] = cur;
-          tage_scl_ctr_t cur = scl_table[t][idx];
-          cur = real_dir ? sat_inc_scl(cur, kCtrMax) : sat_dec_scl(cur, kCtrMin);
-          scl_table[t][idx] = cur;
-        }
+    for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
+      if (!req.scl_we_commit[t]) {
+        continue;
       }
-      if (sc_wrong && (abs_sum >= scl_theta)) {
-        if (scl_theta < TAGE_SC_L_THETA_MAX) {
-          scl_theta++;
-        }
-      } else if (!sc_wrong && low_margin) {
-        if (scl_theta > TAGE_SC_L_THETA_MIN) {
-          scl_theta--;
-        }
-      }
+      const uint32_t idx =
+          static_cast<uint32_t>(req.scl_wr_idx[t]) & (TAGE_SC_L_ENTRY_NUM - 1);
+      scl_table[t][idx] = req.scl_wdata_commit[t];
     }
-#else
-    (void)inp;
+    if (req.scl_theta_we_commit) {
+      scl_theta = req.scl_theta_wdata_commit;
+    }
 #endif
 
 #if ENABLE_TAGE_LOOP_PRED
-    if (inp.update_en) {
-      const uint32_t lidx = static_cast<uint32_t>(inp.loop_idx_in) & (TAGE_LOOP_ENTRY_NUM - 1);
-      const uint16_t ltag = static_cast<uint16_t>(inp.loop_tag_in) &
-                            static_cast<uint16_t>((1u << TAGE_LOOP_TAG_BITS) - 1u);
+    if (req.loop_we_commit) {
+      const uint32_t lidx =
+          static_cast<uint32_t>(req.loop_wr_idx) & (TAGE_LOOP_ENTRY_NUM - 1);
       LoopEntry &le = loop_table[lidx];
-      const uint8_t conf_max = (1u << TAGE_LOOP_CONF_BITS) - 1u;
-      const uint8_t age_max = (1u << TAGE_LOOP_AGE_BITS) - 1u;
-      const uint16_t iter_max = (1u << TAGE_LOOP_ITER_BITS) - 1u;
-
-      if (!le.valid || le.tag != ltag) {
-        // Allocate on first observation (very conservative).
-        le.valid = true;
-        le.tag = ltag;
-        le.iter_count = 0;
-        le.iter_limit = 0;
-        le.conf = 0;
-        le.age = age_max;
-        le.dir = true;
-      }
-
-      if (le.valid && le.tag == ltag) {
-        const bool real_dir = inp.real_dir;
-        if (real_dir == static_cast<bool>(le.dir)) {
-          le.iter_count = loop_sat_inc(le.iter_count, iter_max);
-        } else {
-          if (le.iter_limit != 0 && le.iter_count == le.iter_limit) {
-            le.conf = static_cast<uint8_t>((le.conf >= conf_max) ? conf_max : (le.conf + 1));
-            le.age = age_max;
-          } else {
-            le.conf = static_cast<uint8_t>(le.conf ? (le.conf - 1) : 0);
-            le.iter_limit = (le.iter_count == 0) ? 0 : le.iter_count;
-          }
-          le.iter_count = 0;
-        }
-      }
+      le.valid = req.loop_valid_commit;
+      le.tag = req.loop_tag_commit;
+      le.iter_count = req.loop_iter_count_commit;
+      le.iter_limit = req.loop_iter_limit_commit;
+      le.conf = req.loop_conf_commit;
+      le.age = req.loop_age_commit;
+      le.dir = req.loop_dir_commit;
     }
 #endif
 

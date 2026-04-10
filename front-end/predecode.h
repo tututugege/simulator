@@ -27,8 +27,7 @@ struct predecode_read_data {
 
 void predecode_seq_read(const struct predecode_in *in,
                         struct predecode_read_data *rd);
-void predecode_comb(const struct predecode_read_data *rd,
-                    struct PredecodeResult *out);
+void predecode_comb(const predecode_read_data &input, PredecodeResult &output);
 void predecode_seq_write();
 
 #endif

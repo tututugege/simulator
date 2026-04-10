@@ -60,7 +60,6 @@ void Idu::comb_decode() {
     out.dec2ren->uop[i] = {};
   }
 
-  Assert(in.issue != nullptr && "Idu::comb_decode: issue input is null");
   for (int i = 0; i < DECODE_WIDTH; i++) {
     const InstructionBufferEntry &entry = in.issue->entries[i];
     if (!entry.valid)
