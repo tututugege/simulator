@@ -2,6 +2,10 @@
 #include "IO.h"
 #include <cstdio>
 
+#ifndef CONFIG_REAL_LSU_RANDOM_TEST
+#define CONFIG_REAL_LSU_RANDOM_TEST 0
+#endif
+
 class Csr;
 class SimContext;
 class PtwMemPort;
@@ -24,6 +28,11 @@ typedef struct {
   // MemReadyIO *dcache_wready;
   
   DcacheLsuIO *dcache2lsu;
+
+#if CONFIG_REAL_LSU_RANDOM_TEST
+  // 用于随机测试的额外输入端口
+  wire<32> store_conflict_addr;
+#endif
 } LsuIn;
 
 // 输出信号 (发送给各个流水级)
@@ -35,6 +44,10 @@ typedef struct {
   // MemReqIO *dcache_req;
   // MemReqIO *dcache_wreq;
   LsuDcacheIO *lsu2dcache;
+#if CONFIG_REAL_LSU_RANDOM_TEST
+  // 用于随机测试的额外输出端口
+  wire<1> has_translation_store_conflict;
+#endif
 } LsuOut;
 
 // StqEntry is defined in IO.h (included above).

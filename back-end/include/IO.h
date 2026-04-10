@@ -1158,7 +1158,6 @@ struct PeripheralRespIO {
 
 // STQ 条目结构（定义在此以供 StoreReq 使用）
 struct StqEntry {
-  bool valid = false;
   bool addr_valid = false;
   bool data_valid = false;
   bool committed = false;
