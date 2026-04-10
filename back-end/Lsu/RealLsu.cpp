@@ -1725,10 +1725,7 @@ void RealLsu::comb_flush() {
   }
 }
 
-// =========================================================
-// 6. Sequential Logic: 状态更新与时序模拟
-// =========================================================
-void RealLsu::seq() {
+void RealLsu::comb_seq() {
   auto &state = nxt;
   prepare_runtime_state(state);
   bool is_flush = in.rob_bcast->flush;
@@ -1736,15 +1733,11 @@ void RealLsu::seq() {
   int pop_count = 0;
 
   if (is_flush) {
-    mmu->flush();
-    mmu->seq();
     handle_global_flush(state);
-    cur = nxt;
     return;
   }
 
   if (is_mispred) {
-    mmu->flush();
     handle_mispred(state, in.dec_bcast->br_mask);
   }
 
@@ -1777,13 +1770,7 @@ void RealLsu::seq() {
   }
 
   if (is_mispred) {
-    mmu->seq();
-    cur = nxt;
     return;
-  }
-
-  if (in.rob_bcast->fence) {
-    mmu->flush();
   }
 
   consume_stq_alloc_reqs(state);
@@ -1794,6 +1781,11 @@ void RealLsu::seq() {
   // Retire after load progress so same-cycle completed stores can still
   // participate in store-to-load forwarding.
   retire_stq_head_if_ready(state, pop_count);
+
+  
+#if CONFIG_REAL_LSU_RANDOM_TEST
+  out.has_translation_store_conflict = has_translation_store_conflict(in.store_conflict_addr);
+#endif
 
 #if LSU_LIGHT_ASSERT
   if (pop_count == 0 && committed_stq_count > 0) {
@@ -1830,6 +1822,25 @@ void RealLsu::seq() {
            "STQ invariant: count != distance(head, tail)");
   }
 #endif
+}
+
+// =========================================================
+// 6. Sequential Logic: 状态更新与时序模拟
+// =========================================================
+void RealLsu::seq() {
+  bool is_flush = in.rob_bcast->flush;
+  bool is_mispred = in.dec_bcast->mispred;
+
+  if (is_flush || is_mispred) {
+    mmu->flush();
+    mmu->seq();
+    cur = nxt;
+    return;
+  }
+
+  if (in.rob_bcast->fence) {
+    mmu->flush();
+  }
   mmu->seq();
   cur = nxt;
 }
@@ -2022,10 +2033,4 @@ void RealLsu::overlay_committed_store_word(uint32_t p_addr, uint32_t &data) {
       data = merge_data_to_word(data, entry.data, entry.p_addr, entry.func3);
     }
   }
-}
-
-void RealLsu::comb_fun() {
-#if CONFIG_REAL_LSU_RANDOM_TEST
-  out.has_translation_store_conflict = has_translation_store_conflict(in.store_conflict_addr);
-#endif
 }

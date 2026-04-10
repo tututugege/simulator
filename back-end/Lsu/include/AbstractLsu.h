@@ -72,6 +72,7 @@ public:
   virtual void comb_recv() = 0;         // -> Internal State (Execute Stage)
   virtual void comb_load_res() = 0;     // -> lsu2exe (Writeback Stage)
   virtual void comb_flush() = 0;        // -> Internal State Reset (Exception)
+  virtual void comb_seq() = 0;
 
   // 时序逻辑
   virtual void seq() = 0; // Update registers & Tick latency

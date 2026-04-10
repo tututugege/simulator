@@ -120,7 +120,7 @@ public:
   void comb_recv() override;
   void comb_load_res() override;
   void comb_flush() override;
-  void comb_fun();
+  void comb_seq() override;
   void seq() override;
 
   StqEntry get_stq_entry(int stq_idx, bool stq_flag) override;
