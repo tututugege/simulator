@@ -133,6 +133,7 @@ void PreIduQueue::comb_accept_front() {
   ftq_entry.start_pc = in.front2pre->pc[0];
   ftq_entry.next_pc = in.front2pre->predict_next_fetch_address[0];
   for (int i = 0; i < FETCH_WIDTH; i++) {
+    ftq_entry.slot_pc[i] = in.front2pre->pc[i];
     ftq_entry.pred_taken_mask[i] = in.front2pre->predict_dir[i];
     ftq_entry.alt_pred[i] = in.front2pre->alt_pred[i];
     ftq_entry.altpcpn[i] = in.front2pre->altpcpn[i];
