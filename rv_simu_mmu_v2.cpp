@@ -413,20 +413,6 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   dut_cpu.inst_idx = inst->dbg.inst_idx;
   dut_cpu.commit_pc = inst->dbg.pc;
   *skip = inst->dbg.difftest_skip;
-
-#ifndef CONFIG_DEBUG_FOCUS_LOAD_PADDR0
-#define CONFIG_DEBUG_FOCUS_LOAD_PADDR0 0u
-#endif
-  if (CONFIG_DEBUG_FOCUS_LOAD_PADDR0 != 0u &&
-      inst->diag_val == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_LOAD_PADDR0)) {
-    std::printf(
-        "[FOCUS][DIFFPREP] cyc=%lld commit_pc=0x%08x inst_idx=%lld areg=%u preg=%u prf=0x%08x prf_next=0x%08x arch_rat=%u next_pc=0x%08x\n",
-        (long long)sim_time, inst->dbg.pc, (long long)inst->dbg.inst_idx,
-        (unsigned)inst->dest_areg, (unsigned)inst->dest_preg,
-        back->prf->reg_file[inst->dest_preg],
-        back->prf->reg_file_1[inst->dest_preg],
-        (unsigned)back->rename->arch_RAT_1[inst->dest_areg], dut_cpu.pc);
-  }
 }
 
 void SimContext::run_commit_inst(InstEntry *inst_entry) {

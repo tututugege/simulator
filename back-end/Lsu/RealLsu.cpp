@@ -22,45 +22,6 @@ static inline bool is_amo_lr_uop(const MicroOp &uop) {
          ((uop.func7 >> 2) == AmoOp::LR);
 }
 namespace {
-#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE0
-#define CONFIG_DEBUG_FOCUS_DCACHE_LINE0 0u
-#endif
-
-#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE1
-#define CONFIG_DEBUG_FOCUS_DCACHE_LINE1 0u
-#endif
-
-#ifndef CONFIG_DEBUG_FOCUS_LOAD_PC0
-#define CONFIG_DEBUG_FOCUS_LOAD_PC0 0u
-#endif
-
-#ifndef CONFIG_DEBUG_FOCUS_LOAD_VADDR0
-#define CONFIG_DEBUG_FOCUS_LOAD_VADDR0 0u
-#endif
-
-inline uint32_t lsu_focus_line_base(uint32_t addr) {
-  return addr & ~static_cast<uint32_t>(DCACHE_LINE_BYTES - 1u);
-}
-
-bool focus_lsu_line(uint32_t addr) {
-  const uint32_t line = lsu_focus_line_base(addr);
-  return (CONFIG_DEBUG_FOCUS_DCACHE_LINE0 != 0u &&
-          line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE0)) ||
-         (CONFIG_DEBUG_FOCUS_DCACHE_LINE1 != 0u &&
-          line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE1));
-}
-
-bool focus_load_uop(const MicroOp &uop) {
-  return (CONFIG_DEBUG_FOCUS_LOAD_PC0 != 0u &&
-          uop.dbg.pc == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_LOAD_PC0)) ||
-         (CONFIG_DEBUG_FOCUS_LOAD_VADDR0 != 0u &&
-          uop.result == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_LOAD_VADDR0));
-}
-
-bool focus_lsu_req(uint32_t addr, const MicroOp &uop) {
-  return focus_lsu_line(addr) || focus_load_uop(uop);
-}
-
 inline bool stq_entry_matches_uop(const StqEntry &entry, const MicroOp &uop) {
   return entry.valid && entry.rob_idx == uop.rob_idx &&
          entry.rob_flag == uop.rob_flag;
@@ -517,16 +478,6 @@ void RealLsu::comb_recv() {
       out.lsu2dcache->req_ports.load_ports[i].addr = ldq[max_idx].uop.diag_val;
       out.lsu2dcache->req_ports.load_ports[i].req_id = max_idx;
       out.lsu2dcache->req_ports.load_ports[i].uop = req_uop;
-      if (focus_lsu_req(ldq[max_idx].uop.diag_val, ldq[max_idx].uop)) {
-        std::printf(
-            "[FOCUS][LSU][LD-ISSUE] cyc=%lld port=%d ldq=%d req_id=%d rob=%u pc=0x%08x vaddr=0x%08x paddr=0x%08x func3=0x%x replay_pri=%u wait=%d sent=%d\n",
-            (long long)sim_time, i, max_idx, max_idx,
-            (unsigned)ldq[max_idx].uop.rob_idx, ldq[max_idx].uop.dbg.pc,
-            ldq[max_idx].uop.result, ldq[max_idx].uop.diag_val,
-            (unsigned)ldq[max_idx].uop.func3,
-            (unsigned)ldq[max_idx].replay_priority,
-            (int)ldq[max_idx].waiting_resp, (int)ldq[max_idx].sent);
-      }
       ldq[max_idx].sent = true;
       ldq[max_idx].waiting_resp = true;
       ldq[max_idx].wait_resp_since = sim_time;
@@ -696,18 +647,6 @@ void RealLsu::comb_load_res() {
               uint32_t raw_data = in.dcache2lsu->resp_ports.load_resps[i].data;
               uint32_t extracted =
                   extract_data(raw_data, entry.uop.diag_val, entry.uop.func3);
-              if (focus_lsu_req(entry.uop.diag_val, entry.uop) ||
-                  focus_load_uop(resp_uop)) {
-                std::printf(
-                    "[FOCUS][LSU][LD-WB] cyc=%lld port=%d ldq=%d req_id=%zu rob=%u pc=0x%08x vaddr=0x%08x paddr=0x%08x func3=0x%x raw=0x%08x result=0x%08x difftest_skip=%d\n",
-                    (long long)sim_time, i, idx,
-                    in.dcache2lsu->resp_ports.load_resps[i].req_id,
-                    (unsigned)entry.uop.rob_idx, entry.uop.dbg.pc,
-                    entry.uop.result, entry.uop.diag_val,
-                    (unsigned)entry.uop.func3, raw_data, extracted,
-                    (int)in.dcache2lsu->resp_ports.load_resps[i]
-                        .uop.dbg.difftest_skip);
-              }
               if (is_amo_lr_uop(entry.uop)) {
                 reserve_addr = entry.uop.diag_val;
                 reserve_valid = true;
@@ -731,16 +670,6 @@ void RealLsu::comb_load_res() {
               // Handle load replay if needed (e.g., due to MSHR eviction)
               const uint8_t replay_code =
                   in.dcache2lsu->resp_ports.load_resps[i].replay;
-              if (focus_lsu_req(entry.uop.diag_val, entry.uop) ||
-                  focus_load_uop(resp_uop)) {
-                std::printf(
-                    "[FOCUS][LSU][LD-REPLAY] cyc=%lld port=%d ldq=%d req_id=%zu rob=%u pc=0x%08x vaddr=0x%08x paddr=0x%08x replay=%u\n",
-                    (long long)sim_time, i, idx,
-                    in.dcache2lsu->resp_ports.load_resps[i].req_id,
-                    (unsigned)entry.uop.rob_idx, entry.uop.dbg.pc,
-                    entry.uop.result, entry.uop.diag_val,
-                    (unsigned)replay_code);
-              }
               entry.replay_priority = replay_code;
               // replay=1(mshr_full) and replay=2(wait_mshr) both imply
               // that this load is blocked beyond L1D hit latency.
@@ -892,14 +821,6 @@ void RealLsu::handle_load_req(const MicroOp &inst) {
     ldq[ldq_idx].is_mmio_wait = is_mmio; // 延迟发送：等待到达 ROB 队头后再发出
     auto fwd_res =
         is_mmio ? StoreForwardResult{} : check_store_forward(p_addr, inst);
-    if (focus_lsu_req(p_addr, task)) {
-      std::printf(
-          "[FOCUS][LSU][LD-REQ] cyc=%lld ldq=%d rob=%u pc=0x%08x vaddr=0x%08x paddr=0x%08x func3=0x%x fwd_state=%d fwd_data=0x%08x stq_stop=%d/%u\n",
-          (long long)sim_time, ldq_idx, (unsigned)task.rob_idx, task.dbg.pc,
-          task.result, p_addr, (unsigned)task.func3,
-          static_cast<int>(fwd_res.state), fwd_res.data, task.stq_idx,
-          (unsigned)task.stq_flag);
-    }
 
     if (fwd_res.state == StoreForwardState::Hit) {
       task.result = fwd_res.data;
@@ -1063,21 +984,6 @@ void RealLsu::change_store_info(StqEntry &head, int port, int store_index) {
   out.lsu2dcache->req_ports.store_ports[port].data = wdata;
   out.lsu2dcache->req_ports.store_ports[port].uop = head;
   out.lsu2dcache->req_ports.store_ports[port].req_id = store_index;
-  if (focus_lsu_line(head.p_addr)) {
-    std::printf(
-        "[FOCUS][LSU][ST-ISSUE] cyc=%lld port=%d stq=%d rob=%u paddr=0x%08x func3=0x%x data=0x%08x wdata=0x%08x wstrb=0x%x replay=%u committed=%d\n",
-        (long long)sim_time, port, store_index, (unsigned)head.rob_idx,
-        head.p_addr, (unsigned)head.func3, head.data, wdata, wstrb,
-        (unsigned)head.replay, (int)head.committed);
-  }
-  // if (is_coremark_focus_addr(head.p_addr))
-  // {
-  //     std::printf("[FOCUS][LSU][ST ISSUE] cyc=%lld port=%d stq=%d rob=%u
-  //     paddr=0x%08x func3=0x%x data=0x%08x wdata=0x%08x wstrb=0x%x\n",
-  //                 (long long)sim_time, port, store_index,
-  //                 (unsigned)head.rob_idx, head.p_addr, head.func3, head.data,
-  //                 wdata, wstrb);
-  // }
 }
 
 void RealLsu::handle_global_flush() {
@@ -1716,15 +1622,6 @@ RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
 
     StqEntry &entry = stq[ptr_idx];
     if (entry.valid && !entry.suppress_write) {
-      if (focus_lsu_req(p_addr, load_uop)) {
-        std::printf(
-            "[FOCUS][LSU][STLF-SCAN] cyc=%lld ld_rob=%u paddr=0x%08x stq=%d stq_rob=%u addr_v=%d data_v=%d committed=%d done=%d send=%d replay=%u st_paddr=0x%08x data=0x%08x func3=0x%x\n",
-            (long long)sim_time, (unsigned)load_uop.rob_idx, p_addr, ptr_idx,
-            (unsigned)entry.rob_idx, (int)entry.addr_valid,
-            (int)entry.data_valid, (int)entry.committed, (int)entry.done,
-            (int)entry.send, (unsigned)entry.replay, entry.p_addr, entry.data,
-            (unsigned)entry.func3);
-      }
       if (!entry.addr_valid) {
         if (ctx != nullptr) {
           ctx->perf.ld_stlf_block_unknown_store_addr_count++;
@@ -1754,12 +1651,6 @@ RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
         hit_any = true;
         // Partial overlap is intentionally conservative: keep the load in
         // retry until the older store fully retires from STQ.
-        if (focus_lsu_req(p_addr, load_uop)) {
-          std::printf(
-              "[FOCUS][LSU][STLF-PARTIAL] cyc=%lld ld_rob=%u paddr=0x%08x stq=%d st_paddr=0x%08x s=[0x%08x,0x%08x) l=[0x%08x,0x%08x)\n",
-              (long long)sim_time, (unsigned)load_uop.rob_idx, p_addr,
-              ptr_idx, entry.p_addr, s_start, s_end, l_start, l_end);
-        }
         return {StoreForwardState::Retry, 0};
       }
     }
@@ -1772,16 +1663,7 @@ RealLsu::check_store_forward(uint32_t p_addr, const MicroOp &load_uop) {
   }
 
   if (!hit_any) {
-    if (focus_lsu_req(p_addr, load_uop)) {
-      std::printf("[FOCUS][LSU][STLF-NOHIT] cyc=%lld ld_rob=%u paddr=0x%08x\n",
-                  (long long)sim_time, (unsigned)load_uop.rob_idx, p_addr);
-    }
     return {StoreForwardState::NoHit, 0};
-  }
-  if (focus_lsu_req(p_addr, load_uop)) {
-    std::printf("[FOCUS][LSU][STLF-HIT] cyc=%lld ld_rob=%u paddr=0x%08x data=0x%08x\n",
-                (long long)sim_time, (unsigned)load_uop.rob_idx, p_addr,
-                extract_data(current_word, p_addr, load_uop.func3));
   }
   return {StoreForwardState::Hit,
           extract_data(current_word, p_addr, load_uop.func3)};

@@ -12,39 +12,6 @@ namespace {
 static constexpr uint8_t kCacheLineReqTotalSize =
     static_cast<uint8_t>(DCACHE_LINE_BYTES - 1u);
 
-#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE0
-#define CONFIG_DEBUG_FOCUS_DCACHE_LINE0 0u
-#endif
-
-#ifndef CONFIG_DEBUG_FOCUS_DCACHE_LINE1
-#define CONFIG_DEBUG_FOCUS_DCACHE_LINE1 0u
-#endif
-
-inline uint32_t cache_line_base(uint32_t addr) {
-    return addr & ~static_cast<uint32_t>(DCACHE_LINE_BYTES - 1u);
-}
-
-bool focus_dcache_line(uint32_t addr) {
-    const uint32_t line = cache_line_base(addr);
-    return (CONFIG_DEBUG_FOCUS_DCACHE_LINE0 != 0u &&
-            line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE0)) ||
-           (CONFIG_DEBUG_FOCUS_DCACHE_LINE1 != 0u &&
-            line == static_cast<uint32_t>(CONFIG_DEBUG_FOCUS_DCACHE_LINE1));
-}
-
-void log_focus_mshr_words(const char *tag, uint32_t addr, int slot,
-                          const uint32_t *words) {
-    if (!focus_dcache_line(addr)) {
-        return;
-    }
-    std::printf(
-        "[FOCUS][MSHR][%s] cyc=%lld slot=%d line=0x%08x data=[%08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x]\n",
-        tag, (long long)sim_time, slot, cache_line_base(addr), words[0],
-        words[1], words[2], words[3], words[4], words[5], words[6], words[7],
-        words[8], words[9], words[10], words[11], words[12], words[13],
-        words[14], words[15]);
-}
-
 bool victim_has_same_cycle_store_hit(const DcacheMSHRIO &dcachemshr,
                                      uint32_t set_idx, uint32_t way_idx) {
     for (int p = 0; p < LSU_STA_COUNT; ++p) {
@@ -73,18 +40,9 @@ int find_next_entry_idx(uint32_t set_idx, uint32_t tag) {
 void merge_store_into_entry(MSHREntry &entry, const StoreReq &req) {
     const AddrFields f = decode(req.addr);
     Assert(f.word_off < DCACHE_LINE_WORDS && "Store merge word offset overflow");
-    const uint32_t old_data = entry.merged_store_data[f.word_off];
     apply_strobe(entry.merged_store_data[f.word_off], req.data, req.strb);
     entry.merged_store_strb[f.word_off] |= req.strb;
     entry.merged_store_dirty = true;
-    if (focus_dcache_line(req.addr)) {
-        std::printf(
-            "[FOCUS][MSHR][STORE-MERGE] cyc=%lld line=0x%08x word=%u old=0x%08x data=0x%08x new=0x%08x strb=0x%x\n",
-            (long long)sim_time, cache_line_base(req.addr),
-            static_cast<unsigned>(f.word_off), old_data, req.data,
-            entry.merged_store_data[f.word_off],
-            static_cast<unsigned>(req.strb));
-    }
 }
 
 void log_unexpected_resp(uint8_t resp_id, const char *reason, uint32_t mshr_count) {
@@ -201,12 +159,6 @@ int MSHR::entries_add(int set_idx, int tag)
     miss_alloc_cycle_valid[alloc_idx] = true;
     axi_issue_cycle[alloc_idx] = 0;
     axi_issue_cycle_valid[alloc_idx] = false;
-    const uint32_t line_addr = get_addr(set_idx, tag, 0);
-    if (focus_dcache_line(line_addr)) {
-        std::printf(
-            "[FOCUS][MSHR][ALLOC] cyc=%lld slot=%d line=0x%08x set=%d tag=0x%08x\n",
-            (long long)sim_time, alloc_idx, line_addr, set_idx, tag);
-    }
     return alloc_idx;
 }
 
@@ -368,9 +320,6 @@ void MSHR::comb_inputs()
                                          e_fill.merged_store_strb[w]);
                         }
                     }
-                    log_focus_mshr_words("FILL-DATA", fill_line_addr,
-                                         static_cast<int>(resp_id),
-                                         nxt.fill_data);
                     // AXI read-path check: under direct-memory mode, returned
                     // cachelines must match the backing memory. Under LLC
                     // write-back mode, the response may legally come from a
