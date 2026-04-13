@@ -236,8 +236,9 @@ public:
       : FixedLatencyFU(name, port_idx, 1), exe2lsu(exe2lsu),
         agu_port_idx(agu_port_idx) {}
 
+  int lsu_port_id() const { return agu_port_idx; }
+
 protected:
-  int get_lsu_port_id() override { return this->agu_port_idx; }
   void impl_compute(ExuInst &inst) override {
     // 1. 计算虚拟地址 (Common logic)
     // Load 和 Store (STA) 都需要计算地址： Base + Offset
@@ -269,8 +270,9 @@ public:
       : FixedLatencyFU(name, port_idx, 1), exe2lsu(exe2lsu),
         sdu_port_idx(sdu_port_idx) {}
 
+  int lsu_port_id() const { return sdu_port_idx; }
+
 protected:
-  int get_lsu_port_id() override { return this->sdu_port_idx; }
   void impl_compute(ExuInst &inst) override {
     uint32_t result_data = 0;
 
