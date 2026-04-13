@@ -99,7 +99,7 @@ void Exu::init() {
 
     // 9. FP
     if (mask & OP_MASK_FP) {
-      auto fpu = new FPURtl("FPU", i, 1);
+      auto fpu = new FPUSoftfloat("FPU", i, 10);
       units.push_back(fpu);
       FuEntry fpu_entry;
       fpu_entry.fu = fpu;

@@ -15,25 +15,57 @@ extern "C" {
 // ==========================================
 // FPUSoftfloat
 // ==========================================
-class FPUSoftfloat : public FixedLatencyFU {
+class FPUSoftfloat : public IterativeFU {
     static constexpr int FADD = 0b00000;
     static constexpr int FSUB = 0b00001;
     static constexpr int FMUL = 0b00010;
+    static constexpr int FDIV = 0b00011;
+    static constexpr int FCVT_W_S = 0x60;
+    static constexpr int FCVT_S_W = 0x68;
+    static constexpr int LAT_FADD = 5;
+    static constexpr int LAT_FMUL = 3;
+    static constexpr int LAT_FDIV = 10;
+    static constexpr int LAT_FCVT = 3;
 
 public:
-  FPUSoftfloat(std::string name = "FPUSoftfloat", int port_idx = 0, int lat = 1)
-      : FixedLatencyFU(name, port_idx, lat) {}
+  FPUSoftfloat(std::string name = "FPUSoftfloat", int port_idx = 0, int max_lat = LAT_FDIV)
+      : IterativeFU(name, port_idx, max_lat) {}
 
 protected:
   void impl_compute(ExuInst &inst) override {
-    float32_t a,b;
+    float32_t a, b;
     a.v = inst.src1_rdata;
     b.v = inst.src2_rdata;
-    softfloat_roundingMode = inst.func3; // rm
+    // rm=7(DYN) is currently treated as RNE.
+    softfloat_roundingMode = (inst.func3 == 7) ? 0 : inst.func3;
 
     switch (inst.op) {
     case UOP_FP:{
-        switch (inst.func7 >> 2) {
+        switch (inst.func7) {
+        case FCVT_W_S: {
+            uint32_t rs2_sel = inst.imm & 0x1F;
+            if (rs2_sel == 0) {
+              inst.result = static_cast<uint32_t>(f32_to_i32(a, softfloat_roundingMode, true));
+            } else if (rs2_sel == 1) {
+              inst.result = f32_to_ui32(a, softfloat_roundingMode, true);
+            } else {
+              assert(0);
+            }
+            break;
+        }
+        case FCVT_S_W: {
+            uint32_t rs2_sel = inst.imm & 0x1F;
+            if (rs2_sel == 0) {
+              inst.result = i32_to_f32(static_cast<int32_t>(inst.src1_rdata)).v;
+            } else if (rs2_sel == 1) {
+              inst.result = ui32_to_f32(inst.src1_rdata).v;
+            } else {
+              assert(0);
+            }
+            break;
+        }
+        default:
+          switch (inst.func7 >> 2) {
         case FADD:
             inst.result = f32_add(a,b).v;
             break;
@@ -44,8 +76,12 @@ protected:
         case FMUL:
             inst.result = f32_mul(a,b).v;
             break;
+        case FDIV:
+            inst.result = f32_div(a,b).v;
+            break;
         default:
             assert(0);
+          }
         }
         break;
     }
@@ -55,19 +91,41 @@ protected:
     }
     }
   }
+
+  int calculate_latency(const ExuInst &inst) override {
+    if (inst.op != UOP_FP) {
+      return LAT_FADD;
+    }
+    switch (inst.func7 >> 2) {
+    case FMUL:
+      return LAT_FMUL;
+    case FDIV:
+      return LAT_FDIV;
+    case FADD:
+    case FSUB:
+      return LAT_FADD;
+    default:
+      if (inst.func7 == FCVT_W_S || inst.func7 == FCVT_S_W) {
+        return LAT_FCVT;
+      }
+      return LAT_FADD;
+    }
+  }
 };
 
 // ==========================================
 // FPURtl
 // ==========================================
-class FPURtl : public FixedLatencyFU {
+class FPURtl : public IterativeFU {
     static constexpr int FADD = 0b00000;
     static constexpr int FSUB = 0b00001;
     static constexpr int FMUL = 0b00010;
+    static constexpr int LAT_FADD = 5;
+    static constexpr int LAT_FMUL = 3;
 
 public:
-    FPURtl(std::string name = "FPURtl", int port_idx = 0, int lat = 1)
-        : FixedLatencyFU(name, port_idx, lat) {}
+    FPURtl(std::string name = "FPURtl", int port_idx = 0, int max_lat = LAT_FADD)
+        : IterativeFU(name, port_idx, max_lat) {}
 
 protected:
     // 将整数转换为布尔数组
@@ -146,6 +204,21 @@ protected:
             inst.result = rtlFADD32(a, b, rm);
             break;
         }
+        }
+    }
+
+    int calculate_latency(const ExuInst &inst) override {
+        if (inst.op != UOP_FP) {
+            return LAT_FADD;
+        }
+        switch (inst.func7 >> 2) {
+        case FMUL:
+            return LAT_FMUL;
+        case FADD:
+        case FSUB:
+            return LAT_FADD;
+        default:
+            return LAT_FADD;
         }
     }
 };

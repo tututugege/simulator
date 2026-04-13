@@ -419,6 +419,10 @@ int main(int argc, char *argv[]) {
 
     if (cpu.ctx.exit_reason == ExitReason::EBREAK) {
       uint32_t a0 = cpu.get_reg(10);
+      if (a0 != 0) {
+        std::cerr << "\033[1;31m[sim] Program exited with non-zero code: " << a0
+                  << "\033[0m" << std::endl;
+      }
       return a0;
     }
 

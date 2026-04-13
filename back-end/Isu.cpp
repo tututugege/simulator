@@ -90,11 +90,27 @@ void Isu::comb_begin() {
 }
 
 
-int Isu::get_latency(UopType uop) {
+int Isu::get_latency(UopType uop, wire<7> func7) {
   if (uop == UOP_MUL)
     return MUL_MAX_LATENCY; // 乘法指令延迟
   if (uop == UOP_DIV)
     return DIV_MAX_LATENCY; // 除法指令延迟
+  if (uop == UOP_FP) {
+    switch (func7 >> 2) {
+    case 0b00000: // FADD.S
+    case 0b00001: // FSUB.S
+      return 5;
+    case 0b00010: // FMUL.S
+      return 3;
+    case 0b00011: // FDIV.S
+      return 10;
+    default:
+      if (func7 == 0x60 || func7 == 0x68) { // FCVT.W.S / FCVT.S.W
+        return 3;
+      }
+      return 5;
+    }
+  }
   return 1;                 // 其他指令认为是单周期，走 Fast Wakeup
 }
 
@@ -221,7 +237,7 @@ void Isu::comb_calc_latency_next() {
 
     if (inst.valid && inst.uop.dest_en) {
       UopType op = decode_uop_type(inst.uop.op);
-      int lat = get_latency(op);
+      int lat = get_latency(op, inst.uop.func7);
 
       if (lat > 1) {
         LatencyEntry new_entry;
@@ -268,7 +284,7 @@ void Isu::comb_awake() {
     const auto &entry = out.iss2prf->iss_entry[i];
     if (entry.valid && entry.uop.dest_en) {
       UopType op = decode_uop_type(entry.uop.op);
-      int lat = get_latency(op);
+      int lat = get_latency(op, entry.uop.func7);
       if (lat <= 1 && op != UOP_LOAD && op != UOP_STA) {
         pregs.push_back(entry.uop.dest_preg);
       }

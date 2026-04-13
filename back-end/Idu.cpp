@@ -522,6 +522,12 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
     uop.src1_en = true;
     uop.src2_en = true;
     uop.src2_is_imm = false;
+    // Preserve encoded rs2 (fmt selector) for FCVT/other unary FP ops.
+    uop.imm = reg_b_index;
+    if (number_funct7_unsigned == 0x60 || number_funct7_unsigned == 0x68 ||
+        number_funct7_unsigned == 0x2C || number_funct7_unsigned == 0x70) {
+      uop.src2_en = false;
+    }
     uop.type = encode_inst_type(FP);
     break;
   }
