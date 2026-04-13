@@ -2,6 +2,7 @@
 
 #include "InstructionBuffer.h"
 #include "config.h"
+#include "wire_types.h"
 #include "util.h"
 #include <bitset>
 #include <cstdint>
@@ -112,20 +113,20 @@ struct FrontDecIO {
   wire<1> predict_dir[FETCH_WIDTH];
 
   wire<1> alt_pred[FETCH_WIDTH];
-  wire<8> altpcpn[FETCH_WIDTH];
-  wire<8> pcpn[FETCH_WIDTH];
+  pcpn_t altpcpn[FETCH_WIDTH];
+  pcpn_t pcpn[FETCH_WIDTH];
   wire<32> predict_next_fetch_address[FETCH_WIDTH];
-  wire<32> tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
-  wire<32> tage_tag[FETCH_WIDTH][4]; // TN_MAX = 4
+  tage_idx_t tage_idx[FETCH_WIDTH][4]; // TN_MAX = 4
+  tage_tag_t tage_tag[FETCH_WIDTH][4]; // TN_MAX = 4
   wire<1> sc_used[FETCH_WIDTH];
   wire<1> sc_pred[FETCH_WIDTH];
-  wire<16> sc_sum[FETCH_WIDTH];
-  wire<16> sc_idx[FETCH_WIDTH][BPU_SCL_META_NTABLE];
+  tage_scl_meta_sum_t sc_sum[FETCH_WIDTH];
+  tage_scl_meta_idx_t sc_idx[FETCH_WIDTH][BPU_SCL_META_NTABLE];
   wire<1> loop_used[FETCH_WIDTH];
   wire<1> loop_hit[FETCH_WIDTH];
   wire<1> loop_pred[FETCH_WIDTH];
-  wire<16> loop_idx[FETCH_WIDTH];
-  wire<16> loop_tag[FETCH_WIDTH];
+  tage_loop_meta_idx_t loop_idx[FETCH_WIDTH];
+  tage_loop_meta_tag_t loop_tag[FETCH_WIDTH];
   wire<1> page_fault_inst[FETCH_WIDTH];
 
   FrontDecIO() {
