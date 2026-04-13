@@ -120,12 +120,67 @@
 
 ---
 
-## 6. 资源占用
-| 名称 | 规格 | 描述 |
+## 6. 存储器类型与端口
+
+### 6.1 `InstructionBuffer`（IBUF）
+类型：FIFO（环形队列）
+
+| 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| `ibuf/ibuf_1` | `INSTRUCTION_BUFFER_SIZE` | 指令缓冲当前态与工作副本 |
-| `ftq_entries/ftq_entries_1` | `FTQ_SIZE` | FTQ 元数据表当前态与工作副本 |
-| `ftq_head/tail/count` + `_1` | ring 指针与计数 | FTQ 管理状态 |
+| `IDU_INST_BUFFER_SIZE` | `DECODE_WIDTH` | `FETCH_WIDTH` |
+
+结论：IBUF 可视为 `FETCH_WIDTH` 入、`DECODE_WIDTH` 出的 FIFO，并支持同拍 pop/push 合并更新。
+
+端口分配说明：
+- 读口：`issue->entries[i] = ibuf.peek(i)`，每拍最多读取 `DECODE_WIDTH` 个头部槽位。
+- 写口：`comb_accept_front` 采集后在 `comb_fire` 循环 `push_back`，每拍最多写入 `FETCH_WIDTH` 项。
+- 出队：`idu_consume->fire[i]` 形成 `pop_front` 数量，最多 `DECODE_WIDTH`。
+
+### 6.2 `FTQ` 条目表（`ftq_entries[FTQ_SIZE]`）
+类型：复合结构（FIFO 控制面 + 随机读数据面）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `FTQ_SIZE` | `FTQ_EXU_PC_PORT_NUM + FTQ_ROB_PC_PORT_NUM` | `1`（steady-state 分配写） |
+
+补充：`flush/recover` 会触发批量清空（多项写 0），属于控制路径的状态重置，不是 steady-state 的并行多写端口。
+
+子结构划分：
+- `FTQ-Queue`（纯 FIFO 部分）：`ftq_head / ftq_tail / ftq_count` 与条目 `valid` 的生命周期管理；按 alloc 入队、按 commit 出队、支持 recover/flush。
+- `FTQ-Lookup`（随机读部分）：按 `ftq_idx(+ftq_offset)` 提供查询。
+
+随机读字段（由 `comb_ftq_lookup -> fill_ftq_pc_resp` 实际使用）：
+- `slot_pc[ftq_offset]`
+- `pred_taken_mask[ftq_offset]`
+- `next_pc`
+- `valid`（通过 `entry_valid` 返回）
+
+纯 FIFO 管理字段（不作为 EXU/ROB 查询 payload）：
+- `ftq_head`
+- `ftq_tail`
+- `ftq_count`
+
+随队列写入但不在当前 PC 查询路径直接读取的预测元数据字段：
+- `start_pc`
+- `alt_pred / altpcpn / pcpn`
+- `tage_idx / tage_tag`
+- `sc_used / sc_pred / sc_sum / sc_idx`
+- `loop_used / loop_hit / loop_pred / loop_idx / loop_tag`
+
+端口分配说明：
+- 读口分配：EXU `FTQ_EXU_PC_PORT_NUM` + ROB `FTQ_ROB_PC_PORT_NUM`。
+- 写口分配：`comb_accept_front` 每拍最多一次 `ftq_alloc()`，写入 1 个新条目。
+- 控制路径写：`flush/recover` 会进行批量清零/截断，不计入 steady-state 多写口能力。
+
+### 6.3 FTQ 管理寄存器
+类型：寄存器（Register）
+
+| 存储 | 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- | :--- |
+| `ftq_head` | `1` | `1` | `1` |
+| `ftq_tail` | `1` | `1` | `1` |
+| `ftq_count` | `1` | `1` | `1` |
+
 
 ---
 

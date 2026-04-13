@@ -119,11 +119,44 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
+## 6. 存储器类型与端口
 
-| 名称 | 规格 | 描述 |
+> 说明：`*_1` 是 next-state 工作副本（组合阶段写、`seq` 提交），不代表额外硬件端口；端口统计按模块行为语义给出。
+
+### 6.1 ROB 条目阵列（`entry[ROB_BANK_NUM][ROB_LINE_NUM]`）
+类型：多 bank 环形队列（FIFO 控制 + 按 `rob_idx` 随机更新）
+
+| 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| `entry/entry_1` | `ROB_BANK_NUM * ROB_LINE_NUM` | ROB 条目与下一拍工作副本 |
-| `enq_ptr/deq_ptr` | `clog2(ROB_LINE_NUM)` | 环形尾/头指针 |
-| `enq_flag/deq_flag` | 1 bit | 满空判定与年龄辅助位 |
-| `stall_cycle` | `int` | 提交停滞监控与死锁保护计数 |
+| `ROB_BANK_NUM * ROB_LINE_NUM` | `ROB_BANK_NUM + ISSUE_WIDTH` | `DECODE_WIDTH + ISSUE_WIDTH`（steady-state） |
+
+端口分配说明：
+- 读口 A（队头行）：`comb_ready/comb_commit` 读取 `deq_ptr` 行的 `ROB_BANK_NUM` 槽位。
+- 读口 B（随机）：`comb_complete` 按回传 `rob_idx` 读取对应条目并更新完成状态。
+- 写口 A（入队）：`comb_fire` 按 `dis_fire` 写 tail 行，最多 `DECODE_WIDTH`。
+- 写口 B（完成）：`comb_complete` 写随机条目的 `cplt_mask/异常/分支` 字段，最多 `ISSUE_WIDTH`。
+- 控制路径写：`comb_branch/comb_flush` 可批量失效错误路径或全清。
+
+### 6.2 Ring 指针与标志（`enq_ptr/deq_ptr/enq_flag/deq_flag`）
+类型：寄存器
+
+| 存储 | 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- | :--- |
+| `enq_ptr` | `1` | `1` | `1` |
+| `deq_ptr` | `1` | `1` | `1` |
+| `enq_flag` | `1` | `1` | `1` |
+| `deq_flag` | `1` | `1` | `1` |
+
+端口分配说明：
+- `comb_fire` 负责 tail 推进，`comb_commit` 负责 head 推进。
+- `comb_branch/comb_flush` 在恢复路径直接改写 tail/head 与 flag。
+
+### 6.3 停滞计数（`stall_cycle`）
+类型：寄存器
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `1` | `1` | `1` |
+
+端口分配说明：
+- 在 `comb_commit` 中按提交进展更新，用于死锁保护与调试触发。

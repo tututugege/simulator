@@ -96,23 +96,86 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
+## 6. 存储器类型与端口
 
-### 6.1 持久状态资源
+> 说明：`*_1` 是 next-state 工作副本（组合阶段写、`seq` 提交），不代表额外硬件端口；端口统计按模块行为语义给出。
 
-| 名称 | 规格 | 类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `inst_r` / `inst_valid` | `DECODE_WIDTH` | reg array | rename 流水寄存器 |
-| `spec_RAT` | `ARF_NUM+1` | reg array | 推测映射表 |
-| `arch_RAT` | `ARF_NUM+1` | reg array | 提交映射表 |
-| `free_vec` | `PRF_NUM` | reg array | 空闲位图 |
-| `spec_alloc` | `PRF_NUM` | reg array | 推测分配位图 |
-| `RAT_checkpoint` | `MAX_BR_NUM*(ARF_NUM+1)` | reg array | 分支快照 |
-| `alloc_checkpoint` | `MAX_BR_NUM*PRF_NUM` | reg array | 分支后分配记录 |
+### 6.1 Rename 流水寄存器（`inst_r` / `inst_valid`）
+类型：寄存器堆（按槽位保存 in-flight rename 输入）
 
-### 6.2 组合工作信号
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `DECODE_WIDTH` | `1`（按槽位读取） | `1`（按槽位写回） |
 
-| 名称 | 规格 | 类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `alloc_reg` | `DECODE_WIDTH` | static wire | 本拍目的 preg 预分配结果 |
-| `fire` | `DECODE_WIDTH` | static wire | `ren->dis` 实际握手结果 |
+端口分配说明：
+- 读口：`comb_alloc/comb_rename/comb_fire` 读取当前槽位。
+- 写口：`comb_pipeline` 在 `ready` 时采样新输入，背压时保留未 fire 槽位，`seq` 提交。
+
+### 6.2 `spec_RAT`
+类型：寄存器堆（推测映射表）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `ARF_NUM + 1` | `3 * DECODE_WIDTH`（`src1/src2/old_dest`） | `DECODE_WIDTH`（steady-state） |
+
+端口分配说明：
+- 读口：`comb_rename` 对每槽位读取 `src1/src2/dest` 三路映射。
+- 写口：`comb_fire` 对 fire 且写回目的寄存器的指令更新 `spec_RAT_1[dest_areg]`。
+- 恢复路径：`flush` 用 `arch_RAT` 覆盖，`mispred` 用 `RAT_checkpoint[br_id]` 覆盖。
+
+### 6.3 `arch_RAT`
+类型：寄存器堆（提交映射表）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `ARF_NUM + 1` | `1`（flush 恢复读取） | `COMMIT_WIDTH` |
+
+端口分配说明：
+- 写口：commit 时对 `dest_areg` 写入 `dest_preg`。
+- 读口：`flush` 路径把 `arch_RAT_1` 拷贝回 `spec_RAT_1`。
+
+### 6.4 `free_vec`
+类型：位图寄存器堆（freelist）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `PRF_NUM` | `1`（扫描读取） | `DECODE_WIDTH + COMMIT_WIDTH`（steady-state） |
+
+端口分配说明：
+- 读口：`comb_alloc` 顺序扫描可用 preg。
+- 写口（steady-state）：fire 分配时清零新 `dest_preg`；commit 时释放 `old_dest_preg`。
+- 恢复路径：`flush/mispred` 会按位图批量回收错误路径分配。
+
+### 6.5 `spec_alloc`
+类型：位图寄存器堆（推测分配记录）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `PRF_NUM` | `1` | `DECODE_WIDTH + COMMIT_WIDTH`（steady-state） |
+
+端口分配说明：
+- 写口（steady-state）：fire 分配时置位 `dest_preg`；commit 正常提交时清除对应 `dest_preg` 的推测标记。
+- 恢复路径：`flush/mispred` 根据快照批量修正 `spec_alloc`。
+
+### 6.6 `RAT_checkpoint`
+类型：寄存器堆（分支 RAT 快照）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `MAX_BR_NUM * (ARF_NUM + 1)` | `1`（按 `br_id` 读整行） | `DECODE_WIDTH`（按分支 fire 次数） |
+
+端口分配说明：
+- 写口：分支 fire 时，将当前 `spec_RAT_1` 保存到对应 `br_id` 行。
+- 读口：`mispred` 时读取 `RAT_checkpoint[br_id]` 恢复 `spec_RAT_1`。
+
+### 6.7 `alloc_checkpoint`
+类型：寄存器堆（分支后分配记录）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `MAX_BR_NUM * PRF_NUM` | `1`（按 `br_id` 读整行） | `DECODE_WIDTH + MAX_BR_NUM`（steady-state） |
+
+端口分配说明：
+- 写口 A：每条 fire 且 `dest_en` 的指令，将 `dest_preg` 在所有分支行标记为已分配。
+- 写口 B：分支 fire 时清空该 `br_id` 行，作为新的分支起点快照。
+- 读口：`mispred` 时读取 `alloc_checkpoint[br_id]`，回收错误路径上新分配的 preg。

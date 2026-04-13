@@ -134,4 +134,3 @@ EXU 发射阶段若目标 FPU 不可接收，则该 issue 端口置 `issue_stall
 1. 若目标是“完整 Zfinx”，优先补三源通路以支持 FMA 四指令。
 2. 接入 `fcsr/frm/fflags` 后再处理 `DYN rm` 与异常标志的提交时累积。
 3. 若目标是提高吞吐，可将 FPU 从 `IterativeFU` 升级为可流水化模型，或配置多 FPU 实例。
-

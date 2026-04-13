@@ -102,24 +102,51 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
+## 6. 存储器类型与端口
 
-### 6.1 持久状态资源
 
-| 名称 | 规格 | 类型 | 描述 |
+### 6.1 `tag_vec[MAX_BR_NUM]`
+类型：寄存器堆（Tag 空闲位图，1 bit/entry）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `MAX_BR_NUM` | `1`（整向量读取） | `1`（整向量写回） |
+
+端口分配说明：
+- `comb_decode` 读取 `tag_vec` 寻找可分配 Tag。
+- `comb_fire` 在 flush / clear / mispred / fire 路径更新 `tag_vec_1`，`seq` 提交。
+
+### 6.2 `br_mask_cp[MAX_BR_NUM]`
+类型：寄存器堆（checkpoint 表）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `MAX_BR_NUM` | `1`（按 `br_id` 索引读） | `1`（按索引写） |
+
+端口分配说明：
+- 读口：`mispred` 路径读取 `br_mask_cp[br_latch.br_id]` 计算回收集合。
+- 写口：新分支 fire 时写入 `br_mask_cp_1[new_tag]`。
+- 控制路径写：`clear_mask` 会对所有 checkpoint 执行按位清零（广播式更新）。
+
+### 6.3 `now_br_mask` / `pending_free_mask`
+类型：寄存器（标量状态）
+
+| 存储 | 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- | :--- |
-| `tag_vec` | `MAX_BR_NUM` | reg array | Tag 空闲位图 |
-| `now_br_mask` | `BR_MASK_WIDTH` | reg | 当前 in-flight 分支集合 |
-| `br_mask_cp` | `MAX_BR_NUM * BR_MASK_WIDTH` | reg array | 分支 checkpoint |
-| `pending_free_mask` | `BR_MASK_WIDTH` | reg | 延迟释放集合 |
-| `br_latch` | `ExuIdIO` | reg-like latch | 锁存的分支解析结果 |
+| `now_br_mask` | `1` | `1` | `1` |
+| `pending_free_mask` | `1` | `1` | `1` |
 
-### 6.2 组合工作信号
+端口分配说明：
+- `now_br_mask` 在 decode 参与生成 `running_mask`，在 fire 中被 clear/mispred/new-branch 更新。
+- `pending_free_mask` 在 fire 中先读出 `matured_free`，再写回新的延迟释放集合。
 
-| 名称 | 规格 | 类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `tag_vec_1` | `MAX_BR_NUM` | wire array | 下一拍状态候选 |
-| `now_br_mask_1` | `BR_MASK_WIDTH` | wire | 下一拍状态候选 |
-| `br_mask_cp_1` | `MAX_BR_NUM * BR_MASK_WIDTH` | wire array | 下一拍状态候选 |
-| `pending_free_mask_1` | `BR_MASK_WIDTH` | wire | 下一拍状态候选 |
-| `alloc_tag` | `DECODE_WIDTH * BR_TAG_WIDTH` | static wire | `comb_decode` 预分配结果，供 `comb_fire` 使用 |
+### 6.4 `br_latch`
+类型：寄存器（分支解析结果锁存）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `1` | `1` | `1` |
+
+端口分配说明：
+- 读口：`comb_decode/comb_branch/comb_fire` 读取 `br_latch`（`mispred/br_id/clear_mask`）。
+- 写口：`comb_fire` 将 `in.exu2id` 写入 `br_latch_1`，`seq` 提交。

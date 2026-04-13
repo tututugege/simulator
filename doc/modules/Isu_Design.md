@@ -114,10 +114,40 @@
 
 ---
 
-## 7. 资源占用 (Resource Usage)
+## 7. 存储器类型与端口
 
-| 名称 | 规格 | 描述 |
+
+### 7.1 IQ 条目阵列（`iqs[i].entry`）
+类型：多组寄存器堆（每个 IQ 一组）
+
+| 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| IQ 条目数组 | `sum(GLOBAL_IQ_CONFIG[i].size)` | 各 IQ 存储待发射条目 |
-| 延迟唤醒管线 | 动态向量 | 跟踪多周期目的寄存器倒计时 |
-| 唤醒广播口 | `MAX_WAKEUP_PORTS` | 对外发布本拍唤醒结果 |
+| `sum_i GLOBAL_IQ_CONFIG[i].size` | `sum_i GLOBAL_IQ_CONFIG[i].size`（调度全表读） | `sum_i (GLOBAL_IQ_CONFIG[i].dispatch_width + GLOBAL_IQ_CONFIG[i].port_num)`（入队+出队） |
+
+端口分配说明：
+- 写口 A：`comb_enq` 每个 IQ 每拍最多写 `dispatch_width` 个新条目。
+- 写口 B：`comb_issue` 每个 IQ 每拍最多提交 `port_num` 个已发射条目（置 invalid）。
+- 读口：`schedule()` 读取条目做 ready/年龄/端口匹配。
+
+### 7.2 IQ Wakeup Matrix（`wake_matrix_src1/src2`）
+类型：位图寄存器堆（依赖反向索引）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `2 * PRF_NUM * ceil(GLOBAL_IQ_CONFIG[i].size/64)`（每个 IQ） | `MAX_WAKEUP_PORTS`（每个 IQ） | `GLOBAL_IQ_CONFIG[i].dispatch_width + GLOBAL_IQ_CONFIG[i].port_num + MAX_WAKEUP_PORTS`（每个 IQ） |
+
+端口分配说明：
+- 写口 A：入队时 `set_dep_bits_for_slot` 设置源依赖位。
+- 写口 B：发射出队时 `clear_dep_bits_for_slot` 清除依赖位。
+- 读/写口 C：`wakeup()` 按 preg 读取对应 bitmask，并在处理后清零该行词位。
+
+### 7.3 延迟唤醒管线（`latency_pipe`）
+类型：理论上是移位寄存器
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| 动态（由在飞多周期指令数决定） | 全表遍历读 | 全表重建写 |
+
+端口分配说明：
+- `comb_calc_latency_next` 读取旧表并重建 `latency_pipe_1`（倒计时递减 + 新发射多周期条目入队）。
+- `comb_flush` 在 `flush/mispred` 下执行清空或按 `br_mask` 删除。

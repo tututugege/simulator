@@ -94,11 +94,29 @@
 
 ---
 
-## 5. 资源占用 (Resource Usage)
+## 5. 存储器类型与端口
 
-| 名称 | 规格 | 描述 |
+> 说明：`*_1` 是 next-state 工作副本（组合阶段写、`seq` 提交），不代表额外硬件端口；端口统计按模块行为语义给出。
+
+### 5.1 物理寄存器堆（`reg_file`）
+类型：寄存器堆（SRAM 语义）
+
+| 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| `reg_file/reg_file_1` | `PRF_NUM * 32bit` | 物理寄存器堆与下一拍副本 |
-| `inst_r/inst_r_1` | `ISSUE_WIDTH` | 写回流水寄存器与下一拍副本 |
-| 读旁路比较网络 | `ISSUE_WIDTH * 2` 源操作数 | `preg` 匹配与结果选择 |
-| 唤醒输出端口 | `LSU_LOAD_WB_WIDTH` | Load 写回唤醒广播 |
+| `PRF_NUM` | `2 * ISSUE_WIDTH` | `ISSUE_WIDTH` |
+
+端口分配说明：
+- 读口：`comb_read` 为每个 issue 槽位读取 `src1/src2`。
+- 写口：`comb_write` 从 `inst_r` 写回 `dest_preg`。
+- `x0` 语义：`preg=0` 强制保持 0，不参与有效写回。
+
+### 5.2 写回流水寄存器（`inst_r`）
+类型：寄存器堆（按 issue 端口保存上一拍回写条目）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `ISSUE_WIDTH` | `ISSUE_WIDTH` | `ISSUE_WIDTH` |
+
+端口分配说明：
+- 读口：`comb_write` 和 `comb_awake` 读取 `inst_r` 生成写回与唤醒。
+- 写口：`comb_pipeline` 从 `exe2prf->entry` 采样并做 flush/mispred/clear 过滤后写入。
