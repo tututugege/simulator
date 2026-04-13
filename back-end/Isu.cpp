@@ -105,6 +105,9 @@ int Isu::get_latency(UopType uop, wire<7> func7) {
     case 0b00011: // FDIV.S
       return 10;
     default:
+      if (func7 == 0x2C) { // FSQRT.S
+        return 10;
+      }
       if (func7 == 0x60 || func7 == 0x68) { // FCVT.W.S / FCVT.S.W
         return 3;
       }

@@ -1,4 +1,4 @@
-RISCV_ARCH := rv32imab
+RISCV_ARCH := rv32imab_zfinx
 RISCV_ABI := ilp32
 RISCV_MCMODEL := medlow
 CFLAGS += -O0 
@@ -49,6 +49,7 @@ CLEAN_DIRS += $(BUILD_DIR)
 
 CFLAGS += -march=$(RISCV_ARCH)
 CFLAGS += -mabi=$(RISCV_ABI)
+CFLAGS += -ffp-contract=off
 CFLAGS += -mcmodel=$(RISCV_MCMODEL)  -O2 --specs=nosys.specs  -gdwarf
 
 all: $(ELF)
@@ -71,4 +72,3 @@ $(BUILD_DIR)/%.o: %.c
 
 clean:
 	rm -rf $(CLEAN_DIRS)
-

@@ -20,6 +20,11 @@ class FPUSoftfloat : public IterativeFU {
     static constexpr int FSUB = 0b00001;
     static constexpr int FMUL = 0b00010;
     static constexpr int FDIV = 0b00011;
+    static constexpr int FSQRT = 0x2C;
+    static constexpr int FSGNJ = 0x10;
+    static constexpr int FMINMAX = 0x14;
+    static constexpr int FCMP = 0x50;
+    static constexpr int FCLASS = 0x70;
     static constexpr int FCVT_W_S = 0x60;
     static constexpr int FCVT_S_W = 0x68;
     static constexpr int LAT_FADD = 5;
@@ -32,6 +37,103 @@ public:
       : IterativeFU(name, port_idx, max_lat) {}
 
 protected:
+  static inline bool is_nan_u32(uint32_t v) {
+    return ((v & 0x7F800000u) == 0x7F800000u) && ((v & 0x007FFFFFu) != 0);
+  }
+
+  static inline uint32_t f32_classify(float32_t f) {
+    uint32_t bits = f.v;
+    uint32_t sign = (bits >> 31) & 1u;
+    uint32_t exp = (bits >> 23) & 0xFFu;
+    uint32_t mant = bits & 0x7FFFFFu;
+
+    bool is_subnormal = (exp == 0) && (mant != 0);
+    bool is_zero = (exp == 0) && (mant == 0);
+    bool is_inf = (exp == 0xFF) && (mant == 0);
+    bool is_nan = (exp == 0xFF) && (mant != 0);
+    bool is_snan = is_nan && ((mant >> 22) & 1u) == 0;
+    bool is_qnan = is_nan && ((mant >> 22) & 1u) == 1;
+
+    uint32_t res = 0;
+    if (is_inf && sign) {
+      res |= (1u << 0);
+    } else if (!is_inf && !is_zero && !is_nan && !is_subnormal && sign) {
+      res |= (1u << 1);
+    } else if (is_subnormal && sign) {
+      res |= (1u << 2);
+    } else if (is_zero && sign) {
+      res |= (1u << 3);
+    } else if (is_zero && !sign) {
+      res |= (1u << 4);
+    } else if (is_subnormal && !sign) {
+      res |= (1u << 5);
+    } else if (!is_inf && !is_zero && !is_nan && !is_subnormal && !sign) {
+      res |= (1u << 6);
+    } else if (is_inf && !sign) {
+      res |= (1u << 7);
+    }
+
+    if (is_snan) {
+      res |= (1u << 8);
+    }
+    if (is_qnan) {
+      res |= (1u << 9);
+    }
+    return res;
+  }
+
+  static inline uint32_t f32_min_riscv(float32_t a, float32_t b) {
+    if (f32_isSignalingNaN(a) || f32_isSignalingNaN(b)) {
+      softfloat_exceptionFlags |= softfloat_flag_invalid;
+    }
+
+    bool a_nan = is_nan_u32(a.v);
+    bool b_nan = is_nan_u32(b.v);
+    if (a_nan && b_nan) {
+      return 0x7fc00000u;
+    }
+    if (a_nan) {
+      return b.v;
+    }
+    if (b_nan) {
+      return a.v;
+    }
+
+    if (f32_lt(a, b)) {
+      return a.v;
+    }
+    if (f32_lt(b, a)) {
+      return b.v;
+    }
+    return a.v | b.v;
+  }
+
+  static inline uint32_t f32_max_riscv(float32_t a, float32_t b) {
+    if (f32_isSignalingNaN(a) || f32_isSignalingNaN(b)) {
+      softfloat_exceptionFlags |= softfloat_flag_invalid;
+    }
+
+    bool a_nan = is_nan_u32(a.v);
+    bool b_nan = is_nan_u32(b.v);
+    if (a_nan && b_nan) {
+      return 0x7fc00000u;
+    }
+    if (a_nan) {
+      return b.v;
+    }
+    if (b_nan) {
+      return a.v;
+    }
+
+    if (f32_lt(a, b)) {
+      return b.v;
+    }
+    if (f32_lt(b, a)) {
+      return a.v;
+    }
+    return a.v & b.v;
+  }
+
   void impl_compute(ExuInst &inst) override {
     float32_t a, b;
     a.v = inst.src1_rdata;
@@ -80,7 +182,58 @@ protected:
             inst.result = f32_div(a,b).v;
             break;
         default:
-            assert(0);
+            switch (inst.func7) {
+            case FSQRT: {
+              uint32_t rs2_sel = inst.imm & 0x1F;
+              if (rs2_sel != 0) {
+                assert(0);
+              }
+              inst.result = f32_sqrt(a).v;
+              break;
+            }
+            case FSGNJ:
+              if (inst.func3 == 0) {
+                inst.result = (a.v & ~0x80000000u) | (b.v & 0x80000000u);
+              } else if (inst.func3 == 1) {
+                inst.result = (a.v & ~0x80000000u) | ((~b.v) & 0x80000000u);
+              } else if (inst.func3 == 2) {
+                inst.result = a.v ^ (b.v & 0x80000000u);
+              } else {
+                assert(0);
+              }
+              break;
+            case FMINMAX:
+              if (inst.func3 == 0) {
+                inst.result = f32_min_riscv(a, b);
+              } else if (inst.func3 == 1) {
+                inst.result = f32_max_riscv(a, b);
+              } else {
+                assert(0);
+              }
+              break;
+            case FCMP:
+              if (inst.func3 == 2) {
+                inst.result = static_cast<uint32_t>(f32_eq(a, b));
+              } else if (inst.func3 == 1) {
+                inst.result = static_cast<uint32_t>(f32_lt(a, b));
+              } else if (inst.func3 == 0) {
+                inst.result = static_cast<uint32_t>(f32_le(a, b));
+              } else {
+                assert(0);
+              }
+              break;
+            case FCLASS: {
+              uint32_t rs2_sel = inst.imm & 0x1F;
+              if (rs2_sel != 0) {
+                assert(0);
+              }
+              assert(inst.func3 == 1);
+              inst.result = f32_classify(a);
+              break;
+            }
+            default:
+              assert(0);
+            }
           }
         }
         break;
@@ -107,6 +260,9 @@ protected:
     default:
       if (inst.func7 == FCVT_W_S || inst.func7 == FCVT_S_W) {
         return LAT_FCVT;
+      }
+      if (inst.func7 == FSQRT) {
+        return LAT_FDIV;
       }
       return LAT_FADD;
     }
