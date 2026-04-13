@@ -101,22 +101,42 @@ CSR 模块是异常处理的大脑：
 
 ---
 
-## 6. 资源占用 (Resource Usage)
+## 6. 存储器类型与端口
 
-### 6.1 存储资源 (Storage Resources)
+> 说明：文中“寄存器堆”是逻辑抽象，物理实现可为 FF 阵列或 SRAM（视容量与端口需求而定）。
 
-| 寄存器/存储名称 | 规格 (Size/Bits) | 硬件类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `CSR_RegFile` | `21 * 32` | `reg` array | 分别对应 MSTATUS, MEPC, MCAUSE 等物理寄存器 |
-| `privilege` | 2 | `reg` | 当前特权级寄存器 (Machine/Supervisor/User) |
-| `csr_wxxx` | Various | `reg` | (`csr_idx`, `csr_wdata`, `csr_wcmd`, `csr_we`) 暂存 Exu 写请求的中间寄存器 |
+### 6.1 CSR 寄存器文件（`CSR_RegFile`）
+类型：CSR 状态寄存器组（逻辑上按 CSR 索引访问）
 
-> [!NOTE] 信号命名约定
-> 代码中后缀为 `_1` 的变量（如 `CSR_RegFile_1`, `privilege_1`）并非物理寄存器，而是**组合逻辑计算出的下一周期更新值 (Next State Wire)**。
-> 在 `seq()` 函数中，这些 `_1` 信号的值会被更新到对应的无后缀寄存器中 (e.g., `privilege = privilege_1`)。
-
-### 6.2 硬件开销 (Hardware Overhead)
-
-| 资源名称 | 规格 (Ports/Width) | 描述 |
+| 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| Exception Logic | Complex | 状态机逻辑，包含大量位操作和条件判断 |
+| `CSR_NUM` | `1`（CSR 指令读）+ 内部状态读 | `1`（提交写）+ 控制路径写 |
+
+端口分配说明：
+- 读口：`comb_csr_read` 按 `idx` 读取；`comb_interrupt/comb_exception/comb_csr_status` 读取状态位参与仲裁与输出。
+- 写口 A：`comb_csr_write` 在 `rob2csr.commit && csr_we` 时执行 CSR 指令写。
+- 写口 B：`comb_exception` 在 trap/return 路径写 `mepc/scause/mstatus/...` 等控制状态。
+
+### 6.2 特权级状态（`privilege`）
+类型：寄存器
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `1` | `1` | `1` |
+
+端口分配说明：
+- 读口：中断仲裁与状态输出使用当前特权级。
+- 写口：trap 进入和 `mret/sret` 返回路径更新 `privilege_1`。
+
+### 6.3 延迟提交写缓冲（`csr_idx/csr_wdata/csr_wcmd/csr_we`）
+类型：寄存器（写请求 latch）
+
+| 存储 | 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- | :--- |
+| `csr_idx` | `1` | `1` | `1` |
+| `csr_wdata` | `1` | `1` | `1` |
+| `csr_wcmd` | `1` | `1` | `1` |
+| `csr_we` | `1` | `1` | `1` |
+
+端口分配说明：
+- `comb_csr_write` 在执行阶段锁存 EXU 请求，提交阶段再读取并真正写 `CSR_RegFile_1`。

@@ -112,20 +112,29 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
+## 6. 存储器类型与端口
 
-### 6.1 持久状态资源
+> 说明：文中“寄存器堆”是逻辑抽象，物理实现可为 FF 阵列或 SRAM（视容量与端口需求而定）。
 
-| 名称 | 规格 | 类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `inst_r` / `inst_valid` | `DECODE_WIDTH` | reg array | Dispatch 流水寄存器 |
-| `busy_table` | `PRF_NUM` | reg array | Dispatch 阶段寄存器 busy 位图 |
+### 6.1 Dispatch 流水寄存器（`inst_r` / `inst_valid`）
+类型：流水寄存器阵列（按槽位保存待分派指令）
 
-### 6.2 组合工作资源
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `DECODE_WIDTH` | `1`（按槽位读取） | `1`（按槽位写回） |
 
-| 名称 | 规格 | 类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `inst_alloc` | `DECODE_WIDTH` | comb cache | 本拍分配后的指令元数据 |
-| `dispatch_success_flags` | `DECODE_WIDTH` | comb cache | 槽位是否通过 IQ 分配检查 |
-| `dispatch_cache` | `DECODE_WIDTH * MAX_UOPS_PER_INST` | comb cache | 槽位拆分后 IQ 路由缓存 |
-| `stq_port_owner/ldq_port_owner` | LSU 端口数 | comb cache | 端口到槽位映射 |
+端口分配说明：
+- 读口：`comb_alloc/comb_wake/comb_dispatch/comb_fire` 读取当前槽位状态。
+- 写口：`comb_pipeline` 在 `ready` 时采样 `ren2dis`，背压时保留未 fire 槽位，`seq` 提交。
+
+### 6.2 Busy Table（`busy_table`）
+类型：位图状态阵列（preg busy 状态）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `PRF_NUM` | `2 * DECODE_WIDTH` | `DECODE_WIDTH + LSU_LOAD_WB_WIDTH + MAX_WAKEUP_PORTS` |
+
+端口分配说明：
+- 读口：`comb_wake` 对每槽位 `src1/src2` 查询 busy 位。
+- 写口 A：`dis_fire && dest_en` 时将 `dest_preg` 置 busy。
+- 写口 B：接收 `prf_awake` 与 `iss_awake` 时对对应 `preg` 清 busy。

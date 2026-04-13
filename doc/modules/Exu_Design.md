@@ -112,11 +112,38 @@
 
 ---
 
-## 6. 资源占用 (Resource Usage)
+## 6. 存储器类型与端口
 
-| 名称 | 规格 | 描述 |
+
+### 6.1 执行级流水寄存器（`inst_r`）
+类型：流水寄存器阵列（按 issue 端口保存在飞 uop）
+
+| 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| `inst_r`/`inst_r_1` | `ISSUE_WIDTH` | 执行级流水寄存器 |
-| `units` | 与配置相关 | 各类 FU 对象实例 |
-| `port_mappings` | `ISSUE_WIDTH` | 端口到 FU 的能力路由表 |
-| `issue_stall` | `ISSUE_WIDTH` | 每端口发射阻塞标记 |
+| `ISSUE_WIDTH` | `ISSUE_WIDTH` | `ISSUE_WIDTH` |
+
+端口分配说明：
+- 读口：`comb_ready/comb_exec/comb_ftq_pc_req/comb_to_csr` 读取各端口在飞条目。
+- 写口：`comb_pipeline` 在端口可推进时从 `prf2exe` 采样新条目，或清空被 kill 条目。
+
+### 6.2 FU 内部在飞状态（`units` 内部）
+类型：功能单元本地存储
+
+| 子类型 | 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- | :--- |
+| `FixedLatencyFU::pipeline` | `latency`（每实例） | `1`（取完成） | `1`（accept 入队） |
+| `IterativeFU::current_inst` | `1`（每实例） | `1`（取完成） | `1`（accept 覆盖） |
+
+端口分配说明：
+- `accept()` 写入 FU 在飞状态；`get_finished_uop()/pop_finished()` 读取并弹出完成项。
+- `flush/clear_br` 会对 FU 内部在飞条目做选择性清除/批量清除。
+
+### 6.3 端口路由表（`port_mappings`）
+类型：只读配置表（初始化后运行期不改，实际上是软件，不需要真实的硬件实现）
+
+| 深度 | 读端口 | 写端口 |
+| :--- | :--- | :--- |
+| `ISSUE_WIDTH`（每端口一组 `FuEntry`） | `ISSUE_WIDTH` | `0`（运行期） |
+
+端口分配说明：
+- `comb_ready/comb_exec` 每拍读取路由表选择可用 FU 与支持掩码。
