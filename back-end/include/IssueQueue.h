@@ -129,7 +129,7 @@ struct IqStoredEntry {
 struct IssueQueueIn {
   std::vector<IqStoredEntry> enq_reqs;
   uint32_t wake_pregs[MAX_WAKEUP_PORTS] = {};
-  int wake_preg_num = 0;
+  wire<1> wake_valid[MAX_WAKEUP_PORTS] = {};
   wire<1> issue_block = 0;
   wire<1> flush_all = 0;
   wire<1> flush_br = 0;
@@ -198,9 +198,9 @@ public:
     for (auto &grant : out.issue_grants) {
       grant = {};
     }
-    in.wake_preg_num = 0;
-    for (auto &preg : in.wake_pregs) {
-      preg = 0;
+    for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
+      in.wake_pregs[i] = 0;
+      in.wake_valid[i] = 0;
     }
     in.issue_block = 0;
     in.flush_all = 0;
@@ -228,7 +228,10 @@ public:
   }
 
   void comb_wakeup() {
-    for (int i = 0; i < in.wake_preg_num; i++) {
+    for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
+      if (!in.wake_valid[i]) {
+        continue;
+      }
       uint32_t preg = in.wake_pregs[i];
       if (preg >= PRF_NUM) {
         continue;

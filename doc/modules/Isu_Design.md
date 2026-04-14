@@ -85,7 +85,7 @@
 - **约束/优先级**：仅 `latency>1 && dest_en` 进入延迟管线。
 
 ### 4.6 `comb_awake`
-- **功能描述**：汇总三类唤醒源后写入 `iq.in.wake_pregs[] + iq.in.wake_preg_num` 并调用 `iq.comb_wakeup()`，同时对外广播。
+- **功能描述**：汇总三类唤醒源后写入 `iq.in.wake_valid[] + iq.in.wake_pregs[]` 并调用 `iq.comb_wakeup()`，同时对外广播。
 - **输入依赖**：`in.prf_awake`, `mul_wake_pipe/div_wake_slots/fp_wake_slots`, `out.iss2prf->iss_entry`, `get_latency(op)`, `iqs[]`。
 - **输出更新**：IQ 等待项就绪位、`out.iss_awake->wake[]`。
 - **约束/优先级**：唤醒端口数不超过 `MAX_WAKEUP_PORTS`。

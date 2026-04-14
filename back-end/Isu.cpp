@@ -329,41 +329,58 @@ void Isu::comb_calc_latency_next() {
  * comb_awake
  * 功能: 汇总慢速/延迟/快速唤醒源，唤醒 IQ 内等待项并对外广播 iss_awake。
  * 输入依赖: in.prf_awake, mul/div/fp 延迟唤醒当前状态, out.iss2prf->iss_entry, get_latency(op), iqs[]。
- * 输出更新: iqs[]（通过 q.in.wake_pregs + q.comb_wakeup）, out.iss_awake->wake[]。
+ * 输出更新: iqs[]（通过 q.in.wake_valid/wake_pregs + q.comb_wakeup）, out.iss_awake->wake[]。
  * 约束: 唤醒端口数不超过 MAX_WAKEUP_PORTS；仅单周期且非 LOAD/STA 的新发射进入快速唤醒。
  */
 void Isu::comb_awake() {
-  uint32_t pregs[MAX_WAKEUP_PORTS] = {};
-  int preg_num = 0;
-  auto push_wake_preg = [&](uint32_t preg) {
-    Assert(preg_num < MAX_WAKEUP_PORTS);
-    pregs[preg_num++] = preg;
-  };
+  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
+    out.iss_awake->wake[i].valid = false;
+    out.iss_awake->wake[i].preg = 0;
+  }
+  int wake_idx = 0;
 
   // 来源 A: 慢速唤醒 (来自写回阶段：Load / 缓存缺失)
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
-    if (in.prf_awake->wake[i].valid) {
-      push_wake_preg(in.prf_awake->wake[i].preg);
+    if (!in.prf_awake->wake[i].valid) {
+      continue;
     }
+    Assert(wake_idx < MAX_WAKEUP_PORTS);
+    out.iss_awake->wake[wake_idx].valid = true;
+    out.iss_awake->wake[wake_idx].preg = in.prf_awake->wake[i].preg;
+    wake_idx++;
   }
 
   // 来源 B1: 延迟唤醒（DIV countdown 到 0）
-  for (const auto &slot : div_wake_slots) {
+  for (int i = 0; i < ISU_DIV_WAKE_SLOT_NUM; i++) {
+    const auto &slot = div_wake_slots[i];
     if (slot.valid && slot.countdown == 0) {
-      push_wake_preg(slot.dest_preg);
+      Assert(wake_idx < MAX_WAKEUP_PORTS);
+      out.iss_awake->wake[wake_idx].valid = true;
+      out.iss_awake->wake[wake_idx].preg = slot.dest_preg;
+      wake_idx++;
     }
   }
+
   // 来源 B2: 延迟唤醒（FP countdown 到 0）
-  for (const auto &slot : fp_wake_slots) {
+  for (int i = 0; i < ISU_FP_WAKE_SLOT_NUM; i++) {
+    const auto &slot = fp_wake_slots[i];
     if (slot.valid && slot.countdown == 0) {
-      push_wake_preg(slot.dest_preg);
+      Assert(wake_idx < MAX_WAKEUP_PORTS);
+      out.iss_awake->wake[wake_idx].valid = true;
+      out.iss_awake->wake[wake_idx].preg = slot.dest_preg;
+      wake_idx++;
     }
   }
+
   // 来源 B3: 延迟唤醒（MUL 移位寄存器末级）
-  if (MUL_MAX_LATENCY > 1) {
-    for (const auto &slot : mul_wake_pipe[ISU_MUL_WAKE_DEPTH - 1]) {
+  for (int i = 0; i < ISU_MUL_WAKE_SLOT_NUM; i++) {
+    if (MUL_MAX_LATENCY > 1) {
+      const auto &slot = mul_wake_pipe[ISU_MUL_WAKE_DEPTH - 1][i];
       if (slot.valid) {
-        push_wake_preg(slot.dest_preg);
+        Assert(wake_idx < MAX_WAKEUP_PORTS);
+        out.iss_awake->wake[wake_idx].valid = true;
+        out.iss_awake->wake[wake_idx].preg = slot.dest_preg;
+        wake_idx++;
       }
     }
   }
@@ -375,7 +392,10 @@ void Isu::comb_awake() {
       UopType op = decode_uop_type(entry.uop.op);
       int lat = get_latency(op, entry.uop.func7);
       if (lat <= 1 && op != UOP_LOAD && op != UOP_STA) {
-        push_wake_preg(entry.uop.dest_preg);
+        Assert(wake_idx < MAX_WAKEUP_PORTS);
+        out.iss_awake->wake[wake_idx].valid = true;
+        out.iss_awake->wake[wake_idx].preg = entry.uop.dest_preg;
+        wake_idx++;
       }
     }
   }
@@ -383,23 +403,11 @@ void Isu::comb_awake() {
   // === 统一广播 ===
   // 1. 唤醒所有 IQ
   for (auto &q : iqs) {
-    q.in.wake_preg_num = preg_num;
-    for (int i = 0; i < preg_num; i++) {
-      q.in.wake_pregs[i] = pregs[i];
+    for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
+      q.in.wake_valid[i] = out.iss_awake->wake[i].valid;
+      q.in.wake_pregs[i] = out.iss_awake->wake[i].preg;
     }
     q.comb_wakeup();
-  }
-
-
-
-  // 3. 输出给外部 (iss_awake) - 用于通知 rename table 等
-  for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
-    if (i < preg_num) {
-      out.iss_awake->wake[i].valid = true;
-      out.iss_awake->wake[i].preg = pregs[i];
-    } else {
-      out.iss_awake->wake[i].valid = false;
-    }
   }
 }
 
