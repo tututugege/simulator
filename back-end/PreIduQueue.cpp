@@ -7,14 +7,14 @@ static InstructionBufferEntry push_entries[FETCH_WIDTH];
 static int push_count = 0;
 
 static void fill_ftq_pc_resp(FtqPcReadResp &resp, const FTQEntry &entry,
-                             const FtqPcReadReq &req) {
+                             wire<1> entry_valid, const FtqPcReadReq &req) {
   resp = {};
   if (!req.valid) {
     return;
   }
 
   resp.valid = true;
-  resp.entry_valid = entry.valid;
+  resp.entry_valid = entry_valid;
   resp.pc = entry.slot_pc[req.ftq_offset];
   resp.pred_taken = entry.pred_taken_mask[req.ftq_offset];
   resp.next_pc = entry.next_pc;
@@ -38,6 +38,7 @@ void PreIduQueue::ftq_pop(int pop_cnt) {
     if (ftq_count_1 <= 0) {
       break;
     }
+    ftq_valid_1[ftq_head_1] = false;
     ftq_head_1 = (ftq_head_1 + 1) % FTQ_SIZE;
     ftq_count_1--;
   }
@@ -48,7 +49,7 @@ void PreIduQueue::ftq_recover(int new_tail) {
   int discarded = (ftq_tail_1 - normalized_tail + FTQ_SIZE) % FTQ_SIZE;
   for (int i = 0; i < discarded; i++) {
     int idx = (normalized_tail + i) % FTQ_SIZE;
-    ftq_entries_1[idx] = FTQEntry();
+    ftq_valid_1[idx] = false;
   }
   ftq_tail_1 = normalized_tail;
   ftq_count_1 -= discarded;
@@ -59,7 +60,7 @@ void PreIduQueue::ftq_flush() {
   ftq_tail_1 = 0;
   ftq_count_1 = 0;
   for (int i = 0; i < FTQ_SIZE; i++) {
-    ftq_entries_1[i] = FTQEntry();
+    ftq_valid_1[i] = false;
   }
 }
 
@@ -70,8 +71,12 @@ void PreIduQueue::init() {
   ftq_head_1 = ftq_tail_1 = ftq_count_1 = 0;
   push_count = 0;
   for (int i = 0; i < FTQ_SIZE; i++) {
-    ftq_entries[i] = FTQEntry();
-    ftq_entries_1[i] = FTQEntry();
+    ftq_lookup_entries[i] = FTQEntry();
+    ftq_lookup_entries_1[i] = FTQEntry();
+    ftq_train_meta_fifo[i] = FTQTrainMetaEntry();
+    ftq_train_meta_fifo_1[i] = FTQTrainMetaEntry();
+    ftq_valid[i] = false;
+    ftq_valid_1[i] = false;
   }
 }
 
@@ -80,7 +85,9 @@ void PreIduQueue::comb_begin() {
   ftq_head_1 = ftq_head;
   ftq_tail_1 = ftq_tail;
   ftq_count_1 = ftq_count;
-  std::memcpy(ftq_entries_1, ftq_entries, sizeof(ftq_entries));
+  std::memcpy(ftq_lookup_entries_1, ftq_lookup_entries, sizeof(ftq_lookup_entries));
+  std::memcpy(ftq_train_meta_fifo_1, ftq_train_meta_fifo, sizeof(ftq_train_meta_fifo));
+  std::memcpy(ftq_valid_1, ftq_valid, sizeof(ftq_valid));
 
   for (auto &e : out.issue->entries) {
     e = {};
@@ -129,29 +136,29 @@ void PreIduQueue::comb_accept_front() {
     return;
   }
 
-  FTQEntry ftq_entry;
-  ftq_entry.start_pc = in.front2pre->pc[0];
-  ftq_entry.next_pc = in.front2pre->predict_next_fetch_address[0];
+  FTQEntry ftq_lookup_entry;
+  FTQTrainMetaEntry ftq_train_meta_entry;
+  ftq_lookup_entry.next_pc = in.front2pre->predict_next_fetch_address[0];
   for (int i = 0; i < FETCH_WIDTH; i++) {
-    ftq_entry.slot_pc[i] = in.front2pre->pc[i];
-    ftq_entry.pred_taken_mask[i] = in.front2pre->predict_dir[i];
-    ftq_entry.alt_pred[i] = in.front2pre->alt_pred[i];
-    ftq_entry.altpcpn[i] = in.front2pre->altpcpn[i];
-    ftq_entry.pcpn[i] = in.front2pre->pcpn[i];
-    ftq_entry.sc_used[i] = in.front2pre->sc_used[i];
-    ftq_entry.sc_pred[i] = in.front2pre->sc_pred[i];
-    ftq_entry.sc_sum[i] = in.front2pre->sc_sum[i];
+    ftq_lookup_entry.slot_pc[i] = in.front2pre->pc[i];
+    ftq_lookup_entry.pred_taken_mask[i] = in.front2pre->predict_dir[i];
+    ftq_train_meta_entry.alt_pred[i] = in.front2pre->alt_pred[i];
+    ftq_train_meta_entry.altpcpn[i] = in.front2pre->altpcpn[i];
+    ftq_train_meta_entry.pcpn[i] = in.front2pre->pcpn[i];
+    ftq_train_meta_entry.sc_used[i] = in.front2pre->sc_used[i];
+    ftq_train_meta_entry.sc_pred[i] = in.front2pre->sc_pred[i];
+    ftq_train_meta_entry.sc_sum[i] = in.front2pre->sc_sum[i];
     for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-      ftq_entry.sc_idx[i][t] = in.front2pre->sc_idx[i][t];
+      ftq_train_meta_entry.sc_idx[i][t] = in.front2pre->sc_idx[i][t];
     }
-    ftq_entry.loop_used[i] = in.front2pre->loop_used[i];
-    ftq_entry.loop_hit[i] = in.front2pre->loop_hit[i];
-    ftq_entry.loop_pred[i] = in.front2pre->loop_pred[i];
-    ftq_entry.loop_idx[i] = in.front2pre->loop_idx[i];
-    ftq_entry.loop_tag[i] = in.front2pre->loop_tag[i];
+    ftq_train_meta_entry.loop_used[i] = in.front2pre->loop_used[i];
+    ftq_train_meta_entry.loop_hit[i] = in.front2pre->loop_hit[i];
+    ftq_train_meta_entry.loop_pred[i] = in.front2pre->loop_pred[i];
+    ftq_train_meta_entry.loop_idx[i] = in.front2pre->loop_idx[i];
+    ftq_train_meta_entry.loop_tag[i] = in.front2pre->loop_tag[i];
     for (int j = 0; j < 4; j++) {
-      ftq_entry.tage_idx[i][j] = in.front2pre->tage_idx[i][j];
-      ftq_entry.tage_tag[i][j] = in.front2pre->tage_tag[i][j];
+      ftq_train_meta_entry.tage_idx[i][j] = in.front2pre->tage_idx[i][j];
+      ftq_train_meta_entry.tage_tag[i][j] = in.front2pre->tage_tag[i][j];
     }
   }
   const int ftq_alloc_idx = ftq_alloc();
@@ -159,8 +166,9 @@ void PreIduQueue::comb_accept_front() {
     out.pre2front->ready = false;
     return;
   }
-  ftq_entries_1[ftq_alloc_idx] = ftq_entry;
-  ftq_entries_1[ftq_alloc_idx].valid = true;
+  ftq_lookup_entries_1[ftq_alloc_idx] = ftq_lookup_entry;
+  ftq_train_meta_fifo_1[ftq_alloc_idx] = ftq_train_meta_entry;
+  ftq_valid_1[ftq_alloc_idx] = true;
 
   for (int i = 0; i < FETCH_WIDTH; i++) {
     out.pre2front->fire[i] = in.front2pre->valid[i];
@@ -258,7 +266,8 @@ void PreIduQueue::comb_ftq_lookup() {
     out.ftq_exu_pc_resp->resp[i] = {};
     if (in.ftq_exu_pc_req->req[i].valid) {
       fill_ftq_pc_resp(out.ftq_exu_pc_resp->resp[i],
-                       ftq_entries[in.ftq_exu_pc_req->req[i].ftq_idx],
+                       ftq_lookup_entries[in.ftq_exu_pc_req->req[i].ftq_idx],
+                       ftq_valid[in.ftq_exu_pc_req->req[i].ftq_idx],
                        in.ftq_exu_pc_req->req[i]);
     }
   }
@@ -267,7 +276,8 @@ void PreIduQueue::comb_ftq_lookup() {
     out.ftq_rob_pc_resp->resp[i] = {};
     if (in.ftq_rob_pc_req->req[i].valid) {
       fill_ftq_pc_resp(out.ftq_rob_pc_resp->resp[i],
-                       ftq_entries[in.ftq_rob_pc_req->req[i].ftq_idx],
+                       ftq_lookup_entries[in.ftq_rob_pc_req->req[i].ftq_idx],
+                       ftq_valid[in.ftq_rob_pc_req->req[i].ftq_idx],
                        in.ftq_rob_pc_req->req[i]);
     }
   }
@@ -278,12 +288,48 @@ void PreIduQueue::seq() {
   ftq_head = ftq_head_1;
   ftq_tail = ftq_tail_1;
   ftq_count = ftq_count_1;
-  std::memcpy(ftq_entries, ftq_entries_1, sizeof(ftq_entries));
+  std::memcpy(ftq_lookup_entries, ftq_lookup_entries_1, sizeof(ftq_lookup_entries));
+  std::memcpy(ftq_train_meta_fifo, ftq_train_meta_fifo_1, sizeof(ftq_train_meta_fifo));
+  std::memcpy(ftq_valid, ftq_valid_1, sizeof(ftq_valid));
 }
 
 const FTQEntry *PreIduQueue::lookup_ftq_entry(uint32_t idx) const {
   if (idx >= FTQ_SIZE) {
     return nullptr;
   }
-  return &ftq_entries[idx];
+  if (!ftq_valid[idx]) {
+    return nullptr;
+  }
+  return &ftq_lookup_entries[idx];
+}
+
+bool PreIduQueue::ftq_train_meta_cursor_begin(uint32_t &cursor_idx) const {
+  if (ftq_count == 0) {
+    return false;
+  }
+  cursor_idx = static_cast<uint32_t>(ftq_head);
+  return true;
+}
+
+const FTQTrainMetaEntry *
+PreIduQueue::ftq_train_meta_cursor_peek(uint32_t cursor_idx) const {
+  if (cursor_idx >= FTQ_SIZE) {
+    return nullptr;
+  }
+  if (!ftq_valid[cursor_idx]) {
+    return nullptr;
+  }
+  return &ftq_train_meta_fifo[cursor_idx];
+}
+
+bool PreIduQueue::ftq_train_meta_cursor_advance(uint32_t &cursor_idx) const {
+  if (ftq_count == 0) {
+    return false;
+  }
+  uint32_t next = (cursor_idx + 1) % FTQ_SIZE;
+  if (next == static_cast<uint32_t>(ftq_tail)) {
+    return false;
+  }
+  cursor_idx = next;
+  return true;
 }

@@ -37,6 +37,9 @@ public:
   void comb_ftq_lookup();
   void seq();
   const FTQEntry *lookup_ftq_entry(uint32_t idx) const;
+  bool ftq_train_meta_cursor_begin(uint32_t &cursor_idx) const;
+  const FTQTrainMetaEntry *ftq_train_meta_cursor_peek(uint32_t cursor_idx) const;
+  bool ftq_train_meta_cursor_advance(uint32_t &cursor_idx) const;
 
 private:
   SimContext *ctx = nullptr;
@@ -49,8 +52,12 @@ private:
   InstructionBuffer ibuf;
   InstructionBuffer ibuf_1;
 
-  FTQEntry ftq_entries[FTQ_SIZE];
-  FTQEntry ftq_entries_1[FTQ_SIZE];
+  FTQEntry ftq_lookup_entries[FTQ_SIZE];
+  FTQEntry ftq_lookup_entries_1[FTQ_SIZE];
+  FTQTrainMetaEntry ftq_train_meta_fifo[FTQ_SIZE];
+  FTQTrainMetaEntry ftq_train_meta_fifo_1[FTQ_SIZE];
+  wire<1> ftq_valid[FTQ_SIZE] = {};
+  wire<1> ftq_valid_1[FTQ_SIZE] = {};
   reg<FTQ_IDX_WIDTH> ftq_head = 0;
   reg<FTQ_IDX_WIDTH> ftq_tail = 0;
   reg<bit_width_for_count(FTQ_SIZE + 1)> ftq_count = 0;

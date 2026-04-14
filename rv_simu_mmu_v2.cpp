@@ -304,7 +304,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         bool pred_taken = false;
         const FTQEntry *entry =
             back->pre->lookup_ftq_entry(inst->ftq_idx);
-        if (entry != nullptr && entry->valid) {
+        if (entry != nullptr) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
         if (!pred_taken) {
@@ -317,7 +317,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         bool pred_taken = false;
         const FTQEntry *entry =
             back->pre->lookup_ftq_entry(inst->ftq_idx);
-        if (entry != nullptr && entry->valid) {
+        if (entry != nullptr) {
           pred_taken = entry->pred_taken_mask[inst->ftq_offset];
         }
         if (!pred_taken) {
@@ -330,7 +330,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
       bool pred_taken = false;
       const FTQEntry *entry =
           back->pre->lookup_ftq_entry(inst->ftq_idx);
-      if (entry != nullptr && entry->valid) {
+      if (entry != nullptr) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
       }
       if (pred_taken != inst->br_taken) {
@@ -797,6 +797,13 @@ void SimCpu::back2front_comb() {
   front.in.csr_status = back.csr->out.csr_status;
   front.in.itlb_flush = back.out.itlb_flush;
   front.in.fence_i = back.out.fence_i;
+  uint32_t train_meta_cursor = 0;
+  bool train_meta_cursor_valid =
+      back.pre->ftq_train_meta_cursor_begin(train_meta_cursor);
+  const FTQTrainMetaEntry *train_meta_entry =
+      train_meta_cursor_valid
+          ? back.pre->ftq_train_meta_cursor_peek(train_meta_cursor)
+          : nullptr;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     InstInfo *inst = &back.out.commit_entry[i].uop;
     front.in.back2front_valid[i] = back.out.commit_entry[i].valid;
@@ -834,25 +841,28 @@ void SimCpu::back2front_comb() {
       uint16_t loop_tag = 0;
 
       const FTQEntry *entry = back.pre->lookup_ftq_entry(inst->ftq_idx);
-      if (entry != nullptr && entry->valid) {
+      if (entry != nullptr) {
         pred_taken = entry->pred_taken_mask[inst->ftq_offset];
-        alt_pred = entry->alt_pred[inst->ftq_offset];
-        altpcpn = entry->altpcpn[inst->ftq_offset];
-        pcpn = entry->pcpn[inst->ftq_offset];
-        sc_used = entry->sc_used[inst->ftq_offset];
-        sc_pred = entry->sc_pred[inst->ftq_offset];
-        sc_sum = entry->sc_sum[inst->ftq_offset];
+      }
+      if (train_meta_entry != nullptr) {
+        Assert(inst->ftq_idx == train_meta_cursor);
+        alt_pred = train_meta_entry->alt_pred[inst->ftq_offset];
+        altpcpn = train_meta_entry->altpcpn[inst->ftq_offset];
+        pcpn = train_meta_entry->pcpn[inst->ftq_offset];
+        sc_used = train_meta_entry->sc_used[inst->ftq_offset];
+        sc_pred = train_meta_entry->sc_pred[inst->ftq_offset];
+        sc_sum = train_meta_entry->sc_sum[inst->ftq_offset];
         for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-          sc_idx[t] = entry->sc_idx[inst->ftq_offset][t];
+          sc_idx[t] = train_meta_entry->sc_idx[inst->ftq_offset][t];
         }
-        loop_used = entry->loop_used[inst->ftq_offset];
-        loop_hit = entry->loop_hit[inst->ftq_offset];
-        loop_pred = entry->loop_pred[inst->ftq_offset];
-        loop_idx = entry->loop_idx[inst->ftq_offset];
-        loop_tag = entry->loop_tag[inst->ftq_offset];
+        loop_used = train_meta_entry->loop_used[inst->ftq_offset];
+        loop_hit = train_meta_entry->loop_hit[inst->ftq_offset];
+        loop_pred = train_meta_entry->loop_pred[inst->ftq_offset];
+        loop_idx = train_meta_entry->loop_idx[inst->ftq_offset];
+        loop_tag = train_meta_entry->loop_tag[inst->ftq_offset];
         for (int k = 0; k < 4; k++) {
-          tage_idx[k] = entry->tage_idx[inst->ftq_offset][k];
-          tage_tag[k] = entry->tage_tag[inst->ftq_offset][k];
+          tage_idx[k] = train_meta_entry->tage_idx[inst->ftq_offset][k];
+          tage_tag[k] = train_meta_entry->tage_tag[inst->ftq_offset][k];
         }
       }
 
@@ -898,6 +908,13 @@ void SimCpu::back2front_comb() {
       for (int j = 0; j < 4; j++) { // TN_MAX = 4 (分支预测相关索引)
         front.in.tage_idx[i][j] = tage_idx[j];
         front.in.tage_tag[i][j] = tage_tag[j];
+      }
+      if (inst->ftq_is_last && train_meta_cursor_valid) {
+        train_meta_cursor_valid =
+            back.pre->ftq_train_meta_cursor_advance(train_meta_cursor);
+        train_meta_entry = train_meta_cursor_valid
+                               ? back.pre->ftq_train_meta_cursor_peek(train_meta_cursor)
+                               : nullptr;
       }
     }
   }

@@ -1,57 +1,43 @@
 #pragma once
-#include "IO.h"
 #include "config.h"
+#include "wire_types.h"
 #include <cstdint>
-#include <type_traits>
 
 struct FTQEntry {
-  wire<32> start_pc;
   wire<32> slot_pc[FETCH_WIDTH];
   wire<32> next_pc; // Predicted Target of the block
   wire<1> pred_taken_mask[FETCH_WIDTH];
-  using altpcpn_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->altpcpn[0])>;
-  using pcpn_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->pcpn[0])>;
-  using tage_idx_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->tage_idx[0][0])>;
-  using tage_tag_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->tage_tag[0][0])>;
-  using sc_sum_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->sc_sum[0])>;
-  using sc_idx_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->sc_idx[0][0])>;
-  using loop_idx_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->loop_idx[0])>;
-  using loop_tag_lane_t =
-      std::remove_reference_t<decltype(((FrontPreIO *)nullptr)->loop_tag[0])>;
 
-  tage_idx_lane_t tage_idx[FETCH_WIDTH][4]; // Moved from InstUop
-  tage_tag_lane_t tage_tag[FETCH_WIDTH][4];
+  FTQEntry() {
+    for (int i = 0; i < FETCH_WIDTH; i++) {
+      slot_pc[i] = 0;
+      pred_taken_mask[i] = false;
+    }
+    next_pc = 0;
+  }
+};
+
+// Prediction/training sideband metadata that backend execution path does not
+// need to random-read. This payload is consumed in FIFO order with FTQ blocks.
+struct FTQTrainMetaEntry {
+  tage_idx_t tage_idx[FETCH_WIDTH][4]; // Moved from InstUop
+  tage_tag_t tage_tag[FETCH_WIDTH][4];
   wire<1> mid_pred[FETCH_WIDTH]; // For future use (mid-block prediction)
   wire<1> alt_pred[FETCH_WIDTH];
-  altpcpn_lane_t altpcpn[FETCH_WIDTH];
-  pcpn_lane_t pcpn[FETCH_WIDTH];
+  pcpn_t altpcpn[FETCH_WIDTH];
+  pcpn_t pcpn[FETCH_WIDTH];
   wire<1> sc_used[FETCH_WIDTH];
   wire<1> sc_pred[FETCH_WIDTH];
-  sc_sum_lane_t sc_sum[FETCH_WIDTH];
-  sc_idx_lane_t sc_idx[FETCH_WIDTH][BPU_SCL_META_NTABLE];
+  tage_scl_meta_sum_t sc_sum[FETCH_WIDTH];
+  tage_scl_meta_idx_t sc_idx[FETCH_WIDTH][BPU_SCL_META_NTABLE];
   wire<1> loop_used[FETCH_WIDTH];
   wire<1> loop_hit[FETCH_WIDTH];
   wire<1> loop_pred[FETCH_WIDTH];
-  loop_idx_lane_t loop_idx[FETCH_WIDTH];
-  loop_tag_lane_t loop_tag[FETCH_WIDTH];
-  wire<1> valid;
+  tage_loop_meta_idx_t loop_idx[FETCH_WIDTH];
+  tage_loop_meta_tag_t loop_tag[FETCH_WIDTH];
 
-  FTQEntry() {
-    valid = false;
-    start_pc = 0;
+  FTQTrainMetaEntry() {
     for (int i = 0; i < FETCH_WIDTH; i++) {
-      slot_pc[i] = 0;
-    }
-    next_pc = 0;
-    for (int i = 0; i < FETCH_WIDTH; i++) {
-      pred_taken_mask[i] = false;
       mid_pred[i] = false;
       alt_pred[i] = false;
       altpcpn[i] = 0;

@@ -93,19 +93,19 @@ struct IduConsumeIO {
   }
 };
 
-struct DecFrontIO {
+struct PreFrontIO {
 
   wire<1> fire[FETCH_WIDTH];
   wire<1> ready;
 
-  DecFrontIO() {
+  PreFrontIO() {
     for (auto &v : fire)
       v = {};
     ready = {};
   }
 };
 
-struct FrontDecIO {
+struct FrontPreIO {
 
   wire<32> inst[FETCH_WIDTH];
   wire<32> pc[FETCH_WIDTH];
@@ -129,7 +129,7 @@ struct FrontDecIO {
   tage_loop_meta_tag_t loop_tag[FETCH_WIDTH];
   wire<1> page_fault_inst[FETCH_WIDTH];
 
-  FrontDecIO() {
+  FrontPreIO() {
     for (auto &v : inst)
       v = {};
     for (auto &v : pc)
@@ -177,11 +177,6 @@ struct FrontDecIO {
       v = {};
   }
 };
-
-// Naming aliases to reflect actual topology:
-// Front-end -> PreQueue and PreQueue -> Front-end.
-using FrontPreIO = FrontDecIO;
-using PreFrontIO = DecFrontIO;
 
 struct DecBroadcastIO {
 
