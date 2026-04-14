@@ -126,6 +126,23 @@ struct IqStoredEntry {
   IqStoredUop uop;
 };
 
+struct IssueQueueIn {
+  std::vector<IqStoredEntry> enq_reqs;
+  std::vector<uint32_t> wake_pregs;
+  wire<1> issue_block = 0;
+  wire<1> flush_all = 0;
+  wire<1> flush_br = 0;
+  wire<BR_MASK_WIDTH> flush_br_mask = 0;
+  wire<BR_MASK_WIDTH> clear_mask = 0;
+  wire<1> port_ready[ISSUE_WIDTH] = {};
+  wire<MAX_UOP_TYPE> port_fu_ready_mask[ISSUE_WIDTH] = {};
+};
+
+struct IssueQueueOut {
+  wire<IQ_READY_NUM_WIDTH> free_slots = 0;
+  IqStoredEntry issue_grants[ISSUE_WIDTH];
+};
+
 // ==========================================
 // 2. IssueQueue (纯逻辑，不含IO)
 // ==========================================
@@ -145,6 +162,9 @@ public:
   std::vector<uint64_t> wake_matrix_src1;
   std::vector<uint64_t> wake_matrix_src2;
 
+  IssueQueueIn in;
+  IssueQueueOut out;
+
   IssueQueue(const IssueQueueConfig &cfg)
       : id(cfg.id), size(cfg.size),
         dispatch_width(cfg.dispatch_width), // <--- 初始化
@@ -159,6 +179,79 @@ public:
     // [preg][word_idx], where each word tracks 64 IQ slots.
     wake_matrix_src1.resize(PRF_NUM * wake_words_per_row, 0);
     wake_matrix_src2.resize(PRF_NUM * wake_words_per_row, 0);
+
+    in.enq_reqs.resize(dispatch_width);
+  }
+
+  void comb_begin() {
+    entry_1 = entry;
+    count_1 = count;
+    out.free_slots = size - count;
+    for (auto &grant : out.issue_grants) {
+      grant = {};
+    }
+    in.wake_pregs.clear();
+    in.issue_block = 0;
+    in.flush_all = 0;
+    in.flush_br = 0;
+    in.flush_br_mask = 0;
+    in.clear_mask = 0;
+    for (auto &req : in.enq_reqs) {
+      req = {};
+    }
+    for (int i = 0; i < ISSUE_WIDTH; i++) {
+      in.port_ready[i] = 0;
+      in.port_fu_ready_mask[i] = 0;
+    }
+  }
+
+  void comb_enq() {
+    for (const auto &req : in.enq_reqs) {
+      if (!req.valid) {
+        continue;
+      }
+      int success = enqueue(req);
+      Assert(success && "发射队列溢出！Dispatch 逻辑故障！");
+    }
+    out.free_slots = size - count_1;
+  }
+
+  void comb_wakeup() { wakeup(in.wake_pregs); }
+
+  void comb_issue() {
+    for (auto &grant : out.issue_grants) {
+      grant = {};
+    }
+    std::vector<std::pair<int, int>> scheduled_pairs = schedule();
+    std::vector<int> committed_indices;
+    committed_indices.reserve(scheduled_pairs.size());
+
+    for (const auto &pair : scheduled_pairs) {
+      int entry_idx = pair.first;
+      int phys_port = pair.second;
+      uint64_t req_bit = (1ULL << static_cast<uint32_t>(entry[entry_idx].uop.op));
+      if (in.port_ready[phys_port] && (in.port_fu_ready_mask[phys_port] & req_bit) &&
+          !in.issue_block) {
+        out.issue_grants[phys_port].valid = true;
+        out.issue_grants[phys_port].uop = entry[entry_idx].uop;
+        committed_indices.push_back(entry_idx);
+      }
+    }
+
+    commit_issue(committed_indices);
+    out.free_slots = size - count_1;
+  }
+
+  void comb_flush() {
+    if (in.flush_all) {
+      flush_all();
+    } else if (in.flush_br) {
+      flush_br(in.flush_br_mask);
+    }
+    if (in.clear_mask) {
+      clear_br(in.clear_mask);
+    }
+    out.free_slots = size - count_1;
   }
 
   // 入队 (返回成功入队的个数)
@@ -262,10 +355,12 @@ public:
     }
   }
 
-  void tick() {
+  void seq() {
     entry = entry_1;
     count = count_1;
   }
+
+  void tick() { seq(); }
 
   std::vector<std::pair<int, int>> schedule() {
     std::vector<std::pair<int, int>> result;

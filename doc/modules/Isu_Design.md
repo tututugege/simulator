@@ -53,27 +53,27 @@
 ## 4. 组合逻辑功能描述 (Combinational Logic)
 
 ### 4.1 `comb_begin`
-- **功能描述**：复制 IQ 与延迟管线状态到 `_1` 工作副本。
-- **输入依赖**：`iqs[].entry/count`, `latency_pipe`。
-- **输出更新**：`iqs[].entry_1/count_1`, `latency_pipe_1`。
+- **功能描述**：调用各 IQ 的 `comb_begin()` 建立本拍工作副本并清零 IQ 瞬时输入，再复制延迟管线到 `_1`。
+- **输入依赖**：`iqs[]`, `latency_pipe`。
+- **输出更新**：IQ 内部 `_1` 状态与 `iq.out.free_slots`，`latency_pipe_1`。
 - **约束/优先级**：仅镜像，不改变调度决策。
 
 ### 4.2 `comb_ready`
 - **功能描述**：计算各 IQ 可接收条目数。
-- **输入依赖**：`iqs[i].size/count`。
+- **输入依赖**：`iqs[i].out.free_slots`。
 - **输出更新**：`out.iss2dis->ready_num[i]`。
 - **约束/优先级**：纯容量通告。
 
 ### 4.3 `comb_enq`
-- **功能描述**：将 `dis2iss` 请求入队对应 IQ。
-- **输入依赖**：`in.dis2iss->req`, `configs[i].dispatch_width`, 当前 IQ 状态, `out.iss_awake`（入队前唤醒叠加）。
-- **输出更新**：IQ 内部条目（通过 `enqueue` 写 `entry_1/count_1`）。
+- **功能描述**：将 `dis2iss` 请求写入 `iq.in.enq_reqs` 并调用 `iq.comb_enq()`。
+- **输入依赖**：`in.dis2iss->req`, `configs[i].dispatch_width`, `out.iss_awake`（入队前唤醒叠加）。
+- **输出更新**：IQ 内部条目（经 `iq.in` 驱动写入 `_1`）。
 - **约束/优先级**：入队失败触发 Assert；仅 valid 请求入队。
 
 ### 4.4 `comb_issue`
-- **功能描述**：从各 IQ 选择可发射条目并驱动 `iss2prf`。
-- **输入依赖**：`q.schedule()` 结果, `in.exe2iss->ready`, `in.exe2iss->fu_ready_mask`, `in.rob_bcast->flush`, `in.dec_bcast->mispred`。
-- **输出更新**：`out.iss2prf->iss_entry[]`, IQ `commit_issue` 状态。
+- **功能描述**：通过 `iq.in.{issue_block,port_ready,port_fu_ready_mask}` 驱动各 IQ 发射，并消费 `iq.out.issue_grants` 生成 `iss2prf`。
+- **输入依赖**：`in.exe2iss->ready`, `in.exe2iss->fu_ready_mask`, `in.rob_bcast->flush`, `in.dec_bcast->mispred`, `iq.out.issue_grants`。
+- **输出更新**：`out.iss2prf->iss_entry[]`，IQ 内部提交状态（由 `iq.comb_issue()` 完成）。
 - **约束/优先级**：需同时满足端口 ready 与 FU mask；flush/mispred 时不发射。
 
 ### 4.5 `comb_calc_latency_next`
@@ -83,13 +83,13 @@
 - **约束/优先级**：仅 `latency>1 && dest_en` 进入延迟管线。
 
 ### 4.6 `comb_awake`
-- **功能描述**：汇总三类唤醒源并执行 IQ 唤醒与外部广播。
+- **功能描述**：汇总三类唤醒源后写入 `iq.in.wake_pregs` 并调用 `iq.comb_wakeup()`，同时对外广播。
 - **输入依赖**：`in.prf_awake`, `latency_pipe`, `out.iss2prf->iss_entry`, `get_latency(op)`, `iqs[]`。
-- **输出更新**：`iqs[].wakeup(...)`, `out.iss_awake->wake[]`。
+- **输出更新**：IQ 等待项就绪位、`out.iss_awake->wake[]`。
 - **约束/优先级**：唤醒端口数不超过 `MAX_WAKEUP_PORTS`。
 
 ### 4.7 `comb_flush`
-- **功能描述**：处理 flush/mispred 清空，并清除已解析分支 bit。
+- **功能描述**：通过 `iq.in.{flush_all,flush_br,flush_br_mask,clear_mask}` 驱动 `iq.comb_flush()`，并同步清理延迟管线。
 - **输入依赖**：`in.rob_bcast->flush`, `in.dec_bcast->{mispred,br_mask,clear_mask}`, `latency_pipe_1`, `iqs[]`。
 - **输出更新**：IQ 内容与 `latency_pipe(_1)`。
 - **约束/优先级**：flush 高于 mispred；clear_mask 作用于存活条目。
@@ -97,11 +97,11 @@
 ---
 
 ## 5. IQ 建模说明（特殊）
-当前 `IssueQueue` 子模块在代码上更偏“软件容器 + 调度算法”风格，而不是严格 RTL 级 SRAM/CAM 分解：
+当前 `IssueQueue` 子模块采用“内部状态 + 对外 IO”建模，`Isu` 仅通过 `iq.in/iq.out` 交互：
 
-1. 以 `entry/count` 与 `schedule()/commit_issue()` 抽象行为。
+1. 组合路径以 `comb_begin/comb_enq/comb_wakeup/comb_issue/comb_flush` 组织，时序由 `seq()` 提交。
 2. 端口与能力通过配置动态绑定，而非固定硬编码网表。
-3. 文档中建议将其视作“周期准确行为模型”，而非门级实现描述。
+3. 仍是周期准确行为模型，不等价于门级网表分解。
 
 ---
 
