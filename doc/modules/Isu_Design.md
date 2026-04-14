@@ -45,7 +45,9 @@
 ### 3.2 唤醒来源
 
 1. 慢速唤醒：`prf_awake`（Load/回写）。
-2. 延迟唤醒：`latency_pipe` 倒计时归零。
+2. 延迟唤醒：
+   - `MUL`：固定延迟移位寄存器 `mul_wake_pipe` 末级命中。
+   - `DIV/FP`：迭代槽位 `div_wake_slots/fp_wake_slots` 的 `countdown==0`。
 3. 快速唤醒：本拍发射且单周期完成的目的寄存器。
 
 ---
@@ -54,8 +56,8 @@
 
 ### 4.1 `comb_begin`
 - **功能描述**：调用各 IQ 的 `comb_begin()` 建立本拍工作副本并清零 IQ 瞬时输入，再复制延迟管线到 `_1`。
-- **输入依赖**：`iqs[]`, `latency_pipe`。
-- **输出更新**：IQ 内部 `_1` 状态与 `iq.out.free_slots`，`latency_pipe_1`。
+- **输入依赖**：`iqs[]`, `mul_wake_pipe/div_wake_slots/fp_wake_slots`。
+- **输出更新**：IQ 内部 `_1` 状态与 `iq.out.free_slots`，`*_wake_*_1`。
 - **约束/优先级**：仅镜像，不改变调度决策。
 
 ### 4.2 `comb_ready`
@@ -78,20 +80,20 @@
 
 ### 4.5 `comb_calc_latency_next`
 - **功能描述**：构建下一拍延迟唤醒列表。
-- **输入依赖**：`latency_pipe`, `out.iss2prf->iss_entry`, `get_latency(op)`。
-- **输出更新**：`latency_pipe_1`。
+- **输入依赖**：`mul_wake_pipe/div_wake_slots/fp_wake_slots`, `out.iss2prf->iss_entry`, `get_latency(op)`。
+- **输出更新**：`mul_wake_pipe_1/div_wake_slots_1/fp_wake_slots_1`。
 - **约束/优先级**：仅 `latency>1 && dest_en` 进入延迟管线。
 
 ### 4.6 `comb_awake`
-- **功能描述**：汇总三类唤醒源后写入 `iq.in.wake_pregs` 并调用 `iq.comb_wakeup()`，同时对外广播。
-- **输入依赖**：`in.prf_awake`, `latency_pipe`, `out.iss2prf->iss_entry`, `get_latency(op)`, `iqs[]`。
+- **功能描述**：汇总三类唤醒源后写入 `iq.in.wake_pregs[] + iq.in.wake_preg_num` 并调用 `iq.comb_wakeup()`，同时对外广播。
+- **输入依赖**：`in.prf_awake`, `mul_wake_pipe/div_wake_slots/fp_wake_slots`, `out.iss2prf->iss_entry`, `get_latency(op)`, `iqs[]`。
 - **输出更新**：IQ 等待项就绪位、`out.iss_awake->wake[]`。
 - **约束/优先级**：唤醒端口数不超过 `MAX_WAKEUP_PORTS`。
 
 ### 4.7 `comb_flush`
 - **功能描述**：通过 `iq.in.{flush_all,flush_br,flush_br_mask,clear_mask}` 驱动 `iq.comb_flush()`，并同步清理延迟管线。
-- **输入依赖**：`in.rob_bcast->flush`, `in.dec_bcast->{mispred,br_mask,clear_mask}`, `latency_pipe_1`, `iqs[]`。
-- **输出更新**：IQ 内容与 `latency_pipe(_1)`。
+- **输入依赖**：`in.rob_bcast->flush`, `in.dec_bcast->{mispred,br_mask,clear_mask}`, `*_wake_*_1`, `iqs[]`。
+- **输出更新**：IQ 内容与 `mul/div/fp wake` 状态（含 `_1`）。
 - **约束/优先级**：flush 高于 mispred；clear_mask 作用于存活条目。
 
 ---
@@ -139,15 +141,19 @@
 端口分配说明：
 - 写口 A：入队时 `set_dep_bits_for_slot` 设置源依赖位。
 - 写口 B：发射出队时 `clear_dep_bits_for_slot` 清除依赖位。
-- 读/写口 C：`wakeup()` 按 preg 读取对应 bitmask，并在处理后清零该行词位。
+- 读/写口 C：`comb_wakeup()` 按 preg 读取对应 bitmask，并在处理后清零该行词位。
 
-### 7.3 延迟唤醒管线（`latency_pipe`）
-类型：理论上是移位寄存器
+实现风格说明：
+- Wakeup Matrix 采用双态寄存器建模：`wake_matrix_src{1,2}` / `wake_matrix_src{1,2}_1`。
+- `comb_begin` 先执行 `*_1 <- *`，组合阶段统一读写 `_1`，`seq()` 再提交到当前态。
+
+### 7.3 延迟唤醒结构（`mul/div/fp`）
+类型：`MUL` 为移位寄存器，`DIV/FP` 为迭代计数槽位
 
 | 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| 动态（由在飞多周期指令数决定） | 全表遍历读 | 全表重建写 |
+| `MUL`: `ISU_MUL_WAKE_DEPTH * ISU_MUL_WAKE_SLOT_NUM`；`DIV/FP`: 各自槽位数 | 全表遍历读 | 全表重建写 |
 
 端口分配说明：
-- `comb_calc_latency_next` 读取旧表并重建 `latency_pipe_1`（倒计时递减 + 新发射多周期条目入队）。
+- `comb_calc_latency_next` 读取旧状态并重建 `*_1`（`DIV/FP` 倒计时递减 + `MUL` 移位 + 新发射多周期条目入队）。
 - `comb_flush` 在 `flush/mispred` 下执行清空或按 `br_mask` 删除。

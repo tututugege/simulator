@@ -18,8 +18,15 @@ struct IsuIn {
   DecBroadcastIO *dec_bcast;
 };
 
-// 长延迟唤醒条目（DIV/FP 计数器槽位，MUL 移位寄存器条目）
-struct LongLatencyWakeEntry {
+// MUL 固定延迟唤醒条目（移位寄存器）
+struct MulWakeEntry {
+  wire<1> valid = 0;
+  wire<PRF_IDX_WIDTH> dest_preg = 0;
+  wire<BR_MASK_WIDTH> br_mask;
+};
+
+// DIV/FP 迭代唤醒条目（计数器槽位）
+struct IterWakeEntry {
   wire<1> valid = 0;
   int countdown = 0;
   wire<PRF_IDX_WIDTH> dest_preg = 0;
@@ -48,13 +55,13 @@ private:
 
   // 2. 延迟唤醒
   // MUL: 固定延迟，使用移位寄存器模型（深度 = MUL_MAX_LATENCY - 1）
-  LongLatencyWakeEntry mul_wake_pipe[ISU_MUL_WAKE_DEPTH][ISU_MUL_WAKE_SLOT_NUM];
-  LongLatencyWakeEntry mul_wake_pipe_1[ISU_MUL_WAKE_DEPTH][ISU_MUL_WAKE_SLOT_NUM];
+  MulWakeEntry mul_wake_pipe[ISU_MUL_WAKE_DEPTH][ISU_MUL_WAKE_SLOT_NUM];
+  MulWakeEntry mul_wake_pipe_1[ISU_MUL_WAKE_DEPTH][ISU_MUL_WAKE_SLOT_NUM];
   // DIV / FP: 迭代单元，使用 countdown 槽位（槽位数 = 对应 FU 个数）
-  LongLatencyWakeEntry div_wake_slots[ISU_DIV_WAKE_SLOT_NUM];
-  LongLatencyWakeEntry div_wake_slots_1[ISU_DIV_WAKE_SLOT_NUM];
-  LongLatencyWakeEntry fp_wake_slots[ISU_FP_WAKE_SLOT_NUM];
-  LongLatencyWakeEntry fp_wake_slots_1[ISU_FP_WAKE_SLOT_NUM];
+  IterWakeEntry div_wake_slots[ISU_DIV_WAKE_SLOT_NUM];
+  IterWakeEntry div_wake_slots_1[ISU_DIV_WAKE_SLOT_NUM];
+  IterWakeEntry fp_wake_slots[ISU_FP_WAKE_SLOT_NUM];
+  IterWakeEntry fp_wake_slots_1[ISU_FP_WAKE_SLOT_NUM];
 
 public:
   uint32_t port_attributes[ISSUE_WIDTH];
