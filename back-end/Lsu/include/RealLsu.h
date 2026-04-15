@@ -12,9 +12,6 @@ class PtwWalkPort;
 
 class RealLsu : public AbstractLsu {
 private:
-#ifndef CONFIG_REAL_LSU_RANDOM_TEST
-#define CONFIG_REAL_LSU_RANDOM_TEST 0
-#endif
   static constexpr int FINISHED_LOADS_QUEUE_SIZE = ROB_NUM;
   static constexpr int FINISHED_STA_QUEUE_SIZE = ROB_NUM;
   static constexpr int PENDING_STA_ADDR_QUEUE_SIZE = STQ_SIZE;
@@ -123,6 +120,7 @@ public:
   void comb_recv() override;
   void comb_load_res() override;
   void comb_flush() override;
+  void comb_seq() override;
   void seq() override;
 
   StqEntry get_stq_entry(int stq_idx, bool stq_flag) override;

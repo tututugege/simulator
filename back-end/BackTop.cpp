@@ -327,6 +327,8 @@ void BackTop::comb() {
   exu->comb_pipeline();
   dis->comb_pipeline();
   rename->comb_pipeline();
+
+  lsu->comb_seq();
 }
 
 void BackTop::seq() {
