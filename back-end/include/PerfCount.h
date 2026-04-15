@@ -122,7 +122,6 @@ public:
   uint64_t ret_dir_mispred = 0;
   uint64_t ret_addr_mispred = 0;
 
-  uint64_t ren_reg_stall = 0;
   uint64_t idu_tag_stall = 0;
   uint64_t stall_br_id_cycles = 0;
   uint64_t stall_preg_cycles = 0;
@@ -312,7 +311,6 @@ public:
 
     ret_dir_mispred = 0;
     ret_addr_mispred = 0;
-    ren_reg_stall = 0;
     idu_tag_stall = 0;
     stall_br_id_cycles = 0;
     stall_preg_cycles = 0;

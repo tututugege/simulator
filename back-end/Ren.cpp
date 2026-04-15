@@ -9,18 +9,49 @@
 static wire<1> fire[DECODE_WIDTH];
 static wire<PRF_IDX_WIDTH> alloc_reg[DECODE_WIDTH];
 
-void Ren::init() {
-  for (int i = 0; i < PRF_NUM; i++) {
-    spec_alloc[i] = false;
+static inline int ring_distance(int from, int to) {
+  int d = to - from;
+  if (d < 0) {
+    d += PRF_NUM;
+  }
+  return d;
+}
 
+static inline void ren_freelist_sanity(int spec_head, int commit_head,
+                                       int tail) {
+  constexpr int kManagedPool = PRF_NUM - (ARF_NUM + 1);
+  Assert(spec_head >= 0 && spec_head < PRF_NUM &&
+         "Ren: free_head(spec) out of range");
+  Assert(commit_head >= 0 && commit_head < PRF_NUM &&
+         "Ren: free_head_commit out of range");
+  Assert(tail >= 0 && tail < PRF_NUM && "Ren: free_tail out of range");
+  const int free_cnt = ring_distance(spec_head, tail);
+  Assert(free_cnt >= 0 && free_cnt < PRF_NUM && "Ren: free slots out of range");
+  const int pending_spec = ring_distance(commit_head, spec_head);
+  Assert(pending_spec >= 0 && pending_spec < PRF_NUM &&
+         "Ren: pending spec distance out of range");
+  Assert(free_cnt + pending_spec == kManagedPool &&
+         "Ren: free slots + pending spec must equal managed pool");
+}
+
+void Ren::init() {
+  int init_free_count = 0;
+  for (int i = 0; i < PRF_NUM; i++) {
     if (i < ARF_NUM + 1) {
       spec_RAT[i] = i;
       arch_RAT[i] = i;
-      free_vec[i] = false;
     } else {
-      free_vec[i] = true;
+      free_list[init_free_count] = i;
+      init_free_count++;
     }
   }
+  free_head = 0;
+  free_head_commit = 0;
+  free_tail = init_free_count;
+  for (int i = 0; i < MAX_BR_NUM; i++) {
+    alloc_checkpoint_head[i] = free_head;
+  }
+  ren_freelist_sanity(free_head, free_head_commit, free_tail);
 
   for (int i = 0; i < DECODE_WIDTH; i++) {
     inst_r[i] = {};
@@ -31,16 +62,19 @@ void Ren::init() {
 
   memcpy(arch_RAT_1, arch_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
   memcpy(spec_RAT_1, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
-
-  memcpy(free_vec_1, free_vec, PRF_NUM);
+  memcpy(free_list_1, free_list, PRF_NUM * sizeof(reg<PRF_IDX_WIDTH>));
+  free_head_1 = free_head;
+  free_head_commit_1 = free_head_commit;
+  free_tail_1 = free_tail;
+  memcpy(alloc_checkpoint_head_1, alloc_checkpoint_head,
+         MAX_BR_NUM * sizeof(reg<PRF_IDX_WIDTH>));
 }
 
 /*
  * comb_begin
  * 功能: 组合阶段开始时，将所有时序状态复制到 *_1 工作副本。
- * 输入依赖: inst_r/inst_valid, spec_RAT, arch_RAT, free_vec, spec_alloc, RAT_checkpoint, alloc_checkpoint。
- * 输出更新: inst_r_1/inst_valid_1, spec_RAT_1, arch_RAT_1, free_vec_1, spec_alloc_1, RAT_checkpoint_1, alloc_checkpoint_1。
+ * 输入依赖: inst_r/inst_valid, spec_RAT, arch_RAT, RAT_checkpoint, free list 与 checkpoint 指针状态。
+ * 输出更新: inst_r_1/inst_valid_1, spec_RAT_1, arch_RAT_1, RAT_checkpoint_1, free list 与 checkpoint 指针状态。
  * 约束: 仅做状态镜像，不进行分配/回收决策，不驱动握手输出。
  */
 void Ren::comb_begin() {
@@ -48,34 +82,36 @@ void Ren::comb_begin() {
   memcpy(inst_valid_1, inst_valid, DECODE_WIDTH * sizeof(reg<1>));
   memcpy(spec_RAT_1, spec_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
   memcpy(arch_RAT_1, arch_RAT, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(free_vec_1, free_vec, PRF_NUM);
-  memcpy(spec_alloc_1, spec_alloc, PRF_NUM);
   memcpy(RAT_checkpoint_1, RAT_checkpoint,
          MAX_BR_NUM * (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(alloc_checkpoint_1, alloc_checkpoint, MAX_BR_NUM * PRF_NUM);
+  memcpy(free_list_1, free_list, PRF_NUM * sizeof(reg<PRF_IDX_WIDTH>));
+  free_head_1 = free_head;
+  free_head_commit_1 = free_head_commit;
+  free_tail_1 = free_tail;
+  memcpy(alloc_checkpoint_head_1, alloc_checkpoint_head,
+         MAX_BR_NUM * sizeof(reg<PRF_IDX_WIDTH>));
 }
 
 /*
  * comb_alloc
- * 功能: 从 free_vec 预选目的物理寄存器，并生成 ren2dis.valid 的资源可用性结果。
- * 输入依赖: free_vec, inst_valid, inst_r[].dest_en。
+ * 功能: 从 free list 预选目的物理寄存器，并生成 ren2dis.valid 的资源可用性结果。
+ * 输入依赖: free_list/head/count, inst_valid, inst_r[].dest_en。
  * 输出更新: alloc_reg, out.ren2dis->valid[]（以及性能计数器相关统计）。
  * 约束: 顺序分配且一旦前序指令因寄存器不足 stall，后续槽位同拍全部阻塞。
  */
 void Ren::comb_alloc() {
-  // 可用寄存器个数 每周期最多使用DECODE_WIDTH个
+  ren_freelist_sanity(free_head, free_head_commit, free_tail);
   wire<1> alloc_valid[DECODE_WIDTH] = {false};
-  int alloc_num = 0;
-
-  for (int i = 0; i < PRF_NUM && alloc_num < DECODE_WIDTH; i++) {
-    if (free_vec[i]) {
-      alloc_reg[alloc_num] = i;
-      alloc_valid[alloc_num] = true;
-      alloc_num++;
-    }
-  }
-  for (int i = alloc_num; i < DECODE_WIDTH; i++) {
+  int local_head = free_head;
+  int local_free_count = ring_distance(free_head, free_tail);
+  for (int i = 0; i < DECODE_WIDTH; i++) {
     alloc_reg[i] = 0;
+    if (inst_valid[i] && inst_r[i].dest_en && local_free_count > 0) {
+      alloc_reg[i] = free_list[local_head];
+      alloc_valid[i] = true;
+      LOOP_INC(local_head, PRF_NUM);
+      local_free_count--;
+    }
   }
 
   // stall相当于需要查看前一条指令是否stall
@@ -94,7 +130,6 @@ void Ren::comb_alloc() {
 
 #ifdef CONFIG_PERF_COUNTER
   if (stall) {
-    ctx->perf.ren_reg_stall++;
     ctx->perf.stall_preg_cycles++;
   }
 #endif
@@ -191,7 +226,7 @@ void Ren::comb_rename() {
  * comb_fire
  * 功能: 在 ren->dis 握手成功时提交重命名状态更新，并处理 commit/flush/mispred 恢复。
  * 输入依赖: out.ren2dis->valid, in.dis2ren->ready, inst_r, in.rob_commit, in.rob_bcast, in.dec_bcast, arch/spec RAT 与 checkpoint 状态。
- * 输出更新: spec_RAT_1, arch_RAT_1, free_vec_1, spec_alloc_1, RAT_checkpoint_1, alloc_checkpoint_1, out.ren2dec->ready。
+ * 输出更新: spec_RAT_1, arch_RAT_1, free_list_1 与指针计数, RAT_checkpoint_1, out.ren2dec->ready。
  * 约束: flush 优先于 mispred；mispred 从 checkpoint 恢复；flush 从 arch_RAT 恢复；分支 fire 时保存 checkpoint。
  */
 void Ren::comb_fire() {
@@ -202,26 +237,23 @@ void Ren::comb_fire() {
   for (int i = 0; i < DECODE_WIDTH; i++) {
     if (fire[i] && out.ren2dis->uop[i].dest_en) {
       int dest_preg = out.ren2dis->uop[i].dest_preg;
-      spec_alloc_1[dest_preg] = true;
-      free_vec_1[dest_preg] = false;
+      Assert(free_head_1 != free_tail_1 &&
+             "Ren: allocate when free list is empty");
       spec_RAT_1[inst_r[i].dest_areg] = dest_preg;
-      for (int j = 0; j < MAX_BR_NUM; j++)
-        alloc_checkpoint_1[j][dest_preg] = true;
+      LOOP_INC(free_head_1, PRF_NUM);
     }
 
     // 保存检查点 (Checkpoint)
     if (fire[i] && is_branch(inst_r[i].type)) {
       const auto br_id = inst_r[i].br_id;
+      Assert(br_id < MAX_BR_NUM && "Ren: branch id out of range");
       for (int j = 0; j < ARF_NUM + 1; j++) {
         // 注意这里存在隐藏的旁路 (Bypass)
         // 保存的是本条指令完成后的 spec_RAT，不包括同一周期后续指令对 spec_RAT
         // 的影响
         RAT_checkpoint_1[br_id][j] = spec_RAT_1[j];
       }
-
-      for (int j = 0; j < PRF_NUM; j++) {
-        alloc_checkpoint_1[br_id][j] = false;
-      }
+      alloc_checkpoint_head_1[br_id] = free_head_1;
     }
   }
 
@@ -262,13 +294,14 @@ void Ren::comb_fire() {
           in.rob_commit->commit_entry[i].valid);
       InstInfo *inst = &commit_entry.uop;
 
-      // free_vec_normal在异常指令提交时对应位不会置为true，不会释放dest_areg的原有映射的寄存器
-      // spec_alloc_normal在异常指令提交时对应位不会置为false，这样该指令的dest_preg才能正确在free_vec中被回收
-      // 异常指令要看上去没有执行一样
+      // 异常指令提交时不回收 old_dest，保持“异常指令看起来未提交”的语义。
       if (inst->dest_en) {
         if (!is_exception(*inst) && !in.rob_bcast->interrupt) {
-          free_vec_1[inst->old_dest_preg] = true;
-          spec_alloc_1[inst->dest_preg] = false;
+          Assert(free_head_commit_1 != free_head_1 &&
+                 "Ren: commit reclaim when no pending spec allocation");
+          free_list_1[free_tail_1] = inst->old_dest_preg;
+          LOOP_INC(free_tail_1, PRF_NUM);
+          LOOP_INC(free_head_commit_1, PRF_NUM);
         }
       }
 
@@ -289,25 +322,21 @@ void Ren::comb_fire() {
     for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = arch_RAT_1[i];
     }
-    for (int j = 0; j < PRF_NUM; j++) {
-      // 本拍 fire/commit 对 _1 的更新也应被 flush 恢复逻辑看到。
-      const wire<1> was_spec = spec_alloc_1[j];
-      free_vec_1[j] = free_vec_1[j] || was_spec;
-      spec_alloc_1[j] = false;
-    }
+    free_head_1 = free_head_commit_1;
   } else if (in.dec_bcast->mispred) { // flush/mispred 不会同时发生
     const auto br_idx = in.dec_bcast->br_id;
+    Assert(br_idx < MAX_BR_NUM && "Ren: mispred br_id out of range");
 #ifdef CONFIG_BPU
     Assert(br_idx != 0 && "Ren: mispred br_id should not be zero");
 #endif
     for (int i = 0; i < ARF_NUM + 1; i++) {
       spec_RAT_1[i] = RAT_checkpoint[br_idx][i];
     }
-    for (int j = 0; j < PRF_NUM; j++) {
-      free_vec_1[j] = free_vec[j] || alloc_checkpoint[br_idx][j];
-      spec_alloc_1[j] = spec_alloc[j] && !alloc_checkpoint[br_idx][j];
-    }
+    const int target_head = alloc_checkpoint_head[br_idx];
+    free_head_1 = target_head;
+    free_tail_1 = free_tail;
   }
+  ren_freelist_sanity(free_head_1, free_head_commit_1, free_tail_1);
 }
 
 /*
@@ -370,11 +399,13 @@ void Ren ::seq() {
   memcpy(spec_RAT, spec_RAT_1, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
   memcpy(arch_RAT, arch_RAT_1, (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
 
-  memcpy(free_vec, free_vec_1, PRF_NUM);
-  memcpy(spec_alloc, spec_alloc_1, PRF_NUM);
+  memcpy(free_list, free_list_1, PRF_NUM * sizeof(reg<PRF_IDX_WIDTH>));
+  free_head = free_head_1;
+  free_head_commit = free_head_commit_1;
+  free_tail = free_tail_1;
 
   memcpy(RAT_checkpoint, RAT_checkpoint_1,
          MAX_BR_NUM * (ARF_NUM + 1) * sizeof(reg<PRF_IDX_WIDTH>));
-  memcpy(alloc_checkpoint, alloc_checkpoint_1,
-         MAX_BR_NUM * PRF_NUM * sizeof(reg<1>));
+  memcpy(alloc_checkpoint_head, alloc_checkpoint_head_1,
+         MAX_BR_NUM * sizeof(reg<PRF_IDX_WIDTH>));
 }
