@@ -4,7 +4,7 @@
 SIMULATOR="${SIMULATOR:-./build/simulator}"
 CKPT_ROOT="${CKPT_ROOT:-/share/personal/S/houruyao/simpoint/rv32imab_ckpt_1gb_ram}"
 RESULT_DIR="${RESULT_DIR:-./results_restore}"
-MAX_COMMIT_INST="${MAX_COMMIT_INST:-10000000}"
+CKPT_WARMUP="${CKPT_WARMUP:-}"
 CORE_START="${CORE_START:-0}"
 
 # 内存够的话建议等于可用的核心数 不用超线程
@@ -100,8 +100,14 @@ for ((worker=0; worker<MAX_JOBS; worker++)); do
             ckpt_basename=$(basename "$ckpt_file" .gz)
             log_file="$RESULT_DIR/$bench_name/${ckpt_basename}.log"
 
+            # 默认沿用编译配置中的 WARMUP；只有显式提供 CKPT_WARMUP 时才覆盖。
+            sim_args=("$SIMULATOR" --mode ckpt)
+            if [ -n "$CKPT_WARMUP" ]; then
+                sim_args+=(-w "$CKPT_WARMUP")
+            fi
+
             # 强行绑定物理核，开跑！
-            taskset -c "$core" $SIMULATOR --mode ckpt -w "$MAX_COMMIT_INST" "$ckpt_file" > "$log_file" 2>&1
+            taskset -c "$core" "${sim_args[@]}" "$ckpt_file" > "$log_file" 2>&1
 
             if [ $? -eq 0 ]; then
                 echo "[Done] Core $(printf "%03d" $core) | $bench_name/$ckpt_basename"
