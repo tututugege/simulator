@@ -28,8 +28,8 @@ struct SimConfig {
   std::string target_file;
   // 存储 Fast-forward 的指令数/周期数
   uint64_t fast_forward_count = 0;
-  // CKPT 模式下，O3 目标 warmup 步数（0~WARMUP，默认使用编译配置 WARMUP）
-  uint64_t ckpt_warmup_target = static_cast<uint64_t>(WARMUP);
+  // CKPT 模式下，O3 目标 warmup 步数（0~checkpoint interval）
+  uint64_t ckpt_warmup_target = 0;
   bool ckpt_warmup_target_set = false;
   uint64_t max_commit_inst = static_cast<uint64_t>(MAX_COMMIT_INST);
   bool max_commit_inst_set = false;
@@ -46,11 +46,12 @@ void print_help(char *argv[]) {
                "fast-forward (only for fast mode)"
             << std::endl;
   std::cout << "  -w, --warmup <num>  In CKPT mode, target O3 "
-               "warmup steps in [0,"
-            << WARMUP << "] (default: " << WARMUP << ")" << std::endl;
+               "warmup steps in [0, checkpoint_interval] "
+               "(default: checkpoint_interval)"
+            << std::endl;
   std::cout
       << "  -c, --max-commit <num>  Stop after <num> committed instructions "
-         "(default: SIMPOINT_INTERVAL in CKPT mode, compile-time "
+         "(default: checkpoint_interval in CKPT mode, compile-time "
          "MAX_COMMIT_INST otherwise)"
       << std::endl;
   std::cout << "  -h, --help                  Show this message" << std::endl;
@@ -175,18 +176,13 @@ int main(int argc, char *argv[]) {
     case 'w': {
       std::string warmup_arg(optarg);
       if (!warmup_arg.empty() && warmup_arg[0] == '-') {
-        std::cerr << "Error: --warmup must be in [0," << WARMUP
-                  << "], got: " << optarg << std::endl;
+        std::cerr << "Error: --warmup must be >= 0, got: " << optarg
+                  << std::endl;
         return 1;
       }
       try {
         config.ckpt_warmup_target = std::stoull(optarg);
         config.ckpt_warmup_target_set = true;
-        if (config.ckpt_warmup_target > (uint64_t)WARMUP) {
-          std::cerr << "Error: --warmup must be in [0," << WARMUP
-                    << "], got: " << config.ckpt_warmup_target << std::endl;
-          return 1;
-        }
       } catch (const std::exception &e) {
         std::cerr << "Error: Invalid number for --warmup: " << optarg
                   << std::endl;
@@ -258,14 +254,6 @@ int main(int argc, char *argv[]) {
                  "mode."
               << std::endl;
   }
-  if (config.mode == SimConfig::CKPT && !config.max_commit_inst_set) {
-    config.max_commit_inst = static_cast<uint64_t>(SIMPOINT_INTERVAL);
-  }
-  std::cout << "[CONFIG] max_commit_inst = " << std::dec
-            << config.max_commit_inst
-            << (config.max_commit_inst_set ? " (runtime override)"
-                                           : " (default)")
-            << std::endl;
 
   if (!pmem_init()) {
     std::cerr << "Error: Failed to allocate memory!" << std::endl;
@@ -287,12 +275,41 @@ int main(int argc, char *argv[]) {
               << std::endl;
 #endif
 
+    const uint64_t ckpt_interval = cpu.back.ckpt_interval_inst_count;
+    if (ckpt_interval == 0) {
+      std::cerr << "Error: checkpoint interval must be > 0." << std::endl;
+      return 1;
+    }
+
+    if (!config.max_commit_inst_set) {
+      config.max_commit_inst = ckpt_interval;
+    }
+    if (!config.ckpt_warmup_target_set) {
+      config.ckpt_warmup_target = ckpt_interval;
+    }
+    if (config.ckpt_warmup_target > ckpt_interval) {
+      std::cerr << "Error: --warmup must be in [0," << ckpt_interval
+                << "], got: " << config.ckpt_warmup_target << std::endl;
+      return 1;
+    }
+
+    std::cout << "[CONFIG] checkpoint_interval = " << std::dec
+              << ckpt_interval << std::endl;
+    std::cout << "[CONFIG] warmup_target = " << config.ckpt_warmup_target
+              << (config.ckpt_warmup_target_set ? " (runtime override)"
+                                                : " (checkpoint default)")
+              << std::endl;
+    std::cout << "[CONFIG] max_commit_inst = " << config.max_commit_inst
+              << (config.max_commit_inst_set ? " (runtime override)"
+                                             : " (checkpoint default)")
+              << std::endl;
+
     uint64_t warmup_target = config.ckpt_warmup_target;
-    uint64_t ref_prewarm_target = (uint64_t)WARMUP - warmup_target;
+    uint64_t ref_prewarm_target = ckpt_interval - warmup_target;
 
     uint64_t ref_prewarm_done = 0;
     if (ref_prewarm_target > 0) {
-      std::cout << "[Step 1] Ref prewarm for " << ref_prewarm_target
+      std::cout << "[Run] Ref prewarm for " << ref_prewarm_target
                 << " steps..." << std::endl;
       ref_cpu.uart_print = false;
       ref_cpu.ref_only = true;
@@ -304,15 +321,14 @@ int main(int argc, char *argv[]) {
         }
       }
       ref_cpu.ref_only = false;
-      std::cout << "[Step 1] Ref prewarm done: " << ref_prewarm_done
+      std::cout << "[Run] Ref prewarm done: " << ref_prewarm_done
                 << " steps." << std::endl;
     }
 
-    std::cout << "[Step 2] Restore DUT from ref snapshot..." << std::endl;
+    std::cout << "[Run] Restoring DUT from ref snapshot..." << std::endl;
     cpu.back.restore_from_ref();
 #ifndef CONFIG_BPU
-    std::cout << "[Oracle] Re-synced with ref snapshot together with DUT in "
-                 "Step 2."
+    std::cout << "[Oracle] Re-synced with ref snapshot together with DUT."
               << std::endl;
 #endif
     cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
@@ -323,11 +339,23 @@ int main(int argc, char *argv[]) {
     if (cpu.ctx.ckpt_warmup_commit_target == 0) {
       cpu.ctx.perf.perf_reset();
       cpu.ctx.perf.perf_start = true;
+      std::cout << "[Plan] O3 warmup skipped: target = 0. Measure phase "
+                   "starts immediately."
+                << std::endl;
+      std::cout << "[Run] O3 measure running: target = "
+                << cpu.ctx.ckpt_measure_commit_target << " committed instructions."
+                << std::endl;
+    } else {
+      std::cout << "[Plan] O3 warmup scheduled: target = "
+                << cpu.ctx.ckpt_warmup_commit_target
+                << " committed instructions." << std::endl;
+      std::cout << "[Plan] O3 measure scheduled: target = "
+                << cpu.ctx.ckpt_measure_commit_target
+                << " committed instructions after warmup." << std::endl;
+      std::cout << "[Run] Entering O3 run loop. Warmup/measure transition will "
+                   "be printed when warmup actually finishes."
+                << std::endl;
     }
-    std::cout << "[Step 3] O3 warmup target = "
-              << cpu.ctx.ckpt_warmup_commit_target << " steps." << std::endl;
-    std::cout << "[Step 4] O3 measure target = "
-              << cpu.ctx.ckpt_measure_commit_target << " steps." << std::endl;
   } else if (config.mode == SimConfig::FAST) {
     std::cout << "[Mode] FAST: Hybrid Execution Strategy" << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;

@@ -520,6 +520,7 @@ void BackTop::restore_checkpoint(const std::string &filename) {
 
   gz_read_pod(file, ckpt_state);
   gz_read_pod(file, interval_inst_count);
+  ckpt_interval_inst_count = interval_inst_count;
 
   CPU_state state;
   memcpy(state.gpr, ckpt_state.gpr, sizeof(state.gpr));

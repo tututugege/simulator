@@ -148,6 +148,7 @@ public:
   }
 
   uint32_t number_PC = 0;
+  uint64_t ckpt_interval_inst_count = 0;
 
   void load_image(const std::string &filename);
   void restore_checkpoint(const std::string &filename);

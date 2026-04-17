@@ -280,6 +280,10 @@ void Ren::comb_fire() {
       if (ctx->is_ckpt) {
         if (!ctx->perf.perf_start &&
             ctx->perf.commit_num >= ctx->ckpt_warmup_commit_target) {
+          std::cout << "[CKPT] O3 warmup done at commit " << std::dec
+                    << ctx->perf.commit_num << "/" << ctx->ckpt_warmup_commit_target
+                    << ". Resetting perf counters and starting measure phase."
+                    << std::endl;
           ctx->perf.perf_reset();
           ctx->perf.perf_start = true;
         }
