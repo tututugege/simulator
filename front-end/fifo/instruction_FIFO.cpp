@@ -47,8 +47,12 @@ void instruction_FIFO_comb(const InstructionCombIn &in,
   }
 
   if (do_read) {
+    if (has_data_before_read && !in.rd.head_valid) {
+      std::printf("[INSTRUCTION_FIFO_TOP] ERROR!!: missing head snapshot for same-cycle reread\n");
+      std::exit(1);
+    }
     const instruction_FIFO_entry &read_entry =
-        has_data_before_read ? in.rd.entries[0] : write_entry;
+        has_data_before_read ? in.rd.head_entry : write_entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       out.out_regs.instructions[i] = read_entry.instructions[i];
       out.out_regs.pc[i] = read_entry.pc[i];
@@ -81,7 +85,12 @@ class InstructionFifoModel {
 public:
   void seq_read(const instruction_FIFO_in &inp, instruction_FIFO_read_data &rd) const {
     (void)inp;
-    rd = state_;
+    std::memset(&rd, 0, sizeof(rd));
+    rd.size = size_;
+    rd.head_valid = (size_ > 0);
+    if (rd.head_valid) {
+      rd.head_entry = entries_[0];
+    }
   }
 
   void build_next_read_data(const instruction_FIFO_read_data &cur,
@@ -89,48 +98,81 @@ public:
                             instruction_FIFO_read_data &next_rd) const {
     next_rd = cur;
     if (comb_out.clear_fifo) {
-      next_rd.size = 0;
+      next_rd = {};
     }
+    const instruction_fifo_size_t size_before_ops = next_rd.size;
     if (comb_out.push_en) {
       if (next_rd.size >= INSTRUCTION_FIFO_SIZE) {
         std::printf("[INSTRUCTION_FIFO_TOP] ERROR!!: fifo.size() >= INSTRUCTION_FIFO_SIZE\n");
         std::exit(1);
       }
-      next_rd.entries[next_rd.size++] = comb_out.push_entry;
+      if (next_rd.size == 0) {
+        next_rd.head_entry = comb_out.push_entry;
+        next_rd.head_valid = true;
+      }
+      ++next_rd.size;
     }
     if (comb_out.pop_en) {
       if (next_rd.size == 0) {
         std::printf("[INSTRUCTION_FIFO_TOP] ERROR!!: fifo underflow on read\n");
         std::exit(1);
       }
-      for (uint8_t i = 1; i < next_rd.size; ++i) {
-        next_rd.entries[i - 1] = next_rd.entries[i];
-      }
       --next_rd.size;
-      next_rd.entries[next_rd.size] = instruction_FIFO_entry{};
+      if (next_rd.size == 0) {
+        next_rd.head_entry = instruction_FIFO_entry{};
+        next_rd.head_valid = false;
+      } else if (size_before_ops > 1) {
+        next_rd.head_entry = instruction_FIFO_entry{};
+        next_rd.head_valid = false;
+      } else if (comb_out.push_en) {
+        next_rd.head_entry = comb_out.push_entry;
+        next_rd.head_valid = true;
+      }
     }
   }
 
   void comb_calc(const instruction_FIFO_in &inp,
                  const instruction_FIFO_read_data &rd,
                  instruction_FIFO_out &out,
-                 instruction_FIFO_read_data &next_rd) const {
+                 instruction_FIFO_read_data &next_rd,
+                 InstructionCombOut &step_req) const {
     InstructionCombIn comb_in{};
     comb_in.inp = inp;
     comb_in.rd = rd;
 
-    InstructionCombOut comb_out{};
-    instruction_FIFO_comb(comb_in, comb_out);
-    out = comb_out.out_regs;
-    build_next_read_data(rd, comb_out, next_rd);
+    instruction_FIFO_comb(comb_in, step_req);
+    out = step_req.out_regs;
+    build_next_read_data(rd, step_req, next_rd);
   }
 
-  void seq_write(const instruction_FIFO_read_data &next_rd) {
-    state_ = next_rd;
+  void seq_write(const InstructionCombOut &req) {
+    if (req.clear_fifo) {
+      size_ = 0;
+      std::memset(entries_, 0, sizeof(entries_));
+    }
+    if (req.push_en) {
+      if (size_ >= INSTRUCTION_FIFO_SIZE) {
+        std::printf("[INSTRUCTION_FIFO_TOP] ERROR!!: fifo.size() >= INSTRUCTION_FIFO_SIZE\n");
+        std::exit(1);
+      }
+      entries_[size_++] = req.push_entry;
+    }
+    if (req.pop_en) {
+      if (size_ == 0) {
+        std::printf("[INSTRUCTION_FIFO_TOP] ERROR!!: fifo underflow on read\n");
+        std::exit(1);
+      }
+      for (instruction_fifo_size_t i = 1; i < size_; ++i) {
+        entries_[i - 1] = entries_[i];
+      }
+      --size_;
+      entries_[size_] = instruction_FIFO_entry{};
+    }
   }
 
 private:
-  instruction_FIFO_read_data state_{};
+  instruction_FIFO_entry entries_[INSTRUCTION_FIFO_SIZE]{};
+  instruction_fifo_size_t size_ = 0;
 };
 
 InstructionFifoModel g_instruction_fifo;
@@ -147,15 +189,17 @@ void instruction_FIFO_seq_read(struct instruction_FIFO_in *in,
 void instruction_FIFO_comb_calc(struct instruction_FIFO_in *in,
                                 const struct instruction_FIFO_read_data *rd,
                                 struct instruction_FIFO_out *out,
-                                struct instruction_FIFO_read_data *next_rd) {
+                                struct instruction_FIFO_read_data *next_rd,
+                                InstructionCombOut *step_req) {
   assert(in);
   assert(rd);
   assert(out);
   assert(next_rd);
-  g_instruction_fifo.comb_calc(*in, *rd, *out, *next_rd);
+  assert(step_req);
+  g_instruction_fifo.comb_calc(*in, *rd, *out, *next_rd, *step_req);
 }
 
-void instruction_FIFO_seq_write(const struct instruction_FIFO_read_data *next_rd) {
-  assert(next_rd);
-  g_instruction_fifo.seq_write(*next_rd);
+void instruction_FIFO_seq_write(const InstructionCombOut *req) {
+  assert(req);
+  g_instruction_fifo.seq_write(*req);
 }

@@ -16,8 +16,9 @@ extern axi_interconnect::ReadMasterPort_t *icache_mem_read_port;
 
 
 struct fetch_address_FIFO_read_data {
-  fetch_addr_t entries[FETCH_ADDR_FIFO_SIZE];
   fetch_addr_fifo_size_t size;
+  wire1_t head_valid;
+  fetch_addr_t head_entry;
 };
 
 struct instruction_FIFO_entry {
@@ -31,8 +32,9 @@ struct instruction_FIFO_entry {
 };
 
 struct instruction_FIFO_read_data {
-  instruction_FIFO_entry entries[INSTRUCTION_FIFO_SIZE];
   instruction_fifo_size_t size;
+  wire1_t head_valid;
+  instruction_FIFO_entry head_entry;
 };
 
 struct PTAB_entry {
@@ -58,8 +60,9 @@ struct PTAB_entry {
 };
 
 struct PTAB_read_data {
-  PTAB_entry entries[PTAB_SIZE];
   ptab_size_t size;
+  wire1_t head_valid;
+  PTAB_entry head_entry;
 };
 
 struct front2back_FIFO_entry {
@@ -86,8 +89,9 @@ struct front2back_FIFO_entry {
 };
 
 struct front2back_FIFO_read_data {
-  front2back_FIFO_entry entries[FRONT2BACK_FIFO_SIZE];
   front2back_fifo_size_t size;
+  wire1_t head_valid;
+  front2back_FIFO_entry head_entry;
 };
 
 struct FetchAddrCombIn;
@@ -119,14 +123,16 @@ void instruction_FIFO_comb(const InstructionCombIn &input,
 void instruction_FIFO_comb_calc(struct instruction_FIFO_in *in,
                                 const struct instruction_FIFO_read_data *rd,
                                 struct instruction_FIFO_out *out,
-                                struct instruction_FIFO_read_data *next_rd);
-void instruction_FIFO_seq_write(const struct instruction_FIFO_read_data *next_rd);
+                                struct instruction_FIFO_read_data *next_rd,
+                                InstructionCombOut *step_req);
+void instruction_FIFO_seq_write(const InstructionCombOut *req);
 
 void PTAB_seq_read(struct PTAB_in *in, struct PTAB_read_data *rd);
 void PTAB_comb(const PtabCombIn &input, PtabCombOut &output);
 void PTAB_comb_calc(struct PTAB_in *in, const struct PTAB_read_data *rd,
-                    struct PTAB_out *out, struct PTAB_read_data *next_rd);
-void PTAB_seq_write(const struct PTAB_read_data *next_rd);
+                    struct PTAB_out *out, struct PTAB_read_data *next_rd,
+                    PtabCombOut *step_req);
+void PTAB_seq_write(const PtabCombOut *req);
 
 void front_top(struct front_top_in *in, struct front_top_out *out);
 void front_dump_debug_state();
@@ -138,8 +144,9 @@ void front2back_FIFO_comb(const Front2BackCombIn &input,
 void front2back_FIFO_comb_calc(struct front2back_FIFO_in *in,
                                const struct front2back_FIFO_read_data *rd,
                                struct front2back_FIFO_out *out,
-                               struct front2back_FIFO_read_data *next_rd);
-void front2back_FIFO_seq_write(const struct front2back_FIFO_read_data *next_rd);
+                               struct front2back_FIFO_read_data *next_rd,
+                               Front2BackCombOut *step_req);
+void front2back_FIFO_seq_write(const Front2BackCombOut *req);
 
 void fetch_address_FIFO_seq_read(struct fetch_address_FIFO_in *in,
                                  struct fetch_address_FIFO_read_data *rd);
@@ -148,7 +155,8 @@ void fetch_address_FIFO_comb(const FetchAddrCombIn &input,
 void fetch_address_FIFO_comb_calc(struct fetch_address_FIFO_in *in,
                                   const struct fetch_address_FIFO_read_data *rd,
                                   struct fetch_address_FIFO_out *out,
-                                  struct fetch_address_FIFO_read_data *next_rd);
-void fetch_address_FIFO_seq_write(const struct fetch_address_FIFO_read_data *next_rd);
+                                  struct fetch_address_FIFO_read_data *next_rd,
+                                  FetchAddrCombOut *step_req);
+void fetch_address_FIFO_seq_write(const FetchAddrCombOut *req);
 
 #endif // FRONT_MODULE_H

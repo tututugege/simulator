@@ -914,6 +914,93 @@ static void front_bpu_input_comb(const FrontBpuInputCombIn &input,
     output.bpu_in.icache_read_ready = input.icache_ready;
 }
 
+static void accumulate_fetch_addr_req(FetchAddrCombOut &acc,
+                                      const FetchAddrCombOut &step) {
+    acc.clear_fifo |= step.clear_fifo;
+    if (step.pop_en) {
+        if (acc.pop_en) {
+            std::printf("[front_top] ERROR: fetch_address_FIFO pop requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.pop_en = true;
+    }
+    if (step.push_en) {
+        if (acc.push_en) {
+            std::printf("[front_top] ERROR: fetch_address_FIFO push requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.push_en = true;
+        acc.push_data = step.push_data;
+    }
+}
+
+static void accumulate_instruction_fifo_req(InstructionCombOut &acc,
+                                            const InstructionCombOut &step) {
+    acc.clear_fifo |= step.clear_fifo;
+    if (step.pop_en) {
+        if (acc.pop_en) {
+            std::printf("[front_top] ERROR: instruction_FIFO pop requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.pop_en = true;
+    }
+    if (step.push_en) {
+        if (acc.push_en) {
+            std::printf("[front_top] ERROR: instruction_FIFO push requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.push_en = true;
+        acc.push_entry = step.push_entry;
+    }
+}
+
+static void accumulate_ptab_req(PtabCombOut &acc, const PtabCombOut &step) {
+    acc.clear_ptab |= step.clear_ptab;
+    if (step.pop_en) {
+        if (acc.pop_en) {
+            std::printf("[front_top] ERROR: PTAB pop requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.pop_en = true;
+    }
+    if (step.push_write_en) {
+        if (acc.push_write_en) {
+            std::printf("[front_top] ERROR: PTAB write push requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.push_write_en = true;
+        acc.push_write_entry = step.push_write_entry;
+    }
+    if (step.push_dummy_en) {
+        if (acc.push_dummy_en) {
+            std::printf("[front_top] ERROR: PTAB dummy push requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.push_dummy_en = true;
+        acc.push_dummy_entry = step.push_dummy_entry;
+    }
+}
+
+static void accumulate_front2back_req(Front2BackCombOut &acc,
+                                      const Front2BackCombOut &step) {
+    acc.clear_fifo |= step.clear_fifo;
+    if (step.pop_en) {
+        if (acc.pop_en) {
+            std::printf("[front_top] ERROR: front2back_FIFO pop requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.pop_en = true;
+    }
+    if (step.push_en) {
+        if (acc.push_en) {
+            std::printf("[front_top] ERROR: front2back_FIFO push requested multiple times in one cycle\n");
+            std::exit(1);
+        }
+        acc.push_en = true;
+        acc.push_entry = step.push_entry;
+    }
+}
+
 // ============================================================================
 // 主函数
 // ============================================================================
@@ -924,10 +1011,10 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
     struct front_top_out *out_ptr = &out;
     PendingBpuSeqTxn &bpu_seq_txn_req = req.bpu_seq_txn;
     PendingFrontState &front_state_req = req.front_state;
-    fetch_address_FIFO_read_data &fetch_addr_fifo_final_rd = req.fetch_addr_fifo_next_rd;
-    instruction_FIFO_read_data &fifo_final_rd = req.fifo_next_rd;
-    PTAB_read_data &ptab_final_rd = req.ptab_next_rd;
-    front2back_FIFO_read_data &front2back_fifo_final_rd = req.front2back_fifo_next_rd;
+    FetchAddrCombOut &fetch_addr_fifo_final_req = req.fetch_addr_fifo_req;
+    InstructionCombOut &fifo_final_req = req.fifo_req;
+    PtabCombOut &ptab_final_req = req.ptab_req;
+    Front2BackCombOut &front2back_fifo_final_req = req.front2back_fifo_req;
     std::memset(&out, 0, sizeof(struct front_top_out));
     uint32_t front_sim_time = rd.front_sim_time_snapshot + 1;
     FrontRuntimeStats front_stats = rd.front_stats_snapshot;
@@ -953,20 +1040,28 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
     struct fetch_address_FIFO_out fetch_addr_fifo_out;
     fetch_address_FIFO_read_data fetch_addr_fifo_rd = rd.fetch_addr_fifo_rd_snapshot;
     fetch_address_FIFO_read_data fetch_addr_fifo_next_rd = fetch_addr_fifo_rd;
+    FetchAddrCombOut fetch_addr_fifo_req{};
+    FetchAddrCombOut fetch_addr_fifo_step_req{};
     struct icache_in icache_in;
     struct icache_out icache_out;
     struct instruction_FIFO_in fifo_in;
     struct instruction_FIFO_out fifo_out;
     instruction_FIFO_read_data fifo_rd = rd.fifo_rd_snapshot;
     instruction_FIFO_read_data fifo_next_rd = fifo_rd;
+    InstructionCombOut fifo_req{};
+    InstructionCombOut fifo_step_req{};
     struct PTAB_in ptab_in;
     struct PTAB_out ptab_out;
     PTAB_read_data ptab_rd = rd.ptab_rd_snapshot;
     PTAB_read_data ptab_next_rd = ptab_rd;
+    PtabCombOut ptab_req{};
+    PtabCombOut ptab_step_req{};
     struct front2back_FIFO_in front2back_fifo_in;
     struct front2back_FIFO_out front2back_fifo_out;
     front2back_FIFO_read_data front2back_fifo_rd = rd.front2back_fifo_rd_snapshot;
     front2back_FIFO_read_data front2back_fifo_next_rd = front2back_fifo_rd;
+    Front2BackCombOut front2back_fifo_req{};
+    Front2BackCombOut front2back_fifo_step_req{};
     
     memset(&bpu_in, 0, sizeof(bpu_in));
     memset(&fetch_addr_fifo_in, 0, sizeof(fetch_addr_fifo_in));
@@ -1107,7 +1202,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
         front_read_stage_input_comb(read_stage_input_in, read_stage_input_out);
         fetch_addr_fifo_in = read_stage_input_out.fetch_addr_fifo_in;
         fetch_address_FIFO_comb_calc(&fetch_addr_fifo_in, &fetch_addr_fifo_rd,
-                                     &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd);
+                                     &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd,
+                                     &fetch_addr_fifo_step_req);
+        accumulate_fetch_addr_req(fetch_addr_fifo_req, fetch_addr_fifo_step_req);
         fetch_addr_fifo_rd = fetch_addr_fifo_next_rd;
 
         saved_fetch_addr_fifo_out_0 = fetch_addr_fifo_out;
@@ -1122,7 +1219,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             fetch_addr_fifo_in.write_enable = false;
             fetch_addr_fifo_in.fetch_address = 0;
             fetch_address_FIFO_comb_calc(&fetch_addr_fifo_in, &fetch_addr_fifo_rd,
-                                         &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd);
+                                         &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd,
+                                         &fetch_addr_fifo_step_req);
+            accumulate_fetch_addr_req(fetch_addr_fifo_req, fetch_addr_fifo_step_req);
             fetch_addr_fifo_rd = fetch_addr_fifo_next_rd;
             saved_fetch_addr_fifo_out_1 = fetch_addr_fifo_out;
         }
@@ -1134,16 +1233,21 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
         }
         
         fifo_in = read_stage_input_out.fifo_in;
-        instruction_FIFO_comb_calc(&fifo_in, &fifo_rd, &fifo_out, &fifo_next_rd);
+        instruction_FIFO_comb_calc(&fifo_in, &fifo_rd, &fifo_out, &fifo_next_rd,
+                                   &fifo_step_req);
+        accumulate_instruction_fifo_req(fifo_req, fifo_step_req);
         fifo_rd = fifo_next_rd;
         
         ptab_in = read_stage_input_out.ptab_in;
-        PTAB_comb_calc(&ptab_in, &ptab_rd, &ptab_out, &ptab_next_rd);
+        PTAB_comb_calc(&ptab_in, &ptab_rd, &ptab_out, &ptab_next_rd, &ptab_step_req);
+        accumulate_ptab_req(ptab_req, ptab_step_req);
         ptab_rd = ptab_next_rd;
         
         front2back_fifo_in = read_stage_input_out.front2back_fifo_in;
         front2back_FIFO_comb_calc(&front2back_fifo_in, &front2back_fifo_rd,
-                                  &front2back_fifo_out, &front2back_fifo_next_rd);
+                                  &front2back_fifo_out, &front2back_fifo_next_rd,
+                                  &front2back_fifo_step_req);
+        accumulate_front2back_req(front2back_fifo_req, front2back_fifo_step_req);
         front2back_fifo_rd = front2back_fifo_next_rd;
     }
     
@@ -1285,7 +1389,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             fetch_addr_fifo_in.fetch_address = bpu_output.fetch_address;
             DEBUG_LOG_SMALL_4("normal write enable: %x\n", bpu_output.fetch_address);
             fetch_address_FIFO_comb_calc(&fetch_addr_fifo_in, &fetch_addr_fifo_rd,
-                                         &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd);
+                                         &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd,
+                                         &fetch_addr_fifo_step_req);
+            accumulate_fetch_addr_req(fetch_addr_fifo_req, fetch_addr_fifo_step_req);
             fetch_addr_fifo_rd = fetch_addr_fifo_next_rd;
         } else if (normal_write_enable && bpu_output.mini_flush_correct) {
             front_stats.fetch_addr_write_skip_by_mini_flush_correct_cycles++;
@@ -1297,7 +1403,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             fetch_addr_fifo_in.fetch_address = bpu_output.two_ahead_target;
             DEBUG_LOG_SMALL_4("2ahead write enable: %x\n", bpu_output.two_ahead_target);
             fetch_address_FIFO_comb_calc(&fetch_addr_fifo_in, &fetch_addr_fifo_rd,
-                                         &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd);
+                                         &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd,
+                                         &fetch_addr_fifo_step_req);
+            accumulate_fetch_addr_req(fetch_addr_fifo_req, fetch_addr_fifo_step_req);
             fetch_addr_fifo_rd = fetch_addr_fifo_next_rd;
         }
 #endif
@@ -1419,7 +1527,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             ptab_in.refetch = global_refetch;
             ptab_in.read_enable = true;
             ptab_in.write_enable = false;
-            PTAB_comb_calc(&ptab_in, &ptab_rd, &ptab_out, &ptab_next_rd);
+            PTAB_comb_calc(&ptab_in, &ptab_rd, &ptab_out, &ptab_next_rd,
+                           &ptab_step_req);
+            accumulate_ptab_req(ptab_req, ptab_step_req);
             ptab_rd = ptab_next_rd;
             saved_ptab_out = ptab_out;
             predecode_source_valid = true;
@@ -1509,7 +1619,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
                 fifo_in.seq_next_pc &= mask;
             }
 
-            instruction_FIFO_comb_calc(&fifo_in, &fifo_rd, &fifo_out, &fifo_next_rd);
+            instruction_FIFO_comb_calc(&fifo_in, &fifo_rd, &fifo_out, &fifo_next_rd,
+                                       &fifo_step_req);
+            accumulate_instruction_fifo_req(fifo_req, fifo_step_req);
             fifo_rd = fifo_next_rd;
             inst_fifo_full_for_write = fifo_out.full;
         }
@@ -1549,7 +1661,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
                 fifo_in.seq_next_pc &= mask;
             }
 
-            instruction_FIFO_comb_calc(&fifo_in, &fifo_rd, &fifo_out, &fifo_next_rd);
+            instruction_FIFO_comb_calc(&fifo_in, &fifo_rd, &fifo_out, &fifo_next_rd,
+                                       &fifo_step_req);
+            accumulate_instruction_fifo_req(fifo_req, fifo_step_req);
             fifo_rd = fifo_next_rd;
         }
     }
@@ -1578,7 +1692,9 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             DEBUG_LOG_SMALL_3("bpu_out.predict_next_fetch_address: %x\n",
                               bpu_output.predict_next_fetch_address);
             
-            PTAB_comb_calc(&ptab_in, &ptab_rd, &ptab_out, &ptab_next_rd);
+            PTAB_comb_calc(&ptab_in, &ptab_rd, &ptab_out, &ptab_next_rd,
+                           &ptab_step_req);
+            accumulate_ptab_req(ptab_req, ptab_step_req);
             ptab_rd = ptab_next_rd;
         }
         
@@ -1663,7 +1779,10 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             if (front2back_fifo_in.write_enable) {
                 front2back_FIFO_comb_calc(&front2back_fifo_in, &front2back_fifo_rd,
                                           &front2back_fifo_out,
-                                          &front2back_fifo_next_rd);
+                                          &front2back_fifo_next_rd,
+                                          &front2back_fifo_step_req);
+                accumulate_front2back_req(front2back_fifo_req,
+                                          front2back_fifo_step_req);
                 front2back_fifo_rd = front2back_fifo_next_rd;
             }
         }
@@ -1835,10 +1954,10 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
 
         front_state_req.next_front_sim_time = front_sim_time;
         front_state_req.next_front_stats = front_stats;
-        fetch_addr_fifo_final_rd = fetch_addr_fifo_rd;
-        fifo_final_rd = fifo_rd;
-        ptab_final_rd = ptab_rd;
-        front2back_fifo_final_rd = front2back_fifo_rd;
+        fetch_addr_fifo_final_req = fetch_addr_fifo_req;
+        fifo_final_req = fifo_req;
+        ptab_final_req = ptab_req;
+        front2back_fifo_final_req = front2back_fifo_req;
         front_deadlock_snapshot.valid = true;
         front_deadlock_snapshot.global_reset = global_reset;
         front_deadlock_snapshot.global_refetch = global_refetch;
@@ -1908,10 +2027,10 @@ void front_seq_write(const struct front_top_in &inp, const FrontUpdateRequest &r
     bpu_instance.bpu_seq_write(req.bpu_seq_txn.inp, req.bpu_seq_txn.req,
                                req.bpu_seq_txn.reset);
   }
-  fetch_address_FIFO_seq_write(&req.fetch_addr_fifo_next_rd);
-  instruction_FIFO_seq_write(&req.fifo_next_rd);
-  PTAB_seq_write(&req.ptab_next_rd);
-  front2back_FIFO_seq_write(&req.front2back_fifo_next_rd);
+  fetch_address_FIFO_seq_write(&req.fetch_addr_fifo_req);
+  instruction_FIFO_seq_write(&req.fifo_req);
+  PTAB_seq_write(&req.ptab_req);
+  front2back_FIFO_seq_write(&req.front2back_fifo_req);
   predecode_checker_seq_write();
   icache_seq_write();
 
