@@ -654,26 +654,21 @@ static void front_read_stage_input_comb(const FrontReadStageInputCombIn &input,
     const wire1_t ptab_read_enable = input.ptab_read_enable;
     const wire1_t front2back_read_enable = input.front2back_read_enable;
     std::memset(&output, 0, sizeof(output));
-    output.fetch_addr_fifo_in.reset = global_reset;
-    output.fetch_addr_fifo_in.refetch = global_refetch;
-    output.fetch_addr_fifo_in.read_enable = fetch_addr_fifo_read_enable_slot0;
-    output.fetch_addr_fifo_in.write_enable = false;
-    output.fetch_addr_fifo_in.fetch_address = 0;
+    output.fetch_addr_fifo_reset = global_reset;
+    output.fetch_addr_fifo_refetch = global_refetch;
+    output.fetch_addr_fifo_read_enable = fetch_addr_fifo_read_enable_slot0;
 
-    output.fifo_in.reset = global_reset;
-    output.fifo_in.refetch = global_refetch;
-    output.fifo_in.read_enable = inst_fifo_read_enable;
-    output.fifo_in.write_enable = false;
+    output.fifo_reset = global_reset;
+    output.fifo_refetch = global_refetch;
+    output.fifo_read_enable = inst_fifo_read_enable;
 
-    output.ptab_in.reset = global_reset;
-    output.ptab_in.refetch = global_refetch;
-    output.ptab_in.read_enable = ptab_read_enable;
-    output.ptab_in.write_enable = false;
+    output.ptab_reset = global_reset;
+    output.ptab_refetch = global_refetch;
+    output.ptab_read_enable = ptab_read_enable;
 
-    output.front2back_fifo_in.reset = global_reset;
-    output.front2back_fifo_in.refetch = input.backend_refetch;
-    output.front2back_fifo_in.read_enable = front2back_read_enable;
-    output.front2back_fifo_in.write_enable = false;
+    output.front2back_fifo_reset = global_reset;
+    output.front2back_fifo_refetch = input.backend_refetch;
+    output.front2back_fifo_read_enable = front2back_read_enable;
 }
 
 static void front_bpu_control_comb(const FrontBpuControlCombIn &input,
@@ -1200,7 +1195,27 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
         read_stage_input_in.ptab_read_enable = ptab_read_enable;
         read_stage_input_in.front2back_read_enable = front2back_read_enable;
         front_read_stage_input_comb(read_stage_input_in, read_stage_input_out);
-        fetch_addr_fifo_in = read_stage_input_out.fetch_addr_fifo_in;
+        fetch_addr_fifo_in.reset = read_stage_input_out.fetch_addr_fifo_reset;
+        fetch_addr_fifo_in.refetch = read_stage_input_out.fetch_addr_fifo_refetch;
+        fetch_addr_fifo_in.read_enable = read_stage_input_out.fetch_addr_fifo_read_enable;
+        fetch_addr_fifo_in.write_enable = false;
+        fetch_addr_fifo_in.fetch_address = 0;
+
+        fifo_in.reset = read_stage_input_out.fifo_reset;
+        fifo_in.refetch = read_stage_input_out.fifo_refetch;
+        fifo_in.read_enable = read_stage_input_out.fifo_read_enable;
+        fifo_in.write_enable = false;
+
+        ptab_in.reset = read_stage_input_out.ptab_reset;
+        ptab_in.refetch = read_stage_input_out.ptab_refetch;
+        ptab_in.read_enable = read_stage_input_out.ptab_read_enable;
+        ptab_in.write_enable = false;
+
+        front2back_fifo_in.reset = read_stage_input_out.front2back_fifo_reset;
+        front2back_fifo_in.refetch = read_stage_input_out.front2back_fifo_refetch;
+        front2back_fifo_in.read_enable = read_stage_input_out.front2back_fifo_read_enable;
+        front2back_fifo_in.write_enable = false;
+
         fetch_address_FIFO_comb_calc(&fetch_addr_fifo_in, &fetch_addr_fifo_rd,
                                      &fetch_addr_fifo_out, &fetch_addr_fifo_next_rd,
                                      &fetch_addr_fifo_step_req);
@@ -1232,18 +1247,15 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
             front_stats.fetch_addr_read_slot1_cycles++;
         }
         
-        fifo_in = read_stage_input_out.fifo_in;
         instruction_FIFO_comb_calc(&fifo_in, &fifo_rd, &fifo_out, &fifo_next_rd,
                                    &fifo_step_req);
         accumulate_instruction_fifo_req(fifo_req, fifo_step_req);
         fifo_rd = fifo_next_rd;
         
-        ptab_in = read_stage_input_out.ptab_in;
         PTAB_comb_calc(&ptab_in, &ptab_rd, &ptab_out, &ptab_next_rd, &ptab_step_req);
         accumulate_ptab_req(ptab_req, ptab_step_req);
         ptab_rd = ptab_next_rd;
         
-        front2back_fifo_in = read_stage_input_out.front2back_fifo_in;
         front2back_FIFO_comb_calc(&front2back_fifo_in, &front2back_fifo_rd,
                                   &front2back_fifo_out, &front2back_fifo_next_rd,
                                   &front2back_fifo_step_req);

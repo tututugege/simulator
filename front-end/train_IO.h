@@ -310,10 +310,18 @@ struct FrontReadStageInputCombIn {
 };
 
 struct FrontReadStageInputCombOut {
-  fetch_address_FIFO_in fetch_addr_fifo_in;
-  instruction_FIFO_in fifo_in;
-  PTAB_in ptab_in;
-  front2back_FIFO_in front2back_fifo_in;
+  wire1_t fetch_addr_fifo_reset;
+  wire1_t fetch_addr_fifo_refetch;
+  wire1_t fetch_addr_fifo_read_enable;
+  wire1_t fifo_reset;
+  wire1_t fifo_refetch;
+  wire1_t fifo_read_enable;
+  wire1_t ptab_reset;
+  wire1_t ptab_refetch;
+  wire1_t ptab_read_enable;
+  wire1_t front2back_fifo_reset;
+  wire1_t front2back_fifo_refetch;
+  wire1_t front2back_fifo_read_enable;
 };
 
 struct FrontBpuControlCombIn {
