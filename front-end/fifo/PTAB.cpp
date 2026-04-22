@@ -76,11 +76,15 @@ void PTAB_comb(const PtabCombIn &in, PtabCombOut &out) {
   }
 
   if (do_read) {
+    if (has_data_before_read && !in.rd.head_valid) {
+      std::printf("[PTAB_TOP] ERROR!!: missing head snapshot for same-cycle reread\n");
+      std::exit(1);
+    }
     constexpr uint32_t kPcpnMask = bit_mask_u32(pcpn_t_BITS);
     constexpr uint32_t kTageIdxMask = bit_mask_u32(tage_idx_t_BITS);
     constexpr uint32_t kTageTagMask = bit_mask_u32(tage_tag_t_BITS);
     const PTAB_entry &read_entry =
-        has_data_before_read ? in.rd.entries[0] : write_entry;
+        has_data_before_read ? in.rd.head_entry : write_entry;
     out.out_regs.dummy_entry = read_entry.dummy_entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       out.out_regs.predict_dir[i] = read_entry.predict_dir[i];
@@ -133,70 +137,125 @@ class PTABModel {
 public:
   void seq_read(const PTAB_in &inp, PTAB_read_data &rd) const {
     (void)inp;
-    rd = state_;
+    std::memset(&rd, 0, sizeof(rd));
+    rd.size = size_;
+    rd.head_valid = (size_ > 0);
+    if (rd.head_valid) {
+      rd.head_entry = entries_[0];
+    }
   }
 
   void build_next_read_data(const PTAB_read_data &cur, const PtabCombOut &comb_out,
                             PTAB_read_data &next_rd) const {
     next_rd = cur;
     if (comb_out.clear_ptab) {
-      next_rd.size = 0;
+      next_rd = {};
     }
+    const ptab_size_t size_before_ops = next_rd.size;
+    bool first_push_recorded = false;
+    PTAB_entry first_push_entry{};
     if (comb_out.push_write_en) {
       if (next_rd.size >= PTAB_SIZE) {
         std::printf("[PTAB_TOP] ERROR!!: ptab.size() >= PTAB_SIZE\n");
         std::exit(1);
       }
-      next_rd.entries[next_rd.size++] = comb_out.push_write_entry;
+      if (next_rd.size == 0) {
+        next_rd.head_entry = comb_out.push_write_entry;
+        next_rd.head_valid = true;
+      }
+      first_push_entry = comb_out.push_write_entry;
+      first_push_recorded = true;
+      ++next_rd.size;
     }
     if (comb_out.push_dummy_en) {
       if (next_rd.size >= PTAB_SIZE) {
         std::printf("[PTAB_TOP] dummy entry push ERROR!!: ptab.size() >= PTAB_SIZE\n");
         std::exit(1);
       }
-      next_rd.entries[next_rd.size++] = comb_out.push_dummy_entry;
+      if (next_rd.size == 0) {
+        next_rd.head_entry = comb_out.push_dummy_entry;
+        next_rd.head_valid = true;
+      }
+      if (!first_push_recorded) {
+        first_push_entry = comb_out.push_dummy_entry;
+        first_push_recorded = true;
+      }
+      ++next_rd.size;
     }
     if (comb_out.pop_en) {
       if (next_rd.size == 0) {
         std::printf("[PTAB_TOP] ERROR!!: ptab underflow on read\n");
         std::exit(1);
       }
-      for (uint8_t i = 1; i < next_rd.size; ++i) {
-        next_rd.entries[i - 1] = next_rd.entries[i];
-      }
       --next_rd.size;
-      next_rd.entries[next_rd.size] = PTAB_entry{};
+      if (next_rd.size == 0) {
+        next_rd.head_entry = PTAB_entry{};
+        next_rd.head_valid = false;
+      } else if (size_before_ops > 1) {
+        next_rd.head_entry = PTAB_entry{};
+        next_rd.head_valid = false;
+      } else if (first_push_recorded) {
+        next_rd.head_entry = first_push_entry;
+        next_rd.head_valid = true;
+      }
     }
   }
 
   void comb_calc(const PTAB_in &inp, const PTAB_read_data &rd, PTAB_out &out,
-                 PTAB_read_data &next_rd) const {
+                 PTAB_read_data &next_rd, PtabCombOut &step_req) const {
     PtabCombIn comb_in{};
     comb_in.inp = inp;
     comb_in.rd = rd;
 
-    PtabCombOut comb_out{};
-    PTAB_comb(comb_in, comb_out);
-    out = comb_out.out_regs;
-    build_next_read_data(rd, comb_out, next_rd);
+    PTAB_comb(comb_in, step_req);
+    out = step_req.out_regs;
+    build_next_read_data(rd, step_req, next_rd);
   }
 
-  void seq_write(const PTAB_read_data &next_rd) {
-    state_ = next_rd;
+  void seq_write(const PtabCombOut &req) {
+    if (req.clear_ptab) {
+      size_ = 0;
+      std::memset(entries_, 0, sizeof(entries_));
+    }
+    if (req.push_write_en) {
+      if (size_ >= PTAB_SIZE) {
+        std::printf("[PTAB_TOP] ERROR!!: ptab.size() >= PTAB_SIZE\n");
+        std::exit(1);
+      }
+      entries_[size_++] = req.push_write_entry;
+    }
+    if (req.push_dummy_en) {
+      if (size_ >= PTAB_SIZE) {
+        std::printf("[PTAB_TOP] dummy entry push ERROR!!: ptab.size() >= PTAB_SIZE\n");
+        std::exit(1);
+      }
+      entries_[size_++] = req.push_dummy_entry;
+    }
+    if (req.pop_en) {
+      if (size_ == 0) {
+        std::printf("[PTAB_TOP] ERROR!!: ptab underflow on read\n");
+        std::exit(1);
+      }
+      for (ptab_size_t i = 1; i < size_; ++i) {
+        entries_[i - 1] = entries_[i];
+      }
+      --size_;
+      entries_[size_] = PTAB_entry{};
+    }
   }
 
   bool peek_mini_flush() {
-    if (state_.size == 0) {
+    if (size_ == 0) {
       return false;
     }
     DEBUG_LOG_SMALL_4("ptab_peeking for pc=%x,need_mini_flush=%d\n",
-                      state_.entries[0].predict_base_pc[0],
-                      state_.entries[0].need_mini_flush);
-    return state_.entries[0].need_mini_flush;
+                      entries_[0].predict_base_pc[0], entries_[0].need_mini_flush);
+    return entries_[0].need_mini_flush;
   }
 
 private:
-  PTAB_read_data state_{};
+  PTAB_entry entries_[PTAB_SIZE]{};
+  ptab_size_t size_ = 0;
 };
 
 PTABModel g_ptab_model;
@@ -210,15 +269,17 @@ void PTAB_seq_read(struct PTAB_in *in, struct PTAB_read_data *rd) {
 }
 
 void PTAB_comb_calc(struct PTAB_in *in, const struct PTAB_read_data *rd,
-                    struct PTAB_out *out, struct PTAB_read_data *next_rd) {
+                    struct PTAB_out *out, struct PTAB_read_data *next_rd,
+                    PtabCombOut *step_req) {
   assert(in);
   assert(rd);
   assert(out);
   assert(next_rd);
-  g_ptab_model.comb_calc(*in, *rd, *out, *next_rd);
+  assert(step_req);
+  g_ptab_model.comb_calc(*in, *rd, *out, *next_rd, *step_req);
 }
 
-void PTAB_seq_write(const struct PTAB_read_data *next_rd) {
-  assert(next_rd);
-  g_ptab_model.seq_write(*next_rd);
+void PTAB_seq_write(const PtabCombOut *req) {
+  assert(req);
+  g_ptab_model.seq_write(*req);
 }

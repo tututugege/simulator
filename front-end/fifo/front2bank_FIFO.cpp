@@ -71,11 +71,15 @@ void front2back_FIFO_comb(const Front2BackCombIn &in,
   }
 
   if (do_read) {
+    if (has_data_before_read && !in.rd.head_valid) {
+      std::printf("[FRONT2BACK_FIFO_TOP] ERROR!!: missing head snapshot for same-cycle reread\n");
+      std::exit(1);
+    }
     constexpr uint32_t kPcpnMask = bit_mask_u32(pcpn_t_BITS);
     constexpr uint32_t kTageIdxMask = bit_mask_u32(tage_idx_t_BITS);
     constexpr uint32_t kTageTagMask = bit_mask_u32(tage_tag_t_BITS);
     const front2back_FIFO_entry &read_entry =
-        has_data_before_read ? in.rd.entries[0] : write_entry;
+        has_data_before_read ? in.rd.head_entry : write_entry;
     for (int i = 0; i < FETCH_WIDTH; i++) {
       out.out_regs.fetch_group[i] = read_entry.fetch_group[i];
       out.out_regs.page_fault_inst[i] = read_entry.page_fault_inst[i];
@@ -129,7 +133,12 @@ class Front2BackFifoModel {
 public:
   void seq_read(const front2back_FIFO_in &inp, front2back_FIFO_read_data &rd) const {
     (void)inp;
-    rd = state_;
+    std::memset(&rd, 0, sizeof(rd));
+    rd.size = size_;
+    rd.head_valid = (size_ > 0);
+    if (rd.head_valid) {
+      rd.head_entry = entries_[0];
+    }
   }
 
   void build_next_read_data(const front2back_FIFO_read_data &cur,
@@ -137,48 +146,81 @@ public:
                             front2back_FIFO_read_data &next_rd) const {
     next_rd = cur;
     if (comb_out.clear_fifo) {
-      next_rd.size = 0;
+      next_rd = {};
     }
+    const front2back_fifo_size_t size_before_ops = next_rd.size;
     if (comb_out.push_en) {
       if (next_rd.size >= FRONT2BACK_FIFO_SIZE) {
         std::printf("[FRONT2BACK_FIFO_TOP] ERROR!!: front2back_fifo.size() >= FRONT2BACK_FIFO_SIZE\n");
         std::exit(1);
       }
-      next_rd.entries[next_rd.size++] = comb_out.push_entry;
+      if (next_rd.size == 0) {
+        next_rd.head_entry = comb_out.push_entry;
+        next_rd.head_valid = true;
+      }
+      ++next_rd.size;
     }
     if (comb_out.pop_en) {
       if (next_rd.size == 0) {
         std::printf("[FRONT2BACK_FIFO_TOP] ERROR!!: front2back_fifo underflow on read\n");
         std::exit(1);
       }
-      for (uint8_t i = 1; i < next_rd.size; ++i) {
-        next_rd.entries[i - 1] = next_rd.entries[i];
-      }
       --next_rd.size;
-      next_rd.entries[next_rd.size] = front2back_FIFO_entry{};
+      if (next_rd.size == 0) {
+        next_rd.head_entry = front2back_FIFO_entry{};
+        next_rd.head_valid = false;
+      } else if (size_before_ops > 1) {
+        next_rd.head_entry = front2back_FIFO_entry{};
+        next_rd.head_valid = false;
+      } else if (comb_out.push_en) {
+        next_rd.head_entry = comb_out.push_entry;
+        next_rd.head_valid = true;
+      }
     }
   }
 
   void comb_calc(const front2back_FIFO_in &inp,
                  const front2back_FIFO_read_data &rd,
                  front2back_FIFO_out &out,
-                 front2back_FIFO_read_data &next_rd) const {
+                 front2back_FIFO_read_data &next_rd,
+                 Front2BackCombOut &step_req) const {
     Front2BackCombIn comb_in{};
     comb_in.inp = inp;
     comb_in.rd = rd;
 
-    Front2BackCombOut comb_out{};
-    front2back_FIFO_comb(comb_in, comb_out);
-    out = comb_out.out_regs;
-    build_next_read_data(rd, comb_out, next_rd);
+    front2back_FIFO_comb(comb_in, step_req);
+    out = step_req.out_regs;
+    build_next_read_data(rd, step_req, next_rd);
   }
 
-  void seq_write(const front2back_FIFO_read_data &next_rd) {
-    state_ = next_rd;
+  void seq_write(const Front2BackCombOut &req) {
+    if (req.clear_fifo) {
+      size_ = 0;
+      std::memset(entries_, 0, sizeof(entries_));
+    }
+    if (req.push_en) {
+      if (size_ >= FRONT2BACK_FIFO_SIZE) {
+        std::printf("[FRONT2BACK_FIFO_TOP] ERROR!!: front2back_fifo.size() >= FRONT2BACK_FIFO_SIZE\n");
+        std::exit(1);
+      }
+      entries_[size_++] = req.push_entry;
+    }
+    if (req.pop_en) {
+      if (size_ == 0) {
+        std::printf("[FRONT2BACK_FIFO_TOP] ERROR!!: front2back_fifo underflow on read\n");
+        std::exit(1);
+      }
+      for (front2back_fifo_size_t i = 1; i < size_; ++i) {
+        entries_[i - 1] = entries_[i];
+      }
+      --size_;
+      entries_[size_] = front2back_FIFO_entry{};
+    }
   }
 
 private:
-  front2back_FIFO_read_data state_{};
+  front2back_FIFO_entry entries_[FRONT2BACK_FIFO_SIZE]{};
+  front2back_fifo_size_t size_ = 0;
 };
 
 Front2BackFifoModel g_front2back_fifo_model;
@@ -195,15 +237,17 @@ void front2back_FIFO_seq_read(struct front2back_FIFO_in *in,
 void front2back_FIFO_comb_calc(struct front2back_FIFO_in *in,
                                const struct front2back_FIFO_read_data *rd,
                                struct front2back_FIFO_out *out,
-                               struct front2back_FIFO_read_data *next_rd) {
+                               struct front2back_FIFO_read_data *next_rd,
+                               Front2BackCombOut *step_req) {
   assert(in);
   assert(rd);
   assert(out);
   assert(next_rd);
-  g_front2back_fifo_model.comb_calc(*in, *rd, *out, *next_rd);
+  assert(step_req);
+  g_front2back_fifo_model.comb_calc(*in, *rd, *out, *next_rd, *step_req);
 }
 
-void front2back_FIFO_seq_write(const struct front2back_FIFO_read_data *next_rd) {
-  assert(next_rd);
-  g_front2back_fifo_model.seq_write(*next_rd);
+void front2back_FIFO_seq_write(const Front2BackCombOut *req) {
+  assert(req);
+  g_front2back_fifo_model.seq_write(*req);
 }

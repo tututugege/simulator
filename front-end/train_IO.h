@@ -247,10 +247,10 @@ struct FrontUpdateRequest {
   front_top_out out_regs;
   PendingBpuSeqTxn bpu_seq_txn;
   PendingFrontState front_state;
-  fetch_address_FIFO_read_data fetch_addr_fifo_next_rd{};
-  instruction_FIFO_read_data fifo_next_rd{};
-  PTAB_read_data ptab_next_rd{};
-  front2back_FIFO_read_data front2back_fifo_next_rd{};
+  FetchAddrCombOut fetch_addr_fifo_req{};
+  InstructionCombOut fifo_req{};
+  PtabCombOut ptab_req{};
+  Front2BackCombOut front2back_fifo_req{};
 };
 
 struct FrontBpuInputCombIn {
