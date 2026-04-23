@@ -21,6 +21,7 @@
 | `lsu2exe->{wb_req,sta_wb_req}` | LSU | LSU 回写/完成回调 |
 | `ftq_pc_resp` | FTQ | 分支/PC 相关查询返回 |
 | `csr2exe` | CSR | CSR 读返回 |
+| `fu2exu->entry[fu]` | FU | FU 执行后统一回传（`ready/complete/inst`） |
 | `rob_bcast->flush` | ROB | 全局冲刷 |
 | `dec_bcast->{mispred,br_mask,clear_mask}` | IDU/EXU链路 | 分支恢复与分支位清理 |
 
@@ -37,6 +38,7 @@
 | `exe2csr` | CSR | CSR 读写请求 |
 | `exu2id->{mispred,clear_mask,redirect_*}` | IDU | 分支恢复信息 |
 | `ftq_pc_req` | FTQ | ALU/BR 的 PC 查询请求 |
+| `exu2fu->entry[fu]` | FU | EXU 下发执行包（`en/consume/flush/inst`） |
 
 ---
 
@@ -46,8 +48,12 @@
 `init()` 按 `GLOBAL_ISSUE_PORT_CONFIG` 为每个物理端口构建 FU 列表：
 
 1. `MUL/DIV/ALU/BRU/AGU/SDU/CSR/FP` 按 capability mask 挂载。
-2. `port_mappings[port].entries` 保存 `<fu, support_mask>` 路由项。
+2. `port_mappings[port].entries` 保存 `<fu, fu_idx, support_mask, lsu_port_meta>` 路由项。
 3. 运行时按 `uop.op` 在该端口路由表中选择目标 FU。
+
+补充说明：
+- FU 不直接读/写 EXU 顶层总线（FTQ/LSU/CSR）；总线访问由 EXU 收口。
+- ALU/BRU 需要的 FTQ 上下文由 EXU 在 dispatch 阶段填入 `inst`。
 
 ### 3.2 三类结果路径
 
@@ -66,9 +72,9 @@
 ## 4. 组合逻辑功能描述 (Combinational Logic)
 
 ### 4.1 `comb_begin`
-- **功能描述**：复制执行流水寄存器到 `_1` 工作副本，并统一完成 EXU 输出接口与 FU 输入握手的默认清零。
+- **功能描述**：复制执行流水寄存器到 `_1` 工作副本，并统一完成 EXU 输出接口与 `exu2fu/fu2exu` 快照的默认清零。
 - **输入依赖**：`inst_r[]`。
-- **输出更新**：`inst_r_1[]`，以及 `ftq_pc_req/exe2csr/exe2prf/exu2rob/exe2lsu/exu2id` 默认值，`fu->in.{en,consume,flush,flush_mask,clear_mask}` 默认值。
+- **输出更新**：`inst_r_1[]`，以及 `ftq_pc_req/exe2csr/exe2prf/exu2rob/exe2lsu/exu2id` 默认值，`out.exu2fu->entry[]` 默认值；并将 `units[].out` 快照到 `in.fu2exu->entry[]`。
 - **约束/优先级**：不执行发射/写回/冲刷，仅建立本拍组合初值。
 
 ### 4.2 `comb_ftq_pc_req`
@@ -79,7 +85,7 @@
 
 ### 4.3 `comb_ready`
 - **功能描述**：生成 EXU 端口 ready 与 FU 可接收掩码。
-- **输入依赖**：`inst_r[]`, `issue_stall[]`, `rob_bcast->flush`, `dec_bcast`, `port_mappings[].fu->out.ready`。
+- **输入依赖**：`inst_r[]`, `issue_stall[]`, `rob_bcast->flush`, `dec_bcast`, `in.fu2exu->entry[].ready`。
 - **输出更新**：`out.exe2iss->ready[]`, `out.exe2iss->fu_ready_mask[]`。
 - **约束/优先级**：flush 时全端口 ready=0；被 kill 在飞条目不阻塞端口。
 
@@ -92,13 +98,17 @@
 ### 4.5 `comb_pipeline`
 - **功能描述**：推进执行流水并处理 flush/mispred/clear。
 - **输入依赖**：`inst_r[]`, `issue_stall[]`, `prf2exe->iss_entry[]`, `rob_bcast->flush`, `dec_bcast`, `units[]`。
-- **输出更新**：`inst_r_1[]`，并通过 `fu->in.{flush,flush_mask,clear_mask}` 驱动 FU 清理。
+- **输出更新**：`inst_r_1[]`，并通过 `out.exu2fu->entry[].{flush,flush_mask,clear_mask}` 驱动 FU 清理，再回收至 `in.fu2exu->entry[]`。
 - **约束/优先级**：flush 最高优先级；mispred 先 flush 再 clear；存活条目需清除 `clear_mask`。
 
 ### 4.6 `comb_exec`
-- **功能描述**：执行路由、结果收集、写回分发、LSU 请求发送与分支仲裁。
-- **输入依赖**：`inst_r[]`, `port_mappings`, `units`, `lsu2exe` 回调, `rob_bcast`, `dec_bcast`。
-- **输出更新**：`issue_stall[]`, `exe2prf->{bypass,entry}`, `exu2rob->entry`, `exe2lsu->{agu_req,sdu_req}`, `exu2id->{mispred,clear_mask,redirect_*}`。
+- **功能描述**：按三段式完成执行路由、FU 执行、结果收集与写回。
+- **阶段划分**：
+  1. `comb_exu2fu_dispatch`：收集可发射指令，填充 FTQ 上下文，写 `out.exu2fu->entry[]`。
+  2. `comb_fu_exec`：FU 只消费 `out.exu2fu`，执行后回写 `in.fu2exu->entry[]`。
+  3. `comb_fu2exu_collect`：从 `in.fu2exu` 收集完成结果，完成 bypass/PRF/ROB/LSU/分支仲裁。
+- **输入依赖**：`inst_r[]`, `port_mappings`, `in.fu2exu`, `lsu2exe` 回调, `rob_bcast`, `dec_bcast`。
+- **输出更新**：`issue_stall[]`, `out.exu2fu->entry[]`, `in.fu2exu->entry[]`, `exe2prf->{bypass,entry}`, `exu2rob->entry`, `exe2lsu->{agu_req,sdu_req}`, `exu2id->{mispred,clear_mask,redirect_*}`。
 - **约束/优先级**：被 flush/kill 的结果不产生有效完成；按端口路由顺序选择 FU；分支误预测取最老条目。
 
 ---
@@ -109,6 +119,7 @@
 1. 统一继承 `AbstractFU`，通过公开 `in/out` IO 与 `comb_ctrl/comb_issue/comb_consume/seq` 建模时序行为。
 2. `port_mappings` 动态路由更接近“行为级端口交换矩阵”，非固定 RTL 结构网表。
 3. 文档中的 `FU` 应理解为周期准确行为模块，不等价于最终门级划分。
+4. EXU/FU 边界采用显式 `exu2fu/fu2exu` IO，FU 不直接驱动 EXU 对外总线。
 
 ---
 
@@ -135,7 +146,7 @@
 | `IterativeFU::current_inst` | `1`（每实例） | `1`（取完成） | `1`（issue 覆盖） |
 
 端口分配说明：
-- `fu->in.en/inst/consume/flush/flush_mask/clear_mask` 驱动 FU 输入；`fu->out.ready/complete/inst` 读取输出。
+- EXU 通过 `out.exu2fu->entry[fu_idx]` 驱动 FU 输入；通过 `in.fu2exu->entry[fu_idx]` 回收输出。
 - FU 组合路径按 `comb_ctrl`（控制）/`comb_issue`（接收）/`comb_consume`（消费）分段执行。
 
 ### 6.3 端口路由表（`port_mappings`）

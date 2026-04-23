@@ -8,11 +8,22 @@
 
 struct FuEntry {
   AbstractFU *fu;
+  int fu_idx = -1;
   uint64_t support_mask;
+  int lsu_agu_port = -1;
+  int lsu_sdu_port = -1;
 };
 
 struct PortMapping {
   std::vector<FuEntry> entries;
+};
+
+struct Exu2FuIO {
+  AbstractFU::FuInput entry[TOTAL_FU_COUNT];
+};
+
+struct Fu2ExuIO {
+  AbstractFU::FuOutput entry[TOTAL_FU_COUNT];
 };
 
 struct ExuIn {
@@ -23,6 +34,7 @@ struct ExuIn {
   LsuExeIO *lsu2exe;
   CsrStatusIO *csr_status;
   FtqExuPcRespIO *ftq_pc_resp;
+  Fu2ExuIO *fu2exu;
 };
 
 struct ExuOut {
@@ -33,6 +45,7 @@ struct ExuOut {
   ExuIdIO *exu2id; // [New] Early Branch Resolution
   ExuRobIO *exu2rob;
   FtqExuPcReqIO *ftq_pc_req;
+  Exu2FuIO *exu2fu;
 };
 
 class Exu {
@@ -68,5 +81,11 @@ public:
   ExuEntry inst_r_1[ISSUE_WIDTH]; // 下一周期指令 (Latch)
                                    //
 private:
+  void comb_exu2fu_dispatch();
+  void comb_fu_exec();
+  void comb_fu2exu_collect();
+
   bool issue_stall[ISSUE_WIDTH];
+  Exu2FuIO exu2fu_io{};
+  Fu2ExuIO fu2exu_io{};
 };
