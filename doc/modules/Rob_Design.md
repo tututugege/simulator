@@ -19,7 +19,8 @@
 | :--- | :--- | :--- |
 | `dis2rob->{uop[],dis_fire[]}` | Dispatch | 入队条目与每槽握手 |
 | `exu2rob->entry[]` | Exu | 执行完成回传（完成位/分支/异常补充） |
-| `lsu2rob->{tma.miss_mask,committed_store_pending}` | LSU | 头阻塞归因与 `SFENCE.VMA` 提交约束 |
+| `lsu2rob->{tma.miss_mask,committed_store_pending}` | LSU | 头阻塞归因与 `fence/fence.i/sfence.vma` 提交约束 |
+| `front_stall` | Front-end | 前端向 ROB 的提交节流信号（为 1 时本拍禁止提交） |
 | `dec_bcast->{mispred,redirect_rob_idx}` | Idu/Exu 广播链路 | 分支误预测恢复信息 |
 | `csr2rob->interrupt_req` | CSR | 外部中断请求 |
 | `ftq_pc_resp->resp[0]` | FTQ | 单提交 flush 指令所需 PC 查询返回 |
@@ -54,7 +55,9 @@
 
 1. 默认路径为组提交：队头整行有效条目均完成才可整行退休。
 2. 特殊场景（flush 类指令、异常、中断、进度兜底）进入单提交。
-3. flush/异常/中断仅在 `comb_commit()` 的精确提交点发出。
+3. `fence/fence.i/sfence.vma` 在队头提交前统一检查 `committed_store_pending`，提交侧 STQ 未清空则阻塞提交。
+4. `front_stall=1` 时 `comb_commit()` 入口直接禁止本拍提交（`commit=0`）。
+5. flush/异常/中断仅在 `comb_commit()` 的精确提交点发出。
 
 ---
 
@@ -80,9 +83,9 @@
 
 ### 4.4 `comb_commit`
 - **功能描述**：执行组提交/单提交仲裁，生成 `rob_commit` 与 `rob_bcast`，并推进 `deq_ptr`。
-- **输入依赖**：`entry[][deq_ptr]`、`dec_bcast`、`csr2rob`、`ftq_pc_resp`、`lsu2rob`。
+- **输入依赖**：`entry[][deq_ptr]`、`dec_bcast`、`csr2rob`、`ftq_pc_resp`、`lsu2rob`、`front_stall`。
 - **输出更新**：`rob_commit->commit_entry[]`、`rob_bcast` 全套事件位、`rob2csr`、`rob2dis->{enq_idx,rob_flag}`、`entry_1` 与 `deq_ptr_1/deq_flag_1`。
-- **约束/优先级**：异常/中断/flush 仅在精确提交点触发；特殊指令和中断强制单提交。
+- **约束/优先级**：异常/中断/flush 仅在精确提交点触发；特殊指令和中断强制单提交；`front_stall` 与 fence 的 STQ 门控可共同抑制提交。
 
 ### 4.5 `comb_complete`
 - **功能描述**：接收执行完成回传并更新对应 ROB 条目完成/异常/分支信息。

@@ -32,6 +32,7 @@
 | `inst` | `FETCH_WIDTH * 32` | 输入 | 原始指令机器码 |
 | `pc` | `FETCH_WIDTH * 32` | 输入 | 对应的程序计数器地址 |
 | `valid` | `FETCH_WIDTH * 1` | 输入 | 指令有效位 |
+| `front_stall` | `1` | 输入 | 前端向 ROB 的提交节流信号；为 1 时 ROB 本拍暂停提交 |
 | `predict_dir` | `FETCH_WIDTH * 1` | 输入 | 前端 BPU 的跳转方向预测 |
 | `predict_next_fetch_address` | `FETCH_WIDTH * 32` | 输入 | 预测的下一取指块地址 |
 | `tage_idx` | `FETCH_WIDTH * 4 * 32` | 输入 | TAGE 预测器的索引元数据 (TN_MAX=4) |
