@@ -115,6 +115,7 @@ void BackTop::init() {
   rob->in.csr2rob = &csr2rob;
   rob->in.exu2rob = &exu2rob;
   rob->in.ftq_pc_resp = &ftq_rob_pc_resp;
+  rob->in.front_stall = &in.front_stall;
 
   rob->out.rob_bcast = &rob_bcast;
   rob->out.rob_commit = &rob_commit;

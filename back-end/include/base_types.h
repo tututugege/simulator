@@ -171,6 +171,7 @@ enum UopType {
   UOP_STA,
   UOP_STD,
   UOP_CSR,
+  UOP_FENCE,
   UOP_ECALL,
   UOP_EBREAK,
   UOP_SFENCE_VMA,

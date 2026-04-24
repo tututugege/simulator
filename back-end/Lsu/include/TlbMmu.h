@@ -28,7 +28,6 @@ public:
   void flush() override;
   void seq() override;
   void cancel_pending_walk() override;
-  bool translation_pending() const override;
   void dump_debug(FILE *out) const override;
   void set_ptw_mem_port(PtwMemPort *port) override;
   void set_ptw_walk_port(PtwWalkPort *port) override;

@@ -28,7 +28,7 @@ constexpr bool is_power_of_two_u64(uint64_t n) {
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-// #define CONFIG_BPU
+#define CONFIG_BPU
 #define CONFIG_TLB_MMU
 // #define CONFIG_ORACLE_STEADY_FETCH_WIDTH
 
@@ -220,7 +220,7 @@ static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 constexpr uint64_t OP_MASK_ALU = (1ULL << UOP_ADD) | (1ULL << UOP_ECALL) |
                                  (1ULL << UOP_EBREAK) | (1ULL << UOP_MRET) |
                                  (1ULL << UOP_SRET) | (1ULL << UOP_SFENCE_VMA) |
-                                 (1ULL << UOP_FENCE_I) | (1ULL << UOP_WFI);
+                                 (1ULL << UOP_FENCE_I) | (1ULL << UOP_FENCE) | (1ULL << UOP_WFI);
 constexpr uint64_t OP_MASK_CSR = (1ULL << UOP_CSR);
 constexpr uint64_t OP_MASK_MUL = (1ULL << UOP_MUL);
 constexpr uint64_t OP_MASK_DIV = (1ULL << UOP_DIV);

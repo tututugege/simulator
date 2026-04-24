@@ -559,13 +559,16 @@ void RefCpu::RISCV() {
 
   asy = MTrap || STrap || mret || sret;
 
-  // WFI 检查 (简单处理)
+  // WFI 处理：
+  // - 在 ref_only 模式下，将 WFI 作为“程序结束信号”，便于基准统计与批量运行。
+  // - 在其它模式下不触发断言，按 NOP 语义推进 PC，避免 reference 路径异常中断。
   if (Instruction == INST_WFI && !asy && !page_fault_inst && !page_fault_load &&
       !page_fault_store) {
-    Assert(0 &&
-           "WFI instruction encountered in Reference Model (Exit intended)");
-    // state.pc += 4;
-    // return;
+    state.pc += 4;
+    if (ref_only) {
+      sim_end = true;
+    }
+    return;
   }
 
   if (page_fault_inst) {

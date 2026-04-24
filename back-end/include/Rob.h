@@ -17,6 +17,7 @@ struct RobIn {
   DecBroadcastIO *dec_bcast;
   ExuRobIO *exu2rob;
   FtqRobPcRespIO *ftq_pc_resp;
+  wire<1> *front_stall;
 };
 
 struct RobStoredInst {

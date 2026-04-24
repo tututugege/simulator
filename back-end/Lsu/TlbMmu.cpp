@@ -70,10 +70,6 @@ void TlbMmu::flush() {
   flush_pending_ = true;
 }
 
-bool TlbMmu::translation_pending() const {
-  return visible_walk_regs().active;
-}
-
 void TlbMmu::dump_debug(FILE *out) const {
   if (out == nullptr) {
     return;

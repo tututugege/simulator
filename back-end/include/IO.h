@@ -74,7 +74,8 @@ inline bool is_exception(const DecRenIO::DecRenInst &uop) {
 inline bool is_flush_inst(const DecRenIO::DecRenInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
-         type == SFENCE_VMA || is_exception(uop) || type == EBREAK;
+         type == SFENCE_VMA || type == FENCE_I || is_exception(uop) ||
+         type == EBREAK;
 }
 
 struct RenDecIO {
@@ -110,6 +111,7 @@ struct FrontPreIO {
   wire<32> inst[FETCH_WIDTH];
   wire<32> pc[FETCH_WIDTH];
   wire<1> valid[FETCH_WIDTH];
+  wire<1> front_stall;
   wire<1> predict_dir[FETCH_WIDTH];
 
   wire<1> alt_pred[FETCH_WIDTH];
@@ -136,6 +138,7 @@ struct FrontPreIO {
       v = {};
     for (auto &v : valid)
       v = {};
+    front_stall = {};
     for (auto &v : predict_dir)
       v = {};
     for (auto &v : alt_pred)
@@ -367,7 +370,8 @@ inline bool is_exception(const RobCommitIO::RobCommitInst &uop) {
 inline bool is_flush_inst(const RobCommitIO::RobCommitInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
-         type == SFENCE_VMA || is_exception(uop) || type == EBREAK ||
+         type == SFENCE_VMA || type == FENCE_I || is_exception(uop) ||
+         type == EBREAK ||
          uop.flush_pipe;
 }
 
@@ -469,7 +473,8 @@ inline bool is_exception(const DisRobIO::DisRobInst &uop) {
 inline bool is_flush_inst(const DisRobIO::DisRobInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
-         type == SFENCE_VMA || is_exception(uop) || type == EBREAK ||
+         type == SFENCE_VMA || type == FENCE_I || is_exception(uop) ||
+         type == EBREAK ||
          uop.flush_pipe;
 }
 
@@ -576,7 +581,8 @@ inline bool is_exception(const RenDisIO::RenDisInst &uop) {
 inline bool is_flush_inst(const RenDisIO::RenDisInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
-         type == SFENCE_VMA || is_exception(uop) || type == EBREAK;
+         type == SFENCE_VMA || type == FENCE_I || is_exception(uop) ||
+         type == EBREAK;
 }
 
 struct DisRenIO {
@@ -1294,12 +1300,10 @@ struct LsuRobIO {
     std::bitset<ROB_NUM> miss_mask;
   } tma;
   wire<1> committed_store_pending;
-  wire<1> translation_pending;
 
   LsuRobIO() {
     tma.miss_mask.reset();
     committed_store_pending = 0;
-    translation_pending = 0;
   }
 };
 

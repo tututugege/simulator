@@ -435,7 +435,7 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
     if (number_funct3_unsigned == 0b001) {
       uop.type = encode_inst_type(FENCE_I); // Strict separation
     } else {
-      uop.type = encode_inst_type(NOP); // Ordinary FENCE is NOP
+      uop.type = encode_inst_type(FENCE);
     }
     break;
   }

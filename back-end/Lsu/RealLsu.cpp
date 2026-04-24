@@ -634,7 +634,6 @@ void RealLsu::comb_lsu2dis_info() {
   }
   out.lsu2rob->tma.miss_mask = mask;
   out.lsu2rob->committed_store_pending = has_committed_store_pending();
-  out.lsu2rob->translation_pending = mmu->translation_pending();
 }
 
 // =========================================================
@@ -2020,13 +2019,8 @@ bool RealLsu::has_committed_store_pending() const {
   const auto &state = cur;
   for (int i = 0; i < committed_stq_count; i++) {
     const StqEntry &e = committed_stq_at(state, i).entry;
-    if (e.valid && e.committed && !e.suppress_write && !e.is_mmio) {
-      if (!e.addr_valid || !e.data_valid || !e.done) {
-        return true;
-      }
-      if (has_translation_store_conflict(e.p_addr)) {
-        return true;
-      }
+    if (e.valid && e.committed && !e.suppress_write) {
+      return true;
     }
   }
   return false;

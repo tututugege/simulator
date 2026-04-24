@@ -696,6 +696,7 @@ void SimCpu::front_cycle() {
       if (back.in.valid[j] && front.out.predict_dir[j])
         no_taken = false;
     }
+    back.in.front_stall = front.in.FIFO_read_enable && !front.out.FIFO_valid;
     perf_account_front_supply();
   } else {
 
@@ -707,6 +708,7 @@ void SimCpu::front_cycle() {
     front.step_bpu();
 #else
 #endif
+    back.in.front_stall = front.in.FIFO_read_enable && !front.out.FIFO_valid;
   }
 #else
   // Oracle 模式：每拍都执行握手，利用 1-entry pending
@@ -776,6 +778,7 @@ void SimCpu::front_cycle() {
     }
 #endif
   }
+  back.in.front_stall = front.in.FIFO_read_enable && !front.out.FIFO_valid;
   perf_account_front_supply();
 #endif
 }

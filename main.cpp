@@ -1,5 +1,6 @@
 #include "SimCpu.h"
 #include "PhysMemory.h"
+#include "RISCV.h"
 #include "config.h"
 #include "diff.h"
 #include <csignal>
@@ -316,7 +317,9 @@ int main(int argc, char *argv[]) {
       for (; ref_prewarm_done < ref_prewarm_target; ref_prewarm_done++) {
         difftest_step(false);
         if (ref_cpu.sim_end) {
-          cpu.ctx.exit_reason = ExitReason::EBREAK;
+          cpu.ctx.exit_reason =
+              (ref_cpu.Instruction == INST_WFI) ? ExitReason::WFI
+                                                : ExitReason::EBREAK;
           break;
         }
       }
@@ -368,18 +371,26 @@ int main(int argc, char *argv[]) {
 
     for (uint64_t i = 0; i < config.fast_forward_count; i++) {
       difftest_step(false);
+      if (ref_cpu.sim_end) {
+        cpu.ctx.exit_reason =
+            (ref_cpu.Instruction == INST_WFI) ? ExitReason::WFI
+                                              : ExitReason::EBREAK;
+        break;
+      }
     }
     ref_cpu.ref_only = false;
 
-    cpu.back.restore_from_ref();
+    if (cpu.ctx.exit_reason == ExitReason::NONE) {
+      cpu.back.restore_from_ref();
 #ifndef CONFIG_BPU
-    std::cout << "[Oracle] Synced with ref snapshot before switching to O3."
-              << std::endl;
+      std::cout << "[Oracle] Synced with ref snapshot before switching to O3."
+                << std::endl;
 #endif
-    cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
-    ref_cpu.uart_print = false;
+      cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
+      ref_cpu.uart_print = false;
 
-    std::cout << "[Step 2] Run O3 CPU ... " << endl;
+      std::cout << "[Step 2] Run O3 CPU ... " << endl;
+    }
   } else if (config.mode == SimConfig::REF_ONLY) {
     std::cout << "[Mode] REF_ONLY: Reference Model Validation" << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;
@@ -389,16 +400,27 @@ int main(int argc, char *argv[]) {
 
     std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
 
+    uint64_t ref_commit_cnt = 0;
+
     sim_time = 0;
     while (sim_time < (long long)MAX_SIM_TIME) { // Or a large limit
       difftest_step(false);
+      ref_commit_cnt++;
       sim_time++;
       if (handle_pending_sigint()) {
         pmem_release();
         return 130;
       }
+      if (ref_commit_cnt >= config.max_commit_inst) {
+        cpu.ctx.exit_reason = ExitReason::SIMPOINT;
+        std::cout << "[sim][REF] Reached MAX_COMMIT_INST=" << std::dec
+                  << config.max_commit_inst << std::endl;
+        break;
+      }
       if (ref_cpu.sim_end) {
-        cpu.ctx.exit_reason = ExitReason::EBREAK;
+        cpu.ctx.exit_reason =
+            (ref_cpu.Instruction == INST_WFI) ? ExitReason::WFI
+                                              : ExitReason::EBREAK;
         break;
       }
       if (sim_time % 10000000 == 0) {
@@ -411,30 +433,32 @@ int main(int argc, char *argv[]) {
   }
 
   // 主循环
-  for (sim_time = 0; sim_time < (long long)MAX_SIM_TIME; sim_time++) {
-    if (sim_time % 10000000 == 0) {
-      cout << dec << sim_time << endl;
-    }
-    BE_LOG("************************************************************** "
-           "cycle: %lld "
-           "*************************************************************",
-           (long long)sim_time);
+  if (cpu.ctx.exit_reason == ExitReason::NONE) {
+    for (sim_time = 0; sim_time < (long long)MAX_SIM_TIME; sim_time++) {
+      if (sim_time % 10000000 == 0) {
+        cout << dec << sim_time << endl;
+      }
+      BE_LOG("************************************************************** "
+             "cycle: %lld "
+             "*************************************************************",
+             (long long)sim_time);
 
-    cpu.cycle();
+      cpu.cycle();
 
-    if (handle_pending_sigint()) {
-      pmem_release();
-      return 130;
-    }
+      if (handle_pending_sigint()) {
+        pmem_release();
+        return 130;
+      }
 
-    if (cpu.ctx.perf.commit_num >= config.max_commit_inst) {
-      cpu.ctx.exit_reason = ExitReason::SIMPOINT;
-      std::cout << "[sim] Reached MAX_COMMIT_INST=" << std::dec
-                << config.max_commit_inst << std::endl;
-    }
+      if (cpu.ctx.perf.commit_num >= config.max_commit_inst) {
+        cpu.ctx.exit_reason = ExitReason::SIMPOINT;
+        std::cout << "[sim] Reached MAX_COMMIT_INST=" << std::dec
+                  << config.max_commit_inst << std::endl;
+      }
 
-    if (cpu.ctx.exit_reason != ExitReason::NONE) {
-      break;
+      if (cpu.ctx.exit_reason != ExitReason::NONE) {
+        break;
+      }
     }
   }
 
@@ -452,6 +476,10 @@ int main(int argc, char *argv[]) {
                   << "\033[0m" << std::endl;
       }
       return a0;
+    }
+    if (cpu.ctx.exit_reason == ExitReason::WFI) {
+      std::cout << "[sim] Program exited by WFI." << std::endl;
+      return 0;
     }
 
   } else {

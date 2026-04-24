@@ -958,6 +958,9 @@ int Dispatch::decompose_inst(const DispatchInst &inst, UopPacket *out_uops) {
     case CSR:
       out_uops[0].uop.op = UOP_CSR;
       break;
+    case FENCE:
+      out_uops[0].uop.op = UOP_FENCE;
+      break;
     case ECALL:
       out_uops[0].uop.op = UOP_ECALL;
       break;

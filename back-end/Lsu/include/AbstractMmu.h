@@ -31,8 +31,6 @@ public:
   // Optional hook to cancel only in-flight translation walks without dropping
   // cached TLB entries.
   virtual void cancel_pending_walk() {}
-  // Optional visibility hook for fence/quiesce logic.
-  virtual bool translation_pending() const { return false; }
   virtual void dump_debug(FILE *out) const { (void)out; }
 
   // Optional binding hook for PTW memory access path.

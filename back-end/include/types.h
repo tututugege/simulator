@@ -29,6 +29,7 @@ enum InstType {
   LOAD,
   STORE,
   CSR,
+  FENCE,
   ECALL,
   EBREAK,
   WFI,

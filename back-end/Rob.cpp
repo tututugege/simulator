@@ -29,8 +29,14 @@ inline bool rob_is_exception(const RobStoredInst &uop) {
 inline bool rob_is_flush_inst(const RobStoredInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
-         type == SFENCE_VMA || rob_is_exception(uop) || type == EBREAK ||
+         type == SFENCE_VMA || type == FENCE_I || rob_is_exception(uop) ||
+         type == EBREAK ||
          uop.flush_pipe;
+}
+
+inline bool rob_is_fence_inst(const RobStoredInst &uop) {
+  InstType type = decode_inst_type(uop.type);
+  return type == FENCE || type == FENCE_I || type == SFENCE_VMA;
 }
 
 inline bool rob_is_complete(const RobStoredInst &uop) {
@@ -190,7 +196,9 @@ void Rob::comb_commit() {
       }
     }
   }
-  wire<1> commit = (!is_empty() && !in.dec_bcast->mispred);
+  const bool front_stall =
+      (in.front_stall != nullptr) && static_cast<bool>(*in.front_stall);
+  wire<1> commit = (!is_empty() && !in.dec_bcast->mispred && !front_stall);
 
   // 检查 BANK 的同一行是否都已完成
   for (int i = 0; i < ROB_BANK_NUM; i++) {
@@ -220,7 +228,8 @@ void Rob::comb_commit() {
     const bool interrupt_pending = in.csr2rob->interrupt_req;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if ((entry[i][deq_ptr].valid &&
-           rob_is_flush_inst(entry[i][deq_ptr].uop)) ||
+           (rob_is_flush_inst(entry[i][deq_ptr].uop) ||
+            rob_is_fence_inst(entry[i][deq_ptr].uop))) ||
           interrupt_pending) {
         single_commit = true;
         break;
@@ -237,14 +246,10 @@ void Rob::comb_commit() {
         if (!interrupt_pending && !rob_is_complete(head_uop)) {
           single_commit = false;
         }
-        if (!interrupt_pending &&
-            decode_inst_type(head_uop.type) == SFENCE_VMA &&
-            in.lsu2rob != nullptr &&
-            (in.lsu2rob->committed_store_pending ||
-             in.lsu2rob->translation_pending)) {
-          // SFENCE.VMA 需要单提交并触发 flush；当提交侧仍有已提交 store
-          // 未落地，或旧的 DTLB/PTW walk 仍在飞时，必须阻塞提交，不能
-          // 退化为组提交吞掉该指令。
+        if (!interrupt_pending && rob_is_fence_inst(head_uop) &&
+            in.lsu2rob != nullptr && in.lsu2rob->committed_store_pending) {
+          // fence/fence.i/sfence.vma 统一提交门控：当提交侧 STQ 仍非空时，
+          // 必须阻塞到可见队列清空后再提交。
           single_commit = false;
           commit = false;
         }
@@ -384,6 +389,8 @@ void Rob::comb_commit() {
         out.rob2csr->commit = true;
       } else if (decode_inst_type(uop.type) == SFENCE_VMA) {
         out.rob_bcast->fence = true;
+      } else if (decode_inst_type(uop.type) == FENCE_I) {
+        out.rob_bcast->fence_i = true;
       } else if (uop.flush_pipe) {
         // MMIO-triggered flush, no extra CSR/MMU actions needed here
         out.rob_bcast->pc = single_pc;
