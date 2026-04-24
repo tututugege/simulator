@@ -24,7 +24,8 @@ ZLIB_LIBDIR := $(shell pkg-config --silence-errors --variable=libdir zlib)
 CXXFLAGS += $(ZLIB_CFLAGS)
 
 # Libraries
-LIBS := ./libs/softfloat.a
+REFCPU_LIB := ./libs/librefcpu.a
+LIBS := ./libs/softfloat.a $(REFCPU_LIB)
 LDFLAGS := -lz -lstdc++fs
 ifneq ($(ZLIB_LIBDIR),)
 LDFLAGS := -L$(ZLIB_LIBDIR) $(LDFLAGS)
@@ -48,6 +49,7 @@ INCLUDES := -I./include/ \
             -I./back-end/tools/include/ \
             -I./MemSubSystem/include/ \
             -I./diff/include/ \
+            -I./GenSimpoint/include/api/ \
             -I./legacy/mmu/include/ \
             -I$(FRONT_DIR)/
 
@@ -73,7 +75,7 @@ CXXSRC := $(shell find ./back-end -name "*.cpp") \
           ./MemSubSystem/WriteBuffer.cpp \
           ./MemSubSystem/DcacheConfig.cpp \
           $(shell find $(FRONT_DIR) -name "*.cpp") \
-          $(shell find ./diff -name "*.cpp") \
+          $(shell find ./diff -name "*.cpp" ! -name "ref.cpp") \
           $(AXI_KIT_SRC) \
           ./main.cpp \
           ./rv_simu_mmu_v2.cpp
@@ -106,6 +108,10 @@ large: all
 $(SIM_EXE): profile-config $(OBJS) $(LIBS)
 	@echo "Linking $@"
 	@$(CXX) $(OBJS) $(LIBS) $(LDFLAGS) -o $@ $(CXXFLAGS)
+
+$(REFCPU_LIB): GenSimpoint/librefcpu.a
+	@mkdir -p $(dir $@)
+	@cp $< $@
 
 # Compile
 $(BUILD_DIR)/%.o: %.cpp $(PROFILE_FRONT_DST) $(PROFILE_INCLUDE_DST) | profile-config

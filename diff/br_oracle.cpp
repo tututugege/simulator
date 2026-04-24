@@ -4,14 +4,13 @@
 #include "PhysMemory.h"
 #include "front_IO.h"
 #include "frontend.h"
-#include "ref.h"
 #include "util.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <queue>
 
-static RefCpu oracle;
+static RefCpuContext *oracle_ctx = nullptr;
 static std::queue<uint32_t> oracle_timer_queue;
 
 namespace {
@@ -27,34 +26,74 @@ constexpr IoRange kCkptIoRanges[] = {
     {OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE},
 };
 
+void ensure_oracle() {
+  if (oracle_ctx == nullptr) {
+    oracle_ctx = refcpu_init(0, nullptr, static_cast<uint32_t>(RAM_SIZE));
+    Assert(oracle_ctx != nullptr && "oracle refcpu_init failed");
+  }
+}
+
+RefCpuState current_oracle_state() {
+  ensure_oracle();
+  RefCpuState state{};
+  refcpu_get_state(oracle_ctx, &state);
+  return state;
+}
+
+RefCpuStepInfo current_oracle_step_info() {
+  ensure_oracle();
+  RefCpuStepInfo info{};
+  refcpu_get_step_info(oracle_ctx, &info);
+  return info;
+}
+
+RefCpuState dut_to_ref_state(uint8_t privilege) {
+  RefCpuState state{};
+  std::memcpy(state.gpr, dut_cpu.gpr, sizeof(state.gpr));
+  std::memcpy(state.csr, dut_cpu.csr, sizeof(state.csr));
+  state.pc = dut_cpu.pc;
+  state.privilege = privilege;
+  state.store = dut_cpu.store;
+  state.store_addr = dut_cpu.store_addr;
+  state.store_data = dut_cpu.store_data;
+  state.store_strb = dut_cpu.store_strb;
+  state.instruction = dut_cpu.instruction;
+  state.page_fault_inst = dut_cpu.page_fault_inst;
+  state.page_fault_load = dut_cpu.page_fault_load;
+  state.page_fault_store = dut_cpu.page_fault_store;
+  state.reserve_valid = dut_cpu.reserve_valid;
+  state.reserve_addr = dut_cpu.reserve_addr;
+  return state;
+}
+
 inline void seed_oracle_io_from_backing() {
-  oracle.io_words.clear();
+  ensure_oracle();
+  refcpu_clear_io_words(oracle_ctx);
   for (const auto &range : kCkptIoRanges) {
     for (uint32_t off = 0; off + 4u <= range.size; off += 4u) {
       const uint32_t addr = range.base + off;
       const uint32_t data = pmem_read(addr);
-      if (data != 0u) {
-        oracle.io_words[addr] = data;
-      }
+      refcpu_seed_ref_io_from_backing(oracle_ctx, addr, data);
     }
   }
 }
 
 inline void sync_oracle_control_state(const front_top_in &in) {
-  oracle.state.pc = in.refetch_address;
+  RefCpuState state = current_oracle_state();
+  state.pc = in.refetch_address;
   if (in.csr_status != nullptr) {
-    oracle.state.csr[csr_mstatus] =
-        static_cast<uint32_t>(in.csr_status->mstatus);
-    oracle.state.csr[csr_sstatus] =
-        static_cast<uint32_t>(in.csr_status->sstatus);
-    oracle.state.csr[csr_satp] = static_cast<uint32_t>(in.csr_status->satp);
-    oracle.privilege = static_cast<uint8_t>(in.csr_status->privilege);
+    state.csr[csr_mstatus] = static_cast<uint32_t>(in.csr_status->mstatus);
+    state.csr[csr_sstatus] = static_cast<uint32_t>(in.csr_status->sstatus);
+    state.csr[csr_satp] = static_cast<uint32_t>(in.csr_status->satp);
+    state.privilege = static_cast<uint8_t>(in.csr_status->privilege);
   }
+  refcpu_set_state(oracle_ctx, &state);
 }
 
 inline bool oracle_gpr_matches_dut() {
+  const RefCpuState state = current_oracle_state();
   for (int idx = 0; idx < ARF_NUM; ++idx) {
-    if (oracle.state.gpr[idx] != dut_cpu.gpr[idx]) {
+    if (state.gpr[idx] != dut_cpu.gpr[idx]) {
       return false;
     }
   }
@@ -62,18 +101,17 @@ inline bool oracle_gpr_matches_dut() {
 }
 
 inline void sync_oracle_arch_state_from_dut(const front_top_in &in) {
-  std::memcpy(oracle.state.gpr, dut_cpu.gpr, sizeof(oracle.state.gpr));
-  std::memcpy(oracle.state.csr, dut_cpu.csr, sizeof(oracle.state.csr));
-  oracle.state.store = dut_cpu.store;
-  oracle.state.store_addr = dut_cpu.store_addr;
-  oracle.state.store_data = dut_cpu.store_data;
-  oracle.state.instruction = dut_cpu.instruction;
-  oracle.state.page_fault_inst = dut_cpu.page_fault_inst;
-  oracle.state.page_fault_load = dut_cpu.page_fault_load;
-  oracle.state.page_fault_store = dut_cpu.page_fault_store;
-  oracle.state.inst_idx = dut_cpu.inst_idx;
-  oracle.state.commit_pc = dut_cpu.commit_pc;
-  sync_oracle_control_state(in);
+  const uint8_t privilege = in.csr_status == nullptr
+                                ? RISCV_MODE_M
+                                : static_cast<uint8_t>(in.csr_status->privilege);
+  RefCpuState state = dut_to_ref_state(privilege);
+  state.pc = in.refetch_address;
+  if (in.csr_status != nullptr) {
+    state.csr[csr_mstatus] = static_cast<uint32_t>(in.csr_status->mstatus);
+    state.csr[csr_sstatus] = static_cast<uint32_t>(in.csr_status->sstatus);
+    state.csr[csr_satp] = static_cast<uint32_t>(in.csr_status->satp);
+  }
+  refcpu_set_state(oracle_ctx, &state);
 }
 } // namespace
 
@@ -92,14 +130,13 @@ void init_oracle(int img_size) {
   while (!oracle_timer_queue.empty()) {
     oracle_timer_queue.pop();
   }
-  oracle.init(0);
-  oracle.dut_pf_check_enable = false;
-  std::memcpy(oracle.memory, pmem_ram_ptr(), img_size);
-  oracle.store_word(0x10000004, pmem_read(0x10000004));
-  oracle.store_word(0x0, pmem_read(0x0));
-  oracle.store_word(0x4, pmem_read(0x4));
-  oracle.store_word(0x8, pmem_read(0x8));
-  oracle.store_word(0xc, pmem_read(0xc));
+  if (oracle_ctx != nullptr) {
+    refcpu_destroy(oracle_ctx);
+  }
+  oracle_ctx = refcpu_init(0, nullptr, static_cast<uint32_t>(RAM_SIZE));
+  Assert(oracle_ctx != nullptr && "init_oracle: refcpu_init failed");
+  refcpu_set_uart_print(oracle_ctx, false);
+  refcpu_sync_ram_from_dut(oracle_ctx, pmem_ram_ptr(), img_size);
   seed_oracle_io_from_backing();
 }
 
@@ -107,23 +144,34 @@ void init_oracle_ckpt(CPU_state ckpt_state, uint8_t privilege) {
   while (!oracle_timer_queue.empty()) {
     oracle_timer_queue.pop();
   }
-  oracle.init(0);
-  oracle.dut_pf_check_enable = false;
-  oracle.state = ckpt_state;
-  oracle.privilege = privilege;
+  if (oracle_ctx != nullptr) {
+    refcpu_destroy(oracle_ctx);
+  }
+  oracle_ctx = refcpu_init(0, nullptr, static_cast<uint32_t>(RAM_SIZE));
+  Assert(oracle_ctx != nullptr && "init_oracle_ckpt: refcpu_init failed");
+  RefCpuState state{};
+  std::memcpy(state.gpr, ckpt_state.gpr, sizeof(state.gpr));
+  std::memcpy(state.csr, ckpt_state.csr, sizeof(state.csr));
+  state.pc = ckpt_state.pc;
+  state.privilege = privilege;
+  state.store = ckpt_state.store;
+  state.store_addr = ckpt_state.store_addr;
+  state.store_data = ckpt_state.store_data;
+  state.store_strb = ckpt_state.store_strb;
+  state.instruction = ckpt_state.instruction;
+  state.page_fault_inst = ckpt_state.page_fault_inst;
+  state.page_fault_load = ckpt_state.page_fault_load;
+  state.page_fault_store = ckpt_state.page_fault_store;
+  state.reserve_valid = ckpt_state.reserve_valid;
+  state.reserve_addr = ckpt_state.reserve_addr;
+  refcpu_set_state(oracle_ctx, &state);
 
   const uint32_t *ckpt_memory = pmem_ram_ptr();
   Assert(ckpt_memory != nullptr &&
          "init_oracle_ckpt: pmem RAM backend is not initialized");
-  std::memcpy(oracle.memory, ckpt_memory,
-              static_cast<size_t>(PHYSICAL_MEMORY_LENGTH) * sizeof(uint32_t));
+  refcpu_sync_ram_from_dut(oracle_ctx, ckpt_memory,
+                           static_cast<int>(RAM_SIZE));
   seed_oracle_io_from_backing();
-
-  if ((oracle.state.csr[csr_satp] & 0x80000000u) != 0 &&
-      oracle.privilege != RISCV_MODE_M) {
-    uint32_t p_addr = 0;
-    (void)oracle.va2pa(p_addr, oracle.state.pc, 0);
-  }
 }
 
 void get_oracle(struct front_top_in &in, struct front_top_out &out) {
@@ -131,11 +179,12 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
   static bool stall = false;
 
   if (in.refetch) {
-    oracle.sim_end = false;
+    ensure_oracle();
+    refcpu_set_sim_end(oracle_ctx, false);
     stall = false;
   }
 
-  if (oracle.sim_end) {
+  if (current_oracle_step_info().sim_end) {
     stall = true;
   }
 
@@ -158,44 +207,46 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
 
   out.FIFO_valid = true;
   for (i = 0; i < FETCH_WIDTH; i++) {
+    RefCpuState state = current_oracle_state();
     out.inst_valid[i] = true;
-    out.pc[i] = oracle.state.pc;
+    out.pc[i] = state.pc;
     out.page_fault_inst[i] = false;
 
-    oracle.exec();
-    out.instructions[i] = oracle.Instruction;
+    refcpu_step(oracle_ctx, 1);
+    RefCpuStepInfo info = current_oracle_step_info();
+    state = current_oracle_state();
+    out.instructions[i] = info.instruction;
 
 
-    if (oracle.is_exception || oracle.is_csr || oracle.is_mmio_load ||
-        oracle.is_mmio_store) {
+    if (info.is_exception || info.is_csr || info.is_io) {
       out.predict_dir[i] = false;
-      if (oracle.is_exception || oracle.is_csr) {
+      if (info.is_exception || info.is_csr) {
         stall = true;
       }
 
-      if (oracle.page_fault_inst) {
+      if (info.page_fault_inst) {
         out.page_fault_inst[i] = true;
       }
       break;
     }
 
-    if (oracle.is_br) {
+    if (info.is_br) {
       if (stall) {
-        out.predict_dir[i] = !oracle.br_taken;
+        out.predict_dir[i] = !info.br_taken;
         out.predict_next_fetch_address = 0;
       } else {
-        out.predict_dir[i] = oracle.br_taken;
-        out.predict_next_fetch_address = oracle.state.pc;
+        out.predict_dir[i] = info.br_taken;
+        out.predict_next_fetch_address = state.pc;
       }
 
-      if (oracle.br_taken || stall)
+      if (info.br_taken || stall)
         break;
     } else {
       out.predict_dir[i] = false;
     }
 
     // Cache line boundary check: truncate if next instruction is in a different line
-    if ((oracle.state.pc ^ out.pc[i]) & ~(ICACHE_LINE_SIZE - 1)) {
+    if ((state.pc ^ out.pc[i]) & ~(ICACHE_LINE_SIZE - 1)) {
       break;
     }
   }

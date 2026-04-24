@@ -13,7 +13,6 @@
 #endif
 
 using namespace std;
-extern RefCpu ref_cpu;
 
 // 1. 定义配置结构
 struct SimConfig {
@@ -294,16 +293,14 @@ int main(int argc, char *argv[]) {
     if (ref_prewarm_target > 0) {
       std::cout << "[Step 1] Ref prewarm for " << ref_prewarm_target
                 << " steps..." << std::endl;
-      ref_cpu.uart_print = false;
-      ref_cpu.ref_only = true;
+      difftest_ref_set_uart_print(false);
       for (; ref_prewarm_done < ref_prewarm_target; ref_prewarm_done++) {
         difftest_step(false);
-        if (ref_cpu.sim_end) {
+        if (difftest_ref_sim_end()) {
           cpu.ctx.exit_reason = ExitReason::EBREAK;
           break;
         }
       }
-      ref_cpu.ref_only = false;
       std::cout << "[Step 1] Ref prewarm done: " << ref_prewarm_done
                 << " steps." << std::endl;
     }
@@ -335,13 +332,11 @@ int main(int argc, char *argv[]) {
               << config.fast_forward_count << " cycles..." << std::endl;
 
     cpu.back.load_image(config.target_file);
-    ref_cpu.uart_print = true;
-    ref_cpu.ref_only = true;
+    difftest_ref_set_uart_print(true);
 
     for (uint64_t i = 0; i < config.fast_forward_count; i++) {
       difftest_step(false);
     }
-    ref_cpu.ref_only = false;
 
     cpu.back.restore_from_ref();
 #ifndef CONFIG_BPU
@@ -349,15 +344,14 @@ int main(int argc, char *argv[]) {
               << std::endl;
 #endif
     cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
-    ref_cpu.uart_print = false;
+    difftest_ref_set_uart_print(false);
 
     std::cout << "[Step 2] Run O3 CPU ... " << endl;
   } else if (config.mode == SimConfig::REF_ONLY) {
     std::cout << "[Mode] REF_ONLY: Reference Model Validation" << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.load_image(config.target_file);
-    ref_cpu.uart_print = true;
-    ref_cpu.ref_only = true;
+    difftest_ref_set_uart_print(true);
 
     std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
 
@@ -369,7 +363,7 @@ int main(int argc, char *argv[]) {
         pmem_release();
         return 130;
       }
-      if (ref_cpu.sim_end) {
+      if (difftest_ref_sim_end()) {
         cpu.ctx.exit_reason = ExitReason::EBREAK;
         break;
       }
