@@ -1837,6 +1837,7 @@ void front_comb_calc(const struct front_top_in &inp, const FrontReadData &rd,
         final_output_in.use_front2back_output_bypass = use_front2back_output_bypass;
         front_output_comb(final_output_in, final_output_out);
         *out_ptr = final_output_out.out;
+        out_ptr->commit_stall = bpu_output.update_queue_full;
         dump_front_focus_output(*out_ptr);
 
         for (int i = 0; i < FETCH_WIDTH; i++) {

@@ -1467,7 +1467,9 @@ public:
 
     bool q_full_any = false;
     for (int i = 0; i < BPU_BANK_NUM; i++) {
-      q_full_any |= (out.q_count_next[i] == Q_DEPTH);
+      const queue_count_t remaining_slots =
+          static_cast<queue_count_t>(Q_DEPTH - out.q_count_next[i]);
+      q_full_any |= (remaining_slots < COMMIT_WIDTH);
     }
     out.update_queue_full = q_full_any;
   }
