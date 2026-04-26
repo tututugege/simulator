@@ -42,6 +42,7 @@ struct front_top_in {
 struct front_top_out {
   // to back-end
   wire1_t FIFO_valid;
+  wire1_t commit_stall;
   pc_t pc[FETCH_WIDTH];
   inst_word_t instructions[FETCH_WIDTH];
   wire1_t predict_dir[FETCH_WIDTH];
