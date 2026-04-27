@@ -135,6 +135,10 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
   constexpr bool kOracleSteadyFetchWidth = false;
 #endif
 
+  // Oracle front-end has no BPU update queue. Backend commit must never be
+  // back-pressured by a stale/uninitialized commit_stall in this mode.
+  out.commit_stall = false;
+
   if (in.refetch) {
     oracle.sim_end = false;
     stall = false;

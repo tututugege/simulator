@@ -198,12 +198,42 @@ void Rob::comb_commit() {
   }
   const bool front_stall =
       (in.front_stall != nullptr) && static_cast<bool>(*in.front_stall);
-  wire<1> commit = (!is_empty() && !in.dec_bcast->mispred && !front_stall);
+  wire<1> commit = (!is_empty() && !in.dec_bcast->mispred);
 
-  // 检查 BANK 的同一行是否都已完成
+  // 组提交约束：同一拍只允许提交队头所在 fetch block（同 ftq_idx）的指令，
+  // 防止 ROB retire 跨取指块导致 FTQ/前端需要多出队联动。
+  bool group_commit_mask[ROB_BANK_NUM] = {false};
+  bool group_has_head = false;
   for (int i = 0; i < ROB_BANK_NUM; i++) {
-    commit = commit && (!entry[i][deq_ptr].valid ||
-                        rob_is_complete(entry[i][deq_ptr].uop));
+    if (!entry[i][deq_ptr].valid) {
+      continue;
+    }
+    if (!group_has_head) {
+      group_has_head = true;
+      group_commit_mask[i] = true;
+      continue;
+    }
+    group_commit_mask[i] = true;
+  }
+
+  // Ghost head line 修复：
+  // 在逐项 single-commit 后，队头行可能被清空但指针尚未推进；
+  // 若此时 ROB 仍非空（后续行仍有有效项），必须允许本拍推进 deq_ptr，
+  // 否则会形成“队头全 invalid 但无法提交”的死锁。
+  const bool head_line_empty = !group_has_head;
+  if (group_has_head && front_stall) {
+    // 真实有提交数据时，front_stall 参与背压（BPU update queue full）。
+    commit = false;
+  }
+
+  // 检查候选组（同 fetch block）的可提交条件。
+  // 允许 head_line_empty 走“空提交推进指针”路径。
+  commit = commit && (group_has_head || head_line_empty);
+  for (int i = 0; i < ROB_BANK_NUM; i++) {
+    if (!group_commit_mask[i]) {
+      continue;
+    }
+    commit = commit && rob_is_complete(entry[i][deq_ptr].uop);
   }
 
   // 出队行如果存在特殊指令，则进行单指令提交 (Single Commit)
@@ -295,8 +325,9 @@ void Rob::comb_commit() {
 
   // 一组提交
   if (commit && !single_commit) {
+    bool line_drained = true;
     for (int i = 0; i < ROB_BANK_NUM; i++) {
-      if (entry[i][deq_ptr].valid) {
+      if (entry[i][deq_ptr].valid && group_commit_mask[i]) {
         const auto &uop = entry[i][deq_ptr].uop;
         // 仅在 Load 已完成且非异常语义时检查地址对齐，避免中断单提交/异常路径下
         // 将 diag_val 的其他语义（如指令字、异常地址）误当作物理地址检查。
@@ -307,17 +338,28 @@ void Rob::comb_commit() {
                  "DUT: Load address misaligned at commit!");
         }
       }
-      out.rob_commit->commit_entry[i].valid = entry[i][deq_ptr].valid;
+      out.rob_commit->commit_entry[i].valid =
+          entry[i][deq_ptr].valid && group_commit_mask[i];
       if (out.rob_commit->commit_entry[i].valid) {
         log_incomplete_store_commit(entry[i][deq_ptr].uop, "group", i);
+        entry_1[i][deq_ptr].valid = false;
       }
-      entry_1[i][deq_ptr].valid = false;
+      if (entry_1[i][deq_ptr].valid) {
+        line_drained = false;
+      }
     }
 
     stall_cycle = 0;
-    LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
-    if (deq_ptr_1 == 0) {
-      deq_flag_1 = !deq_flag;
+    if (line_drained) {
+      if (head_line_empty) {
+        DBG_PRINTF("[ROB][ADVANCE_EMPTY_HEAD] cyc=%llu deq_ptr=%u enq_ptr=%u\n",
+                   (unsigned long long)ctx->perf.cycle, (unsigned)deq_ptr,
+                   (unsigned)enq_ptr);
+      }
+      LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
+      if (deq_ptr_1 == 0) {
+        deq_flag_1 = !deq_flag;
+      }
     }
 
   } else if (single_commit) {
@@ -341,6 +383,20 @@ void Rob::comb_commit() {
     }
 
     entry_1[single_idx][deq_ptr].valid = false;
+    bool line_drained_after_single = true;
+    for (int i = 0; i < ROB_BANK_NUM; i++) {
+      if (entry_1[i][deq_ptr].valid) {
+        line_drained_after_single = false;
+        break;
+      }
+    }
+    if (line_drained_after_single) {
+      LOOP_INC(deq_ptr_1, ROB_LINE_NUM);
+      if (deq_ptr_1 == 0) {
+        deq_flag_1 = !deq_flag;
+      }
+    }
+
     if (progress_single_commit) {
       DBG_PRINTF("[ROB][PROGRESS SINGLE COMMIT] cyc=%llu deq_ptr=%u bank=%u "
                  "rob_idx=%u pc=0x%08x type=%u\n",
@@ -416,8 +472,9 @@ void Rob::comb_commit() {
 
     // 详细 ROB 调试信息
     printf("[ROB DEBUG] is_empty=%d, deq_ptr=%d, enq_ptr=%d, commit=%d, "
-           "single_commit=%d\n",
-           is_empty(), deq_ptr, enq_ptr, (int)commit, (int)single_commit);
+           "single_commit=%d front_stall=%d head_line_empty=%d\n",
+           is_empty(), deq_ptr, enq_ptr, (int)commit, (int)single_commit,
+           (int)front_stall, (int)head_line_empty);
 
     // 打印Rob出队行指令 看是哪条指令卡死
     cout << "Rob deq inst:" << endl;

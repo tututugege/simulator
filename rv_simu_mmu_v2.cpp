@@ -778,7 +778,9 @@ void SimCpu::front_cycle() {
     }
 #endif
   }
-  back.in.front_stall = static_cast<bool>(front.out.commit_stall);
+  // Oracle mode has no real front-end update queue; keep ROB retire path
+  // independent from front-end stall semantics.
+  back.in.front_stall = false;
   perf_account_front_supply();
 #endif
 }
