@@ -41,6 +41,19 @@ inline uint32_t read_operand_with_bypass(
   return data;
 }
 
+static inline int get_prf_ftq_slot(int p_idx, const IssPrfIO::IssPrfUop &uop,
+                                   uint64_t req_bit) {
+  if (p_idx >= IQ_ALU_PORT_BASE && p_idx < IQ_ALU_PORT_BASE + ALU_NUM &&
+      (req_bit & OP_MASK_ALU) && uop.src1_is_pc) {
+    return p_idx - IQ_ALU_PORT_BASE;
+  }
+  if (p_idx >= IQ_BR_PORT_BASE && p_idx < IQ_BR_PORT_BASE + BRU_NUM &&
+      (req_bit & OP_MASK_BR)) {
+    return ALU_NUM + (p_idx - IQ_BR_PORT_BASE);
+  }
+  return -1;
+}
+
 static inline bool is_load_wb(const ExePrfIO::ExePrfWbUop &uop) {
   return decode_uop_type(uop.op) == UOP_LOAD;
 }
@@ -70,6 +83,26 @@ void Prf::comb_begin() {
   }
 }
 
+// 功能：根据当前发出的指令，向 FTQ 提取 PC 读请求。
+void Prf::comb_req_ftq() {
+  for (int i = 0; i < FTQ_PRF_PC_PORT_NUM; i++) {
+    out.ftq_prf_pc_req->req[i] = {};
+  }
+  for (int p_idx = 0; p_idx < ISSUE_WIDTH; p_idx++) {
+    if (!in.iss2prf->iss_entry[p_idx].valid) {
+      continue;
+    }
+    const auto &uop = in.iss2prf->iss_entry[p_idx].uop;
+    uint64_t req_bit = (1ULL << uop.op);
+    int ftq_slot = get_prf_ftq_slot(p_idx, uop, req_bit);
+    if (ftq_slot >= 0) {
+      out.ftq_prf_pc_req->req[ftq_slot].valid = true;
+      out.ftq_prf_pc_req->req[ftq_slot].ftq_idx = uop.ftq_idx;
+      out.ftq_prf_pc_req->req[ftq_slot].ftq_offset = uop.ftq_offset;
+    }
+  }
+}
+
 // 功能：为本拍发射条目读取源操作数，并应用写回级与 EXU 广播旁路。
 // 输入依赖：in.iss2prf->iss_entry[]、reg_file[]、inst_r[]、in.exe2prf->bypass[]。
 // 输出更新：out.prf2exe->iss_entry[]（含 src1_rdata/src2_rdata）。
@@ -82,6 +115,22 @@ void Prf::comb_read() {
 
     auto &entry = out.prf2exe->iss_entry[i];
     entry.uop = PrfExeIO::PrfExeUop::from_iss_prf_uop(in.iss2prf->iss_entry[i].uop);
+    
+    // Set PC and FTQ fields from FTQ response
+    uint64_t req_bit = (1ULL << in.iss2prf->iss_entry[i].uop.op);
+    int ftq_slot = get_prf_ftq_slot(i, in.iss2prf->iss_entry[i].uop, req_bit);
+    if (ftq_slot >= 0 && in.ftq_prf_pc_resp->resp[ftq_slot].valid) {
+      entry.uop.pc = in.ftq_prf_pc_resp->resp[ftq_slot].pc;
+      entry.uop.ftq_resp_valid = true;
+      entry.uop.ftq_pred_taken = in.ftq_prf_pc_resp->resp[ftq_slot].pred_taken;
+      entry.uop.ftq_next_pc = in.ftq_prf_pc_resp->resp[ftq_slot].next_pc;
+    } else {
+      entry.uop.pc = 0;
+      entry.uop.ftq_resp_valid = false;
+      entry.uop.ftq_pred_taken = false;
+      entry.uop.ftq_next_pc = 0;
+    }
+
     entry.uop.src1_rdata =
         read_operand_with_bypass(entry.uop.src1_preg, entry.uop.src1_en,
                                  reg_file, inst_r, in.exe2prf);

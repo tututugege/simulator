@@ -201,7 +201,6 @@ void Isu::comb_issue() {
     IssueQueue &q = iqs[i];
     q.in.issue_block = in.rob_bcast->flush || in.dec_bcast->mispred;
     for (int p = 0; p < ISSUE_WIDTH; p++) {
-      q.in.port_ready[p] = in.exe2iss->ready[p];
       q.in.port_fu_ready_mask[p] = in.exe2iss->fu_ready_mask[p];
     }
 

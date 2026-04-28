@@ -13,14 +13,14 @@ struct PreIduQueueIn {
   RobBroadcastIO *rob_bcast = nullptr;
   RobCommitIO *rob_commit = nullptr;
   ExuIdIO *idu_br_latch = nullptr;
-  FtqExuPcReqIO *ftq_exu_pc_req = nullptr;
+  FtqPrfPcReqIO *ftq_prf_pc_req = nullptr;
   FtqRobPcReqIO *ftq_rob_pc_req = nullptr;
 };
 
 struct PreIduQueueOut {
   PreFrontIO *pre2front = nullptr;
   PreIssueIO *issue = nullptr;
-  FtqExuPcRespIO *ftq_exu_pc_resp = nullptr;
+  FtqPrfPcRespIO *ftq_prf_pc_resp = nullptr;
   FtqRobPcRespIO *ftq_rob_pc_resp = nullptr;
 };
 
@@ -34,7 +34,8 @@ public:
   void comb_begin();
   void comb_accept_front();
   void comb_fire();
-  void comb_ftq_lookup();
+  void comb_ftq_lookup_prf();
+  void comb_ftq_lookup_rob();
   void seq();
   const FTQEntry *lookup_ftq_entry(uint32_t idx) const;
   bool ftq_train_meta_cursor_begin(uint32_t &cursor_idx) const;

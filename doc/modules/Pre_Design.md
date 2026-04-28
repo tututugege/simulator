@@ -27,7 +27,7 @@
 | `rob_commit->commit_entry[i]` | `COMMIT_WIDTH * InstEntry` | 输入 | Rob | 提交信息（用于 FTQ 回收） |
 | `idu_br_latch->mispred` | `1` | 输入 | Idu (`br_latch`) | 已锁存分支误预测标志 |
 | `idu_br_latch->ftq_idx` | `FTQ_IDX_WIDTH` | 输入 | Idu (`br_latch`) | 误预测分支对应 FTQ 索引 |
-| `ftq_exu_pc_req->req[i]` | `FTQ_EXU_PC_PORT_NUM * FtqPcReadReq` | 输入 | Exu | EXU 侧 FTQ 读请求 |
+| `ftq_prf_pc_req->req[i]` | `FTQ_PRF_PC_PORT_NUM * FtqPcReadReq` | 输入 | Prf | PRF 侧 FTQ 读请求 |
 | `ftq_rob_pc_req->req[i]` | `FTQ_ROB_PC_PORT_NUM * FtqPcReadReq` | 输入 | Rob | ROB 侧 FTQ 读请求 |
 
 ### 2.2 输出接口
@@ -37,7 +37,7 @@
 | `pre2front->ready` | `1` | 输出 | Front-end | 后端是否可接收新 fetch group |
 | `pre2front->fire[i]` | `FETCH_WIDTH * 1` | 输出 | Front-end | 本拍实际接收的输入槽位 |
 | `issue->entries[i]` | `DECODE_WIDTH * InstructionBufferEntry` | 输出 | Idu | 给 Idu 的候选指令条目 |
-| `ftq_exu_pc_resp->resp[i]` | `FTQ_EXU_PC_PORT_NUM * FtqPcReadResp` | 输出 | Exu | EXU 侧 FTQ 读响应 |
+| `ftq_prf_pc_resp->resp[i]` | `FTQ_PRF_PC_PORT_NUM * FtqPcReadResp` | 输出 | Prf | PRF 侧 FTQ 读响应 |
 | `ftq_rob_pc_resp->resp[i]` | `FTQ_ROB_PC_PORT_NUM * FtqPcReadResp` | 输出 | Rob | ROB 侧 FTQ 读响应 |
 
 ---
@@ -54,7 +54,7 @@
 
 1. `comb_begin`：镜像状态并给 `issue/pre2front` 输出默认值。
 2. `comb_accept_front`：进行 backpressure 判定；若接收成功，分配 FTQ 并缓存待 push 的 IBUF 条目。
-3. `comb_ftq_lookup`：响应 EXU/ROB 的 FTQ 读请求。
+3. `comb_ftq_lookup`：响应 PRF/ROB 的 FTQ 读请求。
 4. `comb_fire`：统一处理 consume/pop、flush/recover、IBUF 更新与 commit reclaim。
 5. `seq`：只做 `*_1 -> 当前态` 提交。
 
@@ -96,9 +96,9 @@
 - 约束/优先级：`flush/mispred` 禁止接收；同拍最多分配一个 FTQ entry。
 
 ### 4.3 `comb_ftq_lookup`
-- 功能描述：处理 EXU/ROB 的 FTQ 读请求并返回响应。
-- 输入依赖：`in.ftq_exu_pc_req`、`in.ftq_rob_pc_req`、`ftq_lookup_entries`、`ftq_valid`。
-- 输出更新：`out.ftq_exu_pc_resp`、`out.ftq_rob_pc_resp`。
+- 功能描述：处理 PRF/ROB 的 FTQ 读请求并返回响应。
+- 输入依赖：`in.ftq_prf_pc_req`、`in.ftq_rob_pc_req`、`ftq_lookup_entries`、`ftq_valid`。
+- 输出更新：`out.ftq_prf_pc_resp`、`out.ftq_rob_pc_resp`。
 - 约束/优先级：仅 `req.valid=1` 的端口返回有效数据，其余端口输出默认空响应。
 
 ### 4.4 `comb_fire`
@@ -142,7 +142,7 @@
 
 | 深度 | 读端口 | 写端口 |
 | :--- | :--- | :--- |
-| `FTQ_SIZE` | Lookup 面：`FTQ_EXU_PC_PORT_NUM + FTQ_ROB_PC_PORT_NUM`；TrainMeta 面：0（不提供随机读口） | `1`（steady-state 分配写） |
+| `FTQ_SIZE` | Lookup 面：`FTQ_PRF_PC_PORT_NUM + FTQ_ROB_PC_PORT_NUM`；TrainMeta 面：0（不提供随机读口） | `1`（steady-state 分配写） |
 
 补充：`flush/recover` 会触发批量清空（多项写 0），属于控制路径的状态重置，不是 steady-state 的并行多写端口。
 
@@ -157,20 +157,20 @@
 - `next_pc`
 - `valid`（由 `ftq_valid[idx]` 通过 `entry_valid` 返回）
 
-纯 FIFO 管理字段（不作为 EXU/ROB 查询 payload）：
+纯 FIFO 管理字段（不作为 PRF/ROB 查询 payload）：
 - `ftq_head`
 - `ftq_tail`
 - `ftq_count`
 - `ftq_valid[idx]`
 
-训练元数据 FIFO（不参与 EXU/ROB 随机读）字段：
+训练元数据 FIFO（不参与 PRF/ROB 随机读）字段：
 - `alt_pred / altpcpn / pcpn`
 - `tage_idx / tage_tag`
 - `sc_used / sc_pred / sc_sum / sc_idx`
 - `loop_used / loop_hit / loop_pred / loop_idx / loop_tag`
 
 端口分配说明：
-- 读口分配：EXU `FTQ_EXU_PC_PORT_NUM` + ROB `FTQ_ROB_PC_PORT_NUM`。
+- 读口分配：PRF `FTQ_PRF_PC_PORT_NUM` + ROB `FTQ_ROB_PC_PORT_NUM`。
 - 写口分配：`comb_accept_front` 每拍最多一次 `ftq_alloc()`，同步写入 1 组 lookup+train_meta 条目并置 `ftq_valid`。
 - 控制路径写：`flush/recover` 会进行批量清零/截断，不计入 steady-state 多写口能力。
 

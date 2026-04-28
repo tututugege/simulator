@@ -70,8 +70,8 @@ private:
   PrfAwakeIO prf_awake;
   ExuIdIO exu2id;
   ExuRobIO exu2rob;
-  FtqExuPcReqIO ftq_exu_pc_req;
-  FtqExuPcRespIO ftq_exu_pc_resp;
+  FtqPrfPcReqIO ftq_prf_pc_req;
+  FtqPrfPcRespIO ftq_prf_pc_resp;
 
   ExePrfIO exe2prf;
   ExeIssIO exe2iss;

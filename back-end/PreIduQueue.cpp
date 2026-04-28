@@ -261,17 +261,19 @@ void PreIduQueue::comb_fire() {
   ftq_pop(pop_cnt);
 }
 
-void PreIduQueue::comb_ftq_lookup() {
-  for (int i = 0; i < FTQ_EXU_PC_PORT_NUM; i++) {
-    out.ftq_exu_pc_resp->resp[i] = {};
-    if (in.ftq_exu_pc_req->req[i].valid) {
-      fill_ftq_pc_resp(out.ftq_exu_pc_resp->resp[i],
-                       ftq_lookup_entries[in.ftq_exu_pc_req->req[i].ftq_idx],
-                       ftq_valid[in.ftq_exu_pc_req->req[i].ftq_idx],
-                       in.ftq_exu_pc_req->req[i]);
+void PreIduQueue::comb_ftq_lookup_prf() {
+  for (int i = 0; i < FTQ_PRF_PC_PORT_NUM; i++) {
+    out.ftq_prf_pc_resp->resp[i] = {};
+    if (in.ftq_prf_pc_req->req[i].valid) {
+      fill_ftq_pc_resp(out.ftq_prf_pc_resp->resp[i],
+                       ftq_lookup_entries[in.ftq_prf_pc_req->req[i].ftq_idx],
+                       ftq_valid[in.ftq_prf_pc_req->req[i].ftq_idx],
+                       in.ftq_prf_pc_req->req[i]);
     }
   }
+}
 
+void PreIduQueue::comb_ftq_lookup_rob() {
   for (int i = 0; i < FTQ_ROB_PC_PORT_NUM; i++) {
     out.ftq_rob_pc_resp->resp[i] = {};
     if (in.ftq_rob_pc_req->req[i].valid) {

@@ -21,18 +21,7 @@ static inline bool cmp_inst_age(const ExuInst &inst1, const ExuInst &inst2) {
   return inst1.rob_idx < inst2.rob_idx;
 }
 
-static inline int get_exu_ftq_slot(int p_idx, const ExuInst &uop,
-                                   uint64_t req_bit) {
-  if (p_idx >= IQ_ALU_PORT_BASE && p_idx < IQ_ALU_PORT_BASE + ALU_NUM &&
-      (req_bit & OP_MASK_ALU) && uop.src1_is_pc) {
-    return p_idx - IQ_ALU_PORT_BASE;
-  }
-  if (p_idx >= IQ_BR_PORT_BASE && p_idx < IQ_BR_PORT_BASE + BRU_NUM &&
-      (req_bit & OP_MASK_BR)) {
-    return ALU_NUM + (p_idx - IQ_BR_PORT_BASE);
-  }
-  return -1;
-}
+
 
 Exu::Exu(SimContext *ctx) : ctx(ctx) {
   in.fu2exu = &fu2exu_io;
@@ -164,9 +153,6 @@ void Exu::comb_begin() {
   }
 
   // 每拍默认清零：统一在组合开始阶段完成，避免分散在各 comb_xxx。
-  for (auto &req : out.ftq_pc_req->req) {
-    req = {};
-  }
 
   out.exe2csr->we = false;
   out.exe2csr->re = false;
@@ -181,7 +167,6 @@ void Exu::comb_begin() {
   for (int i = 0; i < ISSUE_WIDTH; i++) {
     out.exe2prf->entry[i].valid = false;
     out.exu2rob->entry[i].valid = false;
-    out.exe2iss->ready[i] = false;
     out.exe2iss->fu_ready_mask[i] = 0;
   }
 
@@ -212,42 +197,7 @@ void Exu::comb_begin() {
   }
 }
 
-/*
- * comb_ftq_pc_req
- * 功能: 为需要 PC 上下文的 ALU/BR 指令生成 FTQ 读请求。
- * 输入依赖: FU 输入槽（fu_inst_r）、in.rob_bcast->flush、in.dec_bcast。
- * 输出更新: out.ftq_pc_req->req[]。
- * 约束: 被 flush 或分支 kill 的条目不发请求；仅匹配端口能力与操作类型的条目发起请求。
- */
-void Exu::comb_ftq_pc_req() {
-  for (int fu_idx = 0; fu_idx < TOTAL_FU_COUNT; fu_idx++) {
-    if (!fu_inst_r[fu_idx].valid) {
-      continue;
-    }
-    const int p_idx = fu_to_port[fu_idx];
-    if (p_idx < 0 || p_idx >= ISSUE_WIDTH) {
-      continue;
-    }
-    const ExuInst &uop = fu_inst_r[fu_idx].uop;
-    if (in.rob_bcast->flush || is_br_killed(uop, in.dec_bcast)) {
-      continue;
-    }
-    uint64_t req_bit = (1ULL << uop.op);
-    if (p_idx >= IQ_ALU_PORT_BASE && p_idx < IQ_ALU_PORT_BASE + ALU_NUM &&
-        (req_bit & OP_MASK_ALU) && uop.src1_is_pc) {
-      int slot = p_idx - IQ_ALU_PORT_BASE;
-      out.ftq_pc_req->req[slot].valid = true;
-      out.ftq_pc_req->req[slot].ftq_idx = uop.ftq_idx;
-      out.ftq_pc_req->req[slot].ftq_offset = uop.ftq_offset;
-    } else if (p_idx >= IQ_BR_PORT_BASE &&
-               p_idx < IQ_BR_PORT_BASE + BRU_NUM && (req_bit & OP_MASK_BR)) {
-      int slot = ALU_NUM + (p_idx - IQ_BR_PORT_BASE);
-      out.ftq_pc_req->req[slot].valid = true;
-      out.ftq_pc_req->req[slot].ftq_idx = uop.ftq_idx;
-      out.ftq_pc_req->req[slot].ftq_offset = uop.ftq_offset;
-    }
-  }
-}
+
 
 /*
  * comb_ready
@@ -260,7 +210,6 @@ void Exu::comb_ready() {
   // 异常状态下（Flush/Mispred），Exu 停止接收新指令，防止脏数据进入
   if (in.rob_bcast->flush) {
     for (int i = 0; i < ISSUE_WIDTH; i++) {
-      out.exe2iss->ready[i] = false;
       out.exe2iss->fu_ready_mask[i] = 0;
     }
     return;
@@ -278,7 +227,6 @@ void Exu::comb_ready() {
       }
     }
 
-    out.exe2iss->ready[i] = (mask != 0);
     out.exe2iss->fu_ready_mask[i] = mask;
   }
 }
@@ -416,7 +364,7 @@ void Exu::comb_fu_ctrl() {
  * 功能: Stage-1，将 FU 输入槽中的有效条目分发给对应的 FU 执行模块。
  * 输入依赖: FU 输入槽（fu_inst_r）、in.rob_bcast、in.dec_bcast、in.ftq_pc_resp。
  * 输出更新: units[].in.{en, inst} 以及下一态输入槽 fu_inst_r_1 的清除。
- * 约束: flush/kill 条目不下发；ALU/BR 在此补齐 FTQ 上下文。
+ * 约束: flush/kill 条目不下发。
  */
 void Exu::comb_exu2fu_dispatch() {
   for (int fu_idx = 0; fu_idx < TOTAL_FU_COUNT; fu_idx++) {
@@ -436,18 +384,6 @@ void Exu::comb_exu2fu_dispatch() {
       issued_uop.br_mask &= ~in.dec_bcast->clear_mask;
     }
 
-    uint64_t req_bit = (1ULL << issued_uop.op);
-
-    int ftq_slot = get_exu_ftq_slot(p_idx, issued_uop, req_bit);
-    if (ftq_slot >= 0) {
-      Assert(ftq_slot < FTQ_EXU_PC_PORT_NUM);
-      const auto &resp = in.ftq_pc_resp->resp[ftq_slot];
-      issued_uop.ftq_resp_valid = resp.valid;
-      issued_uop.ftq_entry_valid = resp.entry_valid;
-      issued_uop.ftq_pc = resp.pc;
-      issued_uop.ftq_pred_taken = resp.pred_taken;
-      issued_uop.ftq_next_pc = resp.next_pc;
-    }
     out.exu2fu->entry[fu_idx].en = true;
     out.exu2fu->entry[fu_idx].inst = issued_uop;
   }

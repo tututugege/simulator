@@ -33,7 +33,6 @@ struct ExuIn {
   CsrExeIO *csr2exe;
   LsuExeIO *lsu2exe;
   CsrStatusIO *csr_status;
-  FtqExuPcRespIO *ftq_pc_resp;
   Fu2ExuIO *fu2exu;
 };
 
@@ -44,7 +43,6 @@ struct ExuOut {
   ExeLsuIO *exe2lsu;
   ExuIdIO *exu2id; // [New] Early Branch Resolution
   ExuRobIO *exu2rob;
-  FtqExuPcReqIO *ftq_pc_req;
   Exu2FuIO *exu2fu;
 };
 

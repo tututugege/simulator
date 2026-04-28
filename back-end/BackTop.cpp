@@ -34,14 +34,14 @@ void BackTop::init() {
 
   pre->out.pre2front = &pre2front;
   pre->out.issue = &pre_issue;
-  pre->out.ftq_exu_pc_resp = &ftq_exu_pc_resp;
+  pre->out.ftq_prf_pc_resp = &ftq_prf_pc_resp;
   pre->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
   pre->in.front2pre = &in;
   pre->in.idu_consume = &idu_consume;
   pre->in.rob_bcast = &rob_bcast;
   pre->in.rob_commit = &rob_commit;
   pre->in.idu_br_latch = &idu->br_latch;
-  pre->in.ftq_exu_pc_req = &ftq_exu_pc_req;
+  pre->in.ftq_prf_pc_req = &ftq_prf_pc_req;
   pre->in.ftq_rob_pc_req = &ftq_rob_pc_req;
 
   idu->out.dec2ren = &dec2ren;
@@ -87,18 +87,20 @@ void BackTop::init() {
 
   prf->out.prf2exe = &prf2exe;
   prf->out.prf_awake = &prf_awake;
+  prf->out.ftq_prf_pc_req = &ftq_prf_pc_req;
 
   prf->in.iss2prf = &iss2prf;
   prf->in.exe2prf = &exe2prf;
   prf->in.dec_bcast = &dec_bcast;
   prf->in.rob_bcast = &rob_bcast;
+  prf->in.ftq_prf_pc_resp = &ftq_prf_pc_resp;
 
   exu->in.prf2exe = &prf2exe;
   exu->in.dec_bcast = &dec_bcast;
   exu->in.rob_bcast = &rob_bcast;
   exu->in.lsu2exe = &lsu2exe;
   exu->in.csr2exe = &csr2exe;
-  exu->in.ftq_pc_resp = &ftq_exu_pc_resp;
+  exu->in.csr_status = &csr_status;
 
   exu->out.exe2prf = &exe2prf;
   exu->out.exe2iss = &exe2iss;
@@ -107,7 +109,6 @@ void BackTop::init() {
   exu->out.exe2csr = &exe2csr;
   exu->out.exu2id = &exu2id;
   exu->out.exu2rob = &exu2rob;
-  exu->out.ftq_pc_req = &ftq_exu_pc_req;
 
   rob->in.dis2rob = &dis2rob;
   rob->in.dec_bcast = &dec_bcast;
@@ -174,8 +175,8 @@ void BackTop::comb() {
   // dependence on previous-cycle combinational values.
   pre2front = {};
   pre_issue = {};
-  ftq_exu_pc_req = {};
-  ftq_exu_pc_resp = {};
+  ftq_prf_pc_req = {};
+  ftq_prf_pc_resp = {};
   ftq_rob_pc_req = {};
   ftq_rob_pc_resp = {};
 
@@ -249,8 +250,7 @@ void BackTop::comb() {
 
   rob->comb_ready();
   rob->comb_ftq_pc_req();
-  exu->comb_ftq_pc_req();
-  pre->comb_ftq_lookup();
+  pre->comb_ftq_lookup_rob();
   rob->comb_commit();
 
   dis->comb_alloc();
@@ -258,18 +258,23 @@ void BackTop::comb() {
 
   exu->comb_to_csr();
   csr->comb_csr_read();
+
   exu->comb_exec();
   rob->comb_complete();
 
   exu->comb_ready();
   isu->comb_issue();
+
+  prf->comb_req_ftq();
+  pre->comb_ftq_lookup_prf();
+  prf->comb_read();
+
   lsu->comb_recv();
 
   isu->comb_awake();
   isu->comb_calc_latency_next();
   csr->comb_exception();
   csr->comb_csr_write();
-  prf->comb_read();
   dis->comb_wake();
   rename->comb_rename();
 

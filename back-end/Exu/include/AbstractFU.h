@@ -18,9 +18,9 @@ public:
   };
 
   struct FuOutput {
-    wire<1> ready = 0;    // owner: comb_consume
-    wire<1> complete = 0; // owner: comb_issue
-    ExuInst inst;         // owner: comb_issue when complete=1
+    wire<1> ready = 0;   
+    wire<1> complete = 0; 
+    ExuInst inst;        
   };
 
   FuInput in;

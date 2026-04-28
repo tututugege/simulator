@@ -6,6 +6,7 @@
 struct PrfOut {
   PrfExeIO *prf2exe;
   PrfAwakeIO *prf_awake;
+  FtqPrfPcReqIO *ftq_prf_pc_req;
 };
 
 struct PrfIn {
@@ -13,6 +14,7 @@ struct PrfIn {
   ExePrfIO *exe2prf;
   DecBroadcastIO *dec_bcast;
   RobBroadcastIO *rob_bcast;
+  FtqPrfPcRespIO *ftq_prf_pc_resp;
 };
 
 class Prf {
@@ -25,6 +27,7 @@ public:
   void comb_begin(); // 默认保持寄存器状态（*_1 <- *）
   void comb_complete();
   void comb_awake();
+  void comb_req_ftq();
   void comb_read();
   void comb_write();
   void comb_pipeline();

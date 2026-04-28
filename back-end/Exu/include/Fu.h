@@ -26,8 +26,7 @@ protected:
   void impl_compute(ExuInst &inst) override {
     uint32_t operand1, operand2;
     if (inst.src1_is_pc) {
-      Assert(inst.ftq_resp_valid);
-      operand1 = inst.ftq_pc;
+      operand1 = inst.pc;
     } else
       operand1 = inst.src1_rdata;
 
@@ -350,8 +349,7 @@ protected:
   void impl_compute(ExuInst &inst) override {
     uint32_t operand1 = inst.src1_rdata;
     uint32_t operand2 = inst.src2_rdata;
-    Assert(inst.ftq_resp_valid);
-    uint32_t inst_pc = inst.ftq_pc;
+    uint32_t inst_pc = inst.pc;
     uint32_t pc_br = inst_pc + inst.imm;
     bool br_taken = true;
 
@@ -397,17 +395,13 @@ protected:
     inst.mispred = false;
 #else
     // FTQ lookup
-    bool pred_taken = false;
+    bool pred_taken = inst.ftq_pred_taken;
     uint32_t pred_target = 0;
 
-    if (inst.ftq_entry_valid) {
-      pred_taken = inst.ftq_pred_taken;
-      if (pred_taken) {
-        // FTQ stores next_pc of the fetch block.
-        pred_target = inst.ftq_next_pc;
-      } else {
-        pred_target = inst_pc + 4;
-      }
+    if (pred_taken) {
+      pred_target = inst.ftq_next_pc;
+    } else {
+      pred_target = inst_pc + 4;
     }
 
     // Verify

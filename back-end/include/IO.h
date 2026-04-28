@@ -227,19 +227,19 @@ struct FtqPcReadResp {
   }
 };
 
-struct FtqExuPcReqIO {
-  FtqPcReadReq req[FTQ_EXU_PC_PORT_NUM];
+struct FtqPrfPcReqIO {
+  FtqPcReadReq req[FTQ_PRF_PC_PORT_NUM];
 
-  FtqExuPcReqIO() {
+  FtqPrfPcReqIO() {
     for (auto &v : req)
       v = {};
   }
 };
 
-struct FtqExuPcRespIO {
-  FtqPcReadResp resp[FTQ_EXU_PC_PORT_NUM];
+struct FtqPrfPcRespIO {
+  FtqPcReadResp resp[FTQ_PRF_PC_PORT_NUM];
 
-  FtqExuPcRespIO() {
+  FtqPrfPcRespIO() {
     for (auto &v : resp)
       v = {};
   }
@@ -765,6 +765,10 @@ struct IssPrfIO {
 
 struct PrfExeIO {
   struct PrfExeUop {
+    wire<32> pc;
+    wire<1> ftq_resp_valid;
+    wire<1> ftq_pred_taken;
+    wire<32> ftq_next_pc;
     wire<PRF_IDX_WIDTH> dest_preg;
     wire<PRF_IDX_WIDTH> src1_preg;
     wire<PRF_IDX_WIDTH> src2_preg;
@@ -880,12 +884,9 @@ struct ExePrfIO {
 
 struct ExeIssIO {
 
-  wire<1> ready[ISSUE_WIDTH];
   wire<MAX_UOP_TYPE> fu_ready_mask[ISSUE_WIDTH];
 
   ExeIssIO() {
-    for (auto &v : ready)
-      v = {};
     for (auto &v : fu_ready_mask)
       v = {};
   }

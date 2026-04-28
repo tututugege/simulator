@@ -17,7 +17,6 @@
 | 信号/字段 | 来源 | 描述 |
 | :--- | :--- | :--- |
 | `dis2iss->req[iq][w]` | Dispatch | 各 IQ 入队请求 |
-| `exe2iss->ready[port]` | Exu | 发射端口是否可接收 |
 | `exe2iss->fu_ready_mask[port]` | Exu | 端口对应 FU 能力可用掩码 |
 | `prf_awake->wake[]` | PRF/LSU | 慢速唤醒源 |
 | `rob_bcast->flush` | ROB | 全局冲刷 |
@@ -73,10 +72,10 @@
 - **约束/优先级**：入队失败触发 Assert；仅 valid 请求入队。
 
 ### 4.4 `comb_issue`
-- **功能描述**：通过 `iq.in.{issue_block,port_ready,port_fu_ready_mask}` 驱动各 IQ 发射，并消费 `iq.out.issue_grants` 生成 `iss2prf`。
-- **输入依赖**：`in.exe2iss->ready`, `in.exe2iss->fu_ready_mask`, `in.rob_bcast->flush`, `in.dec_bcast->mispred`, `iq.out.issue_grants`。
+- **功能描述**：通过 `iq.in.{issue_block,port_fu_ready_mask}` 驱动各 IQ 发射，并消费 `iq.out.issue_grants` 生成 `iss2prf`。
+- **输入依赖**：`in.exe2iss->fu_ready_mask`, `in.rob_bcast->flush`, `in.dec_bcast->mispred`, `iq.out.issue_grants`。
 - **输出更新**：`out.iss2prf->iss_entry[]`，IQ 内部提交状态（由 `iq.comb_issue()` 完成）。
-- **约束/优先级**：需同时满足端口 ready 与 FU mask；flush/mispred 时不发射。
+- **约束/优先级**：需满足对应端口能力的 FU mask 不为空；flush/mispred 时不发射。
 
 ### 4.5 `comb_calc_latency_next`
 - **功能描述**：构建下一拍延迟唤醒列表。

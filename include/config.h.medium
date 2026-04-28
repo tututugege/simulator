@@ -300,7 +300,7 @@ constexpr int MAX_UOPS_PER_INST = 3;
 
 constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
-constexpr int FTQ_EXU_PC_PORT_NUM = ALU_NUM + BRU_NUM;
+constexpr int FTQ_PRF_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
 constexpr int STQ_SIZE = 32;
 constexpr int LDQ_SIZE = 32;

@@ -135,7 +135,6 @@ struct IssueQueueIn {
   wire<1> flush_br = 0;
   wire<BR_MASK_WIDTH> flush_br_mask = 0;
   wire<BR_MASK_WIDTH> clear_mask = 0;
-  wire<1> port_ready[ISSUE_WIDTH] = {};
   wire<MAX_UOP_TYPE> port_fu_ready_mask[ISSUE_WIDTH] = {};
 };
 
@@ -211,7 +210,6 @@ public:
       req = {};
     }
     for (int i = 0; i < ISSUE_WIDTH; i++) {
-      in.port_ready[i] = 0;
       in.port_fu_ready_mask[i] = 0;
     }
   }
@@ -278,7 +276,7 @@ public:
       int entry_idx = pair.first;
       int phys_port = pair.second;
       uint64_t req_bit = (1ULL << static_cast<uint32_t>(entry[entry_idx].uop.op));
-      if (in.port_ready[phys_port] && (in.port_fu_ready_mask[phys_port] & req_bit) &&
+      if ((in.port_fu_ready_mask[phys_port] & req_bit) &&
           !in.issue_block) {
         out.issue_grants[phys_port].valid = true;
         out.issue_grants[phys_port].uop = entry[entry_idx].uop;
