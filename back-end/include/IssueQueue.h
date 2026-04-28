@@ -375,71 +375,28 @@ public:
 private:
   std::vector<std::pair<int, int>> schedule() {
     std::vector<std::pair<int, int>> result;
-
-    // 1. 端口忙闲状态标记
     int num_ports = ports.size();
-    bool port_busy[ISSUE_WIDTH] = {false};
-    assert(num_ports <= ISSUE_WIDTH &&
-           "IssueQueue ports exceed ISSUE_WIDTH capacity");
 
-    auto try_issue_entry = [&](int entry_idx, int &issued_count) {
-      if (!entry[entry_idx].valid || !is_ready(entry[entry_idx])) {
-        return;
+
+    // 1. Gather all ready instructions
+    std::vector<int> ready_indices;
+    ready_indices.reserve(count);
+    int seen_valid = 0;
+    for (int i = 0; i < size; i++) {
+      if (!entry[i].valid) {
+        continue;
       }
-
-      uint32_t op_type = entry[entry_idx].uop.op;
-      uint64_t op_bit = (1ULL << op_type); // 当前指令的特征位
-
-      // 3. 寻找匹配的端口 (First-Fit 策略)
-      int selected_port_idx = -1; // 这是 ports 数组的下标，不是物理端口号
-      for (int p = 0; p < num_ports; p++) {
-        if (!port_busy[p] && (ports[p].capability_mask & op_bit)) {
-          selected_port_idx = p;
-          break;
-        }
+      seen_valid++;
+      if (is_ready(entry[i])) {
+        ready_indices.push_back(i);
       }
-
-      // 4. 发射成功
-      if (selected_port_idx != -1) {
-        // 记录结果：<IQ中的Index, 物理Port号>
-        result.push_back({entry_idx, ports[selected_port_idx].port_idx});
-        // 标记资源被占用
-        port_busy[selected_port_idx] = true;
-        issued_count++;
+      if (seen_valid >= count) {
+        break;
       }
-    };
+    }
 
-    int issued_count = 0;
-    if (ISSUE_SCHEDULE_POLICY == IssueSchedulePolicy::IQ_SLOT_PRIORITY) {
-      // 固定编号优先：按 IQ 槽位编号从小到大扫描。
-      int seen_valid = 0;
-      for (int i = 0; i < size && issued_count < num_ports; i++) {
-        if (entry[i].valid) {
-          seen_valid++;
-        }
-        try_issue_entry(i, issued_count);
-        if (seen_valid >= count) {
-          break;
-        }
-      }
-    } else {
-      // ROB oldest-first：按 (rob_flag, rob_idx) 年龄排序后再分配端口。
-      std::vector<int> ready_indices;
-      ready_indices.reserve(size);
-      int seen_valid = 0;
-      for (int i = 0; i < size; i++) {
-        if (!entry[i].valid) {
-          continue;
-        }
-        seen_valid++;
-        if (is_ready(entry[i])) {
-          ready_indices.push_back(i);
-        }
-        if (seen_valid >= count) {
-          break;
-        }
-      }
-
+    // 2. Sort ready instructions by priority
+    if (ISSUE_SCHEDULE_POLICY == IssueSchedulePolicy::ROB_OLDEST_FIRST) {
       auto older_than = [&](int lhs, int rhs) {
         const auto &a = entry[lhs].uop;
         const auto &b = entry[rhs].uop;
@@ -455,12 +412,26 @@ private:
         return lhs < rhs; // Stable tie-breaker.
       };
       std::sort(ready_indices.begin(), ready_indices.end(), older_than);
+    }
+    // If IQ_SLOT_PRIORITY, ready_indices is already sorted by slot index (lowest first).
 
+    // 3. Port-centric scheduling: for each port, find the best instruction
+    std::vector<bool> inst_issued(size, false);
+    
+    for (int p = 0; p < num_ports; p++) {
       for (int idx : ready_indices) {
-        if (issued_count >= num_ports) {
-          break;
+        if (inst_issued[idx]) {
+          continue;
         }
-        try_issue_entry(idx, issued_count);
+        
+        uint32_t op_type = entry[idx].uop.op;
+        uint64_t op_bit = (1ULL << op_type);
+        
+        if (ports[p].capability_mask & op_bit) {
+          result.push_back({idx, ports[p].port_idx});
+          inst_issued[idx] = true;
+          break; // Move to the next port
+        }
       }
     }
 

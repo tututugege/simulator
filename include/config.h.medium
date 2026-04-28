@@ -318,7 +318,7 @@ constexpr int DTLB_ENTRIES = 32;
 
 constexpr int MAX_WAKEUP_PORTS =
     LSU_LOAD_WB_WIDTH + count_ports_with_mask(OP_MASK_ALU) +
-    count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_CSR);
+    count_ports_with_mask(OP_MASK_MUL | OP_MASK_DIV | OP_MASK_FP | OP_MASK_CSR);
 
 // ============================================================
 // ISU Scheduling Policy

@@ -329,34 +329,71 @@ void Isu::comb_calc_latency_next() {
  * 功能: 汇总慢速/延迟/快速唤醒源，唤醒 IQ 内等待项并对外广播 iss_awake。
  * 输入依赖: in.prf_awake, mul/div/fp 延迟唤醒当前状态, out.iss2prf->iss_entry, get_latency(op), iqs[]。
  * 输出更新: iqs[]（通过 q.in.wake_valid/wake_pregs + q.comb_wakeup）, out.iss_awake->wake[]。
- * 约束: 唤醒端口数不超过 MAX_WAKEUP_PORTS；仅单周期且非 LOAD/STA 的新发射进入快速唤醒。
+ * 约束: 唤醒端口数不超过 MAX_WAKEUP_PORTS；分配独立唤醒通道以避免写回冲突。
  */
 void Isu::comb_awake() {
   for (int i = 0; i < MAX_WAKEUP_PORTS; i++) {
     out.iss_awake->wake[i].valid = false;
     out.iss_awake->wake[i].preg = 0;
   }
-  int wake_idx = 0;
+
+  uint64_t delayed_mask = OP_MASK_MUL | OP_MASK_DIV | OP_MASK_FP | OP_MASK_CSR;
+  uint64_t fast_mask = OP_MASK_ALU;
+
+  int lsu_base = 0;
+  int delayed_base = lsu_base + LSU_LOAD_WB_WIDTH;
+  int fast_base = delayed_base + count_ports_with_mask(delayed_mask);
+
+  int delayed_ch_map[ISSUE_WIDTH];
+  int fast_ch_map[ISSUE_WIDTH];
+  for (int i = 0; i < ISSUE_WIDTH; i++) {
+    delayed_ch_map[i] = -1;
+    fast_ch_map[i] = -1;
+  }
+  
+  int cur_del = delayed_base;
+  int cur_fst = fast_base;
+  for (int i = 0; i < ISSUE_WIDTH; i++) {
+    uint64_t cap = get_port_capability(i);
+    if (cap & delayed_mask) {
+      delayed_ch_map[i] = cur_del++;
+    }
+    if (cap & fast_mask) {
+      fast_ch_map[i] = cur_fst++;
+    }
+  }
+
+
+  auto get_port_for_unit = [](uint64_t op_mask, int unit_idx) {
+    int seen = 0;
+    for (int p = 0; p < ISSUE_WIDTH; p++) {
+      if (get_port_capability(p) & op_mask) {
+        if (seen == unit_idx) return p;
+        seen++;
+      }
+    }
+    return -1;
+  };
 
   // 来源 A: 慢速唤醒 (来自写回阶段：Load / 缓存缺失)
   for (int i = 0; i < LSU_LOAD_WB_WIDTH; i++) {
-    if (!in.prf_awake->wake[i].valid) {
-      continue;
+    if (in.prf_awake->wake[i].valid) {
+      int ch = lsu_base + i;
+      out.iss_awake->wake[ch].valid = true;
+      out.iss_awake->wake[ch].preg = in.prf_awake->wake[i].preg;
     }
-    Assert(wake_idx < MAX_WAKEUP_PORTS);
-    out.iss_awake->wake[wake_idx].valid = true;
-    out.iss_awake->wake[wake_idx].preg = in.prf_awake->wake[i].preg;
-    wake_idx++;
   }
 
   // 来源 B1: 延迟唤醒（DIV countdown 到 0）
   for (int i = 0; i < ISU_DIV_WAKE_SLOT_NUM; i++) {
     const auto &slot = div_wake_slots[i];
     if (slot.valid && slot.countdown == 0) {
-      Assert(wake_idx < MAX_WAKEUP_PORTS);
-      out.iss_awake->wake[wake_idx].valid = true;
-      out.iss_awake->wake[wake_idx].preg = slot.dest_preg;
-      wake_idx++;
+      int port = get_port_for_unit(OP_MASK_DIV, i);
+      int ch = delayed_ch_map[port];
+      Assert(ch != -1);
+      Assert(!out.iss_awake->wake[ch].valid && "Delayed writeback collision");
+      out.iss_awake->wake[ch].valid = true;
+      out.iss_awake->wake[ch].preg = slot.dest_preg;
     }
   }
 
@@ -364,10 +401,12 @@ void Isu::comb_awake() {
   for (int i = 0; i < ISU_FP_WAKE_SLOT_NUM; i++) {
     const auto &slot = fp_wake_slots[i];
     if (slot.valid && slot.countdown == 0) {
-      Assert(wake_idx < MAX_WAKEUP_PORTS);
-      out.iss_awake->wake[wake_idx].valid = true;
-      out.iss_awake->wake[wake_idx].preg = slot.dest_preg;
-      wake_idx++;
+      int port = get_port_for_unit(OP_MASK_FP, i);
+      int ch = delayed_ch_map[port];
+      Assert(ch != -1);
+      Assert(!out.iss_awake->wake[ch].valid && "Delayed writeback collision");
+      out.iss_awake->wake[ch].valid = true;
+      out.iss_awake->wake[ch].preg = slot.dest_preg;
     }
   }
 
@@ -376,10 +415,12 @@ void Isu::comb_awake() {
     if (MUL_MAX_LATENCY > 1) {
       const auto &slot = mul_wake_pipe[ISU_MUL_WAKE_DEPTH - 1][i];
       if (slot.valid) {
-        Assert(wake_idx < MAX_WAKEUP_PORTS);
-        out.iss_awake->wake[wake_idx].valid = true;
-        out.iss_awake->wake[wake_idx].preg = slot.dest_preg;
-        wake_idx++;
+        int port = get_port_for_unit(OP_MASK_MUL, i);
+        int ch = delayed_ch_map[port];
+        Assert(ch != -1);
+        Assert(!out.iss_awake->wake[ch].valid && "Delayed writeback collision");
+        out.iss_awake->wake[ch].valid = true;
+        out.iss_awake->wake[ch].preg = slot.dest_preg;
       }
     }
   }
@@ -391,13 +432,16 @@ void Isu::comb_awake() {
       UopType op = decode_uop_type(entry.uop.op);
       int lat = get_latency(op, entry.uop.func7);
       if (lat <= 1 && op != UOP_LOAD && op != UOP_STA) {
-        Assert(wake_idx < MAX_WAKEUP_PORTS);
-        out.iss_awake->wake[wake_idx].valid = true;
-        out.iss_awake->wake[wake_idx].preg = entry.uop.dest_preg;
-        wake_idx++;
+        int ch = fast_ch_map[i];
+        if (ch != -1) {
+          Assert(!out.iss_awake->wake[ch].valid && "Fast writeback collision");
+          out.iss_awake->wake[ch].valid = true;
+          out.iss_awake->wake[ch].preg = entry.uop.dest_preg;
+        }
       }
     }
   }
+
 
   // === 统一广播 ===
   // 1. 唤醒所有 IQ
