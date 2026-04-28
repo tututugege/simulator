@@ -48,6 +48,11 @@ struct ExuOut {
   Exu2FuIO *exu2fu;
 };
 
+struct FuInstSlot {
+  wire<1> valid = false;
+  ExuInst uop{};
+};
+
 class Exu {
 public:
   Exu(SimContext *ctx);
@@ -63,7 +68,7 @@ public:
   void comb_ftq_pc_req();
   void comb_exec(); // 核心：发射到 FU + 收集结果
   void comb_to_csr();
-  void comb_pipeline(); // 准备下一周期的 inst_r
+  void comb_pipeline(); // 将本拍 issue 入 FU 输入槽（在 pipeline 阶段生效）
   void comb_ready();    // 告诉 Issue 阶段 FU 是否空闲
 
   // 时序逻辑
@@ -75,17 +80,16 @@ public:
   // === FU 资源管理 ===
   // 物理 FU 实例
   std::vector<AbstractFU *> units;
+  int fu_to_port[TOTAL_FU_COUNT];
+  FuInstSlot fu_inst_r[TOTAL_FU_COUNT];
+  FuInstSlot fu_inst_r_1[TOTAL_FU_COUNT];
 
-  // pipeline registers
-  ExuEntry inst_r[ISSUE_WIDTH];   // 当前执行级指令
-  ExuEntry inst_r_1[ISSUE_WIDTH]; // 下一周期指令 (Latch)
-                                   //
 private:
+  void comb_fu_ctrl();
   void comb_exu2fu_dispatch();
   void comb_fu_exec();
   void comb_fu2exu_collect();
 
-  bool issue_stall[ISSUE_WIDTH];
   Exu2FuIO exu2fu_io{};
   Fu2ExuIO fu2exu_io{};
 };

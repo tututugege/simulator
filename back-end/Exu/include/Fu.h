@@ -8,7 +8,7 @@
 // ==========================================
 // ALU: 算术逻辑单元
 // ==========================================
-class AluUnit : public FixedLatencyFU {
+class AluUnit : public SingleCycleFU {
   static constexpr int SUB = 0b000;
   static constexpr int SLL = 0b001;
   static constexpr int SLT = 0b010;
@@ -20,7 +20,7 @@ class AluUnit : public FixedLatencyFU {
 
 public:
   AluUnit(std::string name = "ALU", int port_idx = 0)
-      : FixedLatencyFU(name, port_idx, 1) {}
+      : SingleCycleFU(name, port_idx) {}
 
 protected:
   void impl_compute(ExuInst &inst) override {
@@ -220,9 +220,9 @@ protected:
 // ==========================================
 // AGU: 地址生成单元 (IO 精确修改版)
 // ==========================================
-class AguUnit : public FixedLatencyFU {
+class AguUnit : public SingleCycleFU {
 public:
-  AguUnit(std::string name, int port_idx) : FixedLatencyFU(name, port_idx, 1) {}
+  AguUnit(std::string name, int port_idx) : SingleCycleFU(name, port_idx) {}
 
 protected:
   void impl_compute(ExuInst &inst) override {
@@ -237,9 +237,9 @@ protected:
 // ==========================================
 // SDU: 存数数据单元 (IO 精确修改版)
 // ==========================================
-class SduUnit : public FixedLatencyFU {
+class SduUnit : public SingleCycleFU {
 public:
-  SduUnit(std::string name, int port_idx) : FixedLatencyFU(name, port_idx, 1) {}
+  SduUnit(std::string name, int port_idx) : SingleCycleFU(name, port_idx) {}
 
 protected:
   void impl_compute(ExuInst &inst) override {
@@ -336,7 +336,7 @@ protected:
 // ==========================================
 // BRU: 分支单元
 // ==========================================
-class BruUnit : public FixedLatencyFU {
+class BruUnit : public SingleCycleFU {
   static constexpr int BEQ = 0b000;
   static constexpr int BNE = 0b001;
   static constexpr int BLT = 0b100;
@@ -344,7 +344,7 @@ class BruUnit : public FixedLatencyFU {
   static constexpr int BLTU = 0b110;
   static constexpr int BGEU = 0b111;
 public:
-  BruUnit(std::string name, int port_idx) : FixedLatencyFU(name, port_idx, 1) {}
+  BruUnit(std::string name, int port_idx) : SingleCycleFU(name, port_idx) {}
 
 protected:
   void impl_compute(ExuInst &inst) override {
@@ -477,29 +477,14 @@ protected:
     }
   }
 
-  // int calculate_latency(const InstUop &inst) override {
-  // 固定返回DIV_MAX_LATENCY以消除竞态条件
-  // 原始的SRT动态延迟计算会导致与唤醒管道不匹配
-  // uint64_t divisor = inst.src2_rdata;
-  // uint64_t dividend = inst.src1_rdata;
-  // if (divisor == 0 || dividend == 0)
-  //   return 4;
-  // int clz_n = __builtin_clzl(dividend);
-  // int clz_d = __builtin_clzl(divisor);
-  // int effective_bits = (64 - clz_n) - (64 - clz_d);
-  // if (effective_bits < 0)
-  //   effective_bits = 0;
-  // return (effective_bits / radix_log2) + 4;
-  // return DIV_MAX_LATENCY;
-  // }
 };
 
 // ==========================================
 // CSR: 控制状态寄存器单元
 // ==========================================
-class CsrUnit : public FixedLatencyFU {
+class CsrUnit : public SingleCycleFU {
 public:
-  CsrUnit(std::string name, int port_idx) : FixedLatencyFU(name, port_idx, 1) {}
+  CsrUnit(std::string name, int port_idx) : SingleCycleFU(name, port_idx) {}
 
 protected:
   void impl_compute(ExuInst &inst) override { (void)inst; }

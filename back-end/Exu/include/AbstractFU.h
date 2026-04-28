@@ -18,25 +18,56 @@ public:
   };
 
   struct FuOutput {
-    wire<1> ready = 0;
-    wire<1> complete = 0;
-    ExuInst inst;
+    wire<1> ready = 0;    // owner: comb_consume
+    wire<1> complete = 0; // owner: comb_issue
+    ExuInst inst;         // owner: comb_issue when complete=1
   };
 
   FuInput in;
   FuOutput out;
+  int issue_port_idx = -1;
 
-  AbstractFU(std::string, int) : in(), out() {}
+  AbstractFU(std::string, int port_idx) : in(), out(), issue_port_idx(port_idx) {}
   virtual ~AbstractFU() = default;
 
-  // 三段组合逻辑：控制/发射/消费，避免同一个 comb 函数被多次调用。
+  virtual void comb_begin() = 0;
   virtual void comb_ctrl() = 0;
   virtual void comb_issue() = 0;
   virtual void comb_consume() = 0;
   virtual void seq() = 0;
 };
 
-// 固定延迟且可流水化：ALU、MUL
+// 确定单周期单元：ALU/BRU/AGU/SDU/CSR。
+class SingleCycleFU : public AbstractFU {
+public:
+  SingleCycleFU(std::string n, int port_idx) : AbstractFU(n, port_idx) {
+    out.ready = true;
+  }
+
+  void comb_begin() override {
+    out.complete = false;
+  }
+
+  void seq() override {}
+
+  void comb_ctrl() override {}
+
+  void comb_issue() override {
+    if (in.en) {
+      ExuInst inst = in.inst;
+      impl_compute(inst);
+      out.complete = true;
+      out.inst = inst;
+    }
+  }
+
+  void comb_consume() override { out.ready = (!in.en) || in.consume; }
+
+protected:
+  virtual void impl_compute(ExuInst &inst) = 0;
+};
+
+// 固定延迟且可流水化：MUL（lat>1）。
 class FixedLatencyFU : public AbstractFU {
 private:
   struct PipeEntry {
@@ -46,51 +77,54 @@ private:
 
   int latency;
   std::deque<PipeEntry> pipeline;
+  std::deque<PipeEntry> pipeline_1;
 
-  ExuInst *peek_finished_impl() {
-    // 延迟为 1 时，指令与接收同拍完成：
-    // done_cycle = sim_time + latency - 1 = sim_time
-    // 此时最新完成项在队尾。
-    // 延迟大于 1 时，按常规从队首取最早完成项。
-    if (latency == 1 && !pipeline.empty() &&
-        pipeline.back().done_cycle <= sim_time) {
-      return &pipeline.back().uop;
-    } else if (!pipeline.empty() && pipeline.front().done_cycle <= sim_time) {
-      return &pipeline.front().uop;
+  bool has_finished(const std::deque<PipeEntry> &pipe) const {
+    if (!pipe.empty() && pipe.front().done_cycle <= sim_time) {
+      return true;
     }
-    return nullptr;
+    return false;
   }
 
-  void pop_finished_impl() {
-    if (!pipeline.empty()) {
-      // 延迟为 1 时，out.complete 对应 pipeline.back()，
-      // 这里必须从队尾弹出以保持一致。
-      if (latency == 1) {
-        pipeline.pop_back();
-      } else {
-        pipeline.pop_front();
-      }
+  ExuInst get_finished_inst(const std::deque<PipeEntry> &pipe) const {
+    return pipe.front().uop;
+  }
+
+  void pop_finished(std::deque<PipeEntry> &pipe) {
+    if (!has_finished(pipe)) {
+      return;
     }
+    pipe.pop_front();
   }
 
 public:
   FixedLatencyFU(std::string n, int port_idx, int lat)
-      : AbstractFU(n, port_idx), latency(lat) {}
-
-  void seq() override {
-    // 固定延迟单元只需等待时间流逝
+      : AbstractFU(n, port_idx), latency(lat) {
+    out.ready = true;
   }
+
+  void comb_begin() override {
+    pipeline_1 = pipeline;
+    size_t limit = (latency <= 0) ? 1 : static_cast<size_t>(latency);
+    out.ready = pipeline.size() < limit;
+    out.complete = has_finished(pipeline);
+    if (out.complete) {
+      out.inst = get_finished_inst(pipeline);
+    }
+  }
+
+  void seq() override { pipeline = pipeline_1; }
 
   void comb_ctrl() override {
     if (in.flush) {
       if (in.flush_mask == static_cast<wire<BR_MASK_WIDTH>>(-1)) {
-        pipeline.clear();
+        pipeline_1.clear();
       } else {
-        auto it = pipeline.begin();
-        while (it != pipeline.end()) {
+        auto it = pipeline_1.begin();
+        while (it != pipeline_1.end()) {
           bool kill_by_mask = (it->uop.br_mask & in.flush_mask) != 0;
           if (kill_by_mask) {
-            it = pipeline.erase(it);
+            it = pipeline_1.erase(it);
           } else {
             ++it;
           }
@@ -98,131 +132,112 @@ public:
       }
     }
     if (in.clear_mask) {
-      for (auto &entry : pipeline) {
+      for (auto &entry : pipeline_1) {
         entry.uop.br_mask &= ~in.clear_mask;
       }
     }
-    size_t limit = (latency <= 0) ? 1 : static_cast<size_t>(latency);
-    out.ready = pipeline.size() < limit;
-    ExuInst *finished = peek_finished_impl();
-    out.complete = (finished != nullptr);
-    if (finished != nullptr) out.inst = *finished;
   }
 
   void comb_issue() override {
     size_t limit = (latency <= 0) ? 1 : static_cast<size_t>(latency);
-    if (in.en && pipeline.size() < limit) {
+    if (in.en && pipeline_1.size() < limit) {
       ExuInst inst = in.inst;
       impl_compute(inst);
       PipeEntry entry{};
       entry.uop = inst;
       entry.done_cycle = sim_time + latency - 1;
-      pipeline.push_back(entry);
+      pipeline_1.push_back(entry);
     }
-    out.ready = pipeline.size() < limit;
-    ExuInst *finished = peek_finished_impl();
-    out.complete = (finished != nullptr);
-    if (finished != nullptr) out.inst = *finished;
+
+    out.complete = has_finished(pipeline_1);
+    if (out.complete) {
+      out.inst = get_finished_inst(pipeline_1);
+    }
   }
 
   void comb_consume() override {
-    ExuInst *finished = peek_finished_impl();
-    if (in.consume && finished != nullptr) {
-      pop_finished_impl();
+    if (in.consume) {
+      pop_finished(pipeline_1);
     }
     size_t limit = (latency <= 0) ? 1 : static_cast<size_t>(latency);
-    out.ready = pipeline.size() < limit;
-    finished = peek_finished_impl();
-    out.complete = (finished != nullptr);
-    if (finished != nullptr) out.inst = *finished;
+    out.ready = pipeline_1.size() < limit;
   }
 
 protected:
-  // === 核心钩子：子类必须实现具体的计算逻辑 ===
   virtual void impl_compute(ExuInst &inst) = 0;
 };
 
 class IterativeFU : public AbstractFU {
 private:
-  ExuInst current_inst; // 迭代单元通常是非全流水化的，持有一个寄存槽即可
+  ExuInst current_inst;
+  ExuInst current_inst_1;
   int64_t done_cycle;
+  int64_t done_cycle_1;
   bool busy;
+  bool busy_1;
   int max_latency;
-
-  ExuInst *peek_finished_impl() {
-    if (busy && done_cycle <= sim_time) {
-      return &current_inst;
-    }
-    return nullptr;
-  }
-
-  void pop_finished_impl() { busy = false; }
 
 public:
   IterativeFU(std::string n, int port_idx, int max_lat)
-      : AbstractFU(n, port_idx), done_cycle(0), busy(false),
-        max_latency(max_lat) {}
+      : AbstractFU(n, port_idx), done_cycle(0), done_cycle_1(0), busy(false),
+        busy_1(false), max_latency(max_lat) {
+    out.ready = true;
+  }
+
+  void comb_begin() override {
+    current_inst_1 = current_inst;
+    done_cycle_1 = done_cycle;
+    busy_1 = busy;
+    out.ready = !busy;
+    out.complete = (busy && done_cycle <= sim_time);
+    if (out.complete) {
+      out.inst = current_inst;
+    }
+  }
 
   void seq() override {
-    // 迭代单元的时间推进由 done_cycle 显式表示。
+    current_inst = current_inst_1;
+    done_cycle = done_cycle_1;
+    busy = busy_1;
   }
 
   void comb_ctrl() override {
-    if (in.flush) {
-      if (busy) {
-        bool kill = false;
-        if (in.flush_mask == static_cast<wire<BR_MASK_WIDTH>>(-1)) {
-          kill = true;
-        } else if ((current_inst.br_mask & in.flush_mask) != 0) {
-          kill = true;
-        }
-        if (kill) {
-          busy = false;
-          done_cycle = 0;
-        }
-      }
+    if (in.flush && busy_1 &&
+        (in.flush_mask == static_cast<wire<BR_MASK_WIDTH>>(-1) ||
+         (current_inst_1.br_mask & in.flush_mask) != 0)) {
+      busy_1 = false;
+      done_cycle_1 = 0;
     }
-    if (in.clear_mask) {
-      if (busy) current_inst.br_mask &= ~in.clear_mask;
+    if (in.clear_mask && busy_1) {
+      current_inst_1.br_mask &= ~in.clear_mask;
     }
-    out.ready = !busy;
-    ExuInst *finished = peek_finished_impl();
-    out.complete = (finished != nullptr);
-    if (finished != nullptr) out.inst = *finished;
   }
 
   void comb_issue() override {
-    if (in.en && !busy) {
+    if (in.en && !busy_1) {
       ExuInst inst = in.inst;
       impl_compute(inst);
       int dyn_latency = calculate_latency(inst);
-      current_inst = inst;
-      done_cycle = sim_time + dyn_latency;
-      busy = true;
+      current_inst_1 = inst;
+      done_cycle_1 = sim_time + dyn_latency;
+      busy_1 = true;
     }
-    out.ready = !busy;
-    ExuInst *finished = peek_finished_impl();
-    out.complete = (finished != nullptr);
-    if (finished != nullptr) out.inst = *finished;
+
+    out.complete = (busy_1 && done_cycle_1 <= sim_time);
+    if (out.complete) {
+      out.inst = current_inst_1;
+    }
   }
 
   void comb_consume() override {
-    ExuInst *finished = peek_finished_impl();
-    if (in.consume && finished != nullptr) {
-      pop_finished_impl();
+    if (in.consume && busy_1 && done_cycle_1 <= sim_time) {
+      busy_1 = false;
+      done_cycle_1 = 0;
     }
-    out.ready = !busy;
-    finished = peek_finished_impl();
-    out.complete = (finished != nullptr);
-    if (finished != nullptr) out.inst = *finished;
+    out.ready = !busy_1;
   }
 
 protected:
-  // 1. 负责计算“结果值”
   virtual void impl_compute(ExuInst &inst) = 0;
-
-  // 2. 负责计算“执行延迟”（仅迭代单元使用）
-  virtual int calculate_latency(const ExuInst &inst) {
-    return max_latency; // 默认返回最大延迟
-  }
+  virtual int calculate_latency(const ExuInst &inst) { return max_latency; }
 };
