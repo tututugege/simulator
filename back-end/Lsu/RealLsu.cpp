@@ -88,8 +88,8 @@ void RealLsu::comb_mmio_out() {
 }
 void RealLsu::comb_mmio_in() {
   if (in.peripheral_resp->is_mmio) {
-    if (cur.uncached_unit.valid) {
-      if (cur.uncached_unit.is_load) {
+     if (cur.uncached_unit.is_load) {
+      if (cur.uncached_unit.valid) {
         auto &entry = nxt.ldq[cur.uncached_unit.idx];
         if (entry.load_state == LoadState::WaitMmioResp) {
           entry.result = in.peripheral_resp->mmio_rdata;
@@ -102,16 +102,18 @@ void RealLsu::comb_mmio_in() {
           nxt.finish[finish_idx].is_load = true;
           nxt.finish_count++;
         }
-      } else {
-        auto &entry = nxt.stq[cur.uncached_unit.idx];
-        if (entry.store_state == StoreState::WaitMmioResp) {
-          entry.store_state = StoreState::Done; // MMIO store在收到响应后就可以认为完成了
-        }
       }
-      nxt.uncached_unit.valid = false; // MMIO load在收到响应后就可以认为完成了，可以清除uncached unit的valid信号
     }
+    else {
+      auto &entry = nxt.stq[cur.uncached_unit.idx];
+      if (entry.store_state == StoreState::WaitMmioResp) {
+        entry.store_state = StoreState::Done; // MMIO store在收到响应后就可以认为完成了
+      }
+    }
+    nxt.uncached_unit.valid = false; // MMIO load在收到响应后就可以认为完成了，可以清除uncached unit的valid信号
   }
 }
+
 void RealLsu::comb_tlb_out() {
   memset(out.lsu2mmu, 0, sizeof(*out.lsu2mmu));
 

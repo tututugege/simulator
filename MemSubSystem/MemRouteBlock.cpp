@@ -33,6 +33,7 @@ void MemRouteBlock::comb_response() {
     if (replay == ReplayType::HIT) {
       if (owner == Owner::ICACHE) {
         out.icache_resp->resp_valid = true;
+        out.icache_resp->resp_miss = false;
         out.icache_resp->resp_data = in.dcache_resp->resp_ports.load_resps[LSU_LDU_COUNT - 1].data;
       } else {
         out.ptw_events->valid = true;
@@ -43,10 +44,14 @@ void MemRouteBlock::comb_response() {
         out.ptw_events->req_id = cur.issued_tags.req_id;
       }
     } else if (replay == ReplayType::CONFLICT) {
+      out.icache_resp->resp_valid = (owner == Owner::ICACHE);
+      out.icache_resp->resp_miss = (owner == Owner::ICACHE);
       out.wakeup->dtlb = (owner == Owner::PTW_DTLB);
       out.wakeup->itlb = (owner == Owner::PTW_ITLB);
       out.wakeup->walk = (owner == Owner::PTW_WALK);
     } else {
+      out.icache_resp->resp_valid = (owner == Owner::ICACHE);
+      out.icache_resp->resp_miss = (owner == Owner::ICACHE);
       if (in.dcache_resp->mshr_fill) {
         out.wakeup->dtlb = (owner == Owner::PTW_DTLB);
         out.wakeup->itlb = (owner == Owner::PTW_ITLB);

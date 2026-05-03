@@ -32,7 +32,7 @@ constexpr uint64_t div_round_u64(uint64_t numerator, uint64_t denominator) {
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-#define CONFIG_BPU
+//#define CONFIG_BPU
 #define CONFIG_TLB_MMU
 #define CONFIG_ORACLE_STEADY_FETCH_WIDTH
 
