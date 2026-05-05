@@ -11,7 +11,7 @@ struct PeripheralAxiReadIn {
   bool req_ready = false;
   bool req_accepted = false;
   bool resp_valid = false;
-  uint32_t resp_data[DCACHE_LINE_WORDS] = {};
+  uint32_t resp_data[DCACHE_WORD_NUM] = {};
   uint8_t resp_id = 0;
 };
 
@@ -36,7 +36,7 @@ struct PeripheralAxiWriteOut {
   uint8_t req_total_size = 0;
   uint8_t req_id = 0;
   uint64_t req_wstrb = 0;
-  uint32_t req_wdata[DCACHE_LINE_WORDS] = {};
+  uint32_t req_wdata[DCACHE_WORD_NUM] = {};
   bool resp_ready = false;
 };
 
@@ -60,7 +60,6 @@ struct PeripheralAxiState {
   uint8_t func3 = 0;
   uint32_t rdata = 0;
   uint8_t req_id = 0;
-  MicroOp uop = {};
 };
 
 class PeripheralAxi {

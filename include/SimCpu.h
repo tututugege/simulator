@@ -17,6 +17,8 @@ using AxiMmioImpl = mmio::MMIO_Bus_AXI4;
 class SimCpu {
   // 性能计数器
 public:
+  ICacheMemPortReq icache_req{}; // 供 FrontTop 直接驱动的 ICache 请求端口（可选，取决于 CONFIG_ICACHE_USE_AXI_MEM_PORT）
+  ICacheMemPortResp icache_resp{}; // 供 FrontTop 直接驱动的 ICache 响应端口（可选，取决于 CONFIG_ICACHE_USE
   SimCpu() : back(&this->ctx), mem_subsystem(&this->ctx) {};
   SimContext ctx;
   BackTop back;

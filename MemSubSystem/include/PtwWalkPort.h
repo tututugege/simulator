@@ -2,6 +2,23 @@
 
 #include "IO.h"
 
+struct PtwWalkPortCombIn {
+  bool req_valid = false;
+  PtwWalkReq req = {};
+  bool resp_consumed = false;
+  bool flush = false;
+};
+
+struct PtwWalkPortSeqIn {
+  bool flush = false;
+};
+
+struct PtwWalkPortCombOut {
+  bool req_ready = false;
+  bool resp_valid = false;
+  PtwWalkResp resp = {};
+};
+
 class PtwWalkPort {
 public:
   virtual ~PtwWalkPort() {}

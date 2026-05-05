@@ -1,7 +1,7 @@
-#include "AbstractLsu.h"
 #include "BackTop.h"
 #include "Csr.h"
 #include "PhysMemory.h"
+#include "RealLsu.h"
 #include "SimCpu.h"
 #include "config.h"
 #include "diff.h"
@@ -129,7 +129,7 @@ void print_soc_config_banner() {
   constexpr uint64_t icache_capacity_bytes =
       static_cast<uint64_t>(ICACHE_SET_NUM) * ICACHE_WAY_NUM * ICACHE_LINE_SIZE;
   constexpr uint64_t dcache_capacity_bytes =
-      static_cast<uint64_t>(DCACHE_SETS) * DCACHE_WAYS * DCACHE_LINE_BYTES;
+      static_cast<uint64_t>(DCACHE_SETS_NUM) * DCACHE_WAYS_NUM * DCACHE_LINE_SIZE;
   constexpr uint64_t llc_capacity_bytes = CONFIG_AXI_LLC_SIZE_BYTES;
   const char *schedule_policy =
       ISSUE_SCHEDULE_POLICY == IssueSchedulePolicy::IQ_SLOT_PRIORITY
@@ -146,8 +146,8 @@ void print_soc_config_banner() {
       "L1D=%lluKB(%d sets x %d ways x %dB)\n",
       static_cast<unsigned long long>(icache_capacity_bytes / 1024),
       ICACHE_SET_NUM, ICACHE_WAY_NUM, ICACHE_LINE_SIZE,
-      static_cast<unsigned long long>(dcache_capacity_bytes / 1024), DCACHE_SETS,
-      DCACHE_WAYS, DCACHE_LINE_BYTES);
+      static_cast<unsigned long long>(dcache_capacity_bytes / 1024), DCACHE_SETS_NUM,
+      DCACHE_WAYS_NUM, DCACHE_LINE_SIZE);
   std::printf(
       "[CFG][MEM] hierarchy=L1I/L1D + AXI%s%s LLC=%lluMB(%u ways,mshr=%u,lookup=%ucy)\n",
       (CONFIG_ICACHE_USE_AXI_MEM_PORT ? "-icache" : ""),
@@ -183,6 +183,14 @@ void print_soc_config_banner() {
         iq_name, iq.size, iq.dispatch_width, iq.port_start_idx,
         iq.port_start_idx + iq.port_num - 1, iq.port_num);
   }
+  #ifdef LSU_STLF
+  std::printf("[LSU STLF ON]");
+  #else
+  std::printf("[LSU STLF OFF]");
+  #endif
+  std::printf("[LSU LOAD/STORE WINDOWS] load_windows=%d lsu_ldu_count=%d LDQ_SIZE=%d store_windows=%d lsu_sta_count=%d STQ_SIZE=%d\n",
+               LOAD_WINDOWS_WIDTH,LSU_LDU_COUNT,LDQ_SIZE,STORE_WINDOWS_WIDTH,LSU_STA_COUNT,STQ_SIZE);
+
 }
 
 void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
@@ -193,7 +201,7 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
   cpu.mem_subsystem.mshr_axi_in.req_accepted_id = rport.req.accepted_id;
   cpu.mem_subsystem.mshr_axi_in.resp_valid = rport.resp.valid;
   cpu.mem_subsystem.mshr_axi_in.resp_id = rport.resp.id;
-  for (int i = 0; i < DCACHE_LINE_WORDS &&
+  for (int i = 0; i < DCACHE_WORD_NUM &&
                   i < axi_interconnect::MAX_READ_TRANSACTION_WORDS;
        i++) {
     cpu.mem_subsystem.mshr_axi_in.resp_data[i] = rport.resp.data[i];
@@ -211,7 +219,7 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
       peri_rport.req.accepted;
   cpu.mem_subsystem.peripheral_axi_read_in.resp_valid = peri_rport.resp.valid;
   cpu.mem_subsystem.peripheral_axi_read_in.resp_id = peri_rport.resp.id;
-  for (int i = 0; i < DCACHE_LINE_WORDS &&
+  for (int i = 0; i < DCACHE_WORD_NUM &&
                   i < axi_interconnect::MAX_READ_TRANSACTION_WORDS;
        i++) {
     cpu.mem_subsystem.peripheral_axi_read_in.resp_data[i] =
@@ -249,7 +257,7 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
     wport.req.wdata[i] = 0;
   }
   for (int i = 0;
-       i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS; i++) {
+       i < DCACHE_WORD_NUM && i < axi_interconnect::CACHELINE_WORDS; i++) {
     wport.req.wdata[i] = cpu.mem_subsystem.wb_axi_out.req_wdata[i];
   }
   wport.resp.ready = cpu.mem_subsystem.wb_axi_out.resp_ready;
@@ -277,7 +285,7 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
     peri_wport.req.wdata[i] = 0;
   }
   for (int i = 0;
-       i < DCACHE_LINE_WORDS && i < axi_interconnect::CACHELINE_WORDS; i++) {
+       i < DCACHE_WORD_NUM && i < axi_interconnect::CACHELINE_WORDS; i++) {
     peri_wport.req.wdata[i] =
         cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
   }
@@ -344,11 +352,12 @@ void SimCpu::commit_sync(InstInfo *inst) {
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
-    const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
+    const bool sc_suppressed = is_amo_sc_inst(inst->type, inst->func7) &&
+                               e.suppress_write &&
                                e.rob_idx == inst->rob_idx &&
                                e.rob_flag == inst->rob_flag;
-    if (!sc_suppressed && e.addr_valid && e.data_valid) {
-      mem_subsystem.on_commit_store(e.p_addr, e.data, e.func3);
+    if (!sc_suppressed && e.paddr_valid && e.data_valid) {
+      mem_subsystem.on_commit_store(e.paddr, e.data, e.func3);
     }
   }
 }
@@ -369,13 +378,14 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
-    const bool sc_suppressed = is_amo_sc_inst(*inst) && e.suppress_write &&
+    const bool sc_suppressed = is_amo_sc_inst(inst->type, inst->func7) &&
+                               e.suppress_write &&
                                e.rob_idx == inst->rob_idx &&
                                e.rob_flag == inst->rob_flag;
     if (sc_suppressed) {
       dut_cpu.store = false;
     } else {
-      if (!(e.addr_valid && e.data_valid)) {
+      if (!(e.paddr_valid && e.data_valid)) {
         // Store addr/data sideband can lag the ROB commit signal by a cycle on
         // some recovery paths. Let the REF execute the instruction normally and
         // skip the per-instruction sideband check instead of aborting the run.
@@ -383,7 +393,7 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
         dut_cpu.store = false;
       } else {
         dut_cpu.store = true;
-        dut_cpu.store_addr = e.p_addr;
+        dut_cpu.store_addr = e.paddr;
         if (e.func3 == 0b00)
           dut_cpu.store_data = e.data & 0xFF;
         else if (e.func3 == 0b01)
@@ -461,11 +471,14 @@ void SimCpu::init() {
   front.in.csr_status = back.csr->out.csr_status;
   front.ctx = &ctx;
 
-  back.lsu->set_ptw_walk_port(mem_subsystem.dtlb_walk_port);
-  back.lsu->set_ptw_mem_port(mem_subsystem.dtlb_ptw_port);
+  back.set_lsu_ptw_walk_port(mem_subsystem.dtlb_walk_port);
+  back.set_lsu_ptw_mem_port(mem_subsystem.dtlb_ptw_port);
 
   mem_subsystem.lsu2dcache = back.lsu_dcache_req_io;
   mem_subsystem.dcache2lsu = back.lsu_dcache_resp_io;
+
+  mem_subsystem.icache_req = &icache_req;
+  mem_subsystem.icache_resp = &icache_resp;
 
   front.icache_ptw_walk_port = mem_subsystem.itlb_walk_port;
   front.icache_ptw_mem_port = mem_subsystem.itlb_ptw_port;
@@ -738,7 +751,7 @@ void SimCpu::front_cycle() {
     front.out = oracle_pending_out;
   }
 
- #ifndef CONFIG_ORACLE_STEADY_FETCH_WIDTH
+#ifndef CONFIG_ORACLE_STEADY_FETCH_WIDTH
   bool no_taken = true;
 #endif
   for (int j = 0; j < FETCH_WIDTH; j++) {
@@ -786,16 +799,18 @@ void SimCpu::front_cycle() {
 }
 
 bool SimCpu::ready_to_exit() const {
-  if (back.lsu->has_committed_store_pending()) {
-    return false;
-  }
+  Assert(false && "SimCpu::ready_to_exit: not implemented");
+  return false;
+  // if (back.lsu->has_committed_store_pending()) {
+  //   return false;
+  // }
 
-  const auto &peri = mem_subsystem.get_peripheral_axi().cur;
-  if (peri.busy || peri.req_accepted || peri.resp_valid) {
-    return false;
-  }
+  // const auto &peri = mem_subsystem.get_peripheral_axi().cur;
+  // if (peri.busy || peri.req_accepted || peri.resp_valid) {
+  //   return false;
+  // }
 
-  return true;
+  // return true;
 }
 void SimCpu::back2front_comb() {
   front.in.FIFO_read_enable = false;

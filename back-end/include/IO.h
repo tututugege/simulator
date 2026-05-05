@@ -1041,11 +1041,13 @@ struct PtwWalkReq {
 
 struct PtwWalkResp {
   wire<1> fault;
+  wire<32> vaddr;
   wire<32> leaf_pte;
   wire<8> leaf_level; // 1: L1 leaf, 0: L0 leaf
 
   PtwWalkResp() {
     fault = {};
+    vaddr = {};
     leaf_pte = {};
     leaf_level = {};
   }
@@ -1135,59 +1137,86 @@ struct PeripheralReqIO {
   wire<1> wen;
   wire<32> mmio_addr;
   wire<32> mmio_wdata;
-  MicroOp uop;
+  wire<3> mmio_fun3;
 
   PeripheralReqIO() {
     is_mmio = {};
     wen = {};
     mmio_addr = {};
     mmio_wdata = {};
-    uop = {};
+    mmio_fun3 = {};
   }
 };
 struct PeripheralRespIO {
   wire<1> is_mmio;
   wire<1> ready;
   wire<32> mmio_rdata;
-  MicroOp uop;
 
   PeripheralRespIO() {
     is_mmio = {};
     ready = {};
     mmio_rdata = {};
-    uop = {};
   }
 };
+enum class ReplayType : wire<2> {
+  HIT = 0,
+  CONFLICT = 1,//mshr conflict, fill confilct
+  MSHR_HIT = 2,
+  MSHR_FULL = 3,
+};
 
+enum class StoreState : uint8_t {
+  Empty,
+  Allocated,
+  WaitAddr,
+  WaitData,
+  WaitTlb,
+  Ready,
+  Committed,
+  WaitDcacheResp,
+  WaitMmioResp,
+  Replaying,
+  PageFault,
+  Done
+};
 // STQ 条目结构（定义在此以供 StoreReq 使用）
 struct StqEntry {
-  bool valid = false;
-  bool addr_valid = false;
-  bool data_valid = false;
-  bool committed = false;
-  bool done = false;
-  bool is_mmio = false;
-  bool send =
-      false; // Whether the store has been sent to DCache (for replay logic)
-  uint8_t replay = 0;
-  uint32_t addr = 0;
-  uint32_t p_addr = 0;
-  uint32_t suppress_write =
-      0; // For MMIO: bits to suppress in the write (e.g., for LR/SC)
-  uint32_t data = 0;
-  uint32_t func3 = 0;
-  mask_t br_mask = {};
-  uint32_t rob_idx = 0;
-  uint32_t rob_flag = 0;
+
+  wire<1> data_valid = false;
+  wire<32> data = 0;
+  wire<3>  func3 = 0;
+
+
+
+  wire<1> vaddr_valid = false;
+  wire<32> vaddr = 0;
+
+  wire<1> paddr_valid = false;
+  wire<32> paddr = 0;
+  wire<1> page_fault = false;
+  
+  wire<1> suppress_write = 0; // For MMIO: bits to suppress in the write (e.g., for LR/SC)
+
+  wire<1> is_mmio = false;
+  wire<1> is_lrsc = false;
+  wire<1> sc_pass = false; // For SC: whether the store-conditional succeeded
+  wire<PRF_IDX_WIDTH> dest_preg = 0; // SC returns 0/1 through STA writeback
+
+  StoreState store_state = StoreState::Empty;
+
+  ReplayType replay_type = ReplayType::HIT;
+
+
+  wire<BR_MASK_WIDTH> br_mask = {};
+  wire<ROB_IDX_WIDTH> rob_idx = 0;
+  wire<1> rob_flag = 0;
+  wire<1> stq_flag = 0;
 };
 
 struct LoadReq {
   wire<1> valid;
   wire<32> addr;
-  MicroOp uop;
-  size_t req_id;
-
-  LoadReq() : valid(false), addr(0), uop(), req_id(0) {}
+  wire<32> req_id;
 };
 
 struct StoreReq {
@@ -1195,30 +1224,23 @@ struct StoreReq {
   wire<32> addr;
   wire<32> data;
   wire<8> strb;
-  StqEntry uop;
-  size_t req_id;
-
-  StoreReq() : valid(false), addr(0), data(0), strb(0xF), uop(), req_id(0) {}
+  wire<32> req_id;
 };
+
 
 // Load响应结构
 struct LoadResp {
   wire<1> valid;
   wire<32> data;
-  MicroOp uop;
-  size_t req_id;
-  wire<2> replay;
-  LoadResp() : valid(false), data(0), uop(), req_id(0), replay(0) {}
+  wire<32> req_id;
+  ReplayType replay;
 };
 
 // Store响应结构
 struct StoreResp {
   wire<1> valid;
-  wire<2> replay;
-  size_t req_id;
-  wire<1> is_cache_miss;
-
-  StoreResp() : valid(false), replay(0), req_id(0), is_cache_miss(false) {}
+  ReplayType replay;
+  wire<32>  req_id;
 };
 
 // 请求端口集合（支持4个Load + 4个Store）
@@ -1236,19 +1258,11 @@ struct DCacheReqPorts {
     }
   }
 };
-struct ReplayResp {
-  wire<2> replay;
-  size_t replay_addr;
-  wire<8> free_slots;
-
-  ReplayResp() : replay(0), replay_addr(0), free_slots(0) {}
-};
 
 // 响应端口集合
 struct DCacheRespPorts {
   LoadResp load_resps[LSU_LDU_COUNT];
   StoreResp store_resps[LSU_STA_COUNT];
-  ReplayResp replay_resp;
 
   void clear() {
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
@@ -1256,23 +1270,44 @@ struct DCacheRespPorts {
     }
     for (int i = 0; i < LSU_STA_COUNT; i++) {
       store_resps[i].valid = false;
-      store_resps[i].replay = 0;
-      store_resps[i].is_cache_miss = false;
     }
-    replay_resp = ReplayResp();
   }
+};
+enum class MMUResultType : wire<2> {
+  MISS = 0,
+  HIT = 1,
+  PAGE_FAULT = 2,
+};
+struct MMUReq{
+  wire<1> valid;
+  wire<32> vaddr;
+};
+struct MMUResp{
+  wire<1> valid;
+  wire<32> paddr;
+  MMUResultType result;
+};
+struct MMULsuIO{
+  MMUResp ldq_resp[LSU_LDU_COUNT];
+  MMUResp stq_resp[LSU_STA_COUNT];
+};
+
+struct LsuMMUIO{
+  MMUReq ldq_req[LSU_LDU_COUNT];
+  MMUReq stq_req[LSU_STA_COUNT];
+  CsrStatusIO csr_status;
 };
 
 struct LsuDcacheIO {
   DCacheReqPorts req_ports;
+  wire<LSU_LDU_WIDTH+1> icache_req;
 
-  LsuDcacheIO() { req_ports.clear(); }
+  LsuDcacheIO() { icache_req = LSU_LDU_COUNT; }
 };
 
 struct DcacheLsuIO {
   DCacheRespPorts resp_ports;
-
-  DcacheLsuIO() { resp_ports.clear(); }
+  wire<1> mshr_fill;
 };
 
 struct LsuDisIO {

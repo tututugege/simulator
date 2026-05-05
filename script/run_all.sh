@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # ================= 配置区域 =================
-SIMULATOR="./build/simulator"
-CKPT_ROOT="/share/personal/S/houruyao/simpoint/rv32imab_ckpt_1gb_ram"
-RESULT_DIR="./results_restore"
-CKPT_WARMUP="10000000"
-CKPT_MAX_COMMIT="10000000"
-CORE_START=0
+SIMULATOR="${SIMULATOR:-./build/simulator}"
+CKPT_ROOT="${CKPT_ROOT:-/share/personal/S/houruyao/simpoint/rv32imab_ckpt_1gb_ram/456.hmmer_ref/}"
+RESULT_DIR="${RESULT_DIR:-./results_restore_456}"
+CKPT_WARMUP="${CKPT_WARMUP-10000000}"
+CKPT_MAX_COMMIT="${CKPT_MAX_COMMIT-10000000}"
+CORE_START="${CORE_START:-0}"
 
-MAX_JOBS=64
+MAX_JOBS="${MAX_JOBS:-64}"
 
 # 捕获 Ctrl+C (SIGINT)，优雅退出
 trap 'echo -e "\n🛑 接收到退出信号，正在清理所有后台模拟器..."; kill 0; exit 1' SIGINT
@@ -75,7 +75,7 @@ rm "$PRINT_FIFO"
 PRINTER_PID=$!
 
 # ================= 核心重构：静态取模分配 =================
-echo "Launching $MAX_JOBS dedicated workers pinned to cores 0-$((MAX_JOBS - 1))..."
+echo "Launching $MAX_JOBS dedicated workers pinned to cores ${CORE_START}-$((CORE_START + MAX_JOBS - 1))..."
 
 WORKER_PIDS=()
 

@@ -40,7 +40,7 @@ struct DebugPtwWalkRespEvent {
   uint32_t pte = 0;
   uint8_t word_off = 0;
   bool backing_valid = false;
-  std::array<uint32_t, DCACHE_LINE_WORDS> backing_words = {};
+  std::array<uint32_t, DCACHE_WORD_NUM> backing_words = {};
 };
 
 namespace debug_ptw_trace {
@@ -73,14 +73,14 @@ inline void record_ptw_walk_resp_detail(const uint32_t *memory, uint32_t req_add
   auto &slot = g_ptw_walk_events[g_ptw_walk_next];
   slot.cycle = sim_time;
   slot.req_addr = req_addr;
-  slot.line_addr = req_addr & ~(DCACHE_LINE_BYTES - 1u);
+  slot.line_addr = req_addr & ~(DCACHE_LINE_SIZE - 1u);
   slot.pte = pte;
   slot.word_off = static_cast<uint8_t>(
-      (req_addr & (DCACHE_LINE_BYTES - 1u)) >> 2);
+      (req_addr & (DCACHE_LINE_SIZE - 1u)) >> 2);
   slot.backing_valid = (memory != nullptr);
   slot.backing_words.fill(0);
   if (memory != nullptr) {
-    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+    for (int w = 0; w < DCACHE_WORD_NUM; w++) {
       const uint32_t paddr = slot.line_addr + static_cast<uint32_t>(w * 4);
       slot.backing_words[static_cast<size_t>(w)] = pmem_read(paddr);
     }
@@ -157,7 +157,7 @@ inline void dump_recent_ptw_walk_resps(
     }
     std::printf("[DEADLOCK][PTW_TRACE][WALK][BACKING] line=0x%08x words=[",
                 e.line_addr);
-    for (int w = 0; w < DCACHE_LINE_WORDS; w++) {
+    for (int w = 0; w < DCACHE_WORD_NUM; w++) {
       std::printf("%s%08x", (w == 0) ? "" : " ",
                   e.backing_words[static_cast<size_t>(w)]);
     }

@@ -5,22 +5,22 @@
 #include "MemPtwBlock.h"
 #include "PeripheralAxi.h"
 #include "PeripheralModel.h"
-#include "MemReadArbBlock.h"
-#include "MemRespRouteBlock.h"
+#include "MemRouteBlock.h"
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
 #include "RealDcache.h"
-using MemDcacheImpl = RealDcache;
 #include "WriteBuffer.h"
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <FrontTop.h>
+
 
 class SimContext;
 class Csr;
-class AbstractLsu;
 class MemSubsystemPtwMemPortAdapter;
 class MemSubsystemPtwWalkPortAdapter;
+class RealLsu;
 struct AxiKitRuntime;
 namespace axi_interconnect {
 struct ReadMasterPort_t;
@@ -39,6 +39,9 @@ public:
 
   explicit MemSubsystem(SimContext *ctx);
   ~MemSubsystem();
+
+  ICacheMemPortResp *icache_resp = nullptr;
+  ICacheMemPortReq *icache_req = nullptr;
 
   // External ports — LSU <-> DCache (RealDcache multi-port interface)
   LsuDcacheIO  *lsu2dcache  = nullptr;  // LSU → DCache requests
@@ -72,17 +75,14 @@ public:
   void dump_debug_state(FILE *out) const;
   axi_interconnect::ReadMasterPort_t *icache_read_port();
   void set_internal_axi_runtime_active(bool active);
-  void set_ptw_coherent_source(AbstractLsu *lsu) {
-    ptw_coherent_source_ = lsu;
-    ptw_block.bind_coherent_source(lsu);
-  }
+  void set_ptw_coherent_source(RealLsu *lsu) { ptw_coherent_source_ = lsu; }
   void set_llc_config(const axi_interconnect::AXI_LLCConfig &cfg);
   void llc_comb_outputs();
   const axi_interconnect::AXI_LLC_LookupIn_t &llc_lookup_in() const;
   void llc_seq(const axi_interconnect::AXI_LLC_TableOut_t &table_out,
                const axi_interconnect::AXI_LLCPerfCounters_t &perf);
 
-  MemDcacheImpl  &get_dcache()  { return dcache_; }
+  RealDcache  &get_dcache()  { return dcache_; }
   MSHR        &get_mshr()    { return mshr_; }
   WriteBuffer &get_wb()      { return wb_; }
   PeripheralAxi &get_peripheral_axi() { return peripheral_axi_; }
@@ -92,45 +92,51 @@ private:
   SimContext *ctx;
 
   // Sub-modules
-  MemDcacheImpl dcache_;
+  RealDcache  dcache_;
   MSHR          mshr_;
   WriteBuffer   wb_;
   PeripheralAxi peripheral_axi_;
   PeripheralModel peripheral_model_;
   MemPtwBlock   ptw_block;
-  MemReadArbBlock read_arb_block;
-  MemRespRouteBlock resp_route_block;
+  MemRouteBlock mem_route_block;
   LsuDcacheIO dcache_req_mux_{};
   DcacheLsuIO dcache_resp_raw_{};
+
+  MSHRDcacheIO mshr_dcache_io_{};
+  DcacheMSHRIO dcache_mshr_io_{};
+
+  WBDcacheIO wb_dcache_io_{};
+  DcacheWBIO dcache_wb_io_{};
+
+  DcacheLineReadResp dcache_line_read_resp_[LSU_LDU_COUNT + LSU_STA_COUNT]{};
+  DcacheLineReadReq dcache_line_read_req_[LSU_LDU_COUNT + LSU_STA_COUNT]{};
+  PendingWrite pending_writes_[LSU_LDU_COUNT + LSU_STA_COUNT]{};
+  LruUpdate lru_updates_[LSU_LDU_COUNT + LSU_STA_COUNT]{};
+  FILLWrite fill_writes_{};
+  FillIn fill_in_{};
+  FillOut fill_out_{};
+
+  PtwReq ptw_walk_req;
+  PtwReq ptw_dtlb_req;
+  PtwReq ptw_itlb_req;
+
+  PtwGrant ptw_grant;
+  PtwEvent ptw_events;
+
+  ReplayWakeup wakeup;
 
   std::unique_ptr<AxiKitRuntime> axi_kit_runtime;
   bool internal_axi_runtime_active_ = true;
 
-  static constexpr size_t kPtwClientCount =
-      static_cast<size_t>(PtwClient::NUM_CLIENTS);
-  static size_t ptw_client_idx(PtwClient c) { return static_cast<size_t>(c); }
-  static MemPtwBlock::Client to_block_client(PtwClient c);
-  void refresh_ptw_client_outputs();
-  bool ptw_mem_send_read_req(PtwClient client, uint32_t paddr);
-  bool ptw_mem_resp_valid(PtwClient client) const;
-  uint32_t ptw_mem_resp_data(PtwClient client) const;
-  void ptw_mem_consume_resp(PtwClient client);
-  bool ptw_walk_send_req(PtwClient client, const PtwWalkReq &req);
-  bool ptw_walk_resp_valid(PtwClient client) const;
-  PtwWalkResp ptw_walk_resp(PtwClient client) const;
-  void ptw_walk_consume_resp(PtwClient client);
-  void ptw_walk_flush(PtwClient client);
-
-  std::array<PtwMemRespIO, kPtwClientCount>  ptw_mem_resp_ios{};
-  std::array<PtwWalkRespIO, kPtwClientCount> ptw_walk_resp_ios{};
+  void sync_ptw_port_outputs();
 
   friend class MemSubsystemPtwMemPortAdapter;
   friend class MemSubsystemPtwWalkPortAdapter;
 
-  std::unique_ptr<PtwMemPort>  dtlb_ptw_port_inst;
-  std::unique_ptr<PtwMemPort>  itlb_ptw_port_inst;
-  std::unique_ptr<PtwWalkPort> dtlb_walk_port_inst;
-  std::unique_ptr<PtwWalkPort> itlb_walk_port_inst;
+  std::unique_ptr<MemSubsystemPtwMemPortAdapter>  dtlb_ptw_port_inst;
+  std::unique_ptr<MemSubsystemPtwMemPortAdapter>  itlb_ptw_port_inst;
+  std::unique_ptr<MemSubsystemPtwWalkPortAdapter> dtlb_walk_port_inst;
+  std::unique_ptr<MemSubsystemPtwWalkPortAdapter> itlb_walk_port_inst;
 
   struct LlcPerfShadow {
     uint64_t read_access = 0;
@@ -161,5 +167,5 @@ private:
   void sync_llc_perf();
   LlcPerfShadow llc_perf_shadow_{};
   bool llc_perf_shadow_valid_ = false;
-  AbstractLsu *ptw_coherent_source_ = nullptr;
+  RealLsu *ptw_coherent_source_ = nullptr;
 };

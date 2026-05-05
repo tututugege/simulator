@@ -77,6 +77,7 @@ CXXSRC := $(shell find ./back-end -name "*.cpp") \
           ./MemSubSystem/MSHR.cpp \
           ./MemSubSystem/WriteBuffer.cpp \
           ./MemSubSystem/DcacheConfig.cpp \
+          ./MemSubSystem/MemRouteBlock.cpp\
           $(shell find $(FRONT_DIR) -name "*.cpp") \
           $(shell find ./diff -name "*.cpp") \
           $(AXI_KIT_SRC) \

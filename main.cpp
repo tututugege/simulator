@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <getopt.h>
 #include <unistd.h>
+#include "RISCV.h"
 
 #ifndef MAX_COMMIT_INST
 #define MAX_COMMIT_INST 15000000000ULL
@@ -445,18 +446,18 @@ int main(int argc, char *argv[]) {
 
       cpu.cycle();
 
-      if (handle_pending_sigint()) {
+    if (handle_pending_sigint()) {
         pmem_release();
         return 130;
       }
 
-      if (cpu.ctx.perf.commit_num >= config.max_commit_inst) {
+    if (cpu.ctx.perf.commit_num >= config.max_commit_inst) {
         cpu.ctx.exit_reason = ExitReason::SIMPOINT;
         std::cout << "[sim] Reached MAX_COMMIT_INST=" << std::dec
                   << config.max_commit_inst << std::endl;
       }
 
-      if (cpu.ctx.exit_reason != ExitReason::NONE) {
+    if (cpu.ctx.exit_reason != ExitReason::NONE) {
         break;
       }
     }

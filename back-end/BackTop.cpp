@@ -18,6 +18,20 @@
 
 void init_diff_ckpt(CPU_state ckpt_state);
 
+namespace {
+MMUResultType to_lsu_mmu_result(TlbMmu::Result result) {
+  switch (result) {
+  case TlbMmu::Result::OK:
+    return MMUResultType::HIT;
+  case TlbMmu::Result::FAULT:
+    return MMUResultType::PAGE_FAULT;
+  case TlbMmu::Result::RETRY:
+  default:
+    return MMUResultType::MISS;
+  }
+}
+} // namespace
+
 void BackTop::init() {
   pre = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
@@ -29,6 +43,7 @@ void BackTop::init() {
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new RealLsu(ctx);
+  dtlb_mmu = std::make_unique<TlbMmu>(ctx, nullptr, DTLB_ENTRIES);
   
   out.fire = pre2front.fire;
 
@@ -141,12 +156,14 @@ void BackTop::init() {
   lsu->in.rob_commit = &rob_commit;
   lsu->in.peripheral_resp = &peripheral_resp_io;
   lsu->in.dcache2lsu  = &dcache2lsu_io;
+  lsu->in.mmu2lsu = &mmu2lsu_io;
 
   lsu->out.lsu2exe = &lsu2exe;
   lsu->out.lsu2dis = &lsu2dis;
   lsu->out.lsu2rob = &lsu2rob;
   lsu->out.peripheral_req = &peripheral_req_io;
   lsu->out.lsu2dcache = &lsu2dcache_io;
+  lsu->out.lsu2mmu = &lsu2mmu_io;
 
   pre->init();
   idu->init();
@@ -158,6 +175,57 @@ void BackTop::init() {
   csr->init();
   rob->init();
   lsu->init();
+  if (dtlb_mmu != nullptr) {
+    dtlb_mmu->flush();
+    dtlb_mmu->seq();
+  }
+}
+
+void BackTop::set_lsu_ptw_mem_port(PtwMemPort *port) {
+  if (dtlb_mmu != nullptr) {
+    dtlb_mmu->set_ptw_mem_port(port);
+  }
+}
+
+void BackTop::set_lsu_ptw_walk_port(PtwWalkPort *port) {
+  if (dtlb_mmu != nullptr) {
+    dtlb_mmu->set_ptw_walk_port(port);
+  }
+}
+
+void BackTop::comb_lsu_mmu() {
+  mmu2lsu_io = {};
+  if (dtlb_mmu == nullptr) {
+    return;
+  }
+
+  if (rob_bcast.fence) {
+    dtlb_mmu->flush();
+    return;
+  }
+  if (rob_bcast.flush || dec_bcast.mispred) {
+    dtlb_mmu->cancel_pending_walk();
+    return;
+  }
+
+  auto translate = [&](const MMUReq &req, MMUResp &resp, uint32_t type) {
+    if (!req.valid) {
+      return;
+    }
+    uint32_t paddr = 0;
+    const TlbMmu::Result result =
+        dtlb_mmu->translate(paddr, req.vaddr, type, &lsu2mmu_io.csr_status);
+    resp.valid = true;
+    resp.result = to_lsu_mmu_result(result);
+    resp.paddr = result == TlbMmu::Result::OK ? paddr : 0;
+  };
+
+  for (int i = 0; i < LSU_LDU_COUNT; i++) {
+    translate(lsu2mmu_io.ldq_req[i], mmu2lsu_io.ldq_resp[i], 1);
+  }
+  for (int i = 0; i < LSU_STA_COUNT; i++) {
+    translate(lsu2mmu_io.stq_req[i], mmu2lsu_io.stq_resp[i], 2);
+  }
 }
 
 void BackTop::comb_csr_status() {
@@ -222,6 +290,8 @@ void BackTop::comb() {
   peripheral_req_io = {};
   peripheral_resp_io = {};
   lsu2dcache_io = {};
+  lsu2mmu_io = {};
+  mmu2lsu_io = {};
 #endif
 
   pre->comb_begin();
@@ -243,8 +313,8 @@ void BackTop::comb() {
   prf->comb_awake();
   prf->comb_write();
   isu->comb_ready();
-  lsu->comb_cal();
-  lsu->comb_lsu2dis_info();
+  lsu->comb_lsu2dis();
+  lsu->comb_lsu2rob();
 
   idu->comb_branch();
 
@@ -252,9 +322,17 @@ void BackTop::comb() {
   rob->comb_ftq_pc_req();
   pre->comb_ftq_lookup_rob();
   rob->comb_commit();
+  lsu->comb_stq_commit();
 
   dis->comb_alloc();
-  lsu->comb_load_res();
+  lsu->comb_mmio_in();
+  lsu->comb_dcache2lsu_ldq();
+  lsu->comb_dcache2lsu_stq();
+  lsu->comb_tlb_out();
+  comb_lsu_mmu();
+  lsu->comb_tlb_in();
+  lsu->comb_stlf();
+  lsu->comb_lsu2exe();
 
   exu->comb_to_csr();
   csr->comb_csr_read();
@@ -264,12 +342,12 @@ void BackTop::comb() {
 
   exu->comb_ready();
   isu->comb_issue();
+  lsu->comb_exe2lsu();
 
   prf->comb_req_ftq();
   pre->comb_ftq_lookup_prf();
   prf->comb_read();
 
-  lsu->comb_recv();
 
   isu->comb_awake();
   isu->comb_calc_latency_next();
@@ -317,9 +395,13 @@ void BackTop::comb() {
   }
 
   dis->comb_fire();
+  lsu->comb_dis2lsu();
   rename->comb_fire();
   idu->comb_fire();
-
+  lsu->comb_lsu2dcache_ldq();
+  lsu->comb_lsu2dcache_stq();
+  lsu->comb_mmio_out();
+  lsu->comb_check();
   isu->comb_enq();
   // Rob recovery was split out of comb_fire(); keep the original priority:
   // branch rollback happens before enqueue, and global flush overrides both.
@@ -327,6 +409,7 @@ void BackTop::comb() {
   rob->comb_fire();
   rob->comb_flush();
   isu->comb_flush();
+    
   lsu->comb_flush();
   pre->comb_fire();
   prf->comb_pipeline();
@@ -347,6 +430,9 @@ void BackTop::seq() {
   prf->seq();
   rob->seq();
   csr->seq();
+  if (dtlb_mmu != nullptr) {
+    dtlb_mmu->seq();
+  }
   lsu->seq();
 }
 
@@ -468,7 +554,10 @@ void BackTop::restore_from_ref() {
   dut_cpu.store_strb = state.store_strb;
   dut_cpu.reserve_valid = state.reserve_valid;
   dut_cpu.reserve_addr = state.reserve_addr;
-  lsu->restore_reservation(state.reserve_valid, state.reserve_addr);
+  lsu->cur.lrsc_unit.reserve_valid = state.reserve_valid;
+  lsu->cur.lrsc_unit.reserve_addr = state.reserve_addr;
+  lsu->nxt.lrsc_unit.reserve_valid = state.reserve_valid;
+  lsu->nxt.lrsc_unit.reserve_addr = state.reserve_addr;
 
   // Ensure the pipeline starts with a refetch from the restored PC
   out.flush = true;
@@ -571,7 +660,10 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   dut_cpu.store_strb = state.store_strb;
   dut_cpu.reserve_valid = state.reserve_valid;
   dut_cpu.reserve_addr = state.reserve_addr;
-  lsu->restore_reservation(state.reserve_valid, state.reserve_addr);
+  lsu->cur.lrsc_unit.reserve_valid = state.reserve_valid;
+  lsu->cur.lrsc_unit.reserve_addr = state.reserve_addr;
+  lsu->nxt.lrsc_unit.reserve_valid = state.reserve_valid;
+  lsu->nxt.lrsc_unit.reserve_addr = state.reserve_addr;
 
   // 2. 恢复内存
   if (pmem_ram_ptr() == nullptr) {

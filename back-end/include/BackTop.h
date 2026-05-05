@@ -9,11 +9,16 @@
 #include "PreIduQueue.h"
 #include "Prf.h"
 #include "Ren.h"
+#include "RealLsu.h"
 #include "Rob.h"
+#include "TlbMmu.h"
 #include "config.h"
 #include <cstdint>
+#include <memory>
 
 class SimContext;
+class PtwMemPort;
+class PtwWalkPort;
 
 using Back_in = FrontPreIO;
 
@@ -42,7 +47,6 @@ class Prf;
 class Exu;
 class Rob;
 class Csr;
-class AbstractLsu;
 class AbstractMMU;
 class MemSubsystem;
 
@@ -84,6 +88,10 @@ private:
   PeripheralRespIO peripheral_resp_io;
   LsuDcacheIO lsu2dcache_io;   // LSU → DCache multi-port request bus
   DcacheLsuIO dcache2lsu_io;   // DCache → LSU multi-port response bus
+  LsuMMUIO lsu2mmu_io;         // LSU → DTLB request bus
+  MMULsuIO mmu2lsu_io;         // DTLB → LSU response bus
+  std::unique_ptr<TlbMmu> dtlb_mmu;
+  void comb_lsu_mmu();
 
   RobDisIO rob2dis;
   RobCsrIO rob2csr;
@@ -112,7 +120,7 @@ public:
   Exu *exu;
   Csr *csr;
   Rob *rob;
-  AbstractLsu *lsu;
+  RealLsu *lsu;
 
   Back_in in;
   Back_out out;
@@ -124,6 +132,8 @@ public:
   void comb_csr_status();
   void comb();
   void seq();
+  void set_lsu_ptw_mem_port(PtwMemPort *port);
+  void set_lsu_ptw_walk_port(PtwWalkPort *port);
 
   BackTop(SimContext *ctx) {
     this->ctx = ctx;
@@ -145,6 +155,7 @@ public:
     delete prf;
     delete rob;
     delete csr;
+    delete lsu;
   }
 
   uint32_t number_PC = 0;

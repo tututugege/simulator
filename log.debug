@@ -1,0 +1,138 @@
+[CONFIG][SOC] bpu=1(real-bpu) icache_axi=1 compiled_icache=shared-top-level-axi
+[CONFIG][AXI] ddr_read_latency=43cy ddr_write_resp_latency=1cy ddr_beat=32B wq=32 wag=0cy wfifo=8 wdrain=0cy whi=8 wlo=0 r2w=0cy w2r=0cy upstream_payload=64B upstream_read_resp=256B out=32 per_master=32 ddr_out=32
+[CONFIG][LLC] enable=1(enabled) capacity=8MB ways=16 mshr=8 lookup_latency=3cy dcache_read_miss=allocate
+[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi memsubsystem_internal_axi_runtime=disabled llc_summary=shared fabric uses LLC
+[TOPOLOGY] icache_runtime=shared-top-level-axi
+[CFG][WIDTH] fetch=16 decode=8 issue_ports=24 commit=8 max_dispatch(iq/ldq/stq)=8/8/8
+[CFG][CACHE] L1I=16KB(64 sets x 4 ways x 64B) L1D=64KB(256 sets x 4 ways x 64B)
+[CFG][MEM] hierarchy=L1I/L1D + AXI-icache+LLC LLC=8MB(16 ways,mshr=8,lookup=3cy)
+[CFG][BACKEND] rob=2048(rob_bank=8) prf=2048 arf=32 ftq=256 instbuf=1024 ldq=512 stq=512 schedule=IQ_SLOT_PRIORITY
+[CFG][FU] total=30 alu=8 bru=4 ldu=4 sta=4 sdu=4 wakeup_ports=16
+[CFG][IQ] IQ_INT size=1024 dispatch=8 issue_ports=[0..7] port_num=8
+[CFG][IQ] IQ_LD size=512 dispatch=8 issue_ports=[8..11] port_num=4
+[CFG][IQ] IQ_STA size=512 dispatch=8 issue_ports=[12..15] port_num=4
+[CFG][IQ] IQ_STD size=512 dispatch=8 issue_ports=[16..19] port_num=4
+[CFG][IQ] IQ_BR size=512 dispatch=8 issue_ports=[20..23] port_num=4
+[LSU STLF ON][LSU LOAD/STORE WINDOWS] load_windows=4 lsu_ldu_count=4 LDQ_SIZE=512 store_windows=512 lsu_sta_count=4 STQ_SIZE=512
+[CONFIG][AXI] ddr_read_latency=43cy ddr_write_resp_latency=1cy ddr_beat=32B wq=32 wag=0cy wfifo=8 wdrain=0cy whi=8 wlo=0 r2w=0cy w2r=0cy out=32 per_master=32 ddr_out=32 dcache_line=64B(16 words) upstream_write_payload=64B upstream_read_resp=256B
+[Mode] RUN: Loading Binary Image...
+[File] ./baremetal/linux.bin
+0
+
+OpenSBI v0.6
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV32ABIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 128 KB
+Runtime SBI Version    : 0.2
+
+MIDELEG : 0x00000222
+MEDELEG : 0x0000b109
+[    0.000000] Linux version 5.15.12-02172-g9b62b5e80305-dirty (jinpengwei@OurEdaNode) (riscv32-unknown-linux-gnu-gcc (GCC) 11.1.0, GNU ld (GNU Binutils) 2.37) #66 Fri Jul 7 16:20:14 CST 2023
+[    0.000000] OF: fdt: Ignoring memory range 0x80000000 - 0x80400000
+[    0.000000] Machine model: riscv-virtio,qemu
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: bootconsole [sbi0] enabled
+[    0.000000] Zone ranges:
+[    0.000000]   Normal   [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080400000-0x000000008fffffff]
+[    0.000000] SBI specification v0.2 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x6
+[    0.000000] SBI TIME extension detected
+[    0.000000] SBI IPI extension detected
+[    0.000000] SBI RFENCE extension detected
+[    0.000000] riscv: ISA extensions acdfimsu
+[    0.000000] riscv: ELF capabilities acdfim
+4327413
+卡死了
+[ROB DEBUG] is_empty=0, deq_ptr=159, enq_ptr=176, commit=0, single_commit=0 front_stall=0 head_line_empty=0
+Rob deq inst:
+0xc0366848: 0x0005c703 cplt_mask:0x0 expect_mask:0x1 rob_idx:1272 is_page_fault: 0 inst_idx: 31672065 type: 5
+0xc036684c: 0x00178793 cplt_mask:0x1 expect_mask:0x1 rob_idx:1273 is_page_fault: 0 inst_idx: 31672066 type: 3
+0xc0366850: 0x00158593 cplt_mask:0x1 expect_mask:0x1 rob_idx:1274 is_page_fault: 0 inst_idx: 31672067 type: 3
+0xc0366854: 0xfee78fa3 cplt_mask:0x0 expect_mask:0x6 rob_idx:1275 is_page_fault: 0 inst_idx: 31672068 type: 6
+0xc0366858: 0xc0366848 cplt_mask:0x2 expect_mask:0x2 rob_idx:1276 is_page_fault: 0 inst_idx: 31672069 type: 4
+[Bank 5] INVALID
+[Bank 6] INVALID
+[Bank 7] INVALID
+[ROB DEADLOCK] dumping LSU/MMU state
+RealLsu State:
+  LDQ: head=84 head_flag=0 count=24 wait_mmu_head=386 wait_mmu_count=0 wait_dcache_head=182 wait_dcache_count=3
+  STQ: head=480 commit=480 head_flag=1 count=12 commit_count=0 wait_mmu_head=110 wait_mmu_count=0 mmu_done_head=353 mmu_done_count=0
+  Finish: head=676 count=0
+  Uncached: valid=0 is_load=0 addr=0x10000000 idx=130
+  LRSC: reserve_valid=0 reserve_addr=0x8083bdac
+  LDQ active entries (first 8):
+    [84] state=7 rob=1272/0 vaddr=1:0xc04be72d paddr=1:0x808be72d mmio=0 page_fault=0 lrsc=0
+    [85] state=12 rob=1280/0 vaddr=1:0xc04be72e paddr=1:0x808be72e mmio=0 page_fault=0 lrsc=0
+    [86] state=6 rob=1288/0 vaddr=1:0xc04be72f paddr=1:0x808be72f mmio=0 page_fault=0 lrsc=0
+    [87] state=7 rob=1296/0 vaddr=1:0xc04be730 paddr=1:0x808be730 mmio=0 page_fault=0 lrsc=0
+    [88] state=4 rob=1304/0 vaddr=1:0xc04be731 paddr=1:0x808be731 mmio=0 page_fault=0 lrsc=0
+    [89] state=4 rob=1312/0 vaddr=1:0xc04be732 paddr=1:0x808be732 mmio=0 page_fault=0 lrsc=0
+    [90] state=4 rob=1320/0 vaddr=1:0xc04be733 paddr=1:0x808be733 mmio=0 page_fault=0 lrsc=0
+    [91] state=4 rob=1328/0 vaddr=1:0xc04be734 paddr=1:0x808be734 mmio=0 page_fault=0 lrsc=0
+  STQ active entries (first 8):
+    [480] state=3 rob=1275/0 data=0:0x00000000 vaddr=1:0xc04be72b paddr=1:0x808be72b mmio=0 page_fault=0 lrsc=0 sc_pass=0
+    [481] state=11 rob=1283/0 data=1:0x0000002d vaddr=1:0xc04be72c paddr=1:0x808be72c mmio=0 page_fault=0 lrsc=0 sc_pass=0
+    [482] state=3 rob=1291/0 data=0:0x00000000 vaddr=1:0xc04be72d paddr=1:0x808be72d mmio=0 page_fault=0 lrsc=0 sc_pass=0
+    [483] state=3 rob=1299/0 data=0:0x00000000 vaddr=1:0xc04be72e paddr=1:0x808be72e mmio=0 page_fault=0 lrsc=0 sc_pass=0
+    [484] state=3 rob=1307/0 data=0:0x00000000 vaddr=1:0xc04be72f paddr=1:0x808be72f mmio=0 page_fault=0 lrsc=0 sc_pass=0
+    [485] state=3 rob=1315/0 data=0:0x00000000 vaddr=1:0xc04be730 paddr=1:0x808be730 mmio=0 page_fault=0 lrsc=0 sc_pass=0
+    [486] state=3 rob=1323/0 data=0:0x00000000 vaddr=1:0xc04be731 paddr=1:0x808be731 mmio=0 page_fault=0 lrsc=0 sc_pass=0
+    [487] state=3 rob=1331/0 data=0:0x00000000 vaddr=1:0xc04be732 paddr=1:0x808be732 mmio=0 page_fault=0 lrsc=0 sc_pass=0
+[ROB DEADLOCK] dumping MemSubsystem state
+[MEM DEBUG][PTW] walk_active=0 state=0 owner=0 req_id_valid=0 req_id=0 dtlb(req_p=0 req_i=0 resp=0 mem_p=0 mem_i=0) itlb(req_p=0 req_i=0 resp=0 mem_p=0 mem_i=0)
+MemRouteBlock State:
+  Issued Tag - Owner: 0, Addr: 0x00000000, ID: 2147484042
+  PTW Wait - DTLB: 0, ITLB: 0, WALK: 0
+  LSU Replay - Valid: 0, Req ID: 295749185
+MSHR State:
+  MSHR Count: 0
+  AXI Resp Hold Valid: 0, ID: 0
+  Entry 0: Valid: 0, Issued: 0, Addr: 0x8083c480
+  Entry 1: Valid: 0, Issued: 0, Addr: 0x80803580
+  Entry 2: Valid: 0, Issued: 0, Addr: 0x808b4500
+  Entry 3: Valid: 0, Issued: 0, Addr: 0x807c0440
+  Entry 4: Valid: 0, Issued: 0, Addr: 0x00000000
+  Entry 5: Valid: 0, Issued: 0, Addr: 0x00000000
+  Entry 6: Valid: 0, Issued: 0, Addr: 0x00000000
+  Entry 7: Valid: 0, Issued: 0, Addr: 0x00000000
+WriteBuffer State:
+  Count: 0
+  Head: 6
+  Send: 0
+  Entry 0: Addr: 0x8fffe700, Data: 0x00000000 0xcfbfe704 0xcfbfe704 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001 0x00000000 0xcfbfe724 0xcfbfe724 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001
+  Entry 1: Addr: 0x8fdffd80, Data: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  Entry 2: Addr: 0x8fff8940, Data: 0x00000000 0xcfbf8944 0xcfbf8944 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001 0x00000000 0xcfbf8964 0xcfbf8964 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001
+  Entry 3: Addr: 0x8fe03ec0, Data: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  Entry 4: Addr: 0x8fe03dc0, Data: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  Entry 5: Addr: 0x8fff8480, Data: 0x00000000 0xcfbf8484 0xcfbf8484 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001 0x00000000 0xcfbf84a4 0xcfbf84a4 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001
+  Entry 6: Addr: 0x8fffc440, Data: 0x00000000 0xcfbfc444 0xcfbfc444 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001 0x00000000 0xcfbfc464 0xcfbfc464 0x00000000 0x00000000 0x00000000 0xffffffff 0x00000001
+  Entry 7: Addr: 0x8001fec0, Data: 0xc04aaedc 0x0000000a 0xc04bbf1e 0x00000000 0xc04ab02c 0x0000002e 0x00000000 0xc04b4000 0xc04b4000 0xffffffff 0x00000000 0x00000001 0xc04bbeff 0xc0004f5c 0x00000900 0x00000000
+RealDcache State:
+  Stage1 Load Slots:
+    Slot 0: Valid: 0, Addr: 0x808be72a, Req ID: 298755934
+    Slot 1: Valid: 0, Addr: 0x808be72d, Req ID: 298758499
+    Slot 2: Valid: 1, Addr: 0x808be72d, Req ID: 324360375
+    Slot 3: Valid: 0, Addr: 0x80833dbc, Req ID: 298749778
+  Stage1 Store Slots:
+    Slot 0: Valid: 0, Addr: 0x808be72a, Data: 0x00700000, Strb: 0x04, Req ID: 479
+    Slot 1: Valid: 0, Addr: 0x808be729, Data: 0x00006300, Strb: 0x02, Req ID: 478
+    Slot 2: Valid: 0, Addr: 0x808be732, Data: 0x006f0000, Strb: 0x04, Req ID: 470
+    Slot 3: Valid: 0, Addr: 0x80833d4c, Data: 0xc036c6b4, Strb: 0x0f, Req ID: 446
+  Stage1 Fill Write: Valid: 0, SetIdx: 0, Tag: 0x00000000, WayIdx: 0, Data: [0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000]
+make: *** [Makefile:133: linux] Error 1

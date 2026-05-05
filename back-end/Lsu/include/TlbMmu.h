@@ -1,17 +1,25 @@
 #pragma once
 
-#include "AbstractMmu.h"
+#include "IO.h"
 #include "PtwWalker.h"
 #include "PtwWalkPort.h"
+#include "config.h"
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <vector>
 
 class SimContext;
 class PtwMemPort;
 
-class TlbMmu : public AbstractMmu {
+class TlbMmu {
 public:
+  enum class Result : uint8_t {
+    OK,
+    FAULT,
+    RETRY,
+  };
+
   enum class RetryReason : uint8_t {
     NONE = 0,
     OTHER_WALK_ACTIVE = 1,
@@ -24,13 +32,13 @@ public:
          int tlb_entries = DTLB_ENTRIES);
 
   Result translate(uint32_t &p_addr, uint32_t v_addr, uint32_t type,
-                   CsrStatusIO *status) override;
-  void flush() override;
-  void seq() override;
-  void cancel_pending_walk() override;
-  void dump_debug(FILE *out) const override;
-  void set_ptw_mem_port(PtwMemPort *port) override;
-  void set_ptw_walk_port(PtwWalkPort *port) override;
+                   CsrStatusIO *status);
+  void flush();
+  void seq();
+  void cancel_pending_walk();
+  void dump_debug(FILE *out) const;
+  void set_ptw_mem_port(PtwMemPort *port);
+  void set_ptw_walk_port(PtwWalkPort *port);
   RetryReason last_retry_reason() const { return last_retry_reason_; }
   struct DebugState {
     bool walk_active = false;

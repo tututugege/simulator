@@ -1,204 +1,235 @@
 #pragma once
 
-#include "AbstractLsu.h"
-#include "SimpleMmu.h"
+#include "IO.h"
+#include "TlbMmu.h"
 #include "config.h"
+#include <cstdio>
+#include "MemUtils.h"
 #include <cstdint>
 #include <memory>
 
+constexpr int LDQ_STQ_IDX_WIDTH  = clog2(LDQ_SIZE+STQ_SIZE);
+constexpr int MAX_IDX_WIDTH = clog2(std::max(LDQ_SIZE, STQ_SIZE));
 class Csr;
 class PtwMemPort;
 class PtwWalkPort;
+class SimContext;
 
-class RealLsu : public AbstractLsu {
-private:
-#ifndef CONFIG_REAL_LSU_RANDOM_TEST
-#define CONFIG_REAL_LSU_RANDOM_TEST 0
-#endif
-  static constexpr int FINISHED_LOADS_QUEUE_SIZE = ROB_NUM;
-  static constexpr int FINISHED_STA_QUEUE_SIZE = ROB_NUM;
-  static constexpr int PENDING_STA_ADDR_QUEUE_SIZE = STQ_SIZE;
-  static constexpr int LOAD_STATE_COUNT = 5;
-  static constexpr int LOAD_RESP_WAIT_CYCLES_LIMIT = 150;
-  static constexpr int STQ_COUNT_WIDTH = bit_width_for_count(STQ_SIZE + 1);
-  static constexpr int LDQ_COUNT_WIDTH = bit_width_for_count(LDQ_SIZE + 1);
-  static constexpr int FINISHED_LOADS_QUEUE_IDX_WIDTH =
-      bit_width_for_count(FINISHED_LOADS_QUEUE_SIZE);
-  static constexpr int FINISHED_LOADS_QUEUE_COUNT_WIDTH =
-      bit_width_for_count(FINISHED_LOADS_QUEUE_SIZE + 1);
-  static constexpr int FINISHED_STA_QUEUE_IDX_WIDTH =
-      bit_width_for_count(FINISHED_STA_QUEUE_SIZE);
-  static constexpr int FINISHED_STA_QUEUE_COUNT_WIDTH =
-      bit_width_for_count(FINISHED_STA_QUEUE_SIZE + 1);
-  static constexpr int PENDING_STA_ADDR_QUEUE_IDX_WIDTH =
-      bit_width_for_count(PENDING_STA_ADDR_QUEUE_SIZE);
-  static constexpr int PENDING_STA_ADDR_QUEUE_COUNT_WIDTH =
-      bit_width_for_count(PENDING_STA_ADDR_QUEUE_SIZE + 1);
-  static constexpr int LOAD_REPLAY_PRIORITY_WIDTH = bit_width_for_count(6);
-  static constexpr int LOAD_RESP_WAIT_CYCLES_WIDTH =
-      bit_width_for_count(LOAD_RESP_WAIT_CYCLES_LIMIT + 1);
+typedef struct {
+  RobCommitIO *rob_commit;
+  RobBroadcastIO *rob_bcast;
+  DecBroadcastIO *dec_bcast;
+  CsrStatusIO *csr_status;
+  DisLsuIO *dis2lsu;
+  ExeLsuIO *exe2lsu;
+  PeripheralRespIO *peripheral_resp;
+  DcacheLsuIO *dcache2lsu;
+  MMULsuIO *mmu2lsu;
+} LsuIn;
 
-  enum class LoadState : uint8_t {
-    WaitExec = 0,
-    WaitSend = 1,
-    WaitResp = 2,
-    WaitRetry = 3,
-    Ready = 4,
-  };
+typedef struct {
+  LsuDisIO *lsu2dis;
+  LsuRobIO *lsu2rob;
+  LsuExeIO *lsu2exe;
+  PeripheralReqIO *peripheral_req;
+  LsuDcacheIO *lsu2dcache;
+  LsuMMUIO *lsu2mmu;
+} LsuOut;
+enum class LoadState : uint8_t {
+  Empty,
+  Allocated,
+  WaitAddr,
+  WaitTlb,
+  CheckStlf,
+  WaitOlderStore,
+  ReadyToIssue,
+  WaitDcacheResp,
+  WaitMmioResp,
+  ReadyToWb,
+  Replaying,
+  PageFault,
+  Done
+};
 
-  struct LdqEntry {
-    reg<1> valid;
-    reg<1> killed;
-    reg<1> sent;
-    reg<1> waiting_resp;
-    LoadState load_state;
-    reg<1> ready_delay;
-    reg<LOAD_RESP_WAIT_CYCLES_WIDTH> resp_wait_cycles;
-    reg<1> tlb_retry;
-    reg<1> is_mmio_wait;
-    reg<LOAD_REPLAY_PRIORITY_WIDTH> replay_priority;
-    MicroOp uop;
-  };
+struct LoadTag {
+  reg<LDQ_IDX_WIDTH> idx = 0;
+  reg<1> flag = false;
+};
 
-  enum class StoreForwardState : uint8_t {
-    NoHit = 0,
-    Hit = 1,
-    Retry = 2,
-  };
+struct LdqEntry {
 
-  struct StoreForwardResult {
-    StoreForwardState state = StoreForwardState::NoHit;
-    uint32_t data = 0;
-  };
+  LoadState load_state;
+  
+  wire<1> v_addr_valid;
+  wire<32> v_addr;
 
-  struct StoreTag {
-    reg<STQ_IDX_WIDTH> idx = 0;
-    reg<1> flag = false;
-  };
+  wire<1> p_addr_valid;
+  wire<32> p_addr;
 
-  struct StoreNode {
-    StoreTag tag;
-    StqEntry entry;
-  };
+  ReplayType replay_type;
 
-  struct LsuState {
-    StoreTag empty_stq_tag{};
+  wire<3> func3;
+  
+  wire<32> result;
+  wire<PRF_IDX_WIDTH> dest_preg;
+  wire<4> byte_mask;
 
-    StoreNode committed_stq[STQ_SIZE];
-    reg<STQ_IDX_WIDTH> committed_stq_head = 0;
-    reg<STQ_COUNT_WIDTH> committed_stq_count = 0;
-    StoreNode speculative_stq[STQ_SIZE];
-    reg<STQ_IDX_WIDTH> speculative_stq_head = 0;
-    reg<STQ_COUNT_WIDTH> speculative_stq_count = 0;
+  wire<ROB_IDX_WIDTH> rob_idx;
+  wire<1> rob_flag;
+  wire<BR_MASK_WIDTH> br_mask;
+  
+  wire<1> is_mmio;
+  wire<32> diag_val; // 用于记录发生异常时的相关信息（如访问的虚拟地址），供后续异常处理使用
+  wire<1> page_fault;
+  wire<1> is_lrsc;
 
-    LdqEntry ldq[LDQ_SIZE];
-    reg<1> reserve_valid = false;
-    reg<32> reserve_addr = 0;
+  StoreTag stq_snapshot;
 
-    reg<1> replay_type = false;
+  #if !BSD_CONFIG
+  wire<1> cache_miss; // 仅用于性能统计，非必需
+  #endif
+};
 
-    MicroOp finished_loads[FINISHED_LOADS_QUEUE_SIZE];
-    reg<FINISHED_LOADS_QUEUE_IDX_WIDTH> finished_loads_head = 0;
-    reg<FINISHED_LOADS_QUEUE_COUNT_WIDTH> finished_loads_count = 0;
-    MicroOp finished_sta_reqs[FINISHED_STA_QUEUE_SIZE];
-    reg<FINISHED_STA_QUEUE_IDX_WIDTH> finished_sta_reqs_head = 0;
-    reg<FINISHED_STA_QUEUE_COUNT_WIDTH> finished_sta_reqs_count = 0;
-    MicroOp pending_sta_addr_reqs[PENDING_STA_ADDR_QUEUE_SIZE];
-    reg<PENDING_STA_ADDR_QUEUE_IDX_WIDTH> pending_sta_addr_reqs_head = 0;
-    reg<PENDING_STA_ADDR_QUEUE_COUNT_WIDTH> pending_sta_addr_reqs_count = 0;
-    reg<1> pending_mmio_valid = false;
-    PeripheralReqIO pending_mmio_req{};
-  };
+struct UncachedUnit {
+  wire<1> valid;
 
-  std::unique_ptr<AbstractMmu> mmu;
-  LsuState cur;
-  LsuState nxt;
+  wire<1> is_load;
 
+  wire<32> addr;
+  wire<32> wdata;
+  wire<32> func3;
+
+  wire<MAX_IDX_WIDTH> idx;
+};
+struct FenceUnit {
+  wire<1> valid;
+
+  wire<1> fence;
+  wire<1> fence_i;
+  wire<1> sfence_vma;
+
+  wire<ROB_IDX_WIDTH> rob_idx;
+  wire<1> rob_flag;
+};
+struct LrScUnit {
+  wire<1> reserve_valid;
+  wire<32> reserve_addr;
+  wire<ROB_IDX_WIDTH> reserve_rob_idx;
+  wire<1> reserve_rob_flag;
+  wire<BR_MASK_WIDTH> reserve_br_mask;
+};
+struct WaitMmuSTQEntry{
+  wire<1> valid;
+  wire<STQ_IDX_WIDTH> stq_idx;
+};
+struct WaitMmuLDQEntry{
+  wire<1> valid;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
+};
+struct WaitDcacheLDQEntry{
+  wire<1> valid;
+  wire<31-LDQ_IDX_WIDTH> req_gen;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
+};
+struct MMUDoneEntry{
+  wire<1> valid;
+  wire<STQ_IDX_WIDTH> stq_idx;
+};
+struct FinishEntry{
+  wire<1> valid;
+  wire<MAX_IDX_WIDTH> idx;
+  wire<1> is_load;
+};
+
+struct LsuState{
+  LdqEntry ldq[LDQ_SIZE];
+  wire<LDQ_IDX_WIDTH> ldq_head;
+  wire<1> ldq_head_flag;
+  wire<LDQ_IDX_WIDTH+1> ldq_count; // 包括分配但未提交的条目
+
+  StqEntry stq[STQ_SIZE];
+  wire<STQ_IDX_WIDTH> stq_head;
+  wire<STQ_IDX_WIDTH> stq_commit;
+  wire<1> stq_head_flag;
+  wire<STQ_IDX_WIDTH+1> stq_commit_count; // 已提交但尚未排空的store条目数量
+  wire<STQ_IDX_WIDTH+1> stq_count; // 包括分配但未提交的条目
+
+  WaitMmuSTQEntry wait_mmu_stq[STQ_SIZE]; 
+  wire<STQ_IDX_WIDTH> wait_mmu_stq_head;
+  wire<STQ_IDX_WIDTH+1> wait_mmu_stq_count;
+
+  WaitMmuLDQEntry wait_mmu_ldq[LDQ_SIZE];
+  wire<LDQ_IDX_WIDTH> wait_mmu_ldq_head;
+  wire<LDQ_IDX_WIDTH+1> wait_mmu_ldq_count;
+
+  MMUDoneEntry mmu_done_stq[STQ_SIZE];
+  wire<STQ_IDX_WIDTH> mmu_done_stq_head;
+  wire<STQ_IDX_WIDTH+1> mmu_done_stq_count;
+
+  FinishEntry finish[LDQ_SIZE+STQ_SIZE];
+  wire<LDQ_STQ_IDX_WIDTH> finish_head;
+  wire<LDQ_STQ_IDX_WIDTH+1> finish_count;
+
+
+  WaitDcacheLDQEntry wait_dcache_ldq[LDQ_SIZE];
+  wire<LDQ_IDX_WIDTH> wait_dcache_ldq_head;
+  wire<LDQ_IDX_WIDTH+1> wait_dcache_ldq_count;
+
+  // WaitDcacheReplayEntry wait_dcache_replay[LDQ_SIZE];
+  // wire<LDQ_IDX_WIDTH> wait_dcache_replay_head;
+  // wire<LDQ_IDX_WIDTH+1> wait_dcache_replay_count;
+
+  UncachedUnit uncached_unit;
+  LrScUnit lrsc_unit;
+
+  wire<31-LDQ_IDX_WIDTH> req_gen; // 用于区分不同轮次的重放，防止过期重放条目被误用
+};
+
+enum class STLFResult : wire<2> {
+  Disjoint = 0,
+  Overlap = 1,
+  Retry = 2,
+};
+class RealLsu {
 public:
   RealLsu(SimContext *ctx);
 
-  void init() override;
-  void comb_cal() override;
-  void comb_lsu2dis_info() override;
-  void comb_recv() override;
-  void comb_load_res() override;
-  void comb_flush() override;
-  void seq() override;
+  LsuState cur;
+  LsuState nxt;
 
-  StqEntry get_stq_entry(int stq_idx, bool stq_flag) override;
+  LsuIn in{};
+  LsuOut out{};
+  SimContext *ctx = nullptr;
 
-  void set_ptw_mem_port(PtwMemPort *port)override {
-    mmu->set_ptw_mem_port(port);
-  }
-  void set_ptw_walk_port(PtwWalkPort *port) override {
-    mmu->set_ptw_walk_port(port);
-  }
+  void init();
+  void comb_cal();
+  void comb_lsu2dis();
+  void comb_lsu2rob();
+  void comb_mmio_out();
+  void comb_mmio_in();
+  void comb_tlb_out();
+  void comb_tlb_in();
+  void comb_exe2lsu();
+  void comb_dis2lsu();
+  void comb_lsu2dcache_ldq();
+  void comb_dcache2lsu_ldq();
+  void comb_lsu2dcache_stq();
+  void comb_dcache2lsu_stq();
+  void comb_lsureplay();
+  void comb_lsu2exe();
+  void comb_stq_commit();
+  void comb_flush();
+  void comb_stlf();
+  void comb_check();
+  void seq();
 
-  uint32_t coherent_read(uint32_t p_addr) override;
-  void overlay_committed_store_word(uint32_t p_addr,
-                                    uint32_t &data) override;
-  bool has_translation_store_conflict(uint32_t p_addr) const override;
-  bool has_committed_store_pending() const override;
+  void handle_store_addr(const MicroOp &inst);
+  void handle_store_data(const MicroOp &inst);
+  void handle_load_req(const MicroOp &inst);
 
-private:
+  bool alloc_stq_entry(mask_t br_mask,uint32_t rob_idx, uint32_t rob_flag,uint32_t func3, bool slot_flag);
+  bool alloc_ldq_entry( mask_t br_mask,uint32_t rob_idx, uint32_t rob_flag,uint32_t ldq_idx);
 
-  void handle_load_req(const MicroOp &uop);
-  void handle_store_addr(const MicroOp &uop);
-  void handle_store_data(const MicroOp &uop);
-  StoreTag make_store_tag(int idx, bool flag) const;
-  StoreTag next_store_tag(const StoreTag &tag) const;
-  StoreTag current_stq_head_tag(const LsuState &state) const;
-  StoreTag current_stq_tail_tag(const LsuState &state) const;
-  int total_stq_count(const LsuState &state) const;
-  int encode_store_req_id(const StoreTag &tag) const;
-  StoreTag decode_store_req_id(int req_id) const;
-  StoreNode &committed_stq_at(LsuState &state, int offset);
-  const StoreNode &committed_stq_at(const LsuState &state, int offset) const;
-  StoreNode &speculative_stq_at(LsuState &state, int offset);
-  const StoreNode &speculative_stq_at(const LsuState &state, int offset) const;
-  StoreNode *find_store_node(LsuState &state, const StoreTag &tag);
-  const StoreNode *find_store_node(const LsuState &state,
-                                   const StoreTag &tag) const;
-  StqEntry *find_store_entry(LsuState &state, const StoreTag &tag);
-  const StqEntry *find_store_entry(const LsuState &state,
-                                   const StoreTag &tag) const;
-  bool is_store_older(int s_idx, int s_flag, int l_idx, int l_flag) const;
-  void clear_store_node(StoreNode &node);
-  void committed_stq_push(LsuState &state, const StoreNode &node);
-  StoreNode &committed_stq_front(LsuState &state);
-  const StoreNode &committed_stq_front(const LsuState &state) const;
-  void committed_stq_pop(LsuState &state);
-  void speculative_stq_push(LsuState &state, const StoreNode &node);
-  StoreNode &speculative_stq_front(LsuState &state);
-  const StoreNode &speculative_stq_front(const LsuState &state) const;
-  void speculative_stq_pop(LsuState &state);
-  void move_speculative_front_to_committed(LsuState &state);
-  bool reserve_stq_entry(LsuState &state, mask_t br_mask, uint32_t rob_idx,
-                         uint32_t rob_flag, uint32_t func3, bool stq_flag);
-  void consume_stq_alloc_reqs(LsuState &state);
-  bool reserve_ldq_entry(LsuState &state, int idx, mask_t br_mask,
-                         uint32_t rob_idx, uint32_t rob_flag);
-  void consume_ldq_alloc_reqs(LsuState &state);
-  void free_ldq_entry(LsuState &state, int idx);
-  bool is_mmio_addr(uint32_t paddr) const;
-  void change_store_info(const StoreNode &node, int port_idx);
-  void handle_global_flush(LsuState &state);
-  void handle_mispred(LsuState &state, mask_t mask);
-  void retire_stq_head_if_ready(LsuState &state, int &pop_count);
-  void commit_stores_from_rob(LsuState &state);
-  void progress_ldq_entries(LsuState &state);
-  void progress_pending_sta_addr(LsuState &state);
-  bool finish_store_addr_once(LsuState &state, const MicroOp &inst);
-  bool committed_store_conflicts_word(const LsuState &state,
-                                      uint32_t word_addr) const;
-  void set_load_state(LdqEntry &entry, LoadState state);
-  void set_load_ready(LdqEntry &entry, uint8_t delay);
-  void begin_load_response_wait(LdqEntry &entry);
-  void sanitize_state_for_random_test(LsuState &state);
-  void prepare_runtime_state(LsuState &state);
-
-  bool has_older_store_pending(const LsuState &state,
-                               const MicroOp &load_uop) const;
-  StoreForwardResult check_store_forward(const LsuState &state, uint32_t p_addr,
-                                         const MicroOp &load_uop);
+  void dump_debug_state(FILE *out)const;
+  StqEntry get_stq_entry(int idx,bool flag);
 };

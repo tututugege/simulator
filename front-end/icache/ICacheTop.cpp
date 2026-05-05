@@ -11,7 +11,6 @@
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
 #include "RISCV.h"
-#include "SimpleMmu.h"
 #include "TlbMmu.h"
 #include "PhysMemory.h"
 #include "config.h"
@@ -185,7 +184,7 @@ struct ICacheMmuRespView {
   uint32_t ppn = 0;
   uint32_t paddr = 0;
   bool page_fault = false;
-  AbstractMmu::Result translate_result = AbstractMmu::Result::OK;
+  TlbMmu::Result translate_result = TlbMmu::Result::OK;
   TlbMmu::RetryReason retry_reason = TlbMmu::RetryReason::NONE;
 };
 
@@ -287,7 +286,7 @@ template <typename ReadPort> ReadPort &read_port_runtime() {
 }
 
 template <typename HW, typename ReadPort> struct TrueIcacheRuntime {
-  AbstractMmu *mmu_model = nullptr;
+  TlbMmu *mmu_model = nullptr;
   PtwMemPort *ptw_mem_port = nullptr;
   PtwWalkPort *ptw_walk_port = nullptr;
   axi_interconnect::ReadMasterPort_t *mem_read_port = nullptr;
@@ -300,7 +299,7 @@ TrueIcacheRuntime<HW, ReadPort> &true_icache_runtime() {
 }
 
 struct SimpleIcacheRuntime {
-  AbstractMmu *mmu_model = nullptr;
+  TlbMmu *mmu_model = nullptr;
   PtwMemPort *ptw_mem_port = nullptr;
   PtwWalkPort *ptw_walk_port = nullptr;
   axi_interconnect::ReadMasterPort_t *mem_read_port = nullptr;
@@ -323,16 +322,12 @@ void ensure_mmu_model(Runtime &runtime, SimContext *ctx) {
   if (runtime.mmu_model != nullptr || ctx == nullptr) {
     return;
   }
-#ifdef CONFIG_TLB_MMU
   runtime.mmu_model =
       new TlbMmu(ctx, runtime.ptw_mem_port ? runtime.ptw_mem_port : &ptw_port,
                  ITLB_ENTRIES);
   if (runtime.ptw_walk_port != nullptr) {
     runtime.mmu_model->set_ptw_walk_port(runtime.ptw_walk_port);
   }
-#else
-  runtime.mmu_model = new SimpleMmu(ctx, nullptr);
-#endif
 }
 
 template <typename Runtime>
@@ -380,17 +375,15 @@ ICacheMmuRespView comb_mmu_view(Runtime &runtime, SimContext *ctx,
   uint32_t p_addr = 0;
   resp.translate_result =
       runtime.mmu_model->translate(p_addr, req.vaddr, 0, req.csr_status);
-  if (resp.translate_result == AbstractMmu::Result::OK) {
+  if (resp.translate_result == TlbMmu::Result::OK) {
     resp.paddr = p_addr;
     resp.ppn_valid = true;
     resp.ppn = p_addr >> 12;
-  } else if (resp.translate_result == AbstractMmu::Result::FAULT) {
+  } else if (resp.translate_result == TlbMmu::Result::FAULT) {
     resp.ppn_valid = true;
     resp.page_fault = true;
   }
-  if (auto *tlb = dynamic_cast<TlbMmu *>(runtime.mmu_model); tlb != nullptr) {
-    resp.retry_reason = tlb->last_retry_reason();
-  }
+  resp.retry_reason = runtime.mmu_model->last_retry_reason();
   return resp;
 }
 
@@ -543,7 +536,7 @@ public:
     const bool req_valid = in->icache_read_valid;
     const uint32_t req_pc = in->fetch_address;
     bool itlb_translate_invoked = false;
-    AbstractMmu::Result itlb_translate_ret = AbstractMmu::Result::OK;
+    TlbMmu::Result itlb_translate_ret = TlbMmu::Result::OK;
 
     icache_hw.io.in.refetch = cancel_pending_req;
     icache_hw.io.in.flush = cache_invalidate;
@@ -646,9 +639,9 @@ public:
             in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0u,
             static_cast<int>(in->refetch));
       }
-      if (itlb_translate_ret == AbstractMmu::Result::OK) {
+      if (itlb_translate_ret == TlbMmu::Result::OK) {
         out->perf_itlb_hit = true;
-      } else if (itlb_translate_ret == AbstractMmu::Result::FAULT) {
+      } else if (itlb_translate_ret == TlbMmu::Result::FAULT) {
         out->perf_itlb_fault = true;
       } else {
         out->perf_itlb_miss = true;
@@ -853,16 +846,16 @@ public:
       mmu_req.vaddr = v_addr;
       mmu_req.csr_status = in->csr_status;
       ICacheMmuRespView mmu_resp = comb_mmu_view(runtime, ctx, mmu_req);
-      AbstractMmu::Result ret = mmu_resp.translate_result;
+      TlbMmu::Result ret = mmu_resp.translate_result;
       p_addr = mmu_resp.paddr;
-      for (int spin = 0; spin < 8 && ret == AbstractMmu::Result::RETRY;
+      for (int spin = 0; spin < 8 && ret == TlbMmu::Result::RETRY;
            spin++) {
         mmu_resp = comb_mmu_view(runtime, ctx, mmu_req);
         ret = mmu_resp.translate_result;
         p_addr = mmu_resp.paddr;
       }
 
-      if (ret == AbstractMmu::Result::RETRY) {
+      if (ret == TlbMmu::Result::RETRY) {
         out->perf_itlb_miss = true;
         out->perf_itlb_retry = true;
         switch (mmu_resp.retry_reason) {
@@ -894,7 +887,7 @@ public:
         break;
       }
 
-      if (ret == AbstractMmu::Result::FAULT) {
+      if (ret == TlbMmu::Result::FAULT) {
         out->perf_itlb_fault = true;
         out->page_fault_inst[i] = true;
         out->fetch_group[i] = INST_NOP;
