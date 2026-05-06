@@ -2,13 +2,13 @@
 
 # ================= 配置区域 =================
 SIMULATOR="${SIMULATOR:-./build/simulator}"
-CKPT_ROOT="${CKPT_ROOT:-/share/personal/S/houruyao/simpoint/rv32imab_ckpt_1gb_ram/456.hmmer_ref/}"
-RESULT_DIR="${RESULT_DIR:-./results_restore_456}"
+CKPT_ROOT="${CKPT_ROOT:-/home/renli/qimeng/456.hmmer_ref}"
+RESULT_DIR="${RESULT_DIR:-./results_restore_456_2dcache}"
 CKPT_WARMUP="${CKPT_WARMUP-10000000}"
 CKPT_MAX_COMMIT="${CKPT_MAX_COMMIT-10000000}"
 CORE_START="${CORE_START:-0}"
 
-MAX_JOBS="${MAX_JOBS:-64}"
+MAX_JOBS="${MAX_JOBS:-6}"
 
 # 捕获 Ctrl+C (SIGINT)，优雅退出
 trap 'echo -e "\n🛑 接收到退出信号，正在清理所有后台模拟器..."; kill 0; exit 1' SIGINT
@@ -81,7 +81,7 @@ WORKER_PIDS=()
 
 for ((worker = 0; worker < MAX_JOBS; worker++)); do
   (
-    core=$((CORE_START + worker))
+    core=$((CORE_START + worker*2))
 
     # 核心逻辑：这个 Worker 只认属于自己编号的任务
     for ((i = worker; i < TOTAL_TASKS; i += MAX_JOBS)); do

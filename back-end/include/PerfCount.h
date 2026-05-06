@@ -43,9 +43,9 @@ public:
   uint64_t l1d_miss_mshr_alloc = 0; // real misses that allocate an MSHR entry
   uint64_t l1d_req_replay = 0; // requests re-issued by replay mechanism
   uint64_t l1d_replay_squash_abort = 0; // replay request failed again
-  uint64_t l1d_replay_bank_conflict = 0;
-  uint64_t l1d_replay_bank_conflict_load = 0;
-  uint64_t l1d_replay_bank_conflict_store = 0;
+  uint64_t l1d_replay_conflict = 0;
+  uint64_t l1d_replay_conflict_load = 0;
+  uint64_t l1d_replay_conflict_store = 0;
   uint64_t l1d_replay_mshr_full = 0;
   uint64_t l1d_replay_mshr_full_load = 0;
   uint64_t l1d_replay_mshr_full_store = 0;
@@ -69,10 +69,57 @@ public:
   uint64_t ld_resp_stale_drop_count = 0;
   uint64_t ld_resp_timeout_retry_count = 0;
   uint64_t mmio_head_block_cycles = 0;
-  uint64_t ptw_port0_replay_count = 0;
+  uint64_t ptw_port_replay_count = 0;
   uint64_t stq_same_addr_block_count = 0;
   uint64_t ld_stlf_check_count = 0;
   uint64_t ld_stlf_block_unknown_store_addr_count = 0;
+  uint64_t ldq_average_count = 0;
+  uint64_t ldq_max_count = 0;
+  uint64_t stq_max_count = 0;
+  uint64_t stq_average_count = 0;
+  uint64_t stq_commit_average_count = 0;
+  uint64_t stq_commit_max_count = 0;
+  uint64_t stq_diag_window_cycles = 0;
+  uint64_t stq_diag_window_entries = 0;
+  uint64_t stq_diag_window_committed = 0;
+  uint64_t stq_diag_window_done = 0;
+  uint64_t stq_diag_window_wait_dcache = 0;
+  uint64_t stq_diag_window_wait_mmio = 0;
+  uint64_t stq_diag_window_wait_tlb = 0;
+  uint64_t stq_diag_window_wait_data = 0;
+  uint64_t stq_diag_window_page_fault = 0;
+  uint64_t stq_diag_window_other = 0;
+  uint64_t stq_diag_head_samples = 0;
+  uint64_t stq_diag_head_committed = 0;
+  uint64_t stq_diag_head_done = 0;
+  uint64_t stq_diag_head_wait_dcache = 0;
+  uint64_t stq_diag_head_wait_mmio = 0;
+  uint64_t stq_diag_head_wait_tlb = 0;
+  uint64_t stq_diag_head_wait_data = 0;
+  uint64_t stq_diag_head_page_fault = 0;
+  uint64_t stq_diag_head_other = 0;
+  uint64_t stq_diag_issue_none_cycles = 0;
+  uint64_t stq_diag_issue_total = 0;
+  uint64_t stq_diag_issue_initial = 0;
+  uint64_t stq_diag_issue_replay = 0;
+  uint64_t stq_diag_suppress_done = 0;
+  uint64_t stq_diag_retire_cycles = 0;
+  uint64_t stq_diag_retire_total = 0;
+  uint64_t stq_diag_retire_block_cycles = 0;
+  uint64_t stq_dcache_resp_hit = 0;
+  uint64_t stq_dcache_resp_replay = 0;
+  uint64_t stq_dcache_resp_replay_conflict = 0;
+  uint64_t stq_dcache_resp_replay_mshr_hit = 0;
+  uint64_t stq_dcache_resp_replay_mshr_full = 0;
+  uint64_t stq_same_addr_block_older_committed = 0;
+  uint64_t stq_same_addr_block_older_wait_dcache = 0;
+  uint64_t stq_same_addr_block_older_wait_mmio = 0;
+  uint64_t stq_same_addr_block_older_wait_tlb = 0;
+  uint64_t stq_same_addr_block_older_wait_data = 0;
+  uint64_t stq_same_addr_block_older_page_fault = 0;
+  uint64_t stq_same_addr_block_older_other = 0;
+  uint64_t stq_same_addr_block_distance_sum = 0;
+  uint64_t stq_same_addr_block_distance_max = 0;
 
   uint64_t icache_access_num = 0;
   uint64_t icache_miss_num = 0;
@@ -233,9 +280,15 @@ public:
     l1d_miss_mshr_alloc = 0;
     l1d_req_replay = 0;
     l1d_replay_squash_abort = 0;
+#if !BSD_CONFIG
+    l1d_replay_conflict = 0;
+    l1d_replay_conflict_load = 0;
+    l1d_replay_conflict_store = 0;
+#else
     l1d_replay_bank_conflict = 0;
     l1d_replay_bank_conflict_load = 0;
     l1d_replay_bank_conflict_store = 0;
+#endif
     l1d_replay_mshr_full = 0;
     l1d_replay_mshr_full_load = 0;
     l1d_replay_mshr_full_store = 0;
@@ -259,10 +312,63 @@ public:
     ld_resp_stale_drop_count = 0;
     ld_resp_timeout_retry_count = 0;
     mmio_head_block_cycles = 0;
+#if !BSD_CONFIG
+    ptw_port_replay_count = 0;
+#else
     ptw_port0_replay_count = 0;
+#endif
     stq_same_addr_block_count = 0;
     ld_stlf_check_count = 0;
     ld_stlf_block_unknown_store_addr_count = 0;
+#if !BSD_CONFIG
+    ldq_average_count = 0;
+    ldq_max_count = 0;
+    stq_average_count = 0;
+    stq_max_count = 0;
+#endif
+    stq_commit_average_count = 0;
+    stq_commit_max_count = 0;
+    stq_diag_window_cycles = 0;
+    stq_diag_window_entries = 0;
+    stq_diag_window_committed = 0;
+    stq_diag_window_done = 0;
+    stq_diag_window_wait_dcache = 0;
+    stq_diag_window_wait_mmio = 0;
+    stq_diag_window_wait_tlb = 0;
+    stq_diag_window_wait_data = 0;
+    stq_diag_window_page_fault = 0;
+    stq_diag_window_other = 0;
+    stq_diag_head_samples = 0;
+    stq_diag_head_committed = 0;
+    stq_diag_head_done = 0;
+    stq_diag_head_wait_dcache = 0;
+    stq_diag_head_wait_mmio = 0;
+    stq_diag_head_wait_tlb = 0;
+    stq_diag_head_wait_data = 0;
+    stq_diag_head_page_fault = 0;
+    stq_diag_head_other = 0;
+    stq_diag_issue_none_cycles = 0;
+    stq_diag_issue_total = 0;
+    stq_diag_issue_initial = 0;
+    stq_diag_issue_replay = 0;
+    stq_diag_suppress_done = 0;
+    stq_diag_retire_cycles = 0;
+    stq_diag_retire_total = 0;
+    stq_diag_retire_block_cycles = 0;
+    stq_dcache_resp_hit = 0;
+    stq_dcache_resp_replay = 0;
+    stq_dcache_resp_replay_conflict = 0;
+    stq_dcache_resp_replay_mshr_hit = 0;
+    stq_dcache_resp_replay_mshr_full = 0;
+    stq_same_addr_block_older_committed = 0;
+    stq_same_addr_block_older_wait_dcache = 0;
+    stq_same_addr_block_older_wait_mmio = 0;
+    stq_same_addr_block_older_wait_tlb = 0;
+    stq_same_addr_block_older_wait_data = 0;
+    stq_same_addr_block_older_page_fault = 0;
+    stq_same_addr_block_older_other = 0;
+    stq_same_addr_block_distance_sum = 0;
+    stq_same_addr_block_distance_max = 0;
     icache_access_num = 0;
     icache_miss_num = 0;
     icache_miss_penalty_total_cycles = 0;
@@ -414,6 +520,7 @@ public:
     printf("\n");
     perf_print_periodic_snapshots();
     perf_print_dcache();
+    perf_print_stq_diag();
     perf_print_icache();
     perf_print_llc();
     perf_print_ptw();
@@ -604,11 +711,11 @@ public:
             : static_cast<double>(l1d_mem_inst_total_cycles) /
                   static_cast<double>(l1d_mem_inst_samples);
     const uint64_t l1d_replay_reason_total =
-        l1d_replay_bank_conflict + l1d_replay_mshr_full + l1d_replay_wait_mshr;
-    const double l1d_replay_bank_conflict_ratio =
+        l1d_replay_conflict + l1d_replay_mshr_full + l1d_replay_wait_mshr;
+    const double l1d_replay_conflict_ratio =
         (l1d_replay_reason_total == 0)
             ? 0.0
-            : static_cast<double>(l1d_replay_bank_conflict) * 100.0 /
+            : static_cast<double>(l1d_replay_conflict) * 100.0 /
                   static_cast<double>(l1d_replay_reason_total);
     const double l1d_replay_mshr_full_ratio =
         (l1d_replay_reason_total == 0)
@@ -624,14 +731,16 @@ public:
     printf("\033[38;5;34mL1D_REQ_ALL          : %ld\033[0m\n", l1d_req_all);
     printf("\033[38;5;34mL1D_MISS_MSHR_ALLOC  : %ld\033[0m\n", l1d_miss_mshr_alloc);
     printf("\033[38;5;34mL1D_REQ_REPLAY       : %ld\033[0m\n", l1d_req_replay);
+    printf("\033[38;5;34mdcache access       : %ld\033[0m\n", dcache_access_num);
+    printf("\033[38;5;34mdcache miss         : %ld\033[0m\n", dcache_miss_num);
     printf("\033[38;5;34mL1D_REPLAY_SQUASH    : %ld\033[0m\n",
            l1d_replay_squash_abort);
-    printf("\033[38;5;34mL1D_REPLAY_BANK_CONFLICT : %ld\033[0m\n",
-           l1d_replay_bank_conflict);
+    printf("\033[38;5;34mL1D_REPLAY_CONFLICT      : %ld\033[0m\n",
+           l1d_replay_conflict);
     printf("\033[38;5;34m  - LOAD                 : %ld\033[0m\n",
-           l1d_replay_bank_conflict_load);
+           l1d_replay_conflict_load);
     printf("\033[38;5;34m  - STORE                : %ld\033[0m\n",
-           l1d_replay_bank_conflict_store);
+           l1d_replay_conflict_store);
     printf("\033[38;5;34mL1D_REPLAY_MSHR_FULL     : %ld\033[0m\n",
            l1d_replay_mshr_full);
     printf("\033[38;5;34m  - LOAD                 : %ld\033[0m\n",
@@ -652,8 +761,8 @@ public:
            l1d_replay_wait_mshr_fill_wait);
     printf("\033[38;5;34mL1D_REPLAY_REASON_TOTAL  : %ld\033[0m\n",
            l1d_replay_reason_total);
-    printf("\033[38;5;34m  - BANK_CONFLICT_RATIO  : %.2f%%\033[0m\n",
-           l1d_replay_bank_conflict_ratio);
+    printf("\033[38;5;34m  - CONFLICT_RATIO       : %.2f%%\033[0m\n",
+           l1d_replay_conflict_ratio);
     printf("\033[38;5;34m  - MSHR_FULL_RATIO      : %.2f%%\033[0m\n",
            l1d_replay_mshr_full_ratio);
     printf("\033[38;5;34m  - WAIT_MSHR_RATIO      : %.2f%%\033[0m\n",
@@ -679,8 +788,8 @@ public:
            ld_resp_timeout_retry_count);
     printf("\033[38;5;34mMMIO Head Block Cyc  : %ld\033[0m\n",
            mmio_head_block_cycles);
-    printf("\033[38;5;34mPTW Port0 Replay Cnt : %ld\033[0m\n",
-           ptw_port0_replay_count);
+    printf("\033[38;5;34mPTW Port Replay Cnt  : %ld\033[0m\n",
+           ptw_port_replay_count);
     printf("\033[38;5;34mSTQ SameAddr Block   : %ld\033[0m\n",
            stq_same_addr_block_count);
     const double ld_stlf_unknown_block_ratio =
@@ -692,6 +801,89 @@ public:
            ld_stlf_check_count);
     printf("\033[38;5;34mLD Block Unknown STA : %ld (%.4f%% of checks)\033[0m\n",
            ld_stlf_block_unknown_store_addr_count, ld_stlf_unknown_block_ratio);
+    const double avg_ldq_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(ldq_average_count) /
+                           static_cast<double>(cycle);
+    const double avg_stq_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(stq_average_count) /
+                           static_cast<double>(cycle);
+    const double stq_commit_occupancy =
+        (cycle == 0) ? 0.0
+                                : static_cast<double>(stq_commit_average_count) /
+                                      static_cast<double>(cycle);
+    printf("\033[38;5;34mLDQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           avg_ldq_occupancy, ldq_max_count);
+    printf("\033[38;5;34mSTQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           avg_stq_occupancy, stq_max_count);
+    printf("\033[38;5;34mSTQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           stq_commit_occupancy, stq_commit_max_count);
+    printf("\n");
+  }
+
+  void perf_print_stq_diag() {
+    printf("\033[38;5;34m*********STQ DIAG COUNTER**********\033[0m\n");
+    const double avg_window_entries =
+        stq_diag_window_cycles == 0
+            ? 0.0
+            : static_cast<double>(stq_diag_window_entries) /
+                  static_cast<double>(stq_diag_window_cycles);
+    const double avg_retire_per_cycle =
+        stq_diag_retire_cycles == 0
+            ? 0.0
+            : static_cast<double>(stq_diag_retire_total) /
+                  static_cast<double>(stq_diag_retire_cycles);
+    const double avg_same_addr_distance =
+        stq_same_addr_block_count == 0
+            ? 0.0
+            : static_cast<double>(stq_same_addr_block_distance_sum) /
+                  static_cast<double>(stq_same_addr_block_count);
+
+    printf("\033[38;5;34mSTQ Window Samples       : %ld\033[0m\n",
+           stq_diag_window_cycles);
+    printf("\033[38;5;34mSTQ Window Avg Entries   : %.4f\033[0m\n",
+           avg_window_entries);
+    printf("\033[38;5;34mSTQ Window State Cnts    : committed=%ld done=%ld wait_dcache=%ld wait_mmio=%ld wait_tlb=%ld wait_data=%ld page_fault=%ld other=%ld\033[0m\n",
+           stq_diag_window_committed, stq_diag_window_done,
+           stq_diag_window_wait_dcache, stq_diag_window_wait_mmio,
+           stq_diag_window_wait_tlb, stq_diag_window_wait_data,
+           stq_diag_window_page_fault, stq_diag_window_other);
+    printf("\033[38;5;34mSTQ Head Samples         : %ld\033[0m\n",
+           stq_diag_head_samples);
+    printf("\033[38;5;34mSTQ Head State Cnts      : committed=%ld done=%ld wait_dcache=%ld wait_mmio=%ld wait_tlb=%ld wait_data=%ld page_fault=%ld other=%ld\033[0m\n",
+           stq_diag_head_committed, stq_diag_head_done,
+           stq_diag_head_wait_dcache, stq_diag_head_wait_mmio,
+           stq_diag_head_wait_tlb, stq_diag_head_wait_data,
+           stq_diag_head_page_fault, stq_diag_head_other);
+    printf("\033[38;5;34mSTQ Issue None Cycles    : %ld\033[0m\n",
+           stq_diag_issue_none_cycles);
+    printf("\033[38;5;34mSTQ Issue Total/Init/Repl: %ld / %ld / %ld\033[0m\n",
+           stq_diag_issue_total, stq_diag_issue_initial,
+           stq_diag_issue_replay);
+    printf("\033[38;5;34mSTQ Suppress Done        : %ld\033[0m\n",
+           stq_diag_suppress_done);
+    printf("\033[38;5;34mSTQ Retire Cycles/Total  : %ld / %ld (avg=%.4f)\033[0m\n",
+           stq_diag_retire_cycles, stq_diag_retire_total,
+           avg_retire_per_cycle);
+    printf("\033[38;5;34mSTQ Retire Block Cycles  : %ld\033[0m\n",
+           stq_diag_retire_block_cycles);
+    printf("\033[38;5;34mSTQ DCache Resp Hit/Repl : %ld / %ld\033[0m\n",
+           stq_dcache_resp_hit, stq_dcache_resp_replay);
+    printf("\033[38;5;34m  - replay conflict/mshr_hit/mshr_full: %ld / %ld / %ld\033[0m\n",
+           stq_dcache_resp_replay_conflict,
+           stq_dcache_resp_replay_mshr_hit,
+           stq_dcache_resp_replay_mshr_full);
+    printf("\033[38;5;34mSTQ SameAddr Older State : committed=%ld wait_dcache=%ld wait_mmio=%ld wait_tlb=%ld wait_data=%ld page_fault=%ld other=%ld\033[0m\n",
+           stq_same_addr_block_older_committed,
+           stq_same_addr_block_older_wait_dcache,
+           stq_same_addr_block_older_wait_mmio,
+           stq_same_addr_block_older_wait_tlb,
+           stq_same_addr_block_older_wait_data,
+           stq_same_addr_block_older_page_fault,
+           stq_same_addr_block_older_other);
+    printf("\033[38;5;34mSTQ SameAddr Dist Avg/Max: %.4f / %ld\033[0m\n",
+           avg_same_addr_distance, stq_same_addr_block_distance_max);
     printf("\n");
   }
 

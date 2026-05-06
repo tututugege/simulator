@@ -5,6 +5,9 @@
 #include "IO.h"
 #include <cstdint>
 #include <cstdio>
+#if !BSD_CONFIG
+class SimContext;
+#endif
 constexpr uint32_t DcacheReqIdRouteBit = 1u << 31;
 constexpr uint32_t MemRouteBlockReqID = DcacheReqIdRouteBit;
 
@@ -94,7 +97,14 @@ public:
   void comb_response();
   void comb_request();
   void seq();
+#if !BSD_CONFIG
+  void bind_context(SimContext *c) { ctx = c; }
+#endif
 
   void dump_debug_state(FILE *out) const;
 
+#if !BSD_CONFIG
+private:
+  SimContext *ctx = nullptr;
+#endif
 };

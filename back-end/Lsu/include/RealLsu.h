@@ -82,6 +82,10 @@ struct LdqEntry {
   wire<32> diag_val; // 用于记录发生异常时的相关信息（如访问的虚拟地址），供后续异常处理使用
   wire<1> page_fault;
   wire<1> is_lrsc;
+#if !BSD_CONFIG
+  uint64_t perf_mem_start_cycle;
+  wire<1> perf_mem_started;
+#endif
 
   StoreTag stq_snapshot;
 
@@ -130,6 +134,9 @@ struct WaitDcacheLDQEntry{
   wire<1> valid;
   wire<31-LDQ_IDX_WIDTH> req_gen;
   wire<LDQ_IDX_WIDTH> ldq_idx;
+#if !BSD_CONFIG
+  uint64_t wait_start_cycle;
+#endif
 };
 struct MMUDoneEntry{
   wire<1> valid;
@@ -140,12 +147,12 @@ struct FinishEntry{
   wire<MAX_IDX_WIDTH> idx;
   wire<1> is_load;
 };
-
+struct STLFEntry{
+  wire<1> valid;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
+};
 struct LsuState{
   LdqEntry ldq[LDQ_SIZE];
-  wire<LDQ_IDX_WIDTH> ldq_head;
-  wire<1> ldq_head_flag;
-  wire<LDQ_IDX_WIDTH+1> ldq_count; // 包括分配但未提交的条目
 
   StqEntry stq[STQ_SIZE];
   wire<STQ_IDX_WIDTH> stq_head;
@@ -170,11 +177,14 @@ struct LsuState{
   wire<LDQ_STQ_IDX_WIDTH> finish_head;
   wire<LDQ_STQ_IDX_WIDTH+1> finish_count;
 
+  STLFEntry stlf_queue[LDQ_SIZE];
+  wire<LDQ_IDX_WIDTH> stlf_queue_head;
+  wire<LDQ_IDX_WIDTH+1> stlf_queue_count;
+
 
   WaitDcacheLDQEntry wait_dcache_ldq[LDQ_SIZE];
   wire<LDQ_IDX_WIDTH> wait_dcache_ldq_head;
   wire<LDQ_IDX_WIDTH+1> wait_dcache_ldq_count;
-
   // WaitDcacheReplayEntry wait_dcache_replay[LDQ_SIZE];
   // wire<LDQ_IDX_WIDTH> wait_dcache_replay_head;
   // wire<LDQ_IDX_WIDTH+1> wait_dcache_replay_count;

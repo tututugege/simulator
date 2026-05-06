@@ -6,9 +6,9 @@ from datetime import datetime
 
 # ================= 用户配置区域 =================
 CPU_FREQ_GHZ = float(os.environ.get("CPU_FREQ_GHZ", "1.0"))
-LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_restore_456")
+LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_restore_456_2dcache")
 WEIGHTS_DIR = os.environ.get(
-    "WEIGHTS_DIR", "/share/personal/S/houruyao/simpoint/rv32imab_bbv_1gb_ram"
+    "WEIGHTS_DIR", "/home/renli/qimeng/456.hmmer_ref_bbv"
 )
 DEBUG = os.environ.get("DEBUG", "1") not in ("0", "false", "False")
 LOG_STATUS_REPORT = LOG_ROOT_DIR + "/log_status_report.txt"

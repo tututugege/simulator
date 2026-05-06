@@ -1,7 +1,79 @@
 #include "RealDcache.h"
+#if !BSD_CONFIG
+#include "types.h"
+#endif
 #include <cassert>
 #include <cstring>
 #include <MemUtils.h>
+
+#if !BSD_CONFIG
+namespace {
+enum class L1DReplayReason {
+    Conflict,
+    MshrFull,
+    WaitMshrHit,
+    WaitMshrFirstAlloc,
+    WaitMshrFillWait,
+};
+
+static bool l1d_perf_is_lsu_req(uint32_t req_id) {
+    return (req_id & (1u << 31)) == 0;
+}
+
+static void count_l1d_replay(SimContext *ctx, uint32_t req_id, bool is_store,
+                             bool was_replay, L1DReplayReason reason) {
+    if (ctx == nullptr || !l1d_perf_is_lsu_req(req_id)) {
+        return;
+    }
+    if (was_replay) {
+        ctx->perf.l1d_replay_squash_abort++;
+    }
+    auto count_load_store = [&](uint64_t &total, uint64_t &load,
+                                uint64_t &store) {
+        total++;
+        if (is_store) {
+            store++;
+        } else {
+            load++;
+        }
+    };
+
+    switch (reason) {
+    case L1DReplayReason::Conflict:
+        count_load_store(ctx->perf.l1d_replay_conflict,
+                         ctx->perf.l1d_replay_conflict_load,
+                         ctx->perf.l1d_replay_conflict_store);
+        break;
+    case L1DReplayReason::MshrFull:
+        count_load_store(ctx->perf.l1d_replay_mshr_full,
+                         ctx->perf.l1d_replay_mshr_full_load,
+                         ctx->perf.l1d_replay_mshr_full_store);
+        break;
+    case L1DReplayReason::WaitMshrHit:
+        count_load_store(ctx->perf.l1d_replay_wait_mshr,
+                         ctx->perf.l1d_replay_wait_mshr_load,
+                         ctx->perf.l1d_replay_wait_mshr_store);
+        ctx->perf.l1d_replay_wait_mshr_hit++;
+        break;
+    case L1DReplayReason::WaitMshrFirstAlloc:
+        count_load_store(ctx->perf.l1d_replay_wait_mshr,
+                         ctx->perf.l1d_replay_wait_mshr_load,
+                         ctx->perf.l1d_replay_wait_mshr_store);
+        ctx->perf.l1d_replay_wait_mshr_first_alloc++;
+        break;
+    case L1DReplayReason::WaitMshrFillWait:
+        count_load_store(ctx->perf.l1d_replay_wait_mshr,
+                         ctx->perf.l1d_replay_wait_mshr_load,
+                         ctx->perf.l1d_replay_wait_mshr_store);
+        ctx->perf.l1d_replay_wait_mshr_fill_wait++;
+        break;
+    }
+}
+} // namespace
+#define COUNT_L1D_REPLAY(...) count_l1d_replay(__VA_ARGS__)
+#else
+#define COUNT_L1D_REPLAY(...) do {} while (0)
+#endif
 
 void RealDcache::init() {
     init_dcache();
@@ -21,6 +93,9 @@ void RealDcache::stage1_comb() {
 
     
     s1s2_nxt.fill_write.valid = in.mshr2dcache->fill_req.valid && !same_fill_already_in_s2;
+#if !BSD_CONFIG
+    s1s2_nxt.fill_write.lsu_origin = in.mshr2dcache->fill_req.lsu_origin;
+#endif
     s1s2_nxt.fill_write.set_idx = fill_f.set_idx;
     s1s2_nxt.fill_write.tag = fill_f.tag;
     memcpy(s1s2_nxt.fill_write.data,
@@ -43,6 +118,9 @@ void RealDcache::stage1_comb() {
         S1S2Reg::LoadSlot &slot = s1s2_nxt.loads[i];
         if (!req.valid){
             slot.valid = false;
+#if !BSD_CONFIG
+            slot.perf_replay = false;
+#endif
             out.dcache2wb->bypass_req[i].valid = false;
         }
         else{
@@ -63,6 +141,9 @@ void RealDcache::stage1_comb() {
             slot.addr     = req.addr;
             slot.req_id   = req.req_id;
             slot.replayed  = replay;
+#if !BSD_CONFIG
+            slot.perf_replay = req.replay;
+#endif
             AddrFields f  = decode(req.addr);
             out.dcachereadreq[i]->set_idx = f.set_idx;
 
@@ -81,6 +162,9 @@ void RealDcache::stage1_comb() {
         int idx       = LSU_LDU_COUNT + i;
         if(!req.valid){
             slot.valid = false;
+#if !BSD_CONFIG
+            slot.perf_replay = false;
+#endif
             out.dcache2wb->merge_req[i].valid = false;
         }
         else{
@@ -97,6 +181,9 @@ void RealDcache::stage1_comb() {
             slot.strb     = req.strb;
             slot.req_id   = req.req_id; 
             slot.replayed = replayed;
+#if !BSD_CONFIG
+            slot.perf_replay = req.replay;
+#endif
             AddrFields f  = decode(req.addr);
             out.dcachereadreq[idx]->set_idx = f.set_idx;
 
@@ -137,10 +224,17 @@ void RealDcache::stage2_comb() {
         if(in.fillin->valid_snap[select_way] && in.fillin->dirty_snap[select_way]){
             if(in.wb2dcache->free>0){
                 out.dcache2wb->dirty_info.valid = true;
+#if !BSD_CONFIG
+                out.dcache2wb->dirty_info.lsu_origin =
+                    s1s2_cur.fill_write.lsu_origin;
+#endif
                 out.dcache2wb->dirty_info.addr = get_addr(s1s2_cur.fill_write.set_idx, in.fillin->tag_snap[select_way], 0);
                 memcpy(out.dcache2wb->dirty_info.data, in.fillin->data_snap[select_way], DCACHE_WORD_NUM * sizeof(uint32_t));
 
                 out.fill_write->valid = true;
+#if !BSD_CONFIG
+                out.fill_write->lsu_origin = s1s2_cur.fill_write.lsu_origin;
+#endif
                 out.fill_write->set_idx = s1s2_cur.fill_write.set_idx;
                 out.fill_write->tag = s1s2_cur.fill_write.tag;
                 out.fill_write->way_idx = select_way;
@@ -154,6 +248,9 @@ void RealDcache::stage2_comb() {
         }
         else{
             out.fill_write->valid = true;
+#if !BSD_CONFIG
+            out.fill_write->lsu_origin = s1s2_cur.fill_write.lsu_origin;
+#endif
             out.fill_write->set_idx = s1s2_cur.fill_write.set_idx;
             out.fill_write->tag = s1s2_cur.fill_write.tag;
             out.fill_write->way_idx = select_way;
@@ -178,6 +275,8 @@ void RealDcache::stage2_comb() {
             resp.valid  = true;
             resp.replay = ReplayType::CONFLICT; // This load has been replayed due to MSHR full or conflict, so replay again to give chance for the MSHR state to be updated and avoid starvation when there are multiple back-to-back misses.
             resp.req_id = slot.req_id;
+            COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
+                             L1DReplayReason::Conflict);
             continue;
         }
         int hit_way = -1;
@@ -210,6 +309,8 @@ void RealDcache::stage2_comb() {
                 resp.valid = true;
                 resp.replay = ReplayType::MSHR_HIT;
                 resp.req_id = slot.req_id;
+                COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
+                                 L1DReplayReason::WaitMshrHit);
             }
             else {
                 // Miss with no existing MSHR entry: allocate a new MSHR and replay later when it is ready.
@@ -217,19 +318,29 @@ void RealDcache::stage2_comb() {
                     resp.valid = true;
                     resp.replay = ReplayType::MSHR_FULL;
                     resp.req_id = slot.req_id;
+                    COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
+                                     L1DReplayReason::MshrFull);
                 }
                 else if(!out.dcache2mshr->mshr_req[0].valid){ // The only free MSHR entry is being allocated by the other load port in the same cycle, so can't accept this new miss
                     out.dcache2mshr->mshr_req[0].valid = true;
                     out.dcache2mshr->mshr_req[0].addr = slot.addr;
+#if !BSD_CONFIG
+                    out.dcache2mshr->mshr_req[0].lsu_origin =
+                        l1d_perf_is_lsu_req(slot.req_id);
+#endif
 
                     resp.valid = true;
                     resp.replay = ReplayType::MSHR_HIT;
                     resp.req_id = slot.req_id;
+                    COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
+                                     L1DReplayReason::WaitMshrFirstAlloc);
                 }
                 else{
                     resp.valid = true;
                     resp.replay = ReplayType::CONFLICT; 
                     resp.req_id = slot.req_id;
+                    COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
+                                     L1DReplayReason::Conflict);
                 }
             }
         } 
@@ -251,12 +362,16 @@ void RealDcache::stage2_comb() {
             resp.valid  = true;
             resp.replay = ReplayType::CONFLICT; // This store has been replayed due to MSHR full or conflict, so replay again to give chance for the MSHR state to be updated and avoid starvation when there are multiple back-to-back misses.
             resp.req_id = slot.req_id;
+            COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                             L1DReplayReason::Conflict);
             continue;
         }        
         if(cache_line_match(slot.addr,in.mshr2dcache->fill_req.addr)&&in.mshr2dcache->fill_req.valid){ // hit the MSHR entry allocated in the same cycle, treat it as a hit and update the pending MSHR entry to avoid a deadlock when MSHR is full
            resp.valid  = true;
            resp.replay = ReplayType::CONFLICT;
            resp.req_id = slot.req_id;
+           COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                            L1DReplayReason::WaitMshrFillWait);
            continue;
         }
         wire<DCACHE_WAY_BITS> hit_way = DCACHE_WAYS_NUM;
@@ -272,6 +387,8 @@ void RealDcache::stage2_comb() {
                 resp.valid  = true;
                 resp.replay = ReplayType::CONFLICT;
                 resp.req_id = slot.req_id;
+                COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                                 L1DReplayReason::WaitMshrFillWait);
             }
             else{
                 resp.valid  = true;
@@ -298,11 +415,15 @@ void RealDcache::stage2_comb() {
                 resp.valid = true;
                 resp.replay = ReplayType::CONFLICT; // The store can proceed but the merge logic is busy, so replay later to give chance for the merge logic to catch up and avoid long latency on the following stores that hit the same line.
                 resp.req_id = slot.req_id;
+                COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                                 L1DReplayReason::Conflict);
             }
             else if(in.mshr2dcache->find_resp[iidx].valid){
                 resp.valid = true;
                 resp.replay = ReplayType::MSHR_HIT;
                 resp.req_id = slot.req_id;
+                COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                                 L1DReplayReason::WaitMshrHit);
             }
             else{
                 // Miss with no existing MSHR entry: allocate a new MSHR and replay later when it is ready.
@@ -310,25 +431,37 @@ void RealDcache::stage2_comb() {
                     resp.valid = true;
                     resp.replay = ReplayType::MSHR_FULL; // MSHR full, replay later
                     resp.req_id = slot.req_id;
+                    COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                                     L1DReplayReason::MshrFull);
                 }
                 else if(!out.dcache2mshr->mshr_req[1].valid){ // The free MSHR entry is available for allocation
                     if(out.dcache2mshr->mshr_req[0].valid&&cache_line_match(slot.addr,out.dcache2mshr->mshr_req[0].addr)){ // The only free MSHR entry is being allocated by the other store port in the same cycle, so can't accept this new miss
                         resp.valid = true;
                         resp.replay = ReplayType::MSHR_HIT;
                         resp.req_id = slot.req_id;
+                        COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                                         L1DReplayReason::WaitMshrHit);
                     }else{
                         out.dcache2mshr->mshr_req[1].valid = true;
                         out.dcache2mshr->mshr_req[1].addr = slot.addr;
+#if !BSD_CONFIG
+                        out.dcache2mshr->mshr_req[1].lsu_origin =
+                            l1d_perf_is_lsu_req(slot.req_id);
+#endif
 
                         resp.valid = true;
                         resp.replay = ReplayType::MSHR_HIT;
                         resp.req_id = slot.req_id;
+                        COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                                         L1DReplayReason::WaitMshrFirstAlloc);
                     }
                 }
                 else{
                     resp.valid = true;
                     resp.replay = ReplayType::CONFLICT; // MSHR conflict with the other port in the same cycle, replay later
                     resp.req_id = slot.req_id;
+                    COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
+                                     L1DReplayReason::Conflict);
                 }
             }
         }

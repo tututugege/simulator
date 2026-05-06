@@ -28,10 +28,16 @@ struct MSHRFINDResp{
 struct MSHRReq{
     wire<1> valid;
     wire<32> addr;
+#if !BSD_CONFIG
+    wire<1> lsu_origin;
+#endif
 };
 
 struct MSHR_FILLReq{
     wire<1> valid;
+#if !BSD_CONFIG
+    wire<1> lsu_origin;
+#endif
     wire<DCACHE_WAY_BITS> way_idx;
     wire<32> addr;
     wire<32> data[DCACHE_WORD_NUM];
@@ -83,6 +89,9 @@ struct MergeResp {
 
 struct DirtyInfo {
     wire<1> valid;
+#if !BSD_CONFIG
+    wire<1> lsu_origin;
+#endif
     wire<32> addr;
     wire<32> data[DCACHE_WORD_NUM];
 };
@@ -117,6 +126,9 @@ struct PendingWrite {
 };
 struct FILLWrite {
     wire<1>     valid    = false;
+#if !BSD_CONFIG
+    wire<1>     lsu_origin = false;
+#endif
     wire<DCACHE_SET_BITS> set_idx  = 0;
     wire<DCACHE_TAG_BITS> tag      = 0;
     wire<DCACHE_WAY_BITS> way_idx  = 0;

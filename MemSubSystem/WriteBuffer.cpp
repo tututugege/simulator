@@ -1,7 +1,9 @@
 #include "WriteBuffer.h"
 #include "PhysMemory.h"
 #include "config.h"
+#if !BSD_CONFIG
 #include "types.h"
+#endif
 #include <cassert>
 #include <cstring>
 
@@ -81,9 +83,29 @@ void WriteBuffer::comb_outputs_axi() {
 void WriteBuffer::comb_inputs_axi(){
     if(in.axi_in->req_accepted){
         nxt.send = 1; // request has been accepted, wait for response before sending next
+#if !BSD_CONFIG
+        nxt.axi_write_active = true;
+        nxt.axi_write_lsu_origin =
+            cur.count > 0 ? cur.write_buffer[cur.head].lsu_origin : false;
+        nxt.axi_write_start_cycle = ctx == nullptr ? 0 : ctx->perf.cycle;
+#endif
     }
     if (in.axi_in->resp_valid) {
+#if !BSD_CONFIG
+        if (ctx != nullptr && cur.axi_write_active &&
+            cur.axi_write_lsu_origin &&
+            ctx->perf.cycle >= cur.axi_write_start_cycle) {
+            ctx->perf.l1d_axi_write_total_cycles +=
+                ctx->perf.cycle - cur.axi_write_start_cycle;
+            ctx->perf.l1d_axi_write_samples++;
+        }
+#endif
         nxt.send = 0; // allow sending (or retrying) the head entry
+#if !BSD_CONFIG
+        nxt.axi_write_active = false;
+        nxt.axi_write_lsu_origin = false;
+        nxt.axi_write_start_cycle = 0;
+#endif
     }
 }
 
@@ -142,6 +164,9 @@ void WriteBuffer::comb_inputs_dcache() {
         if(cur.count < DCACHE_WB_ENTRIES){
             WriteBufferEntry &e = nxt.write_buffer[(cur.head + nxt.count) % DCACHE_WB_ENTRIES];
             e.addr     = in.dcache2wb->dirty_info.addr;
+#if !BSD_CONFIG
+            e.lsu_origin = in.dcache2wb->dirty_info.lsu_origin;
+#endif
             std::memcpy(e.data, in.dcache2wb->dirty_info.data, DCACHE_WORD_NUM * sizeof(uint32_t));
         }
         else{

@@ -577,6 +577,11 @@ void MemSubsystem::init() {
   mshr_.out.axi_out = &mshr_axi_out; // MSHR output → AXI read/write ports
   wb_.in.axi_in = &wb_axi_in;        // WB comb input ← AXI read/write ports (for write response handling)
   wb_.out.axi_out = &wb_axi_out;     // WB output → AXI read/write ports (for write issuance)
+#if !BSD_CONFIG
+  dcache_.bind_context(ctx);
+  mshr_.bind_context(ctx);
+  mem_route_block.bind_context(ctx);
+#endif
 
   // Internal WriteBuffer ↔ DCache wires.
   dcache_.in.wb2dcache = &wb_dcache_io_;  // WB output → DCache input
@@ -612,7 +617,9 @@ void MemSubsystem::init() {
   mem_route_block.out.ptw_grant = &ptw_grant;   // MemRouteBlock output → PTW grant signals
   mem_route_block.out.wakeup = &wakeup;         // MemRouteBlock output → LSU wakeup signals
 
+#if !BSD_CONFIG
   wb_.bind_context(ctx);
+#endif
 
   // ── Initialise sub-modules ─────────────────────────────────────────────────
   mshr_.init();
