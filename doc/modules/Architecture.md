@@ -39,6 +39,8 @@
 | `page_fault_inst` | `FETCH_WIDTH * 1` | 输入 | 前端取指触发的页面错误标志 |
 | `alt_pred` | `FETCH_WIDTH * 1` | 输入 | BPU 备选路径预测位 |
 | `altpcpn` / `pcpn` | `FETCH_WIDTH * 8` | 输入 | 分支预测相关的路径索引元数据 |
+| `peripheral_resp` | `PeripheralRespIO` | 输入 | MemSubsystem 返回给 LSU 的 MMIO 响应 |
+| `dcache2lsu` | `DcacheLsuIO` | 输入 | DCache 返回给 LSU 的多端口响应 |
 
 ### 3.2 后端 -> 前端 (`Back_out`)
 后端通过此反馈信号控制前端的取指行为及同步系统状态。
@@ -54,6 +56,8 @@
 | `sstatus` / `mstatus` | `32` | 输出 | 处理器系统状态寄存器 |
 | `satp` | `32` | 输出 | 虚拟地址转换控制寄存器 |
 | `privilege` | `2` | 输出 | 当前处理器特权级 (U/S/M) |
+| `peripheral_req` | `PeripheralReqIO` | 输出 | LSU 发往 MemSubsystem 的 MMIO 请求 |
+| `lsu2dcache` | `LsuDcacheIO` | 输出 | LSU 发往 DCache 的多端口访存请求 |
 
 ---
 

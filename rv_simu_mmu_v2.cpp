@@ -464,8 +464,8 @@ void SimCpu::init() {
   // 第三阶段：集中完成跨模块连线
   mem_subsystem.csr = back.csr;
   mem_subsystem.memory = p_memory;
-  mem_subsystem.peripheral_req = back.lsu_peripheral_req_io;
-  mem_subsystem.peripheral_resp = back.lsu_peripheral_resp_io;
+  mem_subsystem.peripheral_req = &back.out.peripheral_req;
+  mem_subsystem.peripheral_resp = &back.in.peripheral_resp;
   mem_subsystem.set_ptw_coherent_source(back.lsu);
 
   front.in.csr_status = back.csr->out.csr_status;
@@ -474,8 +474,8 @@ void SimCpu::init() {
   back.set_lsu_ptw_walk_port(mem_subsystem.dtlb_walk_port);
   back.set_lsu_ptw_mem_port(mem_subsystem.dtlb_ptw_port);
 
-  mem_subsystem.lsu2dcache = back.lsu_dcache_req_io;
-  mem_subsystem.dcache2lsu = back.lsu_dcache_resp_io;
+  mem_subsystem.lsu2dcache = &back.out.lsu2dcache;
+  mem_subsystem.dcache2lsu = &back.in.dcache2lsu;
 
   mem_subsystem.icache_req = &icache_req;
   mem_subsystem.icache_resp = &icache_resp;

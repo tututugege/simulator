@@ -154,15 +154,15 @@ void BackTop::init() {
   lsu->in.rob_bcast = &rob_bcast;
   lsu->in.dec_bcast = &dec_bcast;
   lsu->in.rob_commit = &rob_commit;
-  lsu->in.peripheral_resp = &peripheral_resp_io;
-  lsu->in.dcache2lsu  = &dcache2lsu_io;
+  lsu->in.peripheral_resp = &in.peripheral_resp;
+  lsu->in.dcache2lsu  = &in.dcache2lsu;
   lsu->in.mmu2lsu = &mmu2lsu_io;
 
   lsu->out.lsu2exe = &lsu2exe;
   lsu->out.lsu2dis = &lsu2dis;
   lsu->out.lsu2rob = &lsu2rob;
-  lsu->out.peripheral_req = &peripheral_req_io;
-  lsu->out.lsu2dcache = &lsu2dcache_io;
+  lsu->out.peripheral_req = &out.peripheral_req;
+  lsu->out.lsu2dcache = &out.lsu2dcache;
   lsu->out.lsu2mmu = &lsu2mmu_io;
 
   pre->init();
@@ -287,9 +287,8 @@ void BackTop::comb() {
   lsu2exe = {};
   lsu2dis = {};
   lsu2rob = {};
-  peripheral_req_io = {};
-  peripheral_resp_io = {};
-  lsu2dcache_io = {};
+  out.peripheral_req = {};
+  out.lsu2dcache = {};
   lsu2mmu_io = {};
   mmu2lsu_io = {};
 #endif
