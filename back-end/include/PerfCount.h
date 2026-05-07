@@ -2,11 +2,17 @@
 #include "config.h"
 #include <array>
 #include <cstdint>
+#include <cstddef>
 #include <cstdio>
 #include <iostream>
 
 class PerfCount {
 public:
+  static constexpr int kLdqStatePerfCount = 14;
+  static constexpr int kLdqStateOtherIndex = kLdqStatePerfCount - 1;
+  static constexpr int kStqStatePerfCount = 13;
+  static constexpr int kStqStateOtherIndex = kStqStatePerfCount - 1;
+
   bool perf_start = false;
   bool icache_busy = false;
   uint64_t cycle = 0;
@@ -38,10 +44,10 @@ public:
   uint64_t dcache_access_num = 0;
   uint64_t dcache_miss_num = 0;
   // RealDcache detailed counters
-  uint64_t l1d_req_initial = 0; // first requests, excluding replay requests
-  uint64_t l1d_req_all = 0; // all dcache requests, including replay requests
-  uint64_t l1d_miss_mshr_alloc = 0; // real misses that allocate an MSHR entry
-  uint64_t l1d_req_replay = 0; // requests re-issued by replay mechanism
+  uint64_t l1d_req_initial = 0;         // first requests, excluding replay requests
+  uint64_t l1d_req_all = 0;             // all dcache requests, including replay requests
+  uint64_t l1d_miss_mshr_alloc = 0;     // real misses that allocate an MSHR entry
+  uint64_t l1d_req_replay = 0;          // requests re-issued by replay mechanism
   uint64_t l1d_replay_squash_abort = 0; // replay request failed again
   uint64_t l1d_replay_conflict = 0;
   uint64_t l1d_replay_conflict_load = 0;
@@ -79,6 +85,22 @@ public:
   uint64_t stq_average_count = 0;
   uint64_t stq_commit_average_count = 0;
   uint64_t stq_commit_max_count = 0;
+  uint64_t wait_mmu_stq_average_count = 0;
+  uint64_t wait_mmu_stq_max_count = 0;
+  uint64_t wait_mmu_ldq_average_count = 0;
+  uint64_t wait_mmu_ldq_max_count = 0;
+  uint64_t mmu_done_stq_average_count = 0;
+  uint64_t mmu_done_stq_max_count = 0;
+  uint64_t finish_average_count = 0;
+  uint64_t finish_max_count = 0;
+  uint64_t wait_dcache_ldq_average_count = 0;
+  uint64_t wait_dcache_ldq_max_count = 0;
+  uint64_t stlf_queue_average_count = 0;
+  uint64_t stlf_queue_max_count = 0;
+  std::array<uint64_t, kLdqStatePerfCount> ldq_state_average_count = {};
+  std::array<uint64_t, kLdqStatePerfCount> ldq_state_max_count = {};
+  std::array<uint64_t, kStqStatePerfCount> stq_state_average_count = {};
+  std::array<uint64_t, kStqStatePerfCount> stq_state_max_count = {};
   uint64_t stq_diag_window_cycles = 0;
   uint64_t stq_diag_window_entries = 0;
   uint64_t stq_diag_window_committed = 0;
@@ -328,6 +350,22 @@ public:
 #endif
     stq_commit_average_count = 0;
     stq_commit_max_count = 0;
+    wait_mmu_stq_average_count = 0;
+    wait_mmu_stq_max_count = 0;
+    wait_mmu_ldq_average_count = 0;
+    wait_mmu_ldq_max_count = 0;
+    mmu_done_stq_average_count = 0;
+    mmu_done_stq_max_count = 0;
+    finish_average_count = 0;
+    finish_max_count = 0;
+    wait_dcache_ldq_average_count = 0;
+    wait_dcache_ldq_max_count = 0;
+    stlf_queue_average_count = 0;
+    stlf_queue_max_count = 0;
+    ldq_state_average_count.fill(0);
+    ldq_state_max_count.fill(0);
+    stq_state_average_count.fill(0);
+    stq_state_max_count.fill(0);
     stq_diag_window_cycles = 0;
     stq_diag_window_entries = 0;
     stq_diag_window_committed = 0;
@@ -549,7 +587,7 @@ public:
   }
 
   void perf_maybe_capture_periodic_snapshot() {
-#if CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL == 0 ||                             \
+#if CONFIG_PERF_PERIODIC_SNAPSHOT_INTERVAL == 0 || \
     CONFIG_PERF_PERIODIC_SNAPSHOT_MAX == 0
     return;
 #else
@@ -811,15 +849,91 @@ public:
                            static_cast<double>(cycle);
     const double stq_commit_occupancy =
         (cycle == 0) ? 0.0
-                                : static_cast<double>(stq_commit_average_count) /
-                                      static_cast<double>(cycle);
+                     : static_cast<double>(stq_commit_average_count) /
+                           static_cast<double>(cycle);
+    const double wait_mmu_stq_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(wait_mmu_stq_average_count) /
+                           static_cast<double>(cycle);
+    const double wait_mmu_ldq_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(wait_mmu_ldq_average_count) /
+                           static_cast<double>(cycle);
+    const double mmu_done_stq_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(mmu_done_stq_average_count) /
+                           static_cast<double>(cycle);
+    const double finish_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(finish_average_count) /
+                           static_cast<double>(cycle);
+    const double stlf_queue_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(stlf_queue_average_count) /
+                           static_cast<double>(cycle);
+    const double wait_dcache_ldq_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(wait_dcache_ldq_average_count) /
+                           static_cast<double>(cycle);
     printf("\033[38;5;34mLDQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",
            avg_ldq_occupancy, ldq_max_count);
     printf("\033[38;5;34mSTQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",
            avg_stq_occupancy, stq_max_count);
-    printf("\033[38;5;34mSTQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+    printf("\033[38;5;34mSTQ Commit Avg/Max Occupancy: %.4f / %ld\033[0m\n",
            stq_commit_occupancy, stq_commit_max_count);
+    printf("\033[38;5;34mSTQ Wait MMu Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           wait_mmu_stq_occupancy, wait_mmu_stq_max_count);
+    printf("\033[38;5;34mLDQ Wait MMu Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           wait_mmu_ldq_occupancy, wait_mmu_ldq_max_count);
+    printf("\033[38;5;34mSTQ Done MMu Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           mmu_done_stq_occupancy, mmu_done_stq_max_count);
+    printf("\033[38;5;34mFinish Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           finish_occupancy, finish_max_count);
+    printf("\033[38;5;34mSTLF Queue Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           stlf_queue_occupancy, stlf_queue_max_count);
+    printf("\033[38;5;34mLDQ Wait DCache Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           wait_dcache_ldq_occupancy, wait_dcache_ldq_max_count);
+    perf_print_lsu_state_occupancy();
     printf("\n");
+  }
+
+  template <size_t N>
+  void perf_print_state_avg_max(
+      const char *title, const char *const (&state_names)[N],
+      const std::array<uint64_t, N> &state_average_count,
+      const std::array<uint64_t, N> &state_max_count) const {
+    printf("\033[38;5;34m%s\033[0m\n", title);
+    for (size_t i = 0; i < N; i++) {
+      const double avg =
+          (cycle == 0)
+              ? 0.0
+              : static_cast<double>(state_average_count[i]) /
+                    static_cast<double>(cycle);
+      printf("\033[38;5;34m  %-15s: %.4f / %ld\033[0m\n", state_names[i],
+             avg, state_max_count[i]);
+    }
+  }
+
+  void perf_print_lsu_state_occupancy() const {
+    static constexpr const char *kLdqStateNames[kLdqStatePerfCount] = {
+        "Empty",          "Allocated",      "WaitAddr",
+        "WaitTlb",        "CheckStlf",      "WaitOlderStore",
+        "ReadyToIssue",   "WaitDcacheResp", "WaitMmioResp",
+        "ReadyToWb",      "Replaying",      "PageFault",
+        "Done",           "Other"};
+    static constexpr const char *kStqStateNames[kStqStatePerfCount] = {
+        "Empty",          "Allocated",      "WaitAddr",
+        "WaitData",       "WaitTlb",        "Ready",
+        "Committed",      "WaitDcacheResp", "WaitMmioResp",
+        "Replaying",      "PageFault",      "Done",
+        "Other"};
+
+    perf_print_state_avg_max("LDQ State Avg/Max Occupancy:",
+                             kLdqStateNames, ldq_state_average_count,
+                             ldq_state_max_count);
+    perf_print_state_avg_max("STQ State Avg/Max Occupancy:",
+                             kStqStateNames, stq_state_average_count,
+                             stq_state_max_count);
   }
 
   void perf_print_stq_diag() {

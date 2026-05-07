@@ -2,6 +2,7 @@
 #include "DcacheConfig.h"
 #include "MemUtils.h"
 #include "PhysMemory.h"
+#include "RealLsuPerf.h"
 #include "SimCpu.h"
 #include "TlbMmu.h"
 #include "config.h"
@@ -12,90 +13,6 @@
 #include <cstring>
 #include <memory>
 
-#if !BSD_CONFIG
-static void perf_count_stq_state(PerfCount &perf, StoreState state,
-                                 bool head_sample) {
-  uint64_t *counter = nullptr;
-  switch (state) {
-  case StoreState::Committed:
-    counter = head_sample ? &perf.stq_diag_head_committed
-                          : &perf.stq_diag_window_committed;
-    break;
-  case StoreState::Done:
-    counter = head_sample ? &perf.stq_diag_head_done
-                          : &perf.stq_diag_window_done;
-    break;
-  case StoreState::WaitDcacheResp:
-    counter = head_sample ? &perf.stq_diag_head_wait_dcache
-                          : &perf.stq_diag_window_wait_dcache;
-    break;
-  case StoreState::WaitMmioResp:
-    counter = head_sample ? &perf.stq_diag_head_wait_mmio
-                          : &perf.stq_diag_window_wait_mmio;
-    break;
-  case StoreState::WaitTlb:
-    counter = head_sample ? &perf.stq_diag_head_wait_tlb
-                          : &perf.stq_diag_window_wait_tlb;
-    break;
-  case StoreState::WaitData:
-    counter = head_sample ? &perf.stq_diag_head_wait_data
-                          : &perf.stq_diag_window_wait_data;
-    break;
-  case StoreState::PageFault:
-    counter = head_sample ? &perf.stq_diag_head_page_fault
-                          : &perf.stq_diag_window_page_fault;
-    break;
-  default:
-    counter = head_sample ? &perf.stq_diag_head_other
-                          : &perf.stq_diag_window_other;
-    break;
-  }
-  (*counter)++;
-}
-
-static void perf_count_stq_same_addr_older(PerfCount &perf, StoreState state) {
-  switch (state) {
-  case StoreState::Committed:
-    perf.stq_same_addr_block_older_committed++;
-    break;
-  case StoreState::WaitDcacheResp:
-    perf.stq_same_addr_block_older_wait_dcache++;
-    break;
-  case StoreState::WaitMmioResp:
-    perf.stq_same_addr_block_older_wait_mmio++;
-    break;
-  case StoreState::WaitTlb:
-    perf.stq_same_addr_block_older_wait_tlb++;
-    break;
-  case StoreState::WaitData:
-    perf.stq_same_addr_block_older_wait_data++;
-    break;
-  case StoreState::PageFault:
-    perf.stq_same_addr_block_older_page_fault++;
-    break;
-  default:
-    perf.stq_same_addr_block_older_other++;
-    break;
-  }
-}
-
-static void perf_count_stq_replay_resp(PerfCount &perf, ReplayType replay) {
-  perf.stq_dcache_resp_replay++;
-  switch (replay) {
-  case ReplayType::CONFLICT:
-    perf.stq_dcache_resp_replay_conflict++;
-    break;
-  case ReplayType::MSHR_HIT:
-    perf.stq_dcache_resp_replay_mshr_hit++;
-    break;
-  case ReplayType::MSHR_FULL:
-    perf.stq_dcache_resp_replay_mshr_full++;
-    break;
-  case ReplayType::HIT:
-    break;
-  }
-}
-#endif
 STLFResult check_stlf(uint32_t load_addr, uint32_t load_func3, uint32_t store_addr, uint32_t store_func3) {
   int store_width = get_mem_width(store_func3);
   int load_width = get_mem_width(load_func3);
@@ -115,20 +32,6 @@ STLFResult check_stlf(uint32_t load_addr, uint32_t load_func3, uint32_t store_ad
   }
 }; // namespace
 
-#if !BSD_CONFIG
-static void perf_record_mem_inst_latency(SimContext *ctx, bool started,
-                                         uint64_t start_cycle) {
-  if (ctx == nullptr || !started) {
-    return;
-  }
-  const uint64_t now = ctx->perf.cycle;
-  if (now >= start_cycle) {
-    ctx->perf.l1d_mem_inst_total_cycles += now - start_cycle;
-    ctx->perf.l1d_mem_inst_samples++;
-  }
-}
-#endif
-
 RealLsu::RealLsu(SimContext *ctx) : cur{}, nxt{}, in{}, out{}, ctx(ctx) {}
 
 void RealLsu::init() {
@@ -143,27 +46,12 @@ void RealLsu::comb_cal() {
       ldq_count++;
     }
   }
+  lsu_perf::sample_queue_occupancy(ctx, cur, ldq_count);
 }
 
 void RealLsu::comb_lsu2dis() {
   memset(out.lsu2dis, 0, sizeof(*out.lsu2dis));
 
-#if !BSD_CONFIG
-  if (ctx != nullptr) {
-    ctx->perf.ldq_average_count += static_cast<uint64_t>(ldq_count);
-    ctx->perf.stq_commit_average_count += static_cast<uint64_t>(cur.stq_commit_count);
-    ctx->perf.stq_average_count += static_cast<uint64_t>(cur.stq_count);
-    if (static_cast<uint64_t>(ldq_count) > ctx->perf.ldq_max_count) {
-      ctx->perf.ldq_max_count = static_cast<uint64_t>(ldq_count);
-    }
-    if (static_cast<uint64_t>(cur.stq_count) > ctx->perf.stq_max_count) {
-      ctx->perf.stq_max_count = static_cast<uint64_t>(cur.stq_count);
-    }
-    if(static_cast<uint64_t>(cur.stq_commit_count) > ctx->perf.stq_commit_max_count) {
-      ctx->perf.stq_commit_max_count = static_cast<uint64_t>(cur.stq_commit_count);
-    }
-  }
-#endif
 
   out.lsu2dis->stq_tail = stq_idx_after(cur.stq_head, cur.stq_count);
   out.lsu2dis->stq_tail_flag =
@@ -171,13 +59,11 @@ void RealLsu::comb_lsu2dis() {
   out.lsu2dis->stq_free = STQ_SIZE - cur.stq_count;
 
   out.lsu2dis->ldq_free = LDQ_SIZE - ldq_count;
-
   uint32_t index = 0;
   for (int i = 0; i < LDQ_SIZE && index < MAX_LDQ_DISPATCH_WIDTH; i++) {
     if(cur.ldq[i].load_state == LoadState::Empty) {
       out.lsu2dis->ldq_alloc_idx[index] = i;
       out.lsu2dis->ldq_alloc_valid[index] = true;
-
       index++;
     } 
   }
@@ -187,17 +73,10 @@ void RealLsu::comb_lsu2rob() {
   memset(out.lsu2rob, 0, sizeof(*out.lsu2rob));
 
   out.lsu2rob->committed_store_pending = cur.stq_commit_count != 0;
-
-  uint64_t miss_mask = 0;
-#if !BSD_CONFIG
-  for (int i = 0; i < LDQ_SIZE; i++) {
-    if (cur.ldq[i].cache_miss == true && cur.ldq[i].load_state != LoadState::Empty) {
-      miss_mask |= (1ULL << cur.ldq[i].rob_idx); // 将重放中的load对应的rob位设置为1
-    }
-  }
-#endif
+  uint64_t miss_mask = lsu_perf::load_miss_mask(cur);
   out.lsu2rob->tma.miss_mask = miss_mask;
 }
+
 void RealLsu::comb_mmio_out() {
   *out.peripheral_req = {};
   if (in.peripheral_resp->ready) {
@@ -220,11 +99,7 @@ void RealLsu::comb_mmio_in() {
         if (entry.load_state == LoadState::WaitMmioResp) {
           entry.result = in.peripheral_resp->mmio_rdata;
           entry.load_state = LoadState::ReadyToWb;
-#if !BSD_CONFIG
-          perf_record_mem_inst_latency(ctx, entry.perf_mem_started,
-                                       entry.perf_mem_start_cycle);
-          entry.perf_mem_started = false;
-#endif
+          lsu_perf::finish_mem_inst(ctx, entry);
 
           const uint32_t finish_idx =
               (nxt.finish_head + nxt.finish_count) % kFinishSize;
@@ -239,11 +114,7 @@ void RealLsu::comb_mmio_in() {
       auto &entry = nxt.stq[cur.uncached_unit.idx];
       if (entry.store_state == StoreState::WaitMmioResp) {
         entry.store_state = StoreState::Done; // MMIO store在收到响应后就可以认为完成了
-#if !BSD_CONFIG
-        perf_record_mem_inst_latency(ctx, entry.perf_mem_started,
-                                     entry.perf_mem_start_cycle);
-        entry.perf_mem_started = false;
-#endif
+        lsu_perf::finish_mem_inst(ctx, entry);
       }
     }
     nxt.uncached_unit.valid = false; // MMIO load在收到响应后就可以认为完成了，可以清除uncached unit的valid信号
@@ -503,25 +374,13 @@ void RealLsu::comb_stlf() {
         older_store_count);
 
     if (!boundary_ok) {
-#if !BSD_CONFIG
-      Assert(0 && "LDQ STQ snapshot boundary is outside active STQ window");
-#endif
+      LSU_NON_BSD_ASSERT(0 && "LDQ STQ snapshot boundary is outside active STQ window");
       continue;
     }
 
     if (older_store_count != 0) {
-#if !BSD_CONFIG
-      if (ctx != nullptr) {
-        ctx->perf.ld_stlf_check_count++;
-        for (uint32_t j = 0; j < older_store_count; j++) {
-          const uint32_t stq_idx = (cur.stq_head + j) % STQ_SIZE;
-          if (!cur.stq[stq_idx].paddr_valid) {
-            ctx->perf.ld_stlf_block_unknown_store_addr_count++;
-            break;
-          }
-        }
-      }
-#endif
+      lsu_perf::count_stlf_waiting_on_unknown_store(ctx, cur,
+                                                    older_store_count);
       entry.load_state = LoadState::CheckStlf;
       continue;
     }
@@ -531,23 +390,15 @@ void RealLsu::comb_stlf() {
       if (lsu_mmio_is_oldest_unfinished(in.rob_bcast, entry.rob_idx) &&
           !nxt.uncached_unit.valid) {
         entry.load_state = LoadState::WaitMmioResp;
-#if !BSD_CONFIG
-        entry.perf_mem_started = true;
-        entry.perf_mem_start_cycle = ctx == nullptr ? 0 : ctx->perf.cycle;
-#endif
+        lsu_perf::start_mem_inst(ctx, entry);
         nxt.uncached_unit.valid = true;
         nxt.uncached_unit.is_load = true;
         nxt.uncached_unit.addr = entry.p_addr;
         nxt.uncached_unit.func3 = entry.func3;
         nxt.uncached_unit.idx = ldq_idx;
-#if !BSD_CONFIG
-        if (ctx != nullptr) {
-          ctx->perf.mmio_inst_count++;
-          ctx->perf.mmio_load_count++;
-        }
-      } else if (ctx != nullptr) {
-        ctx->perf.mmio_head_block_cycles++;
-#endif
+        lsu_perf::count_mmio_load_issue(ctx);
+      } else {
+        lsu_perf::count_mmio_head_block(ctx);
       }
     } else {
       entry.load_state = LoadState::ReadyToIssue;
@@ -555,9 +406,7 @@ void RealLsu::comb_stlf() {
           (nxt.wait_dcache_ldq_head + nxt.wait_dcache_ldq_count) % LDQ_SIZE;
       nxt.wait_dcache_ldq[wait_idx].valid = true;
       nxt.wait_dcache_ldq[wait_idx].ldq_idx = ldq_idx;
-#if !BSD_CONFIG
-      nxt.wait_dcache_ldq[wait_idx].wait_start_cycle = 0;
-#endif
+      lsu_perf::reset_wait_start(nxt.wait_dcache_ldq[wait_idx]);
       nxt.wait_dcache_ldq_count++;
     }
   }
@@ -569,6 +418,14 @@ void RealLsu::comb_stlf() {
   STLFEntry stlf_queue_used[LOAD_WINDOWS_WIDTH] = {};
 
   uint32_t todcache_wait_count = 0;
+  auto requeue_stlf = [&](uint32_t idx) {
+    const uint32_t queue_idx =
+        (nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE;
+    nxt.stlf_queue[queue_idx].valid = true;
+    nxt.stlf_queue[queue_idx].ldq_idx = idx;
+    nxt.stlf_queue_count++;
+  };
+
   for (int i = 0; i < issue; i++) {
     const uint32_t stlf_idx = (cur.stlf_queue_head + i) % LDQ_SIZE;
     const uint32_t ldq_idx = cur.stlf_queue[stlf_idx].ldq_idx;
@@ -593,33 +450,26 @@ void RealLsu::comb_stlf() {
         older_store_count);
 
     if (!boundary_ok) {
-#if !BSD_CONFIG
-      Assert(0 && "LDQ STQ snapshot boundary is outside active STQ window");
-#endif
+      LSU_NON_BSD_ASSERT(0 && "LDQ STQ snapshot boundary is outside active STQ window");
       continue;
     }
 
-    if (entry.is_mmio && older_store_count == 0) {
-      if (lsu_mmio_is_oldest_unfinished(in.rob_bcast, entry.rob_idx) &&
+    if (entry.is_mmio) {
+      if (older_store_count == 0 &&
+          lsu_mmio_is_oldest_unfinished(in.rob_bcast, entry.rob_idx) &&
           !nxt.uncached_unit.valid) {
         entry.load_state = LoadState::WaitMmioResp;
-#if !BSD_CONFIG
-        entry.perf_mem_started = true;
-        entry.perf_mem_start_cycle = ctx == nullptr ? 0 : ctx->perf.cycle;
-#endif
+        lsu_perf::start_mem_inst(ctx, entry);
         nxt.uncached_unit.valid = true;
         nxt.uncached_unit.is_load = true;
         nxt.uncached_unit.addr = entry.p_addr;
         nxt.uncached_unit.func3 = entry.func3;
         nxt.uncached_unit.idx = ldq_idx;
-#if !BSD_CONFIG
-        if (ctx != nullptr) {
-          ctx->perf.mmio_inst_count++;
-          ctx->perf.mmio_load_count++;
-        }
-      } else if (ctx != nullptr) {
-        ctx->perf.mmio_head_block_cycles++;
-#endif
+        lsu_perf::count_mmio_load_issue(ctx);
+      } else {
+        entry.load_state = LoadState::CheckStlf;
+        requeue_stlf(ldq_idx);
+        lsu_perf::count_mmio_head_block(ctx);
       }
       continue;
     }
@@ -628,20 +478,11 @@ void RealLsu::comb_stlf() {
       const uint32_t stq_idx = (cur.stq_head + j) % STQ_SIZE;
       const StqEntry &stq_entry = cur.stq[stq_idx];
       if (!stq_entry.paddr_valid) {
-#if !BSD_CONFIG
-        if (ctx != nullptr) {
-          ctx->perf.ld_stlf_check_count++;
-          ctx->perf.ld_stlf_block_unknown_store_addr_count++;
-        }
-#endif
+        lsu_perf::count_stlf_unknown_store_block(ctx);
         entry.load_state = LoadState::CheckStlf;
         break;
       }
-#if !BSD_CONFIG
-      if (ctx != nullptr) {
-        ctx->perf.ld_stlf_check_count++;
-      }
-#endif
+      lsu_perf::count_stlf_check(ctx);
       STLFResult stlf_result = check_stlf(entry.p_addr, entry.func3, stq_entry.paddr, stq_entry.func3);
       if (stlf_result == STLFResult::Overlap) {
         if (!stq_entry.data_valid) {
@@ -669,9 +510,7 @@ void RealLsu::comb_stlf() {
 
     if (check_stlf_num != older_store_count) {
       if(entry.load_state == LoadState::CheckStlf) {
-        nxt.stlf_queue[(nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE].valid = true;
-        nxt.stlf_queue[(nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE].ldq_idx = ldq_idx;
-        nxt.stlf_queue_count++;
+        requeue_stlf(ldq_idx);
       }
       continue;
     }
@@ -682,9 +521,7 @@ void RealLsu::comb_stlf() {
         (nxt.wait_dcache_ldq_head + nxt.wait_dcache_ldq_count) % LDQ_SIZE;
     nxt.wait_dcache_ldq[wait_idx].valid = true;
     nxt.wait_dcache_ldq[wait_idx].ldq_idx = ldq_idx;
-#if !BSD_CONFIG
-    nxt.wait_dcache_ldq[wait_idx].wait_start_cycle = 0;
-#endif
+    lsu_perf::reset_wait_start(nxt.wait_dcache_ldq[wait_idx]);
     nxt.wait_dcache_ldq_count++;
     todcache_wait_count++;
     if (todcache_wait_count == LSU_LDU_COUNT) {
@@ -696,85 +533,60 @@ void RealLsu::comb_stlf() {
 #endif
 void RealLsu::comb_lsu2dcache_ldq() {
   for (int i = 0; i < LSU_LDU_COUNT; i++) {
-    out.lsu2dcache->req_ports.load_ports[i].valid = false; // 默认不发出load请求，后续根据LDQ条目状态决定是否发出请求
-#if !BSD_CONFIG
-    out.lsu2dcache->req_ports.load_ports[i].replay = false;
-#endif
+    out.lsu2dcache->req_ports.load_ports[i].valid = false;
+    lsu_perf::clear_replay(out.lsu2dcache->req_ports.load_ports[i]);
   }
 
-#if !BSD_CONFIG && CONFIG_LSU_DRESP_TIMEOUT_CYCLES > 0
-  for (int i = 0; i < cur.wait_dcache_ldq_count; i++) {
-    const uint32_t wait_idx = (cur.wait_dcache_ldq_head + i) % LDQ_SIZE;
+  lsu_perf::retry_load_resp_timeouts(ctx, cur, nxt);
+
+  uint32_t issued = 0;
+  uint32_t scan_windows = cur.wait_dcache_ldq_count > LOAD_WINDOWS_WIDTH ? LOAD_WINDOWS_WIDTH : cur.wait_dcache_ldq_count;
+
+  for (uint32_t scan = 0;
+       scan < scan_windows && issued < LSU_LDU_COUNT;
+       scan++) {
+    const uint32_t wait_idx =
+        (cur.wait_dcache_ldq_head + scan) % LDQ_SIZE;
     const auto &entry = cur.wait_dcache_ldq[wait_idx];
+
     if (!entry.valid) {
       continue;
     }
-    const LdqEntry &ldq_entry = cur.ldq[entry.ldq_idx];
-    if (ldq_entry.load_state != LoadState::WaitDcacheResp ||
-        entry.wait_start_cycle == 0 || ctx == nullptr) {
-      continue;
-    }
-    if (ctx->perf.cycle - entry.wait_start_cycle >=
-        static_cast<uint64_t>(CONFIG_LSU_DRESP_TIMEOUT_CYCLES)) {
-      nxt.ldq[entry.ldq_idx].load_state = LoadState::ReadyToIssue;
-      nxt.ldq[entry.ldq_idx].replay_type = ReplayType::CONFLICT;
-      nxt.wait_dcache_ldq[wait_idx].wait_start_cycle = 0;
-      ctx->perf.ld_resp_timeout_retry_count++;
-    }
-  }
-#endif
- //TODO:解释这段代码
 
-  int32_t issue_ldq = cur.wait_dcache_ldq_count > LSU_LDU_COUNT ? LSU_LDU_COUNT : cur.wait_dcache_ldq_count;
-  uint32_t issued = 0;
-  for (int i = 0; i < issue_ldq; i++) {
-    const auto &entry = cur.wait_dcache_ldq[(cur.wait_dcache_ldq_head + i) % LDQ_SIZE];
     const LdqEntry &cur_ldq_entry = cur.ldq[entry.ldq_idx];
     auto &nxt_ldq_entry = nxt.ldq[entry.ldq_idx];
-    if (entry.valid && cur_ldq_entry.load_state == LoadState::ReadyToIssue) {
-      uint32_t wait_idx = (cur.wait_dcache_ldq_head + i) % LDQ_SIZE;
 
-      out.lsu2dcache->req_ports.load_ports[i].valid = true;
-      out.lsu2dcache->req_ports.load_ports[i].addr = cur_ldq_entry.p_addr;
-      uint32_t gen = normalize_lsu_req_gen(cur.req_gen + issued);
-#if !BSD_CONFIG
-      const bool is_replay = cur_ldq_entry.replay_type != ReplayType::HIT;
-#endif
-
-      out.lsu2dcache->req_ports.load_ports[i].req_id =
-          make_lsu_load_req_id(wait_idx, gen);
-#if !BSD_CONFIG
-      out.lsu2dcache->req_ports.load_ports[i].replay = is_replay;
-
-      if (ctx != nullptr) {
-        ctx->perf.l1d_req_all++;
-        if (is_replay) {
-          ctx->perf.l1d_req_replay++;
-        } else {
-          ctx->perf.l1d_req_initial++;
-          ctx->perf.dcache_access_num++;
-        }
-      }
-#endif
-
-      nxt.wait_dcache_ldq[wait_idx].req_gen = gen;
-#if !BSD_CONFIG
-      nxt.wait_dcache_ldq[wait_idx].wait_start_cycle =
-          ctx == nullptr ? 0 : ctx->perf.cycle;
-#endif
-
-      nxt_ldq_entry.load_state = LoadState::WaitDcacheResp;
-#if !BSD_CONFIG
-      if (!nxt_ldq_entry.perf_mem_started) {
-        nxt_ldq_entry.perf_mem_started = true;
-        nxt_ldq_entry.perf_mem_start_cycle = ctx == nullptr ? 0 : ctx->perf.cycle;
-      }
-#endif
-      issued++;
+    if (cur_ldq_entry.load_state != LoadState::ReadyToIssue) {
+      continue;
     }
+
+    LSU_NON_BSD_ASSERT(!cur_ldq_entry.is_mmio &&
+                       "MMIO load must not be issued to DCache");
+
+    out.lsu2dcache->req_ports.load_ports[issued].valid = true;
+    out.lsu2dcache->req_ports.load_ports[issued].addr = cur_ldq_entry.p_addr;
+
+    const uint32_t gen = normalize_lsu_req_gen(cur.req_gen + issued);
+    const bool is_replay = lsu_perf::is_load_replay(cur_ldq_entry);
+
+    out.lsu2dcache->req_ports.load_ports[issued].req_id =
+        make_lsu_load_req_id(wait_idx, gen);
+    lsu_perf::set_replay(out.lsu2dcache->req_ports.load_ports[issued],
+                         is_replay);
+    lsu_perf::count_load_dcache_issue(ctx, is_replay);
+
+    nxt.wait_dcache_ldq[wait_idx].req_gen = gen;
+    lsu_perf::mark_wait_start(ctx, nxt.wait_dcache_ldq[wait_idx]);
+
+    nxt_ldq_entry.load_state = LoadState::WaitDcacheResp;
+    lsu_perf::start_mem_inst_if_needed(ctx, nxt_ldq_entry);
+
+    issued++;
   }
+
   nxt.req_gen = normalize_lsu_req_gen(cur.req_gen + issued);
 }
+
 
 void RealLsu::comb_dcache2lsu_ldq() {
 
@@ -784,9 +596,7 @@ void RealLsu::comb_dcache2lsu_ldq() {
       uint32_t req_id = in.dcache2lsu->resp_ports.load_resps[i].req_id;
 
       if (req_id & (1u << 31)) {
-#if !BSD_CONFIG
-        Assert(0 && "Invalid load response ID from DCache");
-#endif
+        LSU_NON_BSD_ASSERT(0 && "Invalid load response ID from DCache");
         continue; // 理论上 MemRouteBlock 应该过滤掉，LSU 不处理非 LSU response
       }
 
@@ -796,29 +606,19 @@ void RealLsu::comb_dcache2lsu_ldq() {
       const auto &wait_entry = cur.wait_dcache_ldq[entry_idx];
 
       if (!wait_entry.valid) {
-#if !BSD_CONFIG
-        if (ctx != nullptr) {
-          ctx->perf.ld_resp_stale_drop_count++;
-        }
-#endif
+        lsu_perf::count_stale_load_resp(ctx);
         continue; // stale response after flush/replay queue movement
       }
 
       if (wait_entry.req_gen != resp_gen) {
-#if !BSD_CONFIG
-        if (ctx != nullptr) {
-          ctx->perf.ld_resp_stale_drop_count++;
-        }
-        std::fprintf(stderr,
-                     "[LSU][REQ-GEN-MISMATCH] port=%d req_id=%u entry_idx=%u "
-                     "resp_gen=%u wait_gen=%u wait_ldq=%u head=%u count=%u\n",
-                     i, req_id, entry_idx, resp_gen,
-                     static_cast<unsigned>(wait_entry.req_gen),
-                     static_cast<unsigned>(wait_entry.ldq_idx),
-                     static_cast<unsigned>(cur.wait_dcache_ldq_head),
-                     static_cast<unsigned>(cur.wait_dcache_ldq_count));
-        Assert(0 && "LSU load response req_gen mismatch");
-#endif
+        lsu_perf::count_stale_load_resp(ctx);
+        lsu_report_load_req_gen_mismatch(
+            i, req_id, entry_idx, resp_gen,
+            static_cast<unsigned>(wait_entry.req_gen),
+            static_cast<unsigned>(wait_entry.ldq_idx),
+            static_cast<unsigned>(cur.wait_dcache_ldq_head),
+            static_cast<unsigned>(cur.wait_dcache_ldq_count));
+        LSU_NON_BSD_ASSERT(0 && "LSU load response req_gen mismatch");
         continue;
       }
 
@@ -829,12 +629,8 @@ void RealLsu::comb_dcache2lsu_ldq() {
           if (in.dcache2lsu->resp_ports.load_resps[i].replay == ReplayType::HIT) {
             entry.result = extract_data(in.dcache2lsu->resp_ports.load_resps[i].data, entry.p_addr, entry.func3);
             entry.load_state = LoadState::ReadyToWb;
-#if !BSD_CONFIG
-            entry.replay_type = ReplayType::HIT;
-            perf_record_mem_inst_latency(ctx, entry.perf_mem_started,
-                                         entry.perf_mem_start_cycle);
-            entry.perf_mem_started = false;
-#endif
+            lsu_perf::mark_load_hit(entry);
+            lsu_perf::finish_mem_inst(ctx, entry);
             wait_dcache_ldq_entries[i].valid = false;
 
             const uint32_t finish_idx =
@@ -845,19 +641,11 @@ void RealLsu::comb_dcache2lsu_ldq() {
             nxt.finish_count++;
           } else {
             nxt.ldq[ldq_idx].load_state = LoadState::ReadyToIssue;
-#if !BSD_CONFIG
-            nxt.ldq[ldq_idx].replay_type =
-                in.dcache2lsu->resp_ports.load_resps[i].replay;
-#endif
+            lsu_perf::mark_load_replay(
+                entry, in.dcache2lsu->resp_ports.load_resps[i].replay);
             wait_dcache_ldq_entries[i].valid = true;
             wait_dcache_ldq_entries[i].ldq_idx = ldq_idx;
-#if !BSD_CONFIG
-            wait_dcache_ldq_entries[i].wait_start_cycle = 0;
-
-            if (entry.cache_miss == false) { // 只有之前不是未命中的load才标记为未命中需要重放，之前已经是未命中了就说明这个load已经在重放中了，不需要再次标记和重放了，这样可以避免因为冲突导致的重放而再次发生冲突和重放的情况，减少不必要的重放
-              entry.cache_miss = true;       // 只有真正的未命中才标记需要重放，冲突不标记，这样可以避免因为冲突导致的重放而再次发生冲突和重放的情况，减少不必要的重放
-            }
-#endif
+            lsu_perf::reset_wait_start(wait_dcache_ldq_entries[i]);
           }
         } else {
           wait_dcache_ldq_entries[i].valid = false;
@@ -922,33 +710,22 @@ void RealLsu::comb_dcache2lsu_stq() {
     if (in.dcache2lsu->resp_ports.store_resps[i].valid) {
       uint32_t stq_idx = in.dcache2lsu->resp_ports.store_resps[i].req_id;
       if (stq_idx >= STQ_SIZE) {
-#if !BSD_CONFIG
-        Assert(0 && "Store response idx out of bound");
-#endif
+        LSU_NON_BSD_ASSERT(0 && "Store response idx out of bound");
         continue;
       }
       StqEntry &entry = nxt.stq[stq_idx];
       if (entry.store_state == StoreState::WaitDcacheResp) {
         if (in.dcache2lsu->resp_ports.store_resps[i].replay == ReplayType::HIT) {
           entry.store_state = StoreState::Done; // store完成，可以提交了
-#if !BSD_CONFIG
-          if (ctx != nullptr) {
-            ctx->perf.stq_dcache_resp_hit++;
-          }
-          entry.replay_type = ReplayType::HIT;
-          perf_record_mem_inst_latency(ctx, entry.perf_mem_started,
-                                       entry.perf_mem_start_cycle);
-          entry.perf_mem_started = false;
-#endif
+          lsu_perf::count_store_dcache_hit(ctx);
+          lsu_perf::mark_store_hit(entry);
+          lsu_perf::finish_mem_inst(ctx, entry);
         } else {
           entry.store_state = StoreState::Committed; // store重放，进入重放状态等待dcache fill
-#if !BSD_CONFIG
-          if (ctx != nullptr) {
-            perf_count_stq_replay_resp(
-                ctx->perf, in.dcache2lsu->resp_ports.store_resps[i].replay);
-          }
-          entry.replay_type = in.dcache2lsu->resp_ports.store_resps[i].replay;
-#endif
+          lsu_perf::count_store_replay_resp(
+              ctx, in.dcache2lsu->resp_ports.store_resps[i].replay);
+          lsu_perf::mark_store_replay(
+              entry, in.dcache2lsu->resp_ports.store_resps[i].replay);
         }
       }
     }
@@ -957,9 +734,7 @@ void RealLsu::comb_dcache2lsu_stq() {
 void RealLsu::comb_lsu2dcache_stq() {
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     out.lsu2dcache->req_ports.store_ports[i].valid = false; // 默认不发出store请求，后续根据STQ条目状态决定是否发出请求
-#if !BSD_CONFIG
-    out.lsu2dcache->req_ports.store_ports[i].replay = false;
-#endif
+    lsu_perf::clear_replay(out.lsu2dcache->req_ports.store_ports[i]);
   }
 
   uint32_t commit_count = cur.stq_commit_count;
@@ -967,18 +742,7 @@ void RealLsu::comb_lsu2dcache_stq() {
     commit_count = STORE_WINDOWS_WIDTH;
   }
 
-#if !BSD_CONFIG
-  if (ctx != nullptr && commit_count > 0) {
-    ctx->perf.stq_diag_window_cycles++;
-    ctx->perf.stq_diag_window_entries += commit_count;
-    ctx->perf.stq_diag_head_samples++;
-    perf_count_stq_state(ctx->perf, cur.stq[cur.stq_head].store_state, true);
-    for (uint32_t i = 0; i < commit_count; i++) {
-      const uint32_t stq_idx = (cur.stq_head + i) % STQ_SIZE;
-      perf_count_stq_state(ctx->perf, cur.stq[stq_idx].store_state, false);
-    }
-  }
-#endif
+  lsu_perf::sample_stq_issue_window(ctx, cur, commit_count);
 
   int32_t issued_stq = 0;
   for (uint32_t i = 0; i < commit_count && issued_stq < LSU_STA_COUNT; i++) {
@@ -992,20 +756,11 @@ void RealLsu::comb_lsu2dcache_stq() {
       for (uint32_t j = 0; j < i; j++) {
         const uint32_t older_stq_idx = (cur.stq_head + j) % STQ_SIZE;
         uint8_t older_entry_strb = get_store_strb(cur.stq[older_stq_idx].paddr, cur.stq[older_stq_idx].func3);
-        if (cache_line_match(cur_entry.paddr,cur.stq[older_stq_idx].paddr) && cur.stq[older_stq_idx].store_state != StoreState::Done) {
+        if (CheckAddr(cur.stq[older_stq_idx].paddr,older_entry_strb,cur_entry.paddr,entry_strb) && nxt.stq[older_stq_idx].store_state != StoreState::Done) {
           nxt_entry.store_state = StoreState::Committed; // 还有更老的store没有完成，当前store继续保持在提交状态等待更老的store完成
           has_older_unfinished_store = true;
-#if !BSD_CONFIG
-          if (ctx != nullptr) {
-            ctx->perf.stq_same_addr_block_count++;
-            perf_count_stq_same_addr_older(
-                ctx->perf, nxt.stq[older_stq_idx].store_state);
-            ctx->perf.stq_same_addr_block_distance_sum += i - j;
-            if (i - j > ctx->perf.stq_same_addr_block_distance_max) {
-              ctx->perf.stq_same_addr_block_distance_max = i - j;
-            }
-          }
-#endif
+          lsu_perf::count_same_addr_block(
+              ctx, nxt.stq[older_stq_idx].store_state, i - j);
           break;
         }
       }
@@ -1023,25 +778,15 @@ void RealLsu::comb_lsu2dcache_stq() {
           nxt.uncached_unit.func3 = cur_entry.func3;
           nxt.uncached_unit.idx = stq_idx;              // 将准备好发出请求的store的STQ索引传递给uncached unit，方便后续处理响应时找到对应的STQ条目
           nxt_entry.store_state = StoreState::WaitMmioResp; // MMIO store发出后进入等待MMIO响应状态
-#if !BSD_CONFIG
-          nxt_entry.perf_mem_started = true;
-          nxt_entry.perf_mem_start_cycle = ctx == nullptr ? 0 : ctx->perf.cycle;
-          if (ctx != nullptr) {
-            ctx->perf.mmio_inst_count++;
-            ctx->perf.mmio_store_count++;
-          }
-        } else if (ctx != nullptr) {
-          ctx->perf.mmio_head_block_cycles++;
-#endif
+          lsu_perf::start_mem_inst(ctx, nxt_entry);
+          lsu_perf::count_mmio_store_issue(ctx);
+        } else {
+          lsu_perf::count_mmio_head_block(ctx);
         }
       } else {
         if (cur_entry.suppress_write) {
           nxt_entry.store_state = StoreState::Done;
-#if !BSD_CONFIG
-          if (ctx != nullptr) {
-            ctx->perf.stq_diag_suppress_done++;
-          }
-#endif
+          lsu_perf::count_suppress_store_done(ctx);
           continue;
         }
         out.lsu2dcache->req_ports.store_ports[issued_stq].valid = true;
@@ -1050,40 +795,19 @@ void RealLsu::comb_lsu2dcache_stq() {
             align_store_data(cur_entry.data, cur_entry.paddr, cur_entry.func3);
         out.lsu2dcache->req_ports.store_ports[issued_stq].strb = entry_strb;
         out.lsu2dcache->req_ports.store_ports[issued_stq].req_id = stq_idx;
-#if !BSD_CONFIG
-        const bool is_replay = cur_entry.replay_type != ReplayType::HIT;
-        out.lsu2dcache->req_ports.store_ports[issued_stq].replay = is_replay;
-        if (ctx != nullptr) {
-          ctx->perf.stq_diag_issue_total++;
-          ctx->perf.l1d_req_all++;
-          if (is_replay) {
-            ctx->perf.stq_diag_issue_replay++;
-            ctx->perf.l1d_req_replay++;
-          } else {
-            ctx->perf.stq_diag_issue_initial++;
-            ctx->perf.l1d_req_initial++;
-            ctx->perf.dcache_access_num++;
-          }
-        }
-#endif
+        const bool is_replay = lsu_perf::is_store_replay(cur_entry);
+        lsu_perf::set_replay(
+            out.lsu2dcache->req_ports.store_ports[issued_stq], is_replay);
+        lsu_perf::count_store_dcache_issue(ctx, is_replay);
         nxt_entry.store_state = StoreState::WaitDcacheResp; // 发出store请求后，进入等待dcache响应状态
-#if !BSD_CONFIG
-        if (!cur_entry.perf_mem_started) {
-          nxt_entry.perf_mem_started = true;
-          nxt_entry.perf_mem_start_cycle = ctx == nullptr ? 0 : ctx->perf.cycle;
-        }
-#endif
+        lsu_perf::start_mem_inst_if_needed(ctx, cur_entry, nxt_entry);
         issued_stq++;
       }
     }else{
       // break;
     }
   }
-#if !BSD_CONFIG
-  if (ctx != nullptr && commit_count > 0 && issued_stq == 0) {
-    ctx->perf.stq_diag_issue_none_cycles++;
-  }
-#endif
+  lsu_perf::count_store_issue_none(ctx, commit_count, issued_stq);
 }
 
 void RealLsu::comb_lsu2exe() {
@@ -1112,9 +836,7 @@ void RealLsu::comb_lsu2exe() {
             LsuExeIO::LsuExeRespUop::from_micro_op(wb_uop);
         stq_entry.store_state = StoreState::Done; // 已经发出写回请求，进入写回状态等待提交
       } else {
-#if !BSD_CONFIG
-        Assert(0 && "MMU done STQ entry in unexpected state");
-#endif
+        LSU_NON_BSD_ASSERT(0 && "MMU done STQ entry in unexpected state");
       }
     }
     nxt.mmu_done_stq[done_idx].valid = false; // 无论如何都需要将MMU完成的STQ条目标记为无效
@@ -1265,11 +987,33 @@ void RealLsu::comb_stq_commit() {
       }
 
     } else {
-#if !BSD_CONFIG
-      Assert(0 && "Store commit out of order?");
-#endif
+      LSU_NON_BSD_ASSERT(0 && "Store commit out of order?");
     }
   }
+}
+
+void RealLsu::comb_check() {
+
+  uint32_t committed_count = cur.stq_commit_count;
+  if (committed_count > cur.stq_count) {
+    committed_count = cur.stq_count;
+  }
+  uint32_t issue = committed_count > LSU_STA_COUNT ? LSU_STA_COUNT : committed_count;
+  uint32_t retired_stq = 0;
+  for (int i = 0; i < issue; i++) {
+    const uint32_t stq_idx = (cur.stq_head + i) % STQ_SIZE;
+    if (cur.stq[stq_idx].store_state == StoreState::Done) {
+      nxt.stq_count--;
+      if (nxt.stq_commit_count > 0) {
+        nxt.stq_commit_count--;
+      }
+      advance_ring_ptr(nxt.stq_head, nxt.stq_head_flag, STQ_SIZE);
+      retired_stq++;
+    } else {
+      break;
+    }
+  }
+  lsu_perf::count_store_retire(ctx, committed_count, retired_stq);
 }
 void RealLsu::comb_flush() {
   if (in.rob_bcast->flush) {
@@ -1392,37 +1136,6 @@ void RealLsu::comb_flush() {
     }
   }
 }
-void RealLsu::comb_check() {
-
-  uint32_t committed_count = cur.stq_commit_count;
-  if (committed_count > cur.stq_count) {
-    committed_count = cur.stq_count;
-  }
-  uint32_t issue = committed_count > LSU_STA_COUNT ? LSU_STA_COUNT : committed_count;
-  uint32_t retired_stq = 0;
-  for (int i = 0; i < issue; i++) {
-    const uint32_t stq_idx = (cur.stq_head + i) % STQ_SIZE;
-    if (cur.stq[stq_idx].store_state == StoreState::Done) {
-      nxt.stq_count--;
-      if (nxt.stq_commit_count > 0) {
-        nxt.stq_commit_count--;
-      }
-      advance_ring_ptr(nxt.stq_head, nxt.stq_head_flag, STQ_SIZE);
-      retired_stq++;
-    } else {
-      break;
-    }
-  }
-#if !BSD_CONFIG
-  if (ctx != nullptr && committed_count > 0) {
-    ctx->perf.stq_diag_retire_cycles++;
-    ctx->perf.stq_diag_retire_total += retired_stq;
-    if (retired_stq == 0) {
-      ctx->perf.stq_diag_retire_block_cycles++;
-    }
-  }
-#endif
-}
 
 void RealLsu::seq() {
   cur = nxt;
@@ -1526,9 +1239,7 @@ void RealLsu::handle_store_data(const MicroOp &inst) {
   StqEntry &entry = nxt.stq[inst.stq_idx];
 
   if (entry.rob_flag != inst.rob_flag || entry.rob_idx != inst.rob_idx) {
-#if !BSD_CONFIG
-    Assert(0 && "Store data mismatch");
-#endif
+    LSU_NON_BSD_ASSERT(0 && "Store data mismatch");
     return;
   }
   entry.data = inst.result;
@@ -1557,9 +1268,7 @@ void RealLsu::handle_store_addr(const MicroOp &inst) {
   StqEntry &entry = nxt.stq[inst.stq_idx];
 
   if (entry.rob_flag != inst.rob_flag || entry.rob_idx != inst.rob_idx) {
-#if !BSD_CONFIG
-    Assert(0 && "Store addr mismatch");
-#endif
+    LSU_NON_BSD_ASSERT(0 && "Store addr mismatch");
     return;
   }
   entry.vaddr_valid = true;
@@ -1587,10 +1296,9 @@ void RealLsu::handle_load_req(const MicroOp &inst) {
   LdqEntry &entry = nxt.ldq[inst.ldq_idx];
 
   if (entry.rob_flag != inst.rob_flag || entry.rob_idx != inst.rob_idx) {
-#if !BSD_CONFIG
-    Assert(entry.load_state == LoadState::Allocated && "Load req mismatch with non-empty entry");
-    Assert(0 && "Load req mismatch");
-#endif
+    LSU_NON_BSD_ASSERT(entry.load_state == LoadState::Allocated &&
+                       "Load req mismatch with non-empty entry");
+    LSU_NON_BSD_ASSERT(0 && "Load req mismatch");
     return;
   }
   entry.v_addr_valid = true;
@@ -1621,9 +1329,7 @@ bool RealLsu::alloc_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_fla
   bool expected_tail_flag =
       stq_tail_flag(nxt.stq_head, nxt.stq_count, nxt.stq_head_flag);
   if (slot_flag != expected_tail_flag) {
-#if !BSD_CONFIG
-    Assert(0 && "STQ slot flag mismatch");
-#endif
+    LSU_NON_BSD_ASSERT(0 && "STQ slot flag mismatch");
     return false;
   }
   StqEntry &entry = nxt.stq[stq_idx_after(nxt.stq_head, nxt.stq_count)];
@@ -1646,9 +1352,7 @@ StqEntry RealLsu::get_stq_entry(int idx, bool flag) {
   StqEntry &entry = cur.stq[idx];
   int32_t count = (idx + STQ_SIZE - cur.stq_head) % STQ_SIZE;
   if (entry.stq_flag != flag || count >= cur.stq_count) {
-#if !BSD_CONFIG
-    Assert(0 && "STQ entry flag mismatch");
-#endif
+    LSU_NON_BSD_ASSERT(0 && "STQ entry flag mismatch");
   } else {
     return entry;
   }

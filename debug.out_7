@@ -1,0 +1,20 @@
+[CONFIG][SOC] bpu=1(real-bpu) icache_axi=1 compiled_icache=shared-top-level-axi
+[CONFIG][AXI] ddr_read_latency=43cy ddr_write_resp_latency=1cy ddr_beat=32B wq=32 wag=0cy wfifo=8 wdrain=0cy whi=8 wlo=0 r2w=0cy w2r=0cy upstream_payload=64B upstream_read_resp=256B out=32 per_master=32 ddr_out=32
+[CONFIG][LLC] enable=1(enabled) capacity=8MB ways=16 mshr=8 lookup_latency=3cy dcache_read_miss=allocate
+[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi memsubsystem_internal_axi_runtime=disabled llc_summary=shared fabric uses LLC
+[TOPOLOGY] icache_runtime=shared-top-level-axi
+[CFG][WIDTH] fetch=16 decode=8 issue_ports=24 commit=8 max_dispatch(iq/ldq/stq)=8/8/8
+[CFG][CACHE] L1I=16KB(64 sets x 4 ways x 64B) L1D=64KB(256 sets x 4 ways x 64B)
+[CFG][MEM] hierarchy=L1I/L1D + AXI-icache+LLC LLC=8MB(16 ways,mshr=8,lookup=3cy)
+[CFG][BACKEND] rob=2048(rob_bank=8) prf=2048 arf=32 ftq=256 instbuf=1024 ldq=512 stq=512 schedule=IQ_SLOT_PRIORITY
+[CFG][FU] total=30 alu=8 bru=4 ldu=4 sta=4 sdu=4 wakeup_ports=16
+[CFG][IQ] IQ_INT size=1024 dispatch=8 issue_ports=[0..7] port_num=8
+[CFG][IQ] IQ_LD size=512 dispatch=8 issue_ports=[8..11] port_num=4
+[CFG][IQ] IQ_STA size=512 dispatch=8 issue_ports=[12..15] port_num=4
+[CFG][IQ] IQ_STD size=512 dispatch=8 issue_ports=[16..19] port_num=4
+[CFG][IQ] IQ_BR size=512 dispatch=8 issue_ports=[20..23] port_num=4
+[LSU STLF ON][LSU LOAD/STORE WINDOWS] load_windows=12 lsu_ldu_count=4 LDQ_SIZE=512 store_windows=12 lsu_sta_count=4 STQ_SIZE=512
+[CONFIG][AXI] ddr_read_latency=43cy ddr_write_resp_latency=1cy ddr_beat=32B wq=32 wag=0cy wfifo=8 wdrain=0cy whi=8 wlo=0 r2w=0cy w2r=0cy out=32 per_master=32 ddr_out=32 dcache_line=64B(16 words) upstream_write_payload=64B upstream_read_resp=256B
+[Mode] CKPT: Restoring from Snapshot...
+[File] ../ckpt_sp7_target20618_warmup1.gz
+Restoring Memory... format=simpoint-v2(header+ranges)

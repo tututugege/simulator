@@ -1,0 +1,273 @@
+[CONFIG][SOC] bpu=1(real-bpu) icache_axi=1 compiled_icache=shared-top-level-axi
+[CONFIG][AXI] ddr_read_latency=43cy ddr_write_resp_latency=1cy ddr_beat=32B wq=32 wag=0cy wfifo=8 wdrain=0cy whi=8 wlo=0 r2w=0cy w2r=0cy upstream_payload=64B upstream_read_resp=256B out=32 per_master=32 ddr_out=32
+[CONFIG][LLC] enable=1(enabled) capacity=8MB ways=16 mshr=8 lookup_latency=3cy dcache_read_miss=allocate
+[TOPOLOGY] dcache/ptw/peripheral=top-level-shared-axi memsubsystem_internal_axi_runtime=disabled llc_summary=shared fabric uses LLC
+[TOPOLOGY] icache_runtime=shared-top-level-axi
+[CFG][WIDTH] fetch=16 decode=8 issue_ports=24 commit=8 max_dispatch(iq/ldq/stq)=8/8/8
+[CFG][CACHE] L1I=16KB(64 sets x 4 ways x 64B) L1D=64KB(256 sets x 4 ways x 64B)
+[CFG][MEM] hierarchy=L1I/L1D + AXI-icache+LLC LLC=8MB(16 ways,mshr=8,lookup=3cy)
+[CFG][BACKEND] rob=2048(rob_bank=8) prf=2048 arf=32 ftq=256 instbuf=1024 ldq=512 stq=512 schedule=IQ_SLOT_PRIORITY
+[CFG][FU] total=30 alu=8 bru=4 ldu=4 sta=4 sdu=4 wakeup_ports=16
+[CFG][IQ] IQ_INT size=1024 dispatch=8 issue_ports=[0..7] port_num=8
+[CFG][IQ] IQ_LD size=512 dispatch=8 issue_ports=[8..11] port_num=4
+[CFG][IQ] IQ_STA size=512 dispatch=8 issue_ports=[12..15] port_num=4
+[CFG][IQ] IQ_STD size=512 dispatch=8 issue_ports=[16..19] port_num=4
+[CFG][IQ] IQ_BR size=512 dispatch=8 issue_ports=[20..23] port_num=4
+[LSU STLF ON][LSU LOAD/STORE WINDOWS] load_windows=12 lsu_ldu_count=4 LDQ_SIZE=512 store_windows=12 lsu_sta_count=4 STQ_SIZE=512
+[CONFIG][AXI] ddr_read_latency=43cy ddr_write_resp_latency=1cy ddr_beat=32B wq=32 wag=0cy wfifo=8 wdrain=0cy whi=8 wlo=0 r2w=0cy w2r=0cy out=32 per_master=32 ddr_out=32 dcache_line=64B(16 words) upstream_write_payload=64B upstream_read_resp=256B
+[Mode] CKPT: Restoring from Snapshot...
+[File] ../ckpt_sp1_target18266_warmup1.gz
+Restoring Memory... format=simpoint-v2(header+ranges)
+Checkpoint restored from ../ckpt_sp1_target18266_warmup1.gz
+Restore for ref cpu 
+[CONFIG] checkpoint_interval = 100000014
+[CONFIG] warmup_target = 10000000 (runtime override)
+[CONFIG] max_commit_inst = 10000000 (runtime override)
+[Run] Ref prewarm for 90000014 steps...
+[Run] Ref prewarm done: 90000014 steps.
+[Run] Restoring DUT from ref snapshot...
+[Plan] O3 warmup scheduled: target = 10000000 committed instructions.
+[Plan] O3 measure scheduled: target = 10000000 committed instructions after warmup.
+[Run] Entering O3 run loop. Warmup/measure transition will be printed when warmup actually finishes.
+0
+199803/msg00088.html: ac1df5e936a8f2b06ec5a0a23be75399
+199803/msg00089.html: 6c9aad91c92dc4c8607e184c0b53070b
+199803/msg00090.html: a5eb130918c99d962e4defe22c367931
+199803/msg00091.html: bf173ddbe7a1ca6eedc908a0d28620b7
+199803/msg00092.html: 24aa70fbd3272adf97c0f3bb5209be12
+[CKPT] O3 warmup done at commit 10000000/10000000. Resetting perf counters and starting measure phase.
+199803/msg00093.html: c54f499fdd29b6d855934282cf6b3eee
+199803/msg00094.html: 1215c9315a67b3b0ce14c361405ec97b
+Simulation Exited with Reason: 3
+[sim] Reached MAX_COMMIT_INST=10000000
+[38;5;34m-----------------------------[0m
+[38;5;34mSuccess!!!![0m
+[38;5;34m-----------------------------[0m
+[38;5;34m-----------------------------[0m
+Simulation Exited. Printing Perf Stats...
+[38;5;34msim-time(cycle)= 3922229, committed(total/load/store)= 10000000 / 1167991 / 171135[0m
+[38;5;34minstruction num: 10000000[0m
+[38;5;34mcycle       num: 3922229[0m
+[38;5;34mipc            : 2.549571[0m
+
+[38;5;34m*********L1D COUNTER***************[0m
+[38;5;34mL1D_REQ_INITIAL      : 1338454[0m
+[38;5;34mL1D_REQ_ALL          : 2637659[0m
+[38;5;34mL1D_MISS_MSHR_ALLOC  : 32463[0m
+[38;5;34mL1D_REQ_REPLAY       : 1299205[0m
+[38;5;34mdcache access       : 1338454[0m
+[38;5;34mdcache miss         : 32463[0m
+[38;5;34mL1D_REPLAY_SQUASH    : 983512[0m
+[38;5;34mL1D_REPLAY_CONFLICT      : 45373[0m
+[38;5;34m  - LOAD                 : 1622[0m
+[38;5;34m  - STORE                : 43751[0m
+[38;5;34mL1D_REPLAY_MSHR_FULL     : 24[0m
+[38;5;34m  - LOAD                 : 23[0m
+[38;5;34m  - STORE                : 1[0m
+[38;5;34mL1D_REPLAY_WAIT_MSHR     : 1253427[0m
+[38;5;34m  - LOAD                 : 689388[0m
+[38;5;34m  - STORE                : 564039[0m
+[38;5;34m  - WAIT_MSHR_HITLINE    : 1128034[0m
+[38;5;34m  - WAIT_MSHR_FIRST_ALLOC: 46346[0m
+[38;5;34m  - WAIT_MSHR_FILL_WAIT  : 79047[0m
+[38;5;34mL1D_REPLAY_REASON_TOTAL  : 1298824[0m
+[38;5;34m  - CONFLICT_RATIO       : 3.49%[0m
+[38;5;34m  - MSHR_FULL_RATIO      : 0.00%[0m
+[38;5;34m  - WAIT_MSHR_RATIO      : 96.50%[0m
+[38;5;34mL1D Hit Rate         : 0.975746[0m
+[38;5;34mL1D MPKI             : 3.246300[0m
+[38;5;34mL1D AMAT(cycles)     : 1.648985 (hit=1cy assumption)[0m
+[38;5;34mAvg Miss Penalty     : 26.757724 cycles (samples=32463)[0m
+[38;5;34mAvg AXI Read Latency : 22.708499 cycles (samples=32463)[0m
+[38;5;34mAvg AXI Write Latency: 5.134165 cycles (samples=10666)[0m
+[38;5;34mAvg Mem-Inst Latency : 10.340347 cycles (samples=1338137)[0m
+[38;5;34mMMIO Inst Count      : 202[0m
+[38;5;34mMMIO Load Count      : 72[0m
+[38;5;34mMMIO Store Count     : 130[0m
+[38;5;34mLD Resp Stale Drop   : 315[0m
+[38;5;34mLD Resp TimeoutRetry : 0[0m
+[38;5;34mMMIO Head Block Cyc  : 780[0m
+[38;5;34mPTW Port Replay Cnt  : 624[0m
+[38;5;34mSTQ SameAddr Block   : 605[0m
+[38;5;34mLD STLF Check Cnt    : 42542890[0m
+[38;5;34mLD Block Unknown STA : 124983 (0.2938% of checks)[0m
+[38;5;34mLDQ Avg/Max Occupancy: 5.6020 / 275[0m
+[38;5;34mSTQ Avg/Max Occupancy: 19.5876 / 512[0m
+[38;5;34mSTQ Commit Avg/Max Occupancy: 11.1345 / 509[0m
+[38;5;34mSTQ Wait MMu Avg/Max Occupancy: 0.0475 / 39[0m
+[38;5;34mLDQ Wait MMu Avg/Max Occupancy: 0.3235 / 160[0m
+[38;5;34mSTQ Done MMu Avg/Max Occupancy: 0.0443 / 10[0m
+[38;5;34mFinish Avg/Max Occupancy: 0.2986 / 11[0m
+[38;5;34mSTLF Queue Avg/Max Occupancy: 0.3792 / 225[0m
+[38;5;34mLDQ Wait DCache Avg/Max Occupancy: 3.8635 / 220[0m
+[38;5;34mLDQ State Avg/Max Occupancy:[0m
+[38;5;34m  Empty          : 506.3980 / 512[0m
+[38;5;34m  Allocated      : 0.7410 / 107[0m
+[38;5;34m  WaitAddr       : 0.0000 / 0[0m
+[38;5;34m  WaitTlb        : 0.3228 / 160[0m
+[38;5;34m  CheckStlf      : 0.3766 / 225[0m
+[38;5;34m  WaitOlderStore : 0.0000 / 0[0m
+[38;5;34m  ReadyToIssue   : 2.9152 / 212[0m
+[38;5;34m  WaitDcacheResp : 0.9477 / 8[0m
+[38;5;34m  WaitMmioResp   : 0.0001 / 1[0m
+[38;5;34m  ReadyToWb      : 0.2986 / 11[0m
+[38;5;34m  Replaying      : 0.0000 / 0[0m
+[38;5;34m  PageFault      : 0.0000 / 1[0m
+[38;5;34m  Done           : 0.0000 / 0[0m
+[38;5;34m  Other          : 0.0000 / 0[0m
+[38;5;34mSTQ State Avg/Max Occupancy:[0m
+[38;5;34m  Empty          : 492.5759 / 512[0m
+[38;5;34m  Allocated      : 0.0000 / 0[0m
+[38;5;34m  WaitAddr       : 0.0000 / 0[0m
+[38;5;34m  WaitData       : 3.3895 / 225[0m
+[38;5;34m  WaitTlb        : 0.0473 / 39[0m
+[38;5;34m  Ready          : 0.0000 / 0[0m
+[38;5;34m  Committed      : 10.6552 / 501[0m
+[38;5;34m  WaitDcacheResp : 0.3971 / 8[0m
+[38;5;34m  WaitMmioResp   : 0.0001 / 1[0m
+[38;5;34m  Replaying      : 0.0000 / 0[0m
+[38;5;34m  PageFault      : 0.0000 / 1[0m
+[38;5;34m  Done           : 4.9349 / 174[0m
+[38;5;34m  Other          : 0.0000 / 0[0m
+
+[38;5;34m*********STQ DIAG COUNTER**********[0m
+[38;5;34mSTQ Window Samples       : 247359[0m
+[38;5;34mSTQ Window Avg Entries   : 10.9553[0m
+[38;5;34mSTQ Window State Cnts    : committed=829765 done=322163 wait_dcache=1557576 wait_mmio=390 wait_tlb=0 wait_data=0 page_fault=0 other=0[0m
+[38;5;34mSTQ Head Samples         : 247359[0m
+[38;5;34mSTQ Head State Cnts      : committed=60668 done=51733 wait_dcache=134568 wait_mmio=390 wait_tlb=0 wait_data=0 page_fault=0 other=0[0m
+[38;5;34mSTQ Issue None Cycles    : 34439[0m
+[38;5;34mSTQ Issue Total/Init/Repl: 778788 / 170997 / 607791[0m
+[38;5;34mSTQ Suppress Done        : 0[0m
+[38;5;34mSTQ Retire Cycles/Total  : 247359 / 171135 (avg=0.6918)[0m
+[38;5;34mSTQ Retire Block Cycles  : 195626[0m
+[38;5;34mSTQ DCache Resp Hit/Repl : 170997 / 607791[0m
+[38;5;34m  - replay conflict/mshr_hit/mshr_full: 122798 / 484992 / 1[0m
+[38;5;34mSTQ SameAddr Older State : committed=158 wait_dcache=447 wait_mmio=0 wait_tlb=0 wait_data=0 page_fault=0 other=0[0m
+[38;5;34mSTQ SameAddr Dist Avg/Max: 2.2083 / 9[0m
+
+[38;5;34m*********L1I COUNTER***************[0m
+[38;5;34mL1I accuracy    : 0.998413[0m
+[38;5;34mL1I access      : 746070[0m
+[38;5;34mL1I hit         : 744886[0m
+[38;5;34mL1I miss        : 1184[0m
+[38;5;34mL1I AMAT(cycles): 1.014663 (hit=1cy assumption)[0m
+[38;5;34mAvg Miss Penalty: 9.239719 cycles (samples=997)[0m
+[38;5;34mAvg AXI Read    : 4.238716 cycles (samples=997)[0m
+
+[38;5;34m*********LLC COUNTER**************[0m
+[38;5;34mllc read acc    : 0.652795[0m
+[38;5;34mllc read access : 33905[0m
+[38;5;34mllc read hit    : 22133[0m
+[38;5;34mllc read miss   : 11772[0m
+[38;5;34mllc l1i a/h/m   : 1151 / 1147 / 4[0m
+[38;5;34mllc l1d a/h/m   : 32754 / 20986 / 11768[0m
+[38;5;34mllc bypass read : 0[0m
+[38;5;34mllc refill      : 11772[0m
+[38;5;34mllc mshr alloc  : 11772[0m
+[38;5;34mllc mshr merge  : 0[0m
+[38;5;34mllc wr passthru : 0[0m
+[38;5;34mpf issue/hit    : 0 / 0[0m
+[38;5;34mpf drop inflight/full : 0 / 0[0m
+[38;5;34mpf drop queue/hit     : 0 / 0[0m
+[38;5;34mllc->ddr read avg : 45.000000 cycles (samples=11772)[0m
+[38;5;34mllc->ddr write avg: 0.000000 cycles (samples=0)[0m
+
+[38;5;34m*********PTW/ARB COUNTER***********[0m
+[38;5;34mDTLB req/grant/resp : 1058 / 2511 / 829[0m
+[38;5;34mITLB req/grant/resp : 6 / 15 / 3[0m
+[38;5;34mDTLB blocked        : 0[0m
+[38;5;34mITLB blocked        : 0[0m
+[38;5;34mDTLB wait cycles    : 10116[0m
+[38;5;34mITLB wait cycles    : 47[0m
+
+[38;5;34m*********BPU COUNTER************[0m
+[38;5;34mbpu   accuracy : 0.986599[0m
+
+[38;5;34mjalr  accuracy : 0.762938[0m
+[38;5;34mnum        : 599[0m
+[38;5;34mmispred    : 142[0m
+[38;5;34maddr error : 142[0m
+[38;5;34mdir  error : 0[0m
+
+[38;5;34mbr    accuracy : 0.994438[0m
+[38;5;34mnum        : 59511[0m
+[38;5;34mmispred    : 331[0m
+[38;5;34maddr error : 0[0m
+[38;5;34mdir  error : 331[0m
+
+[38;5;34mret    accuracy : 0.716260[0m
+[38;5;34mnum        : 1230[0m
+[38;5;34mmispred    : 349[0m
+[38;5;34maddr error : 349[0m
+[38;5;34mdir  error : 0[0m
+
+[38;5;34m*********SQUASH COUNTER************[0m
+[38;5;34msquash flush total      : 4366[0m
+[38;5;34m  - from ren            : 2431[0m
+[38;5;34m  - from dispatch       : 1935[0m
+[38;5;34msquash mispred total    : 9852[0m
+[38;5;34m  - from ren            : 4997[0m
+[38;5;34m  - from dispatch       : 4855[0m
+[38;5;34mpending squash slots    : flush=0 mispred=0[0m
+
+[38;5;34m*********FRONTEND FETCH***********[0m
+[38;5;34mavg inst / sim cycle         : 2.5903[0m
+[38;5;34mavg inst / ib write cycle    : 13.6728[0m
+[38;5;34mib blocked cycles            : 3154242[0m
+[38;5;34mftq blocked cycles           : 8170[0m
+[38;5;34micache wait bpu cycles       : 0 (0.00%)[0m
+[38;5;34mbpu wait icache cycles       : 0 (0.00%)[0m
+
+[38;5;34m*********RESOURCE STALL************[0m
+[38;5;34mbr id stall cycles      : 1465[0m
+[38;5;34mpreg stall cycles       : 0[0m
+[38;5;34mrob full stall cycles   : 2421258[0m
+[38;5;34miq full stall cycles    : 150222[0m
+[38;5;34mldq full stall cycles   : 0[0m
+[38;5;34mstq full stall cycles   : 58028[0m
+[38;5;34mdis2ren not ready cycles: 2638052[0m
+[38;5;34m  - dis2ren flush/stall : 1877[0m
+[38;5;34m  - dis2ren rob         : 2421255[0m
+[38;5;34m  - dis2ren serialize   : 6657[0m
+[38;5;34m  - dis2ren dispatch    : 208263[0m
+[38;5;34m  - dis2ren older       : 0[0m
+[38;5;34m    - dispatch ldq      : 0[0m
+[38;5;34m    - dispatch stq      : 58026[0m
+[38;5;34m    - dispatch iq total : 150222[0m
+[38;5;34m      - iq int          : 150222[0m
+[38;5;34m      - iq ld           : 0[0m
+[38;5;34m      - iq sta          : 0[0m
+[38;5;34m      - iq std          : 0[0m
+[38;5;34m      - iq br           : 0[0m
+[38;5;34m    - dispatch other    : 0[0m
+
+[38;5;34m*********Top-Down Analysis (Level 1)************[0m
+[38;5;34mTotal Slots      : 31377832[0m
+[38;5;34mFrontend Bound   : 6.14%[0m
+[38;5;34m  - Recovery Total : 0.05%[0m
+[38;5;34m  - Recovery Mispred: 0.03%[0m
+[38;5;34m  - Recovery Flush  : 0.01%[0m
+[38;5;34m  - Front Pure      : 6.09%[0m
+[38;5;34m  - Fetch Latency  : 0.00% (Approx by ICache Miss)[0m
+[38;5;34m  - Fetch Bandwidth: 6.09%[0m
+[38;5;34mBackend Bound    : 61.73%[0m
+[38;5;34m  - Memory Bound   : 0.19% (LSU Stall)[0m
+[38;5;34m    - LDQ Full       : 0.00%[0m
+[38;5;34m    - STQ Full       : 0.19%[0m
+[38;5;34m    - L1 Bound       : 0.19%[0m
+[38;5;34m    - Ext Memory Bound: 0.00%[0m
+[38;5;34m  - Core Bound     : 61.54% (IQ/ROB Stall)[0m
+[38;5;34m    - IQ Bound       : 2.34%[0m
+[38;5;34m    - ROB Bound      : 59.20%[0m
+[38;5;34mBad Speculation  : 0.27%[0m
+[38;5;34mRetiring         : 31.87%[0m
+
+[38;5;34m*********Top-Down Analysis (Level 1 - IDU)************[0m
+[38;5;34mIDU Total Slots      : 31377832[0m
+[38;5;34mIDU Frontend Bound   : 0.54%[0m
+[38;5;34mIDU Backend Bound    : 67.27%[0m
+[38;5;34mIDU Bad Speculation  : 0.31%[0m
+[38;5;34mIDU Retiring         : 31.87%[0m
+
+[38;5;34m-----------------------------[0m
