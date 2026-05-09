@@ -6,7 +6,6 @@ uint32_t tag_array[DCACHE_SETS_NUM][DCACHE_WAYS_NUM] = {};
 uint32_t data_array[DCACHE_SETS_NUM][DCACHE_WAYS_NUM][DCACHE_WORD_NUM] = {};
 bool valid_array[DCACHE_SETS_NUM][DCACHE_WAYS_NUM] = {};
 bool dirty_array[DCACHE_SETS_NUM][DCACHE_WAYS_NUM] = {};
-bool pending_fill_array[DCACHE_SETS_NUM][DCACHE_WAYS_NUM] = {};
 bool plru_tree_state[DCACHE_SETS_NUM][DCACHE_PLRU_TREE_BITS] = {};
 
 namespace {
@@ -41,16 +40,16 @@ void init_dcache()
     std::memset(data_array, 0, sizeof(data_array));
     std::memset(valid_array, 0, sizeof(valid_array));
     std::memset(dirty_array, 0, sizeof(dirty_array));
-    std::memset(pending_fill_array, 0, sizeof(pending_fill_array));
     std::memset(plru_tree_state, 0, sizeof(plru_tree_state));
 }
 
 AddrFields decode(uint32_t addr)
 {
     AddrFields f;
-    f.word_off = (addr >> 2) & (DCACHE_WORD_NUM - 1);
-    f.set_idx = (addr >> DCACHE_OFFSET_BITS) & (DCACHE_SETS_NUM - 1);
+    f.bank = (addr >> 2) & (DCACHE_BANK_NUM - 1);
     f.tag = addr >> (DCACHE_SET_BITS + DCACHE_OFFSET_BITS);
+    f.set_idx = (addr >> DCACHE_OFFSET_BITS) & (DCACHE_SETS_NUM - 1);
+    f.word_off = (addr >> 2) & (DCACHE_WORD_NUM - 1);
     return f;
 }
 
@@ -183,4 +182,12 @@ bool CheckAddr(uint32_t addr1, uint8_t strb1, uint32_t addr2, uint8_t strb2) {
         if (diff >= 8) return false;
         return (strb2 & (strb1 << diff)) != 0;
     }
+}
+
+inline uint32_t word_bank(uint32_t word_off) {
+    return word_off & (DCACHE_BANK_NUM - 1);
+}
+
+inline uint32_t bank_word_idx(uint32_t word_off) {
+    return word_off >> DCACHE_BANK_BITS;
 }

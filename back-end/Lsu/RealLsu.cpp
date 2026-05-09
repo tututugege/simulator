@@ -92,32 +92,29 @@ void RealLsu::comb_mmio_out() {
   }
 }
 void RealLsu::comb_mmio_in() {
-  if (in.peripheral_resp->is_mmio) {
-     if (cur.uncached_unit.is_load) {
-      if (cur.uncached_unit.valid) {
-        auto &entry = nxt.ldq[cur.uncached_unit.idx];
-        if (entry.load_state == LoadState::WaitMmioResp) {
-          entry.result = in.peripheral_resp->mmio_rdata;
-          entry.load_state = LoadState::ReadyToWb;
-          lsu_perf::finish_mem_inst(ctx, entry);
+  if (in.peripheral_resp->is_mmio && cur.uncached_unit.valid) {
+    if (cur.uncached_unit.is_load) {
+      auto &entry = nxt.ldq[cur.uncached_unit.idx];
+      if (entry.load_state == LoadState::WaitMmioResp) {
+        entry.result = in.peripheral_resp->mmio_rdata;
+        entry.load_state = LoadState::ReadyToWb;
+        lsu_perf::finish_mem_inst(ctx, entry);
 
-          const uint32_t finish_idx =
-              (nxt.finish_head + nxt.finish_count) % kFinishSize;
-          nxt.finish[finish_idx].valid = true;
-          nxt.finish[finish_idx].idx = cur.uncached_unit.idx;
-          nxt.finish[finish_idx].is_load = true;
-          nxt.finish_count++;
-        }
+        const uint32_t finish_idx =
+            (nxt.finish_head + nxt.finish_count) % kFinishSize;
+        nxt.finish[finish_idx].valid = true;
+        nxt.finish[finish_idx].idx = cur.uncached_unit.idx;
+        nxt.finish[finish_idx].is_load = true;
+        nxt.finish_count++;
       }
-    }
-    else {
+    } else {
       auto &entry = nxt.stq[cur.uncached_unit.idx];
       if (entry.store_state == StoreState::WaitMmioResp) {
         entry.store_state = StoreState::Done; // MMIO store在收到响应后就可以认为完成了
         lsu_perf::finish_mem_inst(ctx, entry);
       }
     }
-    nxt.uncached_unit.valid = false; // MMIO load在收到响应后就可以认为完成了，可以清除uncached unit的valid信号
+    nxt.uncached_unit.valid = false; // MMIO响应完成后清除uncached unit的valid信号
   }
 }
 
@@ -1047,7 +1044,15 @@ void RealLsu::comb_flush() {
     nxt.wait_dcache_ldq_count = 0;
     nxt.stlf_queue_count = 0;
 
-    nxt.uncached_unit.valid = false;
+    const bool keep_uncached_store =
+        nxt.uncached_unit.valid && !nxt.uncached_unit.is_load &&
+        stq_idx_alive_after_flush(nxt.uncached_unit.idx, nxt.stq_head,
+                                  keep_committed) &&
+        nxt.stq[nxt.uncached_unit.idx].store_state ==
+            StoreState::WaitMmioResp;
+    if (!keep_uncached_store) {
+      nxt.uncached_unit.valid = false;
+    }
     // nxt.lrsc_unit.reserve_valid = false;
   }
 

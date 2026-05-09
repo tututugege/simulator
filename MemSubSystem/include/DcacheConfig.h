@@ -188,6 +188,7 @@ struct DcacheOUTIO {
 // Address field decomposition helper
 // ─────────────────────────────────────────────────────────────────────────────
 struct AddrFields {
+    wire<DCACHE_BANK_BITS> bank;
     wire<DCACHE_TAG_BITS> tag;
     wire<DCACHE_SET_BITS> set_idx;
     wire<DCACHE_OFFSET_BITS> word_off; // which 32-bit word within the cacheline [4:2]

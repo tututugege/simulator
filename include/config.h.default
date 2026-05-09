@@ -309,6 +309,11 @@ constexpr int DCACHE_MISS_NUM = 4;
 constexpr int DCACHE_WAY_BITS = clog2(DCACHE_WAYS_NUM);
 constexpr int DCACHE_SET_BITS = clog2(DCACHE_SETS_NUM);
 
+constexpr int DCACHE_BANK_NUM = 16;
+constexpr int DCACHE_BANK_BITS = clog2(DCACHE_BANK_NUM);
+constexpr int DCACHE_WORDS_PER_BANK = DCACHE_WORD_NUM / DCACHE_BANK_NUM;
+
+
 // ============================================================
 // Core Resources
 // ============================================================
