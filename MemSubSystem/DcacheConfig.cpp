@@ -164,25 +164,19 @@ void plru_tree_touch(uint32_t set_idx, uint32_t way) {
 }
 
 bool CheckAddr(uint32_t addr1, uint8_t strb1, uint32_t addr2, uint8_t strb2) {
-    // 1. 地址完全相同，直接比较选通掩码
-    if (addr1 == addr2) {
-        return (strb1 & strb2) != 0;
-    } 
-    // 2. addr1 在低地址，addr2 在高地址
-    else if (addr1 < addr2) {
-        uint32_t diff = addr2 - addr1;
-        // 如果地址跨度大于等于8字节（strb的表示范围），绝对不可能重叠
-        if (diff >= 8) return false; 
-        // 将高地址的 strb 左移 diff 位，与低地址对齐后按位与
-        return (strb1 & (strb2 << diff)) != 0;
-    } 
-    // 3. addr1 在高地址，addr2 在低地址
-    else {
-        uint32_t diff = addr1 - addr2;
-        if (diff >= 8) return false;
-        return (strb2 & (strb1 << diff)) != 0;
-    }
+    uint32_t base1 = addr1 & ~0x3u;
+    uint32_t base2 = addr2 & ~0x3u;
+    uint32_t min_base = base1 < base2 ? base1 : base2;
+
+    uint32_t diff1 = base1 - min_base;
+    uint32_t diff2 = base2 - min_base;
+    if (diff1 >= 8 || diff2 >= 8) return false;
+
+    uint64_t mask1 = static_cast<uint64_t>(strb1) << diff1;
+    uint64_t mask2 = static_cast<uint64_t>(strb2) << diff2;
+    return (mask1 & mask2) != 0;
 }
+
 
 inline uint32_t word_bank(uint32_t word_off) {
     return word_off & (DCACHE_BANK_NUM - 1);

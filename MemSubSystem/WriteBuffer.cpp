@@ -111,31 +111,31 @@ void WriteBuffer::comb_inputs_axi(){
 
 void WriteBuffer::comb_inputs_dcache() {
     
-    for(int i=0;i<LSU_LDU_COUNT;i++){
-        if(in.dcache2wb->bypass_req[i].valid){
-            int wb_idx = find_wb_entry(cur.write_buffer, cur.head,cur.count,in.dcache2wb->bypass_req[i].addr);
-            if(valid_wb_entry_index(wb_idx)){
-                nxt.bypassvalid[i] = true;
-                nxt.bypassdata[i] = cur.write_buffer[wb_idx].data[decode(in.dcache2wb->bypass_req[i].addr).word_off];
-            }
-            else{
-                nxt.bypassvalid[i] = false;
-                nxt.bypassdata[i] = 0;
-            }
+    if(in.dcache2wb->dirty_info.valid){
+        if(cur.count < DCACHE_WB_ENTRIES){
+            WriteBufferEntry &e = nxt.write_buffer[(cur.head + nxt.count) % DCACHE_WB_ENTRIES];
+            e.addr     = in.dcache2wb->dirty_info.addr;
+#if !BSD_CONFIG
+            e.lsu_origin = in.dcache2wb->dirty_info.lsu_origin;
+#endif
+            std::memcpy(e.data, in.dcache2wb->dirty_info.data, DCACHE_WORD_NUM * sizeof(uint32_t));
         }
         else{
-            nxt.bypassvalid[i] = false;
-            nxt.bypassdata[i] = 0;
+            #if !BSD_CONFIG
+                assert(false && "WriteBuffer overflow: MSHR is producing evictions faster than WriteBuffer can drain them");
+            #endif
         }
     }
-
+    if(in.dcache2wb->dirty_info.valid && cur.count < DCACHE_WB_ENTRIES){
+        nxt.count = cur.count + 1;
+    }
 
     for(int i=0;i<LSU_STA_COUNT;i++){
         if(in.dcache2wb->merge_req[i].valid){
-            int wb_idx = find_wb_entry(cur.write_buffer, cur.head,cur.count,in.dcache2wb->merge_req[i].addr);
+            int wb_idx = find_wb_entry(nxt.write_buffer, cur.head,nxt.count,in.dcache2wb->merge_req[i].addr);
             if(valid_wb_entry_index(wb_idx)){
 
-                if(wb_idx == cur.head&&cur.count > 0){
+                if(wb_idx == cur.head&&nxt.count > 0){
                     nxt.mergebusy[i] = true; // the entry being merged is currently being sent out, mark as busy to stall new merges until we know if the current one will be accepted or not
                     nxt.mergevalid[i] = false; // the merge can't be accepted in the same cycle as the send, even if the address matches, to avoid a
                 }
@@ -159,27 +159,28 @@ void WriteBuffer::comb_inputs_dcache() {
             nxt.mergebusy[i] = false;
         }
     }
-    
-    if(in.dcache2wb->dirty_info.valid){
-        if(cur.count < DCACHE_WB_ENTRIES){
-            WriteBufferEntry &e = nxt.write_buffer[(cur.head + nxt.count) % DCACHE_WB_ENTRIES];
-            e.addr     = in.dcache2wb->dirty_info.addr;
-#if !BSD_CONFIG
-            e.lsu_origin = in.dcache2wb->dirty_info.lsu_origin;
-#endif
-            std::memcpy(e.data, in.dcache2wb->dirty_info.data, DCACHE_WORD_NUM * sizeof(uint32_t));
+    for(int i=0;i<LSU_LDU_COUNT;i++){
+        if(in.dcache2wb->bypass_req[i].valid){
+            int wb_idx = find_wb_entry(nxt.write_buffer, cur.head,nxt.count,in.dcache2wb->bypass_req[i].addr);
+            if(valid_wb_entry_index(wb_idx)){
+                nxt.bypassvalid[i] = true;
+                nxt.bypassdata[i] = nxt.write_buffer[wb_idx].data[decode(in.dcache2wb->bypass_req[i].addr).word_off];
+            }
+            else{
+                nxt.bypassvalid[i] = false;
+                nxt.bypassdata[i] = 0;
+            }
         }
         else{
-            #if !BSD_CONFIG
-                assert(false && "WriteBuffer overflow: MSHR is producing evictions faster than WriteBuffer can drain them");
-            #endif
+            nxt.bypassvalid[i] = false;
+            nxt.bypassdata[i] = 0;
         }
     }
 
-    uint32_t new_count = cur.count;
+    
     if(in.axi_in->resp_valid){
-        if(new_count > 0){
-            new_count = new_count - 1;
+        if(nxt.count > 0){
+            nxt.count = nxt.count - 1;
             nxt.head = (cur.head + 1) % DCACHE_WB_ENTRIES;
         }
         else{
@@ -188,10 +189,7 @@ void WriteBuffer::comb_inputs_dcache() {
             #endif
         }
     }
-    if(in.dcache2wb->dirty_info.valid && cur.count < DCACHE_WB_ENTRIES){
-        new_count = new_count + 1;
-    }
-    nxt.count = new_count;
+
 }
 
 void WriteBuffer::seq() {

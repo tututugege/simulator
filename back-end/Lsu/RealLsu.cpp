@@ -1153,7 +1153,7 @@ void RealLsu::dump_debug_state(FILE *out) const {
 
   std::fprintf(out, "RealLsu State:\n");
   std::fprintf(out,
-               "  LDQ: head=%u wait_mmu_head=%u "
+               "  LDQ: wait_mmu_head=%u "
                "wait_mmu_count=%u wait_dcache_head=%u wait_dcache_count=%u\n",
                static_cast<unsigned>(cur.wait_mmu_ldq_head),
                static_cast<unsigned>(cur.wait_mmu_ldq_count),

@@ -1,14 +1,18 @@
 #!/bin/bash
 
 # ================= 配置区域 =================
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+cd "$REPO_ROOT"
+
 SIMULATOR="${SIMULATOR:-./build/simulator}"
-CKPT_ROOT="${CKPT_ROOT:-/home/renli/qimeng/456.hmmer_ref}"
-RESULT_DIR="${RESULT_DIR:-./results_restore_456_2dcache}"
+CKPT_ROOT="${CKPT_ROOT:-${REPO_ROOT}/../ckpt_2}"
+RESULT_DIR="${RESULT_DIR:-./results_ckpt2_8phys}"
 CKPT_WARMUP="${CKPT_WARMUP-10000000}"
 CKPT_MAX_COMMIT="${CKPT_MAX_COMMIT-10000000}"
-CORE_START="${CORE_START:-0}"
+PIN_CPUS="${PIN_CPUS:-}"
 
-MAX_JOBS="${MAX_JOBS:-6}"
+MAX_JOBS="${MAX_JOBS:-8}"
 
 # 捕获 Ctrl+C (SIGINT)，优雅退出
 trap 'echo -e "\n🛑 接收到退出信号，正在清理所有后台模拟器..."; kill 0; exit 1' SIGINT
@@ -24,11 +28,59 @@ if [ ! -d "$CKPT_ROOT" ]; then
   exit 1
 fi
 
+if ! command -v taskset >/dev/null 2>&1; then
+  echo "Error: taskset is required"
+  exit 1
+fi
+
+if ! command -v lscpu >/dev/null 2>&1; then
+  echo "Error: lscpu is required"
+  exit 1
+fi
+
+discover_physical_cpus() {
+  lscpu -p=CPU,CORE,SOCKET,ONLINE | awk -F, -v max="$MAX_JOBS" '
+    /^#/ { next }
+    $4 != "Y" { next }
+    {
+      key = $3 ":" $2
+      if (!(key in seen)) {
+        seen[key] = 1
+        cpus[++n] = $1
+        if (n == max) {
+          exit
+        }
+      }
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        printf "%s%s", (i == 1 ? "" : " "), cpus[i]
+      }
+      if (n > 0) {
+        printf "\n"
+      }
+    }
+  '
+}
+
+if [ -n "$PIN_CPUS" ]; then
+  read -r -a SELECTED_CPUS <<<"$(tr ',:' '  ' <<<"$PIN_CPUS")"
+else
+  read -r -a SELECTED_CPUS <<<"$(discover_physical_cpus)"
+fi
+
+if [ "${#SELECTED_CPUS[@]}" -lt "$MAX_JOBS" ]; then
+  echo "Error: Need $MAX_JOBS physical cores, got ${#SELECTED_CPUS[@]} CPUs: ${SELECTED_CPUS[*]:-<none>}"
+  exit 1
+fi
+SELECTED_CPUS=("${SELECTED_CPUS[@]:0:MAX_JOBS}")
+
 START_TIME=$(date +%s)
 echo "=================================================="
 echo "Start Time:     $(date)"
-echo "Mode:           Static Modulo Partitioning (Zero-Race)"
+echo "Mode:           Static Modulo Partitioning (Physical-Core Pinning)"
 echo "Parallel Jobs:  $MAX_JOBS"
+echo "Pinned CPUs:    ${SELECTED_CPUS[*]}"
 echo "=================================================="
 
 echo "Scanning for all checkpoint files..."
@@ -75,13 +127,13 @@ rm "$PRINT_FIFO"
 PRINTER_PID=$!
 
 # ================= 核心重构：静态取模分配 =================
-echo "Launching $MAX_JOBS dedicated workers pinned to cores ${CORE_START}-$((CORE_START + MAX_JOBS - 1))..."
+echo "Launching $MAX_JOBS dedicated workers pinned to physical-core CPUs: ${SELECTED_CPUS[*]}..."
 
 WORKER_PIDS=()
 
 for ((worker = 0; worker < MAX_JOBS; worker++)); do
   (
-    core=$((CORE_START + worker*2))
+    core="${SELECTED_CPUS[$worker]}"
 
     # 核心逻辑：这个 Worker 只认属于自己编号的任务
     for ((i = worker; i < TOTAL_TASKS; i += MAX_JOBS)); do
