@@ -1001,6 +1001,16 @@ struct CsrFrontIO {
   }
 };
 
+struct CsrInterruptInjectIO {
+  wire<1> external_irq_pending_valid;
+  wire<1> external_irq_pending;
+
+  CsrInterruptInjectIO() {
+    external_irq_pending_valid = {};
+    external_irq_pending = {};
+  }
+};
+
 struct CsrStatusIO {
 
   wire<32> sstatus;

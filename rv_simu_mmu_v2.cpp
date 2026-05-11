@@ -412,6 +412,15 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   for (int i = 0; i < CSR_NUM; i++) {
     dut_cpu.csr[i] = back->csr->CSR_RegFile_1[i];
   }
+  if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending_valid)) {
+    if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending)) {
+      dut_cpu.csr[csr_mip] = back->csr->CSR_RegFile[csr_mip] | MIP_SEIP;
+      dut_cpu.csr[csr_sip] = back->csr->CSR_RegFile[csr_sip] | MIP_SEIP;
+    } else {
+      dut_cpu.csr[csr_mip] = back->csr->CSR_RegFile[csr_mip] & ~MIP_SEIP;
+      dut_cpu.csr[csr_sip] = back->csr->CSR_RegFile[csr_sip] & ~MIP_SEIP;
+    }
+  }
   dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL ||
                 back->rob->out.rob_bcast->flush)
                    ? inst_entry->uop.diag_val
@@ -462,7 +471,7 @@ void SimCpu::init() {
   back.init();
 
   // 第三阶段：集中完成跨模块连线
-  mem_subsystem.csr = back.csr;
+  mem_subsystem.csr_interrupt_inject = &back.csr_interrupt_inject_io;
   mem_subsystem.memory = p_memory;
   mem_subsystem.peripheral_req = back.lsu_peripheral_req_io;
   mem_subsystem.peripheral_resp = back.lsu_peripheral_resp_io;

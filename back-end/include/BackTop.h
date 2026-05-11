@@ -128,6 +128,7 @@ public:
   PeripheralRespIO *lsu_peripheral_resp_io;  // → &peripheral_resp_io
   LsuDcacheIO *lsu_dcache_req_io;   // → &lsu2dcache_io  (for MemSubsystem)
   DcacheLsuIO *lsu_dcache_resp_io;  // → &dcache2lsu_io  (for MemSubsystem)
+  CsrInterruptInjectIO csr_interrupt_inject_io;
   void init();
   void comb_csr_status();
   void comb();

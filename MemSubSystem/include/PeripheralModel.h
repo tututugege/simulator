@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Csr.h"
+#include "IO.h"
 #include "PhysMemory.h"
 #include "config.h"
 #include <cstdint>
@@ -8,11 +8,12 @@
 
 class PeripheralModel {
 public:
-  Csr *csr = nullptr;
+  CsrInterruptInjectIO *csr_interrupt_inject = nullptr;
   uint32_t *memory = nullptr;
 
-  void bind(Csr *csr_ptr, uint32_t *memory_ptr) {
-    csr = csr_ptr;
+  void bind(CsrInterruptInjectIO *csr_interrupt_inject_ptr,
+            uint32_t *memory_ptr) {
+    csr_interrupt_inject = csr_interrupt_inject_ptr;
     memory = memory_ptr;
   }
 
@@ -58,7 +59,8 @@ public:
   }
 
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3) {
-    if (csr == nullptr || memory == nullptr || !is_modeled_mmio(paddr)) {
+    if (csr_interrupt_inject == nullptr || memory == nullptr ||
+        !is_modeled_mmio(paddr)) {
       return;
     }
 
@@ -81,8 +83,8 @@ public:
       if (cmd == 7u) {
         pmem_write(PLIC_CLAIM_ADDR, 0x0000000Au);
         pmem_write(UART_ADDR_BASE, pmem_read(UART_ADDR_BASE) & 0xFFF0FFFFu);
-        csr->CSR_RegFile_1[csr_mip] = csr->CSR_RegFile[csr_mip] | (1 << 9);
-        csr->CSR_RegFile_1[csr_sip] = csr->CSR_RegFile[csr_sip] | (1 << 9);
+        csr_interrupt_inject->external_irq_pending_valid = true;
+        csr_interrupt_inject->external_irq_pending = true;
       } else if (cmd == 5u) {
         pmem_write(UART_ADDR_BASE,
                    (pmem_read(UART_ADDR_BASE) & 0xFFF0FFFFu) | 0x00030000u);
@@ -92,8 +94,8 @@ public:
 
     if (paddr == PLIC_CLAIM_ADDR && ((store_data & 0xFFu) == 0x0Au)) {
       pmem_write(PLIC_CLAIM_ADDR, 0x00000000u);
-      csr->CSR_RegFile_1[csr_mip] = csr->CSR_RegFile[csr_mip] & ~(1 << 9);
-      csr->CSR_RegFile_1[csr_sip] = csr->CSR_RegFile[csr_sip] & ~(1 << 9);
+      csr_interrupt_inject->external_irq_pending_valid = true;
+      csr_interrupt_inject->external_irq_pending = false;
       return;
     }
   }

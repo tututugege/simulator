@@ -371,6 +371,18 @@ void Csr::comb_csr_write() {
 }
 
 void Csr::seq() {
+  if (in.interrupt_inject != nullptr &&
+      static_cast<bool>(in.interrupt_inject->external_irq_pending_valid)) {
+    if (static_cast<bool>(in.interrupt_inject->external_irq_pending)) {
+      CSR_RegFile_1[csr_mip] = CSR_RegFile[csr_mip] | MIP_SEIP;
+      CSR_RegFile_1[csr_sip] = CSR_RegFile[csr_sip] | MIP_SEIP;
+    } else {
+      CSR_RegFile_1[csr_mip] = CSR_RegFile[csr_mip] & ~MIP_SEIP;
+      CSR_RegFile_1[csr_sip] = CSR_RegFile[csr_sip] & ~MIP_SEIP;
+    }
+    in.interrupt_inject->external_irq_pending_valid = false;
+  }
+
   for (int i = 0; i < CSR_NUM; i++) {
     CSR_RegFile[i] = CSR_RegFile_1[i];
   }

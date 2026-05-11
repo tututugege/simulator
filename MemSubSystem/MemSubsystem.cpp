@@ -558,7 +558,8 @@ MemSubsystem::~MemSubsystem() = default;
 void MemSubsystem::init() {
   Assert(peripheral_req != nullptr && "MemSubsystem: peripheral_req is not connected");
   Assert(peripheral_resp != nullptr && "MemSubsystem: peripheral_resp is not connected");
-  Assert(csr != nullptr && "MemSubsystem: csr is not connected");
+  Assert(csr_interrupt_inject != nullptr &&
+         "MemSubsystem: csr interrupt inject IO is not connected");
   Assert(memory != nullptr && "MemSubsystem: memory is not connected");
 
   // Route LSU/PTW/ICache requests through MemRouteBlock and capture raw
@@ -618,7 +619,7 @@ void MemSubsystem::init() {
   mshr_.init();
   wb_.init();
   dcache_.init();
-  peripheral_model_.bind(csr, memory);
+  peripheral_model_.bind(csr_interrupt_inject, memory);
   peripheral_axi_.peripheral_req = peripheral_req;
   peripheral_axi_.peripheral_resp = peripheral_resp;
   peripheral_axi_.peripheral_model = &peripheral_model_;

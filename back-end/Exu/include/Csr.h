@@ -137,6 +137,7 @@ typedef struct {
   ExeCsrIO *exe2csr;
   RobCsrIO *rob2csr;
   RobBroadcastIO *rob_bcast;
+  CsrInterruptInjectIO *interrupt_inject;
 } CsrIn;
 
 typedef struct {

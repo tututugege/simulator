@@ -142,6 +142,7 @@ void BackTop::init() {
   csr->in.exe2csr = &exe2csr;
   csr->in.rob2csr = &rob2csr;
   csr->in.rob_bcast = &rob_bcast;
+  csr->in.interrupt_inject = &csr_interrupt_inject_io;
 
   csr->out.csr2exe = &csr2exe;
   csr->out.csr2rob = &csr2rob;

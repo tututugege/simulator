@@ -64,7 +64,7 @@ public:
   PtwWalkPort *itlb_walk_port = nullptr;
   PeripheralReqIO *peripheral_req = nullptr;
   PeripheralRespIO *peripheral_resp = nullptr;
-  Csr         *csr            = nullptr;
+  CsrInterruptInjectIO *csr_interrupt_inject = nullptr;
   uint32_t    *memory         = nullptr;
 
   void init();
