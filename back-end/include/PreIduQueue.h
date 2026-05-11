@@ -22,6 +22,7 @@ struct PreIduQueueOut {
   PreIssueIO *issue = nullptr;
   FtqPrfPcRespIO *ftq_prf_pc_resp = nullptr;
   FtqRobPcRespIO *ftq_rob_pc_resp = nullptr;
+  FtqCommitInfoIO *ftq_commit_info = nullptr;
 };
 
 class PreIduQueue {
@@ -36,11 +37,8 @@ public:
   void comb_fire();
   void comb_ftq_lookup_prf();
   void comb_ftq_lookup_rob();
+  void comb_commit_info();
   void seq();
-  const FTQEntry *lookup_ftq_entry(uint32_t idx) const;
-  bool ftq_train_meta_cursor_begin(uint32_t &cursor_idx) const;
-  const FTQTrainMetaEntry *ftq_train_meta_cursor_peek(uint32_t cursor_idx) const;
-  bool ftq_train_meta_cursor_advance(uint32_t &cursor_idx) const;
 
 private:
   SimContext *ctx = nullptr;

@@ -293,8 +293,11 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
 }
 } // namespace
 
-void SimCpu::commit_sync(InstInfo *inst) {
+void SimCpu::commit_sync(InstInfo *inst, int commit_slot) {
   BackTop *back = &this->back;
+  Assert(commit_slot >= 0 && commit_slot < COMMIT_WIDTH &&
+         "SimCpu::commit_sync: invalid commit slot");
+  const auto &ftq_info = back->ftq_commit_info.resp[commit_slot];
   if (inst->type == JALR) {
     if (inst->tma.is_ret) {
       this->ctx.perf.ret_br_num++;
@@ -309,12 +312,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
     if (inst->type == JALR) {
       if (inst->tma.is_ret) {
         this->ctx.perf.ret_mispred_num++;
-        bool pred_taken = false;
-        const FTQEntry *entry =
-            back->pre->lookup_ftq_entry(inst->ftq_idx);
-        if (entry != nullptr) {
-          pred_taken = entry->pred_taken_mask[inst->ftq_offset];
-        }
+        const bool pred_taken = ftq_info.pred_taken;
         if (!pred_taken) {
           this->ctx.perf.ret_dir_mispred++;
         } else {
@@ -322,12 +320,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         }
       } else {
         this->ctx.perf.jalr_mispred_num++;
-        bool pred_taken = false;
-        const FTQEntry *entry =
-            back->pre->lookup_ftq_entry(inst->ftq_idx);
-        if (entry != nullptr) {
-          pred_taken = entry->pred_taken_mask[inst->ftq_offset];
-        }
+        const bool pred_taken = ftq_info.pred_taken;
         if (!pred_taken) {
           this->ctx.perf.jalr_dir_mispred++;
         } else {
@@ -335,12 +328,7 @@ void SimCpu::commit_sync(InstInfo *inst) {
         }
       }
     } else if (inst->type == BR) {
-      bool pred_taken = false;
-      const FTQEntry *entry =
-          back->pre->lookup_ftq_entry(inst->ftq_idx);
-      if (entry != nullptr) {
-        pred_taken = entry->pred_taken_mask[inst->ftq_offset];
-      }
+      const bool pred_taken = ftq_info.pred_taken;
       if (pred_taken != inst->br_taken) {
         this->ctx.perf.cond_dir_mispred++;
       } else {
@@ -434,13 +422,13 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   *skip = inst->dbg.difftest_skip;
 }
 
-void SimContext::run_commit_inst(InstEntry *inst_entry) {
+void SimContext::run_commit_inst(InstEntry *inst_entry, int commit_slot) {
   Assert(cpu != nullptr && "SimContext::run_commit_inst: cpu is null");
   Assert(inst_entry != nullptr &&
          "SimContext::run_commit_inst: inst_entry is null");
   Assert(inst_entry->valid &&
          "SimContext::run_commit_inst: inst_entry is not valid");
-  cpu->commit_sync(&inst_entry->uop);
+  cpu->commit_sync(&inst_entry->uop, commit_slot);
 }
 
 void SimContext::run_difftest_inst(InstEntry *inst_entry) {
@@ -826,15 +814,9 @@ void SimCpu::back2front_comb() {
   front.in.csr_status = back.csr->out.csr_status;
   front.in.itlb_flush = back.out.itlb_flush;
   front.in.fence_i = back.out.fence_i;
-  uint32_t train_meta_cursor = 0;
-  bool train_meta_cursor_valid =
-      back.pre->ftq_train_meta_cursor_begin(train_meta_cursor);
-  const FTQTrainMetaEntry *train_meta_entry =
-      train_meta_cursor_valid
-          ? back.pre->ftq_train_meta_cursor_peek(train_meta_cursor)
-          : nullptr;
   for (int i = 0; i < COMMIT_WIDTH; i++) {
     InstInfo *inst = &back.out.commit_entry[i].uop;
+    const auto &ftq_info = back.ftq_commit_info.resp[i];
     front.in.back2front_valid[i] = back.out.commit_entry[i].valid;
     for (int j = 0; j < 4; j++) {
       front.in.tage_tag[i][j] = 0;
@@ -852,50 +834,7 @@ void SimCpu::back2front_comb() {
     front.in.loop_tag[i] = 0;
 
     if (front.in.back2front_valid[i]) {
-
-      bool pred_taken = false;
-      bool alt_pred = false;
-      uint8_t altpcpn = 0;
-      uint8_t pcpn = 0;
-      uint32_t tage_idx[4] = {0};
-      uint32_t tage_tag[4] = {0};
-      bool sc_used = false;
-      bool sc_pred = false;
-      int16_t sc_sum = 0;
-      uint16_t sc_idx[BPU_SCL_META_NTABLE] = {0};
-      bool loop_used = false;
-      bool loop_hit = false;
-      bool loop_pred = false;
-      uint16_t loop_idx = 0;
-      uint16_t loop_tag = 0;
-
-      const FTQEntry *entry = back.pre->lookup_ftq_entry(inst->ftq_idx);
-      if (entry != nullptr) {
-        pred_taken = entry->pred_taken_mask[inst->ftq_offset];
-      }
-      if (train_meta_entry != nullptr) {
-        Assert(inst->ftq_idx == train_meta_cursor);
-        alt_pred = train_meta_entry->alt_pred[inst->ftq_offset];
-        altpcpn = train_meta_entry->altpcpn[inst->ftq_offset];
-        pcpn = train_meta_entry->pcpn[inst->ftq_offset];
-        sc_used = train_meta_entry->sc_used[inst->ftq_offset];
-        sc_pred = train_meta_entry->sc_pred[inst->ftq_offset];
-        sc_sum = train_meta_entry->sc_sum[inst->ftq_offset];
-        for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-          sc_idx[t] = train_meta_entry->sc_idx[inst->ftq_offset][t];
-        }
-        loop_used = train_meta_entry->loop_used[inst->ftq_offset];
-        loop_hit = train_meta_entry->loop_hit[inst->ftq_offset];
-        loop_pred = train_meta_entry->loop_pred[inst->ftq_offset];
-        loop_idx = train_meta_entry->loop_idx[inst->ftq_offset];
-        loop_tag = train_meta_entry->loop_tag[inst->ftq_offset];
-        for (int k = 0; k < 4; k++) {
-          tage_idx[k] = train_meta_entry->tage_idx[inst->ftq_offset][k];
-          tage_tag[k] = train_meta_entry->tage_tag[inst->ftq_offset][k];
-        }
-      }
-
-      front.in.predict_dir[i] = pred_taken;
+      front.in.predict_dir[i] = ftq_info.pred_taken;
       front.in.predict_base_pc[i] = inst->dbg.pc;
       front.in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
@@ -920,30 +859,23 @@ void SimCpu::back2front_comb() {
       }
 
       front.in.actual_br_type[i] = br_type;
-      front.in.alt_pred[i] = alt_pred;
-      front.in.altpcpn[i] = altpcpn;
-      front.in.pcpn[i] = pcpn;
-      front.in.sc_used[i] = sc_used;
-      front.in.sc_pred[i] = sc_pred;
-      front.in.sc_sum[i] = sc_sum;
+      front.in.alt_pred[i] = ftq_info.alt_pred;
+      front.in.altpcpn[i] = ftq_info.altpcpn;
+      front.in.pcpn[i] = ftq_info.pcpn;
+      front.in.sc_used[i] = ftq_info.sc_used;
+      front.in.sc_pred[i] = ftq_info.sc_pred;
+      front.in.sc_sum[i] = ftq_info.sc_sum;
       for (int t = 0; t < BPU_SCL_META_NTABLE; ++t) {
-        front.in.sc_idx[i][t] = sc_idx[t];
+        front.in.sc_idx[i][t] = ftq_info.sc_idx[t];
       }
-      front.in.loop_used[i] = loop_used;
-      front.in.loop_hit[i] = loop_hit;
-      front.in.loop_pred[i] = loop_pred;
-      front.in.loop_idx[i] = loop_idx;
-      front.in.loop_tag[i] = loop_tag;
+      front.in.loop_used[i] = ftq_info.loop_used;
+      front.in.loop_hit[i] = ftq_info.loop_hit;
+      front.in.loop_pred[i] = ftq_info.loop_pred;
+      front.in.loop_idx[i] = ftq_info.loop_idx;
+      front.in.loop_tag[i] = ftq_info.loop_tag;
       for (int j = 0; j < 4; j++) { // TN_MAX = 4 (分支预测相关索引)
-        front.in.tage_idx[i][j] = tage_idx[j];
-        front.in.tage_tag[i][j] = tage_tag[j];
-      }
-      if (inst->ftq_is_last && train_meta_cursor_valid) {
-        train_meta_cursor_valid =
-            back.pre->ftq_train_meta_cursor_advance(train_meta_cursor);
-        train_meta_entry = train_meta_cursor_valid
-                               ? back.pre->ftq_train_meta_cursor_peek(train_meta_cursor)
-                               : nullptr;
+        front.in.tage_idx[i][j] = ftq_info.tage_idx[j];
+        front.in.tage_tag[i][j] = ftq_info.tage_tag[j];
       }
     }
   }

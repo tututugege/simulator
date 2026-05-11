@@ -43,6 +43,6 @@ public:
   bool ready_to_exit() const;
   uint32_t get_reg(uint8_t arch_idx) { return back.get_reg(arch_idx); }
   // 由 SimContext 在提交路径调用的本地辅助逻辑。
-  void commit_sync(InstInfo *inst);
+  void commit_sync(InstInfo *inst, int commit_slot);
   void difftest_prepare(InstEntry *inst_entry, bool *skip);
 };

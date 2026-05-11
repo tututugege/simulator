@@ -263,6 +263,6 @@ public:
   uint64_t ckpt_warmup_commit_target = 0;
   uint64_t ckpt_measure_commit_target = 0;
   SimCpu *cpu = nullptr;
-  void run_commit_inst(InstEntry *inst_entry);
+  void run_commit_inst(InstEntry *inst_entry, int commit_slot);
   void run_difftest_inst(InstEntry *inst_entry);
 };

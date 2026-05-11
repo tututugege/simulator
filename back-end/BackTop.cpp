@@ -51,6 +51,7 @@ void BackTop::init() {
   pre->out.issue = &pre_issue;
   pre->out.ftq_prf_pc_resp = &ftq_prf_pc_resp;
   pre->out.ftq_rob_pc_resp = &ftq_rob_pc_resp;
+  pre->out.ftq_commit_info = &ftq_commit_info;
   pre->in.front2pre = &in;
   pre->in.idu_consume = &idu_consume;
   pre->in.rob_bcast = &rob_bcast;
@@ -248,6 +249,7 @@ void BackTop::comb() {
   ftq_prf_pc_resp = {};
   ftq_rob_pc_req = {};
   ftq_rob_pc_resp = {};
+  ftq_commit_info = {};
 
   dec2ren = {};
   dec_bcast = {};
@@ -323,6 +325,7 @@ void BackTop::comb() {
   rob->comb_ftq_pc_req();
   pre->comb_ftq_lookup_rob();
   rob->comb_commit();
+  pre->comb_commit_info();
   lsu->comb_stq_commit();
 
   dis->comb_alloc();

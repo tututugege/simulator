@@ -314,7 +314,7 @@ void Ren::comb_fire() {
       if (inst->dest_en && !is_exception(*inst) && !in.rob_bcast->interrupt) {
         arch_RAT_1[inst->dest_areg] = inst->dest_preg;
       }
-      ctx->run_commit_inst(&commit_entry);
+      ctx->run_commit_inst(&commit_entry, i);
 #ifdef CONFIG_DIFFTEST
       ctx->run_difftest_inst(&commit_entry);
 #endif
