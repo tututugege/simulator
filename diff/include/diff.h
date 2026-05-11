@@ -8,7 +8,7 @@ extern CPU_state dut_cpu;
 class SimContext;
 
 void init_difftest(int);
-void init_diff_ckpt(CPU_state ckpt_state);
+void init_diff_ckpt(CPU_state ckpt_state, uint8_t privilege);
 void get_state(CPU_state &dut_state, uint8_t &privilege);
 void difftest_step(bool);
 void difftest_skip();

@@ -16,7 +16,7 @@
 #include <vector>
 #include <zlib.h>
 
-void init_diff_ckpt(CPU_state ckpt_state);
+void init_diff_ckpt(CPU_state ckpt_state, uint8_t privilege);
 
 namespace {
 MMUResultType to_lsu_mmu_result(TlbMmu::Result result) {
@@ -453,11 +453,12 @@ namespace {
 constexpr uint64_t kCkptSimpointRamBytes = RAM_SIZE;
 constexpr uint64_t kGzChunkSize = 1ULL * 1024 * 1024 * 1024;
 constexpr uint32_t kCkptMagic = 0x006d6552u; // "Rem\0" little-endian
-constexpr uint32_t kCkptVersion = 2u;
+constexpr uint16_t kCkptFormatVersion = 2u;
 
 typedef struct CkptHeader {
   uint32_t magic;
-  uint32_t version;
+  uint16_t format_ver;
+  uint16_t privilege_mode;
   uint32_t ram_size;
   uint32_t io_range_count;
 } CkptHeader;
@@ -606,7 +607,7 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   gz_read_pod(file, ckpt_header);
   Assert(ckpt_header.magic == kCkptMagic &&
          "Error: Invalid checkpoint magic.");
-  Assert(ckpt_header.version == kCkptVersion &&
+  Assert(ckpt_header.format_ver == kCkptFormatVersion &&
          "Error: Unsupported checkpoint version.");
   Assert(ckpt_header.ram_size == static_cast<uint32_t>(kCkptSimpointRamBytes) &&
          "Error: Checkpoint RAM size mismatch.");
@@ -636,9 +637,9 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   state.inst_idx = 0;
 
   number_PC = state.pc;
-  // 约束：当前 checkpoint 生成流程要求快照时处于 U 态，因此恢复时固定回到 U
-  // 态。 若未来支持在 S/M 态打点，需要把特权级一并写入并按快照值恢复。
-  csr->privilege = csr->privilege_1 = RISCV_MODE_U;
+  const uint8_t restored_privilege =
+      static_cast<uint8_t>(ckpt_header.privilege_mode & 0x3u);
+  csr->privilege = csr->privilege_1 = restored_privilege;
 
   for (int i = 0; i < ARF_NUM; i++) {
     prf->reg_file[i] = state.gpr[i];
@@ -702,9 +703,9 @@ void BackTop::restore_checkpoint(const std::string &filename) {
   gzclose(file);
   std::cout << "Checkpoint restored from " << final_name << std::endl;
 
-  init_diff_ckpt(state);
+  init_diff_ckpt(state, restored_privilege);
 #ifndef CONFIG_BPU
-  init_oracle_ckpt(state, RISCV_MODE_U);
+  init_oracle_ckpt(state, restored_privilege);
 #endif
 
   // Ensure the pipeline starts with a refetch from the restored PC

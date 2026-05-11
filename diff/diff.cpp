@@ -76,11 +76,11 @@ void init_difftest(int img_size) {
   seed_ref_io_from_backing();
 }
 
-void init_diff_ckpt(CPU_state ckpt_state) {
+void init_diff_ckpt(CPU_state ckpt_state, uint8_t privilege) {
   std::cout << "Restore for ref cpu " << std::endl;
   ref_cpu.init(0);
   ref_cpu.state = ckpt_state;
-  ref_cpu.privilege = RISCV_MODE_U;
+  ref_cpu.privilege = privilege;
 
   const uint32_t *ckpt_memory = pmem_ram_ptr();
   Assert(ckpt_memory != nullptr &&
