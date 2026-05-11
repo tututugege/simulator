@@ -89,6 +89,21 @@ void Csr::comb_interrupt() {
       irq.s_timer_interrupt || irq.s_external_interrupt;
 }
 
+void Csr::comb_interrupt_inject() {
+  if (in.interrupt_inject == nullptr ||
+      !static_cast<bool>(in.interrupt_inject->external_irq_pending_valid)) {
+    return;
+  }
+
+  if (static_cast<bool>(in.interrupt_inject->external_irq_pending)) {
+    CSR_RegFile_1[csr_mip] = CSR_RegFile_1[csr_mip] | MIP_SEIP;
+    CSR_RegFile_1[csr_sip] = CSR_RegFile_1[csr_sip] | MIP_SEIP;
+  } else {
+    CSR_RegFile_1[csr_mip] = CSR_RegFile_1[csr_mip] & ~MIP_SEIP;
+    CSR_RegFile_1[csr_sip] = CSR_RegFile_1[csr_sip] & ~MIP_SEIP;
+  }
+}
+
 void Csr::comb_exception() {
   uint32_t mstatus = CSR_RegFile[csr_mstatus];
   uint32_t sstatus = CSR_RegFile[csr_sstatus];
@@ -371,20 +386,12 @@ void Csr::comb_csr_write() {
 }
 
 void Csr::seq() {
-  if (in.interrupt_inject != nullptr &&
-      static_cast<bool>(in.interrupt_inject->external_irq_pending_valid)) {
-    if (static_cast<bool>(in.interrupt_inject->external_irq_pending)) {
-      CSR_RegFile_1[csr_mip] = CSR_RegFile[csr_mip] | MIP_SEIP;
-      CSR_RegFile_1[csr_sip] = CSR_RegFile[csr_sip] | MIP_SEIP;
-    } else {
-      CSR_RegFile_1[csr_mip] = CSR_RegFile[csr_mip] & ~MIP_SEIP;
-      CSR_RegFile_1[csr_sip] = CSR_RegFile[csr_sip] & ~MIP_SEIP;
-    }
-    in.interrupt_inject->external_irq_pending_valid = false;
-  }
-
   for (int i = 0; i < CSR_NUM; i++) {
     CSR_RegFile[i] = CSR_RegFile_1[i];
+  }
+
+  if (in.interrupt_inject != nullptr) {
+    in.interrupt_inject->external_irq_pending_valid = false;
   }
 
   csr_idx = csr_idx_1;

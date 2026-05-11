@@ -159,6 +159,7 @@ public:
   void comb_csr_read();
   void comb_csr_write();
   void comb_interrupt();
+  void comb_interrupt_inject();
   void comb_exception();
   void seq();
 

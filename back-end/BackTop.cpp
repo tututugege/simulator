@@ -420,6 +420,7 @@ void BackTop::comb() {
   exu->comb_pipeline();
   dis->comb_pipeline();
   rename->comb_pipeline();
+  csr->comb_interrupt_inject();
 }
 
 void BackTop::seq() {
