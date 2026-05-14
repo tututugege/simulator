@@ -125,6 +125,32 @@ LATENCY_METRIC_LABELS = {
     "l1i_axi_read_latency": "L1I Avg AXI Read",
 }
 
+STALL_COUNTER_LABELS = {
+    "stall_br_id_cycles": "br id stall cycles",
+    "stall_preg_cycles": "preg stall cycles",
+    "stall_rob_full_cycles": "rob full stall cycles",
+    "stall_iq_full_cycles": "iq full stall cycles",
+    "stall_ldq_full_cycles": "ldq full stall cycles",
+    "stall_stq_full_cycles": "stq full stall cycles",
+    "dis2ren_not_ready_cycles": "dis2ren not ready cycles",
+    "dis2ren_not_ready_flush_cycles": "- dis2ren flush/stall",
+    "dis2ren_not_ready_rob_cycles": "- dis2ren rob",
+    "dis2ren_not_ready_serialize_cycles": "- dis2ren serialize",
+    "dis2ren_not_ready_dispatch_cycles": "- dis2ren dispatch",
+    "dis2ren_not_ready_older_cycles": "- dis2ren older",
+    "dis2ren_not_ready_dispatch_ldq_cycles": "- dispatch ldq",
+    "dis2ren_not_ready_dispatch_stq_cycles": "- dispatch stq",
+    "dis2ren_not_ready_dispatch_iq_cycles": "- dispatch iq total",
+    "dis2ren_not_ready_dispatch_iq_int_cycles": "- iq int",
+    "dis2ren_not_ready_dispatch_iq_ld_cycles": "- iq ld",
+    "dis2ren_not_ready_dispatch_iq_sta_cycles": "- iq sta",
+    "dis2ren_not_ready_dispatch_iq_std_cycles": "- iq std",
+    "dis2ren_not_ready_dispatch_iq_br_cycles": "- iq br",
+    "dis2ren_not_ready_dispatch_other_cycles": "- dispatch other",
+}
+
+STALL_METRIC_KEYS = tuple(STALL_COUNTER_LABELS.keys())
+
 CONFIG_SCAN_FILE = os.path.join(REPO_ROOT, "include", "config.h")
 
 CONFIG_SCAN_SYMBOLS = (
@@ -612,6 +638,21 @@ def parse_latency_counters(clean_lines):
     return latency
 
 
+def parse_stall_counters(clean_lines):
+    stalls = {k: 0 for k in STALL_METRIC_KEYS}
+    stall_lines = _extract_last_section_lines(clean_lines, ("*********RESOURCE STALL",))
+
+    for key, label in STALL_COUNTER_LABELS.items():
+        for line in stall_lines:
+            if line.startswith(label):
+                value = _extract_last_int(line, label)
+                if value is not None:
+                    stalls[key] = value
+                break
+
+    return stalls
+
+
 def dbg(msg):
     if DEBUG:
         print(msg)
@@ -707,6 +748,7 @@ def parse_log_robust(filepath, with_reason=False):
 
         cache = parse_cache_counters(content)
         latency = parse_latency_counters(clean_lines)
+        stalls = parse_stall_counters(clean_lines)
 
         # =======================================================
         # 2. BPU 解析 (Regex 扫描版)
@@ -755,6 +797,7 @@ def parse_log_robust(filepath, with_reason=False):
             "br_num": br_num_total,
             "br_miss": br_miss_total,
             "tma": tma,
+            "stalls": stalls,
         }
         if with_reason:
             return data, None
@@ -854,12 +897,14 @@ def process_benchmark(bench_path):
     w_cpi_sum = 0.0
     w_weight_sum = 0.0
     w_inst_sum = 0.0
+    w_cyc_sum = 0.0
     w_br_hit = 0.0
     w_br_total = 0.0
     w_br_miss = 0.0
     w_cache = {k: 0.0 for k in WEIGHTED_CACHE_KEYS}
     w_lat_total = {k: 0.0 for k in LATENCY_METRIC_KEYS}
     w_lat_samples = {k: 0.0 for k in LATENCY_METRIC_KEYS}
+    w_stalls = {k: 0.0 for k in STALL_METRIC_KEYS}
 
     w_tma_slots = 0.0
     tma_slot_sums = {k: 0.0 for k in TMA_SLOT_KEYS}
@@ -897,6 +942,7 @@ def process_benchmark(bench_path):
         w_cpi_sum += data["cpi"] * weight
         w_weight_sum += weight
         w_inst_sum += data["inst"] * weight
+        w_cyc_sum += data["cyc"] * weight
 
         for key in WEIGHTED_CACHE_KEYS:
             w_cache[key] += data["cache"].get(key, 0) * weight
@@ -906,6 +952,8 @@ def process_benchmark(bench_path):
             if samples > 0:
                 w_lat_total[key] += weight * avg * samples
                 w_lat_samples[key] += weight * samples
+        for key in STALL_METRIC_KEYS:
+            w_stalls[key] += data["stalls"].get(key, 0) * weight
 
         br_correct = data["br_num"] - data["br_miss"]
         w_br_hit += br_correct * weight
@@ -999,6 +1047,12 @@ def process_benchmark(bench_path):
         p(f"Branch MPKI:        {br_mpki:.2f}")
     else:
         p("Branch Accuracy:    N/A (Parsed 0 branches)")
+
+    p("Resource Stall (Weighted):")
+    for key in STALL_METRIC_KEYS:
+        stall_val = w_stalls[key]
+        stall_pct = _safe_pct(stall_val, w_cyc_sum)
+        p(f"  {STALL_COUNTER_LABELS[key]}: {stall_val:.2f} ({stall_pct:.2f}% cyc)")
 
     if w_tma_slots > 0:
         p("TMA (Weighted):")
