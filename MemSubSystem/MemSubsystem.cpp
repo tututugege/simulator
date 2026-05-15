@@ -835,11 +835,14 @@ void MemSubsystem::comb() {
   ptw_itlb_req.addr =
       ptw_out.mem_req_addr[static_cast<size_t>(PtwClient::ITLB)];
 
-  wb_.comb_outputs_dcache();
-  wb_.comb_outputs_axi();
+  // Consume same-cycle AXI feedback before publishing DCache-facing state.
+  // This lets a just-returned MSHR line or just-retired WB entry be visible
+  // to the DCache in this CPU cycle instead of waiting for the next seq edge.
+  wb_.comb_inputs_axi();
+  mshr_.comb_inputs_axi();
 
+  wb_.comb_outputs_dcache();
   mshr_.comb_outputs_dcache();
-  mshr_.comb_outputs_axi();
   mem_route_block.comb_request();
 
   Dcache_Read(dcache_line_read_req_,
@@ -918,13 +921,14 @@ void MemSubsystem::comb() {
 
   sync_ptw_port_outputs();
 
-  // Phase 3a: run MSHR comb_inputs (may accept AXI R, allocate entries, and
-  // prepare next-cycle registered fill / eviction outputs).
+  // DCache-side updates run after stage2/stage1 produces requests. AXI
+  // outputs are refreshed afterward so newly allocated MSHR/WB entries can
+  // start their external transaction in the same CPU cycle.
   mshr_.comb_inputs_dcache();
-  mshr_.comb_inputs_axi();
-
   wb_.comb_inputs_dcache();
-  wb_.comb_inputs_axi();
+
+  mshr_.comb_outputs_axi();
+  wb_.comb_outputs_axi();
 
   peripheral_axi_.in.read = peripheral_axi_read_in;
   peripheral_axi_.in.write = peripheral_axi_write_in;

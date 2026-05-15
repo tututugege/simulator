@@ -321,26 +321,20 @@ void RealDcache::stage2_comb() {
                     COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
                                      L1DReplayReason::MshrFull);
                 }
-                else if(!out.dcache2mshr->mshr_req[0].valid){ // The only free MSHR entry is being allocated by the other load port in the same cycle, so can't accept this new miss
-                    out.dcache2mshr->mshr_req[0].valid = true;
-                    out.dcache2mshr->mshr_req[0].addr = slot.addr;
+                else { // The only free MSHR entry is being allocated by the other load port in the same cycle, so can't accept this new miss
+                    out.dcache2mshr->mshr_req[i].valid = true;
+                    out.dcache2mshr->mshr_req[i].addr = slot.addr;
 #if !BSD_CONFIG
-                    out.dcache2mshr->mshr_req[0].lsu_origin =
+                    out.dcache2mshr->mshr_req[i].lsu_origin =
                         l1d_perf_is_lsu_req(slot.req_id);
 #endif
 
                     resp.valid = true;
                     resp.replay = ReplayType::MSHR_HIT;
                     resp.req_id = slot.req_id;
+                    mshr_free_entries--;
                     COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
                                      L1DReplayReason::WaitMshrFirstAlloc);
-                }
-                else{
-                    resp.valid = true;
-                    resp.replay = ReplayType::CONFLICT; 
-                    resp.req_id = slot.req_id;
-                    COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
-                                     L1DReplayReason::Conflict);
                 }
             }
         } 
@@ -427,41 +421,27 @@ void RealDcache::stage2_comb() {
             }
             else{
                 // Miss with no existing MSHR entry: allocate a new MSHR and replay later when it is ready.
-                if(mshr_free_entries == 0 || (mshr_free_entries == 1 && out.dcache2mshr->mshr_req[0].valid)){ // No free MSHR entry, or the only free entry is being allocated by the other store port in the same cycle, so can't accept this new miss
+                if(mshr_free_entries == 0){ // No free MSHR entry, or the only free entry is being allocated by the other store port in the same cycle, so can't accept this new miss
                     resp.valid = true;
                     resp.replay = ReplayType::MSHR_FULL; // MSHR full, replay later
                     resp.req_id = slot.req_id;
                     COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
                                      L1DReplayReason::MshrFull);
                 }
-                else if(!out.dcache2mshr->mshr_req[1].valid){ // The free MSHR entry is available for allocation
-                    if(out.dcache2mshr->mshr_req[0].valid&&cache_line_match(slot.addr,out.dcache2mshr->mshr_req[0].addr)){ // The only free MSHR entry is being allocated by the other store port in the same cycle, so can't accept this new miss
-                        resp.valid = true;
-                        resp.replay = ReplayType::MSHR_HIT;
-                        resp.req_id = slot.req_id;
-                        COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
-                                         L1DReplayReason::WaitMshrHit);
-                    }else{
-                        out.dcache2mshr->mshr_req[1].valid = true;
-                        out.dcache2mshr->mshr_req[1].addr = slot.addr;
+                else {
+                    out.dcache2mshr->mshr_req[i].valid = true;
+                    out.dcache2mshr->mshr_req[i].addr = slot.addr;
 #if !BSD_CONFIG
-                        out.dcache2mshr->mshr_req[1].lsu_origin =
-                            l1d_perf_is_lsu_req(slot.req_id);
+                    out.dcache2mshr->mshr_req[i].lsu_origin =
+                        l1d_perf_is_lsu_req(slot.req_id);
 #endif
 
-                        resp.valid = true;
-                        resp.replay = ReplayType::MSHR_HIT;
-                        resp.req_id = slot.req_id;
-                        COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
-                                         L1DReplayReason::WaitMshrFirstAlloc);
-                    }
-                }
-                else{
                     resp.valid = true;
-                    resp.replay = ReplayType::CONFLICT; // MSHR conflict with the other port in the same cycle, replay later
+                    resp.replay = ReplayType::MSHR_HIT;
                     resp.req_id = slot.req_id;
                     COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
-                                     L1DReplayReason::Conflict);
+                                        L1DReplayReason::WaitMshrFirstAlloc);
+                    mshr_free_entries--;
                 }
             }
         }

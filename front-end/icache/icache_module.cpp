@@ -266,7 +266,7 @@ void ICache::capture_lookup_meta_result(uint32_t compare_tag,
     return;
   }
 
-  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+  for (uint32_t way = 0; way < ICACHE_WAY_NUM; ++way) {
     const bool valid = io.lookup_in.lookup_set_valid[way];
     if (!valid && !lookup_has_invalid_way_w) {
       lookup_has_invalid_way_w = true;
@@ -444,10 +444,19 @@ void ICache::eval_state_machine() {
   uint8_t resp_id = static_cast<uint8_t>(io.in.mem_resp_id & 0xF);
   bool canceled_resp =
       io.in.mem_resp_valid && io.regs.txid_canceled_r[resp_id];
+  bool same_cycle_accept_resp_candidate =
+      io.in.mem_resp_valid && state == SWAP_IN && mem_axi_state == AXI_IDLE &&
+      io.regs.miss_txid_valid_r &&
+      (resp_id == static_cast<uint8_t>(io.regs.miss_txid_r & 0xF)) &&
+      io.in.mem_req_accepted &&
+      ((io.in.mem_req_accepted_id & 0xF) ==
+       (io.regs.miss_txid_r & 0xF));
   bool active_resp =
       io.in.mem_resp_valid && io.regs.miss_txid_valid_r &&
       (resp_id == io.regs.miss_txid_r) &&
-      io.regs.txid_inflight_r[resp_id] && !canceled_resp;
+      (io.regs.txid_inflight_r[resp_id] ||
+       same_cycle_accept_resp_candidate) &&
+      !canceled_resp;
   bool orphan_resp =
       io.in.mem_resp_valid && !active_resp && !canceled_resp &&
       !io.regs.txid_inflight_r[resp_id];
@@ -462,6 +471,75 @@ void ICache::eval_state_machine() {
     io.reg_write.txid_canceled_r[resp_id] = false;
     io.reg_write.txid_inflight_r[resp_id] = false;
   }
+
+  auto complete_mem_refill = [&](const char *trace_tag,
+                                 bool same_cycle_issue) {
+    mem_gnt = true;
+    if (perf_state.miss_penalty_active &&
+        static_cast<uint64_t>(sim_time) >=
+            perf_state.miss_penalty_start_cycle) {
+      perf.miss_penalty_valid = true;
+      perf.miss_penalty_cycles =
+          static_cast<uint64_t>(sim_time) -
+          perf_state.miss_penalty_start_cycle;
+    }
+    if (same_cycle_issue) {
+      perf.axi_read_valid = true;
+      perf.axi_read_cycles = 0;
+    } else if (perf_state.axi_read_active &&
+               static_cast<uint64_t>(sim_time) >=
+                   perf_state.axi_read_start_cycle) {
+      perf.axi_read_valid = true;
+      perf.axi_read_cycles =
+          static_cast<uint64_t>(sim_time) - perf_state.axi_read_start_cycle;
+    }
+    for (uint32_t offset = 0; offset < ICACHE_LINE_SIZE / 4; ++offset) {
+      mem_resp_data_w[offset] = io.in.mem_resp_data[offset];
+    }
+    capture_lookup_meta_result(io.regs.ppn_r & 0xFFFFF,
+                               /*compare_valid=*/false);
+    if (lookup_has_invalid_way_w) {
+      replace_idx_next = lookup_first_invalid_way_w;
+    } else {
+      replace_idx_next = (io.regs.replace_idx + 1) % way_cnt;
+    }
+
+    mem_axi_state_next = AXI_IDLE;
+    state_next = IDLE;
+    io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
+    io.reg_write.miss_txid_valid_r = false;
+    io.reg_write.miss_ready_seen_r = false;
+    perf_state_next.miss_penalty_active = false;
+    perf_state_next.miss_penalty_start_cycle = 0;
+    perf_state_next.axi_read_active = false;
+    perf_state_next.axi_read_start_cycle = 0;
+
+    if (!io.in.flush) {
+      io.table_write.we = true;
+      io.table_write.index = io.regs.req_index_r;
+      io.table_write.way = replace_idx_next;
+      for (uint32_t word = 0; word < word_num; ++word) {
+        io.table_write.data[word] = mem_resp_data_w[word];
+      }
+      io.table_write.tag = io.regs.ppn_r;
+      io.table_write.valid = true;
+    }
+
+    if (!io.in.refetch && !io.in.flush) {
+      io.out.ifu_resp_valid = true;
+      for (uint32_t word = 0; word < word_num; ++word) {
+        io.out.rd_data[word] = mem_resp_data_w[word];
+      }
+      if (SIM_DEBUG_PRINT_ACTIVE &&
+          icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
+        dump_icache_module_line(trace_tag, sim_time, io, mem_gnt,
+                                io.out.rd_data);
+      }
+      req_ready_w = true;
+    } else {
+      req_ready_w = true;
+    }
+  };
 
   switch (state) {
   case IDLE:
@@ -689,11 +767,19 @@ void ICache::eval_state_machine() {
       if (io.in.mem_req_accepted &&
           ((io.in.mem_req_accepted_id & 0xF) == (io.regs.miss_txid_r & 0xF))) {
         io.out.mem_req_valid = false;
-        mem_axi_state_next = AXI_BUSY;
-        io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = true;
-        perf_state_next.axi_read_active = true;
-        perf_state_next.axi_read_start_cycle =
-            static_cast<uint64_t>(sim_time);
+        if (active_resp) {
+          // Extra AXI/LLC sub-ticks can complete the refill before the next
+          // CPU cycle observes the registered inflight bit.
+          io.out.mem_resp_ready = true;
+          complete_mem_refill("SWAP_MEM_GNT_SAME_CYCLE",
+                              /*same_cycle_issue=*/true);
+        } else {
+          mem_axi_state_next = AXI_BUSY;
+          io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = true;
+          perf_state_next.axi_read_active = true;
+          perf_state_next.axi_read_start_cycle =
+              static_cast<uint64_t>(sim_time);
+        }
       } else {
         io.out.mem_req_valid = true;
         mem_axi_state_next = AXI_IDLE;
@@ -705,66 +791,7 @@ void ICache::eval_state_machine() {
       mem_gnt = active_resp && io.out.mem_resp_ready;
       state_next = SWAP_IN;
       if (mem_gnt) {
-        if (perf_state.miss_penalty_active &&
-            static_cast<uint64_t>(sim_time) >= perf_state.miss_penalty_start_cycle) {
-          perf.miss_penalty_valid = true;
-          perf.miss_penalty_cycles =
-              static_cast<uint64_t>(sim_time) -
-              perf_state.miss_penalty_start_cycle;
-        }
-        if (perf_state.axi_read_active &&
-            static_cast<uint64_t>(sim_time) >= perf_state.axi_read_start_cycle) {
-          perf.axi_read_valid = true;
-          perf.axi_read_cycles =
-              static_cast<uint64_t>(sim_time) -
-              perf_state.axi_read_start_cycle;
-        }
-        for (uint32_t offset = 0; offset < ICACHE_LINE_SIZE / 4; ++offset) {
-          mem_resp_data_w[offset] = io.in.mem_resp_data[offset];
-        }
-        capture_lookup_meta_result(io.regs.ppn_r & 0xFFFFF,
-                                   /*compare_valid=*/false);
-        if (lookup_has_invalid_way_w) {
-          replace_idx_next = lookup_first_invalid_way_w;
-        } else {
-          replace_idx_next = (io.regs.replace_idx + 1) % way_cnt;
-        }
-
-        mem_axi_state_next = AXI_IDLE;
-        state_next = IDLE;
-        io.reg_write.txid_inflight_r[io.regs.miss_txid_r & 0xF] = false;
-        io.reg_write.miss_txid_valid_r = false;
-        io.reg_write.miss_ready_seen_r = false;
-        perf_state_next.miss_penalty_active = false;
-        perf_state_next.miss_penalty_start_cycle = 0;
-        perf_state_next.axi_read_active = false;
-        perf_state_next.axi_read_start_cycle = 0;
-
-        if (!io.in.flush) {
-          io.table_write.we = true;
-          io.table_write.index = io.regs.req_index_r;
-          io.table_write.way = replace_idx_next;
-          for (uint32_t word = 0; word < word_num; ++word) {
-            io.table_write.data[word] = mem_resp_data_w[word];
-          }
-          io.table_write.tag = io.regs.ppn_r;
-          io.table_write.valid = true;
-        }
-
-        if (!io.in.refetch && !io.in.flush) {
-          io.out.ifu_resp_valid = true;
-          for (uint32_t word = 0; word < word_num; ++word) {
-            io.out.rd_data[word] = mem_resp_data_w[word];
-          }
-          if (SIM_DEBUG_PRINT_ACTIVE &&
-              icache_trace_pc(io.out.ifu_resp_pc, sim_time)) {
-            dump_icache_module_line("SWAP_MEM_GNT", sim_time, io, mem_gnt,
-                                    io.out.rd_data);
-          }
-          req_ready_w = true;
-        } else {
-          req_ready_w = true;
-        }
+        complete_mem_refill("SWAP_MEM_GNT", /*same_cycle_issue=*/false);
       }
     }
     break;

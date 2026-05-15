@@ -90,6 +90,7 @@ public:
     MSHROUTIO out;
 
     MSHR_STATE cur,nxt;
+    bool axi_resp_accepted_this_cycle = false;
 #if !BSD_CONFIG
     SimContext *ctx = nullptr;
 #endif

@@ -49,26 +49,60 @@ void WriteBuffer::init() {
 void WriteBuffer::comb_outputs_dcache() {
     
     out.clear();
-    out.wb2dcache->free = DCACHE_WB_ENTRIES - cur.count;
+    out.wb2dcache->free = DCACHE_WB_ENTRIES - nxt.count;
     for(int i=0;i<LSU_LDU_COUNT;i++){
-        out.wb2dcache->bypass_resp[i].valid = cur.bypassvalid[i];
-        out.wb2dcache->bypass_resp[i].data = cur.bypassdata[i];
+        nxt.bypassvalid[i] = false;
+        nxt.bypassdata[i] = 0;
+        if(in.dcache2wb->bypass_req[i].valid){
+            int wb_idx = find_wb_entry(nxt.write_buffer, nxt.head, nxt.count,
+                                       in.dcache2wb->bypass_req[i].addr);
+            if(valid_wb_entry_index(wb_idx)){
+                nxt.bypassvalid[i] = true;
+                nxt.bypassdata[i] =
+                    nxt.write_buffer[wb_idx]
+                        .data[decode(in.dcache2wb->bypass_req[i].addr)
+                                  .word_off];
+            }
+        }
+        out.wb2dcache->bypass_resp[i].valid = nxt.bypassvalid[i];
+        out.wb2dcache->bypass_resp[i].data = nxt.bypassdata[i];
     }
 
     for(int i=0;i<LSU_STA_COUNT;i++){
-        out.wb2dcache->merge_resp[i].valid = cur.mergevalid[i];
-        out.wb2dcache->merge_resp[i].busy = cur.mergebusy[i];
+        nxt.mergevalid[i] = false;
+        nxt.mergebusy[i] = false;
+        if(in.dcache2wb->merge_req[i].valid){
+            int wb_idx = find_wb_entry(nxt.write_buffer, nxt.head, nxt.count,
+                                       in.dcache2wb->merge_req[i].addr);
+            if(valid_wb_entry_index(wb_idx)){
+                if(wb_idx == nxt.head && nxt.count > 0 && nxt.send != 0){
+                    nxt.mergebusy[i] = true;
+                }
+                else{
+                    nxt.mergevalid[i] = true;
+                    WriteBufferEntry &e = nxt.write_buffer[wb_idx];
+                    uint32_t word_off =
+                        decode(in.dcache2wb->merge_req[i].addr).word_off;
+                    uint32_t strb = in.dcache2wb->merge_req[i].strb;
+                    apply_strobe(e.data[word_off],
+                                 in.dcache2wb->merge_req[i].data, strb);
+                }
+            }
+        }
+        out.wb2dcache->merge_resp[i].valid = nxt.mergevalid[i];
+        out.wb2dcache->merge_resp[i].busy = nxt.mergebusy[i];
     }
 }
 void WriteBuffer::comb_outputs_axi() {
+    out.axi_out->clear();
     out.axi_out->resp_ready = true;
-    if (cur.send != 0) {
+    if (nxt.send != 0) {
         return;
     }
-    if (cur.count == 0) {
+    if (nxt.count == 0) {
         return;
     }
-    const WriteBufferEntry &head_e = cur.write_buffer[cur.head];
+    const WriteBufferEntry &head_e = nxt.write_buffer[nxt.head];
     out.axi_out->req_valid = true;
     out.axi_out->req_addr = head_e.addr;
     out.axi_out->req_total_size = DCACHE_LINE_SIZE - 1;
@@ -81,7 +115,20 @@ void WriteBuffer::comb_outputs_axi() {
 }
 
 void WriteBuffer::comb_inputs_axi(){
-    if(in.axi_in->req_accepted){
+    const bool req_accepted = in.axi_in->req_accepted;
+    const bool accepted_head = req_accepted && cur.count > 0;
+    const bool resp_valid = in.axi_in->resp_valid;
+
+    if(req_accepted){
+        if (out.axi_out->req_valid) {
+            out.axi_out->req_valid = false;
+            out.axi_out->req_addr = 0;
+            out.axi_out->req_total_size = 0;
+            out.axi_out->req_id = 0;
+            out.axi_out->req_wstrb = 0;
+            std::memset(out.axi_out->req_wdata, 0,
+                        sizeof(out.axi_out->req_wdata));
+        }
         nxt.send = 1; // request has been accepted, wait for response before sending next
 #if !BSD_CONFIG
         nxt.axi_write_active = true;
@@ -90,16 +137,32 @@ void WriteBuffer::comb_inputs_axi(){
         nxt.axi_write_start_cycle = ctx == nullptr ? 0 : ctx->perf.cycle;
 #endif
     }
-    if (in.axi_in->resp_valid) {
+    if (resp_valid) {
 #if !BSD_CONFIG
-        if (ctx != nullptr && cur.axi_write_active &&
-            cur.axi_write_lsu_origin &&
-            ctx->perf.cycle >= cur.axi_write_start_cycle) {
-            ctx->perf.l1d_axi_write_total_cycles +=
-                ctx->perf.cycle - cur.axi_write_start_cycle;
-            ctx->perf.l1d_axi_write_samples++;
+        if (ctx != nullptr) {
+            const bool lsu_origin =
+                cur.axi_write_active ? cur.axi_write_lsu_origin
+                                     : (accepted_head &&
+                                        cur.write_buffer[cur.head].lsu_origin);
+            const uint64_t start_cycle =
+                cur.axi_write_active ? cur.axi_write_start_cycle
+                                     : (ctx == nullptr ? 0 : ctx->perf.cycle);
+            if (lsu_origin && ctx->perf.cycle >= start_cycle) {
+                ctx->perf.l1d_axi_write_total_cycles +=
+                    ctx->perf.cycle - start_cycle;
+                ctx->perf.l1d_axi_write_samples++;
+            }
         }
 #endif
+        if (nxt.count > 0) {
+            nxt.count = nxt.count - 1;
+            nxt.head = (nxt.head + 1) % DCACHE_WB_ENTRIES;
+        }
+        else{
+#if !BSD_CONFIG
+            assert(false && "WriteBuffer underflow: received AXI response when buffer is empty");
+#endif
+        }
         nxt.send = 0; // allow sending (or retrying) the head entry
 #if !BSD_CONFIG
         nxt.axi_write_active = false;
@@ -112,8 +175,8 @@ void WriteBuffer::comb_inputs_axi(){
 void WriteBuffer::comb_inputs_dcache() {
     
     if(in.dcache2wb->dirty_info.valid){
-        if(cur.count < DCACHE_WB_ENTRIES){
-            WriteBufferEntry &e = nxt.write_buffer[(cur.head + nxt.count) % DCACHE_WB_ENTRIES];
+        if(nxt.count < DCACHE_WB_ENTRIES){
+            WriteBufferEntry &e = nxt.write_buffer[(nxt.head + nxt.count) % DCACHE_WB_ENTRIES];
             e.addr     = in.dcache2wb->dirty_info.addr;
 #if !BSD_CONFIG
             e.lsu_origin = in.dcache2wb->dirty_info.lsu_origin;
@@ -126,68 +189,8 @@ void WriteBuffer::comb_inputs_dcache() {
             #endif
         }
     }
-    if(in.dcache2wb->dirty_info.valid && cur.count < DCACHE_WB_ENTRIES){
-        nxt.count = cur.count + 1;
-    }
-
-    for(int i=0;i<LSU_STA_COUNT;i++){
-        if(in.dcache2wb->merge_req[i].valid){
-            int wb_idx = find_wb_entry(nxt.write_buffer, cur.head,nxt.count,in.dcache2wb->merge_req[i].addr);
-            if(valid_wb_entry_index(wb_idx)){
-
-                if(wb_idx == cur.head&&nxt.count > 0){
-                    nxt.mergebusy[i] = true; // the entry being merged is currently being sent out, mark as busy to stall new merges until we know if the current one will be accepted or not
-                    nxt.mergevalid[i] = false; // the merge can't be accepted in the same cycle as the send, even if the address matches, to avoid a
-                }
-                else{
-                    nxt.mergebusy[i] = false;
-                    nxt.mergevalid[i] = true;
-                    WriteBufferEntry &e = nxt.write_buffer[wb_idx];
-                    uint32_t word_off = decode(in.dcache2wb->merge_req[i].addr).word_off;
-                    uint32_t strb = in.dcache2wb->merge_req[i].strb;
-                    apply_strobe(e.data[word_off], in.dcache2wb->merge_req[i].data, strb);
-                }
-            }
-            else 
-            {
-                nxt.mergevalid[i] = false;
-                nxt.mergebusy[i] = false;
-            }
-        }
-        else{
-            nxt.mergevalid[i] = false;
-            nxt.mergebusy[i] = false;
-        }
-    }
-    for(int i=0;i<LSU_LDU_COUNT;i++){
-        if(in.dcache2wb->bypass_req[i].valid){
-            int wb_idx = find_wb_entry(nxt.write_buffer, cur.head,nxt.count,in.dcache2wb->bypass_req[i].addr);
-            if(valid_wb_entry_index(wb_idx)){
-                nxt.bypassvalid[i] = true;
-                nxt.bypassdata[i] = nxt.write_buffer[wb_idx].data[decode(in.dcache2wb->bypass_req[i].addr).word_off];
-            }
-            else{
-                nxt.bypassvalid[i] = false;
-                nxt.bypassdata[i] = 0;
-            }
-        }
-        else{
-            nxt.bypassvalid[i] = false;
-            nxt.bypassdata[i] = 0;
-        }
-    }
-
-    
-    if(in.axi_in->resp_valid){
-        if(nxt.count > 0){
-            nxt.count = nxt.count - 1;
-            nxt.head = (cur.head + 1) % DCACHE_WB_ENTRIES;
-        }
-        else{
-            #if !BSD_CONFIG
-                assert(false && "WriteBuffer underflow: received AXI response when buffer is empty");
-            #endif
-        }
+    if(in.dcache2wb->dirty_info.valid && nxt.count < DCACHE_WB_ENTRIES){
+        nxt.count = nxt.count + 1;
     }
 
 }

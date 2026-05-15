@@ -110,6 +110,8 @@ void print_soc_config_banner() {
       static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
       static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
       static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING));
+  std::printf("[CONFIG][AXI] subsystem_freq_div=%u\n",
+              static_cast<unsigned>(CONFIG_AXI_SUBSYSTEM_FREQ_DIV));
   std::printf(
       "[CONFIG][LLC] enable=%u(%s) capacity=%lluMB ways=%u mshr=%u "
       "lookup_latency=%ucy dcache_read_miss=%s\n",
@@ -290,6 +292,195 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
         cpu.mem_subsystem.peripheral_axi_write_out.req_wdata[i];
   }
   peri_wport.resp.ready = cpu.mem_subsystem.peripheral_axi_write_out.resp_ready;
+}
+
+struct AxiCpuBoundaryState {
+  bool read_req_ready[axi_interconnect::NUM_READ_MASTERS] = {};
+  bool read_req_accepted[axi_interconnect::NUM_READ_MASTERS] = {};
+  uint8_t read_req_accepted_id[axi_interconnect::NUM_READ_MASTERS] = {};
+  bool write_req_ready[axi_interconnect::NUM_WRITE_MASTERS] = {};
+  bool write_req_accepted[axi_interconnect::NUM_WRITE_MASTERS] = {};
+  uint8_t write_req_accepted_id[axi_interconnect::NUM_WRITE_MASTERS] = {};
+  bool read_resp_valid[axi_interconnect::NUM_READ_MASTERS] = {};
+  uint8_t read_resp_id[axi_interconnect::NUM_READ_MASTERS] = {};
+  bool read_resp_ready[axi_interconnect::NUM_READ_MASTERS] = {};
+  bool write_resp_valid[axi_interconnect::NUM_WRITE_MASTERS] = {};
+  uint8_t write_resp_id[axi_interconnect::NUM_WRITE_MASTERS] = {};
+  bool write_resp_ready[axi_interconnect::NUM_WRITE_MASTERS] = {};
+};
+
+void capture_axi_cpu_boundary_state(SimCpu &cpu, AxiCpuBoundaryState &state) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    state.read_req_ready[i] = cpu.axi_interconnect.read_ports[i].req.ready;
+    state.read_req_accepted[i] = cpu.axi_interconnect.read_req_accepted[i];
+    state.read_req_accepted_id[i] =
+        cpu.axi_interconnect.read_req_accepted_id[i];
+    state.read_resp_valid[i] = cpu.axi_interconnect.read_ports[i].resp.valid;
+    state.read_resp_id[i] =
+        static_cast<uint8_t>(cpu.axi_interconnect.read_ports[i].resp.id);
+    state.read_resp_ready[i] = cpu.axi_interconnect.read_ports[i].resp.ready;
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    state.write_req_ready[i] = cpu.axi_interconnect.write_ports[i].req.ready;
+    state.write_req_accepted[i] = cpu.axi_interconnect.write_req_accepted[i];
+    state.write_req_accepted_id[i] =
+        static_cast<uint8_t>(cpu.axi_interconnect.write_ports[i].req.id);
+    state.write_resp_valid[i] = cpu.axi_interconnect.write_ports[i].resp.valid;
+    state.write_resp_id[i] =
+        static_cast<uint8_t>(cpu.axi_interconnect.write_ports[i].resp.id);
+    state.write_resp_ready[i] = cpu.axi_interconnect.write_ports[i].resp.ready;
+  }
+}
+
+void accumulate_axi_cpu_boundary_state(SimCpu &cpu,
+                                       AxiCpuBoundaryState &state) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    state.read_req_ready[i] =
+        state.read_req_ready[i] || cpu.axi_interconnect.read_ports[i].req.ready;
+    if (cpu.axi_interconnect.read_req_accepted[i]) {
+      state.read_req_accepted[i] = true;
+      state.read_req_accepted_id[i] =
+          cpu.axi_interconnect.read_req_accepted_id[i];
+    }
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    state.write_req_ready[i] = state.write_req_ready[i] ||
+                               cpu.axi_interconnect.write_ports[i].req.ready;
+    if (cpu.axi_interconnect.write_req_accepted[i]) {
+      state.write_req_accepted[i] = true;
+      state.write_req_accepted_id[i] =
+          static_cast<uint8_t>(cpu.axi_interconnect.write_ports[i].req.id);
+    }
+  }
+}
+
+void restore_axi_cpu_boundary_state(SimCpu &cpu,
+                                    const AxiCpuBoundaryState &state) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    cpu.axi_interconnect.read_req_accepted[i] = state.read_req_accepted[i];
+    cpu.axi_interconnect.read_req_accepted_id[i] =
+        state.read_req_accepted_id[i];
+    cpu.axi_interconnect.read_ports[i].req.ready = state.read_req_ready[i];
+    cpu.axi_interconnect.read_ports[i].req.accepted =
+        state.read_req_accepted[i];
+    cpu.axi_interconnect.read_ports[i].req.accepted_id =
+        state.read_req_accepted_id[i];
+    cpu.axi_interconnect.read_ports[i].resp.ready = state.read_resp_ready[i];
+    const bool read_resp_valid = cpu.axi_interconnect.read_ports[i].resp.valid;
+    const uint8_t read_resp_id =
+        static_cast<uint8_t>(cpu.axi_interconnect.read_ports[i].resp.id);
+    const bool read_resp_from_extra_tick =
+        read_resp_valid &&
+        !(state.read_resp_valid[i] && state.read_resp_id[i] == read_resp_id);
+    const bool read_resp_matches_new_accept =
+        state.read_req_accepted[i] && read_resp_valid &&
+        read_resp_id == state.read_req_accepted_id[i];
+    if (read_resp_matches_new_accept) {
+      cpu.axi_interconnect.read_ports[i].resp.valid = false;
+    }
+    if (read_resp_from_extra_tick || read_resp_matches_new_accept) {
+      cpu.axi_interconnect.read_ports[i].resp.ready = false;
+    }
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    cpu.axi_interconnect.write_req_accepted[i] = state.write_req_accepted[i];
+    cpu.axi_interconnect.write_ports[i].req.ready = state.write_req_ready[i];
+    cpu.axi_interconnect.write_ports[i].req.accepted =
+        state.write_req_accepted[i];
+    cpu.axi_interconnect.write_ports[i].resp.ready = state.write_resp_ready[i];
+    const bool write_resp_valid =
+        cpu.axi_interconnect.write_ports[i].resp.valid;
+    const uint8_t write_resp_id =
+        static_cast<uint8_t>(cpu.axi_interconnect.write_ports[i].resp.id);
+    const bool write_resp_from_extra_tick =
+        write_resp_valid &&
+        !(state.write_resp_valid[i] && state.write_resp_id[i] == write_resp_id);
+    const bool write_resp_matches_new_accept =
+        state.write_req_accepted[i] && write_resp_valid &&
+        write_resp_id == state.write_req_accepted_id[i];
+    if (write_resp_matches_new_accept) {
+      cpu.axi_interconnect.write_ports[i].resp.valid = false;
+    }
+    if (write_resp_from_extra_tick || write_resp_matches_new_accept) {
+      cpu.axi_interconnect.write_ports[i].resp.ready = false;
+    }
+  }
+}
+
+void mask_axi_cpu_boundary_for_internal_tick(SimCpu &cpu) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    auto &port = cpu.axi_interconnect.read_ports[i];
+    port.req.valid = false;
+    port.req.addr = 0;
+    port.req.total_size = 0;
+    port.req.id = 0;
+    port.req.bypass = false;
+    port.resp.ready = false;
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    auto &port = cpu.axi_interconnect.write_ports[i];
+    port.req.valid = false;
+    port.req.addr = 0;
+    port.req.wdata.clear();
+    port.req.wstrb = 0;
+    port.req.total_size = 0;
+    port.req.id = 0;
+    port.req.bypass = false;
+    port.resp.ready = false;
+  }
+}
+
+void axi_subsystem_comb_outputs(SimCpu &cpu) {
+  cpu.mem_subsystem.llc_comb_outputs();
+  cpu.axi_interconnect.set_llc_lookup_in(cpu.mem_subsystem.llc_lookup_in());
+  cpu.axi_ddr.comb_outputs();
+  cpu.axi_mmio.comb_outputs();
+  cpu.axi_router.comb_outputs(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
+                              cpu.axi_mmio.io);
+  cpu.axi_interconnect.comb_outputs();
+}
+
+void axi_subsystem_comb_inputs(SimCpu &cpu) {
+  cpu.axi_interconnect.comb_inputs();
+  cpu.axi_router.comb_inputs(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
+                             cpu.axi_mmio.io);
+  cpu.axi_ddr.comb_inputs();
+  cpu.axi_mmio.comb_inputs();
+}
+
+void axi_subsystem_comb_inputs_internal_tick(SimCpu &cpu) {
+  cpu.axi_interconnect.comb_inputs_internal_tick();
+  cpu.axi_router.comb_inputs(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
+                             cpu.axi_mmio.io);
+  cpu.axi_ddr.comb_inputs();
+  cpu.axi_mmio.comb_inputs();
+}
+
+void axi_subsystem_seq(SimCpu &cpu) {
+  cpu.mem_subsystem.llc_seq(cpu.axi_interconnect.get_llc_table_out(),
+                            cpu.axi_interconnect.get_llc_perf_counters());
+  cpu.axi_interconnect.seq();
+  cpu.axi_router.seq(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
+                     cpu.axi_mmio.io);
+  cpu.axi_ddr.seq();
+  cpu.axi_mmio.seq();
+}
+
+void run_extra_axi_subsystem_ticks(SimCpu &cpu) {
+  if (CONFIG_AXI_SUBSYSTEM_FREQ_DIV <= 1u) {
+    return;
+  }
+
+  AxiCpuBoundaryState cpu_boundary_state{};
+  capture_axi_cpu_boundary_state(cpu, cpu_boundary_state);
+  for (uint32_t tick = 1; tick < CONFIG_AXI_SUBSYSTEM_FREQ_DIV; ++tick) {
+    mask_axi_cpu_boundary_for_internal_tick(cpu);
+    axi_subsystem_comb_outputs(cpu);
+    axi_subsystem_comb_inputs_internal_tick(cpu);
+    axi_subsystem_seq(cpu);
+    accumulate_axi_cpu_boundary_state(cpu, cpu_boundary_state);
+  }
+  restore_axi_cpu_boundary_state(cpu, cpu_boundary_state);
 }
 } // namespace
 
@@ -572,16 +763,8 @@ void SimCpu::cycle() {
   // Interconnect outputs (req.ready/resp.valid) are then bridged into
   // MemSubsystem in the same cycle, so MSHR/WB can consume fresh feedback.
   {
-    FRONTEND_HOST_PROFILE_SCOPE(SimMemLlcCombOutputs);
-    mem_subsystem.llc_comb_outputs();
-  }
-  {
     FRONTEND_HOST_PROFILE_SCOPE(SimAxiOutputs);
-    axi_interconnect.set_llc_lookup_in(mem_subsystem.llc_lookup_in());
-    axi_ddr.comb_outputs();
-    axi_mmio.comb_outputs();
-    axi_router.comb_outputs(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
-    axi_interconnect.comb_outputs();
+    axi_subsystem_comb_outputs(*this);
   }
   {
     FRONTEND_HOST_PROFILE_SCOPE(SimBridgeAxiToMem);
@@ -601,10 +784,7 @@ void SimCpu::cycle() {
   // AXI phase-2: master requests -> interconnect -> router -> slave inputs.
   {
     FRONTEND_HOST_PROFILE_SCOPE(SimAxiInputs);
-    axi_interconnect.comb_inputs();
-    axi_router.comb_inputs(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
-    axi_ddr.comb_inputs();
-    axi_mmio.comb_inputs();
+    axi_subsystem_comb_inputs(*this);
   }
 
   // 步骤 2：反馈给前端
@@ -621,16 +801,9 @@ void SimCpu::cycle() {
     mem_subsystem.seq();
   }
   {
-    FRONTEND_HOST_PROFILE_SCOPE(SimMemLlcSeq);
-    mem_subsystem.llc_seq(axi_interconnect.get_llc_table_out(),
-                          axi_interconnect.get_llc_perf_counters());
-  }
-  {
     FRONTEND_HOST_PROFILE_SCOPE(SimAxiSeq);
-    axi_interconnect.seq();
-    axi_router.seq(axi_interconnect.axi_io, axi_ddr.io, axi_mmio.io);
-    axi_ddr.seq();
-    axi_mmio.seq();
+    axi_subsystem_seq(*this);
+    run_extra_axi_subsystem_ticks(*this);
   }
   ctx.perf.perf_maybe_capture_simtime_snapshot();
 

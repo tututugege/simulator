@@ -16,23 +16,39 @@ void MSHR::init()
 {
     std::memset(&cur, 0, sizeof(cur));
     std::memset(&nxt, 0, sizeof(nxt));
+    axi_resp_accepted_this_cycle = false;
 }
 void MSHR::comb_outputs_dcache()
 {   
-    out.mshr2dcache->free = DCACHE_MSHR_ENTRIES - cur.mshr_count;
+    out.mshr2dcache->free = DCACHE_MSHR_ENTRIES - nxt.mshr_count;
 
     for(int i=0;i<LSU_LDU_COUNT + LSU_STA_COUNT;i++){
-        out.mshr2dcache->find_resp[i].valid = cur.find_hit[i];
+        bool hit = false;
+        if (in.dcache2mshr->find_req[i].valid) {
+            const uint32_t find_addr =
+                get_addr(in.dcache2mshr->find_req[i].set_idx,
+                         in.dcache2mshr->find_req[i].tag, 0);
+            for (int j = 0; j < DCACHE_MSHR_ENTRIES; j++) {
+                const MSHREntry &e = nxt.mshr_entries[j];
+                if (e.valid && e.addr == find_addr) {
+                    hit = true;
+                    break;
+                }
+            }
+        }
+        nxt.find_hit[i] = hit;
+        out.mshr2dcache->find_resp[i].valid = hit;
+        out.mshr2dcache->find_resp[i].hit = hit;
     }
 
-    if(cur.axi_resp_hold_valid){
+    if(nxt.axi_resp_hold_valid){
         out.mshr2dcache->fill_req.valid = true;
-        const MSHREntry &e = cur.mshr_entries[cur.axi_resp_hold_id];
+        const MSHREntry &e = nxt.mshr_entries[nxt.axi_resp_hold_id];
         out.mshr2dcache->fill_req.addr = e.addr;
 #if !BSD_CONFIG
         out.mshr2dcache->fill_req.lsu_origin = e.lsu_origin;
 #endif
-        std::memcpy(out.mshr2dcache->fill_req.data, cur.axi_resp_hold_data, DCACHE_WORD_NUM * sizeof(uint32_t));
+        std::memcpy(out.mshr2dcache->fill_req.data, nxt.axi_resp_hold_data, DCACHE_WORD_NUM * sizeof(uint32_t));
     }
     else{
         out.mshr2dcache->fill_req.valid = false;
@@ -49,7 +65,7 @@ void MSHR::comb_outputs_axi()
     out.axi_out->clear();
 
     for(uint32_t i=0; i<DCACHE_MSHR_ENTRIES; i++){
-        const MSHREntry &ce = cur.mshr_entries[i];
+        const MSHREntry &ce = nxt.mshr_entries[i];
         if (ce.valid && !ce.issued)
         {
             out.axi_out->req_valid = true;
@@ -59,16 +75,50 @@ void MSHR::comb_outputs_axi()
             break;
         }
     }
-    out.axi_out->resp_ready = !cur.axi_resp_hold_valid;
+    out.axi_out->resp_ready =
+        in.axi_in->resp_valid ? axi_resp_accepted_this_cycle
+                              : !nxt.axi_resp_hold_valid;
 }
 
 void MSHR::comb_inputs_dcache()
 {
+    if(in.dcache2mshr->fill_resp.done){
+        const uint8_t hold_id = nxt.axi_resp_hold_id;
+        Assert(hold_id < DCACHE_MSHR_ENTRIES &&
+               "Invalid held MSHR response ID");
+#if !BSD_CONFIG
+        if (ctx != nullptr &&
+            hold_id < DCACHE_MSHR_ENTRIES) {
+            const MSHREntry &e = nxt.mshr_entries[hold_id];
+            if (e.valid && e.lsu_origin &&
+                ctx->perf.cycle >= e.alloc_cycle) {
+                ctx->perf.l1d_miss_penalty_total_cycles +=
+                    ctx->perf.cycle - e.alloc_cycle;
+                ctx->perf.l1d_miss_penalty_samples++;
+            }
+        }
+#endif
+        nxt.mshr_entries[hold_id].valid = false;
+        nxt.mshr_entries[hold_id].issued = false;
+#if !BSD_CONFIG
+        nxt.mshr_entries[hold_id].alloc_cycle = 0;
+        nxt.mshr_entries[hold_id].axi_read_start_cycle = 0;
+        nxt.mshr_entries[hold_id].axi_read_active = false;
+        nxt.mshr_entries[hold_id].lsu_origin = false;
+#endif
+        if (nxt.mshr_count > 0) {
+            nxt.mshr_count = nxt.mshr_count - 1;
+        }
+        nxt.axi_resp_hold_valid = false;
+        nxt.axi_resp_hold_id = 0;
+        std::memset(nxt.axi_resp_hold_data, 0, sizeof(nxt.axi_resp_hold_data));
+    }
+
     for(int i=0;i<LSU_LDU_COUNT + LSU_STA_COUNT;i++){
         nxt.find_hit[i] = false;
         if(in.dcache2mshr->find_req[i].valid){
             for(int j=0;j<DCACHE_MSHR_ENTRIES;j++){
-                const MSHREntry &e = cur.mshr_entries[j];
+                const MSHREntry &e = nxt.mshr_entries[j];
                 uint32_t find_addr = get_addr(in.dcache2mshr->find_req[i].set_idx, in.dcache2mshr->find_req[i].tag, 0);
                 if(e.valid && e.addr == find_addr){
                     nxt.find_hit[i] = true;
@@ -124,83 +174,75 @@ void MSHR::comb_inputs_dcache()
 }
 void MSHR::comb_inputs_axi()
 {
+    axi_resp_accepted_this_cycle = false;
+    const bool req_accepted = in.axi_in->req_accepted;
+    const uint8_t accepted_id = in.axi_in->req_accepted_id;
 
-    // ── Accept R channel response ─────────────────────────────────────────────
-
-    if(!cur.axi_resp_hold_valid){
-        if(in.axi_in->resp_valid){
-            nxt.axi_resp_hold_valid = true;
-            nxt.axi_resp_hold_id = in.axi_in->resp_id;
-            std::memcpy(nxt.axi_resp_hold_data, in.axi_in->resp_data, DCACHE_WORD_NUM * sizeof(uint32_t));
-#if !BSD_CONFIG
-            if (ctx != nullptr && in.axi_in->resp_id < DCACHE_MSHR_ENTRIES) {
-                const MSHREntry &e = cur.mshr_entries[in.axi_in->resp_id];
-                if (e.valid && e.lsu_origin && e.axi_read_active &&
-                    ctx->perf.cycle >= e.axi_read_start_cycle) {
-                    ctx->perf.l1d_axi_read_total_cycles +=
-                        ctx->perf.cycle - e.axi_read_start_cycle;
-                    ctx->perf.l1d_axi_read_samples++;
-                }
-                nxt.mshr_entries[in.axi_in->resp_id].axi_read_active = false;
-                nxt.mshr_entries[in.axi_in->resp_id].axi_read_start_cycle = 0;
-            }
-#endif
-            #if BSD_CONFIG
-                Assert(in.axi_in->resp_id < DCACHE_MSHR_ENTRIES && "Invalid AXI response ID");
-            #endif
-        }
-    }else{
-        if(in.dcache2mshr->fill_resp.done){
-#if !BSD_CONFIG
-            if (ctx != nullptr &&
-                cur.axi_resp_hold_id < DCACHE_MSHR_ENTRIES) {
-                const MSHREntry &e = cur.mshr_entries[cur.axi_resp_hold_id];
-                if (e.valid && e.lsu_origin &&
-                    ctx->perf.cycle >= e.alloc_cycle) {
-                    ctx->perf.l1d_miss_penalty_total_cycles +=
-                        ctx->perf.cycle - e.alloc_cycle;
-                    ctx->perf.l1d_miss_penalty_samples++;
-                }
-            }
-#endif
-            nxt.mshr_entries[cur.axi_resp_hold_id].valid = false;
-            nxt.mshr_entries[cur.axi_resp_hold_id].issued = false;
-#if !BSD_CONFIG
-            nxt.mshr_entries[cur.axi_resp_hold_id].alloc_cycle = 0;
-            nxt.mshr_entries[cur.axi_resp_hold_id].axi_read_start_cycle = 0;
-            nxt.mshr_entries[cur.axi_resp_hold_id].axi_read_active = false;
-            nxt.mshr_entries[cur.axi_resp_hold_id].lsu_origin = false;
-#endif
-            nxt.mshr_count = nxt.mshr_count - 1;
-            nxt.axi_resp_hold_valid = false;
-            nxt.axi_resp_hold_id = 0;
-            std::memset(nxt.axi_resp_hold_data, 0, sizeof(nxt.axi_resp_hold_data));
-            // Mark the MSHR entry as done, which will trigger the fill response to DCache and unblock the waiting load/store.
-        }
-    }
-
-    // ── Issue next pending AR ─────────────────────────────────────────────────
-    // Handshake note:
-    // `req_ready` is only a ready-first hint. Use `req_accepted + req_accepted_id`
-    // to mark exactly which MSHR slot completed AR handshake.
-    if (in.axi_in->req_accepted) {
-        const uint8_t acc_id = in.axi_in->req_accepted_id;
-        if (acc_id < DCACHE_MSHR_ENTRIES) {
-            const MSHREntry &ce = cur.mshr_entries[acc_id];
+    // The AXI/LLC fabric can accept a DCache read and produce the response
+    // before the next CPU cycle observes the issued bit. Make the accepted
+    // state visible to response handling in this same comb pass.
+    if (req_accepted) {
+        if (accepted_id < DCACHE_MSHR_ENTRIES) {
+            const MSHREntry &ce = cur.mshr_entries[accepted_id];
             if (ce.valid && !ce.issued) {
-                nxt.mshr_entries[acc_id].issued = true;
+                nxt.mshr_entries[accepted_id].issued = true;
 #if !BSD_CONFIG
-                nxt.mshr_entries[acc_id].axi_read_active = true;
-                nxt.mshr_entries[acc_id].axi_read_start_cycle =
+                nxt.mshr_entries[accepted_id].axi_read_active = true;
+                nxt.mshr_entries[accepted_id].axi_read_start_cycle =
                     ctx == nullptr ? 0 : ctx->perf.cycle;
 #endif
+            }
+            if (out.axi_out->req_valid &&
+                out.axi_out->req_id == accepted_id) {
+                out.axi_out->req_valid = false;
+                out.axi_out->req_addr = 0;
+                out.axi_out->req_total_size = 0;
+                out.axi_out->req_id = 0;
             }
         }
         else
         {
-            #if !BSD_CONFIG
-                Assert(false && "Invalid MSHR response ID");
-            #endif
+#if !BSD_CONFIG
+            Assert(false && "Invalid MSHR accepted request ID");
+#endif
+        }
+    }
+
+    // ── Accept R channel response ─────────────────────────────────────────────
+
+    if(!nxt.axi_resp_hold_valid){
+        if(in.axi_in->resp_valid){
+            const uint8_t resp_id = in.axi_in->resp_id;
+            bool resp_matches_entry = false;
+            if (resp_id < DCACHE_MSHR_ENTRIES) {
+                const MSHREntry &e = nxt.mshr_entries[resp_id];
+                resp_matches_entry = e.valid && e.issued;
+            }
+            if (resp_matches_entry) {
+                nxt.axi_resp_hold_valid = true;
+                nxt.axi_resp_hold_id = resp_id;
+                std::memcpy(nxt.axi_resp_hold_data, in.axi_in->resp_data,
+                            DCACHE_WORD_NUM * sizeof(uint32_t));
+                axi_resp_accepted_this_cycle = true;
+#if !BSD_CONFIG
+                if (ctx != nullptr) {
+                    const MSHREntry &e = nxt.mshr_entries[resp_id];
+                    if (e.lsu_origin && e.axi_read_active &&
+                        ctx->perf.cycle >= e.axi_read_start_cycle) {
+                        ctx->perf.l1d_axi_read_total_cycles +=
+                            ctx->perf.cycle - e.axi_read_start_cycle;
+                        ctx->perf.l1d_axi_read_samples++;
+                    }
+                    nxt.mshr_entries[resp_id].axi_read_active = false;
+                    nxt.mshr_entries[resp_id].axi_read_start_cycle = 0;
+                }
+#endif
+            }
+            else {
+#if BSD_CONFIG
+                Assert(false && "Invalid AXI response ID");
+#endif
+            }
         }
     }
 
