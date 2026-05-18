@@ -334,7 +334,14 @@ void RealDcache::stage2_comb() {
             out.lru_updates[i]->way = hit_way;
         }
         else {
-            if(s1s2_cur.icache_req==i)continue;
+            if(s1s2_cur.icache_req==i){
+                // ICache coherent probes are lookup-only: report miss to the
+                // front-end route block without allocating an MSHR.
+                resp.valid = true;
+                resp.replay = ReplayType::CONFLICT;
+                resp.req_id = slot.req_id;
+                continue;
+            }
             if(in.mshr2dcache->find_resp[i].valid){
                 resp.valid = true;
                 resp.replay = ReplayType::MSHR_HIT;

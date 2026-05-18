@@ -74,9 +74,10 @@ static constexpr uint32_t ICACHE_WORD_BITS = 32;
 
 // i-Cache State
 enum ICacheState {
-  IDLE,         // Idle state
-  SWAP_IN,      // Swapping in state
-  DRAIN,        // Draining memory response after refetch
+  IDLE,                  // Idle state
+  SWAP_IN,               // LLC request in flight while DCache probe is unresolved
+  WAIT_DCACHE_AFTER_MEM, // LLC response is buffered; wait for DCache probe result
+  DRAIN,                 // Draining memory response after refetch
   CANCEL_WAIT_ACCEPT // Wait one cycle for delayed accepted pulse
 };
 // AXI Memory Channel State
@@ -111,7 +112,7 @@ struct ICache_regs_t {
   reg<1> ifu_req_ready_r = true;
 
   // FSM + memory channel registers
-  reg<2> state = static_cast<reg<2>>(IDLE);
+  reg<3> state = static_cast<reg<3>>(IDLE);
   reg<1> mem_axi_state = static_cast<reg<1>>(AXI_IDLE);
 
   // Memory response registers
@@ -125,6 +126,11 @@ struct ICache_regs_t {
   reg<1> miss_ready_seen_r = false;
   reg<1> txid_inflight_r[16] = {false};
   reg<1> txid_canceled_r[16] = {false};
+  reg<1> dcache_probe_inflight_r = false;
+  reg<1> dcache_probe_done_r = false;
+  reg<1> dcache_probe_hit_r = false;
+  reg<5> dcache_probe_word_r = 0;
+  reg<ICACHE_WORD_BITS> dcache_probe_data_r[ICACHE_WORD_NUM] = {0};
 
   // Lookup in-flight state (resource state, not SRAM implementation timing).
   reg<1> lookup_pending_r = false;
@@ -170,6 +176,10 @@ struct ICache_in_t {
   // For compatibility with the top-level memory response wiring.
   wire<4> mem_resp_id = 0;
   wire<ICACHE_WORD_BITS> mem_resp_data[ICACHE_WORD_NUM] = {0}; // Data from memory (Cache line)
+  // Input from DCache coherent word probe path.
+  wire<1> dcache_resp_valid = false;
+  wire<1> dcache_resp_miss = true;
+  wire<ICACHE_WORD_BITS> dcache_resp_data = 0;
 };
 
 struct ICache_out_t {
@@ -192,6 +202,9 @@ struct ICache_out_t {
   wire<32> mem_req_addr = 0;     // Address for memory access
   wire<4> mem_req_id = 0;        // Memory transaction ID
   wire<1> mem_resp_ready = false;
+  // DCache coherent word probe generated on an icache miss.
+  wire<1> dcache_req_valid = false;
+  wire<32> dcache_req_addr = 0;
   // External single-way data query generated after internal tag compare.
   wire<1> lookup_data_req_valid = false;
   wire<ICACHE_INDEX_BITS> lookup_data_req_index = 0;

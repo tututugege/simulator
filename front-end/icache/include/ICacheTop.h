@@ -16,6 +16,8 @@
 class SimContext;
 class PtwMemPort;
 class PtwWalkPort;
+struct ICacheMemPortReq;
+struct ICacheMemPortResp;
 namespace axi_interconnect {
 struct ReadMasterPort_t;
 }
@@ -42,6 +44,11 @@ public:
   virtual void set_ptw_walk_port(PtwWalkPort *port) { (void)port; }
   virtual void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) {
     (void)port;
+  }
+  virtual void set_mem_probe_ports(ICacheMemPortReq *req_port,
+                                   ICacheMemPortResp *resp_port) {
+    (void)req_port;
+    (void)resp_port;
   }
 
   virtual ~ICacheTop() {}

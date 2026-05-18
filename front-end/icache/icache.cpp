@@ -23,6 +23,8 @@
 icache_module_n::ICache icache;
 PtwMemPort *icache_ptw_mem_port = nullptr;
 PtwWalkPort *icache_ptw_walk_port = nullptr;
+ICacheMemPortReq *icache_mem_req_port = nullptr;
+ICacheMemPortResp *icache_mem_resp_port = nullptr;
 axi_interconnect::ReadMasterPort_t *icache_mem_read_port = nullptr;
 static SimContext *icache_ctx = nullptr;
 
@@ -99,6 +101,8 @@ void dump_focus_row(const char *tag, const DataTableT &data_table,
 void bind_icache_runtime(ICacheTop *instance) {
   static PtwMemPort *bound_mem_port = nullptr;
   static PtwWalkPort *bound_walk_port = nullptr;
+  static ICacheMemPortReq *bound_mem_req_port = nullptr;
+  static ICacheMemPortResp *bound_mem_resp_port = nullptr;
   static axi_interconnect::ReadMasterPort_t *bound_read_port = nullptr;
   static SimContext *bound_ctx = nullptr;
 
@@ -113,6 +117,12 @@ void bind_icache_runtime(ICacheTop *instance) {
   if (bound_read_port != icache_mem_read_port) {
     instance->set_mem_read_port(icache_mem_read_port);
     bound_read_port = icache_mem_read_port;
+  }
+  if (bound_mem_req_port != icache_mem_req_port ||
+      bound_mem_resp_port != icache_mem_resp_port) {
+    instance->set_mem_probe_ports(icache_mem_req_port, icache_mem_resp_port);
+    bound_mem_req_port = icache_mem_req_port;
+    bound_mem_resp_port = icache_mem_resp_port;
   }
   if (bound_ctx != icache_ctx) {
     instance->setContext(icache_ctx);
@@ -372,4 +382,10 @@ void icache_set_ptw_walk_port(PtwWalkPort *port) {
 void icache_set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) {
   ICacheTop *instance = get_icache_instance();
   instance->set_mem_read_port(port);
+}
+
+void icache_set_mem_probe_ports(ICacheMemPortReq *req_port,
+                                ICacheMemPortResp *resp_port) {
+  ICacheTop *instance = get_icache_instance();
+  instance->set_mem_probe_ports(req_port, resp_port);
 }

@@ -735,6 +735,8 @@ void SimCpu::init() {
 
   front.icache_ptw_walk_port = mem_subsystem.itlb_walk_port;
   front.icache_ptw_mem_port = mem_subsystem.itlb_ptw_port;
+  front.icache_mem_req_port = &icache_req;
+  front.icache_mem_resp_port = &icache_resp;
   // Keep a single active SoC memory topology. DCache/PTW/peripheral already use
   // the top-level interconnect; frontend icache should use the same shared path
   // whenever the real BPU frontend is enabled. Oracle mode does not step the

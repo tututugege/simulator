@@ -7,6 +7,7 @@
 
 #include "../front_module.h"
 #include "../frontend.h"
+#include "FrontTop.h"
 #include "Csr.h"
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
@@ -170,6 +171,12 @@ struct MemReadView {
   uint32_t resp_data[ICACHE_LINE_SIZE / 4] = {0};
 };
 
+struct DcacheProbeView {
+  bool resp_valid = false;
+  bool resp_miss = true;
+  uint32_t resp_data = 0;
+};
+
 struct ICacheMmuReqView {
   bool context_flush = false;
   bool cancel_pending = false;
@@ -280,6 +287,34 @@ private:
   axi_interconnect::ReadMasterPort_t *port_ = nullptr;
 };
 
+DcacheProbeView dcache_probe_comb_view(ICacheMemPortResp *port) {
+  DcacheProbeView view;
+  if (port == nullptr) {
+    return view;
+  }
+  view.resp_valid = port->resp_valid;
+  view.resp_miss = port->resp_miss;
+  view.resp_data = port->resp_data;
+  return view;
+}
+
+void reset_dcache_probe_req_port(ICacheMemPortReq *port) {
+  if (port == nullptr) {
+    return;
+  }
+  port->req_valid = false;
+  port->req_addr = 0;
+}
+
+void drive_dcache_probe_req_port(ICacheMemPortReq *port, bool req_valid,
+                                 uint32_t req_addr) {
+  if (port == nullptr) {
+    return;
+  }
+  port->req_valid = req_valid;
+  port->req_addr = req_addr;
+}
+
 template <typename ReadPort> ReadPort &read_port_runtime() {
   static ReadPort read_port;
   return read_port;
@@ -290,6 +325,8 @@ template <typename HW, typename ReadPort> struct TrueIcacheRuntime {
   PtwMemPort *ptw_mem_port = nullptr;
   PtwWalkPort *ptw_walk_port = nullptr;
   axi_interconnect::ReadMasterPort_t *mem_read_port = nullptr;
+  ICacheMemPortReq *mem_probe_req_port = nullptr;
+  ICacheMemPortResp *mem_probe_resp_port = nullptr;
 };
 
 template <typename HW, typename ReadPort>
@@ -350,6 +387,13 @@ template <typename Runtime>
 void bind_mem_read_port(Runtime &runtime,
                         axi_interconnect::ReadMasterPort_t *port) {
   runtime.mem_read_port = port;
+}
+
+template <typename Runtime>
+void bind_mem_probe_ports(Runtime &runtime, ICacheMemPortReq *req_port,
+                          ICacheMemPortResp *resp_port) {
+  runtime.mem_probe_req_port = req_port;
+  runtime.mem_probe_resp_port = resp_port;
 }
 
 template <typename Runtime>
@@ -422,6 +466,12 @@ public:
 
   void set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) override {
     bind_mem_read_port(true_icache_runtime<HW, ReadPort>(), port);
+  }
+
+  void set_mem_probe_ports(ICacheMemPortReq *req_port,
+                           ICacheMemPortResp *resp_port) override {
+    bind_mem_probe_ports(true_icache_runtime<HW, ReadPort>(), req_port,
+                         resp_port);
   }
 
   void peek_ready() override {
@@ -518,6 +568,7 @@ public:
       DEBUG_LOG("[icache] reset\n");
       icache_hw.reset();
       read_port.reset();
+      reset_dcache_probe_req_port(runtime.mem_probe_req_port);
       ICacheMmuReqView reset_mmu_req;
       reset_mmu_req.context_flush = true;
       (void)comb_mmu_view(runtime, ctx, reset_mmu_req);
@@ -533,6 +584,8 @@ public:
     bool hold_for_recovery = in->itlb_flush || in->fence_i || in->invalidate_req;
 
     MemReadView mem = read_port.comb_view();
+    DcacheProbeView dcache_probe =
+        dcache_probe_comb_view(runtime.mem_probe_resp_port);
     const bool req_valid = in->icache_read_valid;
     const uint32_t req_pc = in->fetch_address;
     bool itlb_translate_invoked = false;
@@ -554,6 +607,9 @@ public:
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
       icache_hw.io.in.mem_resp_data[i] = mem.resp_data[i];
     }
+    icache_hw.io.in.dcache_resp_valid = dcache_probe.resp_valid;
+    icache_hw.io.in.dcache_resp_miss = dcache_probe.resp_miss;
+    icache_hw.io.in.dcache_resp_data = dcache_probe.resp_data;
 
     refresh_lookup_meta_input(icache_hw);
     icache_hw.comb_lookup_meta();
@@ -578,6 +634,9 @@ public:
         icache_hw.io.out.mem_req_valid, icache_hw.io.out.mem_req_addr,
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF),
         icache_hw.io.out.mem_resp_ready);
+    drive_dcache_probe_req_port(
+        runtime.mem_probe_req_port, icache_hw.io.out.dcache_req_valid,
+        icache_hw.io.out.dcache_req_addr);
 
     out->icache_read_ready = comb_visible_ready(hold_for_recovery);
     out->perf_req_fire = req_valid && out->icache_read_ready;
@@ -621,6 +680,7 @@ public:
         static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
     out->perf_miss_busy =
         (icache_state == icache_module_n::SWAP_IN ||
+         icache_state == icache_module_n::WAIT_DCACHE_AFTER_MEM ||
          icache_state == icache_module_n::DRAIN);
     out->perf_outstanding_req =
         out->perf_miss_busy || icache_hw.io.regs.req_valid_r ||
