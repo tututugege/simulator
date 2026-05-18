@@ -17,6 +17,9 @@ struct MSHREntry {
     reg<1> valid;
     reg<1> issued;
     reg<32> addr;
+    reg<1> merged_store_dirty;
+    reg<32> merged_store_data[DCACHE_WORD_NUM];
+    reg<8> merged_store_strb[DCACHE_WORD_NUM];
 #if !BSD_CONFIG
     uint64_t alloc_cycle;
     uint64_t axi_read_start_cycle;

@@ -38,6 +38,8 @@ enum class Slot : uint32_t {
   SimAxiOutputs,
   SimBridgeAxiToMem,
   SimMemComb,
+  SimMemCombOutputs,
+  SimMemCombInputs,
   SimBridgeMemToAxi,
   SimAxiInputs,
   SimBack2Front,

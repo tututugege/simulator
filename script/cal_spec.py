@@ -6,9 +6,9 @@ from datetime import datetime
 
 # ================= 用户配置区域 =================
 CPU_FREQ_GHZ = float(os.environ.get("CPU_FREQ_GHZ", "1.0"))
-LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_restore_456_2dcache")
+LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_456")
 WEIGHTS_DIR = os.environ.get(
-    "WEIGHTS_DIR", "/home/renli/qimeng/456.hmmer_ref_bbv"
+    "WEIGHTS_DIR", "/home/renli/qimeng/fix-fence.i/456.hmmer_ref_bbv"
 )
 DEBUG = os.environ.get("DEBUG", "1") not in ("0", "false", "False")
 LOG_STATUS_REPORT = LOG_ROOT_DIR + "/log_status_report.txt"
@@ -125,6 +125,14 @@ LATENCY_METRIC_LABELS = {
     "l1i_axi_read_latency": "L1I Avg AXI Read",
 }
 
+OCCUPANCY_METRIC_KEYS = (
+    "l1d_mshr_occupancy",
+)
+
+OCCUPANCY_METRIC_LABELS = {
+    "l1d_mshr_occupancy": "L1D MSHR Avg/Max Occupancy",
+}
+
 CONFIG_SCAN_FILE = os.path.join(REPO_ROOT, "include", "config.h")
 
 CONFIG_SCAN_SYMBOLS = (
@@ -199,6 +207,13 @@ def _extract_last_section_lines(clean_lines, header_candidates):
 
 def _extract_avg_samples(line):
     m = re.search(r":\s*([-+]?\d+(?:\.\d+)?)\s*cycles\s*\(samples\s*=\s*(\d+)\)", line)
+    if not m:
+        return None, None
+    return float(m.group(1)), int(m.group(2))
+
+
+def _extract_avg_max(line):
+    m = re.search(r":\s*([-+]?\d+(?:\.\d+)?)\s*/\s*(\d+)", line)
     if not m:
         return None, None
     return float(m.group(1)), int(m.group(2))
@@ -612,6 +627,30 @@ def parse_latency_counters(clean_lines):
     return latency
 
 
+def parse_occupancy_counters(clean_lines):
+    occupancy = {k: {"avg": None, "max": None} for k in OCCUPANCY_METRIC_KEYS}
+
+    l1d_lines = _extract_last_section_lines(
+        clean_lines,
+        ("*********L1D COUNTER", "*********DCACHE COUNTER"),
+    )
+
+    prefix_map = {
+        "l1d_mshr_occupancy": "L1D MSHR Avg/Max Occupancy",
+    }
+
+    for key, prefix in prefix_map.items():
+        for line in l1d_lines:
+            if line.startswith(prefix):
+                avg, max_count = _extract_avg_max(line)
+                if avg is not None and max_count is not None:
+                    occupancy[key]["avg"] = avg
+                    occupancy[key]["max"] = max_count
+                break
+
+    return occupancy
+
+
 def dbg(msg):
     if DEBUG:
         print(msg)
@@ -707,6 +746,7 @@ def parse_log_robust(filepath, with_reason=False):
 
         cache = parse_cache_counters(content)
         latency = parse_latency_counters(clean_lines)
+        occupancy = parse_occupancy_counters(clean_lines)
 
         # =======================================================
         # 2. BPU 解析 (Regex 扫描版)
@@ -748,6 +788,7 @@ def parse_log_robust(filepath, with_reason=False):
             "cpi": cyc / inst,
             "cache": cache,
             "latency": latency,
+            "occupancy": occupancy,
             "cache_hit": max(
                 cache["l1d_req_initial"] - cache["l1d_miss_mshr_alloc"], 0
             ),  # backward compatibility
@@ -860,6 +901,9 @@ def process_benchmark(bench_path):
     w_cache = {k: 0.0 for k in WEIGHTED_CACHE_KEYS}
     w_lat_total = {k: 0.0 for k in LATENCY_METRIC_KEYS}
     w_lat_samples = {k: 0.0 for k in LATENCY_METRIC_KEYS}
+    w_occ_avg = {k: 0.0 for k in OCCUPANCY_METRIC_KEYS}
+    w_occ_weight = {k: 0.0 for k in OCCUPANCY_METRIC_KEYS}
+    occ_max = {k: 0 for k in OCCUPANCY_METRIC_KEYS}
 
     w_tma_slots = 0.0
     tma_slot_sums = {k: 0.0 for k in TMA_SLOT_KEYS}
@@ -906,6 +950,13 @@ def process_benchmark(bench_path):
             if samples > 0:
                 w_lat_total[key] += weight * avg * samples
                 w_lat_samples[key] += weight * samples
+        for key in OCCUPANCY_METRIC_KEYS:
+            avg = data["occupancy"][key]["avg"]
+            max_count = data["occupancy"][key]["max"]
+            if avg is not None and max_count is not None:
+                w_occ_avg[key] += weight * avg
+                w_occ_weight[key] += weight
+                occ_max[key] = max(occ_max[key], max_count)
 
         br_correct = data["br_num"] - data["br_miss"]
         w_br_hit += br_correct * weight
@@ -993,6 +1044,13 @@ def process_benchmark(bench_path):
             p(f"  {LATENCY_METRIC_LABELS[key]}: {avg:.2f} cycles")
         else:
             p(f"  {LATENCY_METRIC_LABELS[key]}: N/A")
+    p("Memory Occupancy (Weighted):")
+    for key in OCCUPANCY_METRIC_KEYS:
+        if w_occ_weight[key] > 0:
+            avg = _safe_div(w_occ_avg[key], w_occ_weight[key])
+            p(f"  {OCCUPANCY_METRIC_LABELS[key]}: {avg:.4f} / {occ_max[key]}")
+        else:
+            p(f"  {OCCUPANCY_METRIC_LABELS[key]}: N/A")
 
     if w_br_total > 0:
         p(f"Branch Accuracy:    {br_acc:.2f} %")

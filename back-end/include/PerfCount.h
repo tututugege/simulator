@@ -61,6 +61,8 @@ public:
   uint64_t l1d_replay_wait_mshr_hit = 0;
   uint64_t l1d_replay_wait_mshr_first_alloc = 0;
   uint64_t l1d_replay_wait_mshr_fill_wait = 0;
+  uint64_t l1d_replay_wait_mshr_fill_req = 0;
+  uint64_t l1d_replay_wait_mshr_fill_write = 0;
   uint64_t l1d_miss_penalty_total_cycles = 0;
   uint64_t l1d_miss_penalty_samples = 0;
   uint64_t l1d_axi_read_total_cycles = 0;
@@ -69,6 +71,8 @@ public:
   uint64_t l1d_axi_write_samples = 0;
   uint64_t l1d_mem_inst_total_cycles = 0;
   uint64_t l1d_mem_inst_samples = 0;
+  uint64_t l1d_mshr_average_count = 0;
+  uint64_t l1d_mshr_max_count = 0;
   uint64_t mmio_inst_count = 0;
   uint64_t mmio_load_count = 0;
   uint64_t mmio_store_count = 0;
@@ -320,6 +324,8 @@ public:
     l1d_replay_wait_mshr_hit = 0;
     l1d_replay_wait_mshr_first_alloc = 0;
     l1d_replay_wait_mshr_fill_wait = 0;
+    l1d_replay_wait_mshr_fill_req = 0;
+    l1d_replay_wait_mshr_fill_write = 0;
     l1d_miss_penalty_total_cycles = 0;
     l1d_miss_penalty_samples = 0;
     l1d_axi_read_total_cycles = 0;
@@ -328,6 +334,8 @@ public:
     l1d_axi_write_samples = 0;
     l1d_mem_inst_total_cycles = 0;
     l1d_mem_inst_samples = 0;
+    l1d_mshr_average_count = 0;
+    l1d_mshr_max_count = 0;
     mmio_inst_count = 0;
     mmio_load_count = 0;
     mmio_store_count = 0;
@@ -797,6 +805,10 @@ public:
            l1d_replay_wait_mshr_first_alloc);
     printf("\033[38;5;34m  - WAIT_MSHR_FILL_WAIT  : %ld\033[0m\n",
            l1d_replay_wait_mshr_fill_wait);
+    printf("\033[38;5;34m    - FILL_REQ           : %ld\033[0m\n",
+           l1d_replay_wait_mshr_fill_req);
+    printf("\033[38;5;34m    - FILL_WRITE         : %ld\033[0m\n",
+           l1d_replay_wait_mshr_fill_write);
     printf("\033[38;5;34mL1D_REPLAY_REASON_TOTAL  : %ld\033[0m\n",
            l1d_replay_reason_total);
     printf("\033[38;5;34m  - CONFLICT_RATIO       : %.2f%%\033[0m\n",
@@ -875,6 +887,12 @@ public:
         (cycle == 0) ? 0.0
                      : static_cast<double>(wait_dcache_ldq_average_count) /
                            static_cast<double>(cycle);
+    const double l1d_mshr_occupancy =
+        (cycle == 0) ? 0.0
+                     : static_cast<double>(l1d_mshr_average_count) /
+                           static_cast<double>(cycle);
+    printf("\033[38;5;34mL1D MSHR Avg/Max Occupancy: %.4f / %ld\033[0m\n",
+           l1d_mshr_occupancy, l1d_mshr_max_count);
     printf("\033[38;5;34mLDQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",
            avg_ldq_occupancy, ldq_max_count);
     printf("\033[38;5;34mSTQ Avg/Max Occupancy: %.4f / %ld\033[0m\n",

@@ -336,6 +336,7 @@ void retry_load_resp_timeouts(SimContext *ctx, const LsuState &cur,
         static_cast<uint64_t>(CONFIG_LSU_DRESP_TIMEOUT_CYCLES)) {
       nxt.ldq[entry.ldq_idx].load_state = LoadState::ReadyToIssue;
       nxt.ldq[entry.ldq_idx].replay_type = ReplayType::CONFLICT;
+      nxt.wait_dcache_ldq[wait_idx].replay_wait_cycles = 0;
       nxt.wait_dcache_ldq[wait_idx].wait_start_cycle = 0;
       ctx->perf.ld_resp_timeout_retry_count++;
     }

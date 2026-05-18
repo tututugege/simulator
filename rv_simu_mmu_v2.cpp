@@ -754,14 +754,11 @@ void SimCpu::cycle() {
     FRONTEND_HOST_PROFILE_SCOPE(SimFrontCycle);
     front_cycle();
   }
-  {
-    FRONTEND_HOST_PROFILE_SCOPE(SimBackComb);
-    back.comb();
-  }
 
   // AXI phase-1: slave outputs -> router outputs -> interconnect outputs.
-  // Interconnect outputs (req.ready/resp.valid) are then bridged into
-  // MemSubsystem in the same cycle, so MSHR/WB can consume fresh feedback.
+  // Interconnect outputs (req.ready/resp.valid) are bridged into MemSubsystem
+  // before backend comb, so DCache responses from the previous DCache stage can
+  // be visible to LSU in this CPU cycle.
   {
     FRONTEND_HOST_PROFILE_SCOPE(SimAxiOutputs);
     axi_subsystem_comb_outputs(*this);
@@ -772,8 +769,18 @@ void SimCpu::cycle() {
   }
 
   {
-    FRONTEND_HOST_PROFILE_SCOPE(SimMemComb);
-    mem_subsystem.comb();
+    FRONTEND_HOST_PROFILE_SCOPE(SimMemCombOutputs);
+    mem_subsystem.comb_outputs();
+  }
+
+  {
+    FRONTEND_HOST_PROFILE_SCOPE(SimBackComb);
+    back.comb();
+  }
+
+  {
+    FRONTEND_HOST_PROFILE_SCOPE(SimMemCombInputs);
+    mem_subsystem.comb_inputs();
   }
 
   {

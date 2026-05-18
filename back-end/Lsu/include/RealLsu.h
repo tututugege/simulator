@@ -130,6 +130,7 @@ struct WaitDcacheLDQEntry{
   wire<1> valid;
   wire<31-LDQ_IDX_WIDTH> req_gen;
   wire<LDQ_IDX_WIDTH> ldq_idx;
+  uint32_t replay_wait_cycles;
   LSU_WAIT_DCACHE_LDQ_PERF_FIELDS;
 };
 struct MMUDoneEntry{

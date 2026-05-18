@@ -13,6 +13,98 @@
 #include <cstring>
 #include <memory>
 
+#ifndef CONFIG_LSU_REPLAY_WAIT_CYCLES
+#ifdef CONFIG_LSU_LOAD_REPLAY_WAIT_CYCLES
+#define CONFIG_LSU_REPLAY_WAIT_CYCLES CONFIG_LSU_LOAD_REPLAY_WAIT_CYCLES
+#else
+#define CONFIG_LSU_REPLAY_WAIT_CYCLES 4
+#endif
+#endif
+
+static_assert(CONFIG_LSU_REPLAY_WAIT_CYCLES >= 0,
+              "CONFIG_LSU_REPLAY_WAIT_CYCLES must be non-negative");
+
+static constexpr uint32_t kReplayWaitCycles =
+    static_cast<uint32_t>(CONFIG_LSU_REPLAY_WAIT_CYCLES);
+
+#ifndef CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL
+#define CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL 1
+#endif
+
+static_assert(CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL == 0 ||
+                  CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL == 1,
+              "CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL must be 0 or 1");
+
+static constexpr bool kReplayClearDelayOnMshrFill =
+    CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL != 0;
+
+static uint32_t replay_delay_cycles(ReplayType replay) {
+  return replay == ReplayType::MSHR_HIT || replay == ReplayType::MSHR_FULL
+             ? kReplayWaitCycles
+             : 0;
+}
+
+static void wake_load_replays_on_mshr_fill(const DcacheLsuIO &dcache_resp,
+                                           LsuState &nxt) {
+  if (!dcache_resp.mshr_fill || !kReplayClearDelayOnMshrFill) {
+    return;
+  }
+
+  uint32_t mshr_full_wakeups = 0;
+  for (uint32_t i = 0; i < nxt.wait_dcache_ldq_count; i++) {
+    const uint32_t wait_idx = (nxt.wait_dcache_ldq_head + i) % LDQ_SIZE;
+    auto &wait_entry = nxt.wait_dcache_ldq[wait_idx];
+    if (!wait_entry.valid || wait_entry.replay_wait_cycles == 0) {
+      continue;
+    }
+
+    auto &ldq_entry = nxt.ldq[wait_entry.ldq_idx];
+    if (ldq_entry.load_state != LoadState::ReadyToIssue) {
+      continue;
+    }
+
+    if (ldq_entry.replay_type == ReplayType::MSHR_HIT &&
+        cache_line_match(ldq_entry.p_addr, dcache_resp.mshr_fill_addr)) {
+      wait_entry.replay_wait_cycles = 0;
+    } else if (ldq_entry.replay_type == ReplayType::MSHR_FULL &&
+               mshr_full_wakeups < LSU_LDU_COUNT) {
+      wait_entry.replay_wait_cycles = 0;
+      mshr_full_wakeups++;
+    }
+  }
+}
+
+static void wake_store_replays_on_mshr_fill(const DcacheLsuIO &dcache_resp,
+                                            LsuState &nxt) {
+  if (!dcache_resp.mshr_fill || !kReplayClearDelayOnMshrFill) {
+    return;
+  }
+
+  uint32_t committed_count = nxt.stq_commit_count;
+  if (committed_count > nxt.stq_count) {
+    committed_count = nxt.stq_count;
+  }
+
+  uint32_t mshr_full_wakeups = 0;
+  for (uint32_t i = 0; i < committed_count; i++) {
+    const uint32_t stq_idx = (nxt.stq_head + i) % STQ_SIZE;
+    auto &stq_entry = nxt.stq[stq_idx];
+    if (stq_entry.store_state != StoreState::Committed ||
+        stq_entry.replay_wait_cycles == 0) {
+      continue;
+    }
+
+    if (stq_entry.replay_type == ReplayType::MSHR_HIT &&
+        cache_line_match(stq_entry.paddr, dcache_resp.mshr_fill_addr)) {
+      stq_entry.replay_wait_cycles = 0;
+    } else if (stq_entry.replay_type == ReplayType::MSHR_FULL &&
+               mshr_full_wakeups < LSU_STA_COUNT) {
+      stq_entry.replay_wait_cycles = 0;
+      mshr_full_wakeups++;
+    }
+  }
+}
+
 STLFResult check_stlf(uint32_t load_addr, uint32_t load_func3, uint32_t store_addr, uint32_t store_func3) {
   int store_width = get_mem_width(store_func3);
   int load_width = get_mem_width(load_func3);
@@ -403,6 +495,7 @@ void RealLsu::comb_stlf() {
           (nxt.wait_dcache_ldq_head + nxt.wait_dcache_ldq_count) % LDQ_SIZE;
       nxt.wait_dcache_ldq[wait_idx].valid = true;
       nxt.wait_dcache_ldq[wait_idx].ldq_idx = ldq_idx;
+      nxt.wait_dcache_ldq[wait_idx].replay_wait_cycles = 0;
       lsu_perf::reset_wait_start(nxt.wait_dcache_ldq[wait_idx]);
       nxt.wait_dcache_ldq_count++;
     }
@@ -444,9 +537,9 @@ void RealLsu::comb_stlf() {
 
     uint32_t older_store_count = 0;
     const bool boundary_ok = stq_distance_from_head_to_boundary(
-        cur.stq_head,
-        cur.stq_head_flag,
-        cur.stq_count,
+        nxt.stq_head,
+        nxt.stq_head_flag,
+        nxt.stq_count,
         entry.stq_snapshot,
         older_store_count);
 
@@ -476,8 +569,12 @@ void RealLsu::comb_stlf() {
     }
     uint32_t check_stlf_num = 0;
     for (int j = older_store_count - 1; j >= 0; j--) {
-      const uint32_t stq_idx = (cur.stq_head + j) % STQ_SIZE;
-      const StqEntry &stq_entry = cur.stq[stq_idx];
+      const uint32_t stq_idx = (nxt.stq_head + j) % STQ_SIZE;
+      const StqEntry &stq_entry = nxt.stq[stq_idx];
+      if(stq_entry.store_state == StoreState::Empty) {
+        entry.load_state = LoadState::CheckStlf;
+        break;
+      }
       if (!stq_entry.paddr_valid) {
         lsu_perf::count_stlf_unknown_store_block(ctx);
         entry.load_state = LoadState::CheckStlf;
@@ -522,6 +619,7 @@ void RealLsu::comb_stlf() {
         (nxt.wait_dcache_ldq_head + nxt.wait_dcache_ldq_count) % LDQ_SIZE;
     nxt.wait_dcache_ldq[wait_idx].valid = true;
     nxt.wait_dcache_ldq[wait_idx].ldq_idx = ldq_idx;
+    nxt.wait_dcache_ldq[wait_idx].replay_wait_cycles = 0;
     lsu_perf::reset_wait_start(nxt.wait_dcache_ldq[wait_idx]);
     nxt.wait_dcache_ldq_count++;
     todcache_wait_count++;
@@ -548,7 +646,7 @@ void RealLsu::comb_lsu2dcache_ldq() {
        scan++) {
     const uint32_t wait_idx =
         (nxt.wait_dcache_ldq_head + scan) % LDQ_SIZE;
-    const auto &entry = nxt.wait_dcache_ldq[wait_idx];
+    auto &entry = nxt.wait_dcache_ldq[wait_idx];
 
     if (!entry.valid) {
       continue;
@@ -563,6 +661,13 @@ void RealLsu::comb_lsu2dcache_ldq() {
 
     if (cur_ldq_entry.load_state == LoadState::WaitDcacheResp) {
       continue;
+    }
+
+    if (entry.replay_wait_cycles > 0) {
+      entry.replay_wait_cycles--;
+      if (entry.replay_wait_cycles > 0) {
+        continue;
+      }
     }
 
     LSU_NON_BSD_ASSERT(!nxt_ldq_entry.is_mmio &&
@@ -642,16 +747,22 @@ void RealLsu::comb_dcache2lsu_ldq() {
             nxt.finish[finish_idx].idx = ldq_idx; // 将完成的LDQ条目加入完成队列
             nxt.finish[finish_idx].is_load = true;
             nxt.wait_dcache_ldq[entry_idx].valid = false; // 只有收到响应后才出队，避免丢失仍在等待dcache的load
+            nxt.wait_dcache_ldq[entry_idx].replay_wait_cycles = 0;
             nxt.finish_count++;
           } else {
+            const ReplayType replay =
+                in.dcache2lsu->resp_ports.load_resps[i].replay;
             nxt.ldq[ldq_idx].load_state = LoadState::ReadyToIssue;
-            lsu_perf::mark_load_replay(
-                entry, in.dcache2lsu->resp_ports.load_resps[i].replay);
+            lsu_perf::mark_load_replay(entry, replay);
+            nxt.wait_dcache_ldq[entry_idx].replay_wait_cycles =
+                replay_delay_cycles(replay);
           }
         }
       }
     }
   }
+  wake_load_replays_on_mshr_fill(*in.dcache2lsu, nxt);
+
   uint32_t tmp_head = nxt.wait_dcache_ldq_head;
   uint32_t tmp_count = nxt.wait_dcache_ldq_count;
   uint32_t issue = tmp_count > LSU_LDU_COUNT ? LSU_LDU_COUNT : tmp_count;
@@ -706,17 +817,20 @@ void RealLsu::comb_dcache2lsu_stq() {
           entry.store_state = StoreState::Done; // store完成，可以提交了
           lsu_perf::count_store_dcache_hit(ctx);
           lsu_perf::mark_store_hit(entry);
+          entry.replay_wait_cycles = 0;
           lsu_perf::finish_mem_inst(ctx, entry);
         } else {
+          const ReplayType replay =
+              in.dcache2lsu->resp_ports.store_resps[i].replay;
           entry.store_state = StoreState::Committed; // store重放，进入重放状态等待dcache fill
-          lsu_perf::count_store_replay_resp(
-              ctx, in.dcache2lsu->resp_ports.store_resps[i].replay);
-          lsu_perf::mark_store_replay(
-              entry, in.dcache2lsu->resp_ports.store_resps[i].replay);
+          lsu_perf::count_store_replay_resp(ctx, replay);
+          lsu_perf::mark_store_replay(entry, replay);
+          entry.replay_wait_cycles = replay_delay_cycles(replay);
         }
       }
     }
   }
+  wake_store_replays_on_mshr_fill(*in.dcache2lsu, nxt);
 }
 void RealLsu::comb_lsu2dcache_stq() {
   for (int i = 0; i < LSU_STA_COUNT; i++) {
@@ -740,6 +854,13 @@ void RealLsu::comb_lsu2dcache_stq() {
 
     if (nxt_entry.store_state == StoreState::Committed &&
         cur_entry.store_state != StoreState::WaitDcacheResp) {
+      if (nxt_entry.replay_wait_cycles > 0) {
+        nxt_entry.replay_wait_cycles--;
+        if (nxt_entry.replay_wait_cycles > 0) {
+          continue;
+        }
+      }
+
       bool has_older_unfinished_store = false;
       for (uint32_t j = 0; j < i; j++) {
         const uint32_t older_stq_idx = (nxt.stq_head + j) % STQ_SIZE;
@@ -774,6 +895,7 @@ void RealLsu::comb_lsu2dcache_stq() {
       } else {
         if (nxt_entry.suppress_write) {
           nxt_entry.store_state = StoreState::Done;
+          nxt_entry.replay_wait_cycles = 0;
           lsu_perf::count_suppress_store_done(ctx);
           continue;
         }

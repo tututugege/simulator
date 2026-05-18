@@ -28,6 +28,9 @@ struct MSHRFINDResp{
 struct MSHRReq{
     wire<1> valid;
     wire<32> addr;
+    wire<1> is_store;
+    wire<32> data;
+    wire<8> strb;
 #if !BSD_CONFIG
     wire<1> lsu_origin;
 #endif
@@ -35,6 +38,7 @@ struct MSHRReq{
 
 struct MSHR_FILLReq{
     wire<1> valid;
+    wire<1> dirty;
 #if !BSD_CONFIG
     wire<1> lsu_origin;
 #endif
@@ -126,6 +130,7 @@ struct PendingWrite {
 };
 struct FILLWrite {
     wire<1>     valid    = false;
+    wire<1>     dirty    = false;
 #if !BSD_CONFIG
     wire<1>     lsu_origin = false;
 #endif

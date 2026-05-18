@@ -1209,6 +1209,7 @@ struct StqEntry {
   StoreState store_state = StoreState::Empty;
 
   ReplayType replay_type = ReplayType::HIT;
+  uint32_t replay_wait_cycles = 0;
 
 
   wire<BR_MASK_WIDTH> br_mask = {};
@@ -1324,6 +1325,7 @@ struct LsuDcacheIO {
 struct DcacheLsuIO {
   DCacheRespPorts resp_ports;
   wire<1> mshr_fill;
+  wire<32> mshr_fill_addr;
 };
 
 struct LsuDisIO {

@@ -512,8 +512,8 @@ constexpr int IQ_READY_NUM_WIDTH = bit_width_for_count(MAX_IQ_SIZE + 1);
 constexpr int DCACHE_MISS_NUM = LSU_LDU_COUNT+LSU_STA_COUNT;
 
 #define LSU_STLF
-constexpr int LOAD_WINDOWS_WIDTH = LDQ_SIZE; 
-constexpr int STORE_WINDOWS_WIDTH = STQ_SIZE;
+constexpr int LOAD_WINDOWS_WIDTH = LSU_LDU_COUNT*5; 
+constexpr int STORE_WINDOWS_WIDTH = LSU_LDU_COUNT*5;
 // ============================================================
 // Global Sanity Checks
 // ============================================================

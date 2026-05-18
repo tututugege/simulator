@@ -69,6 +69,8 @@ public:
 
   void init();
   void comb();
+  void comb_outputs();
+  void comb_inputs();
   void seq();
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   void sync_mmio_devices_from_backing();

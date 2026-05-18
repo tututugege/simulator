@@ -60,8 +60,17 @@ public:
 
     void dump_debug_state(FILE *out) const;
 private:
+    struct FillReqMerge {
+        wire<1> valid = false;
+        wire<DCACHE_OFFSET_BITS> word_off = 0;
+        wire<32> data = 0;
+        wire<8> strb = 0;
+    };
+
     S1S2Reg s1s2_cur; // latched at start of cycle
     S1S2Reg s1s2_nxt; // computed by comb(); committed by seq()
+    // Combinational scratch from stage2_comb() to stage1_comb(); not sequenced state.
+    FillReqMerge fill_req_merge_wires[LSU_STA_COUNT] = {};
 #if !BSD_CONFIG
     SimContext *ctx = nullptr;
 #endif
