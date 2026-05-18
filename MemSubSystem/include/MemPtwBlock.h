@@ -110,45 +110,102 @@ public:
     uint32_t mem_req_addr[2] = {0, 0};
   };
 
-  // Packed pure-combinational wrapper layout.
-  // `pi` = current PTW state + current-cycle inputs.
-  // `po` = next PTW state + visible combinational outputs.
+  // Packed internal core-comb layout.
+  // `pi` = current PTW core state + current-cycle inputs.
+  // `po` = next PTW core state.
   //
-  // The routed-event slot count is tied to LSU_LDU_COUNT because the memory
-  // response router can produce at most one PTW-routed event per load port in
-  // a cycle. Under the current large configuration LSU_LDU_COUNT == 3, so the
-  // packed interface exposes 3 event slots.
-  static constexpr int kPackedEventSlots = LSU_LDU_COUNT;
+  // The real PTW top should expose only external interaction signals. The
+  // state_q/state_d ports are an internal boundary used by the compact core
+  // comb model and by the generated seq wrapper around that core.
+  //
+  // The compact packed interface removes fields that are either unused by the
+  // PTW combinational logic or can be reconstructed from canonical state:
+  // - route request IDs are reduced to an event-match bit because PTW only
+  //   compares equality with the active walk request ID;
+  // - walk virtual addresses keep VPN[19:0], not page offset;
+  // - satp keeps root PPN[21:0], not mode/asid bits;
+  // - PTE payloads keep PPN[21:0] and permission bits[7:0].
+  // The compact `po` stores only next state. Visible combinational outputs are
+  // projections of that next state via refresh_outputs(), so they are not
+  // duplicated in the training target.
   static constexpr int kPackedReqIdWidth = static_cast<int>(sizeof(size_t) * 8);
-  static constexpr int kPackedCoreStateWidth = 71 + kPackedReqIdWidth;
-  static constexpr int kPackedMemClientStateWidth = 67;
-  static constexpr int kPackedWalkClientStateWidth = 172;
+  static constexpr int kPackedEventSlots = 1;
+  static constexpr int kPackedCoreStateWidth = 28;
+  static constexpr int kPackedMemClientStateWidth = 63;
+  static constexpr int kPackedWalkClientStateWidth = 77;
   static constexpr int kPackedStateWidth =
       kPackedCoreStateWidth +
       2 * kPackedMemClientStateWidth +
       2 * kPackedWalkClientStateWidth;
-  static constexpr int kPackedMemClientInWidth = 34;
-  static constexpr int kPackedWalkClientInWidth = 99;
-  static constexpr int kPackedGrantInWidth = 3 + kPackedReqIdWidth;
-  static constexpr int kPackedEventCountWidth = 8;
-  static constexpr int kPackedEventInWidth = 69 + kPackedReqIdWidth;
+  static constexpr int kPackedMemClientInWidth = 32;
+  static constexpr int kPackedWalkClientInWidth = 45;
+  static constexpr int kPackedGrantInWidth = 3;
+  static constexpr int kPackedEventInWidth = 36;
   static constexpr int kPackedWakeupInWidth = 3;
   static constexpr int kPackedPiWidth =
       kPackedStateWidth +
       2 * kPackedMemClientInWidth +
       2 * kPackedWalkClientInWidth +
       kPackedGrantInWidth +
-      kPackedEventCountWidth +
       kPackedEventSlots * kPackedEventInWidth +
       kPackedWakeupInWidth;
-  static constexpr int kPackedMemClientOutWidth = 34;
-  static constexpr int kPackedWalkClientOutWidth = 75;
-  static constexpr int kPackedArbOutWidth = 99;
-  static constexpr int kPackedPoWidth =
-      kPackedStateWidth +
-      2 * kPackedMemClientOutWidth +
-      2 * kPackedWalkClientOutWidth +
-      kPackedArbOutWidth;
+  static constexpr int kPackedPoWidth = kPackedStateWidth;
+  static constexpr int kCompactCorePiWidth = kPackedPiWidth;
+  static constexpr int kCompactCorePoWidth = kPackedPoWidth;
+  static constexpr int kCompactCoreVisiblePiWidth = kCompactCorePoWidth;
+
+  // Core public port format is already narrowed for state-independent fields,
+  // but it keeps routed request IDs raw. ID-match compression depends on core
+  // registers and therefore belongs inside the core wrapper, not in top glue.
+  static constexpr int kCorePortMemClientInWidth = 32;
+  static constexpr int kCorePortWalkClientInWidth = 45;
+  static constexpr int kCorePortGrantInWidth = 3 + kPackedReqIdWidth;
+  static constexpr int kCorePortEventSlots = 1;
+  static constexpr int kCorePortEventInWidth = 35 + kPackedReqIdWidth;
+  static constexpr int kCorePortWakeupInWidth = 3;
+  static constexpr int kCorePortInWidth =
+      2 * kCorePortMemClientInWidth +
+      2 * kCorePortWalkClientInWidth +
+      kCorePortGrantInWidth +
+      kCorePortEventSlots * kCorePortEventInWidth +
+      kCorePortWakeupInWidth;
+
+  static constexpr int kCorePortMemClientOutWidth = 34;
+  static constexpr int kCorePortWalkClientOutWidth = 75;
+  static constexpr int kCorePortArbOutWidth = 99;
+  static constexpr int kCorePortOutWidth =
+      2 * kCorePortMemClientOutWidth +
+      2 * kCorePortWalkClientOutWidth +
+      kCorePortArbOutWidth;
+
+  static constexpr int kTopExternalMemClientInWidth = 34;
+  static constexpr int kTopExternalWalkClientInWidth = 99;
+  static constexpr int kTopExternalGrantInWidth = 3 + kPackedReqIdWidth;
+  static constexpr int kTopExternalEventCountWidth = 8;
+  static constexpr int kTopExternalEventInWidth = 69 + kPackedReqIdWidth;
+  static constexpr int kTopExternalWakeupInWidth = 3;
+  static constexpr int kTopExternalInputWidth =
+      2 * kTopExternalMemClientInWidth +
+      2 * kTopExternalWalkClientInWidth +
+      kTopExternalGrantInWidth +
+      kTopExternalEventCountWidth +
+      LSU_LDU_COUNT * kTopExternalEventInWidth +
+      kTopExternalWakeupInWidth;
+  static constexpr int kTopExternalOutputWidth = kCorePortOutWidth;
+
+  static constexpr int kTopGlueExternalInBase = 0;
+  static constexpr int kTopGlueCoreOutBase = kTopExternalInputWidth;
+  static constexpr int kTopGluePiWidth =
+      kTopExternalInputWidth + kCorePortOutWidth;
+  static constexpr int kTopGlueCoreInBase = 0;
+  static constexpr int kTopGlueExternalOutBase = kCorePortInWidth;
+  static constexpr int kTopGluePoWidth =
+      kCorePortInWidth + kTopExternalOutputWidth;
+  static constexpr int kCompactCoreVisiblePoWidth = kCorePortOutWidth;
+  static_assert(kPackedPiWidth <= 518,
+                "MemPtwBlock compact PI width regressed above reference");
+  static_assert(kPackedPoWidth <= 422,
+                "MemPtwBlock compact PO width regressed above reference");
 
   explicit MemPtwBlock(SimContext *ctx = nullptr) : ctx(ctx) { init(); }
 
@@ -218,25 +275,42 @@ public:
     std::fprintf(out, "\n");
   }
 
-  static void eval_packed(const bool *pi, bool *po) {
+  static void compact_core_io_generator(const bool *pi, bool *po) {
     MemPtwBlock block(nullptr);
     PortIn port_in{};
     SeqIn seq_in{};
     FeedbackIn feedback{};
     decode_packed_input(pi, block.cur_, port_in, seq_in, feedback);
 
-    block.nxt_ = block.cur_;
-    reset_outputs(block.comb_);
-    block.apply_port_inputs(port_in);
-    block.select_walk_owner();
-    block.refresh_outputs();
-    block.apply_grant(feedback);
-    block.apply_events(feedback);
-    block.apply_wakeups(feedback);
-    block.apply_seq_inputs(block.nxt_, seq_in);
-    block.refresh_outputs();
+    compact_core_comb(block.cur_, port_in, seq_in, feedback, block.nxt_);
 
     encode_packed_output(po, block.nxt_, block.comb_);
+  }
+
+  static void compact_core_visible_io_generator(const bool *pi, bool *po) {
+    State state_d{};
+    CombOut visible_outputs{};
+    decode_packed_state(pi, state_d);
+    project_outputs_from_state(state_d, visible_outputs);
+    encode_core_port_output(po, visible_outputs);
+  }
+
+  // PTW top glue is intentionally state-free:
+  //   pi = real top external inputs + core visible outputs
+  //   po = core port inputs + real top external outputs
+  // The compact core owns the register boundary internally. Any compression
+  // that needs core state, such as request-ID matching, must stay inside the
+  // core wrapper rather than being pushed into this top glue.
+  static void top_glue_io_generator(const bool *pi, bool *po) {
+    clear_packed_bits(po, kTopGluePoWidth);
+    encode_core_port_input_from_top_external(
+        po + kTopGlueCoreInBase, pi + kTopGlueExternalInBase);
+    copy_packed_bits(po, kTopGlueExternalOutBase, pi, kTopGlueCoreOutBase,
+                     kTopExternalOutputWidth);
+  }
+
+  static void eval_packed(const bool *pi, bool *po) {
+    compact_core_io_generator(pi, po);
   }
 
 private:
@@ -301,27 +375,11 @@ private:
     return value;
   }
 
-  static size_t read_packed_size_t(const bool *bits, int lsb, int width) {
-    size_t value = 0;
-    for (int i = 0; i < width && i < static_cast<int>(sizeof(size_t) * 8); i++) {
-      if (bits[lsb + i]) {
-        value |= (size_t(1) << i);
-      }
-    }
-    return value;
-  }
-
   static bool read_packed_bit(const bool *bits, int bit) { return bits[bit]; }
 
   static void write_packed_uint(bool *bits, int lsb, int width, unsigned value) {
     for (int i = 0; i < width; i++) {
       bits[lsb + i] = ((value >> i) & 1u) != 0u;
-    }
-  }
-
-  static void write_packed_size_t(bool *bits, int lsb, int width, size_t value) {
-    for (int i = 0; i < width; i++) {
-      bits[lsb + i] = ((value >> i) & size_t(1)) != 0;
     }
   }
 
@@ -332,6 +390,13 @@ private:
   static void clear_packed_bits(bool *bits, int width) {
     for (int i = 0; i < width; i++) {
       bits[i] = false;
+    }
+  }
+
+  static void copy_packed_bits(bool *dst, int dst_lsb, const bool *src,
+                               int src_lsb, int width) {
+    for (int i = 0; i < width; i++) {
+      dst[dst_lsb + i] = src[src_lsb + i];
     }
   }
 
@@ -358,103 +423,191 @@ private:
            2 * kPackedWalkClientInWidth;
   }
 
-  static int packed_pi_event_count_base() {
-    return packed_pi_grant_base() + kPackedGrantInWidth;
-  }
-
   static int packed_pi_event_base(int slot) {
-    return packed_pi_event_count_base() + kPackedEventCountWidth +
+    return packed_pi_grant_base() + kPackedGrantInWidth +
            slot * kPackedEventInWidth;
   }
 
   static int packed_pi_wakeup_base() {
-    return packed_pi_event_count_base() + kPackedEventCountWidth +
+    return packed_pi_grant_base() + kPackedGrantInWidth +
            kPackedEventSlots * kPackedEventInWidth;
   }
 
-  static int packed_po_mem_out_base(int client) {
-    return kPackedStateWidth + client * kPackedMemClientOutWidth;
+  static int core_port_mem_in_base(int client) {
+    return client * kCorePortMemClientInWidth;
   }
 
-  static int packed_po_walk_out_base(int client) {
-    return kPackedStateWidth + 2 * kPackedMemClientOutWidth +
-           client * kPackedWalkClientOutWidth;
+  static int core_port_walk_in_base(int client) {
+    return 2 * kCorePortMemClientInWidth +
+           client * kCorePortWalkClientInWidth;
   }
 
-  static int packed_po_arb_base() {
-    return kPackedStateWidth + 2 * kPackedMemClientOutWidth +
-           2 * kPackedWalkClientOutWidth;
+  static int core_port_grant_in_base() {
+    return 2 * kCorePortMemClientInWidth +
+           2 * kCorePortWalkClientInWidth;
+  }
+
+  static int core_port_event_in_base(int slot) {
+    return core_port_grant_in_base() + kCorePortGrantInWidth +
+           slot * kCorePortEventInWidth;
+  }
+
+  static int core_port_wakeup_in_base() {
+    return core_port_grant_in_base() + kCorePortGrantInWidth +
+           kCorePortEventSlots * kCorePortEventInWidth;
+  }
+
+  static int core_port_mem_out_base(int client) {
+    return client * kCorePortMemClientOutWidth;
+  }
+
+  static int core_port_walk_out_base(int client) {
+    return 2 * kCorePortMemClientOutWidth +
+           client * kCorePortWalkClientOutWidth;
+  }
+
+  static int core_port_arb_out_base() {
+    return 2 * kCorePortMemClientOutWidth +
+           2 * kCorePortWalkClientOutWidth;
+  }
+
+  static int top_external_mem_in_base(int client) {
+    return client * kTopExternalMemClientInWidth;
+  }
+
+  static int top_external_walk_in_base(int client) {
+    return 2 * kTopExternalMemClientInWidth +
+           client * kTopExternalWalkClientInWidth;
+  }
+
+  static int top_external_grant_in_base() {
+    return 2 * kTopExternalMemClientInWidth +
+           2 * kTopExternalWalkClientInWidth;
+  }
+
+  static int top_external_event_count_base() {
+    return top_external_grant_in_base() + kTopExternalGrantInWidth;
+  }
+
+  static int top_external_event_in_base(int slot) {
+    return top_external_event_count_base() + kTopExternalEventCountWidth +
+           slot * kTopExternalEventInWidth;
+  }
+
+  static int top_external_wakeup_in_base() {
+    return top_external_event_count_base() + kTopExternalEventCountWidth +
+           LSU_LDU_COUNT * kTopExternalEventInWidth;
+  }
+
+  static bool walk_state_waits_for_response(WalkState state) {
+    return state == WalkState::L1_WAIT_RESP ||
+           state == WalkState::L2_WAIT_RESP;
+  }
+
+  static uint32_t read_packed_word_addr(const bool *bits, int lsb) {
+    return read_packed_uint(bits, lsb, 30) << 2;
+  }
+
+  static void write_packed_word_addr(bool *bits, int lsb, uint32_t addr) {
+    write_packed_uint(bits, lsb, 30, addr >> 2);
+  }
+
+  static uint32_t pack_pte_payload(uint32_t pte) {
+    return (((pte >> 10) & 0x3FFFFFu) << 8) | (pte & 0xFFu);
+  }
+
+  static uint32_t unpack_pte_payload(uint32_t payload) {
+    const uint32_t ppn = (payload >> 8) & 0x3FFFFFu;
+    const uint32_t perm = payload & 0xFFu;
+    return (ppn << 10) | perm;
   }
 
   static void decode_packed_state(const bool *pi, State &state) {
     reset_state(state);
-    state.walk_active = read_packed_bit(pi, 0);
     state.walk_state =
-        static_cast<WalkState>(read_packed_uint(pi, 1, 3));
-    state.walk_owner = read_packed_bit(pi, 4) ? Client::ITLB : Client::DTLB;
-    state.walk_rr_next = read_packed_bit(pi, 5) ? Client::ITLB : Client::DTLB;
-    state.walk_req_id_valid = read_packed_bit(pi, 6);
-    state.walk_req_id = read_packed_size_t(pi, 7, kPackedReqIdWidth);
-    state.walk_l1_pte = read_packed_uint(pi, 7 + kPackedReqIdWidth, 32);
-    state.walk_drop_resp_credit =
-        read_packed_uint(pi, 39 + kPackedReqIdWidth, 32);
+        static_cast<WalkState>(read_packed_uint(pi, 0, 3));
+    state.walk_active = state.walk_state != WalkState::IDLE;
+    state.walk_rr_next = read_packed_bit(pi, 3) ? Client::ITLB : Client::DTLB;
+    state.walk_req_id_valid = walk_state_waits_for_response(state.walk_state);
+    state.walk_req_id = state.walk_req_id_valid ? size_t(1) : size_t(0);
+    state.walk_l1_pte = read_packed_uint(pi, 4, 22) << 10;
+    state.walk_drop_resp_credit = read_packed_uint(pi, 26, 2);
 
     for (size_t i = 0; i < kClientCount; i++) {
       const int mem_base = packed_state_mem_base(static_cast<int>(i));
       auto &mem = state.mem_clients[i];
-      mem.req_pending = read_packed_bit(pi, mem_base + 0);
-      mem.req_inflight = read_packed_bit(pi, mem_base + 1);
-      mem.req_addr = read_packed_uint(pi, mem_base + 2, 32);
-      mem.resp_valid = read_packed_bit(pi, mem_base + 34);
-      mem.resp_data = read_packed_uint(pi, mem_base + 35, 32);
+      const unsigned mem_req_state = read_packed_uint(pi, mem_base + 0, 2);
+      mem.req_pending = (mem_req_state & 1u) != 0u;
+      mem.req_inflight = (mem_req_state & 2u) != 0u;
+      mem.req_addr = read_packed_word_addr(pi, mem_base + 2);
+      mem.resp_valid = read_packed_bit(pi, mem_base + 32);
+      mem.resp_data = unpack_pte_payload(read_packed_uint(pi, mem_base + 33, 30));
 
       const int walk_base = packed_state_walk_base(static_cast<int>(i));
       auto &walk = state.walk_clients[i];
-      walk.req_pending = read_packed_bit(pi, walk_base + 0);
-      walk.req_inflight = read_packed_bit(pi, walk_base + 1);
-      walk.req.vaddr = read_packed_uint(pi, walk_base + 2, 32);
-      walk.req.satp = read_packed_uint(pi, walk_base + 34, 32);
-      walk.req.access_type = read_packed_uint(pi, walk_base + 66, 32);
-      walk.resp_valid = read_packed_bit(pi, walk_base + 98);
-      walk.resp.fault = read_packed_bit(pi, walk_base + 99);
-      walk.resp.vaddr = read_packed_uint(pi, walk_base + 100, 32);
-      walk.resp.leaf_pte = read_packed_uint(pi, walk_base + 132, 32);
-      walk.resp.leaf_level = read_packed_uint(pi, walk_base + 164, 8);
+      const unsigned walk_req_state = read_packed_uint(pi, walk_base + 0, 2);
+      const uint32_t walk_vpn = read_packed_uint(pi, walk_base + 2, 20);
+      const uint32_t walk_root_ppn =
+          read_packed_uint(pi, walk_base + 22, 22);
+      const uint32_t walk_leaf_ppn =
+          read_packed_uint(pi, walk_base + 46, 22);
+      const uint32_t walk_leaf_perm =
+          read_packed_uint(pi, walk_base + 68, 8);
+      walk.req_pending = (walk_req_state & 1u) != 0u;
+      walk.req_inflight = (walk_req_state & 2u) != 0u;
+      walk.req.vaddr = walk_vpn << 12;
+      walk.req.satp = walk_root_ppn;
+      walk.req.access_type = 0;
+      walk.resp_valid = read_packed_bit(pi, walk_base + 44);
+      walk.resp.fault = read_packed_bit(pi, walk_base + 45);
+      walk.resp.vaddr = walk.req.vaddr;
+      walk.resp.leaf_pte = (walk_leaf_ppn << 10) | walk_leaf_perm;
+      walk.resp.leaf_level = read_packed_bit(pi, walk_base + 76) ? 1 : 0;
+    }
+
+    if (state.walk_active &&
+        state.walk_clients[client_idx(Client::ITLB)].req_inflight) {
+      state.walk_owner = Client::ITLB;
+    } else {
+      state.walk_owner = Client::DTLB;
     }
   }
 
   static void encode_packed_state(bool *po, const State &state) {
-    write_packed_bit(po, 0, state.walk_active);
-    write_packed_uint(po, 1, 3, static_cast<unsigned>(state.walk_state));
-    write_packed_bit(po, 4, state.walk_owner != Client::DTLB);
-    write_packed_bit(po, 5, state.walk_rr_next != Client::DTLB);
-    write_packed_bit(po, 6, state.walk_req_id_valid);
-    write_packed_size_t(po, 7, kPackedReqIdWidth, state.walk_req_id);
-    write_packed_uint(po, 7 + kPackedReqIdWidth, 32, state.walk_l1_pte);
-    write_packed_uint(po, 39 + kPackedReqIdWidth, 32,
-                      state.walk_drop_resp_credit);
+    write_packed_uint(po, 0, 3, static_cast<unsigned>(state.walk_state));
+    write_packed_bit(po, 3, state.walk_rr_next != Client::DTLB);
+    write_packed_uint(po, 4, 22, (state.walk_l1_pte >> 10) & 0x3FFFFFu);
+    write_packed_uint(po, 26, 2,
+                      state.walk_drop_resp_credit > 3
+                          ? 3
+                          : state.walk_drop_resp_credit);
 
     for (size_t i = 0; i < kClientCount; i++) {
       const int mem_base = packed_state_mem_base(static_cast<int>(i));
       const auto &mem = state.mem_clients[i];
-      write_packed_bit(po, mem_base + 0, mem.req_pending);
-      write_packed_bit(po, mem_base + 1, mem.req_inflight);
-      write_packed_uint(po, mem_base + 2, 32, mem.req_addr);
-      write_packed_bit(po, mem_base + 34, mem.resp_valid);
-      write_packed_uint(po, mem_base + 35, 32, mem.resp_data);
+      const unsigned mem_req_state = (mem.req_pending ? 1u : 0u) |
+                                     (mem.req_inflight ? 2u : 0u);
+      write_packed_uint(po, mem_base + 0, 2, mem_req_state);
+      write_packed_word_addr(po, mem_base + 2, mem.req_addr);
+      write_packed_bit(po, mem_base + 32, mem.resp_valid);
+      write_packed_uint(po, mem_base + 33, 30, pack_pte_payload(mem.resp_data));
 
       const int walk_base = packed_state_walk_base(static_cast<int>(i));
       const auto &walk = state.walk_clients[i];
-      write_packed_bit(po, walk_base + 0, walk.req_pending);
-      write_packed_bit(po, walk_base + 1, walk.req_inflight);
-      write_packed_uint(po, walk_base + 2, 32, walk.req.vaddr);
-      write_packed_uint(po, walk_base + 34, 32, walk.req.satp);
-      write_packed_uint(po, walk_base + 66, 32, walk.req.access_type);
-      write_packed_bit(po, walk_base + 98, walk.resp_valid);
-      write_packed_bit(po, walk_base + 99, walk.resp.fault);
-      write_packed_uint(po, walk_base + 100, 32, walk.resp.vaddr);
-      write_packed_uint(po, walk_base + 132, 32, walk.resp.leaf_pte);
-      write_packed_uint(po, walk_base + 164, 8, walk.resp.leaf_level);
+      const unsigned walk_req_state = (walk.req_pending ? 1u : 0u) |
+                                      (walk.req_inflight ? 2u : 0u);
+      const uint32_t walk_vpn = (walk.req.vaddr >> 12) & 0xFFFFFu;
+      const uint32_t root_ppn = walk.req.satp & 0x3FFFFFu;
+      const uint32_t leaf_ppn = (walk.resp.leaf_pte >> 10) & 0x3FFFFFu;
+      const uint32_t leaf_perm = walk.resp.leaf_pte & 0xFFu;
+      write_packed_uint(po, walk_base + 0, 2, walk_req_state);
+      write_packed_uint(po, walk_base + 2, 20, walk_vpn);
+      write_packed_uint(po, walk_base + 22, 22, root_ppn);
+      write_packed_bit(po, walk_base + 44, walk.resp_valid);
+      write_packed_bit(po, walk_base + 45, walk.resp.fault);
+      write_packed_uint(po, walk_base + 46, 22, leaf_ppn);
+      write_packed_uint(po, walk_base + 68, 8, leaf_perm);
+      write_packed_bit(po, walk_base + 76, (walk.resp.leaf_level & 1u) != 0);
     }
   }
 
@@ -465,33 +618,25 @@ private:
     for (size_t i = 0; i < kClientCount; i++) {
       const int mem_base = packed_pi_mem_in_base(static_cast<int>(i));
       port_in.mem_clients[i].req_valid = read_packed_bit(pi, mem_base + 0);
-      port_in.mem_clients[i].req_addr = read_packed_uint(pi, mem_base + 1, 32);
+      port_in.mem_clients[i].req_addr = read_packed_word_addr(pi, mem_base + 1);
       port_in.mem_clients[i].resp_consumed =
-          read_packed_bit(pi, mem_base + 33);
+          read_packed_bit(pi, mem_base + 31);
 
       const int walk_base = packed_pi_walk_in_base(static_cast<int>(i));
       auto &walk_in = port_in.walk_clients[i];
       walk_in.req_valid = read_packed_bit(pi, walk_base + 0);
-      walk_in.req.vaddr = read_packed_uint(pi, walk_base + 1, 32);
-      walk_in.req.satp = read_packed_uint(pi, walk_base + 33, 32);
-      walk_in.req.access_type = read_packed_uint(pi, walk_base + 65, 32);
-      walk_in.resp_consumed = read_packed_bit(pi, walk_base + 97);
-      seq_in.walk_client_flush[i] = read_packed_bit(pi, walk_base + 98);
+      walk_in.req.vaddr = read_packed_uint(pi, walk_base + 1, 20) << 12;
+      walk_in.req.satp = read_packed_uint(pi, walk_base + 21, 22);
+      walk_in.req.access_type = 0;
+      walk_in.resp_consumed = read_packed_bit(pi, walk_base + 43);
+      seq_in.walk_client_flush[i] = read_packed_bit(pi, walk_base + 44);
     }
 
     const int grant_base = packed_pi_grant_base();
     feedback.grant_valid = read_packed_bit(pi, grant_base + 0);
     feedback.grant_owner = static_cast<GrantOwner>(
         read_packed_uint(pi, grant_base + 1, 2));
-    feedback.grant_req_id =
-        read_packed_size_t(pi, grant_base + 3, kPackedReqIdWidth);
-
-    feedback.event_count = static_cast<uint8_t>(
-        read_packed_uint(pi, packed_pi_event_count_base(),
-                         kPackedEventCountWidth));
-    if (feedback.event_count > kPackedEventSlots) {
-      feedback.event_count = static_cast<uint8_t>(kPackedEventSlots);
-    }
+    feedback.grant_req_id = 1;
 
     for (int i = 0; i < kPackedEventSlots; i++) {
       const int event_base = packed_pi_event_base(i);
@@ -499,10 +644,15 @@ private:
       evt.valid = read_packed_bit(pi, event_base + 0);
       evt.owner = static_cast<RoutedEventOwner>(
           read_packed_uint(pi, event_base + 1, 2));
-      evt.data = read_packed_uint(pi, event_base + 3, 32);
-      evt.replay = static_cast<uint8_t>(read_packed_uint(pi, event_base + 35, 2));
-      evt.req_addr = read_packed_uint(pi, event_base + 37, 32);
-      evt.req_id = read_packed_size_t(pi, event_base + 69, kPackedReqIdWidth);
+      evt.data = unpack_pte_payload(read_packed_uint(pi, event_base + 3, 30));
+      evt.replay = static_cast<uint8_t>(read_packed_uint(pi, event_base + 33, 2));
+      evt.req_addr = 0;
+      evt.req_id = read_packed_bit(pi, event_base + 35)
+                       ? state.walk_req_id
+                       : (state.walk_req_id ^ size_t(1));
+      if (evt.valid) {
+        feedback.event_count = 1;
+      }
     }
 
     const int wake_base = packed_pi_wakeup_base();
@@ -513,17 +663,21 @@ private:
 
   static void encode_packed_output(bool *po, const State &state,
                                    const CombOut &comb) {
+    (void)comb;
     clear_packed_bits(po, kPackedPoWidth);
     encode_packed_state(po, state);
+  }
 
+  static void encode_core_port_output(bool *po, const CombOut &comb) {
+    clear_packed_bits(po, kCorePortOutWidth);
     for (size_t i = 0; i < kClientCount; i++) {
-      const int mem_base = packed_po_mem_out_base(static_cast<int>(i));
+      const int mem_base = core_port_mem_out_base(static_cast<int>(i));
       const auto &mem = comb.mem_clients[i];
       write_packed_bit(po, mem_base + 0, mem.req_ready);
       write_packed_bit(po, mem_base + 1, mem.resp_valid);
       write_packed_uint(po, mem_base + 2, 32, mem.resp_data);
 
-      const int walk_base = packed_po_walk_out_base(static_cast<int>(i));
+      const int walk_base = core_port_walk_out_base(static_cast<int>(i));
       const auto &walk = comb.walk_clients[i];
       write_packed_bit(po, walk_base + 0, walk.req_ready);
       write_packed_bit(po, walk_base + 1, walk.resp_valid);
@@ -533,13 +687,91 @@ private:
       write_packed_uint(po, walk_base + 67, 8, walk.resp.leaf_level);
     }
 
-    const int arb_base = packed_po_arb_base();
+    const int arb_base = core_port_arb_out_base();
     write_packed_bit(po, arb_base + 0, comb.issue_walk_read);
     write_packed_uint(po, arb_base + 1, 32, comb.walk_read_addr);
     write_packed_bit(po, arb_base + 33, comb.mem_req_pending[0]);
     write_packed_bit(po, arb_base + 34, comb.mem_req_pending[1]);
     write_packed_uint(po, arb_base + 35, 32, comb.mem_req_addr[0]);
     write_packed_uint(po, arb_base + 67, 32, comb.mem_req_addr[1]);
+  }
+
+  static void encode_core_port_input_from_top_external(bool *po,
+                                                       const bool *pi) {
+    clear_packed_bits(po, kCorePortInWidth);
+    for (size_t i = 0; i < kClientCount; i++) {
+      const int top_mem_base = top_external_mem_in_base(static_cast<int>(i));
+      const int core_mem_base = core_port_mem_in_base(static_cast<int>(i));
+      const uint32_t mem_addr = read_packed_uint(pi, top_mem_base + 1, 32);
+      write_packed_bit(po, core_mem_base + 0,
+                       read_packed_bit(pi, top_mem_base + 0));
+      write_packed_word_addr(po, core_mem_base + 1, mem_addr);
+      write_packed_bit(po, core_mem_base + 31,
+                       read_packed_bit(pi, top_mem_base + 33));
+
+      const int top_walk_base = top_external_walk_in_base(static_cast<int>(i));
+      const int core_walk_base = core_port_walk_in_base(static_cast<int>(i));
+      const uint32_t vaddr = read_packed_uint(pi, top_walk_base + 1, 32);
+      const uint32_t satp = read_packed_uint(pi, top_walk_base + 33, 32);
+      write_packed_bit(po, core_walk_base + 0,
+                       read_packed_bit(pi, top_walk_base + 0));
+      write_packed_uint(po, core_walk_base + 1, 20,
+                        (vaddr >> 12) & 0xFFFFFu);
+      write_packed_uint(po, core_walk_base + 21, 22, satp & 0x3FFFFFu);
+      write_packed_bit(po, core_walk_base + 43,
+                       read_packed_bit(pi, top_walk_base + 97));
+      write_packed_bit(po, core_walk_base + 44,
+                       read_packed_bit(pi, top_walk_base + 98));
+    }
+
+    const int top_grant_base = top_external_grant_in_base();
+    const int core_grant_base = core_port_grant_in_base();
+    copy_packed_bits(po, core_grant_base, pi, top_grant_base,
+                     kCorePortGrantInWidth);
+
+    const unsigned event_count =
+        read_packed_uint(pi, top_external_event_count_base(), 8);
+    int selected_event = -1;
+    for (int i = 0; i < LSU_LDU_COUNT; i++) {
+      if (static_cast<unsigned>(i) >= event_count) {
+        break;
+      }
+      const int top_event_base = top_external_event_in_base(i);
+      if (read_packed_bit(pi, top_event_base + 0)) {
+        selected_event = i;
+        break;
+      }
+    }
+    if (selected_event >= 0) {
+      const int top_event_base = top_external_event_in_base(selected_event);
+      const int core_event_base = core_port_event_in_base(0);
+      const uint32_t data = read_packed_uint(pi, top_event_base + 3, 32);
+      write_packed_bit(po, core_event_base + 0, true);
+      copy_packed_bits(po, core_event_base + 1, pi, top_event_base + 1, 2);
+      write_packed_uint(po, core_event_base + 3, 30, pack_pte_payload(data));
+      copy_packed_bits(po, core_event_base + 33, pi, top_event_base + 35, 2);
+      copy_packed_bits(po, core_event_base + 35, pi, top_event_base + 69,
+                       kPackedReqIdWidth);
+    }
+
+    copy_packed_bits(po, core_port_wakeup_in_base(), pi,
+                     top_external_wakeup_in_base(), kCorePortWakeupInWidth);
+  }
+
+  static void compact_core_comb(const State &state_q, const PortIn &port_in,
+                                const SeqIn &seq_in,
+                                const FeedbackIn &feedback, State &state_d) {
+    MemPtwBlock block(nullptr);
+    block.cur_ = state_q;
+    block.nxt_ = state_q;
+    reset_outputs(block.comb_);
+    block.apply_port_inputs(port_in);
+    block.select_walk_owner();
+    block.apply_grant(feedback);
+    block.apply_events(feedback);
+    block.apply_wakeups(feedback);
+    apply_seq_inputs(block.nxt_, seq_in);
+    state_d = block.nxt_;
   }
 
   void apply_port_inputs(const PortIn &in) {
@@ -616,41 +848,43 @@ private:
     }
   }
 
-  void refresh_outputs() {
-    reset_outputs(comb_);
+  static void project_outputs_from_state(const State &state, CombOut &out) {
+    reset_outputs(out);
     for (size_t i = 0; i < kClientCount; i++) {
-      const auto &mem_state = nxt_.mem_clients[i];
-      comb_.mem_clients[i].req_ready =
+      const auto &mem_state = state.mem_clients[i];
+      out.mem_clients[i].req_ready =
           !mem_state.req_pending && !mem_state.req_inflight;
-      comb_.mem_clients[i].resp_valid = mem_state.resp_valid;
-      comb_.mem_clients[i].resp_data = mem_state.resp_data;
-      comb_.mem_req_pending[i] = mem_state.req_pending;
-      comb_.mem_req_addr[i] = mem_state.req_addr;
+      out.mem_clients[i].resp_valid = mem_state.resp_valid;
+      out.mem_clients[i].resp_data = mem_state.resp_data;
+      out.mem_req_pending[i] = mem_state.req_pending;
+      out.mem_req_addr[i] = mem_state.req_addr;
 
-      const auto &walk_state = nxt_.walk_clients[i];
-      comb_.walk_clients[i].req_ready =
+      const auto &walk_state = state.walk_clients[i];
+      out.walk_clients[i].req_ready =
           !walk_state.req_pending && !walk_state.req_inflight;
-      comb_.walk_clients[i].resp_valid = walk_state.resp_valid;
-      comb_.walk_clients[i].resp = walk_state.resp;
+      out.walk_clients[i].resp_valid = walk_state.resp_valid;
+      out.walk_clients[i].resp = walk_state.resp;
     }
 
-    if (!nxt_.walk_active) {
+    if (!state.walk_active) {
       return;
     }
 
-    const auto &req = nxt_.walk_clients[client_idx(nxt_.walk_owner)].req;
-    if (nxt_.walk_state == WalkState::L1_REQ) {
+    const auto &req = state.walk_clients[client_idx(state.walk_owner)].req;
+    if (state.walk_state == WalkState::L1_REQ) {
       const uint32_t root_ppn = req.satp & 0x3FFFFF;
       const uint32_t vpn1 = (req.vaddr >> 22) & 0x3FF;
-      comb_.issue_walk_read = true;
-      comb_.walk_read_addr = (root_ppn << 12) + (vpn1 << 2);
-    } else if (nxt_.walk_state == WalkState::L2_REQ) {
-      const uint32_t ppn = (nxt_.walk_l1_pte >> 10) & 0x3FFFFF;
+      out.issue_walk_read = true;
+      out.walk_read_addr = (root_ppn << 12) + (vpn1 << 2);
+    } else if (state.walk_state == WalkState::L2_REQ) {
+      const uint32_t ppn = (state.walk_l1_pte >> 10) & 0x3FFFFF;
       const uint32_t vpn0 = (req.vaddr >> 12) & 0x3FF;
-      comb_.issue_walk_read = true;
-      comb_.walk_read_addr = (ppn << 12) + (vpn0 << 2);
+      out.issue_walk_read = true;
+      out.walk_read_addr = (ppn << 12) + (vpn0 << 2);
     }
   }
+
+  void refresh_outputs() { project_outputs_from_state(nxt_, comb_); }
 
   void apply_grant(const FeedbackIn &in) {
     if (!in.grant_valid) {
@@ -960,3 +1194,40 @@ private:
   State nxt_{};
   CombOut comb_{};
 };
+
+inline constexpr int PTW_COMPACT_CORE_PI_WIDTH =
+    MemPtwBlock::kCompactCorePiWidth;
+inline constexpr int PTW_COMPACT_CORE_PO_WIDTH =
+    MemPtwBlock::kCompactCorePoWidth;
+inline constexpr int PTW_COMPACT_CORE_VISIBLE_PI_WIDTH =
+    MemPtwBlock::kCompactCoreVisiblePiWidth;
+inline constexpr int PTW_COMPACT_CORE_VISIBLE_PO_WIDTH =
+    MemPtwBlock::kCompactCoreVisiblePoWidth;
+inline constexpr int PTW_CORE_PORT_IN_WIDTH = MemPtwBlock::kCorePortInWidth;
+inline constexpr int PTW_CORE_PORT_OUT_WIDTH = MemPtwBlock::kCorePortOutWidth;
+inline constexpr int PTW_TOP_EXTERNAL_IN_WIDTH =
+    MemPtwBlock::kTopExternalInputWidth;
+inline constexpr int PTW_TOP_EXTERNAL_OUT_WIDTH =
+    MemPtwBlock::kTopExternalOutputWidth;
+inline constexpr int PTW_TOP_GLUE_PI_WIDTH = MemPtwBlock::kTopGluePiWidth;
+inline constexpr int PTW_TOP_GLUE_PO_WIDTH = MemPtwBlock::kTopGluePoWidth;
+inline constexpr int PTW_TOP_GLUE_CORE_IN_BASE =
+    MemPtwBlock::kTopGlueCoreInBase;
+inline constexpr int PTW_TOP_GLUE_EXTERNAL_OUT_BASE =
+    MemPtwBlock::kTopGlueExternalOutBase;
+
+inline void ptw_compact_core_io_generator(const bool *pi, bool *po) {
+  MemPtwBlock::compact_core_io_generator(pi, po);
+}
+
+inline void ptw_compact_core_visible_io_generator(const bool *pi, bool *po) {
+  MemPtwBlock::compact_core_visible_io_generator(pi, po);
+}
+
+inline void ptw_top_glue_io_generator(const bool *pi, bool *po) {
+  MemPtwBlock::top_glue_io_generator(pi, po);
+}
+
+inline void ptw_io_generator(const bool *pi, bool *po) {
+  ptw_compact_core_io_generator(pi, po);
+}
