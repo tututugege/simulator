@@ -71,6 +71,26 @@ namespace icache_module_n {
 // ICache parameters come from include/config.h.
 // -----------------------------------------------------------------------------
 static constexpr uint32_t ICACHE_WORD_BITS = 32;
+constexpr uint32_t icache_constexpr_ceil_log2(uint32_t value,
+                                              uint32_t width = 0) {
+  return (value <= (1u << width)) ? width
+                                  : icache_constexpr_ceil_log2(value, width + 1);
+}
+
+// Compatibility aliases for the packed ICache interface. The source of truth
+// remains include/config.h; the V1 names are only kept for generated glue.
+static constexpr uint32_t ICACHE_V1_OFFSET_BITS = ICACHE_OFFSET_BITS;
+static constexpr uint32_t ICACHE_V1_INDEX_BITS = ICACHE_INDEX_BITS;
+static constexpr uint32_t ICACHE_V1_SET_NUM = ICACHE_SET_NUM;
+static constexpr uint32_t ICACHE_V1_WORD_BITS = ICACHE_WORD_BITS;
+static constexpr uint32_t ICACHE_V1_WORD_BYTES = ICACHE_V1_WORD_BITS / 8u;
+static constexpr uint32_t ICACHE_V1_WORD_NUM = ICACHE_WORD_NUM;
+static constexpr uint32_t ICACHE_V1_TAG_BITS = ICACHE_TAG_BITS;
+static constexpr uint32_t ICACHE_V1_WAYS = ICACHE_WAY_NUM;
+static constexpr uint32_t ICACHE_V1_WAY_BITS =
+    icache_constexpr_ceil_log2(ICACHE_V1_WAYS);
+static constexpr uint32_t ICACHE_V1_WORD_INDEX_BITS =
+    icache_constexpr_ceil_log2(ICACHE_V1_WORD_NUM);
 
 // i-Cache State
 enum ICacheState {
@@ -231,6 +251,97 @@ struct ICache_IO_t {
 
 class ICache {
 public:
+  // Compact packed module-comb layout.
+  // `pi` = current ICache module state + current-cycle module inputs.
+  // `po` = next ICache module state + visible module outputs + table write port.
+  //
+  // Perf bookkeeping is intentionally excluded from this packed hardware
+  // boundary. It depends on simulator time and is not part of the RTL state.
+  static constexpr int kPackedPcWordWidth = 32; // full PC, low bits are visible
+  static constexpr int kPackedLineAddrWidth = 32 - ICACHE_V1_OFFSET_BITS;
+  static constexpr int kPackedWayWidth = ICACHE_V1_WAY_BITS;
+  static constexpr int kPackedWordIndexWidth = ICACHE_V1_WORD_INDEX_BITS;
+  static constexpr int kPackedLineDataWidth =
+      ICACHE_V1_WORD_NUM * ICACHE_V1_WORD_BITS;
+  static constexpr int kPackedRawLookupMetaWidth =
+      1 + ICACHE_V1_WAYS * (ICACHE_V1_TAG_BITS + 1);
+  static constexpr int kPackedLookupMetaWidth =
+      1 +                         // meta_resp_valid
+      1 + kPackedWayWidth +       // predecoded hit_valid/hit_way
+      1 + kPackedWayWidth;        // has_invalid/first_invalid_way
+  static constexpr int kLookupMetaPackPiWidth =
+      1 +                         // compare_valid
+      ICACHE_V1_TAG_BITS +        // compare_tag
+      kPackedRawLookupMetaWidth;  // raw table meta response
+  static constexpr int kLookupMetaPackPoWidth = kPackedLookupMetaWidth;
+
+  static constexpr int kPackedRegsWidth =
+      1 +                         // req_valid_r
+      kPackedPcWordWidth +        // req_pc_r
+      1 +                         // ifu_req_ready_r
+      3 +                         // state
+      1 +                         // mem_axi_state
+      kPackedLineDataWidth +      // mem_resp_data_r
+      kPackedWayWidth +           // replace_idx
+      ICACHE_V1_TAG_BITS +        // ppn_r
+      1 + 4 + 1 +                 // miss txid valid/id/ready_seen
+      16 + 16 +                   // txid inflight/canceled bitsets
+      1 + 1 + 1 +                 // dcache probe inflight/done/hit
+      kPackedWordIndexWidth +     // dcache probe word
+      kPackedLineDataWidth +      // dcache probe data
+      1 +                         // lookup_pending_r
+      kPackedPcWordWidth;         // lookup_pc_r
+
+  static constexpr int kPackedInputWidth =
+      1 +                         // allow_lookup_data_phase
+      kPackedPcWordWidth +        // pc
+      1 +                         // ifu_req_valid
+      1 +                         // refetch
+      1 +                         // flush
+      ICACHE_V1_TAG_BITS +        // ppn
+      1 +                         // ppn_valid
+      1 +                         // page_fault
+      1 +                         // mem_req_ready
+      1 + 4 +                     // mem req accepted/id
+      1 + 4 +                     // mem resp valid/id
+      kPackedLineDataWidth +      // mem resp data
+      1 + 1 + ICACHE_V1_WORD_BITS;// dcache resp valid/miss/data
+
+  static constexpr int kPackedLookupInWidth =
+      kPackedLookupMetaWidth +    // predecoded meta lookup result
+      1 + kPackedWayWidth +       // data_resp_valid/way
+      kPackedLineDataWidth;       // selected data line
+
+  static constexpr int kPackedOutWidth =
+      1 + 1 + 1 +                 // miss/ifu_resp_valid/ifu_req_ready
+      kPackedPcWordWidth +        // ifu_resp_pc
+      kPackedLineDataWidth +      // rd_data
+      1 +                         // ifu_page_fault
+      1 +                         // ppn_ready
+      1 + ICACHE_V1_TAG_BITS +    // mmu_req_valid/vtag
+      1 + kPackedLineAddrWidth +  // mem_req_valid/line addr
+      4 + 1 +                     // mem_req_id/mem_resp_ready
+      1 + kPackedPcWordWidth +    // dcache_req_valid/addr
+      1 + ICACHE_V1_INDEX_BITS +  // lookup_data_req_valid/index
+      kPackedWayWidth;            // lookup_data_req_way
+
+  static constexpr int kPackedTableWriteWidth =
+      1 + 1 +                     // we/invalidate_all
+      ICACHE_V1_INDEX_BITS +
+      kPackedWayWidth +
+      kPackedLineDataWidth +
+      ICACHE_V1_TAG_BITS +
+      1;                          // valid
+
+  static constexpr int kCompactPiWidth =
+      kPackedRegsWidth + kPackedInputWidth + kPackedLookupInWidth;
+  static constexpr int kCompactPoWidth =
+      kPackedRegsWidth + kPackedOutWidth + kPackedTableWriteWidth;
+
+  static void compact_io_generator(const bool *pi, bool *po);
+  static void eval_packed(const bool *pi, bool *po);
+  static void lookup_meta_pack_io_generator(const bool *pi, bool *po);
+
   // Constructor
   ICache();
 
@@ -275,6 +386,12 @@ private:
   bool lookup_has_invalid_way_w = false;
   uint32_t lookup_first_invalid_way_w = 0;
   bool lookup_data_phase_en = false;
+  bool lookup_meta_predecoded_w = false;
+  bool lookup_meta_resp_valid_w = false;
+  bool lookup_meta_hit_valid_w = false;
+  uint32_t lookup_meta_hit_way_w = 0;
+  bool lookup_meta_has_invalid_way_w = false;
+  uint32_t lookup_meta_first_invalid_way_w = 0;
 
   icache_module_n::ICacheState state_next =
       icache_module_n::IDLE; // Next state of the i-cache
@@ -320,11 +437,36 @@ private:
   // Lookup helpers (current-cycle fold from the table response). The comb entry
   // points are pure functions of generalized input/registered state and only
   // differ in whether the second-stage data fold is allowed in that call.
+  void comb_via_compact_io_generator(bool allow_lookup_data_phase);
   void comb_core(bool allow_lookup_data_phase);
   void lookup(uint32_t index);
   void capture_lookup_meta_result(uint32_t compare_tag, bool compare_valid);
   void capture_lookup_data_result();
 };
+
+inline constexpr int ICACHE_MODULE_COMPACT_PI_WIDTH =
+    ICache::kCompactPiWidth;
+inline constexpr int ICACHE_MODULE_COMPACT_PO_WIDTH =
+    ICache::kCompactPoWidth;
+inline constexpr int ICACHE_MODULE_COMPACT_REGS_WIDTH =
+    ICache::kPackedRegsWidth;
+inline constexpr int ICACHE_MODULE_COMPACT_OUT_WIDTH =
+    ICache::kPackedOutWidth;
+inline constexpr int ICACHE_MODULE_COMPACT_TABLE_WRITE_WIDTH =
+    ICache::kPackedTableWriteWidth;
+inline constexpr int ICACHE_MODULE_LOOKUP_META_PACK_PI_WIDTH =
+    ICache::kLookupMetaPackPiWidth;
+inline constexpr int ICACHE_MODULE_LOOKUP_META_PACK_PO_WIDTH =
+    ICache::kLookupMetaPackPoWidth;
+
+inline void icache_module_compact_io_generator(const bool *pi, bool *po) {
+  ICache::compact_io_generator(pi, po);
+}
+
+inline void icache_module_lookup_meta_pack_io_generator(const bool *pi,
+                                                       bool *po) {
+  ICache::lookup_meta_pack_io_generator(pi, po);
+}
 
 }; // namespace icache_module_n
 
