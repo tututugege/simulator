@@ -1,4 +1,5 @@
 #include "TlbMmu.h"
+#include "TlbMmuKernel.h"
 #include "PtwMemPort.h"
 #include "ref.h"
 
@@ -933,23 +934,17 @@ TlbMmu::TopOutput TlbMmu::top_comb(const TopInput &in, int entries) {
 }
 
 void TlbMmu::tlb_core_io_generator(const bool *pi, bool *po, int entries) {
-  const CoreInput in = decode_core_input_bits(pi, entries);
-  const CoreOutput out = core_comb(in);
-  encode_core_output_bits(po, out, entries);
+  tlb_kernel_core_io_generator(pi, po, entries);
 }
 
 void TlbMmu::itlb_top_io_generator(const bool *pi, bool *po) {
-  const TopInput in =
-      decode_top_input_bits(pi, ITLB_ENTRIES, kItlbTopPortCount, false);
-  const TopOutput out = top_comb(in, ITLB_ENTRIES);
-  encode_top_output_bits(po, out, ITLB_ENTRIES, kItlbTopPortCount);
+  tlb_kernel_top_io_generator(pi, po, ITLB_ENTRIES, kItlbTopPortCount,
+                              LSU_LDU_COUNT, false);
 }
 
 void TlbMmu::dtlb_top_io_generator(const bool *pi, bool *po) {
-  const TopInput in =
-      decode_top_input_bits(pi, DTLB_ENTRIES, kDtlbTopPortCount, true);
-  const TopOutput out = top_comb(in, DTLB_ENTRIES);
-  encode_top_output_bits(po, out, DTLB_ENTRIES, kDtlbTopPortCount);
+  tlb_kernel_top_io_generator(pi, po, DTLB_ENTRIES, kDtlbTopPortCount,
+                              LSU_LDU_COUNT, true);
 }
 
 TlbMmu::Result TlbMmu::translate_shared_via_io_generator(

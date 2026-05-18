@@ -3,6 +3,8 @@
 #include "PtwWalkPort.h"
 #include "ref.h"
 #include "types.h"
+#define PTW_COMPACT_CORE_KERNEL_TOP_EVENT_SLOTS LSU_LDU_COUNT
+#include "PtwCompactCoreKernel.h"
 #include <array>
 #include <cstddef>
 #include <cstdio>
@@ -206,6 +208,23 @@ public:
                 "MemPtwBlock compact PI width regressed above reference");
   static_assert(kPackedPoWidth <= 422,
                 "MemPtwBlock compact PO width regressed above reference");
+  static_assert(kPackedPiWidth == PTW_COMPACT_CORE_KERNEL_PI_WIDTH,
+                "MemPtwBlock compact PI width differs from shared kernel");
+  static_assert(kPackedPoWidth == PTW_COMPACT_CORE_KERNEL_PO_WIDTH,
+                "MemPtwBlock compact PO width differs from shared kernel");
+  static_assert(kCorePortInWidth ==
+                    PTW_COMPACT_CORE_KERNEL_CORE_PORT_IN_WIDTH,
+                "MemPtwBlock core input width differs from shared kernel");
+  static_assert(kCorePortOutWidth ==
+                    PTW_COMPACT_CORE_KERNEL_CORE_PORT_OUT_WIDTH,
+                "MemPtwBlock core output width differs from shared kernel");
+  static_assert(kTopExternalInputWidth ==
+                    PTW_COMPACT_CORE_KERNEL_TOP_EXTERNAL_INPUT_WIDTH,
+                "MemPtwBlock top external PI width differs from shared kernel");
+  static_assert(kTopGluePiWidth == PTW_COMPACT_CORE_KERNEL_TOP_GLUE_PI_WIDTH,
+                "MemPtwBlock top glue PI width differs from shared kernel");
+  static_assert(kTopGluePoWidth == PTW_COMPACT_CORE_KERNEL_TOP_GLUE_PO_WIDTH,
+                "MemPtwBlock top glue PO width differs from shared kernel");
 
   explicit MemPtwBlock(SimContext *ctx = nullptr) : ctx(ctx) { init(); }
 
@@ -276,23 +295,11 @@ public:
   }
 
   static void compact_core_io_generator(const bool *pi, bool *po) {
-    MemPtwBlock block(nullptr);
-    PortIn port_in{};
-    SeqIn seq_in{};
-    FeedbackIn feedback{};
-    decode_packed_input(pi, block.cur_, port_in, seq_in, feedback);
-
-    compact_core_comb(block.cur_, port_in, seq_in, feedback, block.nxt_);
-
-    encode_packed_output(po, block.nxt_, block.comb_);
+    ptw_compact_core_kernel_eval(pi, po);
   }
 
   static void compact_core_visible_io_generator(const bool *pi, bool *po) {
-    State state_d{};
-    CombOut visible_outputs{};
-    decode_packed_state(pi, state_d);
-    project_outputs_from_state(state_d, visible_outputs);
-    encode_core_port_output(po, visible_outputs);
+    ptw_compact_core_visible_kernel(pi, po);
   }
 
   // PTW top glue is intentionally state-free:
@@ -302,11 +309,7 @@ public:
   // that needs core state, such as request-ID matching, must stay inside the
   // core wrapper rather than being pushed into this top glue.
   static void top_glue_io_generator(const bool *pi, bool *po) {
-    clear_packed_bits(po, kTopGluePoWidth);
-    encode_core_port_input_from_top_external(
-        po + kTopGlueCoreInBase, pi + kTopGlueExternalInBase);
-    copy_packed_bits(po, kTopGlueExternalOutBase, pi, kTopGlueCoreOutBase,
-                     kTopExternalOutputWidth);
+    ptw_top_glue_kernel(pi, po);
   }
 
   static void eval_packed(const bool *pi, bool *po) {
