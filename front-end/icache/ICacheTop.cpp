@@ -573,7 +573,7 @@ void ensure_mmu_model(Runtime &runtime, SimContext *ctx) {
   }
   runtime.mmu_model =
       new TlbMmu(ctx, runtime.ptw_mem_port ? runtime.ptw_mem_port : &ptw_port,
-                 ITLB_ENTRIES);
+                 ITLB_ENTRIES, TlbMmu::Kind::ITLB);
   if (runtime.ptw_walk_port != nullptr) {
     runtime.mmu_model->set_ptw_walk_port(runtime.ptw_walk_port);
   }

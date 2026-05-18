@@ -18,20 +18,6 @@
 
 void init_diff_ckpt(CPU_state ckpt_state, uint8_t privilege);
 
-namespace {
-MMUResultType to_lsu_mmu_result(TlbMmu::Result result) {
-  switch (result) {
-  case TlbMmu::Result::OK:
-    return MMUResultType::HIT;
-  case TlbMmu::Result::FAULT:
-    return MMUResultType::PAGE_FAULT;
-  case TlbMmu::Result::RETRY:
-  default:
-    return MMUResultType::MISS;
-  }
-}
-} // namespace
-
 void BackTop::init() {
   pre = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
@@ -43,7 +29,8 @@ void BackTop::init() {
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new RealLsu(ctx);
-  dtlb_mmu = std::make_unique<TlbMmu>(ctx, nullptr, DTLB_ENTRIES);
+  dtlb_mmu =
+      std::make_unique<TlbMmu>(ctx, nullptr, DTLB_ENTRIES, TlbMmu::Kind::DTLB);
   
   out.fire = pre2front.fire;
 
@@ -210,24 +197,7 @@ void BackTop::comb_lsu_mmu() {
     return;
   }
 
-  auto translate = [&](const MMUReq &req, MMUResp &resp, uint32_t type) {
-    if (!req.valid) {
-      return;
-    }
-    uint32_t paddr = 0;
-    const TlbMmu::Result result =
-        dtlb_mmu->translate(paddr, req.vaddr, type, &lsu2mmu_io.csr_status);
-    resp.valid = true;
-    resp.result = to_lsu_mmu_result(result);
-    resp.paddr = result == TlbMmu::Result::OK ? paddr : 0;
-  };
-
-  for (int i = 0; i < LSU_LDU_COUNT; i++) {
-    translate(lsu2mmu_io.ldq_req[i], mmu2lsu_io.ldq_resp[i], 1);
-  }
-  for (int i = 0; i < LSU_STA_COUNT; i++) {
-    translate(lsu2mmu_io.stq_req[i], mmu2lsu_io.stq_resp[i], 2);
-  }
+  dtlb_mmu->translate_lsu_ports(lsu2mmu_io, mmu2lsu_io);
 }
 
 void BackTop::comb_csr_status() {

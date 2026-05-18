@@ -290,6 +290,8 @@ public:
 
   PtwWalkResp resp() const override { return comb_out_.resp; }
 
+  PtwWalkPortCombOut comb_output() const override { return comb_out_; }
+
   void consume_resp() override {
     comb_in_.resp_consumed = true;
     comb_out_.resp_valid = false;
