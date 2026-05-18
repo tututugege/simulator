@@ -20,7 +20,13 @@ class SimContext;
 class PtwMemPort;
 class PtwWalkPort;
 
-using Back_in = FrontPreIO;
+struct Back_in : FrontPreIO {
+  // from MemSubsystem
+  PeripheralRespIO peripheral_resp;
+  DcacheLsuIO dcache2lsu;
+
+  Back_in() : FrontPreIO(), peripheral_resp{}, dcache2lsu{} {}
+};
 
 struct Back_out {
   // to front-end
@@ -37,6 +43,16 @@ struct Back_out {
   wire<32> mstatus;
   wire<32> satp;
   wire<2> privilege;
+
+  // to MemSubsystem
+  PeripheralReqIO peripheral_req;
+  LsuDcacheIO lsu2dcache;
+
+  Back_out()
+      : mispred(false), stall(false), flush(false), fence_i(false),
+        itlb_flush(false), fire(nullptr), redirect_pc(0), commit_entry{},
+        sstatus{}, mstatus{}, satp{}, privilege{}, peripheral_req{},
+        lsu2dcache{} {}
 };
 
 class Dispatch;
@@ -84,10 +100,6 @@ private:
   LsuExeIO lsu2exe;
   LsuDisIO lsu2dis;
   LsuRobIO lsu2rob;
-  PeripheralReqIO peripheral_req_io;
-  PeripheralRespIO peripheral_resp_io;
-  LsuDcacheIO lsu2dcache_io;   // LSU → DCache multi-port request bus
-  DcacheLsuIO dcache2lsu_io;   // DCache → LSU multi-port response bus
   LsuMMUIO lsu2mmu_io;         // LSU → DTLB request bus
   MMULsuIO mmu2lsu_io;         // DTLB → LSU response bus
   std::unique_ptr<TlbMmu> dtlb_mmu;
@@ -124,12 +136,6 @@ public:
 
   Back_in in;
   Back_out out;
-  PeripheralReqIO *lsu_peripheral_req_io;    // → &peripheral_req_io
-  PeripheralRespIO *lsu_peripheral_resp_io;  // → &peripheral_resp_io
-  LsuDcacheIO *lsu_dcache_req_io;   // → &lsu2dcache_io  (for MemSubsystem)
-  DcacheLsuIO *lsu_dcache_resp_io;  // → &dcache2lsu_io  (for MemSubsystem)
-  CsrInterruptInjectIO csr_interrupt_inject_io;
-  FtqCommitInfoIO ftq_commit_info;
   void init();
   void comb_csr_status();
   void comb();
@@ -141,11 +147,6 @@ public:
     this->ctx = ctx;
     pre = nullptr;
     out.fire = nullptr;
-    
-    lsu_peripheral_req_io = &peripheral_req_io;
-    lsu_peripheral_resp_io = &peripheral_resp_io;
-    lsu_dcache_req_io  = &lsu2dcache_io;
-    lsu_dcache_resp_io = &dcache2lsu_io;
   };
   ~BackTop() {
     delete pre;

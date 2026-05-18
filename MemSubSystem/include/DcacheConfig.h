@@ -28,10 +28,20 @@ struct MSHRFINDResp{
 struct MSHRReq{
     wire<1> valid;
     wire<32> addr;
+    wire<1> is_store;
+    wire<32> data;
+    wire<8> strb;
+#if !BSD_CONFIG
+    wire<1> lsu_origin;
+#endif
 };
 
 struct MSHR_FILLReq{
     wire<1> valid;
+    wire<1> dirty;
+#if !BSD_CONFIG
+    wire<1> lsu_origin;
+#endif
     wire<DCACHE_WAY_BITS> way_idx;
     wire<32> addr;
     wire<32> data[DCACHE_WORD_NUM];
@@ -83,6 +93,9 @@ struct MergeResp {
 
 struct DirtyInfo {
     wire<1> valid;
+#if !BSD_CONFIG
+    wire<1> lsu_origin;
+#endif
     wire<32> addr;
     wire<32> data[DCACHE_WORD_NUM];
 };
@@ -117,6 +130,10 @@ struct PendingWrite {
 };
 struct FILLWrite {
     wire<1>     valid    = false;
+    wire<1>     dirty    = false;
+#if !BSD_CONFIG
+    wire<1>     lsu_origin = false;
+#endif
     wire<DCACHE_SET_BITS> set_idx  = 0;
     wire<DCACHE_TAG_BITS> tag      = 0;
     wire<DCACHE_WAY_BITS> way_idx  = 0;
@@ -176,6 +193,7 @@ struct DcacheOUTIO {
 // Address field decomposition helper
 // ─────────────────────────────────────────────────────────────────────────────
 struct AddrFields {
+    wire<DCACHE_BANK_BITS> bank;
     wire<DCACHE_TAG_BITS> tag;
     wire<DCACHE_SET_BITS> set_idx;
     wire<DCACHE_OFFSET_BITS> word_off; // which 32-bit word within the cacheline [4:2]

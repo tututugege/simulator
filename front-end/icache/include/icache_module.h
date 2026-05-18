@@ -1,17 +1,17 @@
 /*
  * Architecture of current I-Cache design:
- * - 8-way set associative cache
- * - 128 sets
- * - 32 bytes per cache line
+ * - Set associativity, set count and line size come from include/config.h.
+ * - The default/small/medium/large profiles currently configure 32KB:
+ *   8-way, 64 sets, 64 bytes per cache line.
  * - Random replacement policy
  * - single registered request context with same-cycle hit bypass
  *
- * Address split:
- * PC[31:12], PC[11:5], PC[4:0]
+ * Default profile address split:
+ * PC[31:12], PC[11:6], PC[5:0]
  * - PC[31:12]: 20-bit Tag
- * - PC[11:5]: 7-bit Index to cache set
- * - PC[4:0]: 5-bit Byte offset within a cache line
- *    - PC[4:2]: 3-bit Word offset within a cache line
+ * - PC[11:6]: 6-bit Index to cache set
+ * - PC[5:0]: 6-bit Byte offset within a cache line
+ *    - PC[5:2]: 4-bit Word offset within a cache line
  *    - PC[1:0]: 2-bit Byte offset within a word
  *
  * 当前实现显式拆成两段组合逻辑：
@@ -66,23 +66,11 @@
 #endif
 #endif
 
-// -----------------------------------------------------------------------------
-// ICache V1 (blocking) configurable knobs
-// -----------------------------------------------------------------------------
-#ifndef ICACHE_V1_WAYS
-#define ICACHE_V1_WAYS 8
-#endif
 namespace icache_module_n {
 // -----------------------------------------------------------------------------
-// ICache V1 derived parameters (for generalized-IO structs)
+// ICache parameters come from include/config.h.
 // -----------------------------------------------------------------------------
-static constexpr uint32_t ICACHE_V1_OFFSET_BITS = __builtin_ctz(ICACHE_LINE_SIZE);
-static constexpr uint32_t ICACHE_V1_INDEX_BITS = 12 - ICACHE_V1_OFFSET_BITS;
-static constexpr uint32_t ICACHE_V1_SET_NUM = 1u << ICACHE_V1_INDEX_BITS;
-static constexpr uint32_t ICACHE_V1_WORD_BITS = 32;
-static constexpr uint32_t ICACHE_V1_WORD_BYTES = ICACHE_V1_WORD_BITS / 8u;
-static constexpr uint32_t ICACHE_V1_WORD_NUM = ICACHE_LINE_SIZE / ICACHE_V1_WORD_BYTES;
-static constexpr uint32_t ICACHE_V1_TAG_BITS = 20;
+static constexpr uint32_t ICACHE_WORD_BITS = 32;
 
 // i-Cache State
 enum ICacheState {
@@ -103,12 +91,12 @@ enum AXIState {
 struct ICache_lookup_in_t {
   // Tag/valid response for the looked-up set. Tag match stays inside module.
   wire<1> meta_resp_valid = false;
-  wire<20> lookup_set_tag[ICACHE_V1_WAYS] = {0};
-  wire<1> lookup_set_valid[ICACHE_V1_WAYS] = {false};
+  wire<ICACHE_TAG_BITS> lookup_set_tag[ICACHE_WAY_NUM] = {0};
+  wire<1> lookup_set_valid[ICACHE_WAY_NUM] = {false};
   // Single-way data response selected after the module finishes tag compare.
   wire<1> data_resp_valid = false;
   wire<8> data_resp_way = 0;
-  wire<ICACHE_V1_WORD_BITS> data_resp_line[ICACHE_V1_WORD_NUM] = {0};
+  wire<ICACHE_WORD_BITS> data_resp_line[ICACHE_WORD_NUM] = {0};
 };
 
 // -----------------------------------------------------------------------------
@@ -118,7 +106,7 @@ struct ICache_regs_t {
   // Registered request context for the current in-flight lookup/fill.
   reg<1> req_valid_r = false;
   reg<32> req_pc_r = 0;
-  reg<7> req_index_r = 0;
+  reg<ICACHE_INDEX_BITS> req_index_r = 0;
   // Registered frontend acceptance state.
   reg<1> ifu_req_ready_r = true;
 
@@ -127,7 +115,7 @@ struct ICache_regs_t {
   reg<1> mem_axi_state = static_cast<reg<1>>(AXI_IDLE);
 
   // Memory response registers
-  reg<ICACHE_V1_WORD_BITS> mem_resp_data_r[ICACHE_V1_WORD_NUM] = {0};
+  reg<ICACHE_WORD_BITS> mem_resp_data_r[ICACHE_WORD_NUM] = {0};
 
   // Replacement / translation state
   reg<8> replace_idx = 0;
@@ -140,7 +128,7 @@ struct ICache_regs_t {
 
   // Lookup in-flight state (resource state, not SRAM implementation timing).
   reg<1> lookup_pending_r = false;
-  reg<7> lookup_index_r = 0;
+  reg<ICACHE_INDEX_BITS> lookup_index_r = 0;
   reg<32> lookup_pc_r = 0;
 };
 
@@ -154,10 +142,10 @@ using ICache_reg_write_t = ICache_regs_t;
 struct ICache_table_write_t {
   wire<1> we = false;
   wire<1> invalidate_all = false;
-  wire<7> index = 0;
+  wire<ICACHE_INDEX_BITS> index = 0;
   wire<8> way = 0;
-  wire<ICACHE_V1_WORD_BITS> data[ICACHE_V1_WORD_NUM] = {0};
-  wire<20> tag = 0;
+  wire<ICACHE_WORD_BITS> data[ICACHE_WORD_NUM] = {0};
+  wire<ICACHE_TAG_BITS> tag = 0;
   wire<1> valid = false;
 };
 
@@ -179,9 +167,9 @@ struct ICache_in_t {
   wire<1> mem_req_accepted = false;
   wire<4> mem_req_accepted_id = 0;
   wire<1> mem_resp_valid = false;
-  // For compatibility with ICacheV2 top-level wiring (ignored by V1).
+  // For compatibility with the top-level memory response wiring.
   wire<4> mem_resp_id = 0;
-  wire<ICACHE_V1_WORD_BITS> mem_resp_data[ICACHE_V1_WORD_NUM] = {0}; // Data from memory (Cache line)
+  wire<ICACHE_WORD_BITS> mem_resp_data[ICACHE_WORD_NUM] = {0}; // Data from memory (Cache line)
 };
 
 struct ICache_out_t {
@@ -190,7 +178,7 @@ struct ICache_out_t {
   wire<1> ifu_resp_valid = false; // Indicates if output data is valid
   wire<1> ifu_req_ready = false;  // Indicates if i-cache is allow to accept next PC
   wire<32> ifu_resp_pc = 0;    // PC corresponding to ifu_resp
-  wire<ICACHE_V1_WORD_BITS> rd_data[ICACHE_V1_WORD_NUM] = {0}; // Data read from cache
+  wire<ICACHE_WORD_BITS> rd_data[ICACHE_WORD_NUM] = {0}; // Data read from cache
   wire<1> ifu_page_fault = false;                 // page fault exception signal
 
   // Output to MMU (Memory Management Unit)
@@ -206,7 +194,7 @@ struct ICache_out_t {
   wire<1> mem_resp_ready = false;
   // External single-way data query generated after internal tag compare.
   wire<1> lookup_data_req_valid = false;
-  wire<7> lookup_data_req_index = 0;
+  wire<ICACHE_INDEX_BITS> lookup_data_req_index = 0;
   wire<8> lookup_data_req_way = 0;
 };
 
@@ -258,14 +246,11 @@ private:
    * offset_bits + index_bits + tag_bits = 32
    * for current design, tag_bits = 20
    */
-  static uint32_t const offset_bits =
-      __builtin_ctz(ICACHE_LINE_SIZE); // log2(ICACHE_LINE_SIZE)
-  static uint32_t const index_bits = 12 - offset_bits;
-  static uint32_t const set_num = 1 << index_bits; // Total number of cache sets
-  static uint32_t const word_num =
-      1 << (offset_bits - 2); // Number of words per cache line (8 words, since
-                              // each word is 4 bytes)
-  static uint32_t const way_cnt = ICACHE_V1_WAYS; // N-way set associative cache
+  static uint32_t const offset_bits = ICACHE_OFFSET_BITS;
+  static uint32_t const index_bits = ICACHE_INDEX_BITS;
+  static uint32_t const set_num = ICACHE_SET_NUM;
+  static uint32_t const word_num = ICACHE_WORD_NUM;
+  static uint32_t const way_cnt = ICACHE_WAY_NUM;
 
   // Folded lookup view used by the request compare path.
   // The module only consumes generalized lookup inputs and never inspects the

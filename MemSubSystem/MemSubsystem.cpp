@@ -578,6 +578,11 @@ void MemSubsystem::init() {
   mshr_.out.axi_out = &mshr_axi_out; // MSHR output → AXI read/write ports
   wb_.in.axi_in = &wb_axi_in;        // WB comb input ← AXI read/write ports (for write response handling)
   wb_.out.axi_out = &wb_axi_out;     // WB output → AXI read/write ports (for write issuance)
+#if !BSD_CONFIG
+  dcache_.bind_context(ctx);
+  mshr_.bind_context(ctx);
+  mem_route_block.bind_context(ctx);
+#endif
 
   // Internal WriteBuffer ↔ DCache wires.
   dcache_.in.wb2dcache = &wb_dcache_io_;  // WB output → DCache input
@@ -613,7 +618,9 @@ void MemSubsystem::init() {
   mem_route_block.out.ptw_grant = &ptw_grant;   // MemRouteBlock output → PTW grant signals
   mem_route_block.out.wakeup = &wakeup;         // MemRouteBlock output → LSU wakeup signals
 
+#if !BSD_CONFIG
   wb_.bind_context(ctx);
+#endif
 
   // ── Initialise sub-modules ─────────────────────────────────────────────────
   mshr_.init();
@@ -759,7 +766,7 @@ void MemSubsystem::dump_debug_state(FILE *out) const {
   dcache_.dump_debug_state(out);
 }
 
-void MemSubsystem::comb() {
+void MemSubsystem::comb_outputs() {
 #if AXI_KIT_RUNTIME_ENABLED
   if (internal_axi_runtime_active_) {
     auto &interconnect = axi_kit_runtime->interconnect;
@@ -779,6 +786,29 @@ void MemSubsystem::comb() {
   }
 #endif
 
+  // Consume same-cycle AXI feedback before publishing DCache-facing state.
+  // This lets a just-returned MSHR line or just-retired WB entry be visible
+  // to the DCache in this CPU cycle instead of waiting for the next seq edge.
+  wb_.comb_inputs_axi();
+  mshr_.comb_inputs_axi();
+
+  wb_.comb_outputs_dcache();
+  mshr_.comb_outputs_dcache();
+
+  Dcache_Read(dcache_line_read_req_,
+              dcache_line_read_resp_,
+              fill_out_,
+              fill_in_);
+
+  dcache_.stage2_comb();
+  Dcache_Write(pending_writes_,
+               lru_updates_,
+               fill_writes_);
+
+  mem_route_block.comb_response();
+}
+
+void MemSubsystem::comb_inputs() {
   MemPtwBlock::PortIn ptw_port_in{};
   {
     const auto &dtlb_mem_in = dtlb_ptw_port_inst->comb_input();
@@ -829,24 +859,7 @@ void MemSubsystem::comb() {
   ptw_itlb_req.addr =
       ptw_out.mem_req_addr[static_cast<size_t>(PtwClient::ITLB)];
 
-  wb_.comb_outputs_dcache();
-  wb_.comb_outputs_axi();
-
-  mshr_.comb_outputs_dcache();
-  mshr_.comb_outputs_axi();
   mem_route_block.comb_request();
-
-  Dcache_Read(dcache_line_read_req_,
-              dcache_line_read_resp_,
-              fill_out_,
-              fill_in_);
-
-  dcache_.stage2_comb();
-  Dcache_Write(pending_writes_,
-               lru_updates_,
-               fill_writes_);
-
-  mem_route_block.comb_response();
   dcache_.stage1_comb();
 
   MemPtwBlock::FeedbackIn ptw_feedback{};
@@ -912,13 +925,14 @@ void MemSubsystem::comb() {
 
   sync_ptw_port_outputs();
 
-  // Phase 3a: run MSHR comb_inputs (may accept AXI R, allocate entries, and
-  // prepare next-cycle registered fill / eviction outputs).
+  // DCache-side updates run after stage2/stage1 produces requests. AXI
+  // outputs are refreshed afterward so newly allocated MSHR/WB entries can
+  // start their external transaction in the same CPU cycle.
   mshr_.comb_inputs_dcache();
-  mshr_.comb_inputs_axi();
-
   wb_.comb_inputs_dcache();
-  wb_.comb_inputs_axi();
+
+  mshr_.comb_outputs_axi();
+  wb_.comb_outputs_axi();
 
   peripheral_axi_.in.read = peripheral_axi_read_in;
   peripheral_axi_.in.write = peripheral_axi_write_in;
@@ -971,6 +985,11 @@ void MemSubsystem::comb() {
   itlb_ptw_port_inst->reset_cycle_input();
   dtlb_walk_port_inst->reset_cycle_input();
   itlb_walk_port_inst->reset_cycle_input();
+}
+
+void MemSubsystem::comb() {
+  comb_outputs();
+  comb_inputs();
 }
 
 void MemSubsystem::seq() {

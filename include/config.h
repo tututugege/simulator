@@ -32,7 +32,7 @@ constexpr uint64_t div_round_u64(uint64_t numerator, uint64_t denominator) {
 
 #define CONFIG_DIFFTEST
 #define CONFIG_PERF_COUNTER
-//#define CONFIG_BPU
+#define CONFIG_BPU
 #define CONFIG_TLB_MMU
 #define CONFIG_ORACLE_STEADY_FETCH_WIDTH
 
@@ -179,35 +179,12 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
     div_round_u64(CONFIG_DDR_READ_LATENCY_FS, CONFIG_CPU_CYCLE_FS));
 
 #ifndef CONFIG_SIM_DDR_LATENCY
-#define CONFIG_SIM_DDR_LATENCY CONFIG_SIM_DDR_LATENCY_CALC
+// #define CONFIG_SIM_DDR_LATENCY CONFIG_SIM_DDR_LATENCY_CALC
+#define CONFIG_SIM_DDR_LATENCY 60
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY
 // Extra full cycles to wait after the final W beat before B can become visible.
 #define CONFIG_AXI_KIT_SIM_DDR_WRITE_RESP_LATENCY 1
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_QUEUE_DEPTH CONFIG_AXI_KIT_SIM_DDR_MAX_OUTSTANDING
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_ACCEPT_GAP 0
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH 8
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_GAP 0
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_HIGH_WATERMARK CONFIG_AXI_KIT_SIM_DDR_WRITE_DATA_FIFO_DEPTH
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_DRAIN_LOW_WATERMARK 0
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND
-#define CONFIG_AXI_KIT_SIM_DDR_READ_TO_WRITE_TURNAROUND 0
-#endif
-#ifndef CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND
-#define CONFIG_AXI_KIT_SIM_DDR_WRITE_TO_READ_TURNAROUND 0
 #endif
 #ifndef CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES
 #define CONFIG_AXI_KIT_SIM_DDR_BEAT_BYTES 32
@@ -233,6 +210,11 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
 #ifndef CONFIG_AXI_KIT_DEBUG
 #define CONFIG_AXI_KIT_DEBUG 0
 #endif
+#ifndef CONFIG_AXI_SUBSYSTEM_FREQ_DIV
+#define CONFIG_AXI_SUBSYSTEM_FREQ_DIV 16u
+#endif
+static_assert(CONFIG_AXI_SUBSYSTEM_FREQ_DIV >= 1,
+              "CONFIG_AXI_SUBSYSTEM_FREQ_DIV must be >= 1");
 #ifndef CONFIG_AXI_KIT_UART_BASE
 #define CONFIG_AXI_KIT_UART_BASE 0x10000000u
 #endif
@@ -255,7 +237,7 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
 #endif
 
 #ifndef CONFIG_AXI_LLC_SIZE_BYTES
-#define CONFIG_AXI_LLC_SIZE_BYTES (8ull << 20)
+#define CONFIG_AXI_LLC_SIZE_BYTES (4ull << 20)
 #endif
 
 #ifndef CONFIG_AXI_LLC_WAYS
@@ -278,7 +260,7 @@ constexpr int CONFIG_SIM_DDR_LATENCY_CALC = static_cast<int>(
 #define CONFIG_AXI_LLC_DEBUG_LOG 0
 #endif
 
-constexpr int ICACHE_WAY_NUM = 4;
+constexpr int ICACHE_WAY_NUM = 8;
 constexpr int ICACHE_OFFSET_BITS = clog2(ICACHE_LINE_SIZE);
 constexpr int ICACHE_INDEX_BITS = 12 - ICACHE_OFFSET_BITS;
 constexpr int ICACHE_SET_NUM = 1 << ICACHE_INDEX_BITS;
@@ -304,23 +286,27 @@ constexpr int DCACHE_WB_ENTRIES = 8;
 constexpr int DCACHE_WB_BITS = clog2(DCACHE_WB_ENTRIES);
 constexpr int DCACHE_WB_COUNT_BITS = DCACHE_WB_BITS + 1; // one extra bit to track full vs empty
 
-constexpr int DCACHE_MISS_NUM = 4;
 
 constexpr int DCACHE_WAY_BITS = clog2(DCACHE_WAYS_NUM);
 constexpr int DCACHE_SET_BITS = clog2(DCACHE_SETS_NUM);
+
+constexpr int DCACHE_BANK_NUM = 16;
+constexpr int DCACHE_BANK_BITS = clog2(DCACHE_BANK_NUM);
+constexpr int DCACHE_WORDS_PER_BANK = DCACHE_WORD_NUM / DCACHE_BANK_NUM;
+
 
 // ============================================================
 // Core Resources
 // ============================================================
 
 constexpr int ARF_NUM = 32;
-constexpr int PRF_NUM = 2048;
+constexpr int PRF_NUM = 512;
 constexpr int MAX_BR_NUM = 64;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
 constexpr int ROB_BANK_NUM = DECODE_WIDTH;
-constexpr int ROB_NUM = 2048;
+constexpr int ROB_NUM = 512;
 constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 
 // ============================================================
@@ -328,7 +314,7 @@ constexpr int ROB_LINE_NUM = ROB_NUM / ROB_BANK_NUM;
 // ============================================================
 
 constexpr int IDU_INST_BUFFER_SIZE = 1024;
-constexpr int FTQ_SIZE = 256;
+constexpr int FTQ_SIZE = 512;
 static_assert(is_power_of_two_u64(FTQ_SIZE), "FTQ_SIZE must be a power of two");
 
 // ============================================================
@@ -432,10 +418,10 @@ constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
 constexpr int FTQ_PRF_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
-constexpr int STQ_SIZE = 512;
+constexpr int STQ_SIZE = 1024;
 constexpr int LDQ_SIZE = 512;
 constexpr int MUL_MAX_LATENCY = 2;
-constexpr int DIV_MAX_LATENCY = 2;
+constexpr int DIV_MAX_LATENCY = 16;
 
 // LSU / TLB config derived from issue port layout.
 constexpr int LSU_STA_COUNT = count_ports_with_mask(OP_MASK_STA);
@@ -522,9 +508,12 @@ constexpr int calculate_max_iq_size() {
 constexpr int MAX_IQ_SIZE = calculate_max_iq_size();
 constexpr int IQ_READY_NUM_WIDTH = bit_width_for_count(MAX_IQ_SIZE + 1);
 
+
+constexpr int DCACHE_MISS_NUM = LSU_LDU_COUNT+LSU_STA_COUNT;
+
 #define LSU_STLF
-constexpr int LOAD_WINDOWS_WIDTH = LSU_LDU_COUNT*3; 
-constexpr int STORE_WINDOWS_WIDTH = LSU_STA_COUNT*3;
+constexpr int LOAD_WINDOWS_WIDTH = LSU_LDU_COUNT*5; 
+constexpr int STORE_WINDOWS_WIDTH = LSU_LDU_COUNT*5;
 // ============================================================
 // Global Sanity Checks
 // ============================================================

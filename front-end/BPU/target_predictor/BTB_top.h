@@ -125,6 +125,8 @@ public:
     bht_hist_t pred_bht_data;
     BtbSetData pred_btb_set;
     TcSetData pred_tc_set;
+    TcSetData pred_tc_pre_set;
+    wire3_t pred_tc_mode;
 
     wire1_t upd_read_valid;
     btb_idx_t upd_btb_idx;
@@ -136,9 +138,14 @@ public:
     BtbSetData upd_btb_set;
 
     wire1_t upd_tc_read_valid;
+    tc_idx_t upd_tc_pred_idx;
+    tc_tag_t upd_tc_pred_tag;
     tc_idx_t upd_tc_write_idx;
     tc_tag_t upd_tc_write_tag;
     TcSetData upd_tc_set;
+    TcSetData upd_tc_pred_set;
+    TcSetData upd_tc_pre_set;
+    wire3_t upd_tc_mode;
   };
 
   // 组合逻辑计算结果结构体
@@ -207,6 +214,16 @@ public:
     tc_tag_t tc_wtag_commit;
     wire1_t tc_wvalid_commit;
     wire3_t tc_wuseful_commit;
+    wire1_t tc_pre_we_commit;
+    tc_way_sel_t tc_pre_wr_way;
+    tc_idx_t tc_pre_wr_idx;
+    target_addr_t tc_pre_wdata_commit;
+    tc_tag_t tc_pre_wtag_commit;
+    wire1_t tc_pre_wvalid_commit;
+    wire3_t tc_pre_wuseful_commit;
+    wire1_t tc_mode_we_commit;
+    bht_idx_t tc_mode_wr_idx;
+    wire3_t tc_mode_wdata_commit;
     wire1_t btb_we_commit;
     btb_way_sel_t btb_wr_way;
     btb_idx_t btb_wr_idx;
@@ -277,6 +294,7 @@ public:
     btb_tag_t upd_tag;
     bht_hist_t upd_next_bht_data;
     wire1_t upd_tc_read_valid;
+    tc_idx_t upd_tc_pred_idx;
     tc_idx_t upd_tc_write_idx;
     tc_tag_t upd_tc_write_tag;
   };
@@ -296,6 +314,7 @@ public:
     tc_idx_t pred_tc_idx;
     bht_hist_t upd_next_bht_data;
     wire1_t upd_tc_read_valid;
+    tc_idx_t upd_tc_pred_idx;
     tc_idx_t upd_tc_write_idx;
     tc_tag_t upd_tc_write_tag;
   };
@@ -304,6 +323,7 @@ public:
     wire1_t pred_tc_read_valid;
     tc_idx_t pred_tc_idx;
     wire1_t upd_tc_read_valid;
+    tc_idx_t upd_tc_pred_idx;
     tc_idx_t upd_tc_write_idx;
   };
 
@@ -427,6 +447,8 @@ public:
     HitCheckOut hit_info;
     BtbSetData set_data;
     TcSetData tc_set;
+    TcSetData tc_pre_set;
+    wire3_t tc_mode;
   };
 
   struct BtbPredOutputCombOut {
@@ -461,6 +483,11 @@ private:
   tc_tag_t mem_tc_tag[TC_WAY_NUM][TC_ENTRY_NUM];
   wire1_t mem_tc_valid[TC_WAY_NUM][TC_ENTRY_NUM];
   wire3_t mem_tc_useful[TC_WAY_NUM][TC_ENTRY_NUM];
+  target_addr_t mem_tc_pre_target[TC_WAY_NUM][TC_ENTRY_NUM];
+  tc_tag_t mem_tc_pre_tag[TC_WAY_NUM][TC_ENTRY_NUM];
+  wire1_t mem_tc_pre_valid[TC_WAY_NUM][TC_ENTRY_NUM];
+  wire3_t mem_tc_pre_useful[TC_WAY_NUM][TC_ENTRY_NUM];
+  wire3_t mem_tc_mode[BHT_ENTRY_NUM];
 
   // Pipeline Registers
   btb_state_t state;
@@ -496,6 +523,10 @@ private:
   MemReadResult sram_delayed_data;  // 延迟期间保存的数据（包含BTB和TC）
   wire32_t sram_prng_state;          // 固定种子伪随机状态
 
+  static constexpr wire3_t kTcModeBias = 3;
+  static constexpr wire3_t kTcModeInit = 2;
+  static constexpr wire3_t kTcModeMax = 6;
+
 public:
   BTB_TOP() { reset(); }
 
@@ -509,6 +540,13 @@ public:
     std::memset(mem_tc_tag, 0, sizeof(mem_tc_tag));
     std::memset(mem_tc_valid, 0, sizeof(mem_tc_valid));
     std::memset(mem_tc_useful, 0, sizeof(mem_tc_useful));
+    std::memset(mem_tc_pre_target, 0, sizeof(mem_tc_pre_target));
+    std::memset(mem_tc_pre_tag, 0, sizeof(mem_tc_pre_tag));
+    std::memset(mem_tc_pre_valid, 0, sizeof(mem_tc_pre_valid));
+    std::memset(mem_tc_pre_useful, 0, sizeof(mem_tc_pre_useful));
+    for (int i = 0; i < BHT_ENTRY_NUM; ++i) {
+      mem_tc_mode[i] = kTcModeInit;
+    }
 
     state = S_IDLE;
     do_pred_latch = false;
@@ -700,6 +738,7 @@ public:
 
     if (in.inp.upd_actual_dir && in.inp.upd_br_type_in == BR_IDIRECT) {
       out.upd_tc_read_valid = true;
+      out.upd_tc_pred_idx = tc_get_idx_value(in.inp.upd_pc, in.rd.upd_bht_data);
       out.upd_tc_write_idx = tc_get_idx_value(in.inp.upd_pc, out.upd_next_bht_data);
       out.upd_tc_write_tag = tc_get_tag_value(in.inp.upd_pc);
     }
@@ -728,7 +767,8 @@ public:
       BtbPredOutputCombOut pred_out{};
       btb_pred_output_comb(
           BtbPredOutputCombIn{inp.pred_pc, inp.pred_type_in, pred_hit_out.hit_info,
-                              rd.pred_btb_set, rd.pred_tc_set},
+                              rd.pred_btb_set, rd.pred_tc_set, rd.pred_tc_pre_set,
+                              rd.pred_tc_mode},
           pred_out);
       out.pred_target = pred_out.pred_target;
       out.btb_pred_out_valid = true;
@@ -798,6 +838,44 @@ public:
         req.tc_wtag_commit = rd.upd_tc_write_tag;
         req.tc_wvalid_commit = true;
         req.tc_wuseful_commit = next_tc_useful;
+
+        TcHitCheckCombOut tc_pre_hit_out{};
+        tc_hit_check_comb(TcHitCheckCombIn{rd.upd_tc_pre_set, rd.upd_tc_pred_tag},
+                          tc_pre_hit_out);
+        TcVictimSelectCombOut tc_pre_victim_out{};
+        tc_victim_select_comb(TcVictimSelectCombIn{rd.upd_tc_pre_set}, tc_pre_victim_out);
+        const int tc_pre_write_way = tc_pre_hit_out.hit_info.hit
+                                         ? tc_pre_hit_out.hit_info.hit_way
+                                         : tc_pre_victim_out.victim_way;
+        const uint8_t current_tc_pre_useful = rd.upd_tc_pre_set.useful[tc_pre_write_way];
+        const uint32_t current_tc_pre_target = rd.upd_tc_pre_set.target[tc_pre_write_way];
+        const bool tc_pre_correct =
+            tc_pre_hit_out.hit_info.hit && (current_tc_pre_target == inp.upd_actual_addr);
+        const uint8_t next_tc_pre_useful =
+            tc_pre_hit_out.hit_info.hit
+                ? useful_next_state_value(current_tc_pre_useful, tc_pre_correct)
+                : static_cast<uint8_t>(INDIRECT_TC_INIT_USEFUL);
+        req.tc_pre_we_commit = true;
+        req.tc_pre_wr_way = tc_pre_write_way;
+        req.tc_pre_wr_idx = rd.upd_tc_pred_idx;
+        req.tc_pre_wdata_commit = inp.upd_actual_addr;
+        req.tc_pre_wtag_commit = rd.upd_tc_pred_tag;
+        req.tc_pre_wvalid_commit = true;
+        req.tc_pre_wuseful_commit = next_tc_pre_useful;
+
+        TcHitCheckCombOut tc_pred_hit_out{};
+        tc_hit_check_comb(TcHitCheckCombIn{rd.upd_tc_pred_set, rd.upd_tc_pred_tag},
+                          tc_pred_hit_out);
+        const bool tc_pred_correct =
+            tc_pred_hit_out.hit_info.hit &&
+            (rd.upd_tc_pred_set.target[tc_pred_hit_out.hit_info.hit_way] ==
+             inp.upd_actual_addr);
+        if (tc_pred_correct != tc_pre_correct) {
+          req.tc_mode_we_commit = true;
+          req.tc_mode_wr_idx = rd.upd_bht_idx;
+          req.tc_mode_wdata_commit =
+              tc_mode_next_value(rd.upd_tc_mode, tc_pre_correct);
+        }
       }
       out.btb_update_done = true;
     }
@@ -845,6 +923,8 @@ public:
     rd.pred_bht_data = 0;
     std::memset(&rd.pred_btb_set, 0, sizeof(rd.pred_btb_set));
     std::memset(&rd.pred_tc_set, 0, sizeof(rd.pred_tc_set));
+    std::memset(&rd.pred_tc_pre_set, 0, sizeof(rd.pred_tc_pre_set));
+    rd.pred_tc_mode = 0;
     rd.upd_read_valid = false;
     rd.upd_btb_idx = 0;
     rd.upd_bht_idx = 0;
@@ -853,9 +933,14 @@ public:
     rd.upd_next_bht_data = 0;
     std::memset(&rd.upd_btb_set, 0, sizeof(rd.upd_btb_set));
     rd.upd_tc_read_valid = false;
+    rd.upd_tc_pred_idx = 0;
+    rd.upd_tc_pred_tag = 0;
     rd.upd_tc_write_idx = 0;
     rd.upd_tc_write_tag = 0;
     std::memset(&rd.upd_tc_set, 0, sizeof(rd.upd_tc_set));
+    std::memset(&rd.upd_tc_pred_set, 0, sizeof(rd.upd_tc_pred_set));
+    std::memset(&rd.upd_tc_pre_set, 0, sizeof(rd.upd_tc_pre_set));
+    rd.upd_tc_mode = 0;
 
     rd.pred_read_valid = in.pred_req.pred_read_valid;
     rd.pred_btb_idx = in.pred_req.pred_btb_idx;
@@ -898,7 +983,12 @@ public:
 
   void btb_tc_data_seq_read(const BtbTcDataSeqReadIn &in, ReadData &rd) const {
     std::memset(&rd.pred_tc_set, 0, sizeof(rd.pred_tc_set));
+    std::memset(&rd.pred_tc_pre_set, 0, sizeof(rd.pred_tc_pre_set));
     std::memset(&rd.upd_tc_set, 0, sizeof(rd.upd_tc_set));
+    std::memset(&rd.upd_tc_pred_set, 0, sizeof(rd.upd_tc_pred_set));
+    std::memset(&rd.upd_tc_pre_set, 0, sizeof(rd.upd_tc_pre_set));
+    rd.pred_tc_mode = 0;
+    rd.upd_tc_mode = 0;
 
     if (in.pred_tc_read_valid) {
       for (int w = 0; w < TC_WAY_NUM; ++w) {
@@ -906,7 +996,12 @@ public:
         rd.pred_tc_set.tag[w] = mem_tc_tag[w][in.pred_tc_idx];
         rd.pred_tc_set.valid[w] = mem_tc_valid[w][in.pred_tc_idx];
         rd.pred_tc_set.useful[w] = mem_tc_useful[w][in.pred_tc_idx];
+        rd.pred_tc_pre_set.target[w] = mem_tc_pre_target[w][in.pred_tc_idx];
+        rd.pred_tc_pre_set.tag[w] = mem_tc_pre_tag[w][in.pred_tc_idx];
+        rd.pred_tc_pre_set.valid[w] = mem_tc_pre_valid[w][in.pred_tc_idx];
+        rd.pred_tc_pre_set.useful[w] = mem_tc_pre_useful[w][in.pred_tc_idx];
       }
+      rd.pred_tc_mode = mem_tc_mode[rd.pred_bht_idx];
     }
 
     if (in.upd_tc_read_valid) {
@@ -915,7 +1010,16 @@ public:
         rd.upd_tc_set.tag[w] = mem_tc_tag[w][in.upd_tc_write_idx];
         rd.upd_tc_set.valid[w] = mem_tc_valid[w][in.upd_tc_write_idx];
         rd.upd_tc_set.useful[w] = mem_tc_useful[w][in.upd_tc_write_idx];
+        rd.upd_tc_pred_set.target[w] = mem_tc_target[w][in.upd_tc_pred_idx];
+        rd.upd_tc_pred_set.tag[w] = mem_tc_tag[w][in.upd_tc_pred_idx];
+        rd.upd_tc_pred_set.valid[w] = mem_tc_valid[w][in.upd_tc_pred_idx];
+        rd.upd_tc_pred_set.useful[w] = mem_tc_useful[w][in.upd_tc_pred_idx];
+        rd.upd_tc_pre_set.target[w] = mem_tc_pre_target[w][in.upd_tc_pred_idx];
+        rd.upd_tc_pre_set.tag[w] = mem_tc_pre_tag[w][in.upd_tc_pred_idx];
+        rd.upd_tc_pre_set.valid[w] = mem_tc_pre_valid[w][in.upd_tc_pred_idx];
+        rd.upd_tc_pre_set.useful[w] = mem_tc_pre_useful[w][in.upd_tc_pred_idx];
       }
+      rd.upd_tc_mode = mem_tc_mode[rd.upd_bht_idx];
     }
   }
 
@@ -930,11 +1034,14 @@ public:
     rd.pred_tc_idx = post_read_out.pred_tc_idx;
     rd.upd_next_bht_data = post_read_out.upd_next_bht_data;
     rd.upd_tc_read_valid = post_read_out.upd_tc_read_valid;
+    rd.upd_tc_pred_idx = post_read_out.upd_tc_pred_idx;
+    rd.upd_tc_pred_tag = post_read_out.upd_tc_write_tag;
     rd.upd_tc_write_idx = post_read_out.upd_tc_write_idx;
     rd.upd_tc_write_tag = post_read_out.upd_tc_write_tag;
     btb_tc_data_seq_read(BtbTcDataSeqReadIn{post_read_out.pred_tc_read_valid,
                                             post_read_out.pred_tc_idx,
                                             post_read_out.upd_tc_read_valid,
+                                            post_read_out.upd_tc_pred_idx,
                                             post_read_out.upd_tc_write_idx},
                          rd);
     btb_comb(BtbCombIn{inp, rd}, comb_out);
@@ -974,6 +1081,15 @@ public:
       mem_tc_tag[req.tc_wr_way][req.tc_wr_idx] = req.tc_wtag_commit;
       mem_tc_valid[req.tc_wr_way][req.tc_wr_idx] = req.tc_wvalid_commit;
       mem_tc_useful[req.tc_wr_way][req.tc_wr_idx] = req.tc_wuseful_commit;
+    }
+    if (req.tc_pre_we_commit) {
+      mem_tc_pre_target[req.tc_pre_wr_way][req.tc_pre_wr_idx] = req.tc_pre_wdata_commit;
+      mem_tc_pre_tag[req.tc_pre_wr_way][req.tc_pre_wr_idx] = req.tc_pre_wtag_commit;
+      mem_tc_pre_valid[req.tc_pre_wr_way][req.tc_pre_wr_idx] = req.tc_pre_wvalid_commit;
+      mem_tc_pre_useful[req.tc_pre_wr_way][req.tc_pre_wr_idx] = req.tc_pre_wuseful_commit;
+    }
+    if (req.tc_mode_we_commit) {
+      mem_tc_mode[req.tc_mode_wr_idx] = req.tc_mode_wdata_commit;
     }
     if (req.btb_we_commit) {
       mem_btb_tag[req.btb_wr_way][req.btb_wr_idx] = req.btb_wr_tag;
@@ -1161,6 +1277,17 @@ private:
     }
   }
 
+  static bool tc_mode_prefers_pre(wire3_t mode) {
+    return mode >= kTcModeBias;
+  }
+
+  static wire3_t tc_mode_next_value(wire3_t mode, bool pre_correct) {
+    if (pre_correct) {
+      return (mode < kTcModeMax) ? static_cast<wire3_t>(mode + 1) : kTcModeMax;
+    }
+    return (mode > 0) ? static_cast<wire3_t>(mode - 1) : 0;
+  }
+
   static void btb_pred_output_comb(const BtbPredOutputCombIn &in,
                                    BtbPredOutputCombOut &out) {
     out = BtbPredOutputCombOut{};
@@ -1169,6 +1296,8 @@ private:
       uint32_t expected_tc_tag = tc_get_tag_value(in.pc);
       bool tc_hit = false;
       uint32_t tc_target = in.pc + 4;
+      bool tc_pre_hit = false;
+      uint32_t tc_pre_target = in.pc + 4;
       for (int way = 0; way < TC_WAY_NUM; way++) {
         if (in.tc_set.valid[way] && in.tc_set.tag[way] == expected_tc_tag) {
           tc_hit = true;
@@ -1176,7 +1305,16 @@ private:
           break;
         }
       }
-      if (tc_hit) {
+      for (int way = 0; way < TC_WAY_NUM; way++) {
+        if (in.tc_pre_set.valid[way] && in.tc_pre_set.tag[way] == expected_tc_tag) {
+          tc_pre_hit = true;
+          tc_pre_target = in.tc_pre_set.target[way];
+          break;
+        }
+      }
+      if (tc_pre_hit && (!tc_hit || tc_mode_prefers_pre(in.tc_mode))) {
+        out.pred_target = tc_pre_target;
+      } else if (tc_hit) {
         out.pred_target = tc_target;
 #if ENABLE_INDIRECT_BTB_FALLBACK
       } else if (in.hit_info.hit) {

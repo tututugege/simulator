@@ -6,9 +6,9 @@ from datetime import datetime
 
 # ================= 用户配置区域 =================
 CPU_FREQ_GHZ = float(os.environ.get("CPU_FREQ_GHZ", "1.0"))
-LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_restore_456")
+LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_456")
 WEIGHTS_DIR = os.environ.get(
-    "WEIGHTS_DIR", "/share/personal/S/houruyao/simpoint/rv32imab_bbv_1gb_ram"
+    "WEIGHTS_DIR", "/home/renli/qimeng/fix-fence.i/456.hmmer_ref_bbv"
 )
 DEBUG = os.environ.get("DEBUG", "1") not in ("0", "false", "False")
 LOG_STATUS_REPORT = LOG_ROOT_DIR + "/log_status_report.txt"
@@ -225,6 +225,13 @@ def _extract_last_section_lines(clean_lines, header_candidates):
 
 def _extract_avg_samples(line):
     m = re.search(r":\s*([-+]?\d+(?:\.\d+)?)\s*cycles\s*\(samples\s*=\s*(\d+)\)", line)
+    if not m:
+        return None, None
+    return float(m.group(1)), int(m.group(2))
+
+
+def _extract_avg_max(line):
+    m = re.search(r":\s*([-+]?\d+(?:\.\d+)?)\s*/\s*(\d+)", line)
     if not m:
         return None, None
     return float(m.group(1)), int(m.group(2))
@@ -790,6 +797,7 @@ def parse_log_robust(filepath, with_reason=False):
             "cpi": cyc / inst,
             "cache": cache,
             "latency": latency,
+            "occupancy": occupancy,
             "cache_hit": max(
                 cache["l1d_req_initial"] - cache["l1d_miss_mshr_alloc"], 0
             ),  # backward compatibility
@@ -1041,6 +1049,13 @@ def process_benchmark(bench_path):
             p(f"  {LATENCY_METRIC_LABELS[key]}: {avg:.2f} cycles")
         else:
             p(f"  {LATENCY_METRIC_LABELS[key]}: N/A")
+    p("Memory Occupancy (Weighted):")
+    for key in OCCUPANCY_METRIC_KEYS:
+        if w_occ_weight[key] > 0:
+            avg = _safe_div(w_occ_avg[key], w_occ_weight[key])
+            p(f"  {OCCUPANCY_METRIC_LABELS[key]}: {avg:.4f} / {occ_max[key]}")
+        else:
+            p(f"  {OCCUPANCY_METRIC_LABELS[key]}: N/A")
 
     if w_br_total > 0:
         p(f"Branch Accuracy:    {br_acc:.2f} %")

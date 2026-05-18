@@ -1240,10 +1240,15 @@ struct StqEntry {
   wire<1> is_lrsc = false;
   wire<1> sc_pass = false; // For SC: whether the store-conditional succeeded
   wire<PRF_IDX_WIDTH> dest_preg = 0; // SC returns 0/1 through STA writeback
+#if !BSD_CONFIG
+  uint64_t perf_mem_start_cycle = 0;
+  wire<1> perf_mem_started = false;
+#endif
 
   StoreState store_state = StoreState::Empty;
 
   ReplayType replay_type = ReplayType::HIT;
+  uint32_t replay_wait_cycles = 0;
 
 
   wire<BR_MASK_WIDTH> br_mask = {};
@@ -1256,6 +1261,9 @@ struct LoadReq {
   wire<1> valid;
   wire<32> addr;
   wire<32> req_id;
+#if !BSD_CONFIG
+  wire<1> replay;
+#endif
 };
 
 struct StoreReq {
@@ -1264,6 +1272,9 @@ struct StoreReq {
   wire<32> data;
   wire<8> strb;
   wire<32> req_id;
+#if !BSD_CONFIG
+  wire<1> replay;
+#endif
 };
 
 
@@ -1291,9 +1302,15 @@ struct DCacheReqPorts {
   void clear() {
     for (int i = 0; i < LSU_LDU_COUNT; i++) {
       load_ports[i].valid = false;
+#if !BSD_CONFIG
+      load_ports[i].replay = false;
+#endif
     }
     for (int i = 0; i < LSU_STA_COUNT; i++) {
       store_ports[i].valid = false;
+#if !BSD_CONFIG
+      store_ports[i].replay = false;
+#endif
     }
   }
 };
@@ -1347,6 +1364,7 @@ struct LsuDcacheIO {
 struct DcacheLsuIO {
   DCacheRespPorts resp_ports;
   wire<1> mshr_fill;
+  wire<32> mshr_fill_addr;
 };
 
 struct LsuDisIO {
