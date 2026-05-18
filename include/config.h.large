@@ -316,7 +316,7 @@ constexpr int DCACHE_SET_BITS = clog2(DCACHE_SETS_NUM);
 
 constexpr int ARF_NUM = 32;
 constexpr int PRF_NUM = 512;
-constexpr int MAX_BR_NUM = 64;
+constexpr int MAX_BR_NUM = 128;
 constexpr int MAX_BR_PER_CYCLE = DECODE_WIDTH;
 constexpr int CSR_NUM = 21;
 
@@ -521,7 +521,6 @@ constexpr int STORE_WINDOWS_WIDTH = STQ_SIZE;
 // Global Sanity Checks
 // ============================================================
 
-static_assert(MAX_BR_NUM <= 64, "MAX_BR_NUM exceeds maximum wire width (64)");
 static_assert(STQ_SIZE > 0, "STQ_SIZE must be positive");
 static_assert(LDQ_SIZE > 0, "LDQ_SIZE must be positive");
 static_assert(ROB_NUM % ROB_BANK_NUM == 0,

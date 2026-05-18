@@ -191,7 +191,7 @@ void Idu::comb_branch() {
     out.dec_bcast->mispred = true;
     out.dec_bcast->br_id = br_latch.br_id;
     out.dec_bcast->redirect_rob_idx = br_latch.redirect_rob_idx;
-    out.dec_bcast->br_mask = 1ULL << br_latch.br_id;
+    out.dec_bcast->br_mask = wire<BR_MASK_WIDTH>(1) << br_latch.br_id;
   } else {
     out.dec_bcast->br_mask = 0;
     out.dec_bcast->mispred = false;
