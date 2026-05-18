@@ -442,7 +442,11 @@ constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
 constexpr int FTQ_PRF_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
-constexpr int STQ_SIZE = 1024;
+#ifndef CONFIG_STQ_SIZE
+#define CONFIG_STQ_SIZE 512
+#endif
+static_assert(CONFIG_STQ_SIZE > 0, "CONFIG_STQ_SIZE must be positive");
+constexpr int STQ_SIZE = CONFIG_STQ_SIZE;
 constexpr int LDQ_SIZE = 512;
 constexpr int MUL_MAX_LATENCY = 2;
 constexpr int DIV_MAX_LATENCY = 16;
@@ -536,8 +540,20 @@ constexpr int IQ_READY_NUM_WIDTH = bit_width_for_count(MAX_IQ_SIZE + 1);
 constexpr int DCACHE_MISS_NUM = LSU_LDU_COUNT+LSU_STA_COUNT;
 
 #define LSU_STLF
-constexpr int LOAD_WINDOWS_WIDTH = LSU_LDU_COUNT*5; 
-constexpr int STORE_WINDOWS_WIDTH = LSU_LDU_COUNT*5;
+#ifndef CONFIG_LSU_LOAD_WINDOW_WIDTH
+#define CONFIG_LSU_LOAD_WINDOW_WIDTH (LSU_LDU_COUNT * 5)
+#endif
+#ifndef CONFIG_LSU_STORE_WINDOW_WIDTH
+#define CONFIG_LSU_STORE_WINDOW_WIDTH (LSU_LDU_COUNT * 5)
+#endif
+static_assert(CONFIG_LSU_LOAD_WINDOW_WIDTH > 0 &&
+                  CONFIG_LSU_LOAD_WINDOW_WIDTH <= LDQ_SIZE,
+              "CONFIG_LSU_LOAD_WINDOW_WIDTH must be in 1..LDQ_SIZE");
+static_assert(CONFIG_LSU_STORE_WINDOW_WIDTH > 0 &&
+                  CONFIG_LSU_STORE_WINDOW_WIDTH <= STQ_SIZE,
+              "CONFIG_LSU_STORE_WINDOW_WIDTH must be in 1..STQ_SIZE");
+constexpr int LOAD_WINDOWS_WIDTH = CONFIG_LSU_LOAD_WINDOW_WIDTH;
+constexpr int STORE_WINDOWS_WIDTH = CONFIG_LSU_STORE_WINDOW_WIDTH;
 // ============================================================
 // Global Sanity Checks
 // ============================================================

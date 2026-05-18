@@ -1,3 +1,19 @@
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <queue>
+#include <vector>
+
+// Parent-side compatibility for axi-interconnect-kit revisions that do not
+// expose comb_inputs_internal_tick(). The adapter below snapshots the explicit
+// CPU-boundary ready/hold registers while extra AXI ticks advance only the
+// internal AXI/LLC/DDR state.
+#define private public
+#include "AXI_Interconnect.h"
+#undef private
+
 #include "BackTop.h"
 #include "Csr.h"
 #include "PhysMemory.h"
@@ -9,10 +25,6 @@
 #include "front_IO.h"
 #include "front_module.h"
 #include "util.h"
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
 namespace {
 template <typename InterconnectT>
@@ -38,6 +50,59 @@ void clear_axi_master_inputs(InterconnectT &interconnect) {
     port.req.id = 0;
     port.req.bypass = false;
   }
+}
+
+struct AxiInternalTickBoundaryState {
+  bool read_req_ready_r[axi_interconnect::NUM_READ_MASTERS] = {};
+  bool read_req_drop_warned[axi_interconnect::NUM_READ_MASTERS] = {};
+  axi_interconnect::ReadReqHoldLatch
+      read_req_hold[axi_interconnect::NUM_READ_MASTERS] = {};
+  bool write_req_ready_r[axi_interconnect::NUM_WRITE_MASTERS] = {};
+};
+
+template <typename InterconnectT>
+void capture_axi_internal_tick_boundary_state(
+    InterconnectT &interconnect, AxiInternalTickBoundaryState &state) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    state.read_req_ready_r[i] = interconnect.req_ready_r[i];
+    state.read_req_drop_warned[i] = interconnect.req_drop_warned[i];
+    state.read_req_hold[i] = interconnect.read_req_hold[i];
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    state.write_req_ready_r[i] = interconnect.w_req_ready_r[i];
+  }
+}
+
+template <typename InterconnectT>
+void restore_axi_internal_tick_boundary_state(
+    InterconnectT &interconnect, const AxiInternalTickBoundaryState &state) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    interconnect.req_ready_r[i] = state.read_req_ready_r[i];
+    interconnect.req_drop_warned[i] = state.read_req_drop_warned[i];
+    interconnect.read_req_hold[i] = state.read_req_hold[i];
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    interconnect.w_req_ready_r[i] = state.write_req_ready_r[i];
+  }
+}
+
+template <typename InterconnectT>
+auto comb_axi_inputs_for_internal_tick_impl(InterconnectT &interconnect, int)
+    -> decltype(interconnect.comb_inputs_internal_tick(), void()) {
+  interconnect.comb_inputs_internal_tick();
+}
+
+template <typename InterconnectT>
+void comb_axi_inputs_for_internal_tick_impl(InterconnectT &interconnect, long) {
+  AxiInternalTickBoundaryState boundary_state{};
+  capture_axi_internal_tick_boundary_state(interconnect, boundary_state);
+  interconnect.comb_inputs();
+  restore_axi_internal_tick_boundary_state(interconnect, boundary_state);
+}
+
+template <typename InterconnectT>
+void comb_axi_inputs_for_internal_tick(InterconnectT &interconnect) {
+  comb_axi_inputs_for_internal_tick_impl(interconnect, 0);
 }
 
 axi_interconnect::AXI_LLCConfig make_default_llc_config() {
@@ -449,7 +514,7 @@ void axi_subsystem_comb_inputs(SimCpu &cpu) {
 }
 
 void axi_subsystem_comb_inputs_internal_tick(SimCpu &cpu) {
-  cpu.axi_interconnect.comb_inputs_internal_tick();
+  comb_axi_inputs_for_internal_tick(cpu.axi_interconnect);
   cpu.axi_router.comb_inputs(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
                              cpu.axi_mmio.io);
   cpu.axi_ddr.comb_inputs();

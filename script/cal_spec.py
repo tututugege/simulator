@@ -150,6 +150,8 @@ STALL_COUNTER_LABELS = {
 }
 
 STALL_METRIC_KEYS = tuple(STALL_COUNTER_LABELS.keys())
+OCCUPANCY_METRIC_KEYS = ()
+OCCUPANCY_METRIC_LABELS = {}
 
 CONFIG_SCAN_FILE = os.path.join(REPO_ROOT, "include", "config.h")
 
@@ -756,6 +758,7 @@ def parse_log_robust(filepath, with_reason=False):
         cache = parse_cache_counters(content)
         latency = parse_latency_counters(clean_lines)
         stalls = parse_stall_counters(clean_lines)
+        occupancy = {}
 
         # =======================================================
         # 2. BPU 解析 (Regex 扫描版)

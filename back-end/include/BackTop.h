@@ -136,6 +136,8 @@ public:
 
   Back_in in;
   Back_out out;
+  FtqCommitInfoIO ftq_commit_info;
+  CsrInterruptInjectIO csr_interrupt_inject_io;
   void init();
   void comb_csr_status();
   void comb();
