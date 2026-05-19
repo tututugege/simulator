@@ -410,6 +410,7 @@ void TlbMmu::set_ptw_mem_port(PtwMemPort *port) { walker.set_mem_port(port); }
 void TlbMmu::set_ptw_walk_port(PtwWalkPort *port) { walk_port = port; }
 
 void TlbMmu::cancel_pending_walk() {
+  consume_completed_walk_refill(true);
   walker.flush();
   run_control_via_top(false, true);
   last_retry_reason_ = RetryReason::NONE;
@@ -1054,8 +1055,49 @@ void TlbMmu::run_control_via_top(bool flush, bool cancel) {
   apply_top_output(out);
 }
 
+bool TlbMmu::consume_completed_walk_refill(bool consume_fault) {
+  if (walk_port == nullptr) {
+    return false;
+  }
+
+  const WalkRegs &walk = visible_walk_regs();
+  const PtwWalkPortCombOut walk_out = walk_port->comb_output();
+  if (!walk.active || !walk.req_sent || !walk_out.resp_valid ||
+      ((static_cast<uint32_t>(walk_out.resp.vaddr) >> 12) !=
+       (walk.v_addr >> 12))) {
+    return false;
+  }
+
+  if (walk_out.resp.fault) {
+    if (!consume_fault) {
+      return false;
+    }
+  } else {
+    const uint8_t perm = walk_out.resp.leaf_pte & 0xFF;
+    const bool perm_ok =
+        check_perm(perm, walk.type, walk.eff_priv, walk.sum, walk.mxr);
+    if (!perm_ok && !consume_fault) {
+      return false;
+    }
+    if (perm_ok) {
+      const bool global = (walk_out.resp.leaf_pte & PTE_G) != 0;
+      schedule_refill(walk.v_addr, sv32_asid(walk.satp),
+                      walk_out.resp.leaf_level, walk_out.resp.leaf_pte,
+                      global);
+    }
+  }
+
+  walk_port->consume_resp();
+  return true;
+}
+
 void TlbMmu::translate_lsu_ports(const LsuMMUIO &req, MMULsuIO &resp) {
   resp = {};
+  if (consume_completed_walk_refill(false)) {
+    walk_comb_ = {};
+    walk_comb_valid_ = true;
+  }
+
   TopInput in = build_top_common_input(&req.csr_status);
   const uint16_t asid = sv32_asid(in.satp);
 
@@ -1096,6 +1138,8 @@ void TlbMmu::translate_lsu_ports(const LsuMMUIO &req, MMULsuIO &resp) {
     ld_resp.valid = port.resp_valid;
     ld_resp.result = to_lsu_mmu_result(result);
     ld_resp.paddr = result == Result::OK ? port.p_addr : 0;
+    ld_resp.entry_idx = req.ldq_req[i].entry_idx;
+    ld_resp.wait_idx = req.ldq_req[i].wait_idx;
     last_valid_port = i;
     const TraceSource trace_source = static_cast<TraceSource>(
         static_cast<uint32_t>(port.trace_source) & 0x7u);
@@ -1117,6 +1161,8 @@ void TlbMmu::translate_lsu_ports(const LsuMMUIO &req, MMULsuIO &resp) {
     st_resp.valid = port.resp_valid;
     st_resp.result = to_lsu_mmu_result(result);
     st_resp.paddr = result == Result::OK ? port.p_addr : 0;
+    st_resp.entry_idx = req.stq_req[i].entry_idx;
+    st_resp.wait_idx = req.stq_req[i].wait_idx;
     last_valid_port = port_idx;
     const TraceSource trace_source = static_cast<TraceSource>(
         static_cast<uint32_t>(port.trace_source) & 0x7u);

@@ -302,10 +302,6 @@ void BackTop::comb() {
   lsu->comb_mmio_in();
   lsu->comb_dcache2lsu_ldq();
   lsu->comb_dcache2lsu_stq();
-  lsu->comb_tlb_out();
-  comb_lsu_mmu();
-  lsu->comb_tlb_in();
-  lsu->comb_stlf();
   lsu->comb_lsu2exe();
 
   exu->comb_to_csr();
@@ -317,6 +313,10 @@ void BackTop::comb() {
   exu->comb_ready();
   isu->comb_issue();
   lsu->comb_exe2lsu();
+  lsu->comb_tlb_out();
+  comb_lsu_mmu();
+  lsu->comb_tlb_in();
+  lsu->comb_stlf();
 
   prf->comb_req_ftq();
   pre->comb_ftq_lookup_prf();

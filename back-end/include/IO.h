@@ -1334,14 +1334,22 @@ enum class MMUResultType : wire<2> {
   HIT = 1,
   PAGE_FAULT = 2,
 };
+
+static constexpr int LSU_MMU_IDX_WIDTH =
+    (LDQ_IDX_WIDTH > STQ_IDX_WIDTH) ? LDQ_IDX_WIDTH : STQ_IDX_WIDTH;
+
 struct MMUReq{
   wire<1> valid;
   wire<32> vaddr;
+  wire<LSU_MMU_IDX_WIDTH> entry_idx;
+  wire<LSU_MMU_IDX_WIDTH> wait_idx;
 };
 struct MMUResp{
   wire<1> valid;
   wire<32> paddr;
   MMUResultType result;
+  wire<LSU_MMU_IDX_WIDTH> entry_idx;
+  wire<LSU_MMU_IDX_WIDTH> wait_idx;
 };
 struct MMULsuIO{
   MMUResp ldq_resp[LSU_LDU_COUNT];

@@ -400,6 +400,7 @@ private:
   TopOutput run_top_via_io_generator(const TopInput &in) const;
   void apply_top_output(const TopOutput &out);
   void run_control_via_top(bool flush, bool cancel);
+  bool consume_completed_walk_refill(bool consume_fault);
   Result walk_and_refill_shared(uint32_t &p_addr, uint32_t v_addr,
                                 uint32_t type, CsrStatusIO *status);
   Result walk_and_refill(uint32_t &p_addr, uint32_t v_addr, uint32_t type,

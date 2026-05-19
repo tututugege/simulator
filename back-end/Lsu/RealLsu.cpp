@@ -44,6 +44,38 @@ static uint32_t replay_delay_cycles(ReplayType replay) {
              : 0;
 }
 
+static void cleanup_wait_mmu_ldq_edges(LsuState &state) {
+  while (state.wait_mmu_ldq_count > 0 &&
+         !state.wait_mmu_ldq[state.wait_mmu_ldq_head].valid) {
+    state.wait_mmu_ldq_head = (state.wait_mmu_ldq_head + 1) % LDQ_SIZE;
+    state.wait_mmu_ldq_count--;
+  }
+  while (state.wait_mmu_ldq_count > 0) {
+    const uint32_t tail =
+        (state.wait_mmu_ldq_head + state.wait_mmu_ldq_count - 1) % LDQ_SIZE;
+    if (state.wait_mmu_ldq[tail].valid) {
+      break;
+    }
+    state.wait_mmu_ldq_count--;
+  }
+}
+
+static void cleanup_wait_mmu_stq_edges(LsuState &state) {
+  while (state.wait_mmu_stq_count > 0 &&
+         !state.wait_mmu_stq[state.wait_mmu_stq_head].valid) {
+    state.wait_mmu_stq_head = (state.wait_mmu_stq_head + 1) % STQ_SIZE;
+    state.wait_mmu_stq_count--;
+  }
+  while (state.wait_mmu_stq_count > 0) {
+    const uint32_t tail =
+        (state.wait_mmu_stq_head + state.wait_mmu_stq_count - 1) % STQ_SIZE;
+    if (state.wait_mmu_stq[tail].valid) {
+      break;
+    }
+    state.wait_mmu_stq_count--;
+  }
+}
+
 static void wake_load_replays_on_mshr_fill(const DcacheLsuIO &dcache_resp,
                                            LsuState &nxt) {
   if (!dcache_resp.mshr_fill || !kReplayClearDelayOnMshrFill) {
@@ -215,108 +247,125 @@ void RealLsu::comb_tlb_out() {
 
   out.lsu2mmu->csr_status = *in.csr_status;
 
-  int32_t issue_ldq = cur.wait_mmu_ldq_count > LSU_LDU_COUNT ? LSU_LDU_COUNT : cur.wait_mmu_ldq_count;
-  int32_t issue_stq = cur.wait_mmu_stq_count > LSU_STA_COUNT ? LSU_STA_COUNT : cur.wait_mmu_stq_count;
-
-  // 将等待MMU响应的LDQ条目发送给MMU
-  for (int i = 0; i < issue_ldq; i++) {
-    const auto &entry = cur.wait_mmu_ldq[(cur.wait_mmu_ldq_head + i) % LDQ_SIZE];
-    const LdqEntry &ldq_entry = cur.ldq[entry.ldq_idx];
-    out.lsu2mmu->ldq_req[i].valid = ldq_entry.load_state == LoadState::WaitTlb && entry.valid;
-    out.lsu2mmu->ldq_req[i].vaddr = ldq_entry.v_addr;
+  uint32_t ld_issue = 0;
+  for (uint32_t i = 0; i < same_cycle_ldq_count && ld_issue < LSU_LDU_COUNT; ++i) {
+    if (same_cycle_ldq_req[i].valid) {
+      out.lsu2mmu->ldq_req[ld_issue++] = same_cycle_ldq_req[i];
+    }
   }
 
-  // 将等待MMU响应的STQ条目发送给MMU
-  for (int i = 0; i < issue_stq; i++) {
-    const auto &entry = cur.wait_mmu_stq[(cur.wait_mmu_stq_head + i) % STQ_SIZE];
+  const uint32_t issue_ldq =
+      std::min<uint32_t>(cur.wait_mmu_ldq_count,
+                         LSU_LDU_COUNT - ld_issue);
+  for (uint32_t i = 0; i < issue_ldq; i++) {
+    const uint32_t wait_idx = (cur.wait_mmu_ldq_head + i) % LDQ_SIZE;
+    const auto &entry = cur.wait_mmu_ldq[wait_idx];
+    const LdqEntry &ldq_entry = cur.ldq[entry.ldq_idx];
+    auto &req = out.lsu2mmu->ldq_req[ld_issue++];
+    req.valid = ldq_entry.load_state == LoadState::WaitTlb && entry.valid;
+    req.vaddr = ldq_entry.v_addr;
+    req.entry_idx = entry.ldq_idx;
+    req.wait_idx = wait_idx;
+  }
+
+  uint32_t st_issue = 0;
+  for (uint32_t i = 0; i < same_cycle_stq_count && st_issue < LSU_STA_COUNT; ++i) {
+    if (same_cycle_stq_req[i].valid) {
+      out.lsu2mmu->stq_req[st_issue++] = same_cycle_stq_req[i];
+    }
+  }
+
+  const uint32_t issue_stq =
+      std::min<uint32_t>(cur.wait_mmu_stq_count,
+                         LSU_STA_COUNT - st_issue);
+  for (uint32_t i = 0; i < issue_stq; i++) {
+    const uint32_t wait_idx = (cur.wait_mmu_stq_head + i) % STQ_SIZE;
+    const auto &entry = cur.wait_mmu_stq[wait_idx];
     const StqEntry &stq_entry = cur.stq[entry.stq_idx];
-    out.lsu2mmu->stq_req[i].valid = stq_entry.store_state == StoreState::WaitTlb && entry.valid;
-    out.lsu2mmu->stq_req[i].vaddr = stq_entry.vaddr;
+    auto &req = out.lsu2mmu->stq_req[st_issue++];
+    req.valid = stq_entry.store_state == StoreState::WaitTlb && entry.valid;
+    req.vaddr = stq_entry.vaddr;
+    req.entry_idx = entry.stq_idx;
+    req.wait_idx = wait_idx;
   }
 }
 void RealLsu::comb_tlb_in() {
-
   WaitMmuLDQEntry wait_mmu_ldq_entries[LSU_LDU_COUNT] = {};
   WaitMmuSTQEntry wait_mmu_stq_entries[LSU_STA_COUNT] = {};
 
   for (int i = 0; i < LSU_LDU_COUNT; i++) {
     if (in.mmu2lsu->ldq_resp[i].valid) {
       const auto &resp = in.mmu2lsu->ldq_resp[i];
-      const auto &entry =
-          cur.wait_mmu_ldq[(cur.wait_mmu_ldq_head + i) % LDQ_SIZE];
-      LdqEntry &ldq_entry = nxt.ldq[entry.ldq_idx];
-
-      if (entry.valid) {
-        if (ldq_entry.load_state == LoadState::WaitTlb) {
-          if (resp.result == MMUResultType::HIT) {
-            ldq_entry.p_addr_valid = true;
-            ldq_entry.p_addr = resp.paddr;
-            ldq_entry.is_mmio = lsu_is_mmio_addr(resp.paddr);
-            ldq_entry.load_state = LoadState::CheckStlf;
-
-            nxt.stlf_queue[(nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE].valid = true;
-            nxt.stlf_queue[(nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE].ldq_idx = entry.ldq_idx;
-            nxt.stlf_queue_count++;
-            wait_mmu_ldq_entries[i].valid = false;
-
-          } else if (resp.result == MMUResultType::MISS) {
-            wait_mmu_ldq_entries[i].valid = true;
-            wait_mmu_ldq_entries[i] = entry;
-          } else if (resp.result == MMUResultType::PAGE_FAULT) {
-            ldq_entry.page_fault = true;
-            ldq_entry.diag_val = ldq_entry.v_addr; // 记录发生页面错误的虚拟地址，供后续异常处理使用
-            ldq_entry.result = ldq_entry.v_addr;
-            ldq_entry.load_state = LoadState::PageFault; // 直接进入可写回状态，由后续逻辑处理异常
-            wait_mmu_ldq_entries[i].valid = false;
-            nxt.lrsc_unit.reserve_valid = false;
-
-            const uint32_t finish_idx =
-                (nxt.finish_head + nxt.finish_count) % kFinishSize;
-            nxt.finish[finish_idx].valid = true;
-            nxt.finish[finish_idx].idx = entry.ldq_idx;
-            nxt.finish[finish_idx].is_load = true;
-            nxt.finish_count++;
-          }
-        }
-        else{
-          wait_mmu_ldq_entries[i].valid = false; // 如果条目不在等待TLB状态，说明这个条目已经被其他逻辑处理了，不需要再等待TLB响应了
-        }
-      } else {
-        wait_mmu_ldq_entries[i].valid = false;
+      const uint32_t wait_idx = resp.wait_idx;
+      const uint32_t ldq_idx = resp.entry_idx;
+      if (wait_idx >= LDQ_SIZE || ldq_idx >= LDQ_SIZE) {
+        continue;
       }
-      nxt.wait_mmu_ldq[(nxt.wait_mmu_ldq_head + i) % LDQ_SIZE].valid = false; // 无论命中与否都需要将条目写回等待队列
+      auto &entry = nxt.wait_mmu_ldq[wait_idx];
+      if (!entry.valid || entry.ldq_idx != ldq_idx) {
+        continue;
+      }
+      LdqEntry &ldq_entry = nxt.ldq[ldq_idx];
+      if (ldq_entry.load_state != LoadState::WaitTlb) {
+        nxt.wait_mmu_ldq[wait_idx].valid = false;
+        continue;
+      }
+
+      if (resp.result == MMUResultType::HIT) {
+        ldq_entry.p_addr_valid = true;
+        ldq_entry.p_addr = resp.paddr;
+        ldq_entry.is_mmio = lsu_is_mmio_addr(resp.paddr);
+        ldq_entry.load_state = LoadState::CheckStlf;
+
+        const uint32_t stlf_idx =
+            (nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE;
+        nxt.stlf_queue[stlf_idx].valid = true;
+        nxt.stlf_queue[stlf_idx].ldq_idx = ldq_idx;
+        nxt.stlf_queue_count++;
+        nxt.wait_mmu_ldq[wait_idx].valid = false;
+      } else if (resp.result == MMUResultType::PAGE_FAULT) {
+        ldq_entry.page_fault = true;
+        ldq_entry.diag_val = ldq_entry.v_addr;
+        ldq_entry.result = ldq_entry.v_addr;
+        ldq_entry.load_state = LoadState::PageFault;
+        nxt.wait_mmu_ldq[wait_idx].valid = false;
+        nxt.lrsc_unit.reserve_valid = false;
+
+        const uint32_t finish_idx =
+            (nxt.finish_head + nxt.finish_count) % kFinishSize;
+        nxt.finish[finish_idx].valid = true;
+        nxt.finish[finish_idx].idx = ldq_idx;
+        nxt.finish[finish_idx].is_load = true;
+        nxt.finish_count++;
+      } else if (resp.result == MMUResultType::MISS) {
+        wait_mmu_ldq_entries[i] = entry;
+        wait_mmu_ldq_entries[i].valid = true;
+        entry.valid = false;
+      }
     }
   }
-
-  uint32_t tmp_head = nxt.wait_mmu_ldq_head;
-  uint32_t tmp_count = nxt.wait_mmu_ldq_count;
-  uint32_t issue = tmp_count > LSU_LDU_COUNT ? LSU_LDU_COUNT : tmp_count;
-  for (int i = 0; i < issue; i++) {
-    if (!nxt.wait_mmu_ldq[(nxt.wait_mmu_ldq_head + i) % LDQ_SIZE].valid) {
-      tmp_head = (tmp_head + 1) % LDQ_SIZE;
-      if (tmp_count > 0) {
-        tmp_count--;
-      }
-    } else {
-      break;
-    }
-  }
-  nxt.wait_mmu_ldq_head = tmp_head;
-  nxt.wait_mmu_ldq_count = tmp_count;
+  cleanup_wait_mmu_ldq_edges(nxt);
 
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     if (in.mmu2lsu->stq_resp[i].valid) {
       const auto &resp = in.mmu2lsu->stq_resp[i];
-      const auto &entry =
-          cur.wait_mmu_stq[(cur.wait_mmu_stq_head + i) % STQ_SIZE];
-      StqEntry &stq_entry = nxt.stq[entry.stq_idx];
+      const uint32_t wait_idx = resp.wait_idx;
+      const uint32_t stq_idx = resp.entry_idx;
+      if (wait_idx >= STQ_SIZE || stq_idx >= STQ_SIZE) {
+        continue;
+      }
+      auto &entry = nxt.wait_mmu_stq[wait_idx];
+      if (!entry.valid || entry.stq_idx != stq_idx) {
+        continue;
+      }
+      StqEntry &stq_entry = nxt.stq[stq_idx];
 
       if (stq_entry.store_state == StoreState::WaitTlb) {
         if (resp.result == MMUResultType::HIT) {
           stq_entry.paddr_valid = true;
           stq_entry.paddr = resp.paddr;
           stq_entry.is_mmio = lsu_is_mmio_addr(resp.paddr);
-          wait_mmu_stq_entries[i].valid = false;
+          nxt.wait_mmu_stq[wait_idx].valid = false;
 
           if (stq_entry.data_valid) {
             stq_entry.store_state = StoreState::Done;
@@ -324,13 +373,13 @@ void RealLsu::comb_tlb_in() {
               const uint32_t done_idx =
                   (nxt.mmu_done_stq_head + nxt.mmu_done_stq_count) % STQ_SIZE;
               nxt.mmu_done_stq[done_idx].valid = true;
-              nxt.mmu_done_stq[done_idx].stq_idx = entry.stq_idx;
+              nxt.mmu_done_stq[done_idx].stq_idx = stq_idx;
               nxt.mmu_done_stq_count++;
             } else {
               const uint32_t finish_idx =
                   (nxt.finish_head + nxt.finish_count) % kFinishSize;
               nxt.finish[finish_idx].valid = true;
-              nxt.finish[finish_idx].idx = entry.stq_idx;
+              nxt.finish[finish_idx].idx = stq_idx;
               nxt.finish[finish_idx].is_load = false;
               nxt.finish_count++;
             }
@@ -338,65 +387,57 @@ void RealLsu::comb_tlb_in() {
             stq_entry.store_state = StoreState::WaitData;
           }
         } else if (resp.result == MMUResultType::MISS) {
+          wait_mmu_stq_entries[i] = entry;
           wait_mmu_stq_entries[i].valid = true;
-          wait_mmu_stq_entries[i].stq_idx = entry.stq_idx;
+          entry.valid = false;
         } else if (resp.result == MMUResultType::PAGE_FAULT) {
           stq_entry.page_fault = true;
           stq_entry.store_state = StoreState::PageFault; // 进入页面错误状态，由后续逻辑处理异常
-          wait_mmu_stq_entries[i].valid = false;
+          nxt.wait_mmu_stq[wait_idx].valid = false;
           if (stq_entry.is_lrsc) {
             const uint32_t finish_idx =
                 (nxt.finish_head + nxt.finish_count) % kFinishSize;
             nxt.finish[finish_idx].valid = true;
-            nxt.finish[finish_idx].idx = entry.stq_idx;
+            nxt.finish[finish_idx].idx = stq_idx;
             nxt.finish[finish_idx].is_load = false;
             nxt.finish_count++;
           } else {
             nxt.mmu_done_stq[(nxt.mmu_done_stq_head + nxt.mmu_done_stq_count) % STQ_SIZE].valid = true;
-            nxt.mmu_done_stq[(nxt.mmu_done_stq_head + nxt.mmu_done_stq_count) % STQ_SIZE].stq_idx = entry.stq_idx; // 将STQ条目加入MMU完成队列
+            nxt.mmu_done_stq[(nxt.mmu_done_stq_head + nxt.mmu_done_stq_count) % STQ_SIZE].stq_idx = stq_idx; // 将STQ条目加入MMU完成队列
             nxt.mmu_done_stq_count++;
           }
 
           nxt.lrsc_unit.reserve_valid = false; // 如果store发生页面错误，取消LRSC保留
         }
       } else {
-        wait_mmu_stq_entries[i].valid = false;
+        nxt.wait_mmu_stq[wait_idx].valid = false;
       }
-      nxt.wait_mmu_stq[(nxt.wait_mmu_stq_head + i) % STQ_SIZE].valid = false; // 无论命中与否都需要将条目写回等待队列
     }
   }
-
-  tmp_head = nxt.wait_mmu_stq_head;
-  tmp_count = nxt.wait_mmu_stq_count;
-  issue = tmp_count > LSU_STA_COUNT ? LSU_STA_COUNT : tmp_count;
-  for (int i = 0; i < issue; i++) {
-    if (!nxt.wait_mmu_stq[(nxt.wait_mmu_stq_head + i) % STQ_SIZE].valid) {
-      tmp_head = (tmp_head + 1) % STQ_SIZE;
-      if (tmp_count > 0) {
-        tmp_count--;
-      }
-    } else {
-      break;
-    }
-  }
-  nxt.wait_mmu_stq_head = tmp_head;
-  nxt.wait_mmu_stq_count = tmp_count;
+  cleanup_wait_mmu_stq_edges(nxt);
 
   for (int i = 0; i < LSU_LDU_COUNT; i++) {
     if (wait_mmu_ldq_entries[i].valid) {
-      nxt.wait_mmu_ldq[(nxt.wait_mmu_ldq_head + nxt.wait_mmu_ldq_count) % LDQ_SIZE] = wait_mmu_ldq_entries[i];
+      nxt.wait_mmu_ldq[(nxt.wait_mmu_ldq_head + nxt.wait_mmu_ldq_count) %
+                       LDQ_SIZE] = wait_mmu_ldq_entries[i];
       nxt.wait_mmu_ldq_count++;
     }
   }
 
   for (int i = 0; i < LSU_STA_COUNT; i++) {
     if (wait_mmu_stq_entries[i].valid) {
-      nxt.wait_mmu_stq[(nxt.wait_mmu_stq_head + nxt.wait_mmu_stq_count) % STQ_SIZE] = wait_mmu_stq_entries[i];
+      nxt.wait_mmu_stq[(nxt.wait_mmu_stq_head + nxt.wait_mmu_stq_count) %
+                       STQ_SIZE] = wait_mmu_stq_entries[i];
       nxt.wait_mmu_stq_count++;
     }
   }
 }
 void RealLsu::comb_exe2lsu() {
+  same_cycle_ldq_count = 0;
+  same_cycle_stq_count = 0;
+  std::memset(same_cycle_ldq_req, 0, sizeof(same_cycle_ldq_req));
+  std::memset(same_cycle_stq_req, 0, sizeof(same_cycle_stq_req));
+
   for (int i = 0; i < LSU_SDU_COUNT; i++) {
     if (in.exe2lsu->sdu_req[i].valid) {
       handle_store_data(in.exe2lsu->sdu_req[i].uop.to_micro_op());
@@ -1405,6 +1446,14 @@ void RealLsu::handle_store_addr(const MicroOp &inst) {
   nxt.wait_mmu_stq[wait_mmu_idx].valid = true;
   nxt.wait_mmu_stq[wait_mmu_idx].stq_idx = inst.stq_idx;
   nxt.wait_mmu_stq_count++;
+
+  if (same_cycle_stq_count < LSU_STA_COUNT) {
+    MMUReq &req = same_cycle_stq_req[same_cycle_stq_count++];
+    req.valid = true;
+    req.vaddr = entry.vaddr;
+    req.entry_idx = inst.stq_idx;
+    req.wait_idx = wait_mmu_idx;
+  }
 }
 
 void RealLsu::handle_load_req(const MicroOp &inst) {
@@ -1438,6 +1487,14 @@ void RealLsu::handle_load_req(const MicroOp &inst) {
   nxt.wait_mmu_ldq[wait_mmu_idx].ldq_idx = inst.ldq_idx;
   nxt.wait_mmu_ldq[wait_mmu_idx].valid = true;
   nxt.wait_mmu_ldq_count++;
+
+  if (same_cycle_ldq_count < LSU_LDU_COUNT) {
+    MMUReq &req = same_cycle_ldq_req[same_cycle_ldq_count++];
+    req.valid = true;
+    req.vaddr = entry.v_addr;
+    req.entry_idx = inst.ldq_idx;
+    req.wait_idx = wait_mmu_idx;
+  }
 }
 
 bool RealLsu::alloc_stq_entry(mask_t br_mask, uint32_t rob_idx, uint32_t rob_flag, uint32_t func3, bool slot_flag) {

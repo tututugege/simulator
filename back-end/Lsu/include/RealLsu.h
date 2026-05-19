@@ -206,6 +206,13 @@ public:
   LsuOut out{};
   SimContext *ctx = nullptr;
 
+  // Combinational AGU-to-DTLB bypass wires for the current cycle. These are
+  // rebuilt in comb_exe2lsu() and are not committed by seq().
+  MMUReq same_cycle_ldq_req[LSU_LDU_COUNT]{};
+  MMUReq same_cycle_stq_req[LSU_STA_COUNT]{};
+  uint32_t same_cycle_ldq_count = 0;
+  uint32_t same_cycle_stq_count = 0;
+
   void init();
   void comb_cal();
   void comb_lsu2dis();
