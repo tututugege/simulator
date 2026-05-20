@@ -49,6 +49,8 @@ constexpr std::array<const char *, kSlotCount> kSlotNames = {
     "sim.axi_outputs",
     "sim.bridge_axi_to_mem",
     "sim.mem.comb",
+    "sim.mem.comb_outputs",
+    "sim.mem.comb_inputs",
     "sim.bridge_mem_to_axi",
     "sim.axi_inputs",
     "sim.back2front",
@@ -183,7 +185,9 @@ void print_summary() {
       slot_est_ns(Slot::SimBackComb) + slot_est_ns(Slot::SimBackSeq);
   const uint64_t memsubsystem_ns =
       slot_est_ns(Slot::SimMemLlcCombOutputs) + slot_est_ns(Slot::SimMemComb) +
-      slot_est_ns(Slot::SimMemSeq) + slot_est_ns(Slot::SimMemLlcSeq);
+      slot_est_ns(Slot::SimMemCombOutputs) +
+      slot_est_ns(Slot::SimMemCombInputs) + slot_est_ns(Slot::SimMemSeq) +
+      slot_est_ns(Slot::SimMemLlcSeq);
   const uint64_t submodule_ns =
       slot_est_ns(Slot::SimCsrStatus) + slot_est_ns(Slot::SimClearAxiInputs) +
       slot_est_ns(Slot::SimAxiOutputs) + slot_est_ns(Slot::SimBridgeAxiToMem) +

@@ -7,6 +7,7 @@
 
 #include "../front_module.h"
 #include "../frontend.h"
+#include "FrontTop.h"
 #include "Csr.h"
 #include "PtwMemPort.h"
 #include "PtwWalkPort.h"
@@ -51,6 +52,236 @@ struct ReadMasterPort_t {
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+
+namespace icache_top_n {
+
+namespace {
+
+struct BitWriter {
+  bool *cursor;
+
+  explicit BitWriter(bool *bits) : cursor(bits) {}
+
+  void bit(bool value) { *cursor++ = value; }
+
+  void uint(uint32_t value, int width) {
+    for (int i = 0; i < width; ++i) {
+      bit(((value >> i) & 1u) != 0);
+    }
+  }
+};
+
+struct BitReader {
+  const bool *cursor;
+
+  explicit BitReader(const bool *bits) : cursor(bits) {}
+
+  bool bit() { return *cursor++; }
+
+  uint32_t uint(int width) {
+    uint32_t value = 0;
+    for (int i = 0; i < width; ++i) {
+      if (bit()) {
+        value |= (1u << i);
+      }
+    }
+    return value;
+  }
+};
+
+} // namespace
+
+struct TrueGlueInput {
+  bool reset = false;
+  bool hold_for_recovery = false;
+
+  bool reg_ifu_req_ready = false;
+  bool reg_lookup_pending = false;
+  bool reg_req_valid = false;
+  bool reg_miss_txid_valid = false;
+  uint32_t reg_state = 0;
+  uint32_t reg_mem_axi_state = 0;
+
+  bool module_ifu_req_ready = false;
+  bool module_ifu_resp_valid = false;
+  uint32_t module_ifu_resp_pc = 0;
+  uint32_t module_rd_data[ICACHE_TOP_TRUE_GLUE_LINE_WORDS] = {0};
+  bool module_ifu_page_fault = false;
+};
+
+struct TrueGlueOutput {
+  bool icache_read_ready = false;
+  bool icache_read_complete = false;
+  bool icache_read_ready_2 = false;
+  bool icache_read_complete_2 = false;
+
+  uint32_t fetch_group[FETCH_WIDTH] = {0};
+  bool page_fault_inst[FETCH_WIDTH] = {false};
+  bool inst_valid[FETCH_WIDTH] = {false};
+  uint32_t fetch_group_2[FETCH_WIDTH] = {0};
+  bool page_fault_inst_2[FETCH_WIDTH] = {false};
+  bool inst_valid_2[FETCH_WIDTH] = {false};
+  uint32_t fetch_pc = 0;
+  uint32_t fetch_pc_2 = 0;
+};
+
+void encode_true_glue_input(const TrueGlueInput &in, bool *pi) {
+  BitWriter w(pi);
+  w.bit(in.reset);
+  w.bit(in.hold_for_recovery);
+  w.bit(in.reg_ifu_req_ready);
+  w.bit(in.reg_lookup_pending);
+  w.bit(in.reg_req_valid);
+  w.bit(in.reg_miss_txid_valid);
+  w.uint(in.reg_state, 3);
+  w.uint(in.reg_mem_axi_state, 1);
+  w.bit(in.module_ifu_req_ready);
+  w.bit(in.module_ifu_resp_valid);
+  w.uint(in.module_ifu_resp_pc, 32);
+  for (int i = 0; i < ICACHE_TOP_TRUE_GLUE_LINE_WORDS; ++i) {
+    w.uint(in.module_rd_data[i], 32);
+  }
+  w.bit(in.module_ifu_page_fault);
+}
+
+TrueGlueInput decode_true_glue_input(const bool *pi) {
+  BitReader r(pi);
+  TrueGlueInput in;
+  in.reset = r.bit();
+  in.hold_for_recovery = r.bit();
+  in.reg_ifu_req_ready = r.bit();
+  in.reg_lookup_pending = r.bit();
+  in.reg_req_valid = r.bit();
+  in.reg_miss_txid_valid = r.bit();
+  in.reg_state = r.uint(3);
+  in.reg_mem_axi_state = r.uint(1);
+  in.module_ifu_req_ready = r.bit();
+  in.module_ifu_resp_valid = r.bit();
+  in.module_ifu_resp_pc = r.uint(32);
+  for (int i = 0; i < ICACHE_TOP_TRUE_GLUE_LINE_WORDS; ++i) {
+    in.module_rd_data[i] = r.uint(32);
+  }
+  in.module_ifu_page_fault = r.bit();
+  return in;
+}
+
+void encode_true_glue_output(const TrueGlueOutput &out, bool *po) {
+  BitWriter w(po);
+  w.bit(out.icache_read_ready);
+  w.bit(out.icache_read_complete);
+  w.bit(out.icache_read_ready_2);
+  w.bit(out.icache_read_complete_2);
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    w.uint(out.fetch_group[i], 32);
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    w.bit(out.page_fault_inst[i]);
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    w.bit(out.inst_valid[i]);
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    w.uint(out.fetch_group_2[i], 32);
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    w.bit(out.page_fault_inst_2[i]);
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    w.bit(out.inst_valid_2[i]);
+  }
+  w.uint(out.fetch_pc, 32);
+  w.uint(out.fetch_pc_2, 32);
+}
+
+TrueGlueOutput decode_true_glue_output(const bool *po) {
+  BitReader r(po);
+  TrueGlueOutput out;
+  out.icache_read_ready = r.bit();
+  out.icache_read_complete = r.bit();
+  out.icache_read_ready_2 = r.bit();
+  out.icache_read_complete_2 = r.bit();
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    out.fetch_group[i] = r.uint(32);
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    out.page_fault_inst[i] = r.bit();
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    out.inst_valid[i] = r.bit();
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    out.fetch_group_2[i] = r.uint(32);
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    out.page_fault_inst_2[i] = r.bit();
+  }
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    out.inst_valid_2[i] = r.bit();
+  }
+  out.fetch_pc = r.uint(32);
+  out.fetch_pc_2 = r.uint(32);
+  return out;
+}
+
+TrueGlueOutput eval_true_glue(const TrueGlueInput &in) {
+  TrueGlueOutput out;
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    out.fetch_group[i] = INST_NOP;
+    out.fetch_group_2[i] = INST_NOP;
+  }
+
+  if (in.reset) {
+    out.icache_read_ready = true;
+    return out;
+  }
+
+  const bool local_busy =
+      in.reg_lookup_pending || in.reg_req_valid || in.reg_miss_txid_valid ||
+      in.reg_state != icache_module_n::IDLE ||
+      in.reg_mem_axi_state != icache_module_n::AXI_IDLE;
+  out.icache_read_ready =
+      in.hold_for_recovery
+          ? false
+          : (in.reg_ifu_req_ready && !local_busy && in.module_ifu_req_ready);
+
+  const bool resp_fire = in.module_ifu_resp_valid;
+  if (resp_fire) {
+    out.icache_read_complete = true;
+    out.fetch_pc = in.module_ifu_resp_pc;
+    const uint32_t mask = ICACHE_LINE_SIZE - 1u;
+    const int base_idx = static_cast<int>((in.module_ifu_resp_pc & mask) / 4u);
+    for (int i = 0; i < FETCH_WIDTH; ++i) {
+      if (base_idx + i >= ICACHE_TOP_TRUE_GLUE_LINE_WORDS) {
+        out.fetch_group[i] = INST_NOP;
+        out.page_fault_inst[i] = false;
+        out.inst_valid[i] = false;
+        continue;
+      }
+      out.fetch_group[i] =
+          in.module_ifu_page_fault ? INST_NOP : in.module_rd_data[base_idx + i];
+      out.page_fault_inst[i] = in.module_ifu_page_fault;
+      out.inst_valid[i] = true;
+    }
+  }
+
+  return out;
+}
+
+TrueGlueOutput run_true_glue_io_generator(const TrueGlueInput &in) {
+  bool pi[ICACHE_TOP_TRUE_GLUE_PI_WIDTH] = {};
+  bool po[ICACHE_TOP_TRUE_GLUE_PO_WIDTH] = {};
+  encode_true_glue_input(in, pi);
+  icache_top_true_glue_io_generator(pi, po);
+  return decode_true_glue_output(po);
+}
+
+void icache_top_true_glue_io_generator(const bool *pi, bool *po) {
+  const TrueGlueInput in = decode_true_glue_input(pi);
+  const TrueGlueOutput out = eval_true_glue(in);
+  encode_true_glue_output(out, po);
+}
+
+} // namespace icache_top_n
 
 extern icache_module_n::ICache icache;
 void icache_fill_lookup_meta_input(icache_module_n::ICache_lookup_in_t &dst);
@@ -127,24 +358,6 @@ void clear_perf_outputs(struct icache_out *out) {
   out->perf_itlb_retry_local_walker_busy = false;
 }
 
-void fill_fetch_group(uint32_t fetch_pc, const uint32_t *line_words,
-                      bool page_fault, uint32_t *fetch_group,
-                      bool *page_fault_inst, bool *inst_valid) {
-  uint32_t mask = ICACHE_LINE_SIZE - 1u;
-  int base_idx = static_cast<int>((fetch_pc & mask) / 4u);
-  for (int i = 0; i < FETCH_WIDTH; ++i) {
-    if (base_idx + i >= ICACHE_LINE_SIZE / 4) {
-      fetch_group[i] = INST_NOP;
-      page_fault_inst[i] = false;
-      inst_valid[i] = false;
-      continue;
-    }
-    fetch_group[i] = page_fault ? INST_NOP : line_words[base_idx + i];
-    page_fault_inst[i] = page_fault;
-    inst_valid[i] = true;
-  }
-}
-
 class IcacheBlockingPtwPort : public PtwMemPort {
 public:
   bool send_read_req(uint32_t paddr) override {
@@ -168,6 +381,12 @@ struct MemReadView {
   bool resp_valid = false;
   uint8_t resp_id = 0;
   uint32_t resp_data[ICACHE_LINE_SIZE / 4] = {0};
+};
+
+struct DcacheProbeView {
+  bool resp_valid = false;
+  bool resp_miss = true;
+  uint32_t resp_data = 0;
 };
 
 struct ICacheMmuReqView {
@@ -280,6 +499,34 @@ private:
   axi_interconnect::ReadMasterPort_t *port_ = nullptr;
 };
 
+DcacheProbeView dcache_probe_comb_view(ICacheMemPortResp *port) {
+  DcacheProbeView view;
+  if (port == nullptr) {
+    return view;
+  }
+  view.resp_valid = port->resp_valid;
+  view.resp_miss = port->resp_miss;
+  view.resp_data = port->resp_data;
+  return view;
+}
+
+void reset_dcache_probe_req_port(ICacheMemPortReq *port) {
+  if (port == nullptr) {
+    return;
+  }
+  port->req_valid = false;
+  port->req_addr = 0;
+}
+
+void drive_dcache_probe_req_port(ICacheMemPortReq *port, bool req_valid,
+                                 uint32_t req_addr) {
+  if (port == nullptr) {
+    return;
+  }
+  port->req_valid = req_valid;
+  port->req_addr = req_addr;
+}
+
 template <typename ReadPort> ReadPort &read_port_runtime() {
   static ReadPort read_port;
   return read_port;
@@ -290,6 +537,8 @@ template <typename HW, typename ReadPort> struct TrueIcacheRuntime {
   PtwMemPort *ptw_mem_port = nullptr;
   PtwWalkPort *ptw_walk_port = nullptr;
   axi_interconnect::ReadMasterPort_t *mem_read_port = nullptr;
+  ICacheMemPortReq *mem_probe_req_port = nullptr;
+  ICacheMemPortResp *mem_probe_resp_port = nullptr;
 };
 
 template <typename HW, typename ReadPort>
@@ -324,7 +573,7 @@ void ensure_mmu_model(Runtime &runtime, SimContext *ctx) {
   }
   runtime.mmu_model =
       new TlbMmu(ctx, runtime.ptw_mem_port ? runtime.ptw_mem_port : &ptw_port,
-                 ITLB_ENTRIES);
+                 ITLB_ENTRIES, TlbMmu::Kind::ITLB);
   if (runtime.ptw_walk_port != nullptr) {
     runtime.mmu_model->set_ptw_walk_port(runtime.ptw_walk_port);
   }
@@ -350,6 +599,13 @@ template <typename Runtime>
 void bind_mem_read_port(Runtime &runtime,
                         axi_interconnect::ReadMasterPort_t *port) {
   runtime.mem_read_port = port;
+}
+
+template <typename Runtime>
+void bind_mem_probe_ports(Runtime &runtime, ICacheMemPortReq *req_port,
+                          ICacheMemPortResp *resp_port) {
+  runtime.mem_probe_req_port = req_port;
+  runtime.mem_probe_resp_port = resp_port;
 }
 
 template <typename Runtime>
@@ -395,6 +651,102 @@ void apply_mmu_resp_view(HW &icache_hw, const ICacheMmuRespView &resp) {
 }
 
 template <typename HW>
+icache_top_n::TrueGlueInput
+make_true_glue_input(const HW &icache_hw, bool hold_for_recovery,
+                     bool reset = false) {
+  icache_top_n::TrueGlueInput glue_in;
+  glue_in.reset = reset;
+  glue_in.hold_for_recovery = hold_for_recovery;
+  glue_in.reg_ifu_req_ready = icache_hw.io.regs.ifu_req_ready_r;
+  glue_in.reg_lookup_pending = icache_hw.io.regs.lookup_pending_r;
+  glue_in.reg_req_valid = icache_hw.io.regs.req_valid_r;
+  glue_in.reg_miss_txid_valid = icache_hw.io.regs.miss_txid_valid_r;
+  glue_in.reg_state = static_cast<uint32_t>(icache_hw.io.regs.state);
+  glue_in.reg_mem_axi_state =
+      static_cast<uint32_t>(icache_hw.io.regs.mem_axi_state);
+  glue_in.module_ifu_req_ready = icache_hw.io.out.ifu_req_ready;
+  glue_in.module_ifu_resp_valid = icache_hw.io.out.ifu_resp_valid;
+  glue_in.module_ifu_resp_pc = icache_hw.io.out.ifu_resp_pc;
+  for (int i = 0; i < icache_top_n::ICACHE_TOP_TRUE_GLUE_LINE_WORDS; ++i) {
+    glue_in.module_rd_data[i] = icache_hw.io.out.rd_data[i];
+  }
+  glue_in.module_ifu_page_fault = icache_hw.io.out.ifu_page_fault;
+  return glue_in;
+}
+
+void apply_true_glue_output(struct icache_out *dst,
+                            const icache_top_n::TrueGlueOutput &src) {
+  dst->icache_read_ready = src.icache_read_ready;
+  dst->icache_read_complete = src.icache_read_complete;
+  dst->icache_read_ready_2 = src.icache_read_ready_2;
+  dst->icache_read_complete_2 = src.icache_read_complete_2;
+  for (int i = 0; i < FETCH_WIDTH; ++i) {
+    dst->fetch_group[i] = src.fetch_group[i];
+    dst->page_fault_inst[i] = src.page_fault_inst[i];
+    dst->inst_valid[i] = src.inst_valid[i];
+    dst->fetch_group_2[i] = src.fetch_group_2[i];
+    dst->page_fault_inst_2[i] = src.page_fault_inst_2[i];
+    dst->inst_valid_2[i] = src.inst_valid_2[i];
+  }
+  dst->fetch_pc = src.fetch_pc;
+  dst->fetch_pc_2 = src.fetch_pc_2;
+}
+
+template <typename HW>
+void update_true_perf_outputs(struct icache_out *dst, bool req_valid,
+                              const HW &icache_hw,
+                              bool itlb_translate_invoked,
+                              TlbMmu::Result itlb_translate_ret,
+                              TlbMmu::RetryReason retry_reason) {
+  dst->perf_req_fire = req_valid && dst->icache_read_ready;
+  dst->perf_req_blocked = req_valid && !dst->icache_read_ready;
+  dst->perf_resp_fire =
+      icache_hw.io.out.ifu_resp_valid && icache_hw.io.in.ifu_resp_ready;
+  dst->perf_miss_event = icache_hw.perf.miss_issue_valid;
+
+  const auto icache_state =
+      static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
+  dst->perf_miss_busy =
+      (icache_state == icache_module_n::SWAP_IN ||
+       icache_state == icache_module_n::WAIT_DCACHE_AFTER_MEM ||
+       icache_state == icache_module_n::DRAIN);
+  dst->perf_outstanding_req =
+      dst->perf_miss_busy || icache_hw.io.regs.req_valid_r ||
+      icache_hw.io.regs.lookup_pending_r;
+
+  if (!itlb_translate_invoked) {
+    return;
+  }
+
+  if (itlb_translate_ret == TlbMmu::Result::OK) {
+    dst->perf_itlb_hit = true;
+  } else if (itlb_translate_ret == TlbMmu::Result::FAULT) {
+    dst->perf_itlb_fault = true;
+  } else {
+    dst->perf_itlb_miss = true;
+    dst->perf_itlb_retry = true;
+    switch (retry_reason) {
+    case TlbMmu::RetryReason::OTHER_WALK_ACTIVE:
+      dst->perf_itlb_retry_other_walk = true;
+      break;
+    case TlbMmu::RetryReason::WALK_REQ_BLOCKED:
+      dst->perf_itlb_retry_walk_req_blocked = true;
+      break;
+    case TlbMmu::RetryReason::WAIT_WALK_RESP:
+      dst->perf_itlb_retry_wait_walk_resp = true;
+      break;
+    case TlbMmu::RetryReason::LOCAL_WALKER_BUSY:
+      dst->perf_itlb_retry_local_walker_busy = true;
+      break;
+    case TlbMmu::RetryReason::NONE:
+    default:
+      dst->perf_itlb_retry_local_walker_busy = true;
+      break;
+    }
+  }
+}
+
+template <typename HW>
 void refresh_lookup_meta_input(HW &icache_hw) {
   icache_fill_lookup_meta_input(icache_hw.io.lookup_in);
 }
@@ -424,12 +776,18 @@ public:
     bind_mem_read_port(true_icache_runtime<HW, ReadPort>(), port);
   }
 
+  void set_mem_probe_ports(ICacheMemPortReq *req_port,
+                           ICacheMemPortResp *resp_port) override {
+    bind_mem_probe_ports(true_icache_runtime<HW, ReadPort>(), req_port,
+                         resp_port);
+  }
+
   void peek_ready() override {
     clear_primary_outputs(out);
     clear_secondary_outputs(out);
     clear_perf_outputs(out);
     bool hold_for_recovery = in->itlb_flush || in->fence_i || in->invalidate_req;
-    out->icache_read_ready = in->reset ? true : comb_visible_ready(hold_for_recovery);
+    out->icache_read_ready = comb_visible_ready(hold_for_recovery, in->reset);
   }
 
   void dump_debug_state() const override {
@@ -518,10 +876,15 @@ public:
       DEBUG_LOG("[icache] reset\n");
       icache_hw.reset();
       read_port.reset();
+      reset_dcache_probe_req_port(runtime.mem_probe_req_port);
       ICacheMmuReqView reset_mmu_req;
       reset_mmu_req.context_flush = true;
       (void)comb_mmu_view(runtime, ctx, reset_mmu_req);
-      out->icache_read_ready = true;
+      const auto glue_in =
+          make_true_glue_input(icache_hw, /*hold_for_recovery=*/false,
+                               /*reset=*/true);
+      const auto glue_out = icache_top_n::run_true_glue_io_generator(glue_in);
+      apply_true_glue_output(out, glue_out);
       return;
     }
 
@@ -533,6 +896,8 @@ public:
     bool hold_for_recovery = in->itlb_flush || in->fence_i || in->invalidate_req;
 
     MemReadView mem = read_port.comb_view();
+    DcacheProbeView dcache_probe =
+        dcache_probe_comb_view(runtime.mem_probe_resp_port);
     const bool req_valid = in->icache_read_valid;
     const uint32_t req_pc = in->fetch_address;
     bool itlb_translate_invoked = false;
@@ -554,6 +919,9 @@ public:
     for (int i = 0; i < ICACHE_LINE_SIZE / 4; ++i) {
       icache_hw.io.in.mem_resp_data[i] = mem.resp_data[i];
     }
+    icache_hw.io.in.dcache_resp_valid = dcache_probe.resp_valid;
+    icache_hw.io.in.dcache_resp_miss = dcache_probe.resp_miss;
+    icache_hw.io.in.dcache_resp_data = dcache_probe.resp_data;
 
     refresh_lookup_meta_input(icache_hw);
     icache_hw.comb_lookup_meta();
@@ -578,28 +946,26 @@ public:
         icache_hw.io.out.mem_req_valid, icache_hw.io.out.mem_req_addr,
         static_cast<uint8_t>(icache_hw.io.out.mem_req_id & 0xF),
         icache_hw.io.out.mem_resp_ready);
+    drive_dcache_probe_req_port(
+        runtime.mem_probe_req_port, icache_hw.io.out.dcache_req_valid,
+        icache_hw.io.out.dcache_req_addr);
 
-    out->icache_read_ready = comb_visible_ready(hold_for_recovery);
-    out->perf_req_fire = req_valid && out->icache_read_ready;
-    out->perf_req_blocked = req_valid && !out->icache_read_ready;
+    const auto glue_in = make_true_glue_input(icache_hw, hold_for_recovery);
+    const auto glue_out = icache_top_n::run_true_glue_io_generator(glue_in);
+    apply_true_glue_output(out, glue_out);
+    update_true_perf_outputs(out, req_valid, icache_hw, itlb_translate_invoked,
+                             itlb_translate_ret, mmu_resp.retry_reason);
 
-    bool resp_fire =
-        icache_hw.io.out.ifu_resp_valid && icache_hw.io.in.ifu_resp_ready;
-    out->perf_resp_fire = resp_fire;
+    bool resp_fire = icache_hw.io.out.ifu_resp_valid;
     if (resp_fire) {
       if (icache_hw.io.out.miss) {
         std::cout << "[icache_top] WARNING: miss is true when ifu_resp is valid"
                   << std::endl;
         std::exit(1);
       }
-      out->icache_read_complete = true;
-      out->fetch_pc = icache_hw.io.out.ifu_resp_pc;
       if (icache_focus_vaddr(out->fetch_pc)) {
         dump_icache_focus_line("RESP", out->fetch_pc, icache_hw.io.out.rd_data);
       }
-      fill_fetch_group(icache_hw.io.out.ifu_resp_pc, icache_hw.io.out.rd_data,
-                       icache_hw.io.out.ifu_page_fault, out->fetch_group,
-                       out->page_fault_inst, out->inst_valid);
     }
 
     bool mem_req_fire =
@@ -616,15 +982,6 @@ public:
           static_cast<unsigned>(icache_hw.io.out.mem_req_id & 0xF),
           static_cast<unsigned>(icache_hw.io.regs.state));
     }
-    out->perf_miss_event = mem_req_issue;
-    const auto icache_state =
-        static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
-    out->perf_miss_busy =
-        (icache_state == icache_module_n::SWAP_IN ||
-         icache_state == icache_module_n::DRAIN);
-    out->perf_outstanding_req =
-        out->perf_miss_busy || icache_hw.io.regs.req_valid_r ||
-        icache_hw.io.regs.lookup_pending_r;
 
     if (itlb_translate_invoked) {
       if (icache_focus_vaddr(icache_hw.io.out.mmu_req_vtag << 12)) {
@@ -638,33 +995,6 @@ public:
             static_cast<int>(itlb_translate_ret),
             in->csr_status ? static_cast<uint32_t>(in->csr_status->satp) : 0u,
             static_cast<int>(in->refetch));
-      }
-      if (itlb_translate_ret == TlbMmu::Result::OK) {
-        out->perf_itlb_hit = true;
-      } else if (itlb_translate_ret == TlbMmu::Result::FAULT) {
-        out->perf_itlb_fault = true;
-      } else {
-        out->perf_itlb_miss = true;
-        out->perf_itlb_retry = true;
-        TlbMmu::RetryReason reason = mmu_resp.retry_reason;
-        switch (reason) {
-        case TlbMmu::RetryReason::OTHER_WALK_ACTIVE:
-          out->perf_itlb_retry_other_walk = true;
-          break;
-        case TlbMmu::RetryReason::WALK_REQ_BLOCKED:
-          out->perf_itlb_retry_walk_req_blocked = true;
-          break;
-        case TlbMmu::RetryReason::WAIT_WALK_RESP:
-          out->perf_itlb_retry_wait_walk_resp = true;
-          break;
-        case TlbMmu::RetryReason::LOCAL_WALKER_BUSY:
-          out->perf_itlb_retry_local_walker_busy = true;
-          break;
-        case TlbMmu::RetryReason::NONE:
-        default:
-          out->perf_itlb_retry_local_walker_busy = true;
-          break;
-        }
       }
     }
 
@@ -695,20 +1025,11 @@ public:
   }
 
 private:
-  bool comb_visible_ready(bool hold_for_recovery) const {
-    const auto state =
-        static_cast<icache_module_n::ICacheState>(icache_hw.io.regs.state);
-    const auto mem_axi_state =
-        static_cast<icache_module_n::AXIState>(icache_hw.io.regs.mem_axi_state);
-    const bool local_busy =
-        icache_hw.io.regs.lookup_pending_r || icache_hw.io.regs.req_valid_r ||
-        icache_hw.io.regs.miss_txid_valid_r ||
-        state != icache_module_n::IDLE ||
-        mem_axi_state != icache_module_n::AXI_IDLE;
-    return hold_for_recovery ? false
-                             : (icache_hw.io.regs.ifu_req_ready_r &&
-                                !local_busy &&
-                                icache_hw.io.out.ifu_req_ready);
+  bool comb_visible_ready(bool hold_for_recovery, bool reset) const {
+    const auto glue_in =
+        make_true_glue_input(icache_hw, hold_for_recovery, reset);
+    const auto glue_out = icache_top_n::run_true_glue_io_generator(glue_in);
+    return glue_out.icache_read_ready;
   }
 
   HW &icache_hw;

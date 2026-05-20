@@ -194,6 +194,7 @@ fault:
   dump_mem_subsystem_snapshot();
 
   Assert(0 && "Difftest: Register or Memory mismatch detected.");
+  exit(1);
 }
 
 void difftest_skip() {

@@ -23,6 +23,8 @@
 icache_module_n::ICache icache;
 PtwMemPort *icache_ptw_mem_port = nullptr;
 PtwWalkPort *icache_ptw_walk_port = nullptr;
+ICacheMemPortReq *icache_mem_req_port = nullptr;
+ICacheMemPortResp *icache_mem_resp_port = nullptr;
 axi_interconnect::ReadMasterPort_t *icache_mem_read_port = nullptr;
 static SimContext *icache_ctx = nullptr;
 
@@ -34,13 +36,13 @@ using LookupTimingPolicy =
     SramTablePolicy;
 #endif
 
-constexpr int kSetAddrBits = icache_module_n::ICACHE_V1_INDEX_BITS;
-constexpr int kRows = icache_module_n::ICACHE_V1_SET_NUM;
-constexpr int kDataChunks = ICACHE_V1_WAYS;
+constexpr int kSetAddrBits = ICACHE_INDEX_BITS;
+constexpr int kRows = ICACHE_SET_NUM;
+constexpr int kDataChunks = ICACHE_WAY_NUM;
 constexpr int kDataChunkBits = ICACHE_LINE_SIZE * 8;
-constexpr int kTagChunks = ICACHE_V1_WAYS;
-constexpr int kTagChunkBits = icache_module_n::ICACHE_V1_TAG_BITS;
-constexpr int kValidChunks = ICACHE_V1_WAYS;
+constexpr int kTagChunks = ICACHE_WAY_NUM;
+constexpr int kTagChunkBits = ICACHE_TAG_BITS;
+constexpr int kValidChunks = ICACHE_WAY_NUM;
 constexpr int kValidChunkBits = 1;
 
 using DataTable = GenericTable<kRows, kDataChunks, kDataChunkBits, LookupTimingPolicy>;
@@ -67,8 +69,8 @@ inline bool icache_focus_enabled() {
 }
 
 inline uint32_t icache_focus_index() {
-  return (CONFIG_ICACHE_FOCUS_VADDR_BEGIN >> icache_module_n::ICACHE_V1_OFFSET_BITS) &
-         (icache_module_n::ICACHE_V1_SET_NUM - 1u);
+  return (CONFIG_ICACHE_FOCUS_VADDR_BEGIN >> ICACHE_OFFSET_BITS) &
+         (ICACHE_SET_NUM - 1u);
 }
 
 template <typename DataTableT, typename TagTableT, typename ValidTableT>
@@ -84,11 +86,11 @@ void dump_focus_row(const char *tag, const DataTableT &data_table,
   const auto &tag_payload = tag_table.peek_row(index);
   const auto &valid_payload = valid_table.peek_row(index);
   std::printf("[ICACHE][TABLE][%s] idx=%u\n", tag, index);
-  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+  for (uint32_t way = 0; way < ICACHE_WAY_NUM; ++way) {
     std::printf("[ICACHE][TABLE][%s] way=%u valid=%u tag=0x%05x data=[", tag,
                 way, static_cast<unsigned>(valid_payload.chunks[way][0]),
                 static_cast<unsigned>(tag_payload.chunks[way][0]));
-    for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+    for (uint32_t word = 0; word < ICACHE_WORD_NUM; ++word) {
       std::printf("%s%08x", (word == 0) ? "" : " ",
                   static_cast<unsigned>(data_payload.chunks[way][word]));
     }
@@ -99,6 +101,8 @@ void dump_focus_row(const char *tag, const DataTableT &data_table,
 void bind_icache_runtime(ICacheTop *instance) {
   static PtwMemPort *bound_mem_port = nullptr;
   static PtwWalkPort *bound_walk_port = nullptr;
+  static ICacheMemPortReq *bound_mem_req_port = nullptr;
+  static ICacheMemPortResp *bound_mem_resp_port = nullptr;
   static axi_interconnect::ReadMasterPort_t *bound_read_port = nullptr;
   static SimContext *bound_ctx = nullptr;
 
@@ -113,6 +117,12 @@ void bind_icache_runtime(ICacheTop *instance) {
   if (bound_read_port != icache_mem_read_port) {
     instance->set_mem_read_port(icache_mem_read_port);
     bound_read_port = icache_mem_read_port;
+  }
+  if (bound_mem_req_port != icache_mem_req_port ||
+      bound_mem_resp_port != icache_mem_resp_port) {
+    instance->set_mem_probe_ports(icache_mem_req_port, icache_mem_resp_port);
+    bound_mem_req_port = icache_mem_req_port;
+    bound_mem_resp_port = icache_mem_resp_port;
   }
   if (bound_ctx != icache_ctx) {
     instance->setContext(icache_ctx);
@@ -138,9 +148,9 @@ struct ICacheLookupTableResp {
   bool meta_resp_valid = false;
   bool data_snapshot_valid = false;
   uint32_t lookup_index = 0;
-  uint32_t set_way_line_snapshot[ICACHE_V1_WAYS][icache_module_n::ICACHE_V1_WORD_NUM] = {{0}};
-  uint32_t set_tag_snapshot[ICACHE_V1_WAYS] = {0};
-  bool set_valid_snapshot[ICACHE_V1_WAYS] = {false};
+  uint32_t set_way_line_snapshot[ICACHE_WAY_NUM][ICACHE_WORD_NUM] = {{0}};
+  uint32_t set_tag_snapshot[ICACHE_WAY_NUM] = {0};
+  bool set_valid_snapshot[ICACHE_WAY_NUM] = {false};
 };
 
 ICacheLookupTableResp g_lookup_table_resp;
@@ -153,10 +163,10 @@ void cache_lookup_table_resp(const DataTable::ReadResp &data_resp,
   g_lookup_table_resp.meta_resp_valid = tag_resp.valid && valid_resp.valid;
   g_lookup_table_resp.data_snapshot_valid = data_resp.valid;
   g_lookup_table_resp.lookup_index = lookup_index;
-  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+  for (uint32_t way = 0; way < ICACHE_WAY_NUM; ++way) {
     g_lookup_table_resp.set_tag_snapshot[way] = tag_resp.payload.chunks[way][0];
     g_lookup_table_resp.set_valid_snapshot[way] = valid_resp.payload.chunks[way][0];
-    for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+    for (uint32_t word = 0; word < ICACHE_WORD_NUM; ++word) {
       g_lookup_table_resp.set_way_line_snapshot[way][word] =
           data_resp.payload.chunks[way][word];
     }
@@ -197,7 +207,7 @@ void icache_fill_lookup_meta_input(icache_module_n::ICache_lookup_in_t &dst) {
     return;
   }
 
-  for (uint32_t way = 0; way < ICACHE_V1_WAYS; ++way) {
+  for (uint32_t way = 0; way < ICACHE_WAY_NUM; ++way) {
     dst.lookup_set_tag[way] = g_lookup_table_resp.set_tag_snapshot[way];
     dst.lookup_set_valid[way] = g_lookup_table_resp.set_valid_snapshot[way];
   }
@@ -208,18 +218,18 @@ void icache_fill_lookup_data_input(icache_module_n::ICache_lookup_in_t &dst,
                                    uint32_t req_way) {
   dst.data_resp_valid = false;
   dst.data_resp_way = 0;
-  for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+  for (uint32_t word = 0; word < ICACHE_WORD_NUM; ++word) {
     dst.data_resp_line[word] = 0;
   }
   if (!req_valid || !g_lookup_table_resp.data_snapshot_valid ||
       g_lookup_table_resp.lookup_index != req_index ||
-      req_way >= ICACHE_V1_WAYS) {
+      req_way >= ICACHE_WAY_NUM) {
     return;
   }
 
   dst.data_resp_valid = true;
   dst.data_resp_way = static_cast<uint8_t>(req_way);
-  for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+  for (uint32_t word = 0; word < ICACHE_WORD_NUM; ++word) {
     dst.data_resp_line[word] =
         g_lookup_table_resp.set_way_line_snapshot[req_way][word];
   }
@@ -274,8 +284,8 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
     lookup_pc = icache.io.regs.lookup_pc_r;
   }
   uint32_t lookup_index =
-      (lookup_pc >> icache_module_n::ICACHE_V1_OFFSET_BITS) &
-      (icache_module_n::ICACHE_V1_SET_NUM - 1u);
+      (lookup_pc >> ICACHE_OFFSET_BITS) &
+      (ICACHE_SET_NUM - 1u);
 
   DataTable::ReadReq data_read{};
   TagTable::ReadReq tag_read{};
@@ -327,7 +337,7 @@ void icache_comb_calc(struct icache_in *in, struct icache_out *out) {
     valid_write.payload.chunks[icache.io.table_write.way][0] =
         icache.io.table_write.valid;
     valid_write.chunk_enable[icache.io.table_write.way] = true;
-    for (uint32_t word = 0; word < icache_module_n::ICACHE_V1_WORD_NUM; ++word) {
+    for (uint32_t word = 0; word < ICACHE_WORD_NUM; ++word) {
       data_write.payload.chunks[icache.io.table_write.way][word] =
           icache.io.table_write.data[word];
     }
@@ -372,4 +382,10 @@ void icache_set_ptw_walk_port(PtwWalkPort *port) {
 void icache_set_mem_read_port(axi_interconnect::ReadMasterPort_t *port) {
   ICacheTop *instance = get_icache_instance();
   instance->set_mem_read_port(port);
+}
+
+void icache_set_mem_probe_ports(ICacheMemPortReq *req_port,
+                                ICacheMemPortResp *resp_port) {
+  ICacheTop *instance = get_icache_instance();
+  instance->set_mem_probe_ports(req_port, resp_port);
 }

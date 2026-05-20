@@ -97,10 +97,6 @@ static void advance_ring_ptr(PtrT &ptr, uint32_t size) {
   ptr = next >= size ? 0 : next;
 }
 
-static bool ldq_idx_alive_after_flush(uint32_t idx, uint32_t head,
-                                      uint32_t new_count) {
-  return ((idx + LDQ_SIZE - head) % LDQ_SIZE) < new_count;
-}
 
 static bool stq_idx_alive_after_flush(uint32_t idx, uint32_t head,
                                       uint32_t new_count) {

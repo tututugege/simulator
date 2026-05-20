@@ -25,6 +25,13 @@ public:
   virtual bool send_walk_req(const PtwWalkReq &req) = 0;
   virtual bool resp_valid() const = 0;
   virtual PtwWalkResp resp() const = 0;
+  virtual PtwWalkPortCombOut comb_output() const {
+    PtwWalkPortCombOut out{};
+    out.req_ready = false;
+    out.resp_valid = resp_valid();
+    out.resp = out.resp_valid ? resp() : PtwWalkResp{};
+    return out;
+  }
   virtual void consume_resp() = 0;
   virtual void flush_client() {}
 };

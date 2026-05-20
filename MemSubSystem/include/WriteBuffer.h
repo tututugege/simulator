@@ -9,12 +9,20 @@ class SimContext;
 struct WriteBufferEntry {
     reg<32> addr;
     reg<32> data[DCACHE_WORD_NUM];
+#if !BSD_CONFIG
+    bool lsu_origin;
+#endif
 };
 
 struct WBState {
     reg<DCACHE_WB_COUNT_BITS> count; // number of valid entries in the buffer
     reg<DCACHE_WB_BITS> head;  // index of the oldest entry (next to evict)
     reg<1> send;  // flag to indicate if a request is currently being sent
+#if !BSD_CONFIG
+    uint64_t axi_write_start_cycle;
+    bool axi_write_active;
+    bool axi_write_lsu_origin;
+#endif
 
     reg<1> bypassvalid[LSU_LDU_COUNT];
     reg<32> bypassdata[LSU_LDU_COUNT];

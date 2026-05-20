@@ -44,7 +44,7 @@ struct WideBits {
         }
         return false;
     }
-    
+
     WideBits operator&(const WideBits& other) const {
         WideBits res;
         for(int i=0; i<kByteCount; ++i) res.bytes[i] = bytes[i] & other.bytes[i];
@@ -62,7 +62,7 @@ struct WideBits {
         for(int i=0; i<kByteCount; ++i) bytes[i] &= other.bytes[i];
         return *this;
     }
-    
+
     WideBits& operator|=(const WideBits& other) {
         for(int i=0; i<kByteCount; ++i) bytes[i] |= other.bytes[i];
         trim_unused_bits();
@@ -76,7 +76,7 @@ int main() {
     WideBits uop_mask;
     uop_mask |= mask;
     std::cout << "uop_mask & mask != 0 ? " << (bool)(uop_mask & mask) << std::endl;
-    
+
     WideBits clear_mask = WideBits(1) << 149;
     uop_mask &= ~clear_mask;
     std::cout << "After clear, uop_mask & mask != 0 ? " << (bool)(uop_mask & mask) << std::endl;

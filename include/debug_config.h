@@ -128,6 +128,7 @@ constexpr uint64_t MMU_LOG_START = LOG_START;
 #define CONFIG_PERF_PERIODIC_SNAPSHOT_MAX 256
 #endif
 
+
 // Diagnostic switch:
 // When enabled, clear backend internal stage IO structs at the beginning of
 // BackTop::comb() before any comb_* runs. This helps detect hidden dependence

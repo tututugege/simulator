@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IO.h"
+#include "RealLsuBsdConfig.h"
 #include "TlbMmu.h"
 #include "config.h"
 #include <cstdio>
@@ -82,12 +83,11 @@ struct LdqEntry {
   wire<32> diag_val; // 用于记录发生异常时的相关信息（如访问的虚拟地址），供后续异常处理使用
   wire<1> page_fault;
   wire<1> is_lrsc;
+  LSU_MEM_PERF_FIELDS;
 
   StoreTag stq_snapshot;
 
-  #if !BSD_CONFIG
-  wire<1> cache_miss; // 仅用于性能统计，非必需
-  #endif
+  LSU_LDQ_CACHE_PERF_FIELDS; // 仅用于性能统计，非必需
 };
 
 struct UncachedUnit {
@@ -130,6 +130,8 @@ struct WaitDcacheLDQEntry{
   wire<1> valid;
   wire<31-LDQ_IDX_WIDTH> req_gen;
   wire<LDQ_IDX_WIDTH> ldq_idx;
+  uint32_t replay_wait_cycles;
+  LSU_WAIT_DCACHE_LDQ_PERF_FIELDS;
 };
 struct MMUDoneEntry{
   wire<1> valid;
@@ -140,12 +142,12 @@ struct FinishEntry{
   wire<MAX_IDX_WIDTH> idx;
   wire<1> is_load;
 };
-
+struct STLFEntry{
+  wire<1> valid;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
+};
 struct LsuState{
   LdqEntry ldq[LDQ_SIZE];
-  wire<LDQ_IDX_WIDTH> ldq_head;
-  wire<1> ldq_head_flag;
-  wire<LDQ_IDX_WIDTH+1> ldq_count; // 包括分配但未提交的条目
 
   StqEntry stq[STQ_SIZE];
   wire<STQ_IDX_WIDTH> stq_head;
@@ -170,11 +172,14 @@ struct LsuState{
   wire<LDQ_STQ_IDX_WIDTH> finish_head;
   wire<LDQ_STQ_IDX_WIDTH+1> finish_count;
 
+  STLFEntry stlf_queue[LDQ_SIZE];
+  wire<LDQ_IDX_WIDTH> stlf_queue_head;
+  wire<LDQ_IDX_WIDTH+1> stlf_queue_count;
+
 
   WaitDcacheLDQEntry wait_dcache_ldq[LDQ_SIZE];
   wire<LDQ_IDX_WIDTH> wait_dcache_ldq_head;
   wire<LDQ_IDX_WIDTH+1> wait_dcache_ldq_count;
-
   // WaitDcacheReplayEntry wait_dcache_replay[LDQ_SIZE];
   // wire<LDQ_IDX_WIDTH> wait_dcache_replay_head;
   // wire<LDQ_IDX_WIDTH+1> wait_dcache_replay_count;
@@ -200,6 +205,13 @@ public:
   LsuIn in{};
   LsuOut out{};
   SimContext *ctx = nullptr;
+
+  // Combinational AGU-to-DTLB bypass wires for the current cycle. These are
+  // rebuilt in comb_exe2lsu() and are not committed by seq().
+  MMUReq same_cycle_ldq_req[LSU_LDU_COUNT]{};
+  MMUReq same_cycle_stq_req[LSU_STA_COUNT]{};
+  uint32_t same_cycle_ldq_count = 0;
+  uint32_t same_cycle_stq_count = 0;
 
   void init();
   void comb_cal();

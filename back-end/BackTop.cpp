@@ -18,20 +18,6 @@
 
 void init_diff_ckpt(CPU_state ckpt_state, uint8_t privilege);
 
-namespace {
-MMUResultType to_lsu_mmu_result(TlbMmu::Result result) {
-  switch (result) {
-  case TlbMmu::Result::OK:
-    return MMUResultType::HIT;
-  case TlbMmu::Result::FAULT:
-    return MMUResultType::PAGE_FAULT;
-  case TlbMmu::Result::RETRY:
-  default:
-    return MMUResultType::MISS;
-  }
-}
-} // namespace
-
 void BackTop::init() {
   pre = new PreIduQueue(ctx);
   idu = new Idu(ctx, MAX_BR_PER_CYCLE);
@@ -43,7 +29,8 @@ void BackTop::init() {
   csr = new Csr();
   rob = new Rob(ctx);
   lsu = new RealLsu(ctx);
-  dtlb_mmu = std::make_unique<TlbMmu>(ctx, nullptr, DTLB_ENTRIES);
+  dtlb_mmu =
+      std::make_unique<TlbMmu>(ctx, nullptr, DTLB_ENTRIES, TlbMmu::Kind::DTLB);
   
   out.fire = pre2front.fire;
 
@@ -156,15 +143,15 @@ void BackTop::init() {
   lsu->in.rob_bcast = &rob_bcast;
   lsu->in.dec_bcast = &dec_bcast;
   lsu->in.rob_commit = &rob_commit;
-  lsu->in.peripheral_resp = &peripheral_resp_io;
-  lsu->in.dcache2lsu  = &dcache2lsu_io;
+  lsu->in.peripheral_resp = &in.peripheral_resp;
+  lsu->in.dcache2lsu  = &in.dcache2lsu;
   lsu->in.mmu2lsu = &mmu2lsu_io;
 
   lsu->out.lsu2exe = &lsu2exe;
   lsu->out.lsu2dis = &lsu2dis;
   lsu->out.lsu2rob = &lsu2rob;
-  lsu->out.peripheral_req = &peripheral_req_io;
-  lsu->out.lsu2dcache = &lsu2dcache_io;
+  lsu->out.peripheral_req = &out.peripheral_req;
+  lsu->out.lsu2dcache = &out.lsu2dcache;
   lsu->out.lsu2mmu = &lsu2mmu_io;
 
   pre->init();
@@ -210,24 +197,7 @@ void BackTop::comb_lsu_mmu() {
     return;
   }
 
-  auto translate = [&](const MMUReq &req, MMUResp &resp, uint32_t type) {
-    if (!req.valid) {
-      return;
-    }
-    uint32_t paddr = 0;
-    const TlbMmu::Result result =
-        dtlb_mmu->translate(paddr, req.vaddr, type, &lsu2mmu_io.csr_status);
-    resp.valid = true;
-    resp.result = to_lsu_mmu_result(result);
-    resp.paddr = result == TlbMmu::Result::OK ? paddr : 0;
-  };
-
-  for (int i = 0; i < LSU_LDU_COUNT; i++) {
-    translate(lsu2mmu_io.ldq_req[i], mmu2lsu_io.ldq_resp[i], 1);
-  }
-  for (int i = 0; i < LSU_STA_COUNT; i++) {
-    translate(lsu2mmu_io.stq_req[i], mmu2lsu_io.stq_resp[i], 2);
-  }
+  dtlb_mmu->translate_lsu_ports(lsu2mmu_io, mmu2lsu_io);
 }
 
 void BackTop::comb_csr_status() {
@@ -290,9 +260,8 @@ void BackTop::comb() {
   lsu2exe = {};
   lsu2dis = {};
   lsu2rob = {};
-  peripheral_req_io = {};
-  peripheral_resp_io = {};
-  lsu2dcache_io = {};
+  out.peripheral_req = {};
+  out.lsu2dcache = {};
   lsu2mmu_io = {};
   mmu2lsu_io = {};
 #endif
@@ -316,6 +285,7 @@ void BackTop::comb() {
   prf->comb_awake();
   prf->comb_write();
   isu->comb_ready();
+  lsu->comb_cal();
   lsu->comb_lsu2dis();
   lsu->comb_lsu2rob();
 
@@ -332,10 +302,6 @@ void BackTop::comb() {
   lsu->comb_mmio_in();
   lsu->comb_dcache2lsu_ldq();
   lsu->comb_dcache2lsu_stq();
-  lsu->comb_tlb_out();
-  comb_lsu_mmu();
-  lsu->comb_tlb_in();
-  lsu->comb_stlf();
   lsu->comb_lsu2exe();
 
   exu->comb_to_csr();
@@ -347,6 +313,10 @@ void BackTop::comb() {
   exu->comb_ready();
   isu->comb_issue();
   lsu->comb_exe2lsu();
+  lsu->comb_tlb_out();
+  comb_lsu_mmu();
+  lsu->comb_tlb_in();
+  lsu->comb_stlf();
 
   prf->comb_req_ftq();
   pre->comb_ftq_lookup_prf();

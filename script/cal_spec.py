@@ -6,9 +6,9 @@ from datetime import datetime
 
 # ================= 用户配置区域 =================
 CPU_FREQ_GHZ = float(os.environ.get("CPU_FREQ_GHZ", "1.0"))
-LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_restore_456")
+LOG_ROOT_DIR = os.environ.get("LOG_ROOT_DIR", "./results_456")
 WEIGHTS_DIR = os.environ.get(
-    "WEIGHTS_DIR", "/share/personal/S/houruyao/simpoint/rv32imab_bbv_1gb_ram"
+    "WEIGHTS_DIR", "/home/renli/qimeng/fix-fence.i/456.hmmer_ref_bbv"
 )
 DEBUG = os.environ.get("DEBUG", "1") not in ("0", "false", "False")
 LOG_STATUS_REPORT = LOG_ROOT_DIR + "/log_status_report.txt"
@@ -150,6 +150,8 @@ STALL_COUNTER_LABELS = {
 }
 
 STALL_METRIC_KEYS = tuple(STALL_COUNTER_LABELS.keys())
+OCCUPANCY_METRIC_KEYS = ()
+OCCUPANCY_METRIC_LABELS = {}
 
 CONFIG_SCAN_FILE = os.path.join(REPO_ROOT, "include", "config.h")
 
@@ -157,6 +159,10 @@ CONFIG_SCAN_SYMBOLS = (
     "FETCH_WIDTH",
     "DECODE_WIDTH",
     "ROB_NUM",
+    "DIV_MAX_LATENCY",
+    "LSU_LDU_COUNT",
+    "LSU_STA_COUNT",
+    "LSU_SDU_COUNT",
     "ICACHE_LINE_SIZE",
     "ICACHE_OFFSET_BITS",
     "ICACHE_INDEX_BITS",
@@ -172,6 +178,9 @@ CONFIG_SCAN_SYMBOLS = (
     "CONFIG_AXI_LLC_SIZE_BYTES",
     "CONFIG_AXI_LLC_WAYS",
     "CONFIG_AXI_LLC_MSHR_NUM",
+    "CONFIG_AXI_LLC_LOOKUP_LATENCY",
+    "CONFIG_AXI_SUBSYSTEM_FREQ_DIV",
+    "CONFIG_SIM_DDR_LATENCY",
     "AXI_KIT_DDR_LATENCY",
 )
 
@@ -230,6 +239,13 @@ def _extract_avg_samples(line):
     return float(m.group(1)), int(m.group(2))
 
 
+def _extract_avg_max(line):
+    m = re.search(r":\s*([-+]?\d+(?:\.\d+)?)\s*/\s*(\d+)", line)
+    if not m:
+        return None, None
+    return float(m.group(1)), int(m.group(2))
+
+
 def _fmt_bytes(n):
     if n is None:
         return "N/A"
@@ -246,6 +262,16 @@ def _load_text(path):
             return f.read()
     except Exception:
         return ""
+
+
+def _iter_log_files(log_root):
+    if not log_root or not os.path.isdir(log_root):
+        return
+    for dirpath, dirnames, filenames in os.walk(log_root):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if name.endswith(".log"):
+                yield os.path.join(dirpath, name)
 
 
 def _strip_inline_comment(s):
@@ -379,9 +405,15 @@ def scan_config_snapshot():
     text = _load_text(CONFIG_SCAN_FILE)
     if not text:
         return {
+            "CONFIG_SOURCE": "unavailable",
+            "BPU": "N/A",
             "FETCH_WIDTH": "N/A",
             "DECODE_WIDTH": "N/A",
             "ROB_NUM": "N/A",
+            "DIV_LATENCY": "N/A",
+            "LDU_COUNT": "N/A",
+            "STA_COUNT": "N/A",
+            "SDU_COUNT": "N/A",
             "CACHE_HIERARCHY": "N/A",
             "L1I_GEOM": "N/A",
             "L1I_SIZE": "N/A",
@@ -391,6 +423,8 @@ def scan_config_snapshot():
             "LLC_SIZE": "N/A",
             "LLC_WAYS": "N/A",
             "LLC_MSHR": "N/A",
+            "LLC_LOOKUP": "N/A",
+            "AXI_DIV": "N/A",
             "L1I_MISS_LATENCY": "N/A",
             "DDR_LATENCY": "N/A",
         }
@@ -420,6 +454,10 @@ def scan_config_snapshot():
     fetch_width = n("FETCH_WIDTH")
     decode_width = n("DECODE_WIDTH")
     rob_num = n("ROB_NUM")
+    div_latency = n("DIV_MAX_LATENCY")
+    ldu_count = n("LSU_LDU_COUNT")
+    sta_count = n("LSU_STA_COUNT")
+    sdu_count = n("LSU_SDU_COUNT")
     l1i_line = n("ICACHE_LINE_SIZE")
     l1i_sets = n("ICACHE_SET_NUM")
     l1i_ways = n("ICACHE_WAY_NUM")
@@ -430,8 +468,13 @@ def scan_config_snapshot():
     llc_size = n("CONFIG_AXI_LLC_SIZE_BYTES")
     llc_ways = n("CONFIG_AXI_LLC_WAYS")
     llc_mshr = n("CONFIG_AXI_LLC_MSHR_NUM")
-    ddr_lat = n("AXI_KIT_DDR_LATENCY")
+    llc_lookup = n("CONFIG_AXI_LLC_LOOKUP_LATENCY")
+    axi_div = n("CONFIG_AXI_SUBSYSTEM_FREQ_DIV")
+    ddr_lat = n("CONFIG_SIM_DDR_LATENCY")
+    if ddr_lat is None:
+        ddr_lat = n("AXI_KIT_DDR_LATENCY")
     l1i_miss_lat = n("ICACHE_MISS_LATENCY")
+    bpu_enabled = re.search(r"^\s*#\s*define\s+CONFIG_BPU\b", text, flags=re.MULTILINE) is not None
 
     l1i_size = None
     if None not in (l1i_line, l1i_sets, l1i_ways):
@@ -447,9 +490,15 @@ def scan_config_snapshot():
         hierarchy = "L1I + L1D + LLC + DDR" if llc_enabled else "L1I + L1D + DDR"
 
     return {
+        "CONFIG_SOURCE": os.path.relpath(CONFIG_SCAN_FILE, REPO_ROOT),
+        "BPU": "Real BPU" if bpu_enabled else "Ideal BPU",
         "FETCH_WIDTH": str(fetch_width) if fetch_width is not None else "N/A",
         "DECODE_WIDTH": str(decode_width) if decode_width is not None else "N/A",
         "ROB_NUM": str(rob_num) if rob_num is not None else "N/A",
+        "DIV_LATENCY": f"{div_latency}cy" if div_latency is not None else "N/A",
+        "LDU_COUNT": str(ldu_count) if ldu_count is not None else "N/A",
+        "STA_COUNT": str(sta_count) if sta_count is not None else "N/A",
+        "SDU_COUNT": str(sdu_count) if sdu_count is not None else "N/A",
         "CACHE_HIERARCHY": hierarchy,
         "L1I_GEOM": (
             f"{l1i_ways}w x {l1i_sets}s x {l1i_line}B"
@@ -473,11 +522,207 @@ def scan_config_snapshot():
         "LLC_MSHR": str(llc_mshr)
         if llc_enabled is True and llc_mshr is not None
         else "N/A",
+        "LLC_LOOKUP": f"{llc_lookup}cy"
+        if llc_enabled is True and llc_lookup is not None
+        else "N/A",
+        "AXI_DIV": str(axi_div) if axi_div is not None else "N/A",
         "L1I_MISS_LATENCY": f"{l1i_miss_lat} cyc"
         if l1i_miss_lat is not None
         else "N/A",
-        "DDR_LATENCY": f"{ddr_lat} cyc" if ddr_lat is not None else "N/A",
+        "DDR_LATENCY": f"{ddr_lat}cy" if ddr_lat is not None else "N/A",
     }
+
+
+def _compact_runtime_line(line, prefix):
+    return line.split(prefix, 1)[1].strip() if prefix in line else line.strip()
+
+
+def scan_runtime_config_snapshot(log_root):
+    runtime = {}
+    for log_path in _iter_log_files(log_root) or []:
+        text = _load_text(log_path)
+        if not text:
+            continue
+        for raw in text.splitlines()[:100]:
+            line = _strip_ansi(raw).strip()
+            if line.startswith("[CONFIG][SOC]"):
+                runtime["SOC"] = _compact_runtime_line(line, "[CONFIG][SOC]")
+                m = re.search(r"bpu=(\d+)\(([^)]+)\)", line)
+                if m:
+                    runtime["BPU"] = "Real BPU" if "real" in m.group(2).lower() else "Ideal BPU"
+                m = re.search(r"icache_axi=(\d+)", line)
+                if m:
+                    runtime["ICACHE_AXI"] = "ON" if m.group(1) != "0" else "OFF"
+                m = re.search(r"compiled_icache=([^ ]+)", line)
+                if m:
+                    runtime["ICACHE_MODE"] = m.group(1)
+            elif line.startswith("[CONFIG][AXI] subsystem_freq_div="):
+                runtime["AXI_DIV"] = line.split("=", 1)[1].strip()
+            elif line.startswith("[CONFIG][AXI]") and "ddr_read_latency=" in line:
+                runtime["AXI"] = _compact_runtime_line(line, "[CONFIG][AXI]")
+                m = re.search(r"ddr_read_latency=([^ ]+)", line)
+                if m:
+                    runtime["DDR_LATENCY"] = m.group(1)
+                m = re.search(r"dcache_line=(.*?)\s+upstream_write_payload=", line)
+                if m:
+                    runtime["DCACHE_LINE"] = m.group(1)
+                for key, field in (
+                    ("ddr_write_resp_latency", "DDR_WRITE_LATENCY"),
+                    ("ddr_beat", "DDR_BEAT"),
+                    ("wq", "DDR_WRITE_QUEUE"),
+                    ("wag", "DDR_WRITE_ACCEPT_GAP"),
+                    ("wfifo", "DDR_WRITE_FIFO"),
+                    ("wdrain", "DDR_WRITE_DRAIN"),
+                    ("whi", "DDR_WRITE_HIGH"),
+                    ("wlo", "DDR_WRITE_LOW"),
+                    ("r2w", "DDR_R2W"),
+                    ("w2r", "DDR_W2R"),
+                    ("out", "AXI_OUT"),
+                    ("per_master", "AXI_PER_MASTER"),
+                    ("ddr_out", "DDR_OUT"),
+                    ("upstream_payload", "UPSTREAM_PAYLOAD"),
+                    ("upstream_write_payload", "UPSTREAM_WRITE_PAYLOAD"),
+                    ("upstream_read_resp", "UPSTREAM_READ_RESP"),
+                ):
+                    m = re.search(rf"{key}=([^ ]+)", line)
+                    if m:
+                        runtime[field] = m.group(1)
+            elif line.startswith("[CONFIG][LLC]"):
+                runtime["LLC"] = _compact_runtime_line(line, "[CONFIG][LLC]")
+                m = re.search(
+                    r"enable=(\d+)\(([^)]+)\).*?capacity=([^ ]+).*?ways=(\d+).*?mshr=(\d+)",
+                    line,
+                )
+                if m:
+                    runtime["LLC_ENABLE"] = "ON" if m.group(1) != "0" else "OFF"
+                    runtime["LLC_SIZE"] = m.group(3)
+                    runtime["LLC_WAYS"] = m.group(4)
+                    runtime["LLC_MSHR"] = m.group(5)
+                m = re.search(r"lookup_latency=([^ ]+)", line)
+                if m:
+                    runtime["LLC_LOOKUP"] = m.group(1)
+                m = re.search(r"dcache_read_miss=([^ ]+)", line)
+                if m:
+                    runtime["LLC_D_READ_MISS"] = m.group(1)
+            elif line.startswith("[TOPOLOGY] dcache/"):
+                runtime["TOPOLOGY_MEM"] = _compact_runtime_line(line, "[TOPOLOGY]")
+            elif line.startswith("[TOPOLOGY] icache_runtime="):
+                runtime["TOPOLOGY_ICACHE"] = _compact_runtime_line(line, "[TOPOLOGY]")
+            elif line.startswith("[CFG][WIDTH]"):
+                runtime["WIDTH"] = _compact_runtime_line(line, "[CFG][WIDTH]")
+                m = re.search(r"fetch=(\d+)\s+decode=(\d+)\s+issue_ports=(\d+)\s+commit=(\d+)", line)
+                if m:
+                    runtime["FETCH_WIDTH"] = m.group(1)
+                    runtime["DECODE_WIDTH"] = m.group(2)
+                    runtime["ISSUE_PORTS"] = m.group(3)
+                    runtime["COMMIT_WIDTH"] = m.group(4)
+                    runtime["WIDTH_SUMMARY"] = (
+                        f"fetch={m.group(1)} decode={m.group(2)} "
+                        f"issue={m.group(3)} commit={m.group(4)}"
+                    )
+                m = re.search(r"max_dispatch\(iq/ldq/stq\)=([^ ]+)", line)
+                if m:
+                    runtime["MAX_DISPATCH"] = m.group(1)
+            elif line.startswith("[CFG][CACHE]"):
+                runtime["CACHE"] = _compact_runtime_line(line, "[CFG][CACHE]")
+                m = re.search(r"L1I=(.*?)\s+L1D=(.*)$", line)
+                if m:
+                    runtime["L1I_RUNTIME"] = m.group(1)
+                    runtime["L1D_RUNTIME"] = m.group(2)
+                    runtime["CACHE_SUMMARY"] = f"L1I={m.group(1)} L1D={m.group(2)}"
+            elif line.startswith("[CFG][MEM]"):
+                runtime["CACHE_HIERARCHY"] = _compact_runtime_line(line, "[CFG][MEM]")
+            elif line.startswith("[CFG][BACKEND]"):
+                runtime["BACKEND"] = _compact_runtime_line(line, "[CFG][BACKEND]")
+                m = re.search(r"rob=(\d+).*?ftq=(\d+).*?instbuf=(\d+).*?ldq=(\d+)\s+stq=(\d+)", line)
+                if m:
+                    runtime["ROB_NUM"] = m.group(1)
+                    runtime["FTQ_SIZE"] = m.group(2)
+                    runtime["INSTBUF_SIZE"] = m.group(3)
+                    runtime["LDQ_SIZE"] = m.group(4)
+                    runtime["STQ_SIZE"] = m.group(5)
+                    runtime["BACKEND_SUMMARY"] = (
+                        f"rob={m.group(1)} ftq={m.group(2)} instbuf={m.group(3)} "
+                        f"ldq={m.group(4)} stq={m.group(5)}"
+                    )
+                for key, field in (
+                    ("rob_bank", "ROB_BANK"),
+                    ("prf", "PRF_SIZE"),
+                    ("arf", "ARF_SIZE"),
+                    ("schedule", "SCHEDULE"),
+                ):
+                    m = re.search(rf"{key}=([^ )]+)", line)
+                    if m:
+                        runtime[field] = m.group(1)
+            elif line.startswith("[CFG][FU]"):
+                runtime["FU"] = _compact_runtime_line(line, "[CFG][FU]")
+                m = re.search(r"total=(\d+)\s+alu=(\d+)\s+bru=(\d+)\s+ldu=(\d+)\s+sta=(\d+)\s+sdu=(\d+)", line)
+                if m:
+                    runtime["FU_TOTAL"] = m.group(1)
+                    runtime["ALU_COUNT"] = m.group(2)
+                    runtime["BRU_COUNT"] = m.group(3)
+                    runtime["LDU_COUNT"] = m.group(4)
+                    runtime["STA_COUNT"] = m.group(5)
+                    runtime["SDU_COUNT"] = m.group(6)
+                    runtime["FU_SUMMARY"] = (
+                        f"total={m.group(1)} alu={m.group(2)} bru={m.group(3)} "
+                        f"ldu={m.group(4)} sta={m.group(5)} sdu={m.group(6)}"
+                    )
+                m = re.search(r"wakeup_ports=(\d+)", line)
+                if m:
+                    runtime["WAKEUP_PORTS"] = m.group(1)
+            elif line.startswith("[CFG][IQ]"):
+                m = re.search(r"\[CFG\]\[IQ\]\s+(IQ_\w+)\s+size=(\d+).*?port_num=(\d+)", line)
+                if m:
+                    name = m.group(1)
+                    runtime[f"{name}_SIZE"] = m.group(2)
+                    runtime[f"{name}_PORTS"] = m.group(3)
+                    runtime[f"{name}_SUMMARY"] = f"{m.group(2)}/{m.group(3)}p"
+            elif line.startswith("[LSU STLF"):
+                runtime["LSU"] = line
+                m = re.search(
+                    r"load_windows=(\d+).*?lsu_ldu_count=(\d+).*?LDQ_SIZE=(\d+).*?"
+                    r"store_windows=(\d+).*?lsu_sta_count=(\d+).*?STQ_SIZE=(\d+)",
+                    line,
+                )
+                if m:
+                    runtime["LOAD_WINDOWS"] = m.group(1)
+                    runtime["STORE_WINDOWS"] = m.group(4)
+                    runtime["LSU_SUMMARY"] = (
+                        f"load_win={m.group(1)} ldu={m.group(2)} ldq={m.group(3)} "
+                        f"store_win={m.group(4)} sta={m.group(5)} stq={m.group(6)}"
+                    )
+
+        if runtime:
+            runtime["RUNTIME_CONFIG_SOURCE"] = os.path.relpath(log_path, log_root)
+            return runtime
+    return runtime
+
+
+def _missing_or_na(value):
+    return value is None or str(value).strip() in ("", "N/A")
+
+
+def merge_runtime_config_snapshot(snapshot, runtime):
+    if not runtime:
+        return snapshot
+
+    warnings = []
+    for key in ("FETCH_WIDTH", "DECODE_WIDTH", "ROB_NUM", "LLC_ENABLE", "LLC_WAYS", "LLC_MSHR", "AXI_DIV"):
+        old = snapshot.get(key)
+        new = runtime.get(key)
+        if new is not None and not _missing_or_na(old) and str(old) != str(new):
+            warnings.append(f"{key}: snapshot={old} runtime={new}")
+
+    merged = dict(snapshot)
+    merged.update(runtime)
+    merged["CONFIG_SOURCE"] = (
+        f"{snapshot.get('CONFIG_SOURCE', 'include/config.h')}; "
+        f"runtime log: {runtime.get('RUNTIME_CONFIG_SOURCE', 'N/A')}"
+    )
+    if warnings:
+        merged["_CONFIG_WARNINGS"] = "; ".join(warnings[:4])
+    return merged
 
 
 def parse_tma(content):
@@ -749,6 +994,7 @@ def parse_log_robust(filepath, with_reason=False):
         cache = parse_cache_counters(content)
         latency = parse_latency_counters(clean_lines)
         stalls = parse_stall_counters(clean_lines)
+        occupancy = {}
 
         # =======================================================
         # 2. BPU 解析 (Regex 扫描版)
@@ -790,6 +1036,7 @@ def parse_log_robust(filepath, with_reason=False):
             "cpi": cyc / inst,
             "cache": cache,
             "latency": latency,
+            "occupancy": occupancy,
             "cache_hit": max(
                 cache["l1d_req_initial"] - cache["l1d_miss_mshr_alloc"], 0
             ),  # backward compatibility
@@ -1041,6 +1288,13 @@ def process_benchmark(bench_path):
             p(f"  {LATENCY_METRIC_LABELS[key]}: {avg:.2f} cycles")
         else:
             p(f"  {LATENCY_METRIC_LABELS[key]}: N/A")
+    p("Memory Occupancy (Weighted):")
+    for key in OCCUPANCY_METRIC_KEYS:
+        if w_occ_weight[key] > 0:
+            avg = _safe_div(w_occ_avg[key], w_occ_weight[key])
+            p(f"  {OCCUPANCY_METRIC_LABELS[key]}: {avg:.4f} / {occ_max[key]}")
+        else:
+            p(f"  {OCCUPANCY_METRIC_LABELS[key]}: N/A")
 
     if w_br_total > 0:
         p(f"Branch Accuracy:    {br_acc:.2f} %")
@@ -1111,12 +1365,6 @@ def main():
     status_report_lines.append("")
     perf_report_lines.append(f"Performance Report @ {ts}")
     perf_report_lines.append(f"LOG_ROOT_DIR = {os.path.abspath(LOG_ROOT_DIR)}")
-    config_snapshot = scan_config_snapshot()
-    perf_report_lines.append("CONFIG_SNAPSHOT_BEGIN")
-    for k, v in config_snapshot.items():
-        perf_report_lines.append(f"{k}={v}")
-    perf_report_lines.append("CONFIG_SNAPSHOT_END")
-    perf_report_lines.append("")
 
     if not os.path.exists(LOG_ROOT_DIR):
         status_report_lines.append("Error: Log dir not found.")
@@ -1130,6 +1378,16 @@ def main():
             f.write("\n".join(status_report_lines) + "\n")
         print(f"Wrote status report: {os.path.abspath(LOG_STATUS_REPORT)}")
         return
+
+    config_snapshot = merge_runtime_config_snapshot(
+        scan_config_snapshot(), scan_runtime_config_snapshot(LOG_ROOT_DIR)
+    )
+    perf_report_lines.append("CONFIG_SNAPSHOT_BEGIN")
+    for k, v in config_snapshot.items():
+        perf_report_lines.append(f"{k}={v}")
+    perf_report_lines.append("CONFIG_SNAPSHOT_END")
+    perf_report_lines.append("")
+
     bench_dirs = sorted(
         [d for d in glob.glob(os.path.join(LOG_ROOT_DIR, "*")) if os.path.isdir(d)]
     )

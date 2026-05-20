@@ -16,7 +16,7 @@ struct ICacheMemPortReq{
 struct ICacheMemPortResp{
   bool resp_valid = false;
   bool resp_miss = false;
-  uint32_t resp_data = 0;
+  uint32_t resp_data;
 };
 
 class FrontTop {

@@ -3,11 +3,12 @@ import argparse
 import math
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch
 import numpy as np
+
+from plot_perf_topdown import augment_config_meta_with_runtime, draw_microarch_config_panel
 
 
 def parse_pct(line: str) -> Optional[float]:
@@ -24,288 +25,14 @@ def parse_num_after_colon(line: str) -> Optional[float]:
     return float(m.group(1)) if m else None
 
 
-def augment_config_meta_with_runtime(config_meta: Dict[str, str]) -> Dict[str, str]:
-    return config_meta
-
-
-def _config_value(config_meta: Optional[Dict[str, str]], key: str, default: str = "N/A") -> str:
-    if not config_meta:
-        return default
-    value = config_meta.get(key, default)
-    if value is None or str(value).strip() == "":
-        return default
-    return str(value)
-
-
-def _has_config_value(config_meta: Optional[Dict[str, str]], key: str) -> bool:
-    value = _config_value(config_meta, key, "")
-    return value not in {"", "N/A"}
-
-
-def _format_load_store(config_meta: Optional[Dict[str, str]]) -> str:
-    if not config_meta:
-        return "N/A"
-    load = config_meta.get("LDU_COUNT")
-    store = config_meta.get("STA_COUNT")
-    if load and store:
-        return f"{load}L/{store}S"
-    fu = config_meta.get("FU_SUMMARY", "")
-    m = re.search(r"ldu=(\d+).*?sta=(\d+)", fu)
-    if m:
-        return f"{m.group(1)}L/{m.group(2)}S"
-    lsu = config_meta.get("LSU_SUMMARY", "")
-    m = re.search(r"ldu=(\d+).*?sta=(\d+)", lsu)
-    if m:
-        return f"{m.group(1)}L/{m.group(2)}S"
-    return "N/A"
-
-
-def _pair_value(config_meta: Optional[Dict[str, str]], left_key: str, right_key: str, sep: str = "/") -> str:
-    left = _config_value(config_meta, left_key)
-    right = _config_value(config_meta, right_key)
-    if left == "N/A" and right == "N/A":
-        return "N/A"
-    return f"{left}{sep}{right}"
-
-
-def _cache_runtime_value(config_meta: Optional[Dict[str, str]], runtime_key: str, size_key: str, geom_key: str) -> str:
-    runtime = _config_value(config_meta, runtime_key, "")
-    m = re.match(r"([^()]+)\((\d+)\s+sets\s+x\s+(\d+)\s+ways\s+x\s+(\d+)B\)", runtime)
-    if m:
-        return f"{m.group(1).strip()} / {m.group(2)}s x {m.group(3)}w x {m.group(4)}B"
-
-    size = _config_value(config_meta, size_key)
-    geom = _config_value(config_meta, geom_key)
-    if size == "N/A":
-        return runtime if runtime else "N/A"
-    return size if geom == "N/A" else f"{size} / {geom}"
-
-
-def microarch_config_items(config_meta: Optional[Dict[str, str]]) -> List[Tuple[str, str]]:
-    items = [
-        ("BPU", _config_value(config_meta, "BPU")),
-        ("ICache AXI", _config_value(config_meta, "ICACHE_AXI")),
-        ("ICache Mode", _config_value(config_meta, "ICACHE_MODE")),
-        ("Fetch Width", _config_value(config_meta, "FETCH_WIDTH")),
-        ("Decode Width", _config_value(config_meta, "DECODE_WIDTH")),
-        ("Issue Ports", _config_value(config_meta, "ISSUE_PORTS")),
-        ("Commit Width", _config_value(config_meta, "COMMIT_WIDTH")),
-        ("Max Dispatch", _config_value(config_meta, "MAX_DISPATCH")),
-        ("ROB Num", _config_value(config_meta, "ROB_NUM")),
-        ("ROB Bank", _config_value(config_meta, "ROB_BANK")),
-        ("PRF/ARF", _pair_value(config_meta, "PRF_SIZE", "ARF_SIZE")),
-        ("FTQ/InstBuf", _pair_value(config_meta, "FTQ_SIZE", "INSTBUF_SIZE")),
-        ("LDQ/STQ", _pair_value(config_meta, "LDQ_SIZE", "STQ_SIZE")),
-        ("Schedule", _config_value(config_meta, "SCHEDULE")),
-        ("DIV Latency", _config_value(config_meta, "DIV_LATENCY")),
-        ("FU Total", _config_value(config_meta, "FU_TOTAL")),
-        ("ALU/BRU", _pair_value(config_meta, "ALU_COUNT", "BRU_COUNT")),
-        ("Load/Store", _format_load_store(config_meta)),
-        ("Wakeup Ports", _config_value(config_meta, "WAKEUP_PORTS")),
-        ("IQ Int", _config_value(config_meta, "IQ_INT_SUMMARY")),
-        ("IQ LD", _config_value(config_meta, "IQ_LD_SUMMARY")),
-        ("IQ STA", _config_value(config_meta, "IQ_STA_SUMMARY")),
-        ("IQ STD", _config_value(config_meta, "IQ_STD_SUMMARY")),
-        ("IQ BR", _config_value(config_meta, "IQ_BR_SUMMARY")),
-        ("L1I", _cache_runtime_value(config_meta, "L1I_RUNTIME", "L1I_SIZE", "L1I_GEOM")),
-        ("L1D", _cache_runtime_value(config_meta, "L1D_RUNTIME", "L1D_SIZE", "L1D_GEOM")),
-        ("LLC Enabled", _config_value(config_meta, "LLC_ENABLE")),
-        ("LLC Size", _config_value(config_meta, "LLC_SIZE")),
-        ("LLC Ways", _config_value(config_meta, "LLC_WAYS")),
-        ("LLC MSHR", _config_value(config_meta, "LLC_MSHR")),
-        ("LLC Lookup", _config_value(config_meta, "LLC_LOOKUP")),
-        ("LLC Policy", _config_value(config_meta, "LLC_D_READ_MISS")),
-        ("LLC Div", _config_value(config_meta, "AXI_DIV")),
-        ("DDR Latency", _config_value(config_meta, "DDR_LATENCY")),
-        ("DDR Write", _config_value(config_meta, "DDR_WRITE_LATENCY")),
-        ("DDR Beat", _config_value(config_meta, "DDR_BEAT")),
-        ("DDR Out", _config_value(config_meta, "DDR_OUT")),
-        ("AXI Out", _config_value(config_meta, "AXI_OUT")),
-        ("Per Master", _config_value(config_meta, "AXI_PER_MASTER")),
-        ("DCache Line", _config_value(config_meta, "DCACHE_LINE")),
-        ("Write Queue", _config_value(config_meta, "DDR_WRITE_QUEUE")),
-        ("W Accept", _config_value(config_meta, "DDR_WRITE_ACCEPT_GAP")),
-        ("Write FIFO", _config_value(config_meta, "DDR_WRITE_FIFO")),
-        ("W Drain", _config_value(config_meta, "DDR_WRITE_DRAIN")),
-        ("W Mark", _pair_value(config_meta, "DDR_WRITE_HIGH", "DDR_WRITE_LOW")),
-        ("R/W Turn", _pair_value(config_meta, "DDR_R2W", "DDR_W2R")),
-        ("Up Payload", _config_value(config_meta, "UPSTREAM_PAYLOAD")),
-        ("Up Write", _config_value(config_meta, "UPSTREAM_WRITE_PAYLOAD")),
-        ("Up Read Resp", _config_value(config_meta, "UPSTREAM_READ_RESP")),
-    ]
-    required_labels = {
-        "BPU",
-        "Fetch Width",
-        "Decode Width",
-        "ROB Num",
-        "DIV Latency",
-        "LLC Lookup",
-        "LLC Enabled",
-        "DDR Latency",
-        "LLC Size",
-        "Load/Store",
-        "LLC Div",
-    }
-    return [
-        (label, value)
-        for label, value in items
-        if label in required_labels or (value is not None and str(value).strip() not in {"", "N/A"})
-    ]
-
-
-def draw_microarch_config_panel(
-    ax,
-    config_meta: Optional[Dict[str, str]],
-    legend_handles: Optional[List[object]] = None,
-    legend_labels: Optional[List[str]] = None,
-    legend_ncol: int = 5,
-    legend_y: float = 1.04,
-    box_y: float = 0.045,
-    box_h: float = 0.74,
-    legend_fontsize: float = 10.0,
-    title_fontsize: float = 12.6,
-    config_fontsize: float = 9.2,
-) -> None:
-    ax.axis("off")
-
-    if legend_handles and legend_labels:
-        ax.legend(
-            legend_handles,
-            legend_labels,
-            ncol=legend_ncol,
-            loc="upper center",
-            bbox_to_anchor=(0.5, legend_y),
-            fontsize=legend_fontsize,
-            frameon=False,
-        )
-
-    box_x, box_w = 0.025, 0.95
-    box = FancyBboxPatch(
-        (box_x, box_y),
-        box_w,
-        box_h,
-        boxstyle="round,pad=0.012,rounding_size=0.012",
-        transform=ax.transAxes,
-        linewidth=0.8,
-        edgecolor="#9d9d9d",
-        facecolor="#eeeeee",
-    )
-    ax.add_patch(box)
-    ax.text(
-        box_x + box_w / 2.0,
-        box_y + box_h - 0.09,
-        "Microarchitecture Config",
-        transform=ax.transAxes,
-        ha="center",
-        va="center",
-        fontsize=title_fontsize,
-        fontweight="bold",
-        color="#1f1f1f",
-    )
-
-    items = microarch_config_items(config_meta)
-    cols = 3 if len(items) > 8 else 2
-    rows = int(math.ceil(len(items) / cols))
-    col_w = box_w / cols
-    y_top = box_y + box_h - 0.17
-    y_bottom = box_y + 0.055
-    row_step = min(0.105, (y_top - y_bottom) / max(rows - 1, 1))
-    text_fontsize = max(8.8, config_fontsize - max(0, rows - 14) * 0.12)
-    for col in range(cols):
-        col_items = items[col * rows : (col + 1) * rows]
-        if not col_items:
-            continue
-        label_width = max(len(label) for label, _ in col_items) + 1
-        x = box_x + 0.030 + col * col_w
-        for row, (label, value) in enumerate(col_items):
-            ax.text(
-                x,
-                y_top - row * row_step,
-                f"{label:<{label_width}}: {value}",
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=text_fontsize,
-                family="monospace",
-                color="#222222",
-            )
-
-    if config_meta and config_meta.get("_CONFIG_WARNINGS"):
-        ax.text(
-            box_x,
-            0.005,
-            "Config check: " + config_meta["_CONFIG_WARNINGS"],
-            transform=ax.transAxes,
-            ha="left",
-            va="bottom",
-            fontsize=7.0,
-            color="#a33a00",
-        )
-
-
-def format_config_panel_lines(config_meta: Optional[Dict[str, str]]) -> Tuple[List[str], List[str]]:
-    if not config_meta:
-        return [], []
-    source = config_meta.get("CONFIG_SOURCE", "CONFIG_SNAPSHOT")
-    lines = [f"Config source: {source}"]
-
-    compact_keys = [
-        ("WIDTH_SUMMARY", "Width"),
-        ("BACKEND_SUMMARY", "Backend"),
-        ("CACHE_SUMMARY", "Cache"),
-        ("LSU_SUMMARY", "LSU"),
-        ("FU_SUMMARY", "FU"),
-    ]
-    for key, label in compact_keys:
-        value = config_meta.get(key)
-        if value:
-            lines.append(f"{label}: {value}")
-
-    if "AXI_DIV" in config_meta or "DDR_LATENCY" in config_meta:
-        axi = []
-        if "AXI_DIV" in config_meta:
-            axi.append(f"div={config_meta['AXI_DIV']}")
-        if "DDR_LATENCY" in config_meta:
-            axi.append(f"ddr_read={config_meta['DDR_LATENCY']}")
-        lines.append("AXI: " + " ".join(axi))
-
-    if "LLC_SIZE" in config_meta or "LLC_WAYS" in config_meta or "LLC_MSHR" in config_meta:
-        llc = []
-        if "LLC_ENABLE" in config_meta:
-            llc.append(config_meta["LLC_ENABLE"])
-        if "LLC_SIZE" in config_meta:
-            llc.append(f"size={config_meta['LLC_SIZE']}")
-        if "LLC_WAYS" in config_meta:
-            llc.append(f"ways={config_meta['LLC_WAYS']}")
-        if "LLC_MSHR" in config_meta:
-            llc.append(f"mshr={config_meta['LLC_MSHR']}")
-        lines.append("LLC: " + " ".join(llc))
-
-    if len(lines) == 1:
-        ordered_keys = [
-            "FETCH_WIDTH",
-            "DECODE_WIDTH",
-            "ROB_NUM",
-            "CACHE_HIERARCHY",
-            "L1I_GEOM",
-            "L1I_SIZE",
-            "L1D_GEOM",
-            "L1D_SIZE",
-            "LLC_ENABLE",
-            "LLC_SIZE",
-            "LLC_WAYS",
-            "LLC_MSHR",
-            "L1I_MISS_LATENCY",
-            "DDR_LATENCY",
-        ]
-        for key in ordered_keys:
-            if key in config_meta:
-                lines.append(f"{key}: {config_meta[key]}")
-
-    warnings = []
-    if config_meta.get("_CONFIG_WARNINGS"):
-        warnings.append("Config check: " + config_meta["_CONFIG_WARNINGS"])
-    return lines, warnings
+def split_backend_memory(backend: float, memory: float) -> (float, float):
+    if not np.isfinite(backend):
+        return np.nan, np.nan
+    backend = max(float(backend), 0.0)
+    if not np.isfinite(memory):
+        return 0.0, backend
+    memory = min(max(float(memory), 0.0), backend)
+    return memory, max(backend - memory, 0.0)
 
 
 def parse_perf_report(path: str):
@@ -352,14 +79,18 @@ def parse_perf_report(path: str):
                 "bad_spec": np.nan,
                 "frontend": np.nan,
                 "backend": np.nan,
+                "memory": np.nan,
+                "backend_other": np.nan,
                 "retiring_core": np.nan,
                 "bad_spec_core": np.nan,
                 "frontend_core": np.nan,
                 "backend_core": np.nan,
+                "memory_core": np.nan,
                 "retiring_idu": np.nan,
                 "bad_spec_idu": np.nan,
                 "frontend_idu": np.nan,
                 "backend_idu": np.nan,
+                "memory_idu": np.nan,
                 "spec": np.nan,
             }
             in_tma = None
@@ -407,6 +138,13 @@ def parse_perf_report(path: str):
                         cur["backend_idu"] = v / 100.0
                     else:
                         cur["backend_core"] = v / 100.0
+            elif line.startswith("Memory Bound:"):
+                v = parse_pct(line)
+                if v is not None:
+                    if in_tma == "idu":
+                        cur["memory_idu"] = v / 100.0
+                    else:
+                        cur["memory_core"] = v / 100.0
             elif line.startswith("Bad Speculation:"):
                 v = parse_pct(line)
                 if v is not None:
@@ -431,16 +169,23 @@ def parse_perf_report(path: str):
             np.isfinite(v)
             for v in [b["frontend_idu"], b["backend_idu"], b["bad_spec_idu"], b["retiring_idu"]]
         )
+        # Memory Bound is usually emitted under core TMA. If IDU TMA exists but
+        # lacks Memory Bound, keep the core TMA so the backend split is useful.
+        if use_idu and np.isfinite(b["memory_core"]) and not np.isfinite(b["memory_idu"]):
+            use_idu = False
         if use_idu:
             b["frontend"] = b["frontend_idu"]
             b["backend"] = b["backend_idu"]
+            b["memory"] = b["memory_idu"]
             b["bad_spec"] = b["bad_spec_idu"]
             b["retiring"] = b["retiring_idu"]
         else:
             b["frontend"] = b["frontend_core"]
             b["backend"] = b["backend_core"]
+            b["memory"] = b["memory_core"]
             b["bad_spec"] = b["bad_spec_core"]
             b["retiring"] = b["retiring_core"]
+        b["memory"], b["backend_other"] = split_backend_memory(b["backend"], b["memory"])
 
     # remove entries with no core plot info
     valid = [
@@ -480,7 +225,8 @@ def plot_report(
     retiring = np.array([b["retiring"] for b in benches], dtype=float)
     bad_spec = np.array([b["bad_spec"] for b in benches], dtype=float)
     frontend = np.array([b["frontend"] for b in benches], dtype=float)
-    backend = np.array([b["backend"] for b in benches], dtype=float)
+    memory = np.array([b["memory"] for b in benches], dtype=float)
+    backend_other = np.array([b["backend_other"] for b in benches], dtype=float)
     ipc = np.array([b["ipc"] for b in benches], dtype=float)
     spec = np.array([b["spec"] for b in benches], dtype=float)
 
@@ -495,12 +241,14 @@ def plot_report(
     retiring_plot = np.zeros(len(axis_labels), dtype=float)
     bad_spec_plot = np.zeros(len(axis_labels), dtype=float)
     frontend_plot = np.zeros(len(axis_labels), dtype=float)
-    backend_plot = np.zeros(len(axis_labels), dtype=float)
+    memory_plot = np.zeros(len(axis_labels), dtype=float)
+    backend_other_plot = np.zeros(len(axis_labels), dtype=float)
     ipc_plot = np.full(len(axis_labels), np.nan, dtype=float)
     retiring_plot[:n] = retiring
     bad_spec_plot[:n] = bad_spec
     frontend_plot[:n] = frontend
-    backend_plot[:n] = backend
+    memory_plot[:n] = memory
+    backend_other_plot[:n] = backend_other
     ipc_plot[:n] = ipc
 
     fig = plt.figure(figsize=(max(14, len(labels) * 0.68), 14.4), dpi=140)
@@ -510,7 +258,8 @@ def plot_report(
     c_ret = "#92b558"
     c_bad = "#c0504d"
     c_fe = "#7030a0"
-    c_be = "#f4b400"
+    c_mem = "#f4b400"
+    c_be_other = "#8a8a8a"
     c_ipc = "#2aa7d6"
 
     b1 = ax.bar(x, retiring_plot, color=c_ret, width=0.66, label="Retiring")
@@ -518,19 +267,27 @@ def plot_report(
     b3 = ax.bar(x, frontend_plot, bottom=retiring_plot + bad_spec_plot, color=c_fe, width=0.66, label="Frontend Bound")
     b4 = ax.bar(
         x,
-        backend_plot,
+        memory_plot,
         bottom=retiring_plot + bad_spec_plot + frontend_plot,
-        color=c_be,
+        color=c_mem,
         width=0.66,
-        label="Backend Bound",
+        label="Memory Bound",
     )
-    _ = (b1, b2, b3, b4)
+    b5 = ax.bar(
+        x,
+        backend_other_plot,
+        bottom=retiring_plot + bad_spec_plot + frontend_plot + memory_plot,
+        color=c_be_other,
+        width=0.66,
+        label="Backend Other Bound",
+    )
+    _ = (b1, b2, b3, b4, b5)
 
     ax.set_ylim(0, 1.0)
     ax.set_yticks(np.linspace(0, 1.0, 11))
     ax.grid(axis="y", linestyle="--", alpha=0.35)
     ax.set_ylabel("Top-Down Fraction", fontsize=11.5)
-    ax.set_title("Top Level Breakdown (IDU TMA) + IPC", fontsize=17, fontweight="bold", pad=10)
+    ax.set_title("Top Level Breakdown (Backend split: Memory/Other) + IPC", fontsize=17, fontweight="bold", pad=10)
 
     ax2 = ax.twinx()
     line = ax2.plot(
@@ -566,7 +323,7 @@ def plot_report(
         config_meta,
         legend_handles=handles1 + handles2,
         legend_labels=labels1 + labels2,
-        legend_ncol=5,
+        legend_ncol=6,
         legend_y=1.02,
         box_y=0.035,
         box_h=0.84,
@@ -636,7 +393,8 @@ def align_reports_for_compare(
         retiring = np.array([mp[k]["retiring"] for k in labels], dtype=float)
         bad_spec = np.array([mp[k]["bad_spec"] for k in labels], dtype=float)
         frontend = np.array([mp[k]["frontend"] for k in labels], dtype=float)
-        backend = np.array([mp[k]["backend"] for k in labels], dtype=float)
+        memory = np.array([mp[k]["memory"] for k in labels], dtype=float)
+        backend_other = np.array([mp[k]["backend_other"] for k in labels], dtype=float)
         ipc = np.array([mp[k]["ipc"] for k in labels], dtype=float)
         spec = np.array([mp[k]["spec"] for k in labels], dtype=float)
         aligned.append(
@@ -644,7 +402,8 @@ def align_reports_for_compare(
                 "retiring": retiring,
                 "bad_spec": bad_spec,
                 "frontend": frontend,
-                "backend": backend,
+                "memory": memory,
+                "backend_other": backend_other,
                 "ipc": ipc,
                 "spec": spec,
             }
@@ -681,7 +440,8 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
         "retiring": "#92b558",
         "bad_spec": "#c0504d",
         "frontend": "#7030a0",
-        "backend": "#f4b400",
+        "memory": "#f4b400",
+        "backend_other": "#8a8a8a",
     }
     line_colors = ["#2aa7d6", "#1f77b4", "#17becf", "#ff7f0e", "#2ca02c", "#8c564b"]
 
@@ -703,22 +463,32 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
         )
         b4 = ax.bar(
             pos,
-            dat["backend"],
+            dat["memory"],
             bottom=dat["retiring"] + dat["bad_spec"] + dat["frontend"],
             width=width,
-            color=tma_colors["backend"],
+            color=tma_colors["memory"],
+            alpha=0.88,
+            edgecolor="#333333",
+            linewidth=0.25,
+        )
+        b5 = ax.bar(
+            pos,
+            dat["backend_other"],
+            bottom=dat["retiring"] + dat["bad_spec"] + dat["frontend"] + dat["memory"],
+            width=width,
+            color=tma_colors["backend_other"],
             alpha=0.88,
             edgecolor="#333333",
             linewidth=0.25,
         )
         if i == 0:
-            first_handles = [b1, b2, b3, b4]
+            first_handles = [b1, b2, b3, b4, b5]
 
     ax.set_ylim(0, 1.0)
     ax.set_yticks(np.linspace(0, 1.0, 11))
     ax.grid(axis="y", linestyle="--", alpha=0.35)
     ax.set_ylabel("Top-Down Fraction", fontsize=11.5)
-    ax.set_title("Top-Down (stacked per config) + IPC compare", fontsize=16, fontweight="bold", pad=10)
+    ax.set_title("Top-Down (Backend split: Memory/Other) + IPC compare", fontsize=16, fontweight="bold", pad=10)
     ax.set_xticks(x)
     ax.set_xticklabels([])
 
@@ -743,7 +513,13 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
     ax2.set_yticks(np.arange(0, 9, 1))
 
     tma_legend_handles = [h[0] for h in first_handles]
-    tma_legend_labels = ["Retiring", "Bad Speculation", "Frontend Bound", "Backend Bound"]
+    tma_legend_labels = [
+        "Retiring",
+        "Bad Speculation",
+        "Frontend Bound",
+        "Memory Bound",
+        "Backend Other Bound",
+    ]
     ax.legend(tma_legend_handles + line_handles, tma_legend_labels + [h.get_label() for h in line_handles], ncol=4, loc="upper center", fontsize=8.5)
 
     axs = fig.add_subplot(gs[1, 0])
@@ -789,10 +565,13 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot Top-Down/IPC/SPEC from perf_report.txt generated by cal_spec.py"
+        description=(
+            "Plot Top-Down/IPC/SPEC from perf_report.txt generated by cal_spec.py, "
+            "splitting Backend Bound into Memory Bound and Backend Other Bound."
+        )
     )
     parser.add_argument("-i", "--input", default="perf_report.txt", help="input perf report path")
-    parser.add_argument("-o", "--output", default="perf_topdown_spec.png", help="output png path")
+    parser.add_argument("-o", "--output", default="perf_topdown_memory_spec.png", help="output png path")
     parser.add_argument(
         "--compare",
         nargs="+",
