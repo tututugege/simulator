@@ -3,9 +3,10 @@ import argparse
 import math
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch
 import numpy as np
 
 
@@ -23,6 +24,290 @@ def parse_num_after_colon(line: str) -> Optional[float]:
     return float(m.group(1)) if m else None
 
 
+def augment_config_meta_with_runtime(config_meta: Dict[str, str]) -> Dict[str, str]:
+    return config_meta
+
+
+def _config_value(config_meta: Optional[Dict[str, str]], key: str, default: str = "N/A") -> str:
+    if not config_meta:
+        return default
+    value = config_meta.get(key, default)
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value)
+
+
+def _has_config_value(config_meta: Optional[Dict[str, str]], key: str) -> bool:
+    value = _config_value(config_meta, key, "")
+    return value not in {"", "N/A"}
+
+
+def _format_load_store(config_meta: Optional[Dict[str, str]]) -> str:
+    if not config_meta:
+        return "N/A"
+    load = config_meta.get("LDU_COUNT")
+    store = config_meta.get("STA_COUNT")
+    if load and store:
+        return f"{load}L/{store}S"
+    fu = config_meta.get("FU_SUMMARY", "")
+    m = re.search(r"ldu=(\d+).*?sta=(\d+)", fu)
+    if m:
+        return f"{m.group(1)}L/{m.group(2)}S"
+    lsu = config_meta.get("LSU_SUMMARY", "")
+    m = re.search(r"ldu=(\d+).*?sta=(\d+)", lsu)
+    if m:
+        return f"{m.group(1)}L/{m.group(2)}S"
+    return "N/A"
+
+
+def _pair_value(config_meta: Optional[Dict[str, str]], left_key: str, right_key: str, sep: str = "/") -> str:
+    left = _config_value(config_meta, left_key)
+    right = _config_value(config_meta, right_key)
+    if left == "N/A" and right == "N/A":
+        return "N/A"
+    return f"{left}{sep}{right}"
+
+
+def _cache_runtime_value(config_meta: Optional[Dict[str, str]], runtime_key: str, size_key: str, geom_key: str) -> str:
+    runtime = _config_value(config_meta, runtime_key, "")
+    m = re.match(r"([^()]+)\((\d+)\s+sets\s+x\s+(\d+)\s+ways\s+x\s+(\d+)B\)", runtime)
+    if m:
+        return f"{m.group(1).strip()} / {m.group(2)}s x {m.group(3)}w x {m.group(4)}B"
+
+    size = _config_value(config_meta, size_key)
+    geom = _config_value(config_meta, geom_key)
+    if size == "N/A":
+        return runtime if runtime else "N/A"
+    return size if geom == "N/A" else f"{size} / {geom}"
+
+
+def microarch_config_items(config_meta: Optional[Dict[str, str]]) -> List[Tuple[str, str]]:
+    items = [
+        ("BPU", _config_value(config_meta, "BPU")),
+        ("ICache AXI", _config_value(config_meta, "ICACHE_AXI")),
+        ("ICache Mode", _config_value(config_meta, "ICACHE_MODE")),
+        ("Fetch Width", _config_value(config_meta, "FETCH_WIDTH")),
+        ("Decode Width", _config_value(config_meta, "DECODE_WIDTH")),
+        ("Issue Ports", _config_value(config_meta, "ISSUE_PORTS")),
+        ("Commit Width", _config_value(config_meta, "COMMIT_WIDTH")),
+        ("Max Dispatch", _config_value(config_meta, "MAX_DISPATCH")),
+        ("ROB Num", _config_value(config_meta, "ROB_NUM")),
+        ("ROB Bank", _config_value(config_meta, "ROB_BANK")),
+        ("PRF/ARF", _pair_value(config_meta, "PRF_SIZE", "ARF_SIZE")),
+        ("FTQ/InstBuf", _pair_value(config_meta, "FTQ_SIZE", "INSTBUF_SIZE")),
+        ("LDQ/STQ", _pair_value(config_meta, "LDQ_SIZE", "STQ_SIZE")),
+        ("Schedule", _config_value(config_meta, "SCHEDULE")),
+        ("DIV Latency", _config_value(config_meta, "DIV_LATENCY")),
+        ("FU Total", _config_value(config_meta, "FU_TOTAL")),
+        ("ALU/BRU", _pair_value(config_meta, "ALU_COUNT", "BRU_COUNT")),
+        ("Load/Store", _format_load_store(config_meta)),
+        ("Wakeup Ports", _config_value(config_meta, "WAKEUP_PORTS")),
+        ("IQ Int", _config_value(config_meta, "IQ_INT_SUMMARY")),
+        ("IQ LD", _config_value(config_meta, "IQ_LD_SUMMARY")),
+        ("IQ STA", _config_value(config_meta, "IQ_STA_SUMMARY")),
+        ("IQ STD", _config_value(config_meta, "IQ_STD_SUMMARY")),
+        ("IQ BR", _config_value(config_meta, "IQ_BR_SUMMARY")),
+        ("L1I", _cache_runtime_value(config_meta, "L1I_RUNTIME", "L1I_SIZE", "L1I_GEOM")),
+        ("L1D", _cache_runtime_value(config_meta, "L1D_RUNTIME", "L1D_SIZE", "L1D_GEOM")),
+        ("LLC Enabled", _config_value(config_meta, "LLC_ENABLE")),
+        ("LLC Size", _config_value(config_meta, "LLC_SIZE")),
+        ("LLC Ways", _config_value(config_meta, "LLC_WAYS")),
+        ("LLC MSHR", _config_value(config_meta, "LLC_MSHR")),
+        ("LLC Lookup", _config_value(config_meta, "LLC_LOOKUP")),
+        ("LLC Policy", _config_value(config_meta, "LLC_D_READ_MISS")),
+        ("LLC Div", _config_value(config_meta, "AXI_DIV")),
+        ("DDR Latency", _config_value(config_meta, "DDR_LATENCY")),
+        ("DDR Write", _config_value(config_meta, "DDR_WRITE_LATENCY")),
+        ("DDR Beat", _config_value(config_meta, "DDR_BEAT")),
+        ("DDR Out", _config_value(config_meta, "DDR_OUT")),
+        ("AXI Out", _config_value(config_meta, "AXI_OUT")),
+        ("Per Master", _config_value(config_meta, "AXI_PER_MASTER")),
+        ("DCache Line", _config_value(config_meta, "DCACHE_LINE")),
+        ("Write Queue", _config_value(config_meta, "DDR_WRITE_QUEUE")),
+        ("W Accept", _config_value(config_meta, "DDR_WRITE_ACCEPT_GAP")),
+        ("Write FIFO", _config_value(config_meta, "DDR_WRITE_FIFO")),
+        ("W Drain", _config_value(config_meta, "DDR_WRITE_DRAIN")),
+        ("W Mark", _pair_value(config_meta, "DDR_WRITE_HIGH", "DDR_WRITE_LOW")),
+        ("R/W Turn", _pair_value(config_meta, "DDR_R2W", "DDR_W2R")),
+        ("Up Payload", _config_value(config_meta, "UPSTREAM_PAYLOAD")),
+        ("Up Write", _config_value(config_meta, "UPSTREAM_WRITE_PAYLOAD")),
+        ("Up Read Resp", _config_value(config_meta, "UPSTREAM_READ_RESP")),
+    ]
+    required_labels = {
+        "BPU",
+        "Fetch Width",
+        "Decode Width",
+        "ROB Num",
+        "DIV Latency",
+        "LLC Lookup",
+        "LLC Enabled",
+        "DDR Latency",
+        "LLC Size",
+        "Load/Store",
+        "LLC Div",
+    }
+    return [
+        (label, value)
+        for label, value in items
+        if label in required_labels or (value is not None and str(value).strip() not in {"", "N/A"})
+    ]
+
+
+def draw_microarch_config_panel(
+    ax,
+    config_meta: Optional[Dict[str, str]],
+    legend_handles: Optional[List[object]] = None,
+    legend_labels: Optional[List[str]] = None,
+    legend_ncol: int = 5,
+    legend_y: float = 1.04,
+    box_y: float = 0.045,
+    box_h: float = 0.74,
+    legend_fontsize: float = 10.0,
+    title_fontsize: float = 12.6,
+    config_fontsize: float = 9.2,
+) -> None:
+    ax.axis("off")
+
+    if legend_handles and legend_labels:
+        ax.legend(
+            legend_handles,
+            legend_labels,
+            ncol=legend_ncol,
+            loc="upper center",
+            bbox_to_anchor=(0.5, legend_y),
+            fontsize=legend_fontsize,
+            frameon=False,
+        )
+
+    box_x, box_w = 0.025, 0.95
+    box = FancyBboxPatch(
+        (box_x, box_y),
+        box_w,
+        box_h,
+        boxstyle="round,pad=0.012,rounding_size=0.012",
+        transform=ax.transAxes,
+        linewidth=0.8,
+        edgecolor="#9d9d9d",
+        facecolor="#eeeeee",
+    )
+    ax.add_patch(box)
+    ax.text(
+        box_x + box_w / 2.0,
+        box_y + box_h - 0.09,
+        "Microarchitecture Config",
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        fontsize=title_fontsize,
+        fontweight="bold",
+        color="#1f1f1f",
+    )
+
+    items = microarch_config_items(config_meta)
+    cols = 3 if len(items) > 8 else 2
+    rows = int(math.ceil(len(items) / cols))
+    col_w = box_w / cols
+    y_top = box_y + box_h - 0.17
+    y_bottom = box_y + 0.055
+    row_step = min(0.105, (y_top - y_bottom) / max(rows - 1, 1))
+    text_fontsize = max(8.8, config_fontsize - max(0, rows - 14) * 0.12)
+    for col in range(cols):
+        col_items = items[col * rows : (col + 1) * rows]
+        if not col_items:
+            continue
+        label_width = max(len(label) for label, _ in col_items) + 1
+        x = box_x + 0.030 + col * col_w
+        for row, (label, value) in enumerate(col_items):
+            ax.text(
+                x,
+                y_top - row * row_step,
+                f"{label:<{label_width}}: {value}",
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=text_fontsize,
+                family="monospace",
+                color="#222222",
+            )
+
+    if config_meta and config_meta.get("_CONFIG_WARNINGS"):
+        ax.text(
+            box_x,
+            0.005,
+            "Config check: " + config_meta["_CONFIG_WARNINGS"],
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=7.0,
+            color="#a33a00",
+        )
+
+
+def format_config_panel_lines(config_meta: Optional[Dict[str, str]]) -> Tuple[List[str], List[str]]:
+    if not config_meta:
+        return [], []
+    source = config_meta.get("CONFIG_SOURCE", "CONFIG_SNAPSHOT")
+    lines = [f"Config source: {source}"]
+
+    compact_keys = [
+        ("WIDTH_SUMMARY", "Width"),
+        ("BACKEND_SUMMARY", "Backend"),
+        ("CACHE_SUMMARY", "Cache"),
+        ("LSU_SUMMARY", "LSU"),
+        ("FU_SUMMARY", "FU"),
+    ]
+    for key, label in compact_keys:
+        value = config_meta.get(key)
+        if value:
+            lines.append(f"{label}: {value}")
+
+    if "AXI_DIV" in config_meta or "DDR_LATENCY" in config_meta:
+        axi = []
+        if "AXI_DIV" in config_meta:
+            axi.append(f"div={config_meta['AXI_DIV']}")
+        if "DDR_LATENCY" in config_meta:
+            axi.append(f"ddr_read={config_meta['DDR_LATENCY']}")
+        lines.append("AXI: " + " ".join(axi))
+
+    if "LLC_SIZE" in config_meta or "LLC_WAYS" in config_meta or "LLC_MSHR" in config_meta:
+        llc = []
+        if "LLC_ENABLE" in config_meta:
+            llc.append(config_meta["LLC_ENABLE"])
+        if "LLC_SIZE" in config_meta:
+            llc.append(f"size={config_meta['LLC_SIZE']}")
+        if "LLC_WAYS" in config_meta:
+            llc.append(f"ways={config_meta['LLC_WAYS']}")
+        if "LLC_MSHR" in config_meta:
+            llc.append(f"mshr={config_meta['LLC_MSHR']}")
+        lines.append("LLC: " + " ".join(llc))
+
+    if len(lines) == 1:
+        ordered_keys = [
+            "FETCH_WIDTH",
+            "DECODE_WIDTH",
+            "ROB_NUM",
+            "CACHE_HIERARCHY",
+            "L1I_GEOM",
+            "L1I_SIZE",
+            "L1D_GEOM",
+            "L1D_SIZE",
+            "LLC_ENABLE",
+            "LLC_SIZE",
+            "LLC_WAYS",
+            "LLC_MSHR",
+            "L1I_MISS_LATENCY",
+            "DDR_LATENCY",
+        ]
+        for key in ordered_keys:
+            if key in config_meta:
+                lines.append(f"{key}: {config_meta[key]}")
+
+    warnings = []
+    if config_meta.get("_CONFIG_WARNINGS"):
+        warnings.append("Config check: " + config_meta["_CONFIG_WARNINGS"])
+    return lines, warnings
+
+
 def parse_perf_report(path: str):
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         lines = [x.strip() for x in f.readlines()]
@@ -36,6 +321,10 @@ def parse_perf_report(path: str):
     in_config_snapshot = False
     for line in lines:
         if not line:
+            continue
+
+        if line.startswith("LOG_ROOT_DIR ="):
+            config_meta["LOG_ROOT_DIR"] = line.split("=", 1)[1].strip()
             continue
 
         if line == "CONFIG_SNAPSHOT_BEGIN":
@@ -164,7 +453,7 @@ def parse_perf_report(path: str):
             and np.isnan(b["backend"])
         )
     ]
-    return valid, geomean_spec, config_meta
+    return valid, geomean_spec, augment_config_meta_with_runtime(config_meta)
 
 
 def compute_geomean_from_spec(benches: List[Dict[str, float]]) -> Optional[float]:
@@ -214,8 +503,8 @@ def plot_report(
     backend_plot[:n] = backend
     ipc_plot[:n] = ipc
 
-    fig = plt.figure(figsize=(max(12, len(labels) * 0.55), 9), dpi=140)
-    gs = fig.add_gridspec(2, 1, height_ratios=[3.2, 1.6], hspace=0.40)
+    fig = plt.figure(figsize=(max(14, len(labels) * 0.68), 14.4), dpi=140)
+    gs = fig.add_gridspec(3, 1, height_ratios=[3.25, 2.55, 2.00], hspace=0.30)
 
     ax = fig.add_subplot(gs[0, 0])
     c_ret = "#92b558"
@@ -240,8 +529,8 @@ def plot_report(
     ax.set_ylim(0, 1.0)
     ax.set_yticks(np.linspace(0, 1.0, 11))
     ax.grid(axis="y", linestyle="--", alpha=0.35)
-    ax.set_ylabel("Top-Down Fraction")
-    ax.set_title("Top Level Breakdown (IDU TMA) + IPC")
+    ax.set_ylabel("Top-Down Fraction", fontsize=11.5)
+    ax.set_title("Top Level Breakdown (IDU TMA) + IPC", fontsize=17, fontweight="bold", pad=10)
 
     ax2 = ax.twinx()
     line = ax2.plot(
@@ -256,7 +545,7 @@ def plot_report(
     )[0]
     ax2.set_ylim(0, 8.0)
     ax2.set_yticks(np.arange(0, 9, 1))
-    ax2.set_ylabel("IPC")
+    ax2.set_ylabel("IPC", fontsize=11.5)
 
     # Label IPC value on each line marker.
     for xi, yi in zip(x, ipc_plot):
@@ -268,44 +557,25 @@ def plot_report(
     # Keep aligned ticks but hide top labels for cleaner view.
     ax.set_xticklabels([])
 
-    if config_meta:
-        ordered_keys = [
-            "FETCH_WIDTH",
-            "DECODE_WIDTH",
-            "ROB_NUM",
-            "CACHE_HIERARCHY",
-            "L1I_GEOM",
-            "L1I_SIZE",
-            "L1D_GEOM",
-            "L1D_SIZE",
-            "LLC_ENABLE",
-            "LLC_SIZE",
-            "LLC_WAYS",
-            "LLC_MSHR",
-            "L1I_MISS_LATENCY",
-            "DDR_LATENCY",
-        ]
-        config_lines = []
-        for key in ordered_keys:
-            if key in config_meta:
-                config_lines.append(f"{key}: {config_meta[key]}")
-        if config_lines:
-            ax.text(
-                0.01,
-                0.98,
-                "\n".join(config_lines),
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=7.5,
-                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.82, edgecolor="#666666"),
-            )
-
     handles1, labels1 = ax.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(handles1 + handles2, labels1 + labels2, ncol=5, loc="upper center", fontsize=9)
 
-    axs = fig.add_subplot(gs[1, 0])
+    meta_ax = fig.add_subplot(gs[1, 0])
+    draw_microarch_config_panel(
+        meta_ax,
+        config_meta,
+        legend_handles=handles1 + handles2,
+        legend_labels=labels1 + labels2,
+        legend_ncol=5,
+        legend_y=1.02,
+        box_y=0.035,
+        box_h=0.84,
+        legend_fontsize=10.5,
+        title_fontsize=13.4,
+        config_fontsize=9.4,
+    )
+
+    axs = fig.add_subplot(gs[2, 0])
     spec_labels = axis_labels.copy()
     spec_vals = spec.copy()
     if len(spec_labels) > len(spec_vals):
@@ -317,8 +587,8 @@ def plot_report(
         bar_colors[-1] = "#d62728"
 
     bars = axs.bar(x_spec, spec_vals, color=bar_colors, width=0.66, label="SPEC Ratio")
-    axs.set_ylabel("SPEC Ratio")
-    axs.set_title("Per-Benchmark SPEC Ratio")
+    axs.set_ylabel("SPEC Ratio", fontsize=11.5)
+    axs.set_title("Per-Benchmark SPEC Ratio", fontsize=17, fontweight="bold", pad=10)
     axs.grid(axis="y", linestyle="--", alpha=0.35)
     axs.set_xticks(x_spec)
     axs.set_xticklabels(spec_labels, rotation=90, ha="right", fontsize=8.5)
@@ -344,7 +614,7 @@ def plot_report(
             color="#d62728",
         )
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.055, right=0.945, top=0.955, bottom=0.18)
     fig.savefig(out_png, bbox_inches="tight")
     print(f"Wrote figure: {os.path.abspath(out_png)}")
 
@@ -447,8 +717,8 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
     ax.set_ylim(0, 1.0)
     ax.set_yticks(np.linspace(0, 1.0, 11))
     ax.grid(axis="y", linestyle="--", alpha=0.35)
-    ax.set_ylabel("Top-Down Fraction")
-    ax.set_title("Top-Down (stacked per config) + IPC compare")
+    ax.set_ylabel("Top-Down Fraction", fontsize=11.5)
+    ax.set_title("Top-Down (stacked per config) + IPC compare", fontsize=16, fontweight="bold", pad=10)
     ax.set_xticks(x)
     ax.set_xticklabels([])
 
@@ -468,7 +738,7 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
             label=f'IPC ({r["name"]})',
         )[0]
         line_handles.append(line)
-    ax2.set_ylabel("IPC")
+    ax2.set_ylabel("IPC", fontsize=11.5)
     ax2.set_ylim(0, 8.0)
     ax2.set_yticks(np.arange(0, 9, 1))
 
@@ -499,8 +769,8 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
                 fontweight="bold",
             )
 
-    axs.set_ylabel("SPEC Ratio")
-    axs.set_title("Per-Benchmark SPEC Ratio compare")
+    axs.set_ylabel("SPEC Ratio", fontsize=11.5)
+    axs.set_title("Per-Benchmark SPEC Ratio compare", fontsize=16, fontweight="bold", pad=10)
     axs.grid(axis="y", linestyle="--", alpha=0.35)
     axs.set_xticks(x)
     axs.set_xticklabels(axis_labels, rotation=90, ha="right", fontsize=8.5)
@@ -545,6 +815,8 @@ def main():
         reports = []
         for path, name in zip(args.compare, names):
             benches, geomean_spec, config_meta = parse_perf_report(path)
+            if config_meta.get("_CONFIG_WARNINGS"):
+                print(f"[WARN] {name}: {config_meta['_CONFIG_WARNINGS']}")
             calc_geomean = compute_geomean_from_spec(benches)
             if geomean_spec is not None and np.isfinite(geomean_spec):
                 if calc_geomean is not None and np.isfinite(calc_geomean):
@@ -577,6 +849,8 @@ def main():
         return
 
     benches, geomean_spec, config_meta = parse_perf_report(args.input)
+    if config_meta.get("_CONFIG_WARNINGS"):
+        print(f"[WARN] {config_meta['_CONFIG_WARNINGS']}")
     calc_geomean = compute_geomean_from_spec(benches)
     if geomean_spec is not None and np.isfinite(geomean_spec):
         if calc_geomean is not None and np.isfinite(calc_geomean):

@@ -8,6 +8,8 @@ from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
+from plot_perf_topdown import augment_config_meta_with_runtime, draw_microarch_config_panel
+
 
 def parse_pct(line: str) -> Optional[float]:
     m = re.search(r"([-+]?\d+(?:\.\d+)?)\s*%", line)
@@ -46,6 +48,10 @@ def parse_perf_report(path: str):
     in_config_snapshot = False
     for line in lines:
         if not line:
+            continue
+
+        if line.startswith("LOG_ROOT_DIR ="):
+            config_meta["LOG_ROOT_DIR"] = line.split("=", 1)[1].strip()
             continue
 
         if line == "CONFIG_SNAPSHOT_BEGIN":
@@ -192,7 +198,7 @@ def parse_perf_report(path: str):
             and np.isnan(b["backend"])
         )
     ]
-    return valid, geomean_spec, config_meta
+    return valid, geomean_spec, augment_config_meta_with_runtime(config_meta)
 
 
 def compute_geomean_from_spec(benches: List[Dict[str, float]]) -> Optional[float]:
@@ -245,8 +251,8 @@ def plot_report(
     backend_other_plot[:n] = backend_other
     ipc_plot[:n] = ipc
 
-    fig = plt.figure(figsize=(max(12, len(labels) * 0.55), 9), dpi=140)
-    gs = fig.add_gridspec(2, 1, height_ratios=[3.2, 1.6], hspace=0.40)
+    fig = plt.figure(figsize=(max(14, len(labels) * 0.68), 14.4), dpi=140)
+    gs = fig.add_gridspec(3, 1, height_ratios=[3.25, 2.55, 2.00], hspace=0.30)
 
     ax = fig.add_subplot(gs[0, 0])
     c_ret = "#92b558"
@@ -280,8 +286,8 @@ def plot_report(
     ax.set_ylim(0, 1.0)
     ax.set_yticks(np.linspace(0, 1.0, 11))
     ax.grid(axis="y", linestyle="--", alpha=0.35)
-    ax.set_ylabel("Top-Down Fraction")
-    ax.set_title("Top Level Breakdown (Backend split: Memory/Other) + IPC")
+    ax.set_ylabel("Top-Down Fraction", fontsize=11.5)
+    ax.set_title("Top Level Breakdown (Backend split: Memory/Other) + IPC", fontsize=17, fontweight="bold", pad=10)
 
     ax2 = ax.twinx()
     line = ax2.plot(
@@ -296,7 +302,7 @@ def plot_report(
     )[0]
     ax2.set_ylim(0, 8.0)
     ax2.set_yticks(np.arange(0, 9, 1))
-    ax2.set_ylabel("IPC")
+    ax2.set_ylabel("IPC", fontsize=11.5)
 
     # Label IPC value on each line marker.
     for xi, yi in zip(x, ipc_plot):
@@ -308,44 +314,25 @@ def plot_report(
     # Keep aligned ticks but hide top labels for cleaner view.
     ax.set_xticklabels([])
 
-    if config_meta:
-        ordered_keys = [
-            "FETCH_WIDTH",
-            "DECODE_WIDTH",
-            "ROB_NUM",
-            "CACHE_HIERARCHY",
-            "L1I_GEOM",
-            "L1I_SIZE",
-            "L1D_GEOM",
-            "L1D_SIZE",
-            "LLC_ENABLE",
-            "LLC_SIZE",
-            "LLC_WAYS",
-            "LLC_MSHR",
-            "L1I_MISS_LATENCY",
-            "DDR_LATENCY",
-        ]
-        config_lines = []
-        for key in ordered_keys:
-            if key in config_meta:
-                config_lines.append(f"{key}: {config_meta[key]}")
-        if config_lines:
-            ax.text(
-                0.01,
-                0.98,
-                "\n".join(config_lines),
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=7.5,
-                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.82, edgecolor="#666666"),
-            )
-
     handles1, labels1 = ax.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(handles1 + handles2, labels1 + labels2, ncol=6, loc="upper center", fontsize=9)
 
-    axs = fig.add_subplot(gs[1, 0])
+    meta_ax = fig.add_subplot(gs[1, 0])
+    draw_microarch_config_panel(
+        meta_ax,
+        config_meta,
+        legend_handles=handles1 + handles2,
+        legend_labels=labels1 + labels2,
+        legend_ncol=6,
+        legend_y=1.02,
+        box_y=0.035,
+        box_h=0.84,
+        legend_fontsize=10.5,
+        title_fontsize=13.4,
+        config_fontsize=9.4,
+    )
+
+    axs = fig.add_subplot(gs[2, 0])
     spec_labels = axis_labels.copy()
     spec_vals = spec.copy()
     if len(spec_labels) > len(spec_vals):
@@ -357,8 +344,8 @@ def plot_report(
         bar_colors[-1] = "#d62728"
 
     bars = axs.bar(x_spec, spec_vals, color=bar_colors, width=0.66, label="SPEC Ratio")
-    axs.set_ylabel("SPEC Ratio")
-    axs.set_title("Per-Benchmark SPEC Ratio")
+    axs.set_ylabel("SPEC Ratio", fontsize=11.5)
+    axs.set_title("Per-Benchmark SPEC Ratio", fontsize=17, fontweight="bold", pad=10)
     axs.grid(axis="y", linestyle="--", alpha=0.35)
     axs.set_xticks(x_spec)
     axs.set_xticklabels(spec_labels, rotation=90, ha="right", fontsize=8.5)
@@ -384,7 +371,7 @@ def plot_report(
             color="#d62728",
         )
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.055, right=0.945, top=0.955, bottom=0.18)
     fig.savefig(out_png, bbox_inches="tight")
     print(f"Wrote figure: {os.path.abspath(out_png)}")
 
@@ -500,8 +487,8 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
     ax.set_ylim(0, 1.0)
     ax.set_yticks(np.linspace(0, 1.0, 11))
     ax.grid(axis="y", linestyle="--", alpha=0.35)
-    ax.set_ylabel("Top-Down Fraction")
-    ax.set_title("Top-Down (Backend split: Memory/Other) + IPC compare")
+    ax.set_ylabel("Top-Down Fraction", fontsize=11.5)
+    ax.set_title("Top-Down (Backend split: Memory/Other) + IPC compare", fontsize=16, fontweight="bold", pad=10)
     ax.set_xticks(x)
     ax.set_xticklabels([])
 
@@ -521,7 +508,7 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
             label=f'IPC ({r["name"]})',
         )[0]
         line_handles.append(line)
-    ax2.set_ylabel("IPC")
+    ax2.set_ylabel("IPC", fontsize=11.5)
     ax2.set_ylim(0, 8.0)
     ax2.set_yticks(np.arange(0, 9, 1))
 
@@ -558,8 +545,8 @@ def plot_compare_reports(reports: List[Dict[str, object]], out_png: str):
                 fontweight="bold",
             )
 
-    axs.set_ylabel("SPEC Ratio")
-    axs.set_title("Per-Benchmark SPEC Ratio compare")
+    axs.set_ylabel("SPEC Ratio", fontsize=11.5)
+    axs.set_title("Per-Benchmark SPEC Ratio compare", fontsize=16, fontweight="bold", pad=10)
     axs.grid(axis="y", linestyle="--", alpha=0.35)
     axs.set_xticks(x)
     axs.set_xticklabels(axis_labels, rotation=90, ha="right", fontsize=8.5)
@@ -607,6 +594,8 @@ def main():
         reports = []
         for path, name in zip(args.compare, names):
             benches, geomean_spec, config_meta = parse_perf_report(path)
+            if config_meta.get("_CONFIG_WARNINGS"):
+                print(f"[WARN] {name}: {config_meta['_CONFIG_WARNINGS']}")
             calc_geomean = compute_geomean_from_spec(benches)
             if geomean_spec is not None and np.isfinite(geomean_spec):
                 if calc_geomean is not None and np.isfinite(calc_geomean):
@@ -639,6 +628,8 @@ def main():
         return
 
     benches, geomean_spec, config_meta = parse_perf_report(args.input)
+    if config_meta.get("_CONFIG_WARNINGS"):
+        print(f"[WARN] {config_meta['_CONFIG_WARNINGS']}")
     calc_geomean = compute_geomean_from_spec(benches)
     if geomean_spec is not None and np.isfinite(geomean_spec):
         if calc_geomean is not None and np.isfinite(calc_geomean):
