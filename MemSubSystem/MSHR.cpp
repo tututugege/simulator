@@ -5,6 +5,7 @@
 #endif
 
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -72,6 +73,7 @@ void MSHR::comb_outputs_dcache()
     if(nxt.axi_resp_hold_valid){
         out.mshr2dcache->fill_req.valid = true;
         const MSHREntry &e = nxt.mshr_entries[nxt.axi_resp_hold_id];
+        out.mshr2dcache->fill_req.id = nxt.axi_resp_hold_id;
         out.mshr2dcache->fill_req.addr = e.addr;
         out.mshr2dcache->fill_req.dirty = e.merged_store_dirty;
 #if !BSD_CONFIG
@@ -88,6 +90,7 @@ void MSHR::comb_outputs_dcache()
     }
     else{
         out.mshr2dcache->fill_req.valid = false;
+        out.mshr2dcache->fill_req.id = 0;
         out.mshr2dcache->fill_req.dirty = false;
 #if !BSD_CONFIG
         out.mshr2dcache->fill_req.lsu_origin = false;
@@ -120,38 +123,49 @@ void MSHR::comb_outputs_axi()
 void MSHR::comb_inputs_dcache()
 {
     if(in.dcache2mshr->fill_resp.done){
-        const uint8_t hold_id = nxt.axi_resp_hold_id;
-        Assert(hold_id < DCACHE_MSHR_ENTRIES &&
-               "Invalid held MSHR response ID");
+        const uint8_t hold_id =
+            static_cast<uint8_t>(in.dcache2mshr->fill_resp.id);
+        const bool valid_id = hold_id < DCACHE_MSHR_ENTRIES;
+        const bool matches_hold =
+            valid_id && nxt.axi_resp_hold_valid &&
+            nxt.axi_resp_hold_id == hold_id;
+        const bool matches_entry =
+            valid_id && nxt.mshr_entries[hold_id].valid &&
+            nxt.mshr_entries[hold_id].issued;
+        if (matches_hold && matches_entry) {
+            const bool entry_was_valid = nxt.mshr_entries[hold_id].valid;
 #if !BSD_CONFIG
-        if (ctx != nullptr &&
-            hold_id < DCACHE_MSHR_ENTRIES) {
-            const MSHREntry &e = nxt.mshr_entries[hold_id];
-            if (e.valid && e.lsu_origin &&
-                ctx->perf.cycle >= e.alloc_cycle) {
-                ctx->perf.l1d_miss_penalty_total_cycles +=
-                    ctx->perf.cycle - e.alloc_cycle;
-                ctx->perf.l1d_miss_penalty_samples++;
+            if (ctx != nullptr &&
+                hold_id < DCACHE_MSHR_ENTRIES) {
+                const MSHREntry &e = nxt.mshr_entries[hold_id];
+                if (e.valid && e.lsu_origin &&
+                    ctx->perf.cycle >= e.alloc_cycle) {
+                    ctx->perf.l1d_miss_penalty_total_cycles +=
+                        ctx->perf.cycle - e.alloc_cycle;
+                    ctx->perf.l1d_miss_penalty_samples++;
+                }
+            }
+#endif
+            nxt.mshr_entries[hold_id].valid = false;
+            nxt.mshr_entries[hold_id].issued = false;
+            clear_store_merge(nxt.mshr_entries[hold_id]);
+#if !BSD_CONFIG
+            nxt.mshr_entries[hold_id].alloc_cycle = 0;
+            nxt.mshr_entries[hold_id].axi_read_start_cycle = 0;
+            nxt.mshr_entries[hold_id].axi_read_active = false;
+            nxt.mshr_entries[hold_id].lsu_origin = false;
+#endif
+            if (entry_was_valid && nxt.mshr_count > 0) {
+                nxt.mshr_count = nxt.mshr_count - 1;
+            }
+            if (nxt.axi_resp_hold_valid && nxt.axi_resp_hold_id == hold_id) {
+                nxt.axi_resp_hold_valid = false;
+                nxt.axi_resp_hold_id = 0;
+                std::memset(nxt.axi_resp_hold_data, 0,
+                            sizeof(nxt.axi_resp_hold_data));
             }
         }
-#endif
-        nxt.mshr_entries[hold_id].valid = false;
-        nxt.mshr_entries[hold_id].issued = false;
-        clear_store_merge(nxt.mshr_entries[hold_id]);
-#if !BSD_CONFIG
-        nxt.mshr_entries[hold_id].alloc_cycle = 0;
-        nxt.mshr_entries[hold_id].axi_read_start_cycle = 0;
-        nxt.mshr_entries[hold_id].axi_read_active = false;
-        nxt.mshr_entries[hold_id].lsu_origin = false;
-#endif
-        if (nxt.mshr_count > 0) {
-            nxt.mshr_count = nxt.mshr_count - 1;
-        }
-        nxt.axi_resp_hold_valid = false;
-        nxt.axi_resp_hold_id = 0;
-        std::memset(nxt.axi_resp_hold_data, 0, sizeof(nxt.axi_resp_hold_data));
     }
-
     for(int i=0;i<LSU_LDU_COUNT + LSU_STA_COUNT;i++){
         nxt.find_hit[i] = false;
         if(in.dcache2mshr->find_req[i].valid){
@@ -166,7 +180,7 @@ void MSHR::comb_inputs_dcache()
         }
     }
 
-    for(int i=0;i<DCACHE_MISS_NUM;i++){
+    for(int i=0;i<LSU_LDU_COUNT + LSU_STA_COUNT;i++){
         if(in.dcache2mshr->mshr_req[i].valid){
             const AddrFields f = decode(in.dcache2mshr->mshr_req[i].addr);
             const uint32_t line_addr = get_addr(f.set_idx, f.tag, 0);
@@ -219,8 +233,8 @@ void MSHR::comb_inputs_axi()
     // state visible to response handling in this same comb pass.
     if (req_accepted) {
         if (accepted_id < DCACHE_MSHR_ENTRIES) {
-            const MSHREntry &ce = cur.mshr_entries[accepted_id];
-            if (ce.valid && !ce.issued) {
+            MSHREntry &ne = nxt.mshr_entries[accepted_id];
+            if (ne.valid && !ne.issued) {
                 nxt.mshr_entries[accepted_id].issued = true;
 #if !BSD_CONFIG
                 nxt.mshr_entries[accepted_id].axi_read_active = true;

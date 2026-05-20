@@ -6,6 +6,7 @@
 #include "config.h"
 #include "util.h"
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 

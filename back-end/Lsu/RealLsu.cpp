@@ -38,6 +38,22 @@ static_assert(CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL == 0 ||
 static constexpr bool kReplayClearDelayOnMshrFill =
     CONFIG_LSU_REPLAY_CLEAR_DELAY_ON_MSHR_FILL != 0;
 
+#ifndef CONFIG_LSU_WAIT_DCACHE_SCAN_WIDTH
+#define CONFIG_LSU_WAIT_DCACHE_SCAN_WIDTH LOAD_WINDOWS_WIDTH
+#endif
+
+static_assert(CONFIG_LSU_WAIT_DCACHE_SCAN_WIDTH > 0,
+              "CONFIG_LSU_WAIT_DCACHE_SCAN_WIDTH must be positive");
+static_assert(CONFIG_LSU_WAIT_DCACHE_SCAN_WIDTH <= LDQ_SIZE,
+              "CONFIG_LSU_WAIT_DCACHE_SCAN_WIDTH must not exceed LDQ_SIZE");
+
+static constexpr uint32_t kWaitDcacheScanWidth =
+    static_cast<uint32_t>(CONFIG_LSU_WAIT_DCACHE_SCAN_WIDTH);
+
+#ifndef CONFIG_LSU_WAIT_DCACHE_REPAIR
+#define CONFIG_LSU_WAIT_DCACHE_REPAIR 1
+#endif
+
 static uint32_t replay_delay_cycles(ReplayType replay) {
   return replay == ReplayType::MSHR_HIT || replay == ReplayType::MSHR_FULL
              ? kReplayWaitCycles
@@ -73,6 +89,112 @@ static void cleanup_wait_mmu_stq_edges(LsuState &state) {
       break;
     }
     state.wait_mmu_stq_count--;
+  }
+}
+
+static void repair_wait_dcache_ldq_entries(LsuState &state) {
+  if (state.wait_dcache_ldq_count != 0) {
+    return;
+  }
+
+  for (uint32_t ldq_idx = 0;
+       ldq_idx < LDQ_SIZE && state.wait_dcache_ldq_count < LOAD_WINDOWS_WIDTH;
+       ldq_idx++) {
+    if (state.ldq[ldq_idx].load_state != LoadState::ReadyToIssue) {
+      continue;
+    }
+    const uint32_t wait_idx =
+        (state.wait_dcache_ldq_head + state.wait_dcache_ldq_count) % LDQ_SIZE;
+    auto &wait_entry = state.wait_dcache_ldq[wait_idx];
+    wait_entry = {};
+    wait_entry.valid = true;
+    wait_entry.ldq_idx = ldq_idx;
+    lsu_perf::reset_wait_start(wait_entry);
+    state.wait_dcache_ldq_count++;
+  }
+}
+
+static void clear_stlf_queue(LsuState &state) {
+  for (uint32_t i = 0; i < LDQ_SIZE; i++) {
+    state.stlf_queue[i].valid = false;
+  }
+  state.stlf_queue_count = 0;
+}
+
+static uint32_t bounded_stlf_queue_count(const LsuState &state) {
+  return state.stlf_queue_count > LDQ_SIZE ? LDQ_SIZE
+                                           : state.stlf_queue_count;
+}
+
+static bool stlf_queue_contains_ldq(const LsuState &state, uint32_t ldq_idx) {
+  const uint32_t count = bounded_stlf_queue_count(state);
+  for (uint32_t i = 0; i < count; i++) {
+    const uint32_t queue_idx = (state.stlf_queue_head + i) % LDQ_SIZE;
+    const auto &entry = state.stlf_queue[queue_idx];
+    if (entry.valid && entry.ldq_idx == ldq_idx) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool enqueue_stlf_queue(LsuState &state, uint32_t ldq_idx) {
+  if (ldq_idx >= LDQ_SIZE) {
+    return false;
+  }
+  if (stlf_queue_contains_ldq(state, ldq_idx)) {
+    return true;
+  }
+  if (state.stlf_queue_count >= LDQ_SIZE) {
+    return false;
+  }
+  const uint32_t queue_idx =
+      (state.stlf_queue_head + state.stlf_queue_count) % LDQ_SIZE;
+  state.stlf_queue[queue_idx].valid = true;
+  state.stlf_queue[queue_idx].ldq_idx = ldq_idx;
+  state.stlf_queue_count++;
+  return true;
+}
+
+static bool stlf_queue_needs_rebuild(const LsuState &state) {
+  if (state.stlf_queue_count > LDQ_SIZE) {
+    return true;
+  }
+
+  bool seen[LDQ_SIZE] = {};
+  const uint32_t count = bounded_stlf_queue_count(state);
+  for (uint32_t i = 0; i < count; i++) {
+    const uint32_t queue_idx = (state.stlf_queue_head + i) % LDQ_SIZE;
+    const auto &entry = state.stlf_queue[queue_idx];
+    if (!entry.valid || entry.ldq_idx >= LDQ_SIZE) {
+      return true;
+    }
+    const uint32_t ldq_idx = entry.ldq_idx;
+    if (state.ldq[ldq_idx].load_state != LoadState::CheckStlf) {
+      return true;
+    }
+    if (seen[ldq_idx]) {
+      return true;
+    }
+    seen[ldq_idx] = true;
+  }
+  return count == 0;
+}
+
+static void repair_stlf_queue_entries(LsuState &state) {
+  if (!stlf_queue_needs_rebuild(state)) {
+    return;
+  }
+
+  clear_stlf_queue(state);
+
+  for (uint32_t ldq_idx = 0;
+       ldq_idx < LDQ_SIZE && state.stlf_queue_count < LDQ_SIZE;
+       ldq_idx++) {
+    if (state.ldq[ldq_idx].load_state != LoadState::CheckStlf) {
+      continue;
+    }
+    enqueue_stlf_queue(state, ldq_idx);
   }
 }
 
@@ -317,11 +439,7 @@ void RealLsu::comb_tlb_in() {
         ldq_entry.is_mmio = lsu_is_mmio_addr(resp.paddr);
         ldq_entry.load_state = LoadState::CheckStlf;
 
-        const uint32_t stlf_idx =
-            (nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE;
-        nxt.stlf_queue[stlf_idx].valid = true;
-        nxt.stlf_queue[stlf_idx].ldq_idx = ldq_idx;
-        nxt.stlf_queue_count++;
+        enqueue_stlf_queue(nxt, ldq_idx);
         nxt.wait_mmu_ldq[wait_idx].valid = false;
       } else if (resp.result == MMUResultType::PAGE_FAULT) {
         ldq_entry.page_fault = true;
@@ -544,15 +662,13 @@ void RealLsu::comb_stlf() {
 }
 #else
 void RealLsu::comb_stlf() {
+  repair_stlf_queue_entries(nxt);
+
   int32_t issue = nxt.stlf_queue_count > LOAD_WINDOWS_WIDTH ? LOAD_WINDOWS_WIDTH : nxt.stlf_queue_count;
 
   uint32_t todcache_wait_count = 0;
   auto requeue_stlf = [&](uint32_t idx) {
-    const uint32_t queue_idx =
-        (nxt.stlf_queue_head + nxt.stlf_queue_count) % LDQ_SIZE;
-    nxt.stlf_queue[queue_idx].valid = true;
-    nxt.stlf_queue[queue_idx].ldq_idx = idx;
-    nxt.stlf_queue_count++;
+    enqueue_stlf_queue(nxt, idx);
   };
 
   for (int i = 0; i < issue; i++) {
@@ -678,9 +794,14 @@ void RealLsu::comb_lsu2dcache_ldq() {
   }
 
   lsu_perf::retry_load_resp_timeouts(ctx, cur, nxt);
+  if (CONFIG_LSU_WAIT_DCACHE_REPAIR != 0) {
+    repair_wait_dcache_ldq_entries(nxt);
+  }
 
   uint32_t issued = 0;
-  uint32_t scan_windows = nxt.wait_dcache_ldq_count > LOAD_WINDOWS_WIDTH ? LOAD_WINDOWS_WIDTH : nxt.wait_dcache_ldq_count;
+  uint32_t scan_windows = nxt.wait_dcache_ldq_count > kWaitDcacheScanWidth
+                              ? kWaitDcacheScanWidth
+                              : nxt.wait_dcache_ldq_count;
 
   for (uint32_t scan = 0;
        scan < scan_windows && issued < LSU_LDU_COUNT;
@@ -1307,10 +1428,13 @@ void RealLsu::dump_debug_state(FILE *out) const {
 
   std::fprintf(out, "RealLsu State:\n");
   std::fprintf(out,
-               "  LDQ: wait_mmu_head=%u "
-               "wait_mmu_count=%u wait_dcache_head=%u wait_dcache_count=%u\n",
+               "  LDQ: wait_mmu_head=%u wait_mmu_count=%u "
+               "stlf_head=%u stlf_count=%u "
+               "wait_dcache_head=%u wait_dcache_count=%u\n",
                static_cast<unsigned>(cur.wait_mmu_ldq_head),
                static_cast<unsigned>(cur.wait_mmu_ldq_count),
+               static_cast<unsigned>(cur.stlf_queue_head),
+               static_cast<unsigned>(cur.stlf_queue_count),
                static_cast<unsigned>(cur.wait_dcache_ldq_head),
                static_cast<unsigned>(cur.wait_dcache_ldq_count));
   std::fprintf(out,
@@ -1342,15 +1466,26 @@ void RealLsu::dump_debug_state(FILE *out) const {
                static_cast<unsigned>(cur.lrsc_unit.reserve_valid),
                static_cast<unsigned>(cur.lrsc_unit.reserve_addr));
 
-  const uint32_t ldq_dump_count = ldq_count < 16 ? ldq_count : 16;
+  uint32_t live_ldq_count = 0;
+  for (uint32_t i = 0; i < LDQ_SIZE; i++) {
+    if (cur.ldq[i].load_state != LoadState::Empty) {
+      live_ldq_count++;
+    }
+  }
+  const uint32_t ldq_dump_count = live_ldq_count < 16 ? live_ldq_count : 16;
   std::fprintf(out, "  LDQ active entries (first %u):\n",
                static_cast<unsigned>(ldq_dump_count));
-  for (uint32_t i = 0; i < ldq_dump_count; i++) {
-    const uint32_t idx = (i) % LDQ_SIZE;
+  uint32_t dumped_ldq_count = 0;
+  for (uint32_t idx = 0; idx < LDQ_SIZE && dumped_ldq_count < ldq_dump_count;
+       idx++) {
     const auto &entry = cur.ldq[idx];
+    if (entry.load_state == LoadState::Empty) {
+      continue;
+    }
     std::fprintf(out,
                  "    [%u] state=%u rob=%u/%u vaddr=%u:0x%08x "
-                 "paddr=%u:0x%08x mmio=%u page_fault=%u lrsc=%u\n",
+                 "paddr=%u:0x%08x stq_snapshot=%u/%u mmio=%u "
+                 "page_fault=%u lrsc=%u\n",
                  static_cast<unsigned>(idx),
                  static_cast<unsigned>(entry.load_state),
                  static_cast<unsigned>(entry.rob_idx),
@@ -1359,9 +1494,25 @@ void RealLsu::dump_debug_state(FILE *out) const {
                  static_cast<unsigned>(entry.v_addr),
                  static_cast<unsigned>(entry.p_addr_valid),
                  static_cast<unsigned>(entry.p_addr),
+                 static_cast<unsigned>(entry.stq_snapshot.idx),
+                 static_cast<unsigned>(entry.stq_snapshot.flag),
                  static_cast<unsigned>(entry.is_mmio),
                  static_cast<unsigned>(entry.page_fault),
                  static_cast<unsigned>(entry.is_lrsc));
+    dumped_ldq_count++;
+  }
+
+  const uint32_t stlf_dump_count =
+      cur.stlf_queue_count < 8 ? cur.stlf_queue_count : 8;
+  std::fprintf(out, "  STLF queue entries (first %u):\n",
+               static_cast<unsigned>(stlf_dump_count));
+  for (uint32_t i = 0; i < stlf_dump_count; i++) {
+    const uint32_t idx = (cur.stlf_queue_head + i) % LDQ_SIZE;
+    const auto &entry = cur.stlf_queue[idx];
+    std::fprintf(out, "    [%u] valid=%u ldq_idx=%u\n",
+                 static_cast<unsigned>(idx),
+                 static_cast<unsigned>(entry.valid),
+                 static_cast<unsigned>(entry.ldq_idx));
   }
 
   const uint32_t stq_dump_count = cur.stq_count < 8 ? cur.stq_count : 8;

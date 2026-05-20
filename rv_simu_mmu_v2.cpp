@@ -105,6 +105,44 @@ void comb_axi_inputs_for_internal_tick(InterconnectT &interconnect) {
   comb_axi_inputs_for_internal_tick_impl(interconnect, 0);
 }
 
+void connect_axi_slave_outputs(sim_ddr::SimDDR_IO_t &master_io,
+                               const sim_ddr::SimDDR_IO_t &slave_io) {
+  master_io.ar.arready = slave_io.ar.arready;
+  master_io.r.rvalid = slave_io.r.rvalid;
+  master_io.r.rid = slave_io.r.rid;
+  master_io.r.rdata = slave_io.r.rdata;
+  master_io.r.rresp = slave_io.r.rresp;
+  master_io.r.rlast = slave_io.r.rlast;
+  master_io.aw.awready = slave_io.aw.awready;
+  master_io.w.wready = slave_io.w.wready;
+  master_io.b.bvalid = slave_io.b.bvalid;
+  master_io.b.bid = slave_io.b.bid;
+  master_io.b.bresp = slave_io.b.bresp;
+}
+
+void connect_axi_master_outputs(const sim_ddr::SimDDR_IO_t &master_io,
+                                sim_ddr::SimDDR_IO_t &slave_io) {
+  slave_io.ar.arvalid = master_io.ar.arvalid;
+  slave_io.ar.arid = master_io.ar.arid;
+  slave_io.ar.araddr = master_io.ar.araddr;
+  slave_io.ar.arlen = master_io.ar.arlen;
+  slave_io.ar.arsize = master_io.ar.arsize;
+  slave_io.ar.arburst = master_io.ar.arburst;
+  slave_io.r.rready = master_io.r.rready;
+
+  slave_io.aw.awvalid = master_io.aw.awvalid;
+  slave_io.aw.awid = master_io.aw.awid;
+  slave_io.aw.awaddr = master_io.aw.awaddr;
+  slave_io.aw.awlen = master_io.aw.awlen;
+  slave_io.aw.awsize = master_io.aw.awsize;
+  slave_io.aw.awburst = master_io.aw.awburst;
+  slave_io.w.wvalid = master_io.w.wvalid;
+  slave_io.w.wdata = master_io.w.wdata;
+  slave_io.w.wstrb = master_io.w.wstrb;
+  slave_io.w.wlast = master_io.w.wlast;
+  slave_io.b.bready = master_io.b.bready;
+}
+
 axi_interconnect::AXI_LLCConfig make_default_llc_config() {
   axi_interconnect::AXI_LLCConfig llc_cfg;
   llc_cfg.enable = (CONFIG_AXI_LLC_ENABLE != 0);
@@ -500,23 +538,23 @@ void axi_subsystem_comb_outputs(SimCpu &cpu) {
   cpu.axi_interconnect.set_llc_lookup_in(cpu.mem_subsystem.llc_lookup_in());
   cpu.axi_ddr.comb_outputs();
   cpu.axi_mmio.comb_outputs();
-  cpu.axi_router.comb_outputs(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
-                              cpu.axi_mmio.io);
+  connect_axi_slave_outputs(cpu.axi_interconnect.axi_ddr_io, cpu.axi_ddr.io);
+  connect_axi_slave_outputs(cpu.axi_interconnect.axi_mmio_io, cpu.axi_mmio.io);
   cpu.axi_interconnect.comb_outputs();
 }
 
 void axi_subsystem_comb_inputs(SimCpu &cpu) {
   cpu.axi_interconnect.comb_inputs();
-  cpu.axi_router.comb_inputs(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
-                             cpu.axi_mmio.io);
+  connect_axi_master_outputs(cpu.axi_interconnect.axi_ddr_io, cpu.axi_ddr.io);
+  connect_axi_master_outputs(cpu.axi_interconnect.axi_mmio_io, cpu.axi_mmio.io);
   cpu.axi_ddr.comb_inputs();
   cpu.axi_mmio.comb_inputs();
 }
 
 void axi_subsystem_comb_inputs_internal_tick(SimCpu &cpu) {
   comb_axi_inputs_for_internal_tick(cpu.axi_interconnect);
-  cpu.axi_router.comb_inputs(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
-                             cpu.axi_mmio.io);
+  connect_axi_master_outputs(cpu.axi_interconnect.axi_ddr_io, cpu.axi_ddr.io);
+  connect_axi_master_outputs(cpu.axi_interconnect.axi_mmio_io, cpu.axi_mmio.io);
   cpu.axi_ddr.comb_inputs();
   cpu.axi_mmio.comb_inputs();
 }
@@ -525,8 +563,6 @@ void axi_subsystem_seq(SimCpu &cpu) {
   cpu.mem_subsystem.llc_seq(cpu.axi_interconnect.get_llc_table_out(),
                             cpu.axi_interconnect.get_llc_perf_counters());
   cpu.axi_interconnect.seq();
-  cpu.axi_router.seq(cpu.axi_interconnect.axi_io, cpu.axi_ddr.io,
-                     cpu.axi_mmio.io);
   cpu.axi_ddr.seq();
   cpu.axi_mmio.seq();
 }
@@ -819,7 +855,7 @@ void SimCpu::cycle() {
     front_cycle();
   }
 
-  // AXI phase-1: slave outputs -> router outputs -> interconnect outputs.
+  // AXI phase-1: slave outputs -> interconnect outputs.
   // Interconnect outputs (req.ready/resp.valid) are bridged into MemSubsystem
   // before backend comb, so DCache responses from the previous DCache stage can
   // be visible to LSU in this CPU cycle.
@@ -852,7 +888,7 @@ void SimCpu::cycle() {
     bridge_mem_subsystem_to_axi(*this);
   }
 
-  // AXI phase-2: master requests -> interconnect -> router -> slave inputs.
+  // AXI phase-2: master requests -> interconnect -> slave inputs.
   {
     FRONTEND_HOST_PROFILE_SCOPE(SimAxiInputs);
     axi_subsystem_comb_inputs(*this);

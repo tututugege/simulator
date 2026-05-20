@@ -108,6 +108,7 @@ void RealDcache::stage1_comb() {
         s1s2_nxt.fill_write = s1s2_cur.fill_write;
     } else {
         s1s2_nxt.fill_write.valid = in.mshr2dcache->fill_req.valid && !same_fill_already_in_s2;
+        s1s2_nxt.fill_write.id = in.mshr2dcache->fill_req.id;
         s1s2_nxt.fill_write.dirty = in.mshr2dcache->fill_req.dirty;
 #if !BSD_CONFIG
         s1s2_nxt.fill_write.lsu_origin = in.mshr2dcache->fill_req.lsu_origin;
@@ -269,6 +270,7 @@ void RealDcache::stage2_comb() {
                 out.fill_write->way_idx = select_way;
                 memcpy(out.fill_write->data, s1s2_cur.fill_write.data, sizeof(out.fill_write->data));
                 out.dcache2mshr->fill_resp.done = true; // Mark the MSHR fill as done to unblock the waiting load/store, even though the line is not yet filled into the cache. This allows the writeback to be issued in parallel with the fill, improving performance when the evicted line is dirty.
+                out.dcache2mshr->fill_resp.id = s1s2_cur.fill_write.id;
             }
             else{
                 out.fill_write->valid = false; // Can't accept new fill, so stall the MSHR fill response and the waiting load/store. This may cause deadlock when MSHR and WB are both full, but it's a rare case and can be resolved by replaying the load/store.
@@ -286,6 +288,7 @@ void RealDcache::stage2_comb() {
             out.fill_write->way_idx = select_way;
             memcpy(out.fill_write->data, s1s2_cur.fill_write.data, sizeof(out.fill_write->data));
             out.dcache2mshr->fill_resp.done = true; // Mark the MSHR fill as done to unblock the waiting load/store, even though the line is not yet filled into the cache. This allows the fill to complete and the line to be allocated in cache without waiting for an unnecessary writeback to drain when the evicted line is clean.
+            out.dcache2mshr->fill_resp.id = s1s2_cur.fill_write.id;
         }
     }
 

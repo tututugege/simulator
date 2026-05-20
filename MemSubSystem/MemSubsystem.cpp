@@ -43,6 +43,7 @@ namespace {
 struct AxiLlcTableRuntime {
   DynamicGenericTable<SramTablePolicy> data;
   DynamicGenericTable<SramTablePolicy> meta;
+  DynamicGenericTable<SramTablePolicy> valid;
   DynamicGenericTable<SramTablePolicy> repl;
   axi_interconnect::AXI_LLC_LookupIn_t lookup_in{};
   axi_interconnect::AXI_LLCConfig config{};
@@ -116,10 +117,14 @@ struct AxiLlcTableRuntime {
     meta.configure(make_table_config(
         sets, cfg.ways * axi_interconnect::AXI_LLC_META_ENTRY_BYTES,
         cfg.lookup_latency));
+    valid.configure(make_table_config(
+        sets, axi_interconnect::AXI_LLC::valid_row_bytes(cfg),
+        cfg.lookup_latency));
     repl.configure(make_table_config(sets, axi_interconnect::AXI_LLC_REPL_BYTES,
                                      cfg.lookup_latency));
     data.reset();
     meta.reset();
+    valid.reset();
     repl.reset();
   }
 
@@ -134,15 +139,19 @@ struct AxiLlcTableRuntime {
 
     DynamicTablePayload data_payload;
     DynamicTablePayload meta_payload;
+    DynamicTablePayload valid_payload;
     DynamicTablePayload repl_payload;
     lookup_in.data_valid =
         data.debug_read_row(lookup_pending_index, data_payload);
     lookup_in.meta_valid =
         meta.debug_read_row(lookup_pending_index, meta_payload);
+    lookup_in.valid_valid =
+        valid.debug_read_row(lookup_pending_index, valid_payload);
     lookup_in.repl_valid =
         repl.debug_read_row(lookup_pending_index, repl_payload);
     lookup_in.data.bytes = data_payload.bytes;
     lookup_in.meta.bytes = meta_payload.bytes;
+    lookup_in.valid.bytes = valid_payload.bytes;
     lookup_in.repl.bytes = repl_payload.bytes;
   }
 
@@ -153,6 +162,7 @@ struct AxiLlcTableRuntime {
     if (table_out.invalidate_all) {
       data.reset();
       meta.reset();
+      valid.reset();
       repl.reset();
       lookup_pending_valid = false;
       lookup_pending_index = 0;
@@ -168,20 +178,26 @@ struct AxiLlcTableRuntime {
         table_out.meta,
         config.ways * axi_interconnect::AXI_LLC_META_ENTRY_BYTES,
         axi_interconnect::AXI_LLC_META_ENTRY_BYTES);
+    const auto valid_write = make_write_req(
+        table_out.valid, axi_interconnect::AXI_LLC::valid_row_bytes(config), 0);
     const auto repl_write =
         make_write_req(table_out.repl, axi_interconnect::AXI_LLC_REPL_BYTES, 0);
 
     data.seq({}, data_write);
     meta.seq({}, meta_write);
+    valid.seq({}, valid_write);
     repl.seq({}, repl_write);
 
     const bool data_read_en = table_out.data.enable && !table_out.data.write;
     const bool meta_read_en = table_out.meta.enable && !table_out.meta.write;
+    const bool valid_read_en = table_out.valid.enable && !table_out.valid.write;
     const bool repl_read_en = table_out.repl.enable && !table_out.repl.write;
-    const bool any_read_en = data_read_en || meta_read_en || repl_read_en;
+    const bool any_read_en =
+        data_read_en || meta_read_en || valid_read_en || repl_read_en;
     if (any_read_en) {
-      assert(data_read_en && meta_read_en && repl_read_en);
+      assert(data_read_en && meta_read_en && valid_read_en && repl_read_en);
       assert(table_out.data.index == table_out.meta.index);
+      assert(table_out.data.index == table_out.valid.index);
       assert(table_out.data.index == table_out.repl.index);
     }
 

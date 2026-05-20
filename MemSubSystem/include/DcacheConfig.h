@@ -38,6 +38,7 @@ struct MSHRReq{
 
 struct MSHR_FILLReq{
     wire<1> valid;
+    wire<DCACHE_MSHR_BITS> id;
     wire<1> dirty;
 #if !BSD_CONFIG
     wire<1> lsu_origin;
@@ -49,6 +50,7 @@ struct MSHR_FILLReq{
 };
 struct MSHR_FILLResp{
     wire<1> done;
+    wire<DCACHE_MSHR_BITS> id;
 };
 struct MSHRDcacheIO {
     MSHR_FILLReq fill_req;
@@ -61,7 +63,7 @@ struct MSHRDcacheIO {
 
 struct DcacheMSHRIO {
     MSHRFINDReq find_req[LSU_LDU_COUNT + LSU_STA_COUNT]; // one MSHRReq per load/store slot, for miss allocation and hit check
-    MSHRReq mshr_req[DCACHE_MISS_NUM];
+    MSHRReq mshr_req[LSU_LDU_COUNT + LSU_STA_COUNT];
     MSHR_FILLResp fill_resp;
     
     void clear() {
@@ -130,6 +132,7 @@ struct PendingWrite {
 };
 struct FILLWrite {
     wire<1>     valid    = false;
+    wire<DCACHE_MSHR_BITS> id = 0;
     wire<1>     dirty    = false;
 #if !BSD_CONFIG
     wire<1>     lsu_origin = false;

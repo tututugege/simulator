@@ -279,8 +279,20 @@ int main(int argc, char *argv[]) {
 
     const uint64_t ckpt_interval = cpu.back.ckpt_interval_inst_count;
     if (ckpt_interval == 0) {
-      std::cerr << "Error: checkpoint interval must be > 0." << std::endl;
-      return 1;
+      if (!config.ckpt_warmup_target_set) {
+        config.ckpt_warmup_target = 0;
+      }
+      if (config.ckpt_warmup_target != 0) {
+        std::cerr << "Error: zero-interval checkpoint requires --warmup 0, got: "
+                  << config.ckpt_warmup_target << std::endl;
+        return 1;
+      }
+      if (!config.max_commit_inst_set || config.max_commit_inst == 0) {
+        std::cerr << "Error: zero-interval checkpoint requires explicit "
+                     "--max-commit > 0."
+                  << std::endl;
+        return 1;
+      }
     }
 
     if (!config.max_commit_inst_set) {
