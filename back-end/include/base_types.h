@@ -68,6 +68,90 @@ struct WideBits {
     return *this;
   }
 
+  constexpr WideBits &operator&=(const WideBits &other) {
+    for (int i = 0; i < kByteCount; ++i) {
+      bytes[i] &= other.bytes[i];
+    }
+    return *this;
+  }
+
+  template <typename T, typename = std::enable_if_t<IsWireScalarV<T>>>
+  constexpr WideBits &operator&=(T value) {
+    WideBits other;
+    other = value;
+    return (*this &= other);
+  }
+
+  constexpr WideBits &operator^=(const WideBits &other) {
+    for (int i = 0; i < kByteCount; ++i) {
+      bytes[i] ^= other.bytes[i];
+    }
+    trim_unused_bits();
+    return *this;
+  }
+
+  template <typename T, typename = std::enable_if_t<IsWireScalarV<T>>>
+  constexpr WideBits &operator^=(T value) {
+    WideBits other;
+    other = value;
+    return (*this ^= other);
+  }
+
+  constexpr WideBits operator~() const {
+    WideBits res;
+    for (int i = 0; i < kByteCount; ++i) {
+      res.bytes[i] = ~bytes[i];
+    }
+    res.trim_unused_bits();
+    return res;
+  }
+
+  constexpr operator bool() const {
+    for (int i = 0; i < kByteCount; ++i) {
+      if (bytes[i] != 0) return true;
+    }
+    return false;
+  }
+
+  constexpr WideBits operator<<(int shift) const {
+    WideBits res;
+    if (shift < 0 || shift >= Bits) return res;
+    int byte_shift = shift / 8;
+    int bit_shift = shift % 8;
+    for (int i = kByteCount - 1; i >= byte_shift; --i) {
+      res.bytes[i] = bytes[i - byte_shift] << bit_shift;
+      if (bit_shift > 0 && i - byte_shift - 1 >= 0) {
+        res.bytes[i] |= bytes[i - byte_shift - 1] >> (8 - bit_shift);
+      }
+    }
+    res.trim_unused_bits();
+    return res;
+  }
+
+  constexpr WideBits &operator<<=(int shift) {
+    *this = *this << shift;
+    return *this;
+  }
+
+  constexpr WideBits operator>>(int shift) const {
+    WideBits res;
+    if (shift < 0 || shift >= Bits) return res;
+    int byte_shift = shift / 8;
+    int bit_shift = shift % 8;
+    for (int i = 0; i < kByteCount - byte_shift; ++i) {
+      res.bytes[i] = bytes[i + byte_shift] >> bit_shift;
+      if (bit_shift > 0 && i + byte_shift + 1 < kByteCount) {
+        res.bytes[i] |= bytes[i + byte_shift + 1] << (8 - bit_shift);
+      }
+    }
+    return res;
+  }
+
+  constexpr WideBits &operator>>=(int shift) {
+    *this = *this >> shift;
+    return *this;
+  }
+
   template <typename T, typename = std::enable_if_t<IsWireScalarV<T>>>
   constexpr WideBits &operator|=(T value) {
     WideBits other;
@@ -124,6 +208,34 @@ template <int Bits, typename T,
           typename = std::enable_if_t<IsWireScalarV<T>>>
 constexpr WideBits<Bits> operator|(WideBits<Bits> lhs, T value) {
   lhs |= value;
+  return lhs;
+}
+
+template <int Bits>
+constexpr WideBits<Bits> operator&(WideBits<Bits> lhs,
+                                   const WideBits<Bits> &rhs) {
+  lhs &= rhs;
+  return lhs;
+}
+
+template <int Bits, typename T,
+          typename = std::enable_if_t<IsWireScalarV<T>>>
+constexpr WideBits<Bits> operator&(WideBits<Bits> lhs, T value) {
+  lhs &= value;
+  return lhs;
+}
+
+template <int Bits>
+constexpr WideBits<Bits> operator^(WideBits<Bits> lhs,
+                                   const WideBits<Bits> &rhs) {
+  lhs ^= rhs;
+  return lhs;
+}
+
+template <int Bits, typename T,
+          typename = std::enable_if_t<IsWireScalarV<T>>>
+constexpr WideBits<Bits> operator^(WideBits<Bits> lhs, T value) {
+  lhs ^= value;
   return lhs;
 }
 

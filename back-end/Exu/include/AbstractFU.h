@@ -117,7 +117,7 @@ public:
 
   void comb_ctrl() override {
     if (in.flush) {
-      if (in.flush_mask == static_cast<wire<BR_MASK_WIDTH>>(-1)) {
+      if (in.flush_mask == ~wire<BR_MASK_WIDTH>(0)) {
         pipeline_1.clear();
       } else {
         auto it = pipeline_1.begin();
@@ -203,7 +203,7 @@ public:
 
   void comb_ctrl() override {
     if (in.flush && busy_1 &&
-        (in.flush_mask == static_cast<wire<BR_MASK_WIDTH>>(-1) ||
+        (in.flush_mask == ~wire<BR_MASK_WIDTH>(0) ||
          (current_inst_1.br_mask & in.flush_mask) != 0)) {
       busy_1 = false;
       done_cycle_1 = 0;

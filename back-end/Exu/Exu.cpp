@@ -345,8 +345,8 @@ void Exu::comb_fu_ctrl() {
   const bool flush_all = in.rob_bcast->flush;
   const bool flush_br = (!flush_all) && in.dec_bcast->mispred;
   const wire<BR_MASK_WIDTH> flush_mask =
-      flush_all ? static_cast<wire<BR_MASK_WIDTH>>(-1)
-                : (flush_br ? in.dec_bcast->br_mask : 0);
+      flush_all ? ~wire<BR_MASK_WIDTH>(0)
+                : (flush_br ? in.dec_bcast->br_mask : wire<BR_MASK_WIDTH>(0));
   const wire<BR_MASK_WIDTH> clear_mask = in.dec_bcast->clear_mask;
 
   for (size_t i = 0; i < units.size(); i++) {
