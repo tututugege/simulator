@@ -26,6 +26,40 @@ inline void pmem_require_ready(const char *op) {
                "[PhysMemory] %s failed: RAM backend not initialized\n", op);
   std::abort();
 }
+
+inline bool pmem_is_mmio_addr(uint32_t paddr, uint32_t size) {
+  const auto in_range = [](uint32_t addr, uint32_t base, uint32_t len) {
+    if (addr < base) {
+      return false;
+    }
+    return static_cast<uint64_t>(addr - base) < static_cast<uint64_t>(len);
+  };
+  if (size == 0) {
+    return false;
+  }
+  for (uint32_t off = 0; off < size; ++off) {
+    const uint32_t addr = paddr + off;
+    if (!(in_range(addr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
+          in_range(addr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
+          in_range(addr, BOOT_IO_BASE, BOOT_IO_SIZE) ||
+          in_range(addr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline void pmem_require_legal_addr(const char *op, uint32_t paddr,
+                                    uint32_t size) {
+  if (pmem_is_ram_addr(paddr, size) || pmem_is_mmio_addr(paddr, size)) {
+    return;
+  }
+  std::fprintf(stderr,
+               "[PhysMemory] illegal %s access: addr=0x%08x size=%u "
+               "(not in RAM or supported MMIO)\n",
+               op, paddr, static_cast<unsigned>(size));
+  std::abort();
+}
 } // namespace
 
 bool pmem_init() {
@@ -69,6 +103,7 @@ bool pmem_is_ram_addr(uint32_t paddr, uint32_t size) {
 uint32_t pmem_read(uint32_t paddr) {
   pmem_require_ready("read");
   const uint32_t word_addr = paddr & ~0x3u;
+  pmem_require_legal_addr("read", word_addr, 4u);
   if (pmem_is_ram_addr(word_addr, 4u)) {
     return p_memory[(word_addr - PMEM_RAM_BASE) >> 2];
   }
@@ -79,6 +114,7 @@ uint32_t pmem_read(uint32_t paddr) {
 void pmem_write(uint32_t paddr, uint32_t data) {
   pmem_require_ready("write");
   const uint32_t word_addr = paddr & ~0x3u;
+  pmem_require_legal_addr("write", word_addr, 4u);
   if (pmem_is_ram_addr(word_addr, 4u)) {
     p_memory[(word_addr - PMEM_RAM_BASE) >> 2] = data;
     return;
