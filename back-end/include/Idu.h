@@ -39,14 +39,12 @@ public:
   // 状态
   reg<BR_MASK_WIDTH> now_br_mask;
   reg<BR_MASK_WIDTH> br_mask_cp[MAX_BR_NUM];
-  reg<BR_MASK_WIDTH> pending_free_mask; // 延迟一拍释放，避免同拍复用 br_id
   reg<1> tag_vec[MAX_BR_NUM];
   ExuIdIO br_latch;
 
   // 下一周期状态
   wire<BR_MASK_WIDTH> now_br_mask_1;
   wire<BR_MASK_WIDTH> br_mask_cp_1[MAX_BR_NUM];
-  wire<BR_MASK_WIDTH> pending_free_mask_1;
   wire<1> tag_vec_1[MAX_BR_NUM];
   ExuIdIO br_latch_1;
 };
