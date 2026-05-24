@@ -658,8 +658,13 @@ void BackTop::restore_checkpoint(const std::string &filename) {
     CkptIoRange range = {};
     gz_read_pod(file, range);
     const auto &expected = kExpectedIoLayout[i];
-    Assert(range.base == expected.base && range.size == expected.size &&
-           "Error: Checkpoint IO layout mismatch.");
+
+    const bool is_timer_range = (i == kExpectedIoLayout.size() - 1);
+    const bool layout_match =
+        is_timer_range ? (range.base == expected.base)
+                       : (range.base == expected.base &&
+                          range.size == expected.size);
+    Assert(layout_match && "Error: Checkpoint IO layout mismatch.");
 
     std::vector<uint8_t> io_bytes(range.size, 0);
     gz_read_exact(file, io_bytes.data(), io_bytes.size());

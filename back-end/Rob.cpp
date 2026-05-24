@@ -28,6 +28,10 @@ inline bool rob_is_exception(const RobStoredInst &uop) {
   return rob_is_page_fault(uop) || uop.illegal_inst || type == ECALL;
 }
 
+inline bool rob_is_wfi(const RobStoredInst &uop) {
+  return decode_inst_type(uop.type) == WFI;
+}
+
 inline bool rob_is_flush_inst(const RobStoredInst &uop) {
   InstType type = decode_inst_type(uop.type);
   return type == CSR || type == ECALL || type == MRET || type == SRET ||
@@ -261,7 +265,8 @@ void Rob::comb_commit() {
     for (int i = 0; i < ROB_BANK_NUM; i++) {
       if ((entry[i][deq_ptr].valid &&
            (rob_is_flush_inst(entry[i][deq_ptr].uop) ||
-            rob_is_fence_inst(entry[i][deq_ptr].uop))) ||
+            rob_is_fence_inst(entry[i][deq_ptr].uop) ||
+            rob_is_wfi(entry[i][deq_ptr].uop))) ||
           interrupt_pending) {
         single_commit = true;
         break;
@@ -408,15 +413,19 @@ void Rob::comb_commit() {
                  entry[single_idx][deq_ptr].uop.dbg.pc,
                  (unsigned)entry[single_idx][deq_ptr].uop.type);
     }
-    if (rob_is_flush_inst(entry[single_idx][deq_ptr].uop) ||
-        out.rob2csr->interrupt_resp) {
-      const auto &uop = entry[single_idx][deq_ptr].uop;
-      Assert(in.ftq_pc_resp->resp[0].valid);
-      uint32_t single_pc = in.ftq_pc_resp->resp[0].pc;
-      out.rob_bcast->flush = true;
-      out.rob_bcast->exception =
-          rob_is_exception(uop) || out.rob2csr->interrupt_resp;
-      out.rob_bcast->pc = single_pc;
+    const auto &uop = entry[single_idx][deq_ptr].uop;
+    const bool single_is_flush = rob_is_flush_inst(uop);
+    const bool single_is_wfi = rob_is_wfi(uop);
+    if (single_is_flush || out.rob2csr->interrupt_resp || single_is_wfi) {
+      uint32_t single_pc = 0;
+      if (single_is_flush || out.rob2csr->interrupt_resp) {
+        Assert(in.ftq_pc_resp->resp[0].valid);
+        single_pc = in.ftq_pc_resp->resp[0].pc;
+        out.rob_bcast->flush = true;
+        out.rob_bcast->exception =
+            rob_is_exception(uop) || out.rob2csr->interrupt_resp;
+        out.rob_bcast->pc = single_pc;
+      }
 
       if (out.rob2csr->interrupt_resp) {
         // interrupt拥有最高优先级
@@ -441,7 +450,7 @@ void Rob::comb_commit() {
         out.rob_bcast->trap_val = uop.diag_val;
       } else if (decode_inst_type(uop.type) == EBREAK) {
         ctx->exit_reason = ExitReason::EBREAK;
-      } else if (decode_inst_type(uop.type) == WFI) {
+      } else if (single_is_wfi) {
         ctx->exit_reason = ExitReason::WFI;
       } else if (decode_inst_type(uop.type) == CSR) {
         out.rob2csr->commit = true;
