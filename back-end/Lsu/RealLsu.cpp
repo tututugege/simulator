@@ -298,13 +298,46 @@ void RealLsu::comb_cal() {
 void RealLsu::comb_lsu2dis() {
   memset(out.lsu2dis, 0, sizeof(*out.lsu2dis));
 
+  bool stq_full_upper =
+      cur.wait_mmu_stq_count >= STQ_UPPER_BOUND ||
+      cur.mmu_done_stq_count >= STQ_UPPER_BOUND;
+  bool ldq_full_upper =
+      cur.wait_mmu_ldq_count >= LDQ_UPPER_BOUND ||
+      cur.stlf_queue_count >= LDQ_UPPER_BOUND ||
+      cur.wait_dcache_ldq_count >= LDQ_UPPER_BOUND;
+  bool finish_full_upper = cur.finish_count >= Finish_UPPER_BOUND;
+
+  bool stq_full_lower =
+      cur.wait_mmu_stq_count <= STQ_LOWER_BOUND &&
+      cur.mmu_done_stq_count <= STQ_LOWER_BOUND;
+  bool ldq_full_lower =
+      cur.wait_mmu_ldq_count <= LDQ_LOWER_BOUND &&
+      cur.stlf_queue_count <= LDQ_LOWER_BOUND &&
+      cur.wait_dcache_ldq_count <= LDQ_LOWER_BOUND;
+  bool finish_full_lower = cur.finish_count <= Finish_LOWER_BOUND;
+
+  if(!cur.stq_full_flag&&stq_full_upper){
+    nxt.stq_full_flag = true;
+  }else if(cur.stq_full_flag&&stq_full_lower){
+    nxt.stq_full_flag = false;
+  }
+  if(!cur.ldq_full_flag&&ldq_full_upper){
+    nxt.ldq_full_flag = true;
+  }else if(cur.ldq_full_flag&&ldq_full_lower){
+    nxt.ldq_full_flag = false;
+  }
+  if(!cur.finish_full_flag&&finish_full_upper){
+    nxt.finish_full_flag = true;
+  }else if(cur.finish_full_flag&&finish_full_lower){
+    nxt.finish_full_flag = false;
+  }
 
   out.lsu2dis->stq_tail = stq_idx_after(cur.stq_head, cur.stq_count);
   out.lsu2dis->stq_tail_flag =
       stq_tail_flag(cur.stq_head, cur.stq_count, cur.stq_head_flag);
-  out.lsu2dis->stq_free = STQ_SIZE - cur.stq_count;
+  out.lsu2dis->stq_free = (nxt.stq_full_flag || nxt.finish_full_flag) ? 0 : STQ_SIZE - cur.stq_count;
 
-  out.lsu2dis->ldq_free = LDQ_SIZE - ldq_count;
+  out.lsu2dis->ldq_free = (nxt.ldq_full_flag || nxt.finish_full_flag) ? 0 : LDQ_SIZE - ldq_count;
   uint32_t index = 0;
   for (int i = 0; i < LDQ_SIZE && index < MAX_LDQ_DISPATCH_WIDTH; i++) {
     if(cur.ldq[i].load_state == LoadState::Empty) {

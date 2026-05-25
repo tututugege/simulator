@@ -25,6 +25,7 @@ struct S1S2Reg {
         reg<32>    addr     = 0;
         reg<32>     req_id   = 0;
         reg<1>    replayed  = false; // whether this load has been replayed due to MSHR full or conflict, used to avoid accepting new requests for the same load and causing starvation when there are multiple back-to-back misses
+        reg<1>    bank_conflict = false;
 #if !BSD_CONFIG
         reg<1>    perf_replay = false;
 #endif
@@ -38,6 +39,7 @@ struct S1S2Reg {
         reg<8>     strb     = 0; // byte-enable
         reg<32>    req_id   = 0;
         reg<1>     replayed  = false; // whether this store has been replayed due to MSHR full or conflict, used to avoid accepting new requests for the same store and causing starvation when there are multiple back-to-back misses
+        reg<1>     bank_conflict = false;
 #if !BSD_CONFIG
         reg<1>     perf_replay = false;
 #endif

@@ -97,7 +97,7 @@ struct UncachedUnit {
 
   wire<32> addr;
   wire<32> wdata;
-  wire<32> func3;
+  wire<3> func3;
 
   wire<MAX_IDX_WIDTH> idx;
 };
@@ -186,6 +186,10 @@ struct LsuState{
 
   UncachedUnit uncached_unit;
   LrScUnit lrsc_unit;
+
+  wire<1> stq_full_flag;
+  wire<1> ldq_full_flag;
+  wire<1> finish_full_flag;
 
   wire<31-LDQ_IDX_WIDTH> req_gen; // 用于区分不同轮次的重放，防止过期重放条目被误用
 };

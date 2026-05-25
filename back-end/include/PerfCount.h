@@ -52,6 +52,12 @@ public:
   uint64_t l1d_replay_conflict = 0;
   uint64_t l1d_replay_conflict_load = 0;
   uint64_t l1d_replay_conflict_store = 0;
+  uint64_t l1d_replay_bank_conflict = 0;
+  uint64_t l1d_replay_bank_conflict_load = 0;
+  uint64_t l1d_replay_bank_conflict_store = 0;
+  uint64_t l1d_fillout_bank_grant = 0;
+  uint64_t l1d_fillout_bank_conflict = 0;
+  uint64_t l1d_same_line_merge = 0;
   uint64_t l1d_replay_mshr_full = 0;
   uint64_t l1d_replay_mshr_full_load = 0;
   uint64_t l1d_replay_mshr_full_store = 0;
@@ -306,15 +312,15 @@ public:
     l1d_miss_mshr_alloc = 0;
     l1d_req_replay = 0;
     l1d_replay_squash_abort = 0;
-#if !BSD_CONFIG
     l1d_replay_conflict = 0;
     l1d_replay_conflict_load = 0;
     l1d_replay_conflict_store = 0;
-#else
     l1d_replay_bank_conflict = 0;
     l1d_replay_bank_conflict_load = 0;
     l1d_replay_bank_conflict_store = 0;
-#endif
+    l1d_fillout_bank_grant = 0;
+    l1d_fillout_bank_conflict = 0;
+    l1d_same_line_merge = 0;
     l1d_replay_mshr_full = 0;
     l1d_replay_mshr_full_load = 0;
     l1d_replay_mshr_full_store = 0;
@@ -757,11 +763,17 @@ public:
             : static_cast<double>(l1d_mem_inst_total_cycles) /
                   static_cast<double>(l1d_mem_inst_samples);
     const uint64_t l1d_replay_reason_total =
-        l1d_replay_conflict + l1d_replay_mshr_full + l1d_replay_wait_mshr;
+        l1d_replay_conflict + l1d_replay_bank_conflict +
+        l1d_replay_mshr_full + l1d_replay_wait_mshr;
     const double l1d_replay_conflict_ratio =
         (l1d_replay_reason_total == 0)
             ? 0.0
             : static_cast<double>(l1d_replay_conflict) * 100.0 /
+                  static_cast<double>(l1d_replay_reason_total);
+    const double l1d_replay_bank_conflict_ratio =
+        (l1d_replay_reason_total == 0)
+            ? 0.0
+            : static_cast<double>(l1d_replay_bank_conflict) * 100.0 /
                   static_cast<double>(l1d_replay_reason_total);
     const double l1d_replay_mshr_full_ratio =
         (l1d_replay_reason_total == 0)
@@ -787,6 +799,18 @@ public:
            l1d_replay_conflict_load);
     printf("\033[38;5;34m  - STORE                : %ld\033[0m\n",
            l1d_replay_conflict_store);
+    printf("\033[38;5;34mL1D_REPLAY_BANK_CONFLICT : %ld\033[0m\n",
+           l1d_replay_bank_conflict);
+    printf("\033[38;5;34m  - LOAD                 : %ld\033[0m\n",
+           l1d_replay_bank_conflict_load);
+    printf("\033[38;5;34m  - STORE                : %ld\033[0m\n",
+           l1d_replay_bank_conflict_store);
+    printf("\033[38;5;34mL1D_FILLOUT_BANK_GRANT   : %ld\033[0m\n",
+           l1d_fillout_bank_grant);
+    printf("\033[38;5;34mL1D_FILLOUT_BANK_CONFLICT: %ld\033[0m\n",
+           l1d_fillout_bank_conflict);
+    printf("\033[38;5;34mL1D_SAME_LINE_MERGE      : %ld\033[0m\n",
+           l1d_same_line_merge);
     printf("\033[38;5;34mL1D_REPLAY_MSHR_FULL     : %ld\033[0m\n",
            l1d_replay_mshr_full);
     printf("\033[38;5;34m  - LOAD                 : %ld\033[0m\n",
@@ -813,6 +837,8 @@ public:
            l1d_replay_reason_total);
     printf("\033[38;5;34m  - CONFLICT_RATIO       : %.2f%%\033[0m\n",
            l1d_replay_conflict_ratio);
+    printf("\033[38;5;34m  - BANK_CONFLICT_RATIO  : %.2f%%\033[0m\n",
+           l1d_replay_bank_conflict_ratio);
     printf("\033[38;5;34m  - MSHR_FULL_RATIO      : %.2f%%\033[0m\n",
            l1d_replay_mshr_full_ratio);
     printf("\033[38;5;34m  - WAIT_MSHR_RATIO      : %.2f%%\033[0m\n",

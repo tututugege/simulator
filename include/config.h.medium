@@ -539,6 +539,11 @@ static_assert(CONFIG_LSU_STORE_WINDOW_WIDTH > 0 &&
               "CONFIG_LSU_STORE_WINDOW_WIDTH must be in 1..STQ_SIZE");
 constexpr int LOAD_WINDOWS_WIDTH = CONFIG_LSU_LOAD_WINDOW_WIDTH;
 constexpr int STORE_WINDOWS_WIDTH = CONFIG_LSU_STORE_WINDOW_WIDTH;
+
+constexpr int STQ_UPPER_LIMIT = STQ_SIZE*0.8;
+constexpr int LDQ_UPPER_LIMIT = LDQ_SIZE*0.8;
+constexpr int Finish_UPPER_LIMIT = (STQ_SIZE + LDQ_SIZE)*0.8;
+
 // ============================================================
 // Global Sanity Checks
 // ============================================================
