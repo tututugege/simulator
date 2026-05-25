@@ -10,11 +10,11 @@ struct StoreTag {
 
 namespace {
 
-static uint32_t mem_mask_for_width(int width) {
+[[maybe_unused]] static uint32_t mem_mask_for_width(int width) {
   return width >= 4 ? 0xFFFFFFFFu : ((1u << (width * 8)) - 1);
 }
 
-static int get_mem_width(int func3) {
+[[maybe_unused]] static int get_mem_width(int func3) {
   switch (func3 & 0b11) {
   case 0b00:
     return 1;
@@ -26,7 +26,7 @@ static int get_mem_width(int func3) {
   }
 }
 
-static uint32_t extract_data(uint32_t raw_mem_val, uint32_t addr, int func3) {
+[[maybe_unused]] static uint32_t extract_data(uint32_t raw_mem_val, uint32_t addr, int func3) {
   const int bit_offset = (addr & 0x3) * 8;
   const int width = get_mem_width(func3);
   const uint32_t mask = mem_mask_for_width(width);
@@ -42,7 +42,7 @@ static uint32_t extract_data(uint32_t raw_mem_val, uint32_t addr, int func3) {
   return result;
 }
 
-static inline uint8_t get_store_strb(uint32_t addr, uint8_t func3) {
+[[maybe_unused]] static inline uint8_t get_store_strb(uint32_t addr, uint8_t func3) {
   uint32_t off = addr & 0x3;
   switch (func3 & 0x3) {
   case 0:
@@ -56,7 +56,7 @@ static inline uint8_t get_store_strb(uint32_t addr, uint8_t func3) {
   }
 }
 
-static inline uint32_t align_store_data(uint32_t data, uint32_t addr,
+[[maybe_unused]] static inline uint32_t align_store_data(uint32_t data, uint32_t addr,
                                         uint8_t func3) {
   uint32_t off = addr & 0x3;
   switch (func3 & 0x3) {
@@ -76,12 +76,12 @@ constexpr uint32_t kLsuReqIdGenBits = 31 - LDQ_IDX_WIDTH;
 constexpr uint32_t kLsuReqIdIdxMask = (1u << LDQ_IDX_WIDTH) - 1;
 constexpr uint32_t kLsuReqIdGenMask = (1u << kLsuReqIdGenBits) - 1;
 
-static uint32_t normalize_lsu_req_gen(uint32_t gen) {
+[[maybe_unused]] static uint32_t normalize_lsu_req_gen(uint32_t gen) {
   return gen & kLsuReqIdGenMask;
 }
 
 template <typename PtrT, typename FlagT>
-static void advance_ring_ptr(PtrT &ptr, FlagT &flag, uint32_t size) {
+[[maybe_unused]] static void advance_ring_ptr(PtrT &ptr, FlagT &flag, uint32_t size) {
   const uint32_t next = static_cast<uint32_t>(ptr) + 1;
   if (next >= size) {
     ptr = 0;
@@ -92,33 +92,33 @@ static void advance_ring_ptr(PtrT &ptr, FlagT &flag, uint32_t size) {
 }
 
 template <typename PtrT>
-static void advance_ring_ptr(PtrT &ptr, uint32_t size) {
+[[maybe_unused]] static void advance_ring_ptr(PtrT &ptr, uint32_t size) {
   const uint32_t next = static_cast<uint32_t>(ptr) + 1;
   ptr = next >= size ? 0 : next;
 }
 
 
-static bool stq_idx_alive_after_flush(uint32_t idx, uint32_t head,
+[[maybe_unused]] static bool stq_idx_alive_after_flush(uint32_t idx, uint32_t head,
                                       uint32_t new_count) {
   return ((idx + STQ_SIZE - head) % STQ_SIZE) < new_count;
 }
 
-static bool stq_tail_flag(uint32_t head, uint32_t count, bool head_flag) {
+[[maybe_unused]] static bool stq_tail_flag(uint32_t head, uint32_t count, bool head_flag) {
   return (head + count) >= STQ_SIZE ? !head_flag : head_flag;
 }
 
-static uint32_t stq_idx_after(uint32_t head, uint32_t count) {
+[[maybe_unused]] static uint32_t stq_idx_after(uint32_t head, uint32_t count) {
   return (head + count) % STQ_SIZE;
 }
 
-static bool lsu_is_mmio_addr(uint32_t paddr) {
+[[maybe_unused]] static bool lsu_is_mmio_addr(uint32_t paddr) {
   return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
          ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
          (paddr == OPENSBI_TIMER_LOW_ADDR) ||
          (paddr == OPENSBI_TIMER_HIGH_ADDR);
 }
 
-static bool lsu_mmio_is_oldest_unfinished(const RobBroadcastIO *rob_bcast,
+[[maybe_unused]] static bool lsu_mmio_is_oldest_unfinished(const RobBroadcastIO *rob_bcast,
                                           uint32_t rob_idx) {
   if (rob_bcast == nullptr) {
     return false;
@@ -129,11 +129,11 @@ static bool lsu_mmio_is_oldest_unfinished(const RobBroadcastIO *rob_bcast,
   return rob_bcast->head_valid && rob_bcast->head_rob_idx == rob_idx;
 }
 
-static uint32_t stq_tag_value(uint32_t idx, bool flag) {
+[[maybe_unused]] static uint32_t stq_tag_value(uint32_t idx, bool flag) {
   return (flag ? STQ_SIZE : 0) + idx;
 }
 
-static bool stq_distance_from_head_to_boundary(uint32_t head,
+[[maybe_unused]] static bool stq_distance_from_head_to_boundary(uint32_t head,
                                                bool head_flag,
                                                uint32_t count,
                                                StoreTag boundary,
@@ -149,20 +149,20 @@ static bool stq_distance_from_head_to_boundary(uint32_t head,
   return distance <= count;
 }
 
-static uint32_t make_lsu_load_req_id(uint32_t wait_idx, uint32_t gen) {
+[[maybe_unused]] static uint32_t make_lsu_load_req_id(uint32_t wait_idx, uint32_t gen) {
   return (normalize_lsu_req_gen(gen) << LDQ_IDX_WIDTH) |
          (wait_idx & kLsuReqIdIdxMask);
 }
 
-static uint32_t lsu_req_id_gen(uint32_t req_id) {
+[[maybe_unused]] static uint32_t lsu_req_id_gen(uint32_t req_id) {
   return (req_id >> LDQ_IDX_WIDTH) & kLsuReqIdGenMask;
 }
 
-static uint32_t lsu_req_id_wait_idx(uint32_t req_id) {
+[[maybe_unused]] static uint32_t lsu_req_id_wait_idx(uint32_t req_id) {
   return req_id & kLsuReqIdIdxMask;
 }
 
-static bool lsu_is_timer_addr(uint32_t paddr) {
+[[maybe_unused]] static bool lsu_is_timer_addr(uint32_t paddr) {
   return paddr == OPENSBI_TIMER_LOW_ADDR ||
          paddr == OPENSBI_TIMER_HIGH_ADDR;
 }

@@ -281,8 +281,8 @@ STLFResult check_stlf(uint32_t load_addr, uint32_t load_func3, uint32_t store_ad
 RealLsu::RealLsu(SimContext *ctx) : cur{}, nxt{}, in{}, out{}, ctx(ctx) {}
 
 void RealLsu::init() {
-  std::memset(&cur, 0, sizeof(cur));
-  std::memset(&nxt, 0, sizeof(nxt));
+  cur = {};
+  nxt = {};
 }
 uint32_t ldq_count = 0;
 void RealLsu::comb_cal() {
@@ -296,7 +296,7 @@ void RealLsu::comb_cal() {
 }
 
 void RealLsu::comb_lsu2dis() {
-  memset(out.lsu2dis, 0, sizeof(*out.lsu2dis));
+  *out.lsu2dis = {};
 
 
   out.lsu2dis->stq_tail = stq_idx_after(cur.stq_head, cur.stq_count);
@@ -316,7 +316,7 @@ void RealLsu::comb_lsu2dis() {
 }
 
 void RealLsu::comb_lsu2rob() {
-  memset(out.lsu2rob, 0, sizeof(*out.lsu2rob));
+  *out.lsu2rob = {};
 
   out.lsu2rob->committed_store_pending = cur.stq_commit_count != 0;
   uint64_t miss_mask = lsu_perf::load_miss_mask(cur);
@@ -365,7 +365,7 @@ void RealLsu::comb_mmio_in() {
 }
 
 void RealLsu::comb_tlb_out() {
-  memset(out.lsu2mmu, 0, sizeof(*out.lsu2mmu));
+  *out.lsu2mmu = {};
 
   out.lsu2mmu->csr_status = *in.csr_status;
 
@@ -600,9 +600,9 @@ void RealLsu::comb_dis2lsu() {
 
 #ifndef LSU_STLF
 void RealLsu::comb_stlf() {
-  int32_t issue = LOAD_WINDOWS_WIDTH;
+  const uint32_t issue = static_cast<uint32_t>(LOAD_WINDOWS_WIDTH);
 
-  for (int i = 0; i < issue; i++) {
+  for (uint32_t i = 0; i < issue; i++) {
     const uint32_t ldq_idx = (nxt.ldq_head + i) % LDQ_SIZE;
     LdqEntry &entry = nxt.ldq[ldq_idx];
 
@@ -664,14 +664,17 @@ void RealLsu::comb_stlf() {
 void RealLsu::comb_stlf() {
   repair_stlf_queue_entries(nxt);
 
-  int32_t issue = nxt.stlf_queue_count > LOAD_WINDOWS_WIDTH ? LOAD_WINDOWS_WIDTH : nxt.stlf_queue_count;
+  const uint32_t issue =
+      nxt.stlf_queue_count > static_cast<uint32_t>(LOAD_WINDOWS_WIDTH)
+          ? static_cast<uint32_t>(LOAD_WINDOWS_WIDTH)
+          : nxt.stlf_queue_count;
 
   uint32_t todcache_wait_count = 0;
   auto requeue_stlf = [&](uint32_t idx) {
     enqueue_stlf_queue(nxt, idx);
   };
 
-  for (int i = 0; i < issue; i++) {
+  for (uint32_t i = 0; i < issue; i++) {
     const uint32_t stlf_idx = nxt.stlf_queue_head;
     const STLFEntry stlf_entry = nxt.stlf_queue[stlf_idx];
     nxt.stlf_queue[stlf_idx].valid = false; // 无论能否通过STLF检查，这个条目都不应该再保留在STLF队列中了
@@ -928,7 +931,7 @@ void RealLsu::comb_dcache2lsu_ldq() {
   uint32_t tmp_head = nxt.wait_dcache_ldq_head;
   uint32_t tmp_count = nxt.wait_dcache_ldq_count;
   uint32_t issue = tmp_count > LSU_LDU_COUNT ? LSU_LDU_COUNT : tmp_count;
-  for (int i = 0; i < issue; i++) {
+  for (uint32_t i = 0; i < issue; i++) {
     if (!nxt.wait_dcache_ldq[(nxt.wait_dcache_ldq_head + i) % LDQ_SIZE].valid) {
       tmp_head = (tmp_head + 1) % LDQ_SIZE;
       if (tmp_count > 0) {
@@ -1083,11 +1086,14 @@ void RealLsu::comb_lsu2dcache_stq() {
 }
 
 void RealLsu::comb_lsu2exe() {
-  memset(out.lsu2exe, 0, sizeof(*out.lsu2exe));
+  *out.lsu2exe = {};
 
-  int32_t issue = nxt.mmu_done_stq_count > LSU_STA_COUNT ? LSU_STA_COUNT : nxt.mmu_done_stq_count;
+  uint32_t issue =
+      nxt.mmu_done_stq_count > static_cast<uint32_t>(LSU_STA_COUNT)
+          ? static_cast<uint32_t>(LSU_STA_COUNT)
+          : nxt.mmu_done_stq_count;
 
-  for (int i = 0; i < issue; i++) {
+  for (uint32_t i = 0; i < issue; i++) {
     const uint32_t done_idx = (nxt.mmu_done_stq_head + i) % STQ_SIZE;
     const auto entry = nxt.mmu_done_stq[done_idx];
     if (entry.valid) {
@@ -1116,8 +1122,10 @@ void RealLsu::comb_lsu2exe() {
 
   uint32_t tmp_head = nxt.mmu_done_stq_head;
   uint32_t tmp_count = nxt.mmu_done_stq_count;
-  issue = tmp_count > LSU_STA_COUNT ? LSU_STA_COUNT : tmp_count;
-  for (int i = 0; i < issue; i++) {
+  issue = tmp_count > static_cast<uint32_t>(LSU_STA_COUNT)
+              ? static_cast<uint32_t>(LSU_STA_COUNT)
+              : tmp_count;
+  for (uint32_t i = 0; i < issue; i++) {
     if (!nxt.mmu_done_stq[(nxt.mmu_done_stq_head + i) % STQ_SIZE].valid) {
       tmp_head = (tmp_head + 1) % STQ_SIZE;
       if (tmp_count > 0) {
@@ -1130,8 +1138,10 @@ void RealLsu::comb_lsu2exe() {
   nxt.mmu_done_stq_head = tmp_head;
   nxt.mmu_done_stq_count = tmp_count;
 
-  issue = nxt.finish_count > LSU_LDU_COUNT ? LSU_LDU_COUNT : nxt.finish_count;
-  for (int i = 0; i < issue; i++) {
+  issue = nxt.finish_count > static_cast<uint32_t>(LSU_LDU_COUNT)
+              ? static_cast<uint32_t>(LSU_LDU_COUNT)
+              : nxt.finish_count;
+  for (uint32_t i = 0; i < issue; i++) {
     const uint32_t finish_idx = (nxt.finish_head + i) % kFinishSize;
     const auto entry = nxt.finish[finish_idx];
     if (entry.valid) {
@@ -1208,8 +1218,10 @@ void RealLsu::comb_lsu2exe() {
 
   tmp_head = nxt.finish_head;
   tmp_count = nxt.finish_count;
-  issue = tmp_count > LSU_LDU_COUNT ? LSU_LDU_COUNT : tmp_count;
-  for (int i = 0; i < issue; i++) {
+  issue = tmp_count > static_cast<uint32_t>(LSU_LDU_COUNT)
+              ? static_cast<uint32_t>(LSU_LDU_COUNT)
+              : tmp_count;
+  for (uint32_t i = 0; i < issue; i++) {
     if (!nxt.finish[(nxt.finish_head + i) % kFinishSize].valid) {
       tmp_head = (tmp_head + 1) % kFinishSize;
       if (tmp_count > 0) {
@@ -1272,7 +1284,7 @@ void RealLsu::comb_check() {
   }
   uint32_t issue = committed_count > LSU_STA_COUNT ? LSU_STA_COUNT : committed_count;
   uint32_t retired_stq = 0;
-  for (int i = 0; i < issue; i++) {
+  for (uint32_t i = 0; i < issue; i++) {
     const uint32_t stq_idx = nxt.stq_head;
     if (nxt.stq[stq_idx].store_state == StoreState::Done) {
       nxt.stq_count--;
@@ -1308,7 +1320,7 @@ void RealLsu::comb_flush() {
       nxt.wait_mmu_stq[i].valid = false;
       nxt.mmu_done_stq[i].valid = false;
     }
-    for (int i = 0; i < kFinishSize; i++) {
+    for (uint32_t i = 0; i < kFinishSize; i++) {
       nxt.finish[i].valid = false;
     }
 
