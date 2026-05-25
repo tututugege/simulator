@@ -3,4 +3,4 @@
 	url = https://github.com/dyh1807/axi-interconnect-kit.git
 [submodule "GenSimpoint"]
 	path = GenSimpoint
-	url = git@github.com:tututugege/GenSimpoint.git
+	url = https://github.com/tututugege/GenSimpoint.git
