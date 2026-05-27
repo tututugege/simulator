@@ -297,11 +297,11 @@ void MSHR::comb_inputs_axi()
     }
 
 }
-void MSHR::seq()
+void MSHR::seq(bool sample_perf)
 {
     cur = nxt;
 #if !BSD_CONFIG
-    if (ctx != nullptr) {
+    if (sample_perf && ctx != nullptr) {
         const uint64_t mshr_count = static_cast<uint64_t>(cur.mshr_count);
         ctx->perf.l1d_mshr_average_count += mshr_count;
         if (mshr_count > ctx->perf.l1d_mshr_max_count) {

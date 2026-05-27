@@ -72,6 +72,8 @@ public:
   void comb_outputs();
   void comb_inputs();
   void seq();
+  void dcache_fast_comb(bool inject_slow_request);
+  void dcache_fast_seq(bool sample_mshr_perf = false);
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   void sync_mmio_devices_from_backing();
   void dump_debug_state(FILE *out) const;
@@ -103,6 +105,20 @@ private:
   MemRouteBlock mem_route_block;
   LsuDcacheIO dcache_req_mux_{};
   DcacheLsuIO dcache_resp_raw_{};
+  DcacheLsuIO dcache_resp_pending_{};
+  DcacheLsuIO dcache_resp_route_{};
+  LsuDcacheIO dcache_empty_req_{};
+
+  struct DcacheRespMeta {
+    bool valid = false;
+    bool is_store = false;
+    uint32_t addr = 0;
+    uint32_t data = 0;
+    uint8_t strb = 0;
+  };
+  DcacheRespMeta dcache_resp_meta_cur_[LSU_LDU_COUNT + LSU_STA_COUNT]{};
+  DcacheRespMeta dcache_resp_meta_nxt_[LSU_LDU_COUNT + LSU_STA_COUNT]{};
+  DcacheRespMeta dcache_resp_pending_meta_[LSU_LDU_COUNT + LSU_STA_COUNT]{};
 
   MSHRDcacheIO mshr_dcache_io_{};
   DcacheMSHRIO dcache_mshr_io_{};
@@ -131,6 +147,14 @@ private:
   bool internal_axi_runtime_active_ = true;
 
   void sync_ptw_port_outputs();
+  void dcache_domain_comb_outputs();
+  void dcache_domain_comb_inputs();
+  void dcache_domain_seq(bool sample_mshr_perf);
+  void record_dcache_stage1_metadata();
+  void capture_dcache_raw_response();
+  void forward_pending_response_from_fill();
+  void publish_pending_dcache_response();
+  void clear_pending_dcache_response();
 
   friend class MemSubsystemPtwMemPortAdapter;
   friend class MemSubsystemPtwWalkPortAdapter;

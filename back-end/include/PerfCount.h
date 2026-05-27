@@ -69,6 +69,15 @@ public:
   uint64_t l1d_replay_wait_mshr_fill_wait = 0;
   uint64_t l1d_replay_wait_mshr_fill_req = 0;
   uint64_t l1d_replay_wait_mshr_fill_write = 0;
+  uint64_t l1d_fast_domain_ticks = 0;
+  uint64_t l1d_fast_mshr_axi_req_accepted = 0;
+  uint64_t l1d_fast_mshr_axi_resp_consumed = 0;
+  uint64_t l1d_fast_wb_axi_req_accepted = 0;
+  uint64_t l1d_fast_wb_axi_resp_consumed = 0;
+  uint64_t l1d_fill_forward_load = 0;
+  uint64_t l1d_fill_merge_store = 0;
+  uint64_t l1d_fill_wakeup_seen = 0;
+  uint64_t l1d_fill_wakeup_overwrite = 0;
   uint64_t l1d_miss_penalty_total_cycles = 0;
   uint64_t l1d_miss_penalty_samples = 0;
   uint64_t l1d_axi_read_total_cycles = 0;
@@ -332,6 +341,15 @@ public:
     l1d_replay_wait_mshr_fill_wait = 0;
     l1d_replay_wait_mshr_fill_req = 0;
     l1d_replay_wait_mshr_fill_write = 0;
+    l1d_fast_domain_ticks = 0;
+    l1d_fast_mshr_axi_req_accepted = 0;
+    l1d_fast_mshr_axi_resp_consumed = 0;
+    l1d_fast_wb_axi_req_accepted = 0;
+    l1d_fast_wb_axi_resp_consumed = 0;
+    l1d_fill_forward_load = 0;
+    l1d_fill_merge_store = 0;
+    l1d_fill_wakeup_seen = 0;
+    l1d_fill_wakeup_overwrite = 0;
     l1d_miss_penalty_total_cycles = 0;
     l1d_miss_penalty_samples = 0;
     l1d_axi_read_total_cycles = 0;
@@ -833,6 +851,24 @@ public:
            l1d_replay_wait_mshr_fill_req);
     printf("\033[38;5;34m    - FILL_WRITE         : %ld\033[0m\n",
            l1d_replay_wait_mshr_fill_write);
+    printf("\033[38;5;34mL1D_FAST_DOMAIN_TICKS    : %ld\033[0m\n",
+           l1d_fast_domain_ticks);
+    printf("\033[38;5;34m  - MSHR_REQ_ACCEPTED   : %ld\033[0m\n",
+           l1d_fast_mshr_axi_req_accepted);
+    printf("\033[38;5;34m  - MSHR_RESP_CONSUMED  : %ld\033[0m\n",
+           l1d_fast_mshr_axi_resp_consumed);
+    printf("\033[38;5;34m  - WB_REQ_ACCEPTED     : %ld\033[0m\n",
+           l1d_fast_wb_axi_req_accepted);
+    printf("\033[38;5;34m  - WB_RESP_CONSUMED    : %ld\033[0m\n",
+           l1d_fast_wb_axi_resp_consumed);
+    printf("\033[38;5;34mL1D_FILL_FORWARD_LOAD    : %ld\033[0m\n",
+           l1d_fill_forward_load);
+    printf("\033[38;5;34mL1D_FILL_MERGE_STORE     : %ld\033[0m\n",
+           l1d_fill_merge_store);
+    printf("\033[38;5;34mL1D_FILL_WAKEUP_SEEN     : %ld\033[0m\n",
+           l1d_fill_wakeup_seen);
+    printf("\033[38;5;34mL1D_FILL_WAKEUP_OVERWRITE: %ld\033[0m\n",
+           l1d_fill_wakeup_overwrite);
     printf("\033[38;5;34mL1D_REPLAY_REASON_TOTAL  : %ld\033[0m\n",
            l1d_replay_reason_total);
     printf("\033[38;5;34m  - CONFLICT_RATIO       : %.2f%%\033[0m\n",

@@ -87,7 +87,7 @@ public:
     void comb_outputs_dcache();
     void comb_inputs_axi();
     void comb_inputs_dcache();
-    void seq();
+    void seq(bool sample_perf = true);
 
     MSHRINIO in;
     MSHROUTIO out;

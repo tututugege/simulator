@@ -382,10 +382,22 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_LD),                             // Port 3: Load
     PORT_CFG(OP_MASK_LD),                             // Port 3: Load
     PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_LD),                             // Port 2: Load
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
+    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
     PORT_CFG(OP_MASK_STA),                            // Port 4: Store Addr
     PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
     PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
     PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 4: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
+    PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
+    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
     PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
     PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
     PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
