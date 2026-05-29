@@ -66,7 +66,8 @@ inline bool is_mmio_range(uint32_t addr, uint32_t base, uint32_t size) {
 
 inline bool is_modeled_mmio_addr(uint32_t paddr) {
   return is_mmio_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
-         is_mmio_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE);
+         is_mmio_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
+         is_mmio_range(paddr, XPS_INTC_ADDR_BASE, XPS_INTC_MMIO_SIZE);
 } // namespace
 
 // ---------------- 辅助工具 ----------------

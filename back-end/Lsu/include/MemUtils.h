@@ -114,6 +114,8 @@ template <typename PtrT>
 [[maybe_unused]] static bool lsu_is_mmio_addr(uint32_t paddr) {
   return ((paddr & UART_ADDR_MASK) == UART_ADDR_BASE) ||
          ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
+         (paddr >= XPS_INTC_ADDR_BASE &&
+          paddr < (XPS_INTC_ADDR_BASE + XPS_INTC_MMIO_SIZE)) ||
          (paddr == OPENSBI_TIMER_LOW_ADDR) ||
          (paddr == OPENSBI_TIMER_HIGH_ADDR);
 }

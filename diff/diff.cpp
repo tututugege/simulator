@@ -253,7 +253,6 @@ fault:
          dut_cpu.instruction);
   std::printf("Commit PC: 0x%08x\tDUT next PC: 0x%08x\tREF next PC: 0x%08x\n",
               dut_cpu.commit_pc, dut_cpu.pc, ref_state.pc);
-  
   std::printf("[DIFF] p_memory@a5(0x%08x)=0x%08x ref=0x%08x\n", dut_cpu.gpr[15],
               pmem_read(dut_cpu.gpr[15]),
               refcpu_load_word(ref_cpu_ctx, dut_cpu.gpr[15]));
