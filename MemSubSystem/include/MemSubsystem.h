@@ -177,7 +177,6 @@ private:
     uint64_t bypass_read = 0;
     uint64_t write_passthrough = 0;
     uint64_t refill = 0;
-    uint64_t mshr_alloc = 0;
     uint64_t mshr_merge = 0;
     uint64_t prefetch_issue = 0;
     uint64_t prefetch_hit = 0;

@@ -66,7 +66,6 @@ static void count_l1d_replay(SimContext *ctx, uint32_t req_id, bool is_store,
         count_load_store(ctx->perf.l1d_replay_wait_mshr,
                          ctx->perf.l1d_replay_wait_mshr_load,
                          ctx->perf.l1d_replay_wait_mshr_store);
-        ctx->perf.l1d_replay_wait_mshr_first_alloc++;
         break;
     case L1DReplayReason::WaitMshrFillReq:
         count_load_store(ctx->perf.l1d_replay_wait_mshr,

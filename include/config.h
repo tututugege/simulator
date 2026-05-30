@@ -377,11 +377,6 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
-    PORT_CFG(OP_MASK_LD),                             // Port 2: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
-    PORT_CFG(OP_MASK_LD),                             // Port 3: Load
     PORT_CFG(OP_MASK_LD),                             // Port 2: Load
     PORT_CFG(OP_MASK_LD),                             // Port 3: Load
     PORT_CFG(OP_MASK_LD),                             // Port 3: Load
@@ -390,14 +385,6 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
     PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
     PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 4: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
-    PORT_CFG(OP_MASK_STA),                            // Port 5: Store Addr
-    PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
-    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
-    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
-    PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
     PORT_CFG(OP_MASK_STD),                            // Port 6: Store Data
     PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
     PORT_CFG(OP_MASK_STD),                            // Port 7: Store Data
@@ -454,11 +441,7 @@ constexpr int ALU_NUM = count_ports_with_mask(OP_MASK_ALU);
 constexpr int BRU_NUM = count_ports_with_mask(OP_MASK_BR);
 constexpr int FTQ_PRF_PC_PORT_NUM = ALU_NUM + BRU_NUM;
 constexpr int FTQ_ROB_PC_PORT_NUM = 1;
-#ifndef CONFIG_STQ_SIZE
-#define CONFIG_STQ_SIZE 512
-#endif
-static_assert(CONFIG_STQ_SIZE > 0, "CONFIG_STQ_SIZE must be positive");
-constexpr int STQ_SIZE = CONFIG_STQ_SIZE;
+constexpr int STQ_SIZE = 512;
 constexpr int LDQ_SIZE = 512;
 constexpr int MUL_MAX_LATENCY = 2;
 constexpr int DIV_MAX_LATENCY = 16;
@@ -550,30 +533,13 @@ constexpr int IQ_READY_NUM_WIDTH = bit_width_for_count(MAX_IQ_SIZE + 1);
 
 
 constexpr int DCACHE_MISS_NUM = LSU_LDU_COUNT+LSU_STA_COUNT;
-
-#define LSU_STLF
-#ifndef CONFIG_LSU_LOAD_WINDOW_WIDTH
-#define CONFIG_LSU_LOAD_WINDOW_WIDTH (LSU_LDU_COUNT * 5)
-#endif
-#ifndef CONFIG_LSU_STORE_WINDOW_WIDTH
-#define CONFIG_LSU_STORE_WINDOW_WIDTH (LSU_LDU_COUNT * 5)
-#endif
-
-constexpr int STQ_UPPER_BOUND = STQ_SIZE-CONFIG_LSU_LOAD_WINDOW_WIDTH-LSU_STA_COUNT;
-constexpr int LDQ_UPPER_BOUND = LDQ_SIZE-CONFIG_LSU_STORE_WINDOW_WIDTH-LSU_LDU_COUNT;
-constexpr int Finish_UPPER_BOUND = STQ_SIZE + LDQ_SIZE - CONFIG_LSU_LOAD_WINDOW_WIDTH - LSU_STA_COUNT*5;
-constexpr int STQ_LOWER_BOUND = STQ_SIZE*0.8;
-constexpr int LDQ_LOWER_BOUND = LDQ_SIZE*0.8;
-constexpr int Finish_LOWER_BOUND = (STQ_SIZE + LDQ_SIZE)*0.8;
-
-static_assert(CONFIG_LSU_LOAD_WINDOW_WIDTH > 0 &&
-                  CONFIG_LSU_LOAD_WINDOW_WIDTH <= LDQ_SIZE,
-              "CONFIG_LSU_LOAD_WINDOW_WIDTH must be in 1..LDQ_SIZE");
-static_assert(CONFIG_LSU_STORE_WINDOW_WIDTH > 0 &&
-                  CONFIG_LSU_STORE_WINDOW_WIDTH <= STQ_SIZE,
-              "CONFIG_LSU_STORE_WINDOW_WIDTH must be in 1..STQ_SIZE");
-constexpr int LOAD_WINDOWS_WIDTH = CONFIG_LSU_LOAD_WINDOW_WIDTH;
-constexpr int STORE_WINDOWS_WIDTH = CONFIG_LSU_STORE_WINDOW_WIDTH;
+constexpr int LSU_LOAD_WINDOW_WIDTH = LSU_LDU_COUNT * 5;
+constexpr int LSU_STORE_WINDOW_WIDTH = LSU_STA_COUNT * 5;
+constexpr int LSU_PEPLAY_WAIT_CYCLES = 4;
+constexpr int LSU_REPLAY_WAIT_CYCLES_WIDTH = clog2(LSU_PEPLAY_WAIT_CYCLES+1);
+constexpr int LSU_WAIT_MSHR_FILL = 1;
+constexpr int LSU_MMU_WAIT_CYCLES = 2;
+constexpr int LSU_MMU_WAIT_CYCLES_WIDTH =  clog2(LSU_MMU_WAIT_CYCLES+1);
 // ============================================================
 // Global Sanity Checks
 // ============================================================

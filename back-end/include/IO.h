@@ -1210,12 +1210,16 @@ enum class StoreState : uint8_t {
   WaitAddr,
   WaitData,
   WaitTlb,
+  WaitTlbRetry,
+  WaitDone,
   Ready,
+  WaitCommit,
   Committed,
   WaitDcacheResp,
   WaitMmioResp,
   Replaying,
   PageFault,
+  WaitFinish,
   Done
 };
 // STQ 条目结构（定义在此以供 StoreReq 使用）
@@ -1255,6 +1259,9 @@ struct StqEntry {
   wire<ROB_IDX_WIDTH> rob_idx = 0;
   wire<1> rob_flag = 0;
   wire<1> stq_flag = 0;
+
+  wire<STQ_IDX_WIDTH> mmu_idx = 0;
+  wire<STQ_IDX_WIDTH> done_idx = 0;
 };
 
 struct LoadReq {

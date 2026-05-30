@@ -330,7 +330,7 @@ void print_soc_config_banner() {
   std::printf("[LSU STLF OFF]");
   #endif
   std::printf("[LSU LOAD/STORE WINDOWS] load_windows=%d lsu_ldu_count=%d LDQ_SIZE=%d store_windows=%d lsu_sta_count=%d STQ_SIZE=%d\n",
-               LOAD_WINDOWS_WIDTH,LSU_LDU_COUNT,LDQ_SIZE,STORE_WINDOWS_WIDTH,LSU_STA_COUNT,STQ_SIZE);
+               LSU_LOAD_WINDOW_WIDTH,LSU_LDU_COUNT,LDQ_SIZE,LSU_STORE_WINDOW_WIDTH,LSU_STA_COUNT,STQ_SIZE);
 
 }
 

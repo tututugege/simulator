@@ -46,7 +46,6 @@ public:
   // RealDcache detailed counters
   uint64_t l1d_req_initial = 0;         // first requests, excluding replay requests
   uint64_t l1d_req_all = 0;             // all dcache requests, including replay requests
-  uint64_t l1d_miss_mshr_alloc = 0;     // real misses that allocate an MSHR entry
   uint64_t l1d_req_replay = 0;          // requests re-issued by replay mechanism
   uint64_t l1d_replay_squash_abort = 0; // replay request failed again
   uint64_t l1d_replay_conflict = 0;
@@ -65,7 +64,6 @@ public:
   uint64_t l1d_replay_wait_mshr_load = 0;
   uint64_t l1d_replay_wait_mshr_store = 0;
   uint64_t l1d_replay_wait_mshr_hit = 0;
-  uint64_t l1d_replay_wait_mshr_first_alloc = 0;
   uint64_t l1d_replay_wait_mshr_fill_wait = 0;
   uint64_t l1d_replay_wait_mshr_fill_req = 0;
   uint64_t l1d_replay_wait_mshr_fill_write = 0;
@@ -180,7 +178,6 @@ public:
   uint64_t llc_bypass_read = 0;
   uint64_t llc_write_passthrough = 0;
   uint64_t llc_refill = 0;
-  uint64_t llc_mshr_alloc = 0;
   uint64_t llc_mshr_merge = 0;
   uint64_t llc_prefetch_issue = 0;
   uint64_t llc_prefetch_hit = 0;
@@ -318,7 +315,6 @@ public:
     dcache_miss_num = 0;
     l1d_req_initial = 0;
     l1d_req_all = 0;
-    l1d_miss_mshr_alloc = 0;
     l1d_req_replay = 0;
     l1d_replay_squash_abort = 0;
     l1d_replay_conflict = 0;
@@ -337,7 +333,6 @@ public:
     l1d_replay_wait_mshr_load = 0;
     l1d_replay_wait_mshr_store = 0;
     l1d_replay_wait_mshr_hit = 0;
-    l1d_replay_wait_mshr_first_alloc = 0;
     l1d_replay_wait_mshr_fill_wait = 0;
     l1d_replay_wait_mshr_fill_req = 0;
     l1d_replay_wait_mshr_fill_write = 0;
@@ -457,7 +452,6 @@ public:
     llc_bypass_read = 0;
     llc_write_passthrough = 0;
     llc_refill = 0;
-    llc_mshr_alloc = 0;
     llc_mshr_merge = 0;
     llc_prefetch_issue = 0;
     llc_prefetch_hit = 0;
@@ -751,13 +745,13 @@ public:
     const double l1d_hit_rate =
         (l1d_req_initial == 0)
             ? 1.0
-            : 1.0 - static_cast<double>(l1d_miss_mshr_alloc) /
+            : 1.0 - static_cast<double>(dcache_miss_num) /
                         static_cast<double>(l1d_req_initial);
     const double l1d_miss_rate = 1.0 - l1d_hit_rate;
     const double l1d_mpki =
         (commit_num == 0)
             ? 0.0
-            : static_cast<double>(l1d_miss_mshr_alloc) * 1000.0 /
+            : static_cast<double>(dcache_miss_num) * 1000.0 /
                   static_cast<double>(commit_num);
     const double avg_miss_penalty =
         (l1d_miss_penalty_samples == 0)
@@ -805,7 +799,6 @@ public:
                   static_cast<double>(l1d_replay_reason_total);
     printf("\033[38;5;34mL1D_REQ_INITIAL      : %ld\033[0m\n", l1d_req_initial);
     printf("\033[38;5;34mL1D_REQ_ALL          : %ld\033[0m\n", l1d_req_all);
-    printf("\033[38;5;34mL1D_MISS_MSHR_ALLOC  : %ld\033[0m\n", l1d_miss_mshr_alloc);
     printf("\033[38;5;34mL1D_REQ_REPLAY       : %ld\033[0m\n", l1d_req_replay);
     printf("\033[38;5;34mdcache access       : %ld\033[0m\n", dcache_access_num);
     printf("\033[38;5;34mdcache miss         : %ld\033[0m\n", dcache_miss_num);
@@ -843,8 +836,6 @@ public:
            l1d_replay_wait_mshr_store);
     printf("\033[38;5;34m  - WAIT_MSHR_HITLINE    : %ld\033[0m\n",
            l1d_replay_wait_mshr_hit);
-    printf("\033[38;5;34m  - WAIT_MSHR_FIRST_ALLOC: %ld\033[0m\n",
-           l1d_replay_wait_mshr_first_alloc);
     printf("\033[38;5;34m  - WAIT_MSHR_FILL_WAIT  : %ld\033[0m\n",
            l1d_replay_wait_mshr_fill_wait);
     printf("\033[38;5;34m    - FILL_REQ           : %ld\033[0m\n",
@@ -1140,7 +1131,6 @@ public:
            llc_dcache_read_access, llc_dcache_read_hit, llc_dcache_read_miss);
     printf("\033[38;5;34mllc bypass read : %ld\033[0m\n", llc_bypass_read);
     printf("\033[38;5;34mllc refill      : %ld\033[0m\n", llc_refill);
-    printf("\033[38;5;34mllc mshr alloc  : %ld\033[0m\n", llc_mshr_alloc);
     printf("\033[38;5;34mllc mshr merge  : %ld\033[0m\n", llc_mshr_merge);
     printf("\033[38;5;34mllc wr passthru : %ld\033[0m\n",
            llc_write_passthrough);

@@ -394,7 +394,6 @@ void MemSubsystem::sync_llc_perf() {
   current.bypass_read = perf.bypass_read;
   current.write_passthrough = perf.write_passthrough;
   current.refill = perf.refill;
-  current.mshr_alloc = perf.mshr_alloc;
   current.mshr_merge = perf.mshr_merge;
   current.prefetch_issue = perf.prefetch_issue;
   current.prefetch_hit = perf.prefetch_hit;
@@ -445,8 +444,6 @@ void MemSubsystem::sync_llc_perf() {
     sync_counter(current.write_passthrough, llc_perf_shadow_.write_passthrough,
                  ctx->perf.llc_write_passthrough);
     sync_counter(current.refill, llc_perf_shadow_.refill, ctx->perf.llc_refill);
-    sync_counter(current.mshr_alloc, llc_perf_shadow_.mshr_alloc,
-                 ctx->perf.llc_mshr_alloc);
     sync_counter(current.mshr_merge, llc_perf_shadow_.mshr_merge,
                  ctx->perf.llc_mshr_merge);
     sync_counter(current.prefetch_issue, llc_perf_shadow_.prefetch_issue,

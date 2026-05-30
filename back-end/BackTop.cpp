@@ -303,7 +303,6 @@ void BackTop::comb() {
   lsu->comb_dcache2lsu_ldq();
   lsu->comb_dcache2lsu_stq();
   lsu->comb_lsu2exe();
-
   exu->comb_to_csr();
   csr->comb_csr_read();
 
@@ -312,10 +311,10 @@ void BackTop::comb() {
 
   exu->comb_ready();
   isu->comb_issue();
-  lsu->comb_exe2lsu();
   lsu->comb_tlb_out();
   comb_lsu_mmu();
-  lsu->comb_tlb_in();
+  lsu->comb_tlb_in_ldq();
+  lsu->comb_tlb_in_stq();
   lsu->comb_stlf();
 
   prf->comb_req_ftq();
@@ -372,6 +371,9 @@ void BackTop::comb() {
   lsu->comb_dis2lsu();
   rename->comb_fire();
   idu->comb_fire();
+  lsu->comb_exe2lsu();
+  // Kill flushed LSU work before driving new DCache/MMIO requests.
+  lsu->comb_flush();
   lsu->comb_lsu2dcache_ldq();
   lsu->comb_lsu2dcache_stq();
   lsu->comb_mmio_out();
@@ -383,8 +385,7 @@ void BackTop::comb() {
   rob->comb_fire();
   rob->comb_flush();
   isu->comb_flush();
-    
-  lsu->comb_flush();
+
   pre->comb_fire();
   prf->comb_pipeline();
   exu->comb_pipeline();

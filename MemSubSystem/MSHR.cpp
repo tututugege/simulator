@@ -204,7 +204,6 @@ void MSHR::comb_inputs_dcache()
                             in.dcache2mshr->mshr_req[i].lsu_origin;
                         if (ctx != nullptr &&
                             in.dcache2mshr->mshr_req[i].lsu_origin) {
-                            ctx->perf.l1d_miss_mshr_alloc++;
                             ctx->perf.dcache_miss_num++;
                         }
 #endif
