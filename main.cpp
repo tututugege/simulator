@@ -15,7 +15,6 @@
 #endif
 
 using namespace std;
-extern RefCpu ref_cpu;
 
 // 1. 定义配置结构
 struct SimConfig {
@@ -325,18 +324,18 @@ int main(int argc, char *argv[]) {
     if (ref_prewarm_target > 0) {
       std::cout << "[Run] Ref prewarm for " << ref_prewarm_target
                 << " steps..." << std::endl;
-      ref_cpu.uart_print = false;
-      ref_cpu.ref_only = true;
+      difftest_ref_set_uart_print(false);
+      difftest_ref_set_ref_only(true);
       for (; ref_prewarm_done < ref_prewarm_target; ref_prewarm_done++) {
         difftest_step(false);
-        if (ref_cpu.sim_end) {
+        if (difftest_ref_sim_end()) {
           cpu.ctx.exit_reason =
-              (ref_cpu.Instruction == INST_WFI) ? ExitReason::WFI
-                                                : ExitReason::EBREAK;
+              difftest_ref_last_inst_is_wfi() ? ExitReason::WFI
+                                              : ExitReason::EBREAK;
           break;
         }
       }
-      ref_cpu.ref_only = false;
+      difftest_ref_set_ref_only(false);
       std::cout << "[Run] Ref prewarm done: " << ref_prewarm_done
                 << " steps." << std::endl;
     }
@@ -379,19 +378,19 @@ int main(int argc, char *argv[]) {
               << config.fast_forward_count << " cycles..." << std::endl;
 
     cpu.back.load_image(config.target_file);
-    ref_cpu.uart_print = true;
-    ref_cpu.ref_only = true;
+    difftest_ref_set_uart_print(true);
+    difftest_ref_set_ref_only(true);
 
     for (uint64_t i = 0; i < config.fast_forward_count; i++) {
       difftest_step(false);
-      if (ref_cpu.sim_end) {
+      if (difftest_ref_sim_end()) {
         cpu.ctx.exit_reason =
-            (ref_cpu.Instruction == INST_WFI) ? ExitReason::WFI
-                                              : ExitReason::EBREAK;
+            difftest_ref_last_inst_is_wfi() ? ExitReason::WFI
+                                            : ExitReason::EBREAK;
         break;
       }
     }
-    ref_cpu.ref_only = false;
+    difftest_ref_set_ref_only(false);
 
     if (cpu.ctx.exit_reason == ExitReason::NONE) {
       cpu.back.restore_from_ref();
@@ -400,7 +399,7 @@ int main(int argc, char *argv[]) {
                 << std::endl;
 #endif
       cpu.restore_pc(cpu.back.number_PC); // 强制同步前端 PC
-      ref_cpu.uart_print = false;
+      difftest_ref_set_uart_print(false);
 
       std::cout << "[Step 2] Run O3 CPU ... " << endl;
     }
@@ -408,8 +407,8 @@ int main(int argc, char *argv[]) {
     std::cout << "[Mode] REF_ONLY: Reference Model Validation" << std::endl;
     std::cout << "[File] " << config.target_file << std::endl;
     cpu.back.load_image(config.target_file);
-    ref_cpu.uart_print = true;
-    ref_cpu.ref_only = true;
+    difftest_ref_set_uart_print(true);
+    difftest_ref_set_ref_only(true);
 
     std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
 
@@ -430,10 +429,10 @@ int main(int argc, char *argv[]) {
                   << config.max_commit_inst << std::endl;
         break;
       }
-      if (ref_cpu.sim_end) {
+      if (difftest_ref_sim_end()) {
         cpu.ctx.exit_reason =
-            (ref_cpu.Instruction == INST_WFI) ? ExitReason::WFI
-                                              : ExitReason::EBREAK;
+            difftest_ref_last_inst_is_wfi() ? ExitReason::WFI
+                                            : ExitReason::EBREAK;
         break;
       }
       if (sim_time % 10000000 == 0) {

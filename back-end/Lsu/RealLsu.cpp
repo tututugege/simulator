@@ -912,12 +912,13 @@ void RealLsu::comb_lsu2dcache_stq() {
 
 void RealLsu::comb_lsu2exe() {
   *out.lsu2exe = {};
+  *out.lsu2exe = {};
 
   uint32_t issue = std::min<int32_t>(nxt.mmu_done_stq_count, LSU_STORE_WINDOW_WIDTH);
   uint32_t issue_st = 0;
   uint32_t issue_ld = 0;
 
-  for (int i = 0; i < issue; i++) {
+  for (uint32_t i = 0; i < issue; i++) {
     const uint32_t done_idx = (nxt.mmu_done_stq_head + i) % STQ_SIZE;
     const auto entry = nxt.mmu_done_stq[done_idx];
     if (entry.valid) {
@@ -1092,7 +1093,7 @@ void RealLsu::comb_check() {
   }
   uint32_t issue = std::min<uint32_t>(committed_count, LSU_STORE_WINDOW_WIDTH);
   uint32_t retired_stq = 0;
-  for (int i = 0; i < issue; i++) {
+  for (uint32_t i = 0; i < issue; i++) {
     const uint32_t stq_idx = nxt.stq_head;
     if (nxt.stq[stq_idx].store_state == StoreState::Done) {
       nxt.stq_count--;

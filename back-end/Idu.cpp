@@ -23,8 +23,6 @@ void Idu::init() {
   tag_vec_1[0] = false;
   now_br_mask = 0;
   now_br_mask_1 = 0;
-  pending_free_mask = 0;
-  pending_free_mask_1 = 0;
   br_latch = {};
   br_latch_1 = {};
 }
@@ -32,8 +30,8 @@ void Idu::init() {
 /*
  * comb_begin
  * 功能: 组合阶段开始时，将时序态镜像到 *_1 工作副本，作为本拍组合逻辑的可写基线。
- * 输入依赖: tag_vec, br_mask_cp, now_br_mask, pending_free_mask, br_latch。
- * 输出更新: tag_vec_1, br_mask_cp_1, now_br_mask_1, pending_free_mask_1, br_latch_1。
+ * 输入依赖: tag_vec, br_mask_cp, now_br_mask, br_latch。
+ * 输出更新: tag_vec_1, br_mask_cp_1, now_br_mask_1, br_latch_1。
  * 约束: 仅做状态复制，不分配/释放分支 Tag，不驱动对外接口信号。
  */
 void Idu::comb_begin() {
@@ -42,7 +40,6 @@ void Idu::comb_begin() {
     br_mask_cp_1[i] = br_mask_cp[i];
   }
   now_br_mask_1 = now_br_mask;
-  pending_free_mask_1 = pending_free_mask;
   br_latch_1 = br_latch;
 }
 
@@ -206,8 +203,8 @@ void Idu::comb_branch() {
 /*
  * comb_fire
  * 功能: 在 ready/flush/分支解析条件下推进 IDU 分支状态机（Tag 释放、误预测回收、新分支提交分配）。
- * 输入依赖: in.rob_bcast->flush, in.ren2dec->ready, out.dec2ren->valid/uop, alloc_tag, br_latch, now_br_mask, br_mask_cp, pending_free_mask。
- * 输出更新: tag_vec_1, now_br_mask_1, br_mask_cp_1, pending_free_mask_1, br_latch_1。
+ * 输入依赖: in.rob_bcast->flush, in.ren2dec->ready, out.dec2ren->valid/uop, alloc_tag, br_latch, now_br_mask, br_mask_cp。
+ * 输出更新: tag_vec_1, now_br_mask_1, br_mask_cp_1, br_latch_1。
  * 约束: flush 最高优先级并直接返回；mispred 路径不进行新分支分配；仅对 fire 且为分支的槽位提交 Tag 占用。
  */
 void Idu::comb_fire() {
@@ -228,45 +225,39 @@ void Idu::comb_fire() {
     }
     tag_vec_1[0] = false;
     now_br_mask_1 = 0;
-    pending_free_mask_1 = 0;
     return;
   }
 
-  // 1. 先应用上拍累积的释放请求（延迟一拍生效）
-  wire<BR_MASK_WIDTH> matured_free = pending_free_mask;
-  for (int i = 1; i < MAX_BR_NUM; i++) {
-    if ((matured_free >> i) & 1) {
-      tag_vec_1[i] = true;
-      pending_free_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
-    }
-  }
-
-  // 2. clear_mask 生效：已解析分支从当前运行集合清除，并延迟释放空闲位图。
+  // 1. clear_mask 生效：已解析分支从当前运行集合清除，并直接回收 tag。
   wire<BR_MASK_WIDTH> clear = br_latch.clear_mask;
   for (int i = 1; i < MAX_BR_NUM; i++) {
     if ((clear >> i) & 1) {
-      pending_free_mask_1 |= (wire<BR_MASK_WIDTH>(1) << i);
+      tag_vec_1[i] = true;
       now_br_mask_1 &= ~(wire<BR_MASK_WIDTH>(1) << i);
     }
   }
 
-  // 3. 清理所有 checkpoint 中对应 clear_mask 的 bit，避免 tag 复用污染。
+  // 2. 清理所有 checkpoint 中对应 clear_mask 的 bit，避免 tag 复用污染。
   if (clear != 0) {
     for (int i = 1; i < MAX_BR_NUM; i++) {
       br_mask_cp_1[i] &= ~clear;
     }
   }
 
-  // 4. 误预测：回收更年轻 tag；本拍不再进行新分支分配。
+  // 3. 误预测：回收更年轻 tag；本拍不再进行新分支分配。
   if (br_latch.mispred) {
     wire<BR_MASK_WIDTH> tags_to_free =
         now_br_mask & ~br_mask_cp[br_latch.br_id];
     now_br_mask_1 &= ~tags_to_free;
-    pending_free_mask_1 |= tags_to_free;
+    for (int i = 1; i < MAX_BR_NUM; i++) {
+      if ((tags_to_free >> i) & 1) {
+        tag_vec_1[i] = true;
+      }
+    }
     return;
   }
 
-  // 5. 正常发射路径：所有成功握手的槽位都要通知 PreIduQueue 出队；
+  // 4. 正常发射路径：所有成功握手的槽位都要通知 PreIduQueue 出队；
   // 分支 tag 的推进仅在启用 BPU 时生效。
 #ifdef CONFIG_BPU
   int br_num = 0;
@@ -288,7 +279,6 @@ void Idu::comb_fire() {
 
 void Idu::seq() {
   now_br_mask = now_br_mask_1;
-  pending_free_mask = pending_free_mask_1;
   for (int i = 0; i < MAX_BR_NUM; i++) {
     tag_vec[i] = tag_vec_1[i];
     br_mask_cp[i] = br_mask_cp_1[i];

@@ -117,7 +117,9 @@ void RealDcache::init() {
     init_dcache();
     s1s2_cur = {};
     s1s2_nxt = {};
-    memset(fill_req_merge_wires, 0, sizeof(fill_req_merge_wires));
+    for (auto &entry : fill_req_merge_wires) {
+        entry = {};
+    }
 }
 
 void RealDcache::stage1_comb() {
@@ -338,7 +340,9 @@ void RealDcache::stage2_comb() {
         *out.lru_updates[i] = {};
         *out.pendingwrite[i] = {};
     }
-    memset(fill_req_merge_wires, 0, sizeof(fill_req_merge_wires));
+    for (auto &entry : fill_req_merge_wires) {
+        entry = {};
+    }
 
     if(s1s2_cur.fill_write.valid){
         int select_way = choose_plru_tree_victim(in.fillin->plru_tree_state, in.fillin->valid_snap);

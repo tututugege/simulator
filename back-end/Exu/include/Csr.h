@@ -1,6 +1,8 @@
 #pragma once
 #include "IO.h"
 #include "config.h"
+#include <cstdlib>
+#include <cstdio>
 
 #define M_MODE_ECALL 0xb
 #define CSR_W 0b01
@@ -58,79 +60,59 @@ enum enum_csr {
 };
 
 inline int cvt_number_to_csr(int csr_idx) {
-  int ret;
   switch (csr_idx) {
   case number_mtvec:
-    ret = csr_mtvec;
-    break;
+    return csr_mtvec;
   case number_mepc:
-    ret = csr_mepc;
-    break;
+    return csr_mepc;
   case number_mcause:
-    ret = csr_mcause;
-    break;
+    return csr_mcause;
   case number_mie:
-    ret = csr_mie;
-    break;
+    return csr_mie;
   case number_mip:
-    ret = csr_mip;
-    break;
+    return csr_mip;
   case number_mtval:
-    ret = csr_mtval;
-    break;
+    return csr_mtval;
   case number_mscratch:
-    ret = csr_mscratch;
-    break;
+    return csr_mscratch;
   case number_mstatus:
-    ret = csr_mstatus;
-    break;
+    return csr_mstatus;
   case number_mideleg:
-    ret = csr_mideleg;
-    break;
+    return csr_mideleg;
   case number_medeleg:
-    ret = csr_medeleg;
-    break;
+    return csr_medeleg;
   case number_sepc:
-    ret = csr_sepc;
-    break;
+    return csr_sepc;
   case number_stvec:
-    ret = csr_stvec;
-    break;
+    return csr_stvec;
   case number_scause:
-    ret = csr_scause;
-    break;
+    return csr_scause;
   case number_sscratch:
-    ret = csr_sscratch;
-    break;
+    return csr_sscratch;
   case number_stval:
-    ret = csr_stval;
-    break;
+    return csr_stval;
   case number_sstatus:
-    ret = csr_sstatus;
-    break;
+    return csr_sstatus;
   case number_sie:
-    ret = csr_sie;
-    break;
+    return csr_sie;
   case number_sip:
-    ret = csr_sip;
-    break;
+    return csr_sip;
   case number_satp:
-    ret = csr_satp;
-    break;
+    return csr_satp;
   case number_mhartid:
-    ret = csr_mhartid;
-    break;
+    return csr_mhartid;
   case number_misa:
-    ret = csr_misa;
-    break;
+    return csr_misa;
   case number_time:
   case number_timeh:
-    Assert(0 && "time/timeh are not implemented in Csr RegFile");
-    break;
+    std::fprintf(stderr,
+                 "Fatal: CSR 0x%x (time/timeh) is not implemented in Csr RegFile\n",
+                 csr_idx);
+    std::abort();
   default:
-    Assert(0);
+    std::fprintf(stderr, "Fatal: unknown CSR index 0x%x\n", csr_idx);
+    std::abort();
   }
-  return ret;
 }
 
 typedef struct {

@@ -188,13 +188,13 @@ struct WideBits {
 template <int Bits, typename T,
           typename = std::enable_if_t<IsWireScalarV<T>>>
 constexpr bool operator==(T value, const WideBits<Bits> &rhs) {
-  return rhs == value;
+  return rhs.template operator==<T>(value);
 }
 
 template <int Bits, typename T,
           typename = std::enable_if_t<IsWireScalarV<T>>>
 constexpr bool operator!=(T value, const WideBits<Bits> &rhs) {
-  return rhs != value;
+  return rhs.template operator!=<T>(value);
 }
 
 template <int Bits>

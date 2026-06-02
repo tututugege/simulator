@@ -674,8 +674,12 @@ void MemSubsystem::init() {
 
   memset(dcache_line_read_req_, 0, sizeof(dcache_line_read_req_));
   memset(dcache_line_read_resp_, 0, sizeof(dcache_line_read_resp_));
-  memset(lru_updates_, 0, sizeof(lru_updates_));
-  memset(pending_writes_, 0, sizeof(pending_writes_));
+  for (auto &entry : lru_updates_) {
+    entry = {};
+  }
+  for (auto &entry : pending_writes_) {
+    entry = {};
+  }
   fill_writes_ = {};
   fill_in_ = {};
   fill_out_ = {};

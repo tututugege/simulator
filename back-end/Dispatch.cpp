@@ -383,8 +383,9 @@ void Dispatch::comb_fire() {
   // === 步骤 1: 计算 Fire 信号 (确认分派) ===
   for (int i = 0; i < DECODE_WIDTH; i++) {
     bool older_block = pre_stall;
-    bool is_atomic_inst =
-        inst_valid[i] && decode_inst_type(inst_r[i].type) == AMO;
+    InstType inst_type = inst_valid[i] ? decode_inst_type(inst_r[i].type) : NOP;
+    bool is_atomic_inst = inst_valid[i] && inst_type == AMO;
+    bool is_wfi_inst = inst_valid[i] && inst_type == WFI;
     bool csr_blocked = false;
     bool atomic_blocked = false;
     bool basic_fire = out.dis2rob->valid[i] &&
@@ -430,7 +431,7 @@ void Dispatch::comb_fire() {
     }
 
     // 原子指令本拍独占发射，后续槽位全部阻塞。
-    if (basic_fire && is_atomic_inst) {
+    if (basic_fire && (is_atomic_inst || is_wfi_inst)) {
       pre_stall = true;
       serializing_barrier = true;
     }
