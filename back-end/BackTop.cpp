@@ -311,6 +311,7 @@ void BackTop::comb() {
 
   exu->comb_ready();
   isu->comb_issue();
+  lsu->comb_exe2lsu();
   lsu->comb_tlb_out();
   comb_lsu_mmu();
   lsu->comb_tlb_in_ldq();
@@ -371,7 +372,6 @@ void BackTop::comb() {
   lsu->comb_dis2lsu();
   rename->comb_fire();
   idu->comb_fire();
-  lsu->comb_exe2lsu();
   // Kill flushed LSU work before driving new DCache/MMIO requests.
   lsu->comb_flush();
   lsu->comb_lsu2dcache_ldq();

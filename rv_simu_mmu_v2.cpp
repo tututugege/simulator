@@ -27,7 +27,7 @@
 #include "util.h"
 
 #ifndef CONFIG_DCACHE_FAST_DOMAIN
-#define CONFIG_DCACHE_FAST_DOMAIN 1
+#define CONFIG_DCACHE_FAST_DOMAIN 16
 #endif
 
 namespace {
@@ -324,11 +324,6 @@ void print_soc_config_banner() {
         iq_name, iq.size, iq.dispatch_width, iq.port_start_idx,
         iq.port_start_idx + iq.port_num - 1, iq.port_num);
   }
-  #ifdef LSU_STLF
-  std::printf("[LSU STLF ON]");
-  #else
-  std::printf("[LSU STLF OFF]");
-  #endif
   std::printf("[LSU LOAD/STORE WINDOWS] load_windows=%d lsu_ldu_count=%d LDQ_SIZE=%d store_windows=%d lsu_sta_count=%d STQ_SIZE=%d\n",
                LSU_LOAD_WINDOW_WIDTH,LSU_LDU_COUNT,LDQ_SIZE,LSU_STORE_WINDOW_WIDTH,LSU_STA_COUNT,STQ_SIZE);
 

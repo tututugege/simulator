@@ -377,6 +377,7 @@ constexpr IssuePortConfigInfo GLOBAL_ISSUE_PORT_CONFIG[] = {
     PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
+    PORT_CFG(OP_MASK_ALU ), // Port 1: ALU + DIV + FP
     PORT_CFG(OP_MASK_LD),                             // Port 2: Load
     PORT_CFG(OP_MASK_LD),                             // Port 3: Load
     PORT_CFG(OP_MASK_LD),                             // Port 3: Load
@@ -538,8 +539,11 @@ constexpr int LSU_STORE_WINDOW_WIDTH = LSU_STA_COUNT * 5;
 constexpr int LSU_PEPLAY_WAIT_CYCLES = 4;
 constexpr int LSU_REPLAY_WAIT_CYCLES_WIDTH = clog2(LSU_PEPLAY_WAIT_CYCLES+1);
 constexpr int LSU_WAIT_MSHR_FILL = 1;
-constexpr int LSU_MMU_WAIT_CYCLES = 2;
-constexpr int LSU_MMU_WAIT_CYCLES_WIDTH =  clog2(LSU_MMU_WAIT_CYCLES+1);
+
+constexpr int LDQ_WAIT_MMU_UPPER_BOUND = LDQ_SIZE-LSU_LDU_COUNT;
+constexpr int STQ_WIAT_MMU_UPPER_BOUND = STQ_SIZE-LSU_STA_COUNT;
+constexpr int STQ_MMU_DONE_UPPER_BOUND = STQ_SIZE-LSU_STA_COUNT*2;
+
 // ============================================================
 // Global Sanity Checks
 // ============================================================

@@ -91,7 +91,7 @@ struct LdqEntry {
   LSU_MEM_PERF_FIELDS;
 
   StoreTag stq_snapshot;
-  wire<LDQ_IDX_WIDTH> mmu_idx;
+
 
   LSU_LDQ_CACHE_PERF_FIELDS; // 仅用于性能统计，非必需
 };
@@ -126,12 +126,10 @@ struct LrScUnit {
 };
 struct WaitMmuSTQEntry{
   wire<1> valid;
-  wire<1> reserve;
   wire<STQ_IDX_WIDTH> stq_idx;
 };
 struct WaitMmuLDQEntry{
   wire<1> valid;
-  wire<1> reserve;
   wire<LDQ_IDX_WIDTH> ldq_idx;
 };
 struct WaitDcacheLDQEntry{
@@ -144,7 +142,6 @@ struct WaitDcacheLDQEntry{
 struct MMUDoneEntry{
   wire<1> valid;
   wire<STQ_IDX_WIDTH> stq_idx;
-  wire<1> reserve;
 };
 struct FinishEntry{
   wire<1> valid;
@@ -193,6 +190,8 @@ struct LsuState{
   LrScUnit lrsc_unit;
 
   wire<31-LDQ_IDX_WIDTH> req_gen; // 用于区分不同轮次的重放，防止过期重放条目被误用
+
+  wire<1> stq_wait;
 };
 
 enum class STLFResult : wire<2> {
@@ -247,8 +246,8 @@ public:
   wire<STQ_IDX_WIDTH> enqueue_wait_mmu_stq(wire<STQ_IDX_WIDTH> stq_idx);
   wire<LDQ_IDX_WIDTH> enqueue_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> ldq_idx);
   wire<STQ_IDX_WIDTH> enqueue_mmu_done_stq(wire<STQ_IDX_WIDTH> stq_idx);
-  void requeue_wait_mmu_stq();
-  void requeue_wait_mmu_ldq();
+  wire<STQ_IDX_WIDTH> requeue_wait_mmu_stq(wire<STQ_IDX_WIDTH> idx);
+  wire<LDQ_IDX_WIDTH> requeue_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> idx);
   
   void enqueue_wait_dcache_ldq(wire<LDQ_IDX_WIDTH> ldq_idx);
   void enqueue_finish(wire<LDQ_IDX_WIDTH> ldq_idx);
