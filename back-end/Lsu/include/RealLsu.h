@@ -201,6 +201,7 @@ enum class STLFResult : wire<2> {
 };
 class RealLsu {
 public:
+  RealLsu():cur{}, nxt{}, in{}, out{}, ctx(nullptr) {};
   RealLsu(SimContext *ctx);
 
   LsuState cur;
@@ -246,8 +247,6 @@ public:
   wire<STQ_IDX_WIDTH> enqueue_wait_mmu_stq(wire<STQ_IDX_WIDTH> stq_idx);
   wire<LDQ_IDX_WIDTH> enqueue_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> ldq_idx);
   wire<STQ_IDX_WIDTH> enqueue_mmu_done_stq(wire<STQ_IDX_WIDTH> stq_idx);
-  wire<STQ_IDX_WIDTH> requeue_wait_mmu_stq(wire<STQ_IDX_WIDTH> idx);
-  wire<LDQ_IDX_WIDTH> requeue_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> idx);
   
   void enqueue_wait_dcache_ldq(wire<LDQ_IDX_WIDTH> ldq_idx);
   void enqueue_finish(wire<LDQ_IDX_WIDTH> ldq_idx);

@@ -120,33 +120,6 @@ wire<LDQ_IDX_WIDTH> RealLsu::enqueue_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> ldq_idx) {
   nxt.wait_mmu_ldq_count++;
   return wait_mmu_idx;
 }
-wire<STQ_IDX_WIDTH> RealLsu::requeue_wait_mmu_stq(wire<STQ_IDX_WIDTH> idx) {
-  uint32_t old_head = idx;
-  uint32_t old_tail = (nxt.wait_mmu_stq_head + nxt.wait_mmu_stq_count) % STQ_SIZE;
-  if (nxt.wait_mmu_stq_count == STQ_SIZE) {
-    nxt.wait_mmu_stq_head = (nxt.wait_mmu_stq_head + 1) % STQ_SIZE; // 如果队列已满，直接覆盖当前头部条目
-    return old_head;
-  }
-
-  nxt.wait_mmu_stq[old_tail].valid = true;                                 // 将当前头部条目重新加入到队列尾部
-  nxt.wait_mmu_stq[old_tail].stq_idx = nxt.wait_mmu_stq[old_head].stq_idx; // 保持原有的store索引不变
-  nxt.wait_mmu_stq[old_head].valid = false;                                // 将当前头部条目标记为无效
-  nxt.wait_mmu_stq_count++;
-  return old_tail;
-}
-wire<LDQ_IDX_WIDTH> RealLsu::requeue_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> idx) {
-  uint32_t old_head = idx;
-  uint32_t old_tail = (nxt.wait_mmu_ldq_head + nxt.wait_mmu_ldq_count) % LDQ_SIZE;
-  if (nxt.wait_mmu_ldq_count == LDQ_SIZE) {
-    nxt.wait_mmu_ldq_head = (nxt.wait_mmu_ldq_head + 1) % LDQ_SIZE; // 如果队列已满，直接覆盖当前头部条目
-    return old_head;
-  }
-  nxt.wait_mmu_ldq[old_tail].valid = true;                                 // 将当前头部条目重新加入到队列尾部
-  nxt.wait_mmu_ldq[old_tail].ldq_idx = nxt.wait_mmu_ldq[old_head].ldq_idx; // 保持原有的load索引不变
-  nxt.wait_mmu_ldq[old_head].valid = false;                                // 将当前头部条目标记为无效
-  nxt.wait_mmu_ldq_count++;
-  return old_tail;
-}
 void RealLsu::dequeue_wait_mmu_ldq() {
   nxt.wait_mmu_ldq[nxt.wait_mmu_ldq_head].valid = false;
   nxt.wait_mmu_ldq_head = (nxt.wait_mmu_ldq_head + 1) % LDQ_SIZE;
@@ -206,16 +179,29 @@ void RealLsu::init() {
   cur = {};
   nxt = {};
 }
+uint32_t stq_alloc_count = 0;
 uint32_t ldq_count = 0;
+uint32_t ldq_empty=0;
 void RealLsu::comb_cal() {
   ldq_count = 0;
   for (int i = 0; i < LDQ_SIZE; i++) {
-    if (cur.ldq[i].load_state != LoadState::Empty) {
+    if (cur.ldq[i].load_state == LoadState::Allocated) {
       ldq_count++;
+    }
+    if (cur.ldq[i].load_state == LoadState::Empty) {
+      ldq_empty++;
+    }
+  }
+  stq_alloc_count = 0;
+  for(int i=0;i<cur.stq_count;i++){
+    uint32_t idx = (cur.stq_head + i) % STQ_SIZE;
+    auto &entry = cur.stq[idx];
+    if(entry.store_state == StoreState::Allocated){
+      stq_alloc_count++;
     }
   }
 
-  lsu_perf::sample_queue_occupancy(ctx, cur, ldq_count);
+  lsu_perf::sample_queue_occupancy(ctx, cur, ldq_empty);
 }
 
 void RealLsu::comb_lsu2rob() {
@@ -232,15 +218,10 @@ void RealLsu::comb_lsu2dis() {
   out.lsu2dis->stq_tail_flag =
       stq_tail_flag(cur.stq_head, cur.stq_count, cur.stq_head_flag);
 
-  uint32_t ldq_free = LDQ_SIZE - ldq_count;
-  uint32_t stq_free = STQ_SIZE - cur.stq_count;
-
-  if(cur.wait_mmu_stq_count > STQ_WIAT_MMU_UPPER_BOUND || cur.mmu_done_stq_count > STQ_MMU_DONE_UPPER_BOUND) {
-    stq_free = 0; // 如果当前等待MMU的store条目数量超过阈值了，那么就进入stq_wait状态，暂时不允许分配新的store条目了，直到等待MMU的store条目数量下降到阈值以下
-  }
-  if(cur.wait_mmu_ldq_count > LDQ_WAIT_MMU_UPPER_BOUND) {
-    ldq_free = 0; // 如果当前等待MMU的load条目数量超过阈值了，那么就进入ldq_wait状态，暂时不允许分配新的load条目了，直到等待MMU的load条目数量下降到阈值以下
-  }
+  uint32_t ldq_free = LDQ_SIZE - ldq_count - cur.wait_mmu_ldq_count;
+  ldq_free = std::min(ldq_free, LDQ_SIZE - ldq_empty);
+  uint32_t stq_free = STQ_SIZE - stq_alloc_count - std::max(cur.wait_mmu_stq_count, cur.mmu_done_stq_count);
+  stq_free = std::min<uint32_t>(stq_free, STQ_SIZE - cur.stq_count);
 
   out.lsu2dis->stq_free = stq_free;
   out.lsu2dis->ldq_free = ldq_free;
@@ -635,9 +616,13 @@ void RealLsu::comb_stlf() {
         stlf_entry.valid = false; // 从STLF队列中移除，等待MMIO响应时不需要保留STLF entry了
       } else if (entry.load_state == LoadState::CheckStlfRetry) {
         // 需要重试的load在STLF检查阶段直接进入等待MMIO响应状态，不需要进入等待DCACHE的队列
-        stlf_entry.valid = false;                // 从STLF队列中移除，等待MMIO响应时不需要保留STLF entry了
-        enqueue_stlf(stlf_entry.ldq_idx);        // 重新加入STLF队列等待下一轮检查
-        entry.load_state = LoadState::CheckStlf; // 重新设置load状态为等待STLF检查
+        // stlf_entry.valid = false;                // 从STLF队列中移除，等待MMIO响应时不需要保留STLF entry了
+        // enqueue_stlf(stlf_entry.ldq_idx);        // 重新加入STLF队列等待下一轮检查
+        if(nxt.stlf_queue_count < LDQ_SIZE) {
+          stlf_entry.valid = false;                // 从STLF队列中移除，等待重新加入STLF队列时重新设置entry内容
+          enqueue_stlf(stlf_entry.ldq_idx);        // 重新加入STLF队列等待下一轮检查
+        }
+        entry.load_state = LoadState::CheckStlf; // 设置load状态为等待STLF检查重试，避免在STLF检查重试的过程中load被错误地发出DCACHE请求了
       }
     }
   }
