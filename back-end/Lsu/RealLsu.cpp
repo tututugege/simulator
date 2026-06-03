@@ -184,6 +184,7 @@ uint32_t ldq_count = 0;
 uint32_t ldq_empty=0;
 void RealLsu::comb_cal() {
   ldq_count = 0;
+  ldq_empty = 0;
   for (int i = 0; i < LDQ_SIZE; i++) {
     if (cur.ldq[i].load_state == LoadState::Allocated) {
       ldq_count++;
@@ -219,7 +220,7 @@ void RealLsu::comb_lsu2dis() {
       stq_tail_flag(cur.stq_head, cur.stq_count, cur.stq_head_flag);
 
   uint32_t ldq_free = LDQ_SIZE - ldq_count - cur.wait_mmu_ldq_count;
-  ldq_free = std::min(ldq_free, LDQ_SIZE - ldq_empty);
+  ldq_free = std::min(ldq_free, ldq_empty);
   uint32_t stq_free = STQ_SIZE - stq_alloc_count - std::max(cur.wait_mmu_stq_count, cur.mmu_done_stq_count);
   stq_free = std::min<uint32_t>(stq_free, STQ_SIZE - cur.stq_count);
 
