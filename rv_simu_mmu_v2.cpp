@@ -26,7 +26,23 @@
 #include "front_module.h"
 #include "util.h"
 
+#ifndef CONFIG_DCACHE_FAST_DOMAIN
+#define CONFIG_DCACHE_FAST_DOMAIN 16
+#endif
+
 namespace {
+constexpr bool kDcacheFastDomainEnabled = CONFIG_DCACHE_FAST_DOMAIN != 0;
+
+bool is_dcache_read_master(int master) {
+  return kDcacheFastDomainEnabled &&
+         master == axi_interconnect::MASTER_DCACHE_R;
+}
+
+bool is_dcache_write_master(int master) {
+  return kDcacheFastDomainEnabled &&
+         master == axi_interconnect::MASTER_DCACHE_W;
+}
+
 template <typename InterconnectT>
 void clear_axi_master_inputs(InterconnectT &interconnect) {
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; i++) {
@@ -82,6 +98,25 @@ void restore_axi_internal_tick_boundary_state(
     interconnect.read_req_hold[i] = state.read_req_hold[i];
   }
   for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    interconnect.w_req_ready_r[i] = state.write_req_ready_r[i];
+  }
+}
+
+template <typename InterconnectT>
+void restore_axi_internal_tick_boundary_state_except_dcache(
+    InterconnectT &interconnect, const AxiInternalTickBoundaryState &state) {
+  for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    if (is_dcache_read_master(i)) {
+      continue;
+    }
+    interconnect.req_ready_r[i] = state.read_req_ready_r[i];
+    interconnect.req_drop_warned[i] = state.read_req_drop_warned[i];
+    interconnect.read_req_hold[i] = state.read_req_hold[i];
+  }
+  for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    if (is_dcache_write_master(i)) {
+      continue;
+    }
     interconnect.w_req_ready_r[i] = state.write_req_ready_r[i];
   }
 }
@@ -213,8 +248,9 @@ void print_soc_config_banner() {
       static_cast<unsigned>(axi_interconnect::MAX_OUTSTANDING),
       static_cast<unsigned>(axi_interconnect::MAX_READ_OUTSTANDING_PER_MASTER),
       static_cast<unsigned>(sim_ddr::SIM_DDR_MAX_OUTSTANDING));
-  std::printf("[CONFIG][AXI] subsystem_freq_div=%u\n",
-              static_cast<unsigned>(CONFIG_AXI_SUBSYSTEM_FREQ_DIV));
+  std::printf("[CONFIG][AXI] subsystem_freq_div=%u dcache_fast_domain=%u\n",
+              static_cast<unsigned>(CONFIG_AXI_SUBSYSTEM_FREQ_DIV),
+              static_cast<unsigned>(CONFIG_DCACHE_FAST_DOMAIN));
   std::printf(
       "[CONFIG][LLC] enable=%u(%s) capacity=%lluMB ways=%u mshr=%u "
       "lookup_latency=%ucy dcache_read_miss=%s\n",
@@ -288,13 +324,8 @@ void print_soc_config_banner() {
         iq_name, iq.size, iq.dispatch_width, iq.port_start_idx,
         iq.port_start_idx + iq.port_num - 1, iq.port_num);
   }
-  #ifdef LSU_STLF
-  std::printf("[LSU STLF ON]");
-  #else
-  std::printf("[LSU STLF OFF]");
-  #endif
   std::printf("[LSU LOAD/STORE WINDOWS] load_windows=%d lsu_ldu_count=%d LDQ_SIZE=%d store_windows=%d lsu_sta_count=%d STQ_SIZE=%d\n",
-               LOAD_WINDOWS_WIDTH,LSU_LDU_COUNT,LDQ_SIZE,STORE_WINDOWS_WIDTH,LSU_STA_COUNT,STQ_SIZE);
+               LSU_LOAD_WINDOW_WIDTH,LSU_LDU_COUNT,LDQ_SIZE,LSU_STORE_WINDOW_WIDTH,LSU_STA_COUNT,STQ_SIZE);
 
 }
 
@@ -338,6 +369,27 @@ void bridge_axi_to_mem_subsystem(SimCpu &cpu) {
       peri_wport.req.accepted;
   cpu.mem_subsystem.peripheral_axi_write_in.resp_valid = peri_wport.resp.valid;
   cpu.mem_subsystem.peripheral_axi_write_in.resp_id = peri_wport.resp.id;
+}
+
+void bridge_dcache_axi_to_mem_subsystem(SimCpu &cpu) {
+  const auto &rport =
+      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_DCACHE_R];
+  cpu.mem_subsystem.mshr_axi_in.req_ready = rport.req.ready;
+  cpu.mem_subsystem.mshr_axi_in.req_accepted = rport.req.accepted;
+  cpu.mem_subsystem.mshr_axi_in.req_accepted_id = rport.req.accepted_id;
+  cpu.mem_subsystem.mshr_axi_in.resp_valid = rport.resp.valid;
+  cpu.mem_subsystem.mshr_axi_in.resp_id = rport.resp.id;
+  for (int i = 0; i < DCACHE_WORD_NUM &&
+                  i < axi_interconnect::MAX_READ_TRANSACTION_WORDS;
+       i++) {
+    cpu.mem_subsystem.mshr_axi_in.resp_data[i] = rport.resp.data[i];
+  }
+
+  const auto &wport =
+      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_DCACHE_W];
+  cpu.mem_subsystem.wb_axi_in.req_ready = wport.req.ready;
+  cpu.mem_subsystem.wb_axi_in.req_accepted = wport.req.accepted;
+  cpu.mem_subsystem.wb_axi_in.resp_valid = wport.resp.valid;
 }
 
 void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
@@ -397,6 +449,34 @@ void bridge_mem_subsystem_to_axi(SimCpu &cpu) {
   peri_wport.resp.ready = cpu.mem_subsystem.peripheral_axi_write_out.resp_ready;
 }
 
+void bridge_dcache_mem_subsystem_to_axi(SimCpu &cpu) {
+  auto &rport =
+      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_DCACHE_R];
+  rport.req.valid = cpu.mem_subsystem.mshr_axi_out.req_valid;
+  rport.req.addr = cpu.mem_subsystem.mshr_axi_out.req_addr;
+  rport.req.total_size = cpu.mem_subsystem.mshr_axi_out.req_total_size;
+  rport.req.id = cpu.mem_subsystem.mshr_axi_out.req_id;
+  rport.req.bypass = false;
+  rport.resp.ready = cpu.mem_subsystem.mshr_axi_out.resp_ready;
+
+  auto &wport =
+      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_DCACHE_W];
+  wport.req.valid = cpu.mem_subsystem.wb_axi_out.req_valid;
+  wport.req.addr = cpu.mem_subsystem.wb_axi_out.req_addr;
+  wport.req.total_size = cpu.mem_subsystem.wb_axi_out.req_total_size;
+  wport.req.id = cpu.mem_subsystem.wb_axi_out.req_id;
+  wport.req.wstrb = cpu.mem_subsystem.wb_axi_out.req_wstrb;
+  wport.req.bypass = false;
+  for (int i = 0; i < axi_interconnect::CACHELINE_WORDS; i++) {
+    wport.req.wdata[i] = 0;
+  }
+  for (int i = 0;
+       i < DCACHE_WORD_NUM && i < axi_interconnect::CACHELINE_WORDS; i++) {
+    wport.req.wdata[i] = cpu.mem_subsystem.wb_axi_out.req_wdata[i];
+  }
+  wport.resp.ready = cpu.mem_subsystem.wb_axi_out.resp_ready;
+}
+
 struct AxiCpuBoundaryState {
   bool read_req_ready[axi_interconnect::NUM_READ_MASTERS] = {};
   bool read_req_accepted[axi_interconnect::NUM_READ_MASTERS] = {};
@@ -438,6 +518,9 @@ void capture_axi_cpu_boundary_state(SimCpu &cpu, AxiCpuBoundaryState &state) {
 void accumulate_axi_cpu_boundary_state(SimCpu &cpu,
                                        AxiCpuBoundaryState &state) {
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    if (is_dcache_read_master(i)) {
+      continue;
+    }
     state.read_req_ready[i] =
         state.read_req_ready[i] || cpu.axi_interconnect.read_ports[i].req.ready;
     if (cpu.axi_interconnect.read_req_accepted[i]) {
@@ -447,6 +530,9 @@ void accumulate_axi_cpu_boundary_state(SimCpu &cpu,
     }
   }
   for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    if (is_dcache_write_master(i)) {
+      continue;
+    }
     state.write_req_ready[i] = state.write_req_ready[i] ||
                                cpu.axi_interconnect.write_ports[i].req.ready;
     if (cpu.axi_interconnect.write_req_accepted[i]) {
@@ -460,6 +546,9 @@ void accumulate_axi_cpu_boundary_state(SimCpu &cpu,
 void restore_axi_cpu_boundary_state(SimCpu &cpu,
                                     const AxiCpuBoundaryState &state) {
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    if (is_dcache_read_master(i)) {
+      continue;
+    }
     cpu.axi_interconnect.read_req_accepted[i] = state.read_req_accepted[i];
     cpu.axi_interconnect.read_req_accepted_id[i] =
         state.read_req_accepted_id[i];
@@ -486,6 +575,9 @@ void restore_axi_cpu_boundary_state(SimCpu &cpu,
     }
   }
   for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    if (is_dcache_write_master(i)) {
+      continue;
+    }
     cpu.axi_interconnect.write_req_accepted[i] = state.write_req_accepted[i];
     cpu.axi_interconnect.write_ports[i].req.ready = state.write_req_ready[i];
     cpu.axi_interconnect.write_ports[i].req.accepted =
@@ -512,6 +604,9 @@ void restore_axi_cpu_boundary_state(SimCpu &cpu,
 
 void mask_axi_cpu_boundary_for_internal_tick(SimCpu &cpu) {
   for (int i = 0; i < axi_interconnect::NUM_READ_MASTERS; ++i) {
+    if (is_dcache_read_master(i)) {
+      continue;
+    }
     auto &port = cpu.axi_interconnect.read_ports[i];
     port.req.valid = false;
     port.req.addr = 0;
@@ -521,6 +616,9 @@ void mask_axi_cpu_boundary_for_internal_tick(SimCpu &cpu) {
     port.resp.ready = false;
   }
   for (int i = 0; i < axi_interconnect::NUM_WRITE_MASTERS; ++i) {
+    if (is_dcache_write_master(i)) {
+      continue;
+    }
     auto &port = cpu.axi_interconnect.write_ports[i];
     port.req.valid = false;
     port.req.addr = 0;
@@ -551,12 +649,41 @@ void axi_subsystem_comb_inputs(SimCpu &cpu) {
   cpu.axi_mmio.comb_inputs();
 }
 
-void axi_subsystem_comb_inputs_internal_tick(SimCpu &cpu) {
-  comb_axi_inputs_for_internal_tick(cpu.axi_interconnect);
+void axi_subsystem_comb_inputs_dcache_fast_tick(SimCpu &cpu) {
+  AxiInternalTickBoundaryState boundary_state{};
+  capture_axi_internal_tick_boundary_state(cpu.axi_interconnect,
+                                           boundary_state);
+  cpu.axi_interconnect.comb_inputs();
+  restore_axi_internal_tick_boundary_state_except_dcache(cpu.axi_interconnect,
+                                                        boundary_state);
   connect_axi_master_outputs(cpu.axi_interconnect.axi_ddr_io, cpu.axi_ddr.io);
   connect_axi_master_outputs(cpu.axi_interconnect.axi_mmio_io, cpu.axi_mmio.io);
   cpu.axi_ddr.comb_inputs();
   cpu.axi_mmio.comb_inputs();
+}
+
+void count_dcache_fast_tick_axi_events(SimCpu &cpu) {
+  cpu.ctx.perf.l1d_fast_domain_ticks++;
+
+  const auto &rport =
+      cpu.axi_interconnect.read_ports[axi_interconnect::MASTER_DCACHE_R];
+  if (cpu.axi_interconnect
+          .read_req_accepted[axi_interconnect::MASTER_DCACHE_R]) {
+    cpu.ctx.perf.l1d_fast_mshr_axi_req_accepted++;
+  }
+  if (rport.resp.valid && rport.resp.ready) {
+    cpu.ctx.perf.l1d_fast_mshr_axi_resp_consumed++;
+  }
+
+  const auto &wport =
+      cpu.axi_interconnect.write_ports[axi_interconnect::MASTER_DCACHE_W];
+  if (cpu.axi_interconnect
+          .write_req_accepted[axi_interconnect::MASTER_DCACHE_W]) {
+    cpu.ctx.perf.l1d_fast_wb_axi_req_accepted++;
+  }
+  if (wport.resp.valid && wport.resp.ready) {
+    cpu.ctx.perf.l1d_fast_wb_axi_resp_consumed++;
+  }
 }
 
 void axi_subsystem_seq(SimCpu &cpu) {
@@ -577,7 +704,16 @@ void run_extra_axi_subsystem_ticks(SimCpu &cpu) {
   for (uint32_t tick = 1; tick < CONFIG_AXI_SUBSYSTEM_FREQ_DIV; ++tick) {
     mask_axi_cpu_boundary_for_internal_tick(cpu);
     axi_subsystem_comb_outputs(cpu);
-    axi_subsystem_comb_inputs_internal_tick(cpu);
+    if (kDcacheFastDomainEnabled) {
+      bridge_dcache_axi_to_mem_subsystem(cpu);
+      cpu.mem_subsystem.dcache_fast_comb(false);
+      bridge_dcache_mem_subsystem_to_axi(cpu);
+    }
+    axi_subsystem_comb_inputs_dcache_fast_tick(cpu);
+    if (kDcacheFastDomainEnabled) {
+      count_dcache_fast_tick_axi_events(cpu);
+      cpu.mem_subsystem.dcache_fast_seq(false);
+    }
     axi_subsystem_seq(cpu);
     accumulate_axi_cpu_boundary_state(cpu, cpu_boundary_state);
   }

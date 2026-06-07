@@ -11,6 +11,11 @@ extern wire<1>  dirty_array[DCACHE_SETS_NUM][DCACHE_WAYS_NUM];
 
 static_assert((DCACHE_WAYS_NUM & (DCACHE_WAYS_NUM - 1)) == 0,
               "tree-PLRU requires power-of-two DCACHE_WAYS_NUM");
+static_assert(DCACHE_BANK_NUM > 0, "DCACHE_BANK_NUM must be positive");
+static_assert((DCACHE_BANK_NUM & (DCACHE_BANK_NUM - 1)) == 0,
+              "DCache bank conflict model requires power-of-two DCACHE_BANK_NUM");
+static_assert((DCACHE_SETS_NUM % DCACHE_BANK_NUM) == 0,
+              "DCACHE_BANK_NUM must divide DCACHE_SETS_NUM");
 constexpr int DCACHE_PLRU_TREE_BITS =
     (DCACHE_WAYS_NUM > 1) ? (DCACHE_WAYS_NUM - 1) : 1;
 extern wire<1>  plru_tree_state[DCACHE_SETS_NUM][DCACHE_PLRU_TREE_BITS];

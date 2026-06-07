@@ -71,7 +71,6 @@ namespace {
   }
 }
 
-constexpr uint32_t kFinishSize = LDQ_SIZE + STQ_SIZE;
 constexpr uint32_t kLsuReqIdGenBits = 31 - LDQ_IDX_WIDTH;
 constexpr uint32_t kLsuReqIdIdxMask = (1u << LDQ_IDX_WIDTH) - 1;
 constexpr uint32_t kLsuReqIdGenMask = (1u << kLsuReqIdGenBits) - 1;
