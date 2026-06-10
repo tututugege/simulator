@@ -39,6 +39,7 @@ struct DecRenIO {
 
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
+    wire<1> is_ret;
 
     TmaMeta tma;
     DebugMeta dbg;
@@ -264,6 +265,7 @@ struct FtqRobPcRespIO {
 };
 
 struct FtqCommitInfoResp {
+  wire<32> pc;
   wire<1> pred_taken;
   wire<1> alt_pred;
   pcpn_t altpcpn;
@@ -330,6 +332,7 @@ struct RobCommitIO {
     wire<1> page_fault_load;
     wire<1> page_fault_store;
     wire<1> illegal_inst;
+    wire<1> is_ret;
 
     wire<INST_TYPE_WIDTH> type;
     TmaMeta tma;
@@ -360,6 +363,7 @@ struct RobCommitIO {
       dst.uop.page_fault_load = page_fault_load;
       dst.uop.page_fault_store = page_fault_store;
       dst.uop.illegal_inst = illegal_inst;
+      dst.uop.is_ret = is_ret;
       dst.uop.type = decode_inst_type(type);
       dst.uop.tma = tma;
       dst.uop.dbg = dbg;
@@ -462,6 +466,7 @@ struct DisRobIO {
 
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
+    wire<1> is_ret;
     wire<1> flush_pipe;
 
     TmaMeta tma;
@@ -543,6 +548,7 @@ struct RenDisIO {
 
     wire<1> page_fault_inst;
     wire<1> illegal_inst;
+    wire<1> is_ret;
 
     TmaMeta tma;
     DebugMeta dbg;
@@ -574,6 +580,7 @@ struct RenDisIO {
       dst.cplt_mask = src.cplt_mask;
       dst.page_fault_inst = src.page_fault_inst;
       dst.illegal_inst = src.illegal_inst;
+      dst.is_ret = src.is_ret;
       dst.type = src.type;
       dst.tma = src.tma;
       dst.dbg = src.dbg;

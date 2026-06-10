@@ -314,9 +314,9 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
   uop.illegal_inst = false;
   uop.type = encode_inst_type(NOP);
   uop.tma.is_cache_miss = false;
-  uop.tma.is_ret = false;
   uop.tma.mem_commit_is_load = false;
   uop.tma.mem_commit_is_store = false;
+  uop.is_ret = false;
   uop.dbg.mem_align_mask = 0;
   static uint64_t global_inst_idx = 0;
   uop.dbg.inst_idx = global_inst_idx++;
@@ -446,6 +446,7 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
           csr_idx != number_stval && csr_idx != number_sstatus &&
           csr_idx != number_sie && csr_idx != number_sip &&
           csr_idx != number_satp && csr_idx != number_mhartid &&
+          csr_idx != number_stimecmp &&
           csr_idx != number_misa) {
         uop.type = encode_inst_type(NOP);
         uop.dest_en = false;
@@ -533,8 +534,8 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
   }
 
   InstType inst_type = decode_inst_type(uop.type);
-  uop.tma.is_ret = (inst_type == JALR && uop.src1_areg == 1 &&
-                    uop.dest_areg == 0 && uop.imm == 0);
+  uop.is_ret = (inst_type == JALR && uop.src1_areg == 1 &&
+                uop.dest_areg == 0 && uop.imm == 0);
   uop.tma.mem_commit_is_load =
       (inst_type == LOAD ||
        (inst_type == AMO && (uop.func7 >> 2) != AmoOp::SC));

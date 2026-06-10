@@ -228,6 +228,7 @@ void get_oracle(struct front_top_in &in, struct front_top_out &out) {
     out.pc[i] = state.pc;
     out.page_fault_inst[i] = false;
 
+    refcpu_set_sim_time(oracle_ctx, static_cast<uint64_t>(sim_time));
     refcpu_step(oracle_ctx, 1);
     RefCpuStepInfo info = current_oracle_step_info();
     state = current_oracle_state();

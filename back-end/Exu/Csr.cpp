@@ -2,6 +2,7 @@
 #include "DebugPtwTrace.h"
 #include "config.h"
 #include "ref.h"
+#include "util.h"
 
 namespace {
 struct IrqState {
@@ -46,6 +47,25 @@ inline IrqState eval_interrupts(uint32_t mstatus, uint32_t mie_reg,
 
   return irq;
 }
+
+inline uint32_t current_timer_value() {
+  return sim_time >= 0 ? static_cast<uint32_t>(sim_time) : 0u;
+}
+
+inline bool mtimer_pending(uint32_t stimecmp) {
+  return stimecmp != 0 && current_timer_value() > stimecmp;
+}
+
+inline uint32_t effective_mip_with_stimer(uint32_t mip_reg, uint32_t stimecmp) {
+  if (mtimer_pending(stimecmp)) {
+    return mip_reg | MIP_MTIP;
+  }
+  return mip_reg & ~MIP_MTIP;
+}
+
+inline uint32_t effective_sip_from_mip(uint32_t mip_reg) {
+  return mip_reg & 0x00000333u;
+}
 } // namespace
 
 void Csr::init() {
@@ -62,6 +82,7 @@ void Csr::comb_begin() {
   csr_wdata_1 = csr_wdata;
   csr_wcmd_1 = csr_wcmd;
   csr_we_1 = csr_we;
+  stimecmp_1 = stimecmp;
 }
 
 void Csr::comb_csr_status() {
@@ -73,14 +94,24 @@ void Csr::comb_csr_status() {
 
 void Csr::comb_csr_read() {
   if (in.exe2csr->re) {
-    out.csr2exe->rdata = CSR_RegFile[cvt_number_to_csr(in.exe2csr->idx)];
+    if (in.exe2csr->idx == number_stimecmp) {
+      out.csr2exe->rdata = stimecmp;
+    } else if (in.exe2csr->idx == number_mip) {
+      out.csr2exe->rdata =
+          effective_mip_with_stimer(CSR_RegFile[csr_mip], stimecmp);
+    } else if (in.exe2csr->idx == number_sip) {
+      out.csr2exe->rdata = effective_sip_from_mip(
+          effective_mip_with_stimer(CSR_RegFile[csr_mip], stimecmp));
+    } else {
+      out.csr2exe->rdata = CSR_RegFile[cvt_number_to_csr(in.exe2csr->idx)];
+    }
   }
 }
 
 void Csr::comb_interrupt() {
   uint32_t mstatus = CSR_RegFile[csr_mstatus];
   uint32_t mie_reg = CSR_RegFile[csr_mie];
-  uint32_t mip_reg = CSR_RegFile[csr_mip];
+  uint32_t mip_reg = effective_mip_with_stimer(CSR_RegFile[csr_mip], stimecmp);
   uint32_t mideleg = CSR_RegFile[csr_mideleg];
   IrqState irq = eval_interrupts(mstatus, mie_reg, mip_reg, mideleg, privilege);
   out.csr2rob->interrupt_req =
@@ -108,7 +139,7 @@ void Csr::comb_exception() {
   uint32_t mstatus = CSR_RegFile[csr_mstatus];
   uint32_t sstatus = CSR_RegFile[csr_sstatus];
   uint32_t mie_reg = CSR_RegFile[csr_mie];
-  uint32_t mip_reg = CSR_RegFile[csr_mip];
+  uint32_t mip_reg = effective_mip_with_stimer(CSR_RegFile[csr_mip], stimecmp);
   uint32_t mideleg = CSR_RegFile[csr_mideleg];
   uint32_t medeleg = CSR_RegFile[csr_medeleg];
   uint32_t mtvec = CSR_RegFile[csr_mtvec];
@@ -325,13 +356,27 @@ void Csr::comb_csr_write() {
   }
 
   if (in.rob2csr->commit && csr_we) {
-    if (csr_wcmd == CSR_S) {
-      csr_wdata = (csr_wdata | CSR_RegFile[cvt_number_to_csr(csr_idx)]);
-    } else if (csr_wcmd == CSR_C) {
-      csr_wdata = (~csr_wdata & CSR_RegFile[cvt_number_to_csr(csr_idx)]);
+    uint32_t old_val = 0;
+    if (csr_idx == number_stimecmp) {
+      old_val = stimecmp;
+    } else if (csr_idx == number_mip) {
+      old_val = effective_mip_with_stimer(CSR_RegFile[csr_mip], stimecmp);
+    } else if (csr_idx == number_sip) {
+      old_val = effective_sip_from_mip(
+          effective_mip_with_stimer(CSR_RegFile[csr_mip], stimecmp));
+    } else {
+      old_val = CSR_RegFile[cvt_number_to_csr(csr_idx)];
     }
 
-    if (csr_idx == number_mie || csr_idx == number_sie) {
+    if (csr_wcmd == CSR_S) {
+      csr_wdata = (csr_wdata | old_val);
+    } else if (csr_wcmd == CSR_C) {
+      csr_wdata = (~csr_wdata & old_val);
+    }
+
+    if (csr_idx == number_stimecmp) {
+      stimecmp_1 = csr_wdata;
+    } else if (csr_idx == number_mie || csr_idx == number_sie) {
       uint32_t mie_mask = 0x00000bbb;
       uint32_t sie_mask = 0x00000333;
 
@@ -389,6 +434,10 @@ void Csr::seq() {
   for (int i = 0; i < CSR_NUM; i++) {
     CSR_RegFile[i] = CSR_RegFile_1[i];
   }
+  const uint32_t mip_reg =
+      effective_mip_with_stimer(CSR_RegFile_1[csr_mip], stimecmp_1);
+  CSR_RegFile[csr_mip] = mip_reg;
+  CSR_RegFile[csr_sip] = effective_sip_from_mip(mip_reg);
 
   if (in.interrupt_inject != nullptr) {
     in.interrupt_inject->external_irq_pending_valid = false;
@@ -399,4 +448,5 @@ void Csr::seq() {
   csr_wcmd = csr_wcmd_1;
   csr_we = csr_we_1;
   privilege = privilege_1;
+  stimecmp = stimecmp_1;
 }

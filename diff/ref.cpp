@@ -13,6 +13,8 @@ extern "C" {
 constexpr uint32_t kRamBase = 0x80000000u;
 constexpr uint32_t kRamUpperBound = 0xC0000000u;
 constexpr uint32_t kRamSizeBytes = kRamUpperBound - kRamBase;
+constexpr uint32_t kCsrStimecmp = 0x5c0u;
+static uint32_t g_ref_stimecmp = 0;
 
 inline int effective_data_privilege(const CPU_state &state, uint8_t privilege) {
   const uint32_t mstatus = state.csr[csr_mstatus];
@@ -69,6 +71,19 @@ inline bool is_modeled_mmio_addr(uint32_t paddr) {
          is_mmio_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
          is_mmio_range(paddr, XPS_INTC_ADDR_BASE, XPS_INTC_MMIO_SIZE);
 } // namespace
+
+static inline uint32_t ref_effective_mip(uint32_t mip_reg) {
+  const uint32_t now = sim_time >= 0 ? static_cast<uint32_t>(sim_time) : 0u;
+  if (g_ref_stimecmp != 0 && now > g_ref_stimecmp) {
+    return mip_reg | MIP_MTIP;
+  }
+  return mip_reg & ~MIP_MTIP;
+}
+
+static inline void sync_timer_csrs(CPU_state &state) {
+  state.csr[csr_mip] = ref_effective_mip(state.csr[csr_mip]);
+  state.csr[csr_sip] = state.csr[csr_mip] & 0x00000333u;
+}
 
 // ---------------- 辅助工具 ----------------
 static inline float32_t to_f32(uint32_t v) {
@@ -213,6 +228,7 @@ void RefCpu::init(uint32_t reset_pc) {
   for (int i = 0; i < 21; i++) {
     state.csr[i] = 0;
   }
+  g_ref_stimecmp = 0;
   state.csr[csr_misa] = 0x40141103;
   privilege = 0b11;
 
@@ -479,6 +495,7 @@ void RefCpu::exception(uint32_t trap_val) {
 }
 
 void RefCpu::RISCV() {
+  sync_timer_csrs(state);
   // === 优化 1: 极速解码 ===
   // 使用 BITS 宏直接提取字段，完全替代 bool 数组操作
   uint32_t opcode = BITS(Instruction, 6, 0);
@@ -490,7 +507,7 @@ void RefCpu::RISCV() {
   // === 优化 2: 快速读取 CSR 状态 ===
   uint32_t mstatus = state.csr[csr_mstatus];
   uint32_t mie_reg = state.csr[csr_mie];
-  uint32_t mip_reg = state.csr[csr_mip];
+  uint32_t mip_reg = ref_effective_mip(state.csr[csr_mip]);
   uint32_t mideleg = state.csr[csr_mideleg];
   uint32_t medeleg = state.csr[csr_medeleg];
 
@@ -852,7 +869,8 @@ void RefCpu::RV32CSR() {
       csr_addr != number_stval && csr_addr != number_sstatus &&
       csr_addr != number_sie && csr_addr != number_sip &&
       csr_addr != number_satp && csr_addr != number_mhartid &&
-      csr_addr != number_misa && csr_addr != number_time &&
+      csr_addr != number_misa && csr_addr != kCsrStimecmp &&
+      csr_addr != number_time &&
       csr_addr != number_timeh) {
     ;
   } else if (csr_addr == number_time || csr_addr == number_timeh) {
@@ -861,13 +879,30 @@ void RefCpu::RV32CSR() {
     return;
   } else {
 
-    int csr_idx = cvt_number_to_csr(csr_addr);
+    int csr_idx = (csr_addr == kCsrStimecmp) ? -1 : cvt_number_to_csr(csr_addr);
     if (re) {
-      state.gpr[rd] = state.csr[csr_idx];
+      if (csr_addr == kCsrStimecmp) {
+        state.gpr[rd] = g_ref_stimecmp;
+      } else if (csr_addr == number_mip) {
+        state.gpr[rd] = ref_effective_mip(state.csr[csr_mip]);
+      } else if (csr_addr == number_sip) {
+        state.gpr[rd] = ref_effective_mip(state.csr[csr_mip]) & 0x00000333u;
+      } else {
+        state.gpr[rd] = state.csr[csr_idx];
+      }
     }
 
     if (we) {
-      uint32_t old_val = state.csr[csr_idx];
+      uint32_t old_val = 0;
+      if (csr_addr == kCsrStimecmp) {
+        old_val = g_ref_stimecmp;
+      } else if (csr_addr == number_mip) {
+        old_val = ref_effective_mip(state.csr[csr_mip]);
+      } else if (csr_addr == number_sip) {
+        old_val = ref_effective_mip(state.csr[csr_mip]) & 0x00000333u;
+      } else {
+        old_val = state.csr[csr_idx];
+      }
       uint32_t csr_wdata = 0;
       if (wcmd == CSR_W) {
         csr_wdata = wdata;
@@ -877,7 +912,9 @@ void RefCpu::RV32CSR() {
         csr_wdata = old_val & ~wdata;
       }
 
-      if (csr_idx == csr_mie || csr_idx == csr_sie) {
+      if (csr_addr == kCsrStimecmp) {
+        g_ref_stimecmp = csr_wdata;
+      } else if (csr_idx == csr_mie || csr_idx == csr_sie) {
         uint32_t mie_mask =
             0x00000bbb; // MEI(11), SEI(9), MTI(7), STI(5), MSI(3), SSI(1)
         uint32_t sie_mask =

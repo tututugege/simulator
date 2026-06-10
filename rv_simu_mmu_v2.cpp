@@ -591,7 +591,7 @@ void SimCpu::commit_sync(InstInfo *inst, int commit_slot) {
          "SimCpu::commit_sync: invalid commit slot");
   const auto &ftq_info = back->ftq_commit_info.resp[commit_slot];
   if (inst->type == JALR) {
-    if (inst->tma.is_ret) {
+    if (inst->is_ret) {
       this->ctx.perf.ret_br_num++;
     } else {
       this->ctx.perf.jalr_br_num++;
@@ -602,7 +602,7 @@ void SimCpu::commit_sync(InstInfo *inst, int commit_slot) {
 
   if (inst->mispred) {
     if (inst->type == JALR) {
-      if (inst->tma.is_ret) {
+      if (inst->is_ret) {
         this->ctx.perf.ret_mispred_num++;
         const bool pred_taken = ftq_info.pred_taken;
         if (!pred_taken) {
@@ -692,13 +692,21 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   for (int i = 0; i < CSR_NUM; i++) {
     dut_cpu.csr[i] = back->csr->CSR_RegFile_1[i];
   }
+  const uint32_t stimecmp = static_cast<uint32_t>(back->csr->stimecmp);
+  const uint32_t now = sim_time >= 0 ? static_cast<uint32_t>(sim_time) : 0u;
+  if (stimecmp != 0 && now > stimecmp) {
+    dut_cpu.csr[csr_mip] |= MIP_MTIP;
+  } else {
+    dut_cpu.csr[csr_mip] &= ~MIP_MTIP;
+  }
+  dut_cpu.csr[csr_sip] = dut_cpu.csr[csr_mip] & 0x00000333u;
   if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending_valid)) {
     if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending)) {
-      dut_cpu.csr[csr_mip] = back->csr->CSR_RegFile[csr_mip] | MIP_SEIP;
-      dut_cpu.csr[csr_sip] = back->csr->CSR_RegFile[csr_sip] | MIP_SEIP;
+      dut_cpu.csr[csr_mip] |= MIP_SEIP;
+      dut_cpu.csr[csr_sip] |= MIP_SEIP;
     } else {
-      dut_cpu.csr[csr_mip] = back->csr->CSR_RegFile[csr_mip] & ~MIP_SEIP;
-      dut_cpu.csr[csr_sip] = back->csr->CSR_RegFile[csr_sip] & ~MIP_SEIP;
+      dut_cpu.csr[csr_mip] &= ~MIP_SEIP;
+      dut_cpu.csr[csr_sip] &= ~MIP_SEIP;
     }
   }
   dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL ||
@@ -1118,13 +1126,13 @@ void SimCpu::back2front_comb() {
 
     if (front.in.back2front_valid[i]) {
       front.in.predict_dir[i] = ftq_info.pred_taken;
-      front.in.predict_base_pc[i] = inst->dbg.pc;
+      front.in.predict_base_pc[i] = ftq_info.pc;
       front.in.actual_dir[i] =
           (inst->type == JAL || inst->type == JALR) ? true : inst->br_taken;
       front.in.actual_target[i] =
           (is_branch(inst->type) || inst->type == JAL || inst->type == JALR)
               ? back.out.commit_entry[i].uop.diag_val
-              : inst->dbg.pc + 4;
+              : ftq_info.pc + 4;
       int br_type = BR_NONCTL;
       if (is_branch(inst->type)) {
         br_type = BR_DIRECT;
@@ -1135,7 +1143,7 @@ void SimCpu::back2front_comb() {
       if (inst->type == JAL && inst->dest_en && inst->dest_areg == 1) {
         br_type = BR_CALL;
       } else if (inst->type == JALR) {
-        if (inst->tma.is_ret)
+        if (inst->is_ret)
           br_type = BR_RET;
         else
           br_type = BR_IDIRECT;

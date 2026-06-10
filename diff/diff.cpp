@@ -271,6 +271,7 @@ void difftest_skip() {
   refcpu_set_dut_expected_faults(ref_cpu_ctx, dut_cpu.page_fault_inst,
                                  dut_cpu.page_fault_load,
                                  dut_cpu.page_fault_store);
+  refcpu_set_sim_time(ref_cpu_ctx, static_cast<uint64_t>(sim_time));
   refcpu_step(ref_cpu_ctx, 1);
   refcpu_sync_gprs_from_dut(ref_cpu_ctx, dut_cpu.gpr, ARF_NUM);
 }
@@ -280,6 +281,7 @@ void difftest_step(bool check) {
   refcpu_set_dut_expected_faults(ref_cpu_ctx, dut_cpu.page_fault_inst,
                                  dut_cpu.page_fault_load,
                                  dut_cpu.page_fault_store);
+  refcpu_set_sim_time(ref_cpu_ctx, static_cast<uint64_t>(sim_time));
   refcpu_step(ref_cpu_ctx, 1);
   if (check)
     checkregs();

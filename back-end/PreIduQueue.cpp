@@ -300,6 +300,7 @@ void PreIduQueue::comb_commit_info() {
     const uint32_t ftq_idx = commit.uop.ftq_idx;
     const uint32_t ftq_offset = commit.uop.ftq_offset;
     if (ftq_idx < FTQ_SIZE && ftq_valid[ftq_idx]) {
+      resp.pc = ftq_lookup_entries[ftq_idx].slot_pc[ftq_offset];
       resp.pred_taken = ftq_lookup_entries[ftq_idx].pred_taken_mask[ftq_offset];
     }
 
