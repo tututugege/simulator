@@ -1024,6 +1024,7 @@ void MemSubsystem::seq() {
   dcache_.seq();
   mshr_.seq();
   wb_.seq();
+  peripheral_model_.tick();
   peripheral_axi_.seq();
   mem_route_block.seq();
 #if AXI_KIT_RUNTIME_ENABLED

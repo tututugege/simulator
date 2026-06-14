@@ -1161,6 +1161,7 @@ void RealLsu::comb_lsu2exe() {
           wb_uop.dest_preg = ldq_entry.dest_preg;
           wb_uop.page_fault_load = ldq_entry.page_fault;
           wb_uop.dest_en = true;
+          wb_uop.dbg.is_mmio = ldq_entry.is_mmio;
 
           wb_uop.dbg.difftest_skip = !ldq_entry.page_fault && lsu_is_timer_addr(ldq_entry.p_addr);
           out.lsu2exe->wb_req[i].uop =
@@ -1188,6 +1189,7 @@ void RealLsu::comb_lsu2exe() {
           wb_uop.diag_val = stq_entry.vaddr;
           wb_uop.page_fault_store = stq_entry.page_fault;
           wb_uop.dest_en = false;
+          wb_uop.dbg.is_mmio = stq_entry.is_mmio;
 
           if (stq_entry.page_fault) {
             wb_uop.result = stq_entry.vaddr;

@@ -30,24 +30,15 @@ trap_vector:
     li t6, '!'
     sb t6, 0(t5)
 
-    # Clear custom timer compare so MTIP deasserts after return.
-    .word 0x5c001073 # csrw 0x5c0, x0
+    # Clear timer compare so MTIP deasserts after return.
+    li t5, 0x1fd0e008
+    li t6, -1
+    sw t6, 0(t5)
+    sw t6, 4(t5)
 
     addi t1, t1, 4
     .word 0x34131073 # csrw mepc, t1
     .word 0x30200073 # mret
-
-    .align 2
-    .globl write_stimecmp
-write_stimecmp:
-    .word 0x5c051073 # csrw 0x5c0, a0
-    ret
-
-    .align 2
-    .globl read_stimecmp
-read_stimecmp:
-    .word 0x5c002573 # csrr a0, 0x5c0
-    ret
 
     .align 2
     .globl read_mstatus

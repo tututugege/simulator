@@ -55,6 +55,8 @@ void print_help(char *argv[]) {
          "(default: checkpoint_interval in CKPT mode, compile-time "
          "MAX_COMMIT_INST otherwise)"
       << std::endl;
+  std::cout << "      --no-diff               Disable commit-time difftest checks"
+            << std::endl;
   std::cout << "  -h, --help                  Show this message" << std::endl;
   std::cout << "\nExamples:" << std::endl;
   std::cout << "  Run Binary: " << argv[0] << " spec_mem/mcf.bin" << std::endl;
@@ -137,6 +139,7 @@ int main(int argc, char *argv[]) {
       {"fast-forward", required_argument, 0, 'f'}, // 快进参数
       {"warmup", required_argument, 0, 'w'},
       {"max-commit", required_argument, 0, 'c'},
+      {"no-diff", no_argument, 0, 1000},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}};
 
@@ -215,6 +218,9 @@ int main(int argc, char *argv[]) {
     case 'h':
       print_help(argv);
       return 0;
+    case 1000:
+      cpu.ctx.enable_difftest = false;
+      break;
     default:
       print_help(argv);
       return 1;
@@ -326,6 +332,7 @@ int main(int argc, char *argv[]) {
                 << " steps..." << std::endl;
       difftest_ref_set_uart_print(false);
       difftest_ref_set_ref_only(true);
+      difftest_ref_set_device_effects(true);
       for (; ref_prewarm_done < ref_prewarm_target; ref_prewarm_done++) {
         difftest_step(false);
         if (difftest_ref_sim_end()) {
@@ -335,6 +342,7 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
+      difftest_ref_set_device_effects(false);
       difftest_ref_set_ref_only(false);
       std::cout << "[Run] Ref prewarm done: " << ref_prewarm_done
                 << " steps." << std::endl;
@@ -380,6 +388,7 @@ int main(int argc, char *argv[]) {
     cpu.back.load_image(config.target_file);
     difftest_ref_set_uart_print(true);
     difftest_ref_set_ref_only(true);
+    difftest_ref_set_device_effects(true);
 
     for (uint64_t i = 0; i < config.fast_forward_count; i++) {
       difftest_step(false);
@@ -390,6 +399,7 @@ int main(int argc, char *argv[]) {
         break;
       }
     }
+    difftest_ref_set_device_effects(false);
     difftest_ref_set_ref_only(false);
 
     if (cpu.ctx.exit_reason == ExitReason::NONE) {
@@ -409,6 +419,7 @@ int main(int argc, char *argv[]) {
     cpu.back.load_image(config.target_file);
     difftest_ref_set_uart_print(true);
     difftest_ref_set_ref_only(true);
+    difftest_ref_set_device_effects(true);
 
     std::cout << "[Debug] Running Reference Model Standalone..." << std::endl;
 

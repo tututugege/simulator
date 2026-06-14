@@ -642,10 +642,10 @@ void SimCpu::commit_sync(InstInfo *inst, int commit_slot) {
   }
 }
 
-void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
+void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *sync) {
   Assert(inst_entry != nullptr &&
          "SimCpu::difftest_prepare: inst_entry is null");
-  Assert(skip != nullptr && "SimCpu::difftest_prepare: skip is null");
+  Assert(sync != nullptr && "SimCpu::difftest_prepare: sync is null");
   BackTop *back = &this->back;
   InstInfo *inst = &inst_entry->uop;
 
@@ -666,10 +666,7 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
       dut_cpu.store = false;
     } else {
       if (!(e.paddr_valid && e.data_valid)) {
-        // Store addr/data sideband can lag the ROB commit signal by a cycle on
-        // some recovery paths. Let the REF execute the instruction normally and
-        // skip the per-instruction sideband check instead of aborting the run.
-        *skip = true;
+        *sync = true;
         dut_cpu.store = false;
       } else {
         dut_cpu.store = true;
@@ -689,26 +686,70 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
     dut_cpu.store = false;
   }
 
+  if (inst->dbg.is_mmio && inst->tma.mem_commit_is_store &&
+      !inst->page_fault_store) {
+    *sync = true;
+  }
+
+  if (inst->dbg.is_mmio && inst->tma.mem_commit_is_load &&
+      !inst->page_fault_load) {
+    *sync = true;
+  }
+
+  const uint32_t raw_inst = inst->dbg.instruction;
+  const bool is_csr_inst = (raw_inst & 0x7f) == 0x73;
+  const uint32_t csr_addr = raw_inst >> 20;
+  if (is_csr_inst &&
+      (csr_addr == number_mip || csr_addr == number_sip) &&
+      (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending_valid) ||
+       static_cast<bool>(back->csr_interrupt_inject_io.timer_irq_pending_valid))) {
+    *sync = true;
+  }
+
   for (int i = 0; i < CSR_NUM; i++) {
     dut_cpu.csr[i] = back->csr->CSR_RegFile_1[i];
   }
-  const uint32_t stimecmp = static_cast<uint32_t>(back->csr->stimecmp);
-  const uint32_t now = sim_time >= 0 ? static_cast<uint32_t>(sim_time) : 0u;
-  if (stimecmp != 0 && now > stimecmp) {
-    dut_cpu.csr[csr_mip] |= MIP_MTIP;
-  } else {
-    dut_cpu.csr[csr_mip] &= ~MIP_MTIP;
+
+  const bool timer_irq_level = mem_subsystem.timer_irq_level();
+  const bool timer_irq_enabled =
+      (dut_cpu.csr[csr_mie] & MIP_MTIP) &&
+      ((back->csr->privilege_1 < RISCV_MODE_M) ||
+       (dut_cpu.csr[csr_mstatus] & MSTATUS_MIE));
+  if (timer_irq_level && timer_irq_enabled) {
+    *sync = true;
   }
-  dut_cpu.csr[csr_sip] = dut_cpu.csr[csr_mip] & 0x00000333u;
-  if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending_valid)) {
-    if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending)) {
-      dut_cpu.csr[csr_mip] |= MIP_SEIP;
-      dut_cpu.csr[csr_sip] |= MIP_SEIP;
-    } else {
+
+  const bool need_visible_irq_state =
+      *sync || static_cast<bool>(back->csr->out.csr2rob->interrupt_req) ||
+      static_cast<bool>(back->rob->out.rob_bcast->interrupt);
+  if (!need_visible_irq_state) {
+    if (static_cast<bool>(
+            back->csr_interrupt_inject_io.external_irq_pending_valid)) {
       dut_cpu.csr[csr_mip] &= ~MIP_SEIP;
-      dut_cpu.csr[csr_sip] &= ~MIP_SEIP;
     }
+    if (static_cast<bool>(back->csr_interrupt_inject_io.timer_irq_pending_valid)) {
+      dut_cpu.csr[csr_mip] &= ~MIP_MTIP;
+    }
+    dut_cpu.csr[csr_sip] = dut_cpu.csr[csr_mip] & 0x00000333u;
+  } else {
+    if (static_cast<bool>(
+            back->csr_interrupt_inject_io.external_irq_pending_valid)) {
+      if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending)) {
+        dut_cpu.csr[csr_mip] |= MIP_SEIP;
+      } else {
+        dut_cpu.csr[csr_mip] &= ~MIP_SEIP;
+      }
+    }
+    if (static_cast<bool>(back->csr_interrupt_inject_io.timer_irq_pending_valid)) {
+      if (static_cast<bool>(back->csr_interrupt_inject_io.timer_irq_pending)) {
+        dut_cpu.csr[csr_mip] |= MIP_MTIP;
+      } else {
+        dut_cpu.csr[csr_mip] &= ~MIP_MTIP;
+      }
+    }
+    dut_cpu.csr[csr_sip] = dut_cpu.csr[csr_mip] & 0x00000333u;
   }
+
   dut_cpu.pc = (is_branch(inst->type) || inst->type == JAL ||
                 back->rob->out.rob_bcast->flush)
                    ? inst_entry->uop.diag_val
@@ -719,7 +760,13 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *skip) {
   dut_cpu.page_fault_store = inst->page_fault_store;
   dut_cpu.inst_idx = inst->dbg.inst_idx;
   dut_cpu.commit_pc = inst->dbg.pc;
-  *skip = inst->dbg.difftest_skip;
+  *sync = *sync || static_cast<bool>(inst->dbg.difftest_skip);
+  if (static_cast<bool>(back->csr->out.csr2rob->interrupt_req)) {
+    *sync = true;
+  }
+  if (static_cast<bool>(back->rob->out.rob_bcast->interrupt)) {
+    *sync = true;
+  }
 }
 
 void SimContext::run_commit_inst(InstEntry *inst_entry, int commit_slot) {
@@ -737,13 +784,14 @@ void SimContext::run_difftest_inst(InstEntry *inst_entry) {
          "SimContext::run_difftest_inst: inst_entry is null");
   Assert(inst_entry->valid &&
          "SimContext::run_difftest_inst: inst_entry is not valid");
-  bool skip = false;
-  cpu->difftest_prepare(inst_entry, &skip);
-  if (skip) {
-    difftest_skip();
+  if (!enable_difftest) {
+    return;
+  }
+  bool sync = false;
+  cpu->difftest_prepare(inst_entry, &sync);
+  if (sync) {
+    difftest_sync_from_dut(static_cast<uint8_t>(cpu->back.csr->privilege_1));
   } else {
-    // Keep commit-time difftest checking enabled in real-BPU runs. Skip is
-    // reserved for explicitly unsupported sideband cases only.
     difftest_step(true);
   }
 }

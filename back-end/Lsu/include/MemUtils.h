@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "../../../include/config.h"
+
 struct StoreTag {
   reg<STQ_IDX_WIDTH> idx = 0;
   reg<1> flag = false;
@@ -117,7 +119,9 @@ template <typename PtrT>
          (paddr >= XPS_INTC_ADDR_BASE &&
           paddr < (XPS_INTC_ADDR_BASE + XPS_INTC_MMIO_SIZE)) ||
          (paddr == OPENSBI_TIMER_LOW_ADDR) ||
-         (paddr == OPENSBI_TIMER_HIGH_ADDR);
+         (paddr == OPENSBI_TIMER_HIGH_ADDR) ||
+         (paddr == OPENSBI_TIMERCMP_LOW_ADDR) ||
+         (paddr == OPENSBI_TIMERCMP_HIGH_ADDR);
 }
 
 [[maybe_unused]] static bool lsu_mmio_is_oldest_unfinished(const RobBroadcastIO *rob_bcast,
@@ -166,6 +170,8 @@ template <typename PtrT>
 
 [[maybe_unused]] static bool lsu_is_timer_addr(uint32_t paddr) {
   return paddr == OPENSBI_TIMER_LOW_ADDR ||
-         paddr == OPENSBI_TIMER_HIGH_ADDR;
+         paddr == OPENSBI_TIMER_HIGH_ADDR ||
+         paddr == OPENSBI_TIMERCMP_LOW_ADDR ||
+         paddr == OPENSBI_TIMERCMP_HIGH_ADDR;
 }
 } // namespace

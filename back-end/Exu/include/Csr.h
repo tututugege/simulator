@@ -33,7 +33,6 @@ enum enum_number_csr_code {
   number_misa = 0x301,
   number_time = 0xc01,
   number_timeh = 0xc81,
-  number_stimecmp = 0x5c0,
 };
 
 enum enum_csr {
@@ -156,7 +155,6 @@ public:
   reg<32> csr_wdata;
   reg<2> csr_wcmd;
   reg<1> csr_we;
-  reg<32> stimecmp = 0;
 
   wire<32> CSR_RegFile_1[CSR_NUM];
   wire<2> privilege_1 = 0b11;
@@ -165,5 +163,4 @@ public:
   wire<32> csr_wdata_1;
   wire<2> csr_wcmd_1;
   wire<1> csr_we_1;
-  wire<32> stimecmp_1 = 0;
 };

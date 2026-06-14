@@ -607,6 +607,8 @@ void Rob::comb_complete() {
       // 需要保持置位， 不能被后到达的 uop 覆盖为 0。
       entry_1[bank_idx][line_idx].uop.flush_pipe =
           entry_1[bank_idx][line_idx].uop.flush_pipe || wb.flush_pipe;
+      entry_1[bank_idx][line_idx].uop.dbg.is_mmio =
+          entry_1[bank_idx][line_idx].uop.dbg.is_mmio || wb.dbg.is_mmio;
       entry_1[bank_idx][line_idx].uop.dbg.difftest_skip = wb.dbg.difftest_skip;
       if (is_branch_uop(wb.op)) {
         entry_1[bank_idx][line_idx].uop.diag_val = wb.diag_val;

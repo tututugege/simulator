@@ -69,6 +69,7 @@ constexpr uint8_t MAXU = 0b11100;
 struct DebugMeta {
   wire<32> instruction;
   wire<32> pc;
+  bool is_mmio;
   uint8_t mem_align_mask;
   bool difftest_skip;
   int64_t inst_idx;
@@ -228,6 +229,7 @@ struct MicroOp {
     this->is_atomic = info.is_atomic;
     this->dbg.instruction = info.dbg.instruction;
     this->dbg.pc = info.dbg.pc;
+    this->dbg.is_mmio = info.dbg.is_mmio;
     this->dbg.mem_align_mask = info.dbg.mem_align_mask;
     this->dbg.difftest_skip = info.dbg.difftest_skip;
     this->dbg.inst_idx = info.dbg.inst_idx;
@@ -261,6 +263,7 @@ public:
   PerfCount perf;
   ExitReason exit_reason = ExitReason::NONE;
   bool is_ckpt = false;
+  bool enable_difftest = true;
   uint64_t ckpt_warmup_commit_target = 0;
   uint64_t ckpt_measure_commit_target = 0;
   SimCpu *cpu = nullptr;

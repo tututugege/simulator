@@ -1,31 +1,6 @@
 #include "PeripheralAxi.h"
 #include "PeripheralModel.h"
 #include "config.h"
-#include "oracle.h"
-
-namespace {
-bool is_local_special_read_addr(uint32_t addr) {
-  return addr == OPENSBI_TIMER_LOW_ADDR || addr == OPENSBI_TIMER_HIGH_ADDR;
-}
-
-uint32_t local_special_read_data(uint32_t addr) {
-  if (addr == OPENSBI_TIMER_LOW_ADDR) {
-#ifdef CONFIG_BPU
-    return static_cast<uint32_t>(sim_time);
-#else
-    return static_cast<uint32_t>(get_oracle_timer());
-#endif
-  }
-  if (addr == OPENSBI_TIMER_HIGH_ADDR) {
-#ifdef CONFIG_BPU
-    return static_cast<uint32_t>(sim_time >> 32);
-#else
-    return static_cast<uint32_t>(get_oracle_timer());
-#endif
-  }
-  return 0;
-}
-} // namespace
 
 void PeripheralAxi::init() {
   in = {};
@@ -139,19 +114,6 @@ void PeripheralAxi::comb_inputs() {
 
   if (!cur.busy) {
     if (peripheral_req != nullptr && peripheral_req->is_mmio) {
-      if (!peripheral_req->wen &&
-          is_local_special_read_addr(peripheral_req->mmio_addr)) {
-        nxt.busy = false;
-        nxt.write = false;
-        nxt.req_accepted = false;
-        nxt.resp_valid = true;
-        nxt.addr = peripheral_req->mmio_addr;
-        nxt.wdata = 0;
-        nxt.func3 = peripheral_req->mmio_fun3;
-        nxt.rdata = local_special_read_data(peripheral_req->mmio_addr);
-        nxt.req_id = 0;
-        return;
-      }
       if (peripheral_model != nullptr &&
           PeripheralModel::is_modeled_mmio(peripheral_req->mmio_addr)) {
         nxt.busy = false;

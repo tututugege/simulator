@@ -5,11 +5,14 @@
 #include "config.h"
 #include <cstdint>
 #include <iostream>
+#include "debug_config.h"
 
 class PeripheralModel {
 public:
   CsrInterruptInjectIO *csr_interrupt_inject = nullptr;
   uint32_t *memory = nullptr;
+  uint64_t timer_offset_ = 0;
+  uint64_t timer_cmp_ = 0;
 
   void bind(CsrInterruptInjectIO *csr_interrupt_inject_ptr,
             uint32_t *memory_ptr) {
@@ -25,12 +28,26 @@ public:
       return static_cast<uint64_t>(addr - base) < static_cast<uint64_t>(size);
     };
     return in_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
-           in_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE);
+           in_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
+           in_range(paddr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE);
   }
 
   uint32_t read_load(uint32_t paddr, uint8_t func3) const {
     if (memory == nullptr || !is_modeled_mmio(paddr)) {
       return 0;
+    }
+
+    if (paddr == OPENSBI_TIMER_LOW_ADDR) {
+      return static_cast<uint32_t>(effective_timer_value());
+    }
+    if (paddr == OPENSBI_TIMER_HIGH_ADDR) {
+      return static_cast<uint32_t>(effective_timer_value() >> 32);
+    }
+    if (paddr == OPENSBI_TIMERCMP_LOW_ADDR) {
+      return static_cast<uint32_t>(timer_cmp_);
+    }
+    if (paddr == OPENSBI_TIMERCMP_HIGH_ADDR) {
+      return static_cast<uint32_t>(timer_cmp_ >> 32);
     }
 
     const uint32_t shift = (paddr & 0x3u) * 8u;
@@ -61,6 +78,35 @@ public:
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3) {
     if (csr_interrupt_inject == nullptr || memory == nullptr ||
         !is_modeled_mmio(paddr)) {
+      return;
+    }
+
+    if (paddr == OPENSBI_TIMER_LOW_ADDR || paddr == OPENSBI_TIMER_HIGH_ADDR) {
+      const uint64_t current_timer = effective_timer_value();
+      uint64_t new_timer = current_timer;
+      if (paddr == OPENSBI_TIMER_LOW_ADDR) {
+        new_timer = (current_timer & 0xFFFFFFFF00000000ull) |
+                    static_cast<uint64_t>(data);
+      } else {
+        new_timer = (static_cast<uint64_t>(data) << 32) |
+                    (current_timer & 0x00000000FFFFFFFFull);
+      }
+      timer_offset_ = new_timer - current_sim_time_u64();
+      update_timer_irq();
+      return;
+    }
+
+    if (paddr == OPENSBI_TIMERCMP_LOW_ADDR) {
+      timer_cmp_ =
+          (timer_cmp_ & 0xFFFFFFFF00000000ull) | static_cast<uint64_t>(data);
+      update_timer_irq();
+      return;
+    }
+
+    if (paddr == OPENSBI_TIMERCMP_HIGH_ADDR) {
+      timer_cmp_ = (static_cast<uint64_t>(data) << 32) |
+                   (timer_cmp_ & 0x00000000FFFFFFFFull);
+      update_timer_irq();
       return;
     }
 
@@ -100,7 +146,27 @@ public:
     }
   }
 
+  void tick() { update_timer_irq(); }
+  bool timer_irq_level() const { return effective_timer_value() >= timer_cmp_; }
+
 private:
+  static uint64_t current_sim_time_u64() {
+    return sim_time >= 0 ? static_cast<uint64_t>(sim_time) : 0ull;
+  }
+
+  uint64_t effective_timer_value() const {
+    return current_sim_time_u64() + timer_offset_;
+  }
+
+  void update_timer_irq() {
+    if (csr_interrupt_inject == nullptr) {
+      return;
+    }
+    csr_interrupt_inject->timer_irq_pending_valid = true;
+    csr_interrupt_inject->timer_irq_pending =
+        effective_timer_value() >= timer_cmp_;
+  }
+
   static uint32_t mask_store_data(uint32_t data, uint8_t func3) {
     if ((func3 & 0x3u) == 0u) {
       return data & 0xFFu;

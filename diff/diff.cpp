@@ -134,6 +134,7 @@ void init_difftest(int img_size) {
   }
   ref_cpu_ctx = refcpu_init(0, static_cast<uint32_t>(RAM_SIZE));
   Assert(ref_cpu_ctx != nullptr && "init_difftest: refcpu_init failed");
+  refcpu_set_device_effects(ref_cpu_ctx, false);
   refcpu_sync_ram_from_dut(ref_cpu_ctx, pmem_ram_ptr(),
                            static_cast<size_t>(img_size));
   seed_ref_io_from_backing();
@@ -146,6 +147,7 @@ void init_diff_ckpt(CPU_state ckpt_state, uint8_t privilege) {
   }
   ref_cpu_ctx = refcpu_init(0, static_cast<uint32_t>(RAM_SIZE));
   Assert(ref_cpu_ctx != nullptr && "init_diff_ckpt: refcpu_init failed");
+  refcpu_set_device_effects(ref_cpu_ctx, false);
   RefCpuState ref_state = to_ref_state(ckpt_state, privilege);
   refcpu_set_state(ref_cpu_ctx, &ref_state);
 
@@ -266,14 +268,14 @@ fault:
   exit(1);
 }
 
-void difftest_skip() {
+void difftest_sync_from_dut(uint8_t privilege) {
   ensure_ref_cpu();
   refcpu_set_dut_expected_faults(ref_cpu_ctx, dut_cpu.page_fault_inst,
                                  dut_cpu.page_fault_load,
                                  dut_cpu.page_fault_store);
   refcpu_set_sim_time(ref_cpu_ctx, static_cast<uint64_t>(sim_time));
-  refcpu_step(ref_cpu_ctx, 1);
-  refcpu_sync_gprs_from_dut(ref_cpu_ctx, dut_cpu.gpr, ARF_NUM);
+  const RefCpuState ref_state = to_ref_state(dut_cpu, privilege);
+  refcpu_set_state(ref_cpu_ctx, &ref_state);
 }
 
 void difftest_step(bool check) {
@@ -301,6 +303,11 @@ void difftest_ref_set_uart_print(bool enable) {
 void difftest_ref_set_ref_only(bool enable) {
   ensure_ref_cpu();
   refcpu_set_ref_only(ref_cpu_ctx, enable);
+}
+
+void difftest_ref_set_device_effects(bool enable) {
+  ensure_ref_cpu();
+  refcpu_set_device_effects(ref_cpu_ctx, enable);
 }
 
 void difftest_dump_memory_line(const char *tag, uint32_t addr) {

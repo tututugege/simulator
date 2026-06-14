@@ -5,7 +5,8 @@
 
 #define TIMER_LOW_ADDR 0x1fd0e000u
 #define TIMER_HIGH_ADDR 0x1fd0e004u
-#define CSR_STIMECMP 0x5c0u
+#define TIMERCMP_LOW_ADDR 0x1fd0e008u
+#define TIMERCMP_HIGH_ADDR 0x1fd0e00cu
 
 #define MSTATUS_MIE (1u << 3)
 #define MIP_MTIP (1u << 7)
@@ -13,8 +14,6 @@
 #define MTIMER_INTERRUPT_CAUSE 0x80000007u
 
 extern void install_trap_vector(void);
-extern void write_stimecmp(uint32_t val);
-extern uint32_t read_stimecmp(void);
 extern uint32_t read_mstatus(void);
 extern uint32_t read_mie(void);
 extern void write_mie(uint32_t val);
@@ -32,6 +31,10 @@ static inline uint32_t mmio_read32(uint32_t addr) {
   return val;
 }
 
+static inline void mmio_write32(uint32_t addr, uint32_t val) {
+  asm volatile("sw %0, 0(%1)" : : "r"(val), "r"(addr));
+}
+
 static uint32_t read_timer_low(void) { return mmio_read32(TIMER_LOW_ADDR); }
 
 static uint32_t read_timer_high(void) { return mmio_read32(TIMER_HIGH_ADDR); }
@@ -46,6 +49,11 @@ static uint32_t read_timer_stable_low(void) {
     hi2 = read_timer_high();
   }
   return lo;
+}
+
+static void write_timercmp(uint64_t val) {
+  mmio_write32(TIMERCMP_LOW_ADDR, (uint32_t)val);
+  mmio_write32(TIMERCMP_HIGH_ADDR, (uint32_t)(val >> 32));
 }
 
 static void fail(const char *msg) {
@@ -67,12 +75,12 @@ int main(void) {
   last_mepc = 0;
   last_mip = 0;
 
-  write_stimecmp(0);
+  write_timercmp(UINT64_MAX);
   write_mie(read_mie() & ~MIP_MTIP);
 
   now = read_timer_stable_low();
   target = now + 2000u;
-  write_stimecmp(target);
+  write_timercmp((uint64_t)target);
 
   xprintf("[TIMER-CSR] now=0x%08x target=0x%08x\n",
           (unsigned int)now, (unsigned int)target);

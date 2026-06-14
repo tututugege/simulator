@@ -79,6 +79,7 @@ public:
   void set_internal_axi_runtime_active(bool active);
   void set_ptw_coherent_source(RealLsu *lsu) { ptw_coherent_source_ = lsu; }
   void set_llc_config(const axi_interconnect::AXI_LLCConfig &cfg);
+  bool timer_irq_level() const { return peripheral_model_.timer_irq_level(); }
   void llc_comb_outputs();
   const axi_interconnect::AXI_LLC_LookupIn_t &llc_lookup_in() const;
   void llc_seq(const axi_interconnect::AXI_LLC_TableOut_t &table_out,

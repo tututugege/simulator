@@ -13,8 +13,8 @@ extern "C" {
 constexpr uint32_t kRamBase = 0x80000000u;
 constexpr uint32_t kRamUpperBound = 0xC0000000u;
 constexpr uint32_t kRamSizeBytes = kRamUpperBound - kRamBase;
-constexpr uint32_t kCsrStimecmp = 0x5c0u;
-static uint32_t g_ref_stimecmp = 0;
+static uint64_t g_ref_timer_offset = 0;
+static uint64_t g_ref_timer_cmp = 0;
 
 inline int effective_data_privilege(const CPU_state &state, uint8_t privilege) {
   const uint32_t mstatus = state.csr[csr_mstatus];
@@ -73,8 +73,8 @@ inline bool is_modeled_mmio_addr(uint32_t paddr) {
 } // namespace
 
 static inline uint32_t ref_effective_mip(uint32_t mip_reg) {
-  const uint32_t now = sim_time >= 0 ? static_cast<uint32_t>(sim_time) : 0u;
-  if (g_ref_stimecmp != 0 && now > g_ref_stimecmp) {
+  const uint64_t now = sim_time >= 0 ? static_cast<uint64_t>(sim_time) : 0ull;
+  if ((now + g_ref_timer_offset) >= g_ref_timer_cmp) {
     return mip_reg | MIP_MTIP;
   }
   return mip_reg & ~MIP_MTIP;
@@ -83,6 +83,16 @@ static inline uint32_t ref_effective_mip(uint32_t mip_reg) {
 static inline void sync_timer_csrs(CPU_state &state) {
   state.csr[csr_mip] = ref_effective_mip(state.csr[csr_mip]);
   state.csr[csr_sip] = state.csr[csr_mip] & 0x00000333u;
+}
+
+static inline uint64_t ref_timer_now() {
+  const uint64_t now = sim_time >= 0 ? static_cast<uint64_t>(sim_time) : 0ull;
+  return now + g_ref_timer_offset;
+}
+
+static inline void ref_write_timer_value(uint64_t value) {
+  const uint64_t now = sim_time >= 0 ? static_cast<uint64_t>(sim_time) : 0ull;
+  g_ref_timer_offset = value - now;
 }
 
 // ---------------- 辅助工具 ----------------
@@ -228,7 +238,8 @@ void RefCpu::init(uint32_t reset_pc) {
   for (int i = 0; i < 21; i++) {
     state.csr[i] = 0;
   }
-  g_ref_stimecmp = 0;
+  g_ref_timer_offset = 0;
+  g_ref_timer_cmp = 0;
   state.csr[csr_misa] = 0x40141103;
   privilege = 0b11;
 
@@ -869,8 +880,7 @@ void RefCpu::RV32CSR() {
       csr_addr != number_stval && csr_addr != number_sstatus &&
       csr_addr != number_sie && csr_addr != number_sip &&
       csr_addr != number_satp && csr_addr != number_mhartid &&
-      csr_addr != number_misa && csr_addr != kCsrStimecmp &&
-      csr_addr != number_time &&
+      csr_addr != number_misa && csr_addr != number_time &&
       csr_addr != number_timeh) {
     ;
   } else if (csr_addr == number_time || csr_addr == number_timeh) {
@@ -879,11 +889,9 @@ void RefCpu::RV32CSR() {
     return;
   } else {
 
-    int csr_idx = (csr_addr == kCsrStimecmp) ? -1 : cvt_number_to_csr(csr_addr);
+    int csr_idx = cvt_number_to_csr(csr_addr);
     if (re) {
-      if (csr_addr == kCsrStimecmp) {
-        state.gpr[rd] = g_ref_stimecmp;
-      } else if (csr_addr == number_mip) {
+      if (csr_addr == number_mip) {
         state.gpr[rd] = ref_effective_mip(state.csr[csr_mip]);
       } else if (csr_addr == number_sip) {
         state.gpr[rd] = ref_effective_mip(state.csr[csr_mip]) & 0x00000333u;
@@ -894,9 +902,7 @@ void RefCpu::RV32CSR() {
 
     if (we) {
       uint32_t old_val = 0;
-      if (csr_addr == kCsrStimecmp) {
-        old_val = g_ref_stimecmp;
-      } else if (csr_addr == number_mip) {
+      if (csr_addr == number_mip) {
         old_val = ref_effective_mip(state.csr[csr_mip]);
       } else if (csr_addr == number_sip) {
         old_val = ref_effective_mip(state.csr[csr_mip]) & 0x00000333u;
@@ -912,9 +918,7 @@ void RefCpu::RV32CSR() {
         csr_wdata = old_val & ~wdata;
       }
 
-      if (csr_addr == kCsrStimecmp) {
-        g_ref_stimecmp = csr_wdata;
-      } else if (csr_idx == csr_mie || csr_idx == csr_sie) {
+      if (csr_idx == csr_mie || csr_idx == csr_sie) {
         uint32_t mie_mask =
             0x00000bbb; // MEI(11), SEI(9), MTI(7), STI(5), MSI(3), SSI(1)
         uint32_t sie_mask =
@@ -1206,18 +1210,21 @@ void RefCpu::RV32IM() {
           is_mmio_range(p_addr, OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE)) {
         is_mmio_load = true;
       }
-      // Timer MMIO 特殊处理：使用 sim_time (非Oracle自有计数) 并推入FIFO
       uint64_t data_l = (uint64_t)load_word(p_addr & ~0x3u);
       uint64_t data_h = (uint64_t)load_word((p_addr & ~0x3u) + 4u);
       uint64_t data64 = (data_h << 32) | data_l;
 
       uint32_t data;
       if (p_addr == OPENSBI_TIMER_LOW_ADDR) {
-        data = sim_time;
+        data = static_cast<uint32_t>(ref_timer_now());
         push_oracle_timer(data);
       } else if (p_addr == OPENSBI_TIMER_HIGH_ADDR) {
-        data = sim_time >> 32;
+        data = static_cast<uint32_t>(ref_timer_now() >> 32);
         push_oracle_timer(data);
+      } else if (p_addr == OPENSBI_TIMERCMP_LOW_ADDR) {
+        data = static_cast<uint32_t>(g_ref_timer_cmp);
+      } else if (p_addr == OPENSBI_TIMERCMP_HIGH_ADDR) {
+        data = static_cast<uint32_t>(g_ref_timer_cmp >> 32);
       } else {
         data = (uint32_t)(data64 >> ((p_addr & 0b11) * 8));
       }
@@ -1610,6 +1617,28 @@ uint32_t RefCpu::load_word(uint32_t addr) const {
 
 void RefCpu::store_word(uint32_t addr, uint32_t data) {
   const uint32_t word_addr = addr & ~0x3u;
+  if (word_addr == OPENSBI_TIMER_LOW_ADDR) {
+    const uint64_t current = ref_timer_now();
+    ref_write_timer_value((current & 0xFFFFFFFF00000000ull) |
+                          static_cast<uint64_t>(data));
+    return;
+  }
+  if (word_addr == OPENSBI_TIMER_HIGH_ADDR) {
+    const uint64_t current = ref_timer_now();
+    ref_write_timer_value((static_cast<uint64_t>(data) << 32) |
+                          (current & 0x00000000FFFFFFFFull));
+    return;
+  }
+  if (word_addr == OPENSBI_TIMERCMP_LOW_ADDR) {
+    g_ref_timer_cmp = (g_ref_timer_cmp & 0xFFFFFFFF00000000ull) |
+                      static_cast<uint64_t>(data);
+    return;
+  }
+  if (word_addr == OPENSBI_TIMERCMP_HIGH_ADDR) {
+    g_ref_timer_cmp = (static_cast<uint64_t>(data) << 32) |
+                      (g_ref_timer_cmp & 0x00000000FFFFFFFFull);
+    return;
+  }
   if (is_ram_range(word_addr, 4)) {
     memory[(word_addr - kRamBase) >> 2] = data;
     return;

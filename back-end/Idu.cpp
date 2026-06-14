@@ -446,7 +446,6 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
           csr_idx != number_stval && csr_idx != number_sstatus &&
           csr_idx != number_sie && csr_idx != number_sip &&
           csr_idx != number_satp && csr_idx != number_mhartid &&
-          csr_idx != number_stimecmp &&
           csr_idx != number_misa) {
         uop.type = encode_inst_type(NOP);
         uop.dest_en = false;

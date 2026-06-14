@@ -665,5 +665,7 @@ constexpr uint32_t OPENSBI_TIMER_BASE = 0x1fd0e000;
 constexpr uint32_t OPENSBI_TIMER_MMIO_SIZE = 0x00000100;
 constexpr uint32_t OPENSBI_TIMER_LOW_ADDR = 0x1fd0e000;
 constexpr uint32_t OPENSBI_TIMER_HIGH_ADDR = 0x1fd0e004;
+constexpr uint32_t OPENSBI_TIMERCMP_LOW_ADDR = 0x1fd0e008;
+constexpr uint32_t OPENSBI_TIMERCMP_HIGH_ADDR = 0x1fd0e00c;
 
 #include "types.h"

@@ -1040,10 +1040,14 @@ struct CsrFrontIO {
 struct CsrInterruptInjectIO {
   wire<1> external_irq_pending_valid;
   wire<1> external_irq_pending;
+  wire<1> timer_irq_pending_valid;
+  wire<1> timer_irq_pending;
 
   CsrInterruptInjectIO() {
     external_irq_pending_valid = {};
     external_irq_pending = {};
+    timer_irq_pending_valid = {};
+    timer_irq_pending = {};
   }
 };
 
