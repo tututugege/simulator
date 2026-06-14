@@ -35,6 +35,13 @@ SECTIONS
     . = ALIGN(8);
   } >ram AT>ram 
 
+  .dma_buffer (NOLOAD) :
+  {
+    . = ALIGN(64);
+    *(.dma_buffer .dma_buffer.*)
+    . = ALIGN(64);
+  } >ram AT>ram
+
   .stack ORIGIN(ram) + LENGTH(ram) - __stack_size :
   {
     . = __stack_size;

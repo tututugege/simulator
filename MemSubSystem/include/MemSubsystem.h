@@ -74,6 +74,9 @@ public:
   void seq();
   void on_commit_store(uint32_t paddr, uint32_t data, uint8_t func3);
   void sync_mmio_devices_from_backing();
+  void set_ram_sync_hook(void (*hook)(uint32_t paddr, size_t size_bytes)) {
+    peripheral_model_.set_ram_sync_hook(hook);
+  }
   void dump_debug_state(FILE *out) const;
   axi_interconnect::ReadMasterPort_t *icache_read_port();
   void set_internal_axi_runtime_active(bool active);

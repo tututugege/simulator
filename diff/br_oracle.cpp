@@ -24,6 +24,7 @@ constexpr IoRange kCkptIoRanges[] = {
     {UART_ADDR_BASE, UART_MMIO_SIZE},
     {PLIC_ADDR_BASE, PLIC_MMIO_SIZE},
     {OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE},
+    {DMA_ADDR_BASE, DMA_MMIO_SIZE},
 };
 
 RefCpuState dut_to_ref_state(uint8_t privilege) {

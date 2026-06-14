@@ -13,6 +13,7 @@ void init_diff_ckpt(CPU_state ckpt_state, uint8_t privilege);
 void get_state(CPU_state &dut_state, uint8_t &privilege);
 void difftest_step(bool);
 void difftest_sync_from_dut(uint8_t privilege);
+void difftest_sync_ram_range_from_dut(uint32_t paddr, size_t size_bytes);
 bool difftest_ref_sim_end();
 bool difftest_ref_last_inst_is_wfi();
 void difftest_ref_set_uart_print(bool enable);

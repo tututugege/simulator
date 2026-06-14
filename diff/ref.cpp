@@ -69,6 +69,7 @@ inline bool is_mmio_range(uint32_t addr, uint32_t base, uint32_t size) {
 inline bool is_modeled_mmio_addr(uint32_t paddr) {
   return is_mmio_range(paddr, UART_ADDR_BASE, UART_MMIO_SIZE) ||
          is_mmio_range(paddr, PLIC_ADDR_BASE, PLIC_MMIO_SIZE) ||
+         is_mmio_range(paddr, DMA_ADDR_BASE, DMA_MMIO_SIZE) ||
          is_mmio_range(paddr, XPS_INTC_ADDR_BASE, XPS_INTC_MMIO_SIZE);
 } // namespace
 
@@ -1689,8 +1690,8 @@ void RefCpu::store_data() {
     store_word(PLIC_CLAIM_ADDR, 0x0000000Au);
     store_word(UART_ADDR_BASE, load_word(UART_ADDR_BASE) & 0xfff0ffffu);
 
-    state.csr[csr_mip] = state.csr[csr_mip] | (1 << 9);
-    state.csr[csr_sip] = state.csr[csr_sip] | (1 << 9);
+    state.csr[csr_mip] = state.csr[csr_mip] | MIP_MEIP;
+    state.csr[csr_sip] = state.csr[csr_mip] & 0x00000333u;
   }
 
   if (p_addr == 0x10000001 && (state.store_data & 0x000000ff) == 5) {
@@ -1700,8 +1701,8 @@ void RefCpu::store_data() {
 
   if (p_addr == PLIC_CLAIM_ADDR && (state.store_data & 0x000000ff) == 0xa) {
     store_word(PLIC_CLAIM_ADDR, 0x0);
-    state.csr[csr_mip] = state.csr[csr_mip] & ~(1 << 9);
-    state.csr[csr_sip] = state.csr[csr_sip] & ~(1 << 9);
+    state.csr[csr_mip] = state.csr[csr_mip] & ~MIP_MEIP;
+    state.csr[csr_sip] = state.csr[csr_mip] & 0x00000333u;
   }
 
   state.store_data = state.store_data << offset * 8;

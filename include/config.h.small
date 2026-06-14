@@ -648,6 +648,8 @@ constexpr uint32_t PLIC_ADDR_BASE = 0x0c000000;
 constexpr uint32_t PLIC_MMIO_SIZE = 0x00210000;
 constexpr uint32_t PLIC_ADDR_MASK = 0xFC000000;
 constexpr uint32_t PLIC_CLAIM_ADDR = 0x0c201004;
+constexpr uint32_t UART_PLIC_IRQ_ID = 0x0000000A;
+constexpr uint32_t DMA_PLIC_IRQ_ID = 0x0000000B;
 constexpr uint32_t XPS_INTC_ADDR_BASE = 0x1fb00000;
 constexpr uint32_t XPS_INTC_MMIO_SIZE = 0x00001000;
 constexpr uint32_t BOOT_IO_BASE = 0x00000000;
@@ -658,5 +660,12 @@ constexpr uint32_t OPENSBI_TIMER_LOW_ADDR = 0x1fd0e000;
 constexpr uint32_t OPENSBI_TIMER_HIGH_ADDR = 0x1fd0e004;
 constexpr uint32_t OPENSBI_TIMERCMP_LOW_ADDR = 0x1fd0e008;
 constexpr uint32_t OPENSBI_TIMERCMP_HIGH_ADDR = 0x1fd0e00c;
+constexpr uint32_t DMA_ADDR_BASE = 0x1fd0f000;
+constexpr uint32_t DMA_MMIO_SIZE = 0x00000100;
+constexpr uint32_t DMA_SRC_ADDR = 0x1fd0f000;
+constexpr uint32_t DMA_DST_ADDR = 0x1fd0f004;
+constexpr uint32_t DMA_LEN_ADDR = 0x1fd0f008;
+constexpr uint32_t DMA_CTRL_ADDR = 0x1fd0f00c;
+constexpr uint32_t DMA_STATUS_ADDR = 0x1fd0f010;
 
 #include "types.h"

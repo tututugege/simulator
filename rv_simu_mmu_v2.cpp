@@ -699,8 +699,9 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *sync) {
   const uint32_t raw_inst = inst->dbg.instruction;
   const bool is_csr_inst = (raw_inst & 0x7f) == 0x73;
   const uint32_t csr_addr = raw_inst >> 20;
-  if (is_csr_inst &&
-      (csr_addr == number_mip || csr_addr == number_sip) &&
+  const bool is_irq_csr_read =
+      is_csr_inst && (csr_addr == number_mip || csr_addr == number_sip);
+  if (is_irq_csr_read &&
       (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending_valid) ||
        static_cast<bool>(back->csr_interrupt_inject_io.timer_irq_pending_valid))) {
     *sync = true;
@@ -715,17 +716,25 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *sync) {
       (dut_cpu.csr[csr_mie] & MIP_MTIP) &&
       ((back->csr->privilege_1 < RISCV_MODE_M) ||
        (dut_cpu.csr[csr_mstatus] & MSTATUS_MIE));
+  const bool external_irq_level =
+      static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending_valid) &&
+      static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending);
+  const bool external_irq_enabled =
+      (dut_cpu.csr[csr_mie] & MIP_MEIP) &&
+      ((back->csr->privilege_1 < RISCV_MODE_M) ||
+       (dut_cpu.csr[csr_mstatus] & MSTATUS_MIE));
   if (timer_irq_level && timer_irq_enabled) {
     *sync = true;
   }
+  if (external_irq_level && external_irq_enabled) {
+    *sync = true;
+  }
 
-  const bool need_visible_irq_state =
-      *sync || static_cast<bool>(back->csr->out.csr2rob->interrupt_req) ||
-      static_cast<bool>(back->rob->out.rob_bcast->interrupt);
+  const bool need_visible_irq_state = is_irq_csr_read;
   if (!need_visible_irq_state) {
     if (static_cast<bool>(
             back->csr_interrupt_inject_io.external_irq_pending_valid)) {
-      dut_cpu.csr[csr_mip] &= ~MIP_SEIP;
+      dut_cpu.csr[csr_mip] &= ~MIP_MEIP;
     }
     if (static_cast<bool>(back->csr_interrupt_inject_io.timer_irq_pending_valid)) {
       dut_cpu.csr[csr_mip] &= ~MIP_MTIP;
@@ -735,9 +744,9 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *sync) {
     if (static_cast<bool>(
             back->csr_interrupt_inject_io.external_irq_pending_valid)) {
       if (static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending)) {
-        dut_cpu.csr[csr_mip] |= MIP_SEIP;
+        dut_cpu.csr[csr_mip] |= MIP_MEIP;
       } else {
-        dut_cpu.csr[csr_mip] &= ~MIP_SEIP;
+        dut_cpu.csr[csr_mip] &= ~MIP_MEIP;
       }
     }
     if (static_cast<bool>(back->csr_interrupt_inject_io.timer_irq_pending_valid)) {
@@ -809,6 +818,7 @@ void SimCpu::init() {
   // 第三阶段：集中完成跨模块连线
   mem_subsystem.csr_interrupt_inject = &back.csr_interrupt_inject_io;
   mem_subsystem.memory = p_memory;
+  mem_subsystem.set_ram_sync_hook(difftest_sync_ram_range_from_dut);
   mem_subsystem.peripheral_req = &back.out.peripheral_req;
   mem_subsystem.peripheral_resp = &back.in.peripheral_resp;
   mem_subsystem.set_ptw_coherent_source(back.lsu);

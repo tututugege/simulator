@@ -7,8 +7,10 @@
 #include "config.h"
 #include "util.h"
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
 CPU_state dut_cpu;
 static RefCpuContext *ref_cpu_ctx = nullptr;
@@ -24,6 +26,7 @@ constexpr IoRange kCkptIoRanges[] = {
     {UART_ADDR_BASE, UART_MMIO_SIZE},
     {PLIC_ADDR_BASE, PLIC_MMIO_SIZE},
     {OPENSBI_TIMER_BASE, OPENSBI_TIMER_MMIO_SIZE},
+    {DMA_ADDR_BASE, DMA_MMIO_SIZE},
 };
 
 RefCpuState to_ref_state(const CPU_state &state, uint8_t privilege) {
@@ -186,6 +189,22 @@ static void checkregs() {
   int i;
   const RefCpuState ref_state = current_ref_state();
   const RefCpuStepInfo step_info = current_step_info();
+  uint32_t ref_csrs[CSR_NUM];
+  uint32_t dut_csrs[CSR_NUM];
+  std::memcpy(ref_csrs, ref_state.csr, sizeof(ref_csrs));
+  std::memcpy(dut_csrs, dut_cpu.csr, sizeof(dut_csrs));
+
+  const uint32_t raw_inst = step_info.instruction;
+  const bool is_csr_inst = (raw_inst & 0x7fu) == 0x73u;
+  const uint32_t csr_addr = raw_inst >> 20;
+  const bool is_irq_csr_read =
+      is_csr_inst && (csr_addr == number_mip || csr_addr == number_sip);
+  if (!is_irq_csr_read) {
+    ref_csrs[csr_mip] &= ~(MIP_MEIP | MIP_MTIP);
+    dut_csrs[csr_mip] &= ~(MIP_MEIP | MIP_MTIP);
+    ref_csrs[csr_sip] = ref_csrs[csr_mip] & 0x00000333u;
+    dut_csrs[csr_sip] = dut_csrs[csr_mip] & 0x00000333u;
+  }
 
   if (ref_state.pc != dut_cpu.pc)
     goto fault;
@@ -209,7 +228,7 @@ static void checkregs() {
 
   // csr
   for (i = 0; i < CSR_NUM; i++) {
-    if (ref_state.csr[i] != dut_cpu.csr[i])
+    if (ref_csrs[i] != dut_csrs[i])
       goto fault;
   }
 
@@ -243,7 +262,7 @@ fault:
 
   cout << endl;
   for (int i = 0; i < CSR_NUM; i++) {
-    print_mismatch(csr_names[i].c_str(), ref_state.csr[i], dut_cpu.csr[i]);
+    print_mismatch(csr_names[i].c_str(), ref_csrs[i], dut_csrs[i]);
   }
 
   cout << endl;
@@ -276,6 +295,18 @@ void difftest_sync_from_dut(uint8_t privilege) {
   refcpu_set_sim_time(ref_cpu_ctx, static_cast<uint64_t>(sim_time));
   const RefCpuState ref_state = to_ref_state(dut_cpu, privilege);
   refcpu_set_state(ref_cpu_ctx, &ref_state);
+}
+
+void difftest_sync_ram_range_from_dut(uint32_t paddr, size_t size_bytes) {
+  if (ref_cpu_ctx == nullptr || size_bytes == 0) {
+    return;
+  }
+  if (!pmem_is_ram_addr(paddr, static_cast<uint32_t>(size_bytes))) {
+    return;
+  }
+  std::vector<uint8_t> temp(size_bytes);
+  pmem_memcpy_from_ram(temp.data(), paddr, size_bytes);
+  refcpu_sync_ram_range_from_dut(ref_cpu_ctx, paddr, temp.data(), size_bytes);
 }
 
 void difftest_step(bool check) {

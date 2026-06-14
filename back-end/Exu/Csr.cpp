@@ -96,12 +96,11 @@ void Csr::comb_interrupt_inject() {
 
   if (static_cast<bool>(in.interrupt_inject->external_irq_pending_valid)) {
     if (static_cast<bool>(in.interrupt_inject->external_irq_pending)) {
-      CSR_RegFile_1[csr_mip] = CSR_RegFile_1[csr_mip] | MIP_SEIP;
-      CSR_RegFile_1[csr_sip] = CSR_RegFile_1[csr_sip] | MIP_SEIP;
+      CSR_RegFile_1[csr_mip] = CSR_RegFile_1[csr_mip] | MIP_MEIP;
     } else {
-      CSR_RegFile_1[csr_mip] = CSR_RegFile_1[csr_mip] & ~MIP_SEIP;
-      CSR_RegFile_1[csr_sip] = CSR_RegFile_1[csr_sip] & ~MIP_SEIP;
+      CSR_RegFile_1[csr_mip] = CSR_RegFile_1[csr_mip] & ~MIP_MEIP;
     }
+    CSR_RegFile_1[csr_sip] = CSR_RegFile_1[csr_mip] & 0x00000333u;
   }
 
   if (static_cast<bool>(in.interrupt_inject->timer_irq_pending_valid)) {

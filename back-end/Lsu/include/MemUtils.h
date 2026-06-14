@@ -118,6 +118,7 @@ template <typename PtrT>
          ((paddr & PLIC_ADDR_MASK) == PLIC_ADDR_BASE) ||
          (paddr >= XPS_INTC_ADDR_BASE &&
           paddr < (XPS_INTC_ADDR_BASE + XPS_INTC_MMIO_SIZE)) ||
+         (paddr >= DMA_ADDR_BASE && paddr < (DMA_ADDR_BASE + DMA_MMIO_SIZE)) ||
          (paddr == OPENSBI_TIMER_LOW_ADDR) ||
          (paddr == OPENSBI_TIMER_HIGH_ADDR) ||
          (paddr == OPENSBI_TIMERCMP_LOW_ADDR) ||
