@@ -22,6 +22,9 @@ cmake_install.cmake
 Makefile
 !/Makefile
 !/baremetal/**/Makefile
+/BSD-train
+
+
 
 # Project specific
 baremetal/memory
@@ -40,3 +43,4 @@ __pycache__/
 .vscode/
 .idea/
 .clangd/
+

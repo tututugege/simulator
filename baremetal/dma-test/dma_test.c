@@ -34,11 +34,8 @@ volatile uint32_t last_mepc = 0;
 volatile uint32_t last_mip = 0;
 volatile uint32_t last_claim = 0;
 
-static const uint32_t src_data[8] = {
-    0x11223344u, 0x55667788u, 0xdeadbeefu, 0x13579bdfu,
-    0x2468ace0u, 0xc001d00du, 0x0badc0deu, 0xa5a55a5au,
-};
-static volatile uint32_t dst_data[8]
+static const char src_data[] = "Rem is waifu";
+static volatile char dst_data[sizeof(src_data)]
     __attribute__((section(".dma_buffer"), aligned(64)));
 
 static inline uint32_t mmio_read32(uint32_t addr) {
@@ -119,13 +116,16 @@ int main(void) {
     fail("unexpected dma status");
   }
 
-  for (idx = 0; idx < 8; ++idx) {
+  for (idx = 0; idx < sizeof(src_data); ++idx) {
     if (dst_data[idx] != src_data[idx]) {
-      xprintf("[DMA] mismatch idx=%u got=0x%08x expect=0x%08x\n",
-              idx, (unsigned int)dst_data[idx], (unsigned int)src_data[idx]);
+      xprintf("[DMA] mismatch idx=%u got=0x%02x expect=0x%02x\n",
+              idx, (unsigned int)(unsigned char)dst_data[idx],
+              (unsigned int)(unsigned char)src_data[idx]);
       fail("dma copy result mismatch");
     }
   }
+
+  xprintf("[DMA] copied string: %s\n", (const char *)dst_data);
 
   xputs("[DMA] PASS\n");
   halt(0);

@@ -10,6 +10,7 @@
 namespace {
 enum class L1DReplayReason {
     Conflict,
+    BankConflict,
     MshrFull,
     WaitMshrHit,
     WaitMshrFirstAlloc,
@@ -45,6 +46,11 @@ static void count_l1d_replay(SimContext *ctx, uint32_t req_id, bool is_store,
                          ctx->perf.l1d_replay_conflict_load,
                          ctx->perf.l1d_replay_conflict_store);
         break;
+    case L1DReplayReason::BankConflict:
+        count_load_store(ctx->perf.l1d_replay_bank_conflict,
+                         ctx->perf.l1d_replay_bank_conflict_load,
+                         ctx->perf.l1d_replay_bank_conflict_store);
+        break;
     case L1DReplayReason::MshrFull:
         count_load_store(ctx->perf.l1d_replay_mshr_full,
                          ctx->perf.l1d_replay_mshr_full_load,
@@ -60,7 +66,6 @@ static void count_l1d_replay(SimContext *ctx, uint32_t req_id, bool is_store,
         count_load_store(ctx->perf.l1d_replay_wait_mshr,
                          ctx->perf.l1d_replay_wait_mshr_load,
                          ctx->perf.l1d_replay_wait_mshr_store);
-        ctx->perf.l1d_replay_wait_mshr_first_alloc++;
         break;
     case L1DReplayReason::WaitMshrFillReq:
         count_load_store(ctx->perf.l1d_replay_wait_mshr,
@@ -78,10 +83,34 @@ static void count_l1d_replay(SimContext *ctx, uint32_t req_id, bool is_store,
         break;
     }
 }
+
+static void count_l1d_same_line_merge(SimContext *ctx, uint64_t count) {
+    if (ctx != nullptr) {
+        ctx->perf.l1d_same_line_merge += count;
+    }
+}
+
+static void count_l1d_fillout_bank_grant(SimContext *ctx) {
+    if (ctx != nullptr) {
+        ctx->perf.l1d_fillout_bank_grant++;
+    }
+}
+
+static void count_l1d_fillout_bank_conflict(SimContext *ctx, uint64_t count) {
+    if (ctx != nullptr) {
+        ctx->perf.l1d_fillout_bank_conflict += count;
+    }
+}
 } // namespace
 #define COUNT_L1D_REPLAY(...) count_l1d_replay(__VA_ARGS__)
+#define COUNT_L1D_SAME_LINE_MERGE(...) count_l1d_same_line_merge(__VA_ARGS__)
+#define COUNT_L1D_FILLOUT_BANK_GRANT(...) count_l1d_fillout_bank_grant(__VA_ARGS__)
+#define COUNT_L1D_FILLOUT_BANK_CONFLICT(...) count_l1d_fillout_bank_conflict(__VA_ARGS__)
 #else
 #define COUNT_L1D_REPLAY(...) do {} while (0)
+#define COUNT_L1D_SAME_LINE_MERGE(...) do {} while (0)
+#define COUNT_L1D_FILLOUT_BANK_GRANT(...) do {} while (0)
+#define COUNT_L1D_FILLOUT_BANK_CONFLICT(...) do {} while (0)
 #endif
 
 void RealDcache::init() {
@@ -95,7 +124,15 @@ void RealDcache::init() {
 
 void RealDcache::stage1_comb() {
 
+    auto line_id = [](uint32_t addr) -> uint32_t {
+        return addr >> DCACHE_OFFSET_BITS;
+    };
+    auto bank_index = [](const AddrFields &f) -> uint32_t {
+        return static_cast<uint32_t>(f.bank);
+    };
+
     AddrFields fill_f = decode(in.mshr2dcache->fill_req.addr);
+    const uint32_t fill_line_id = line_id(in.mshr2dcache->fill_req.addr);
     
     bool same_fill_already_in_s2 =
     s1s2_cur.fill_write.valid &&
@@ -105,21 +142,61 @@ void RealDcache::stage1_comb() {
 
     const bool hold_fill_in_s2 =
         same_fill_already_in_s2 && !out.fill_write->valid;
+    const bool fillout_needs_snapshot =
+        in.mshr2dcache->fill_req.valid &&
+        !(same_fill_already_in_s2 && out.fill_write->valid);
+
+    bool bank_valid[DCACHE_BANK_NUM] = {};
+    uint32_t bank_line_id[DCACHE_BANK_NUM] = {};
+    bool bank_from_fillout[DCACHE_BANK_NUM] = {};
+    bool fillout_granted = false;
+    uint64_t same_line_merge_count = 0;
+    uint64_t fillout_bank_conflict_count = 0;
+
+    if (fillout_needs_snapshot) {
+        const uint32_t bank = bank_index(fill_f);
+        bank_valid[bank] = true;
+        bank_line_id[bank] = fill_line_id;
+        bank_from_fillout[bank] = true;
+        fillout_granted = true;
+        COUNT_L1D_FILLOUT_BANK_GRANT(ctx);
+    }
+
+    auto try_grant_bank = [&](const AddrFields &f, uint32_t req_line_id) -> bool {
+        const uint32_t bank = bank_index(f);
+        if (!bank_valid[bank]) {
+            bank_valid[bank] = true;
+            bank_line_id[bank] = req_line_id;
+            bank_from_fillout[bank] = false;
+            return true;
+        }
+        if (bank_line_id[bank] == req_line_id) {
+            same_line_merge_count++;
+            return true;
+        }
+        if (bank_from_fillout[bank]) {
+            fillout_bank_conflict_count++;
+        }
+        return false;
+    };
 
     if (hold_fill_in_s2) {
         s1s2_nxt.fill_write = s1s2_cur.fill_write;
     } else {
-        s1s2_nxt.fill_write.valid = in.mshr2dcache->fill_req.valid && !same_fill_already_in_s2;
-        s1s2_nxt.fill_write.id = in.mshr2dcache->fill_req.id;
-        s1s2_nxt.fill_write.dirty = in.mshr2dcache->fill_req.dirty;
+        s1s2_nxt.fill_write = {};
+        if (fillout_granted && !same_fill_already_in_s2) {
+            s1s2_nxt.fill_write.valid = true;
+            s1s2_nxt.fill_write.id = in.mshr2dcache->fill_req.id;
+            s1s2_nxt.fill_write.dirty = in.mshr2dcache->fill_req.dirty;
 #if !BSD_CONFIG
-        s1s2_nxt.fill_write.lsu_origin = in.mshr2dcache->fill_req.lsu_origin;
+            s1s2_nxt.fill_write.lsu_origin = in.mshr2dcache->fill_req.lsu_origin;
 #endif
-        s1s2_nxt.fill_write.set_idx = fill_f.set_idx;
-        s1s2_nxt.fill_write.tag = fill_f.tag;
-        memcpy(s1s2_nxt.fill_write.data,
-            in.mshr2dcache->fill_req.data,
-            sizeof(s1s2_nxt.fill_write.data));
+            s1s2_nxt.fill_write.set_idx = fill_f.set_idx;
+            s1s2_nxt.fill_write.tag = fill_f.tag;
+            memcpy(s1s2_nxt.fill_write.data,
+                in.mshr2dcache->fill_req.data,
+                sizeof(s1s2_nxt.fill_write.data));
+        }
     }
 
     if (s1s2_nxt.fill_write.valid) {
@@ -148,13 +225,16 @@ void RealDcache::stage1_comb() {
         S1S2Reg::LoadSlot &slot = s1s2_nxt.loads[i];
         if (!req.valid){
             slot.valid = false;
+            slot.replayed = false;
+            slot.bank_conflict = false;
 #if !BSD_CONFIG
             slot.perf_replay = false;
 #endif
             out.dcache2wb->bypass_req[i].valid = false;
         }
         else{
-            bool replay = false;
+            AddrFields f  = decode(req.addr);
+            const bool bank_granted = try_grant_bank(f, line_id(req.addr));
             // for(int j=0;j<LSU_STA_COUNT;j++){
             //     if(s1s2_cur.loads[j].valid&&CheckAddr(req.addr,(uint8_t)0xffff, s1s2_cur.stores[j].addr,s1s2_cur.stores[j].strb)){
             //         replay = true; // 如果有older load地址重叠且还在等待dcache响应或者等待重放中（即需要重放），则这个load也需要重放，以避免饥饿。注意我们只检查older load的状态，因为如果older load是hit，说明它可以在同一周期完成并更新cache，从而这个load不需要重放。另一方面，如果我们检查这个load自己的状态，可能会导致当有多条连续miss时出现不必要的重放，因为这个load可能还没有被标记为replay，但它会在同一周期内因为MSHR miss而被重放。
@@ -170,13 +250,16 @@ void RealDcache::stage1_comb() {
             slot.valid    = true;
             slot.addr     = req.addr;
             slot.req_id   = req.req_id;
-            slot.replayed  = replay;
+            slot.replayed  = !bank_granted;
+            slot.bank_conflict = !bank_granted;
 #if !BSD_CONFIG
             slot.perf_replay = req.replay;
 #endif
-            AddrFields f  = decode(req.addr);
-            out.dcachereadreq[i]->set_idx = f.set_idx;
+            if (!bank_granted) {
+                continue;
+            }
 
+            out.dcachereadreq[i]->set_idx = f.set_idx;
             out.dcache2wb->bypass_req[i].valid = true;
             out.dcache2wb->bypass_req[i].addr = req.addr;
 
@@ -192,13 +275,16 @@ void RealDcache::stage1_comb() {
         int idx       = LSU_LDU_COUNT + i;
         if(!req.valid){
             slot.valid = false;
+            slot.replayed = false;
+            slot.bank_conflict = false;
 #if !BSD_CONFIG
             slot.perf_replay = false;
 #endif
             out.dcache2wb->merge_req[i].valid = false;
         }
         else{
-            bool replayed = false;
+            AddrFields f  = decode(req.addr);
+            const bool bank_granted = try_grant_bank(f, line_id(req.addr));
             // for(int j=0;j<LSU_STA_COUNT;j++){
             //     if(s1s2_cur.stores[j].valid&&CheckAddr(req.addr,req.strb, s1s2_cur.stores[j].addr,s1s2_cur.stores[j].strb)){
             //         replayed = out.dcache2lsu->resp_ports.store_resps[j].replay != ReplayType::HIT; // If there is an older store with overlapping address that is waiting for MSHR allocation or has been allocated an MSHR but not yet completed (i.e., needs to be replayed), then this store should also be replayed to avoid starvation. Note that we only check the replay status of the older store, because if the older store is a hit, it means it can complete in the same cycle and update the cache before this store's hit check, so this store doesn't need to be replayed. On the other hand, if we check the replay status of this store itself, it may cause unnecessary replays when there are multiple back-to-back misses, because this store may not have been marked as replayed yet when we check, even though it will be replayed in the same cycle due to MSHR miss.
@@ -210,13 +296,16 @@ void RealDcache::stage1_comb() {
             slot.data     = req.data;
             slot.strb     = req.strb;
             slot.req_id   = req.req_id; 
-            slot.replayed = replayed;
+            slot.replayed = !bank_granted;
+            slot.bank_conflict = !bank_granted;
 #if !BSD_CONFIG
             slot.perf_replay = req.replay;
 #endif
-            AddrFields f  = decode(req.addr);
-            out.dcachereadreq[idx]->set_idx = f.set_idx;
+            if (!bank_granted) {
+                continue;
+            }
 
+            out.dcachereadreq[idx]->set_idx = f.set_idx;
             out.dcache2wb->merge_req[i].valid = true;
             out.dcache2wb->merge_req[i].addr = req.addr;
             out.dcache2wb->merge_req[i].data = req.data;
@@ -228,8 +317,11 @@ void RealDcache::stage1_comb() {
         }
     }
 
-    out.fillout->valid = in.mshr2dcache->fill_req.valid;
-    out.fillout->set_idx = decode(in.mshr2dcache->fill_req.addr).set_idx;
+    out.fillout->valid = fillout_granted;
+    out.fillout->set_idx = fillout_granted ? fill_f.set_idx : 0;
+
+    COUNT_L1D_SAME_LINE_MERGE(ctx, same_line_merge_count);
+    COUNT_L1D_FILLOUT_BANK_CONFLICT(ctx, fillout_bank_conflict_count);
 
     s1s2_nxt.icache_req = in.lsu2dcache->icache_req;
     
@@ -313,7 +405,8 @@ void RealDcache::stage2_comb() {
             resp.replay = ReplayType::CONFLICT; // This load has been replayed due to MSHR full or conflict, so replay again to give chance for the MSHR state to be updated and avoid starvation when there are multiple back-to-back misses.
             resp.req_id = slot.req_id;
             COUNT_L1D_REPLAY(ctx, slot.req_id, false, slot.perf_replay,
-                             L1DReplayReason::Conflict);
+                             slot.bank_conflict ? L1DReplayReason::BankConflict
+                                                : L1DReplayReason::Conflict);
             continue;
         }
         int hit_way = -1;
@@ -401,7 +494,8 @@ void RealDcache::stage2_comb() {
             resp.replay = ReplayType::CONFLICT; // This store has been replayed due to MSHR full or conflict, so replay again to give chance for the MSHR state to be updated and avoid starvation when there are multiple back-to-back misses.
             resp.req_id = slot.req_id;
             COUNT_L1D_REPLAY(ctx, slot.req_id, true, slot.perf_replay,
-                             L1DReplayReason::Conflict);
+                             slot.bank_conflict ? L1DReplayReason::BankConflict
+                                                : L1DReplayReason::Conflict);
             continue;
         }        
         if(cache_line_match(slot.addr,in.mshr2dcache->fill_req.addr)&&in.mshr2dcache->fill_req.valid){ // merge the store into the incoming fill so the store can complete without replaying

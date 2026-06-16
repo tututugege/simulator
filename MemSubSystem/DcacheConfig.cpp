@@ -46,9 +46,9 @@ void init_dcache()
 AddrFields decode(uint32_t addr)
 {
     AddrFields f;
-    f.bank = (addr >> 2) & (DCACHE_BANK_NUM - 1);
     f.tag = addr >> (DCACHE_SET_BITS + DCACHE_OFFSET_BITS);
     f.set_idx = (addr >> DCACHE_OFFSET_BITS) & (DCACHE_SETS_NUM - 1);
+    f.bank = f.set_idx & (DCACHE_BANK_NUM - 1);
     f.word_off = (addr >> 2) & (DCACHE_WORD_NUM - 1);
     return f;
 }
@@ -186,13 +186,4 @@ bool CheckAddr(uint32_t addr1, uint8_t strb1, uint32_t addr2, uint8_t strb2) {
     uint64_t mask1 = static_cast<uint64_t>(strb1) << diff1;
     uint64_t mask2 = static_cast<uint64_t>(strb2) << diff2;
     return (mask1 & mask2) != 0;
-}
-
-
-inline uint32_t word_bank(uint32_t word_off) {
-    return word_off & (DCACHE_BANK_NUM - 1);
-}
-
-inline uint32_t bank_word_idx(uint32_t word_off) {
-    return word_off >> DCACHE_BANK_BITS;
 }

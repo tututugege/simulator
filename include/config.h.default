@@ -536,22 +536,16 @@ constexpr int IQ_READY_NUM_WIDTH = bit_width_for_count(MAX_IQ_SIZE + 1);
 
 
 constexpr int DCACHE_MISS_NUM = LSU_LDU_COUNT+LSU_STA_COUNT;
+constexpr int LSU_LOAD_WINDOW_WIDTH = LSU_LDU_COUNT * 5;
+constexpr int LSU_STORE_WINDOW_WIDTH = LSU_STA_COUNT * 5;
+constexpr int LSU_PEPLAY_WAIT_CYCLES = 4;
+constexpr int LSU_REPLAY_WAIT_CYCLES_WIDTH = clog2(LSU_PEPLAY_WAIT_CYCLES+1);
+constexpr int LSU_WAIT_MSHR_FILL = 1;
 
-#define LSU_STLF
-#ifndef CONFIG_LSU_LOAD_WINDOW_WIDTH
-#define CONFIG_LSU_LOAD_WINDOW_WIDTH (LSU_LDU_COUNT * 5)
-#endif
-#ifndef CONFIG_LSU_STORE_WINDOW_WIDTH
-#define CONFIG_LSU_STORE_WINDOW_WIDTH (LSU_LDU_COUNT * 5)
-#endif
-static_assert(CONFIG_LSU_LOAD_WINDOW_WIDTH > 0 &&
-                  CONFIG_LSU_LOAD_WINDOW_WIDTH <= LDQ_SIZE,
-              "CONFIG_LSU_LOAD_WINDOW_WIDTH must be in 1..LDQ_SIZE");
-static_assert(CONFIG_LSU_STORE_WINDOW_WIDTH > 0 &&
-                  CONFIG_LSU_STORE_WINDOW_WIDTH <= STQ_SIZE,
-              "CONFIG_LSU_STORE_WINDOW_WIDTH must be in 1..STQ_SIZE");
-constexpr int LOAD_WINDOWS_WIDTH = CONFIG_LSU_LOAD_WINDOW_WIDTH;
-constexpr int STORE_WINDOWS_WIDTH = CONFIG_LSU_STORE_WINDOW_WIDTH;
+constexpr int LDQ_WAIT_MMU_UPPER_BOUND = LDQ_SIZE-LSU_LDU_COUNT;
+constexpr int STQ_WIAT_MMU_UPPER_BOUND = STQ_SIZE-LSU_STA_COUNT;
+constexpr int STQ_MMU_DONE_UPPER_BOUND = STQ_SIZE-LSU_STA_COUNT*2;
+
 // ============================================================
 // Global Sanity Checks
 // ============================================================

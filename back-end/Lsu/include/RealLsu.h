@@ -41,7 +41,10 @@ enum class LoadState : uint8_t {
   Allocated,
   WaitAddr,
   WaitTlb,
+  WaitTlbRetry,
+  WaitSTLF,
   CheckStlf,
+  CheckStlfRetry,
   WaitOlderStore,
   ReadyToIssue,
   WaitDcacheResp,
@@ -49,6 +52,8 @@ enum class LoadState : uint8_t {
   ReadyToWb,
   Replaying,
   PageFault,
+  WaitFinish,
+  WaitDcache,
   Done
 };
 
@@ -87,6 +92,7 @@ struct LdqEntry {
 
   StoreTag stq_snapshot;
 
+
   LSU_LDQ_CACHE_PERF_FIELDS; // 仅用于性能统计，非必需
 };
 
@@ -97,7 +103,7 @@ struct UncachedUnit {
 
   wire<32> addr;
   wire<32> wdata;
-  wire<32> func3;
+  wire<3> func3;
 
   wire<MAX_IDX_WIDTH> idx;
 };
@@ -130,7 +136,7 @@ struct WaitDcacheLDQEntry{
   wire<1> valid;
   wire<31-LDQ_IDX_WIDTH> req_gen;
   wire<LDQ_IDX_WIDTH> ldq_idx;
-  uint32_t replay_wait_cycles;
+  wire<LSU_REPLAY_WAIT_CYCLES_WIDTH> replay_wait_cycles;
   LSU_WAIT_DCACHE_LDQ_PERF_FIELDS;
 };
 struct MMUDoneEntry{
@@ -139,8 +145,7 @@ struct MMUDoneEntry{
 };
 struct FinishEntry{
   wire<1> valid;
-  wire<MAX_IDX_WIDTH> idx;
-  wire<1> is_load;
+  wire<LDQ_IDX_WIDTH> ldq_idx;
 };
 struct STLFEntry{
   wire<1> valid;
@@ -168,9 +173,9 @@ struct LsuState{
   wire<STQ_IDX_WIDTH> mmu_done_stq_head;
   wire<STQ_IDX_WIDTH+1> mmu_done_stq_count;
 
-  FinishEntry finish[LDQ_SIZE+STQ_SIZE];
-  wire<LDQ_STQ_IDX_WIDTH> finish_head;
-  wire<LDQ_STQ_IDX_WIDTH+1> finish_count;
+  FinishEntry finish[LDQ_SIZE];
+  wire<LDQ_IDX_WIDTH> finish_head;
+  wire<LDQ_IDX_WIDTH+1> finish_count;
 
   STLFEntry stlf_queue[LDQ_SIZE];
   wire<LDQ_IDX_WIDTH> stlf_queue_head;
@@ -180,14 +185,13 @@ struct LsuState{
   WaitDcacheLDQEntry wait_dcache_ldq[LDQ_SIZE];
   wire<LDQ_IDX_WIDTH> wait_dcache_ldq_head;
   wire<LDQ_IDX_WIDTH+1> wait_dcache_ldq_count;
-  // WaitDcacheReplayEntry wait_dcache_replay[LDQ_SIZE];
-  // wire<LDQ_IDX_WIDTH> wait_dcache_replay_head;
-  // wire<LDQ_IDX_WIDTH+1> wait_dcache_replay_count;
 
   UncachedUnit uncached_unit;
   LrScUnit lrsc_unit;
 
   wire<31-LDQ_IDX_WIDTH> req_gen; // 用于区分不同轮次的重放，防止过期重放条目被误用
+
+  wire<1> stq_wait;
 };
 
 enum class STLFResult : wire<2> {
@@ -197,6 +201,7 @@ enum class STLFResult : wire<2> {
 };
 class RealLsu {
 public:
+  RealLsu():cur{}, nxt{}, in{}, out{}, ctx(nullptr) {};
   RealLsu(SimContext *ctx);
 
   LsuState cur;
@@ -206,13 +211,6 @@ public:
   LsuOut out{};
   SimContext *ctx = nullptr;
 
-  // Combinational AGU-to-DTLB bypass wires for the current cycle. These are
-  // rebuilt in comb_exe2lsu() and are not committed by seq().
-  MMUReq same_cycle_ldq_req[LSU_LDU_COUNT]{};
-  MMUReq same_cycle_stq_req[LSU_STA_COUNT]{};
-  uint32_t same_cycle_ldq_count = 0;
-  uint32_t same_cycle_stq_count = 0;
-
   void init();
   void comb_cal();
   void comb_lsu2dis();
@@ -220,7 +218,8 @@ public:
   void comb_mmio_out();
   void comb_mmio_in();
   void comb_tlb_out();
-  void comb_tlb_in();
+  void comb_tlb_in_ldq();
+  void comb_tlb_in_stq();
   void comb_exe2lsu();
   void comb_dis2lsu();
   void comb_lsu2dcache_ldq();
@@ -244,4 +243,23 @@ public:
 
   void dump_debug_state(FILE *out)const;
   StqEntry get_stq_entry(int idx,bool flag);
+
+  wire<STQ_IDX_WIDTH> enqueue_wait_mmu_stq(wire<STQ_IDX_WIDTH> stq_idx);
+  wire<LDQ_IDX_WIDTH> enqueue_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> ldq_idx);
+  wire<STQ_IDX_WIDTH> enqueue_mmu_done_stq(wire<STQ_IDX_WIDTH> stq_idx);
+  
+  void enqueue_wait_dcache_ldq(wire<LDQ_IDX_WIDTH> ldq_idx);
+  void enqueue_finish(wire<LDQ_IDX_WIDTH> ldq_idx);
+  void enqueue_stlf(wire<LDQ_IDX_WIDTH> ldq_idx);
+
+  void dequeue_wait_mmu_stq();
+  void dequeue_wait_mmu_ldq();
+  void dequeue_mmu_done_stq();
+  void dequeue_wait_dcache_ldq();
+  void dequeue_finish();
+  void dequeue_stlf();
+
+  void activate_wait_mmu_stq(wire<STQ_IDX_WIDTH> stq_idx);
+  void activate_wait_mmu_ldq(wire<LDQ_IDX_WIDTH> ldq_idx);
+  void activate_mmu_done_stq(wire<STQ_IDX_WIDTH> stq_idx);
 };

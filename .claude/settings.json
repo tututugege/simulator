@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk -F',' 'NR>1 { if \\($4*$5 != $6\\) print \"MISMATCH @ row \" NR \": \" $0 \" \\(expected \" $4*$5 \"\\)\" } END { print \"Done. Total rows: \" NR-1 }' /home/renli/qimeng/bsd-final/reallsu_signal_widths.csv)"
+    ]
+  }
+}

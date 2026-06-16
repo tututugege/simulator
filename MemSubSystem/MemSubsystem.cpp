@@ -394,7 +394,6 @@ void MemSubsystem::sync_llc_perf() {
   current.bypass_read = perf.bypass_read;
   current.write_passthrough = perf.write_passthrough;
   current.refill = perf.refill;
-  current.mshr_alloc = perf.mshr_alloc;
   current.mshr_merge = perf.mshr_merge;
   current.prefetch_issue = perf.prefetch_issue;
   current.prefetch_hit = perf.prefetch_hit;
@@ -445,8 +444,6 @@ void MemSubsystem::sync_llc_perf() {
     sync_counter(current.write_passthrough, llc_perf_shadow_.write_passthrough,
                  ctx->perf.llc_write_passthrough);
     sync_counter(current.refill, llc_perf_shadow_.refill, ctx->perf.llc_refill);
-    sync_counter(current.mshr_alloc, llc_perf_shadow_.mshr_alloc,
-                 ctx->perf.llc_mshr_alloc);
     sync_counter(current.mshr_merge, llc_perf_shadow_.mshr_merge,
                  ctx->perf.llc_mshr_merge);
     sync_counter(current.prefetch_issue, llc_perf_shadow_.prefetch_issue,
@@ -620,7 +617,7 @@ void MemSubsystem::init() {
   dcache_.out.fillout = &fill_out_;       // DCache fill output (to MSHR/WB)
 
   mem_route_block.out.dcache_req = &dcache_req_mux_;  // MemRouteBlock output → DCache request multiplexer
-  mem_route_block.in.dcache_resp = &dcache_resp_raw_; // LSU request → MemRouteBlock input
+  mem_route_block.in.dcache_resp = &dcache_resp_route_; // DCache response → MemRouteBlock input
 
   mem_route_block.in.lsu_req = &lsu2dcache->req_ports;
   mem_route_block.out.lsu_resp = dcache2lsu;
@@ -662,6 +659,13 @@ void MemSubsystem::init() {
 
   dcache_req_mux_ = {};
   dcache_resp_raw_ = {};
+  dcache_resp_pending_ = {};
+  dcache_resp_route_ = {};
+  dcache_empty_req_ = LsuDcacheIO{};
+  std::memset(dcache_resp_meta_cur_, 0, sizeof(dcache_resp_meta_cur_));
+  std::memset(dcache_resp_meta_nxt_, 0, sizeof(dcache_resp_meta_nxt_));
+  std::memset(dcache_resp_pending_meta_, 0,
+              sizeof(dcache_resp_pending_meta_));
 
   mshr_dcache_io_ = {};
   dcache_mshr_io_ = {};
@@ -777,6 +781,10 @@ void MemSubsystem::sync_mmio_devices_from_backing() {
 #endif
 }
 
+static bool replay_waits_for_mshr_fill(ReplayType replay) {
+  return replay == ReplayType::MSHR_HIT || replay == ReplayType::MSHR_FULL;
+}
+
 void MemSubsystem::dump_debug_state(FILE *out) const {
   if (out == nullptr) {
     return;
@@ -786,6 +794,185 @@ void MemSubsystem::dump_debug_state(FILE *out) const {
   mshr_.dump_debug_state(out);
   wb_.dump_debug_state(out);
   dcache_.dump_debug_state(out);
+}
+
+void MemSubsystem::dcache_domain_comb_outputs() {
+  // Consume same-cycle AXI feedback before publishing DCache-facing state.
+  // This lets a just-returned MSHR line or just-retired WB entry be visible
+  // to the DCache in this CPU cycle instead of waiting for the next seq edge.
+  wb_.comb_inputs_axi();
+  mshr_.comb_inputs_axi();
+
+  wb_.comb_outputs_dcache();
+  mshr_.comb_outputs_dcache();
+
+  Dcache_Read(dcache_line_read_req_,
+              dcache_line_read_resp_,
+              fill_out_,
+              fill_in_);
+
+  dcache_.stage2_comb();
+  Dcache_Write(pending_writes_,
+               lru_updates_,
+               fill_writes_);
+}
+
+void MemSubsystem::record_dcache_stage1_metadata() {
+  std::memset(dcache_resp_meta_nxt_, 0, sizeof(dcache_resp_meta_nxt_));
+  const LsuDcacheIO &req = *dcache_.in.lsu2dcache;
+  for (int i = 0; i < LSU_LDU_COUNT; i++) {
+    const LoadReq &load = req.req_ports.load_ports[i];
+    if (!load.valid) {
+      continue;
+    }
+    dcache_resp_meta_nxt_[i].valid = true;
+    dcache_resp_meta_nxt_[i].is_store = false;
+    dcache_resp_meta_nxt_[i].addr = load.addr;
+  }
+  for (int i = 0; i < LSU_STA_COUNT; i++) {
+    const StoreReq &store = req.req_ports.store_ports[i];
+    if (!store.valid) {
+      continue;
+    }
+    const int idx = LSU_LDU_COUNT + i;
+    dcache_resp_meta_nxt_[idx].valid = true;
+    dcache_resp_meta_nxt_[idx].is_store = true;
+    dcache_resp_meta_nxt_[idx].addr = store.addr;
+    dcache_resp_meta_nxt_[idx].data = store.data;
+    dcache_resp_meta_nxt_[idx].strb = store.strb;
+  }
+}
+
+void MemSubsystem::capture_dcache_raw_response() {
+  for (int i = 0; i < LSU_LDU_COUNT; i++) {
+    if (!dcache_resp_raw_.resp_ports.load_resps[i].valid) {
+      continue;
+    }
+    Assert(!dcache_resp_pending_.resp_ports.load_resps[i].valid &&
+           "DCache load response latch overflow");
+    dcache_resp_pending_.resp_ports.load_resps[i] =
+        dcache_resp_raw_.resp_ports.load_resps[i];
+    dcache_resp_pending_meta_[i] = dcache_resp_meta_cur_[i];
+  }
+  for (int i = 0; i < LSU_STA_COUNT; i++) {
+    if (!dcache_resp_raw_.resp_ports.store_resps[i].valid) {
+      continue;
+    }
+    Assert(!dcache_resp_pending_.resp_ports.store_resps[i].valid &&
+           "DCache store response latch overflow");
+    dcache_resp_pending_.resp_ports.store_resps[i] =
+        dcache_resp_raw_.resp_ports.store_resps[i];
+    dcache_resp_pending_meta_[LSU_LDU_COUNT + i] =
+        dcache_resp_meta_cur_[LSU_LDU_COUNT + i];
+  }
+  if (dcache_resp_raw_.mshr_fill) {
+#if !BSD_CONFIG
+    if (ctx != nullptr) {
+      ctx->perf.l1d_fill_wakeup_seen++;
+      if (dcache_resp_pending_.mshr_fill) {
+        ctx->perf.l1d_fill_wakeup_overwrite++;
+      }
+    }
+#endif
+    dcache_resp_pending_.mshr_fill = true;
+    dcache_resp_pending_.mshr_fill_addr = dcache_resp_raw_.mshr_fill_addr;
+  }
+}
+
+void MemSubsystem::forward_pending_response_from_fill() {
+  MSHR_FILLReq &fill = mshr_dcache_io_.fill_req;
+  if (!fill.valid) {
+    return;
+  }
+
+  for (int i = 0; i < LSU_LDU_COUNT; i++) {
+    LoadResp &resp = dcache_resp_pending_.resp_ports.load_resps[i];
+    const DcacheRespMeta &meta = dcache_resp_pending_meta_[i];
+    if (!resp.valid || !meta.valid || meta.is_store ||
+        !replay_waits_for_mshr_fill(resp.replay) ||
+        !cache_line_match(meta.addr, fill.addr)) {
+      continue;
+    }
+    const AddrFields f = decode(meta.addr);
+    resp.data = fill.data[f.word_off];
+    resp.replay = ReplayType::HIT;
+#if !BSD_CONFIG
+    if (ctx != nullptr) {
+      ctx->perf.l1d_fill_forward_load++;
+    }
+#endif
+  }
+
+  for (int i = 0; i < LSU_STA_COUNT; i++) {
+    StoreResp &resp = dcache_resp_pending_.resp_ports.store_resps[i];
+    const int meta_idx = LSU_LDU_COUNT + i;
+    const DcacheRespMeta &meta = dcache_resp_pending_meta_[meta_idx];
+    if (!resp.valid || !meta.valid || !meta.is_store ||
+        !replay_waits_for_mshr_fill(resp.replay) ||
+        !cache_line_match(meta.addr, fill.addr)) {
+      continue;
+    }
+    const AddrFields f = decode(meta.addr);
+    apply_strobe(fill.data[f.word_off], meta.data, meta.strb);
+    fill.dirty = true;
+    resp.replay = ReplayType::HIT;
+#if !BSD_CONFIG
+    if (ctx != nullptr) {
+      ctx->perf.l1d_fill_merge_store++;
+    }
+#endif
+  }
+}
+
+void MemSubsystem::publish_pending_dcache_response() {
+  dcache_resp_route_ = dcache_resp_pending_;
+}
+
+void MemSubsystem::clear_pending_dcache_response() {
+  dcache_resp_pending_ = {};
+  std::memset(dcache_resp_pending_meta_, 0,
+              sizeof(dcache_resp_pending_meta_));
+}
+
+void MemSubsystem::dcache_domain_comb_inputs() {
+  dcache_.stage1_comb();
+  record_dcache_stage1_metadata();
+
+  // DCache-side updates run after stage2/stage1 produces requests. AXI
+  // outputs are refreshed afterward so newly allocated MSHR/WB entries can
+  // start their external transaction in the same DCache-domain cycle.
+  mshr_.comb_inputs_dcache();
+  wb_.comb_inputs_dcache();
+
+  mshr_.comb_outputs_axi();
+  wb_.comb_outputs_axi();
+}
+
+void MemSubsystem::dcache_domain_seq(bool sample_mshr_perf) {
+  dcache_.seq();
+  std::memcpy(dcache_resp_meta_cur_, dcache_resp_meta_nxt_,
+              sizeof(dcache_resp_meta_cur_));
+  mshr_.seq(sample_mshr_perf);
+  wb_.seq();
+}
+
+void MemSubsystem::dcache_fast_comb(bool inject_slow_request) {
+  LsuDcacheIO *saved_req = dcache_.in.lsu2dcache;
+  if (!inject_slow_request) {
+    dcache_empty_req_ = LsuDcacheIO{};
+    dcache_.in.lsu2dcache = &dcache_empty_req_;
+  }
+
+  dcache_domain_comb_outputs();
+  capture_dcache_raw_response();
+  forward_pending_response_from_fill();
+  dcache_domain_comb_inputs();
+
+  dcache_.in.lsu2dcache = saved_req;
+}
+
+void MemSubsystem::dcache_fast_seq(bool sample_mshr_perf) {
+  dcache_domain_seq(sample_mshr_perf);
 }
 
 void MemSubsystem::comb_outputs() {
@@ -808,24 +995,10 @@ void MemSubsystem::comb_outputs() {
   }
 #endif
 
-  // Consume same-cycle AXI feedback before publishing DCache-facing state.
-  // This lets a just-returned MSHR line or just-retired WB entry be visible
-  // to the DCache in this CPU cycle instead of waiting for the next seq edge.
-  wb_.comb_inputs_axi();
-  mshr_.comb_inputs_axi();
-
-  wb_.comb_outputs_dcache();
-  mshr_.comb_outputs_dcache();
-
-  Dcache_Read(dcache_line_read_req_,
-              dcache_line_read_resp_,
-              fill_out_,
-              fill_in_);
-
-  dcache_.stage2_comb();
-  Dcache_Write(pending_writes_,
-               lru_updates_,
-               fill_writes_);
+  dcache_domain_comb_outputs();
+  capture_dcache_raw_response();
+  forward_pending_response_from_fill();
+  publish_pending_dcache_response();
 
   mem_route_block.comb_response();
 }
@@ -882,7 +1055,7 @@ void MemSubsystem::comb_inputs() {
       ptw_out.mem_req_addr[static_cast<size_t>(PtwClient::ITLB)];
 
   mem_route_block.comb_request();
-  dcache_.stage1_comb();
+  dcache_domain_comb_inputs();
 
   MemPtwBlock::FeedbackIn ptw_feedback{};
 
@@ -946,15 +1119,6 @@ void MemSubsystem::comb_inputs() {
   ptw_block.comb_finish(ptw_feedback);
 
   sync_ptw_port_outputs();
-
-  // DCache-side updates run after stage2/stage1 produces requests. AXI
-  // outputs are refreshed afterward so newly allocated MSHR/WB entries can
-  // start their external transaction in the same CPU cycle.
-  mshr_.comb_inputs_dcache();
-  wb_.comb_inputs_dcache();
-
-  mshr_.comb_outputs_axi();
-  wb_.comb_outputs_axi();
 
   peripheral_axi_.in.read = peripheral_axi_read_in;
   peripheral_axi_.in.write = peripheral_axi_write_in;
@@ -1021,12 +1185,11 @@ void MemSubsystem::seq() {
   ptw_seq_in.walk_client_flush[static_cast<size_t>(PtwClient::ITLB)] =
       itlb_walk_port_inst->seq_input().flush;
   ptw_block.seq(ptw_seq_in);
-  dcache_.seq();
-  mshr_.seq();
-  wb_.seq();
+  dcache_domain_seq(true);
   peripheral_model_.tick();
   peripheral_axi_.seq();
   mem_route_block.seq();
+  clear_pending_dcache_response();
 #if AXI_KIT_RUNTIME_ENABLED
   if (internal_axi_runtime_active_) {
     axi_kit_runtime->ddr.seq();
