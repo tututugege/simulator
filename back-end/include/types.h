@@ -70,7 +70,6 @@ struct DebugMeta {
   wire<32> instruction;
   wire<32> pc;
   bool is_mmio;
-  uint8_t mem_align_mask;
   bool difftest_skip;
   int64_t inst_idx;
 };
@@ -230,7 +229,6 @@ struct MicroOp {
     this->dbg.instruction = info.dbg.instruction;
     this->dbg.pc = info.dbg.pc;
     this->dbg.is_mmio = info.dbg.is_mmio;
-    this->dbg.mem_align_mask = info.dbg.mem_align_mask;
     this->dbg.difftest_skip = info.dbg.difftest_skip;
     this->dbg.inst_idx = info.dbg.inst_idx;
     this->flush_pipe = info.flush_pipe;

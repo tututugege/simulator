@@ -11,6 +11,17 @@
 #include <iostream>
 
 namespace {
+inline uint32_t rob_load_alignment_mask(uint32_t func3) {
+  switch (func3 & 0x3u) {
+  case 0u:
+    return 0u;
+  case 1u:
+    return 1u;
+  default:
+    return 3u;
+  }
+}
+
 inline bool rob_is_store(const RobStoredInst &uop) {
   return uop.tma.mem_commit_is_store;
 }
@@ -340,7 +351,7 @@ void Rob::comb_commit() {
         // 将 diag_val 的其他语义（如指令字、异常地址）误当作物理地址检查。
         if (rob_is_load(uop) && rob_is_complete(uop) &&
             !rob_is_page_fault(uop)) {
-          uint32_t alignment_mask = uop.dbg.mem_align_mask;
+          uint32_t alignment_mask = rob_load_alignment_mask(uop.func3);
           Assert((uop.diag_val & alignment_mask) == 0 &&
                  "DUT: Load address misaligned at commit!");
         }
@@ -383,7 +394,7 @@ void Rob::comb_commit() {
       log_incomplete_store_commit(uop, "single", single_idx);
       if (rob_is_load(uop) && rob_is_complete(uop) &&
           !rob_is_page_fault(uop)) {
-        uint32_t alignment_mask = uop.dbg.mem_align_mask;
+        uint32_t alignment_mask = rob_load_alignment_mask(uop.func3);
         Assert((uop.diag_val & alignment_mask) == 0 &&
                "DUT: Load address misaligned at single commit!");
       }

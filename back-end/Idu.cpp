@@ -317,7 +317,6 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
   uop.tma.mem_commit_is_load = false;
   uop.tma.mem_commit_is_store = false;
   uop.is_ret = false;
-  uop.dbg.mem_align_mask = 0;
   static uint64_t global_inst_idx = 0;
   uop.dbg.inst_idx = global_inst_idx++;
 
@@ -541,11 +540,6 @@ void Idu::decode(DecRenIO::DecRenInst &uop, uint32_t inst) {
   uop.tma.mem_commit_is_store =
       (inst_type == STORE ||
        (inst_type == AMO && (uop.func7 >> 2) != AmoOp::LR));
-  if (uop.tma.mem_commit_is_load) {
-    uop.dbg.mem_align_mask = (uop.func3 & 0x3) == 0   ? 0
-                             : (uop.func3 & 0x3) == 1 ? 1
-                                                      : 3;
-  }
 
   if (inst_type == AMO && uop.dest_areg == 0 && (uop.func7 >> 2) != AmoOp::LR &&
       (uop.func7 >> 2) != AmoOp::SC) {
