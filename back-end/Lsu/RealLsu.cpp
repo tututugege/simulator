@@ -507,134 +507,141 @@ void RealLsu::comb_tlb_in_stq() {
 void RealLsu::comb_stlf() {
 
   const uint32_t issue = std::min<uint32_t>(nxt.stlf_queue_count, LSU_LOAD_WINDOW_WIDTH);
-  uint32_t issue_deal = 0;
+  wire<LDQ_IDX_WIDTH> retry_ldq[LSU_LOAD_WINDOW_WIDTH] = {};
+  uint32_t retry_count = 0;
+  uint32_t pop_count = 0;
 
-  //TODO 限制issue_deal数量，避免单周期处理过多STLF检查导致时序压力过大
+  // FIFO style: pop entries that leave STLF first, then push retry entries
+  // back to the tail after the pop frees queue slots.
   for (uint32_t i = 0; i < issue; i++) {
     const uint32_t stlf_idx = (nxt.stlf_queue_head + i) % LDQ_SIZE;
-    const STLFEntry stlf_entry = nxt.stlf_queue[stlf_idx];
+    auto &stlf_entry = nxt.stlf_queue[stlf_idx];
 
     if (!stlf_entry.valid) {
+      pop_count++;
       continue;
     }
 
     const uint32_t ldq_idx = stlf_entry.ldq_idx;
     LdqEntry &entry = nxt.ldq[ldq_idx];
+    bool pop_entry = false;
+    bool retry_entry = false;
 
     if (entry.load_state == LoadState::Empty) {
-      continue;
-    }
-    if (entry.load_state != LoadState::CheckStlf) {
-      continue;
-    }
+      pop_entry = true;
+    } else if (entry.load_state == LoadState::CheckStlf) {
+      uint32_t older_store_count = 0;
+      const bool boundary_ok = stq_distance_from_head_to_boundary(
+          nxt.stq_head,
+          nxt.stq_head_flag,
+          nxt.stq_count,
+          entry.stq_snapshot,
+          older_store_count);
 
-    uint32_t older_store_count = 0;
-    const bool boundary_ok = stq_distance_from_head_to_boundary(
-        nxt.stq_head,
-        nxt.stq_head_flag,
-        nxt.stq_count,
-        entry.stq_snapshot,
-        older_store_count);
-
-    if (!boundary_ok) {
-      LSU_NON_BSD_ASSERT(0 && "LDQ STQ snapshot boundary is outside active STQ window");
-      continue;
-    }
-
-    if (entry.is_mmio) {
-      if (older_store_count == 0 &&
-          lsu_mmio_is_oldest_unfinished(in.rob_bcast, entry.rob_idx) &&
-          !nxt.uncached_unit.valid) {
-        entry.load_state = LoadState::WaitMmioResp;
-        lsu_perf::start_mem_inst(ctx, entry);
-        nxt.uncached_unit.valid = true;
-        nxt.uncached_unit.is_load = true;
-        nxt.uncached_unit.addr = entry.p_addr;
-        nxt.uncached_unit.func3 = entry.func3;
-        nxt.uncached_unit.idx = ldq_idx;
-        lsu_perf::count_mmio_load_issue(ctx);
-      } else {
-        entry.load_state = LoadState::CheckStlfRetry;
-        lsu_perf::count_mmio_head_block(ctx);
-      }
-      continue;
-    }
-    uint32_t check_stlf_num = 0;
-    for (int j = older_store_count - 1; j >= 0; j--) {
-      const uint32_t stq_idx = (nxt.stq_head + j) % STQ_SIZE;
-      const StqEntry &stq_entry = nxt.stq[stq_idx];
-      if (stq_entry.store_state == StoreState::Allocated) {
-        entry.load_state = LoadState::CheckStlfRetry;
+      if (!boundary_ok) {
+        LSU_NON_BSD_ASSERT(0 && "LDQ STQ snapshot boundary is outside active STQ window");
         break;
       }
-      if (!stq_entry.paddr_valid) {
-        lsu_perf::count_stlf_unknown_store_block(ctx);
-        entry.load_state = LoadState::CheckStlfRetry;
-        break;
-      }
-      lsu_perf::count_stlf_check(ctx);
-      STLFResult stlf_result = check_stlf(entry.p_addr, entry.func3, stq_entry.paddr, stq_entry.func3);
-      if (stlf_result == STLFResult::Overlap) {
-        if (!stq_entry.data_valid) {
+
+      if (entry.is_mmio) {
+        if (older_store_count == 0 &&
+            lsu_mmio_is_oldest_unfinished(in.rob_bcast, entry.rob_idx) &&
+            !nxt.uncached_unit.valid) {
+          entry.load_state = LoadState::WaitMmioResp;
+          lsu_perf::start_mem_inst(ctx, entry);
+          nxt.uncached_unit.valid = true;
+          nxt.uncached_unit.is_load = true;
+          nxt.uncached_unit.addr = entry.p_addr;
+          nxt.uncached_unit.func3 = entry.func3;
+          nxt.uncached_unit.idx = ldq_idx;
+          lsu_perf::count_mmio_load_issue(ctx);
+        } else {
           entry.load_state = LoadState::CheckStlfRetry;
-          break;
+          lsu_perf::count_mmio_head_block(ctx);
         }
-        const uint32_t forward_offset = entry.p_addr - stq_entry.paddr;
-        entry.result = extract_data(stq_entry.data, forward_offset, entry.func3);
-        entry.load_state = LoadState::WaitFinish; // STLF命中且数据已准备好，直接进入完成状态
-        break;
-      } else if (stlf_result == STLFResult::Retry) {
-        entry.load_state = LoadState::CheckStlfRetry;
-        break;
       } else {
-        check_stlf_num++;
+        uint32_t check_stlf_num = 0;
+        for (int j = older_store_count - 1; j >= 0; j--) {
+          const uint32_t stq_idx = (nxt.stq_head + j) % STQ_SIZE;
+          const StqEntry &stq_entry = nxt.stq[stq_idx];
+          if (stq_entry.store_state == StoreState::Allocated) {
+            entry.load_state = LoadState::CheckStlfRetry;
+            break;
+          }
+          if (!stq_entry.paddr_valid) {
+            lsu_perf::count_stlf_unknown_store_block(ctx);
+            entry.load_state = LoadState::CheckStlfRetry;
+            break;
+          }
+          lsu_perf::count_stlf_check(ctx);
+          STLFResult stlf_result = check_stlf(entry.p_addr, entry.func3, stq_entry.paddr, stq_entry.func3);
+          if (stlf_result == STLFResult::Overlap) {
+            if (!stq_entry.data_valid) {
+              entry.load_state = LoadState::CheckStlfRetry;
+              break;
+            }
+            const uint32_t forward_offset = entry.p_addr - stq_entry.paddr;
+            entry.result = extract_data(stq_entry.data, forward_offset, entry.func3);
+            entry.load_state = LoadState::WaitFinish; // STLF命中且数据已准备好，直接进入完成状态
+            break;
+          } else if (stlf_result == STLFResult::Retry) {
+            entry.load_state = LoadState::CheckStlfRetry;
+            break;
+          } else {
+            check_stlf_num++;
+          }
+        }
+
+        if (check_stlf_num == older_store_count) {
+          entry.load_state = LoadState::WaitDcache;
+        }
       }
     }
 
-    if (check_stlf_num == older_store_count) {
-      entry.load_state = LoadState::WaitDcache;
+    if (entry.load_state == LoadState::WaitDcache) {
+      if (nxt.wait_dcache_ldq_count < LDQ_SIZE) {
+        enqueue_wait_dcache_ldq(stlf_entry.ldq_idx); // 通过STLF检查的load进入等待DCACHE的队列等待发出DCACHE请求
+        entry.load_state = LoadState::ReadyToIssue;  // 设置load状态为等待DCACHE
+        pop_entry = true;
+      } else {
+        break;
+      }
+    } else if (entry.load_state == LoadState::WaitFinish) {
+      if (nxt.finish_count < LDQ_SIZE) {
+        enqueue_finish(stlf_entry.ldq_idx);      // 通过STLF检查且数据已准备好的load进入完成队列等待完成
+        entry.load_state = LoadState::ReadyToWb; // 设置load状态为等待完成
+        pop_entry = true;
+      } else {
+        break;
+      }
+    } else if (entry.load_state == LoadState::WaitMmioResp) {
+      // MMIO load在STLF检查阶段直接进入等待MMIO响应状态，不需要重试也不需要进入等待DCACHE的队列
+      pop_entry = true;
+    } else if (entry.load_state == LoadState::CheckStlfRetry) {
+      retry_entry = true;
+      entry.load_state = LoadState::CheckStlf; // 设置load状态为等待STLF检查重试，避免在STLF检查重试的过程中load被错误地发出DCACHE请求了
+      pop_entry = true;
+    } else if (!pop_entry) {
+      break;
     }
-  }
-  for (int i = 0; i < issue; i++) {
-    const uint32_t stlf_idx = (nxt.stlf_queue_head + i) % LDQ_SIZE;
-    auto &stlf_entry = nxt.stlf_queue[stlf_idx];
-    LdqEntry &entry = nxt.ldq[stlf_entry.ldq_idx];
-    if (stlf_entry.valid) {
-      if (entry.load_state == LoadState::WaitDcache) {
-        if (nxt.wait_dcache_ldq_count < LDQ_SIZE) {
-          enqueue_wait_dcache_ldq(stlf_entry.ldq_idx); // 通过STLF检查的load进入等待DCACHE的队列等待发出DCACHE请求
-          entry.load_state = LoadState::ReadyToIssue;  // 设置load状态为等待DCACHE
-          stlf_entry.valid = false;                    // 从STLF队列中移除，等待进入等待DCACHE的队列时重新设置entry内容
-        }
-      } else if (entry.load_state == LoadState::WaitFinish) {
-        if (nxt.finish_count < LDQ_SIZE) {
-          enqueue_finish(stlf_entry.ldq_idx);      // 通过STLF检查且数据已准备好的load进入完成队列等待完成
-          entry.load_state = LoadState::ReadyToWb; // 设置load状态为等待完成
-          stlf_entry.valid = false;                // 从STLF队列中移除，等待进入完成队列时重新设置entry内容
-        }
-      } else if (entry.load_state == LoadState::WaitMmioResp) {
-        // MMIO load在STLF检查阶段直接进入等待MMIO响应状态，不需要重试也不需要进入等待DCACHE的队列
-        stlf_entry.valid = false; // 从STLF队列中移除，等待MMIO响应时不需要保留STLF entry了
-      } else if (entry.load_state == LoadState::CheckStlfRetry) {
-        // 需要重试的load在STLF检查阶段直接进入等待MMIO响应状态，不需要进入等待DCACHE的队列
-        // stlf_entry.valid = false;                // 从STLF队列中移除，等待MMIO响应时不需要保留STLF entry了
-        // enqueue_stlf(stlf_entry.ldq_idx);        // 重新加入STLF队列等待下一轮检查
-        if(nxt.stlf_queue_count < LDQ_SIZE) {
-          stlf_entry.valid = false;                // 从STLF队列中移除，等待重新加入STLF队列时重新设置entry内容
-          enqueue_stlf(stlf_entry.ldq_idx);        // 重新加入STLF队列等待下一轮检查
-        }
-        entry.load_state = LoadState::CheckStlf; // 设置load状态为等待STLF检查重试，避免在STLF检查重试的过程中load被错误地发出DCACHE请求了
+
+    if (pop_entry) {
+      stlf_entry.valid = false;
+      pop_count++;
+      if (retry_entry) {
+        retry_ldq[retry_count++] = stlf_entry.ldq_idx;
       }
     }
   }
 
-  uint32_t stlf_head = nxt.stlf_queue_head;
-  for (int i = 0; i < issue; i++) {
-    const uint32_t stlf_idx = (stlf_head + i) % LDQ_SIZE;
-    if (!nxt.stlf_queue[stlf_idx].valid) {
-      dequeue_stlf(); // 已经在上面处理过的entry无论如何都不应该再保留在STLF队列中了，从队列中移除
-    } else if (nxt.stlf_queue[stlf_idx].valid) {
-      break; // 还未处理的entry后面的一定也还未处理，直接跳出循环等待下一轮处理
+  for (uint32_t i = 0; i < pop_count; i++) {
+    dequeue_stlf();
+  }
+
+  for (uint32_t i = 0; i < retry_count; i++) {
+    LSU_NON_BSD_ASSERT(nxt.stlf_queue_count < LDQ_SIZE && "STLF retry requeue overflow");
+    if (nxt.stlf_queue_count < LDQ_SIZE) {
+      enqueue_stlf(retry_ldq[i]);
     }
   }
 }
@@ -922,7 +929,6 @@ void RealLsu::comb_lsu2exe() {
           wb_uop.diag_val = stq_entry.vaddr;
           wb_uop.page_fault_store = stq_entry.page_fault;
           wb_uop.dest_en = false;
-          wb_uop.dbg.is_mmio = stq_entry.is_mmio;
 
           if (stq_entry.page_fault) {
             wb_uop.result = stq_entry.vaddr;
@@ -1004,7 +1010,6 @@ void RealLsu::comb_lsu2exe() {
         wb_uop.dest_preg = ldq_entry.dest_preg;
         wb_uop.page_fault_load = ldq_entry.page_fault;
         wb_uop.dest_en = true;
-        wb_uop.dbg.is_mmio = ldq_entry.is_mmio;
 
         wb_uop.dbg.difftest_skip = !ldq_entry.page_fault && lsu_is_timer_addr(ldq_entry.p_addr);
         out.lsu2exe->wb_req[issue_ld].uop =
