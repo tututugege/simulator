@@ -6,7 +6,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "$REPO_ROOT"
 
 SIMULATOR="${SIMULATOR:-./build/simulator}"
-CKPT_ROOT="${CKPT_ROOT:-${REPO_ROOT}/../456.hmmer_ref}"
+CKPT_ROOT="${CKPT_ROOT:-${REPO_ROOT}/../spec_simpoint/456.hmmer_ref}"
 RESULT_DIR="${RESULT_DIR:-./results_456}"
 CKPT_WARMUP="${CKPT_WARMUP-10000000}"
 CKPT_MAX_COMMIT="${CKPT_MAX_COMMIT-10000000}"
