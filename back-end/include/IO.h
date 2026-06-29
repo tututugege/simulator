@@ -1270,7 +1270,6 @@ struct StqEntry {
   wire<ROB_IDX_WIDTH> rob_idx = 0;
   wire<1> rob_flag = 0;
   wire<1> stq_flag = 0;
-
 };
 
 struct LoadReq {

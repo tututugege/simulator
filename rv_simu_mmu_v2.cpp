@@ -32,7 +32,6 @@
 
 namespace {
 constexpr bool kDcacheFastDomainEnabled = CONFIG_DCACHE_FAST_DOMAIN != 0;
-
 bool is_dcache_read_master(int master) {
   return kDcacheFastDomainEnabled &&
          master == axi_interconnect::MASTER_DCACHE_R;
@@ -768,11 +767,10 @@ void SimCpu::commit_sync(InstInfo *inst, int commit_slot) {
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
-    const bool sc_suppressed = is_amo_sc_inst(inst->type, inst->func7) &&
-                               e.suppress_write &&
-                               e.rob_idx == inst->rob_idx &&
-                               e.rob_flag == inst->rob_flag;
-    if (!sc_suppressed && e.paddr_valid && e.data_valid) {
+    const bool store_suppressed = static_cast<bool>(e.suppress_write) &&
+                                  e.rob_idx == inst->rob_idx &&
+                                  e.rob_flag == inst->rob_flag;
+    if (!store_suppressed && e.paddr_valid && e.data_valid) {
       mem_subsystem.on_commit_store(e.paddr, e.data, e.func3);
     }
   }
@@ -794,11 +792,10 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *sync) {
 
   if (inst->tma.mem_commit_is_store && !inst->page_fault_store) {
     StqEntry e = back->lsu->get_stq_entry(inst->stq_idx, inst->stq_flag);
-    const bool sc_suppressed = is_amo_sc_inst(inst->type, inst->func7) &&
-                               e.suppress_write &&
-                               e.rob_idx == inst->rob_idx &&
-                               e.rob_flag == inst->rob_flag;
-    if (sc_suppressed) {
+    const bool store_suppressed = static_cast<bool>(e.suppress_write) &&
+                                  e.rob_idx == inst->rob_idx &&
+                                  e.rob_flag == inst->rob_flag;
+    if (store_suppressed) {
       dut_cpu.store = false;
     } else {
       if (!(e.paddr_valid && e.data_valid)) {
@@ -847,25 +844,6 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *sync) {
     dut_cpu.csr[i] = back->csr->CSR_RegFile_1[i];
   }
 
-  const bool timer_irq_level = mem_subsystem.timer_irq_level();
-  const bool timer_irq_enabled =
-      (dut_cpu.csr[csr_mie] & MIP_MTIP) &&
-      ((back->csr->privilege_1 < RISCV_MODE_M) ||
-       (dut_cpu.csr[csr_mstatus] & MSTATUS_MIE));
-  const bool external_irq_level =
-      static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending_valid) &&
-      static_cast<bool>(back->csr_interrupt_inject_io.external_irq_pending);
-  const bool external_irq_enabled =
-      (dut_cpu.csr[csr_mie] & MIP_MEIP) &&
-      ((back->csr->privilege_1 < RISCV_MODE_M) ||
-       (dut_cpu.csr[csr_mstatus] & MSTATUS_MIE));
-  if (timer_irq_level && timer_irq_enabled) {
-    *sync = true;
-  }
-  if (external_irq_level && external_irq_enabled) {
-    *sync = true;
-  }
-
   const bool need_visible_irq_state = is_irq_csr_read;
   if (!need_visible_irq_state) {
     if (static_cast<bool>(
@@ -906,9 +884,6 @@ void SimCpu::difftest_prepare(InstEntry *inst_entry, bool *sync) {
   dut_cpu.inst_idx = inst->dbg.inst_idx;
   dut_cpu.commit_pc = inst->dbg.pc;
   *sync = *sync || static_cast<bool>(inst->dbg.difftest_skip);
-  if (static_cast<bool>(back->csr->out.csr2rob->interrupt_req)) {
-    *sync = true;
-  }
   if (static_cast<bool>(back->rob->out.rob_bcast->interrupt)) {
     *sync = true;
   }

@@ -694,7 +694,6 @@ void RealLsu::comb_lsu2dcache_ldq() {
     lsu_perf::set_replay(out.lsu2dcache->req_ports.load_ports[issued],
                          is_replay);
     lsu_perf::count_load_dcache_issue(ctx, is_replay);
-
     nxt.wait_dcache_ldq[wait_idx].req_gen = gen;
     lsu_perf::mark_wait_start(ctx, nxt.wait_dcache_ldq[wait_idx]);
 
@@ -749,7 +748,6 @@ void RealLsu::comb_dcache2lsu_ldq() {
             entry.load_state = LoadState::ReadyToWb;
             lsu_perf::mark_load_hit(entry);
             lsu_perf::finish_mem_inst(ctx, entry);
-
           } else {
             const ReplayType replay =
                 in.dcache2lsu->resp_ports.load_resps[i].replay;
@@ -945,6 +943,7 @@ void RealLsu::comb_lsu2exe() {
             wb_uop.dest_preg = stq_entry.dest_preg;
             wb_uop.dest_en = true;
           }
+          wb_uop.dbg.is_mmio = stq_entry.is_mmio;
 
           out.lsu2exe->wb_req[issue_ld].valid = true;
           out.lsu2exe->wb_req[issue_ld].uop =
@@ -968,6 +967,7 @@ void RealLsu::comb_lsu2exe() {
           wb_uop.result = stq_entry.vaddr;
           wb_uop.page_fault_store = stq_entry.page_fault;
           wb_uop.dest_en = false;
+          wb_uop.dbg.is_mmio = stq_entry.is_mmio;
 
           out.lsu2exe->sta_wb_req[issue_st].uop =
               LsuExeIO::LsuExeRespUop::from_micro_op(wb_uop);
@@ -1010,6 +1010,7 @@ void RealLsu::comb_lsu2exe() {
         wb_uop.dest_preg = ldq_entry.dest_preg;
         wb_uop.page_fault_load = ldq_entry.page_fault;
         wb_uop.dest_en = true;
+        wb_uop.dbg.is_mmio = ldq_entry.is_mmio;
 
         wb_uop.dbg.difftest_skip = !ldq_entry.page_fault && lsu_is_timer_addr(ldq_entry.p_addr);
         out.lsu2exe->wb_req[issue_ld].uop =
@@ -1059,7 +1060,7 @@ void RealLsu::comb_stq_commit() {
     if (idx == nxt.stq_commit && nxt.stq[idx].store_state == StoreState::WaitCommit) {
       StqEntry &nxt_entry = nxt.stq[idx];
 
-      if (nxt_entry.page_fault) {
+      if (static_cast<bool>(in.rob_bcast->flush)) {
         nxt_entry.store_state = StoreState::Done;
         nxt_entry.suppress_write = true;
         commit_stq_entry();
@@ -1071,7 +1072,6 @@ void RealLsu::comb_stq_commit() {
         nxt_entry.store_state = StoreState::Committed;
         commit_stq_entry();
       }
-
     } else {
       LSU_NON_BSD_ASSERT(0 && "Store commit out of order?");
     }
@@ -1430,7 +1430,6 @@ void RealLsu::handle_store_addr(const MicroOp &inst) {
   enqueue_wait_mmu_stq(inst.stq_idx);
 
   entry.is_lrsc = inst.is_atomic && ((inst.func7 >> 2) == AmoOp::SC);
-
 }
 
 void RealLsu::handle_load_req(const MicroOp &inst) {
@@ -1460,7 +1459,6 @@ void RealLsu::handle_load_req(const MicroOp &inst) {
 
   entry.is_lrsc = is_amo_lr_uop(inst);
   enqueue_wait_mmu_ldq(inst.ldq_idx);
-
 }
 
 StqEntry RealLsu::get_stq_entry(int idx, bool flag) {
