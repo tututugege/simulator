@@ -2065,6 +2065,15 @@ void front_seq_write(const struct front_top_in &inp, const FrontUpdateRequest &r
 
 } // namespace
 
+void front_top_seq_read(const struct front_top_in &inp, FrontReadData &rd) {
+  front_seq_read(inp, rd);
+}
+
+void front_top_seq_write(const struct front_top_in &inp,
+                         const FrontUpdateRequest &req, bool reset) {
+  front_seq_write(inp, req, reset);
+}
+
 void front_top(struct front_top_in *in, struct front_top_out *out) {
   assert(in);
   assert(out);

@@ -1028,8 +1028,8 @@ void SimCpu::cycle() {
   }
 
   {
-    FRONTEND_HOST_PROFILE_SCOPE(SimFrontCycle);
-    front_cycle();
+    FRONTEND_HOST_PROFILE_SCOPE(SimFrontCombBeforeBack);
+    front_comb_before_back();
   }
 
   // AXI phase-1: slave outputs -> interconnect outputs.
@@ -1056,6 +1056,11 @@ void SimCpu::cycle() {
   }
 
   {
+    FRONTEND_HOST_PROFILE_SCOPE(SimFrontAcceptCombAfterBack);
+    front_accept_comb_after_back();
+  }
+
+  {
     FRONTEND_HOST_PROFILE_SCOPE(SimMemCombInputs);
     mem_subsystem.comb_inputs();
   }
@@ -1071,11 +1076,16 @@ void SimCpu::cycle() {
     axi_subsystem_comb_inputs(*this);
   }
 
-  // 步骤 2：反馈给前端
   {
     FRONTEND_HOST_PROFILE_SCOPE(SimBack2Front);
     back2front_comb();
   }
+
+  {
+    FRONTEND_HOST_PROFILE_SCOPE(SimFrontSeq);
+    front.seq_write_bpu();
+  }
+
   {
     FRONTEND_HOST_PROFILE_SCOPE(SimBackSeq);
     back.seq();
@@ -1106,7 +1116,7 @@ void SimCpu::cycle() {
   }
 }
 
-void SimCpu::front_cycle() {
+void SimCpu::front_comb_before_back() {
   auto perf_account_front_supply = [&]() {
     if (front.in.FIFO_read_enable) {
       ctx.perf.front2back_read_enable_cycle_total++;
@@ -1123,62 +1133,51 @@ void SimCpu::front_cycle() {
       }
     }
   };
+  (void)perf_account_front_supply;
 
 #ifdef CONFIG_BPU
-  if (!back.out.stall || back.out.mispred || back.out.flush) {
+  front.in.FIFO_read_enable = false;
+  front.in.refetch = (back.out.mispred || back.out.flush);
+  front.in.itlb_flush = back.out.itlb_flush;
+  front.in.fence_i = back.out.fence_i;
+  if (front.in.refetch) {
+    front.in.refetch_address = back.out.redirect_pc;
+  }
 
-    front.in.FIFO_read_enable = true;
-    front.in.refetch = (back.out.mispred || back.out.flush);
-    front.in.itlb_flush = back.out.itlb_flush;
-    front.in.fence_i = back.out.fence_i;
-    if (front.in.refetch) {
-      front.in.refetch_address =
-          back.out.redirect_pc; // 再次确保赋值，防止时序错位
+  front.seq_read_bpu();
+  front.comb_bpu();
+
+  bool no_taken = true;
+  for (int j = 0; j < FETCH_WIDTH; j++) {
+    back.in.valid[j] =
+        no_taken && front.out.FIFO_valid && front.out.inst_valid[j];
+    back.in.pc[j] = front.out.pc[j];
+    back.in.predict_next_fetch_address[j] =
+        front.out.predict_next_fetch_address;
+    back.in.page_fault_inst[j] = front.out.page_fault_inst[j];
+    back.in.inst[j] = front.out.instructions[j];
+
+    // if (back.in.valid[j]) {
+    //   cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
+    //        << front.out.pc[j] << " Inst: " << back.in.inst[j] << endl;
+    // }
+
+    back.in.predict_dir[j] = front.out.predict_dir[j];
+    back.in.alt_pred[j] = front.out.alt_pred[j];
+    back.in.altpcpn[j] = front.out.altpcpn[j];
+    back.in.pcpn[j] = front.out.pcpn[j];
+    for (int k = 0; k < 4; k++) { // TN_MAX = 4 (分支预测相关索引)
+      back.in.tage_idx[j][k] = front.out.tage_idx[j][k];
+      back.in.tage_tag[j][k] = front.out.tage_tag[j][k];
     }
-
-#ifdef CONFIG_BPU
-    front.step_bpu();
-#endif
-
-    bool no_taken = true;
-    for (int j = 0; j < FETCH_WIDTH; j++) {
-      back.in.valid[j] =
-          no_taken && front.out.FIFO_valid && front.out.inst_valid[j];
-      back.in.pc[j] = front.out.pc[j];
-      back.in.predict_next_fetch_address[j] =
-          front.out.predict_next_fetch_address;
-      back.in.page_fault_inst[j] = front.out.page_fault_inst[j];
-      back.in.inst[j] = front.out.instructions[j];
-
-      // if (back.in.valid[j]) {
-      //   cout << "指令index:" << dec << sim_time << " 当前PC的取值为:" << hex
-      //        << front.out.pc[j] << " Inst: " << back.in.inst[j] << endl;
-      // }
-
-      back.in.predict_dir[j] = front.out.predict_dir[j];
-      back.in.alt_pred[j] = front.out.alt_pred[j];
-      back.in.altpcpn[j] = front.out.altpcpn[j];
-      back.in.pcpn[j] = front.out.pcpn[j];
-      for (int k = 0; k < 4; k++) { // TN_MAX = 4 (分支预测相关索引)
-        back.in.tage_idx[j][k] = front.out.tage_idx[j][k];
-        back.in.tage_tag[j][k] = front.out.tage_tag[j][k];
-      }
-      if (back.in.valid[j] && front.out.predict_dir[j])
-        no_taken = false;
+    if (back.in.valid[j] && front.out.predict_dir[j])
+      no_taken = false;
+  }
+  back.in.front_stall = static_cast<bool>(front.out.commit_stall);
+  for (int j = 0; j < FETCH_WIDTH; j++) {
+    if (back.in.valid[j]) {
+      ctx.perf.front2back_fetched_inst_total++;
     }
-    back.in.front_stall = static_cast<bool>(front.out.commit_stall);
-    perf_account_front_supply();
-  } else {
-
-#ifdef CONFIG_BPU
-    front.in.FIFO_read_enable = false;
-    front.in.refetch = false;
-    front.in.itlb_flush = back.out.itlb_flush;
-    front.in.fence_i = back.out.fence_i;
-    front.step_bpu();
-#else
-#endif
-    back.in.front_stall = static_cast<bool>(front.out.commit_stall);
   }
 #else
   // Oracle 模式：每拍都执行握手，利用 1-entry pending
@@ -1252,6 +1251,25 @@ void SimCpu::front_cycle() {
   // independent from front-end stall semantics.
   back.in.front_stall = false;
   perf_account_front_supply();
+#endif
+}
+
+void SimCpu::front_accept_comb_after_back() {
+#ifdef CONFIG_BPU
+  const bool frontend_accept =
+      front.out.FIFO_valid && !back.out.stall && !back.out.mispred &&
+      !back.out.flush;
+  front.comb_apply_front2back_accept(frontend_accept);
+
+  if (frontend_accept) {
+    ctx.perf.front2back_read_enable_cycle_total++;
+  }
+  if (front.out.FIFO_valid) {
+    ctx.perf.front2back_read_cycle_total++;
+  }
+  if (frontend_accept && !front.out.FIFO_valid) {
+    ctx.perf.front2back_read_empty_cycle_total++;
+  }
 #endif
 }
 

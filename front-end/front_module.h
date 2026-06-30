@@ -106,6 +106,8 @@ struct PtabCombIn;
 struct PtabCombOut;
 struct Front2BackCombIn;
 struct Front2BackCombOut;
+struct FrontReadData;
+struct FrontUpdateRequest;
 
 void BPU_top(struct BPU_in *in, struct BPU_out *out);
 void icache_top(struct icache_in *in, struct icache_out *out);
@@ -140,6 +142,11 @@ void PTAB_comb_calc(struct PTAB_in *in, const struct PTAB_read_data *rd,
                     PtabCombOut *step_req);
 void PTAB_seq_write(const PtabCombOut *req);
 
+void front_top_seq_read(const struct front_top_in &in, FrontReadData &rd);
+void front_comb_calc(const struct front_top_in &in, const FrontReadData &rd,
+                     struct front_top_out &out, FrontUpdateRequest &req);
+void front_top_seq_write(const struct front_top_in &in,
+                         const FrontUpdateRequest &req, bool reset);
 void front_top(struct front_top_in *in, struct front_top_out *out);
 void front_dump_debug_state();
 

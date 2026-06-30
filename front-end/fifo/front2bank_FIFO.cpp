@@ -70,7 +70,9 @@ void front2back_FIFO_comb(const Front2BackCombIn &in,
         in.inp.predict_next_fetch_address_corrected;
   }
 
-  if (do_read) {
+  const bool expose_read_entry =
+      has_data_before_read || (do_read && do_write && !has_data_before_read);
+  if (expose_read_entry) {
     if (has_data_before_read && !in.rd.head_valid) {
       std::printf("[FRONT2BACK_FIFO_TOP] ERROR!!: missing head snapshot for same-cycle reread\n");
       std::exit(1);

@@ -38,7 +38,8 @@ public:
   void reinit_frontend_after_restore();
   void restore_pc(uint32_t pc);
   void cycle();
-  void front_cycle();
+  void front_comb_before_back();
+  void front_accept_comb_after_back();
   void back2front_comb();
   bool ready_to_exit() const;
   uint32_t get_reg(uint8_t arch_idx) { return back.get_reg(arch_idx); }
